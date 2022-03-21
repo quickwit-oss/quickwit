@@ -67,6 +67,7 @@ The response for the is a JSON object, and the content type is `application/json
 | **num_hits**            | Total number of matches        | `number`   |
 | **elapsed_time_micros** | Processing time of the query   | `number`   |
 
+
 ### Search stream in an index
 
 ```

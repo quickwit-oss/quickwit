@@ -138,7 +138,7 @@ which returns the json
 
 ```json
 {
-  "numHits": 364,
+  "num_hits": 364,
   "hits": [
     {
       "attributes.class": [
@@ -159,7 +159,7 @@ which returns the json
     }
     ...
   ],
-  "numMicrosecs": 505923
+  "elapsed_time_micros": 505923
 }
 ```
 

@@ -348,7 +348,7 @@ fn merge_leaf_responses(
         intermediate_aggregation_results
             .into_iter()
             .reduce(|mut res1, res2| {
-                res1.merge_fruits(&res2);
+                res1.merge_fruits(res2);
                 res1
             });
 
