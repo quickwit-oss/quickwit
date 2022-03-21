@@ -26,7 +26,6 @@ use crate::error::SearchError;
 /// SearchResponseRest represents the response returned by the REST search API
 /// and is meant to be serialized into JSON.
 #[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SearchResponseRest {
     /// Overall number of documents matching the query.
     pub num_hits: u64,

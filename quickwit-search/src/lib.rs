@@ -41,7 +41,6 @@ mod thread_pool;
 pub type Result<T> = std::result::Result<T, SearchError>;
 
 use std::cmp::Reverse;
-use std::net::SocketAddr;
 use std::ops::Range;
 
 use anyhow::Context;
@@ -51,6 +50,7 @@ use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_metastore::{Metastore, SplitMetadata, SplitState};
 use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
+use tantivy::aggregation::agg_req::Aggregations;
 use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::DocAddress;
@@ -66,15 +66,6 @@ pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 use crate::thread_pool::run_cpu_intensive;
-
-/// Compute the gRPC port from the Scuttlebutt gossip port.
-/// Add 1 to the Scuttlebutt gossip port to get the gRPC port.
-pub fn scuttlebutt_gossip_addr_to_grpc_addr(scuttlebutt_gossip_addr: SocketAddr) -> SocketAddr {
-    SocketAddr::new(
-        scuttlebutt_gossip_addr.ip(),
-        scuttlebutt_gossip_addr.port() + 1,
-    )
-}
 
 /// GlobalDocAddress serves as a hit address.
 #[derive(Clone, Copy, Eq, Debug, PartialEq, Hash, Ord, PartialOrd)]
@@ -195,7 +186,9 @@ pub async fn single_node_search(
             .intermediate_aggregation_result
             .map(|res| {
                 let res: IntermediateAggregationResults = serde_json::from_str(&res)?;
-                let res: AggregationResults = res.into();
+                let req: Aggregations = serde_json::from_str(search_request.aggregation_request())?;
+                let res: AggregationResults =
+                    AggregationResults::from_intermediate_and_req(res, req);
                 serde_json::to_string(&res)
             })
             .transpose()

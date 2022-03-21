@@ -36,6 +36,17 @@ pub struct LeaveClusterRequest {}
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeaveClusterResponse {}
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClusterStateRequest {}
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClusterStateResponse {
+    #[prost(string, tag = "1")]
+    pub state_serialized_json: ::prost::alloc::string::String,
+}
 #[doc = r" Generated client implementations."]
 pub mod cluster_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -127,6 +138,20 @@ pub mod cluster_service_client {
             let path = http::uri::PathAndQuery::from_static("/cluster.ClusterService/LeaveCluster");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        pub async fn cluster_state(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ClusterStateRequest>,
+        ) -> Result<tonic::Response<super::ClusterStateResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/cluster.ClusterService/ClusterState");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
 #[doc = r" Generated server implementations."]
@@ -147,6 +172,10 @@ pub mod cluster_service_server {
             &self,
             request: tonic::Request<super::LeaveClusterRequest>,
         ) -> Result<tonic::Response<super::LeaveClusterResponse>, tonic::Status>;
+        async fn cluster_state(
+            &self,
+            request: tonic::Request<super::ClusterStateRequest>,
+        ) -> Result<tonic::Response<super::ClusterStateResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct ClusterServiceServer<T: ClusterService> {
@@ -243,6 +272,39 @@ pub mod cluster_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = LeaveClusterSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/cluster.ClusterService/ClusterState" => {
+                    #[allow(non_camel_case_types)]
+                    struct ClusterStateSvc<T: ClusterService>(pub Arc<T>);
+                    impl<T: ClusterService> tonic::server::UnaryService<super::ClusterStateRequest>
+                        for ClusterStateSvc<T>
+                    {
+                        type Response = super::ClusterStateResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ClusterStateRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).cluster_state(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ClusterStateSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
                             accept_compression_encodings,

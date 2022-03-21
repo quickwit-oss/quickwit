@@ -74,11 +74,12 @@ pub async fn run_searcher(
     let cluster = Arc::new(Cluster::new(
         member,
         quickwit_config.gossip_socket_addr()?,
+        quickwit_config.grpc_socket_addr()?,
         &seed_nodes,
         FailureDetectorConfig::default(),
     )?);
     let storage_uri_resolver = quickwit_storage_uri_resolver().clone();
-    let client_pool = SearchClientPool::create_and_keep_updated(cluster.clone()).await;
+    let client_pool = SearchClientPool::create_and_keep_updated(cluster.clone()).await?;
     let cluster_client = ClusterClient::new(client_pool.clone());
     let search_service = Arc::new(SearchServiceImpl::new(
         metastore,
