@@ -19,6 +19,9 @@
 
 use std::sync::Arc;
 use std::time::Duration;
+use std::path::PathBuf;
+use tokio::fs;
+use tracing::info;
 
 use quickwit_indexing::{
     delete_splits_with_files, run_garbage_collect, FileEntry, IndexingSplitStore,
@@ -112,6 +115,27 @@ pub async fn delete_index(
     .await?;
     metastore.delete_index(index_id).await?;
     Ok(deleted_entries)
+}
+
+/// Cleans up split cache in local split store.
+///
+/// * `metastore_uri` - The metastore URI for accessing the metastore.
+/// * `index_id` - The target index Id.
+/// * `grace_period` -  Threshold period after which a staged split can be garbage collected.
+/// * `dry_run` - Should this only return a list of affected files without performing deletion.
+pub async fn clean_split_cache(
+    data_dir_path: &PathBuf,
+    index_id: String,
+    source_id: String
+) -> anyhow::Result<()> {
+    let cache_path = data_dir_path.join("indexing")
+                                    .join(source_id)
+                                    .join(index_id)
+                                    .join("cache");
+
+    info!(cache_path = %cache_path.as_path().display(), "cache_path");
+    fs::remove_dir_all(cache_path.as_path()).await?;
+    Ok(())
 }
 
 /// Detect all dangling splits and associated files from the index and removes them.

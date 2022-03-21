@@ -99,6 +99,9 @@ impl IndexingSplitStore {
     ) -> StorageResult<Self> {
         let local_storage_root = cache_directory.join(SPLIT_CACHE_DIR_NAME);
         std::fs::create_dir_all(&local_storage_root)?;
+
+        info!(local_storage_root = ?local_storage_root, "local_storage_root" );
+
         let local_split_store = LocalSplitStore::open(local_storage_root, cache_params)?;
         Ok(Self {
             remote_storage,

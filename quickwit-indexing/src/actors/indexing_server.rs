@@ -177,7 +177,7 @@ impl IndexingServer {
     }
 
     pub fn spawn(
-        data_dir_path: PathBuf,
+        data_dir_path: &PathBuf,
         indexer_config: IndexerConfig,
         metastore: Arc<dyn Metastore>,
         storage_resolver: StorageUriResolver,
