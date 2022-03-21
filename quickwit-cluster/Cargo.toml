@@ -22,7 +22,7 @@ tokio-stream = { version = "0.1", features = [ "sync" ] }
 tracing = "0.1.29"
 uuid = "0.8"
 quickwit-proto = { version = "0.2.1", path = "../quickwit-proto"}
-scuttlebutt = { git = "https://github.com/quickwit-oss/scuttlebutt", version = "0.1.0", rev="9ce60f1" }
+scuttlebutt = { git = "https://github.com/quickwit-oss/scuttlebutt", version = "0.1.0", rev="fb799bd" }
 
 [dev-dependencies]
 itertools = '0.10'

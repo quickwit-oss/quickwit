@@ -3103,7 +3103,7 @@ dependencies = [
 [[package]]
 name = "scuttlebutt"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/scuttlebutt?rev=9ce60f1#9ce60f11853bd286b8912ce4a821795438a7da98"
+source = "git+https://github.com/quickwit-oss/scuttlebutt?rev=fb799bd#fb799bd19643403389976d52c1b885da2f7b1b95"
 dependencies = [
  "anyhow",
  "bytes",
