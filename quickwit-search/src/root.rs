@@ -27,6 +27,7 @@ use quickwit_proto::{
     FetchDocsRequest, FetchDocsResponse, Hit, LeafSearchRequest, LeafSearchResponse, PartialHit,
     SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
 };
+use tantivy::aggregation::agg_req::Aggregations;
 use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
@@ -245,7 +246,9 @@ pub async fn root_search(
             .intermediate_aggregation_result
             .map(|res| {
                 let res: IntermediateAggregationResults = serde_json::from_str(&res)?;
-                let res: AggregationResults = res.into();
+                let req: Aggregations = serde_json::from_str(search_request.aggregation_request())?;
+                let res: AggregationResults =
+                    AggregationResults::from_intermediate_and_req(res, req);
                 serde_json::to_string(&res)
             })
             .transpose()

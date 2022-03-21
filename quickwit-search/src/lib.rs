@@ -50,6 +50,7 @@ use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_metastore::{Metastore, SplitMetadata, SplitState};
 use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
+use tantivy::aggregation::agg_req::Aggregations;
 use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::DocAddress;
@@ -185,7 +186,9 @@ pub async fn single_node_search(
             .intermediate_aggregation_result
             .map(|res| {
                 let res: IntermediateAggregationResults = serde_json::from_str(&res)?;
-                let res: AggregationResults = res.into();
+                let req: Aggregations = serde_json::from_str(search_request.aggregation_request())?;
+                let res: AggregationResults =
+                    AggregationResults::from_intermediate_and_req(res, req);
                 serde_json::to_string(&res)
             })
             .transpose()
