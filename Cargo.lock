@@ -752,7 +752,7 @@ checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 [[package]]
 name = "fastfield_codecs"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=1a92b58#1a92b588e019aa0158db8b2753639e05527c8d28"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=46d5de9#46d5de920dd1ac86fa7a74baa0debd933bcb6574"
 dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
@@ -894,7 +894,6 @@ dependencies = [
  "futures-core",
  "futures-task",
  "futures-util",
- "num_cpus",
 ]
 
 [[package]]
@@ -942,6 +941,19 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
+]
+
+[[package]]
+name = "generator"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1d9279ca822891c1a4dae06d185612cf8fc6acfe5dff37781b41297811b12ee"
+dependencies = [
+ "cc",
+ "libc",
+ "log",
+ "rustversion",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -1380,6 +1392,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "loom"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edc5c7d328e32cc4954e8e01193d7f0ef5ab257b5090b70a964e099a36034309"
+dependencies = [
+ "cfg-if 1.0.0",
+ "generator",
+ "scoped-tls",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "lru"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1707,6 +1732,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "87f3e037eac156d1775da914196f0f37741a274155e34a0b7e427c35d2a2ecb9"
 
 [[package]]
+name = "oneshot"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3b8d98df258e762e901eb4349d66d5a5f5a7a994db8df82ff596011773be535"
+dependencies = [
+ "loom",
+]
+
+[[package]]
 name = "opaque-debug"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1830,7 +1864,7 @@ dependencies = [
 [[package]]
 name = "ownedbytes"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=1a92b58#1a92b588e019aa0158db8b2753639e05527c8d28"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=46d5de9#46d5de920dd1ac86fa7a74baa0debd933bcb6574"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -3069,7 +3103,7 @@ dependencies = [
 [[package]]
 name = "scuttlebutt"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/scuttlebutt?rev=56e2e8f#56e2e8ff6dec6e26f4ab4fc31e20adda72cd2594"
+source = "git+https://github.com/quickwit-oss/scuttlebutt?rev=fb799bd#fb799bd19643403389976d52c1b885da2f7b1b95"
 dependencies = [
  "anyhow",
  "bytes",
@@ -3436,8 +3470,8 @@ dependencies = [
 
 [[package]]
 name = "tantivy"
-version = "0.17.0-dev"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=1a92b58#1a92b588e019aa0158db8b2753639e05527c8d28"
+version = "0.17.0"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=46d5de9#46d5de920dd1ac86fa7a74baa0debd933bcb6574"
 dependencies = [
  "async-trait",
  "base64",
@@ -3453,7 +3487,6 @@ dependencies = [
  "fastfield_codecs",
  "fnv",
  "fs2",
- "futures",
  "htmlescape",
  "itertools",
  "levenshtein_automata",
@@ -3465,6 +3498,7 @@ dependencies = [
  "murmurhash32",
  "num_cpus",
  "once_cell",
+ "oneshot",
  "ownedbytes",
  "pretty_assertions",
  "rayon",
@@ -3488,12 +3522,12 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.1.1"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=1a92b58#1a92b588e019aa0158db8b2753639e05527c8d28"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=46d5de9#46d5de920dd1ac86fa7a74baa0debd933bcb6574"
 
 [[package]]
 name = "tantivy-common"
-version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=1a92b58#1a92b588e019aa0158db8b2753639e05527c8d28"
+version = "0.2.0"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=46d5de9#46d5de920dd1ac86fa7a74baa0debd933bcb6574"
 dependencies = [
  "byteorder",
  "ownedbytes",
@@ -3513,7 +3547,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.15.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=1a92b58#1a92b588e019aa0158db8b2753639e05527c8d28"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=46d5de9#46d5de920dd1ac86fa7a74baa0debd933bcb6574"
 dependencies = [
  "combine",
  "once_cell",

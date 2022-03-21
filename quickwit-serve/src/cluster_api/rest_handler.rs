@@ -40,7 +40,6 @@ pub fn cluster_handler<TClusterService: ClusterService>(
 /// the rest API.
 #[derive(Deserialize, Debug, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-#[serde(rename_all = "camelCase")]
 struct ListMembersRequestQueryString {
     /// The output format requested.
     #[serde(default)]

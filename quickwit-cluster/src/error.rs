@@ -53,6 +53,13 @@ pub enum ClusterError {
         /// Underlying error message.
         message: String,
     },
+
+    /// Create cluster error.
+    #[error("Failed to read cluster state: `{message}`")]
+    ClusterStateError {
+        /// Underlying error message.
+        message: String,
+    },
 }
 
 impl From<ClusterError> for tonic::Status {
@@ -62,6 +69,7 @@ impl From<ClusterError> for tonic::Status {
             ClusterError::UDPPortBindingError { .. } => tonic::Code::PermissionDenied,
             ClusterError::ReadHostIdError { .. } => tonic::Code::Internal,
             ClusterError::WriteHostIdError { .. } => tonic::Code::Internal,
+            ClusterError::ClusterStateError { .. } => tonic::Code::Internal,
         };
         let message = error.to_string();
         tonic::Status::new(code, message)

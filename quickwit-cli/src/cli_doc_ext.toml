@@ -3,8 +3,8 @@ long_about = """
 Creates an index of ID `index` at `index-uri` configured by a [YAML config file](index-config.md) located at `index-config`.
 The index config lets you define the mapping of your document on the index and how each field is stored and indexed.
 If `index-uri` is omitted, `index-uri` will be set to `{default_index_root_uri}/{index}`, more info on [Quickwit config docs](config.md).
-The command fails if an index already exists unless `overwrite` is passed. 
-When `overwrite` is enabled, the command deletes all the files stored at `index-uri` before creating a new index. 
+The command fails if an index already exists unless `overwrite` is passed.
+When `overwrite` is enabled, the command deletes all the files stored at `index-uri` before creating a new index.
 """
 
 [[index.create.examples]]
@@ -16,8 +16,8 @@ quickwit index create --index-config wikipedia_index_config.yaml  --config=./con
 
 [index.ingest]
 long_about = """
-Indexes a dataset consisting of newline-delimited JSON objects located at `input-path` or read from *stdin*. 
-The data is appended to the target index of ID `index` unless `overwrite` is passed. `input-path` can be a file or another command output piped into stdin. 
+Indexes a dataset consisting of newline-delimited JSON objects located at `input-path` or read from *stdin*.
+The data is appended to the target index of ID `index` unless `overwrite` is passed. `input-path` can be a file or another command output piped into stdin.
 Currently, only local datasets are supported.
 By default, Quickwit's indexer will work with a heap of 2 GiB of memory. Learn how to change `heap-size` in the [index config doc page](index-config.md).
 """
@@ -35,10 +35,10 @@ command = "cat hdfs-log.json | quickwit index ingest --index wikipedia --config=
 
 [index.gc]
 note = """
-Intermediate files are created while executing Quickwit commands. 
-These intermediate files are always cleaned at the end of each successfully executed command. 
-However, failed or interrupted commands can leave behind intermediate files that need to be removed. 
-Also, note that using a very short grace period (like seconds) can cause the removal of intermediate files being operated on, especially when using Quickwit concurrently on the same index. 
+Intermediate files are created while executing Quickwit commands.
+These intermediate files are always cleaned at the end of each successfully executed command.
+However, failed or interrupted commands can leave behind intermediate files that need to be removed.
+Also, note that using a very short grace period (like seconds) can cause the removal of intermediate files being operated on, especially when using Quickwit concurrently on the same index.
 In practice, you can settle with the default value (1 hour) and only specify a lower value if you really know what you are doing.
 """
 
@@ -46,9 +46,9 @@ In practice, you can settle with the default value (1 hour) and only specify a l
 long_about = """
 Searches an index with ID `--index` and returns the documents matching the query specified with `--query`.
 More details on the [query language page](query-language.md).
-The offset of the first hit returned and the number of hits returned can be set with the `start-offset` and `max-hits` options. 
+The offset of the first hit returned and the number of hits returned can be set with the `start-offset` and `max-hits` options.
 It's possible to override the default search fields `search-fields` option to define the list of fields that Quickwit will search into if the user query does not explicitly target a field in the query.
-Search can also be limited to a time range using the `start-timestamp` and `end-timestamp` options. 
+Search can also be limited to a time range using the `start-timestamp` and `end-timestamp` options.
 These timestamp options are useful for boosting query performance when using a time series dataset.
 """
 
@@ -65,7 +65,7 @@ name = "Limiting the result set to 50 hits"
 command = '''
 quickwit index search --index wikipedia --query "Barack Obama" --max-hits 50 --config ./config/quickwit.yaml
 # If you have jq installed.
-quickwit index search --index wikipedia --query "Barack Obama" --max-hits 50 --config ./config/quickwit.yaml | jq '.numHits'
+quickwit index search --index wikipedia --query "Barack Obama" --max-hits 50 --config ./config/quickwit.yaml | jq '.num_hits'
 '''
 
 [[index.search.examples]]
@@ -108,7 +108,7 @@ command = '''quickwit index delete --index wikipedia --config ./config/quickwit.
 long_about = """
 Starts a web server at `rest_listing_address:rest_list_port` that exposes the [Quickwit REST API](rest-api.md)
 where `rest_listing_address` and `rest_list_port` are defined in Quickwit config file (quickwit.yaml).
-The node can optionally join a cluster using the `peer_seeds` parameter. 
+The node can optionally join a cluster using the `peer_seeds` parameter.
 This list of node addresses is used to discover the remaining peer nodes in the cluster through a gossip protocol (SWIM).
 """
 
@@ -133,7 +133,7 @@ command = '''
 # Start a searcher.
 quickwit service run searcher --config=./config/quickwit.yaml
 # Make a request.
-curl "http://127.0.0.1:7280/api/v1/wikipedia/search?query=barack+obama" 
+curl "http://127.0.0.1:7280/api/v1/wikipedia/search?query=barack+obama"
 '''
 
 
