@@ -157,7 +157,7 @@ async fn run_indexer_cli(args: RunIndexerArgs) -> anyhow::Result<()> {
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
     let client = IndexingServer::spawn(
-        &config.data_dir_path,
+        config.data_dir_path,
         config.indexer_config,
         metastore,
         storage_resolver,

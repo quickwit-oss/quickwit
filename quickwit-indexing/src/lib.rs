@@ -55,7 +55,7 @@ pub async fn index_data(
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
 ) -> anyhow::Result<IndexingStatistics> {
-    let client = IndexingServer::spawn(&data_dir_path, indexer_config, metastore, storage_resolver);
+    let client = IndexingServer::spawn(data_dir_path, indexer_config, metastore, storage_resolver);
     let pipeline_id = client.spawn_pipeline(index_id, source).await?;
     let pipeline_handle = client.detach_pipeline(&pipeline_id).await?;
     let (exit_status, statistics) = pipeline_handle.join().await;

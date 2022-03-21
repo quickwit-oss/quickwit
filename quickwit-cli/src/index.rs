@@ -782,7 +782,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         ..Default::default()
     };
     let client = IndexingServer::spawn(
-        &config.data_dir_path,
+        config.clone().data_dir_path,
         indexer_config,
         metastore,
         storage_resolver,
@@ -871,7 +871,7 @@ pub async fn merge_or_demux_cli(
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
     let client = IndexingServer::spawn(
-        &config.data_dir_path,
+        config.data_dir_path,
         indexer_config,
         metastore,
         storage_resolver,
