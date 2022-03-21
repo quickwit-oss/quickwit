@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -123,7 +123,7 @@ pub async fn delete_index(
 /// * `grace_period` -  Threshold period after which a staged split can be garbage collected.
 /// * `dry_run` - Should this only return a list of affected files without performing deletion.
 pub async fn clean_split_cache(
-    data_dir_path: &PathBuf,
+    data_dir_path: &Path,
     index_id: String,
     source_id: String,
 ) -> anyhow::Result<()> {
