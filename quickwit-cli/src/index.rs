@@ -32,7 +32,9 @@ use quickwit_actors::{ActorHandle, ObservationType};
 use quickwit_common::uri::Uri;
 use quickwit_common::{run_checklist, GREEN_COLOR};
 use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig, SourceParams};
-use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index, clean_split_cache};
+use quickwit_core::{
+    clean_split_cache, create_index, delete_index, garbage_collect_index, reset_index,
+};
 use quickwit_doc_mapper::tag_pruning::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingServer};
 use quickwit_indexing::models::IndexingStatistics;
@@ -337,7 +339,7 @@ impl IndexCliCommand {
             overwrite,
             config_uri,
             data_dir,
-            clean_cache
+            clean_cache,
         }))
     }
 
@@ -787,7 +789,9 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         metastore,
         storage_resolver,
     );
-    let pipeline_id = client.spawn_pipeline(args.index_id.clone(), source.clone()).await?;
+    let pipeline_id = client
+        .spawn_pipeline(args.index_id.clone(), source.clone())
+        .await?;
     let pipeline_handle = client.detach_pipeline(&pipeline_id).await?;
 
     let is_stdin_atty = atty::is(atty::Stream::Stdin);
@@ -813,9 +817,12 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
 
     if args.clean_cache {
         println!("Cleaning up split cache ...");
-        clean_split_cache(&config.data_dir_path, 
-                            source.source_id.clone(), 
-                            index_metadata.index_id.clone()).await?;
+        clean_split_cache(
+            &config.data_dir_path,
+            source.source_id.clone(),
+            index_metadata.index_id.clone(),
+        )
+        .await?;
     }
 
     Ok(())

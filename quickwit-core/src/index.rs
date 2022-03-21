@@ -17,11 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use std::path::PathBuf;
-use tokio::fs;
-use tracing::info;
 
 use quickwit_indexing::{
     delete_splits_with_files, run_garbage_collect, FileEntry, IndexingSplitStore,
@@ -30,7 +28,8 @@ use quickwit_metastore::{
     quickwit_metastore_uri_resolver, IndexMetadata, Metastore, SplitMetadata, SplitState,
 };
 use quickwit_storage::{quickwit_storage_uri_resolver, Storage};
-use tracing::error;
+use tokio::fs;
+use tracing::{error, info};
 
 /// Creates an index at `index-path` extracted from `metastore_uri`. The command fails if an index
 /// already exists at `index-path`.
@@ -126,12 +125,13 @@ pub async fn delete_index(
 pub async fn clean_split_cache(
     data_dir_path: &PathBuf,
     index_id: String,
-    source_id: String
+    source_id: String,
 ) -> anyhow::Result<()> {
-    let cache_path = data_dir_path.join("indexing")
-                                    .join(source_id)
-                                    .join(index_id)
-                                    .join("cache");
+    let cache_path = data_dir_path
+        .join("indexing")
+        .join(source_id)
+        .join(index_id)
+        .join("cache");
 
     info!(cache_path = %cache_path.as_path().display(), "cache_path");
     fs::remove_dir_all(cache_path.as_path()).await?;
