@@ -64,8 +64,8 @@ The response for the is a JSON object, and the content type is `application/json
 | Field                | Description                    |    Type    |
 | -------------------- | ------------------------------ | :--------: |
 | **hits**             | Results of the query           | `[hit]` |
-| **numHits**         | Total number of matches        |  `number`  |
-| **elapsedTimeMicros**    | Processing time of the query   |  `number`  |
+| **num_hits**         | Total number of matches        |  `number`  |
+| **elapsed_time_micros**    | Processing time of the query   |  `number`  |
 
 ### Search stream in an index
 
@@ -107,8 +107,8 @@ The endpoint will return 10 million values if 10 million documents match the que
 
 The response is an HTTP stream. Depending on the client's capability, it is an HTTP1.1 [chunked transfer encoded stream](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) or an HTTP2 stream.
 
-It returns a list of all the field values from documents matching the query. The field must be marked as "fast" in the index config for this to work. 
-The formatting is based on the specified output format. 
+It returns a list of all the field values from documents matching the query. The field must be marked as "fast" in the index config for this to work.
+The formatting is based on the specified output format.
 
 On error, an "X-Stream-Error" header will be sent via the trailers channel with information about the error, and the stream will be closed via [`sender.abort()`](https://docs.rs/hyper/0.14.16/hyper/body/struct.Sender.html#method.abort).
-Depending on the client, the trailer header with error details may not be shown. The error will also be logged in quickwit ("Error when streaming search results"). 
+Depending on the client, the trailer header with error details may not be shown. The error will also be logged in quickwit ("Error when streaming search results").

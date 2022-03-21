@@ -827,7 +827,7 @@ async fn test_cmd_all_with_s3_localstack_cli() -> Result<()> {
     .success()
     .stdout(predicate::function(|output: &[u8]| {
         let result: Value = serde_json::from_slice(output).unwrap();
-        result["numHits"] == Value::Number(Number::from(2i64))
+        result["num_hits"] == Value::Number(Number::from(2i64))
     }));
 
     // serve & api-search
@@ -851,7 +851,7 @@ async fn test_cmd_all_with_s3_localstack_cli() -> Result<()> {
     .await?;
     let result: Value =
         serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
-    assert_eq!(result["numHits"], Value::Number(Number::from(2i64)));
+    assert_eq!(result["num_hits"], Value::Number(Number::from(2i64)));
 
     server_process.kill().unwrap();
 
@@ -911,7 +911,7 @@ async fn test_cmd_all_with_s3_localstack_internal_api() -> Result<()> {
     .success()
     .stdout(predicate::function(|output: &[u8]| {
         let result: Value = serde_json::from_slice(output).unwrap();
-        result["numHits"] == Value::Number(Number::from(2i64))
+        result["num_hits"] == Value::Number(Number::from(2i64))
     }));
 
     // serve & api-search
@@ -935,7 +935,7 @@ async fn test_cmd_all_with_s3_localstack_internal_api() -> Result<()> {
     .await?;
     let result: Value =
         serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
-    assert_eq!(result["numHits"], Value::Number(Number::from(2i64)));
+    assert_eq!(result["num_hits"], Value::Number(Number::from(2i64)));
 
     server_process.kill().unwrap();
 
