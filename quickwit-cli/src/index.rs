@@ -27,6 +27,7 @@ use anyhow::{bail, Context};
 use chrono::Utc;
 use clap::{arg, ArgMatches, Command};
 use colored::Colorize;
+use humantime::format_duration;
 use itertools::Itertools;
 use quickwit_actors::{ActorHandle, ObservationType};
 use quickwit_common::uri::Uri;
@@ -42,6 +43,7 @@ use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
 use quickwit_telemetry::payload::TelemetryEvent;
+use thousands::Separable;
 use tracing::{debug, info, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
@@ -992,21 +994,13 @@ pub async fn start_statistics_reporting_loop(
     }
     // display end of task report
     println!();
-    let elapsed_secs = start_time.elapsed().as_secs();
-    if elapsed_secs >= 60 {
-        println!(
-            "Indexed {} documents in {} mins {} secs.",
-            pipeline_statistics.num_docs,
-            elapsed_secs / 60,
-            elapsed_secs % 60
-        );
-    } else {
-        println!(
-            "Indexed {} documents in {} secs.",
-            pipeline_statistics.num_docs,
-            elapsed_secs.max(1)
-        );
-    }
+    let secs = Duration::from_secs(start_time.elapsed().as_secs());
+    println!(
+        "Indexed {} documents in {}",
+        pipeline_statistics.num_docs.separate_with_commas(),
+        format_duration(secs)
+    );
+
     Ok(pipeline_statistics)
 }
 
