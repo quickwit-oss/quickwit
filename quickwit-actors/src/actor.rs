@@ -24,17 +24,20 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use thiserror::Error;
+use tokio::sync::oneshot;
 use tokio::sync::watch::Sender;
 use tracing::{debug, error, info_span, Span};
 
 use crate::actor_state::{ActorState, AtomicState};
 use crate::channel_with_priority::Priority;
+use crate::envelope::wrap_in_envelope;
 use crate::mailbox::{Command, CommandOrMessage};
 use crate::progress::{Progress, ProtectedZoneGuard};
-use crate::scheduler::{Callback, SchedulerMessage};
+use crate::scheduler::{Callback, ScheduleEvent, Scheduler};
 use crate::spawn_builder::SpawnBuilder;
-use crate::{AsyncActor, KillSwitch, Mailbox, QueueCapacity, SendError, SyncActor};
+use crate::{ActorRunner, KillSwitch, Mailbox, QueueCapacity, SendError};
 
 /// The actor exit status represents the outcome of the execution of an actor,
 /// after the end of the execution.
@@ -113,13 +116,8 @@ impl From<SendError> for ActorExitStatus {
 /// While processing a message, the actor typically
 /// - update its state;
 /// - emits one or more messages to other actors.
-///
-/// Actors exist in two flavors:
-/// - async actors, are executed in event thread in tokio runtime.
-/// - sync actors, executed on the blocking thread pool of tokio runtime.
+#[async_trait]
 pub trait Actor: Send + Sync + Sized + 'static {
-    /// Type of message that can be received by the actor.
-    type Message: Send + Sync + fmt::Debug;
     /// Piece of state that can be copied for assert in unit test, admin, etc.
     type ObservableState: Send + Sync + Clone + fmt::Debug;
     /// A name identifying the type of actor.
@@ -131,6 +129,16 @@ pub trait Actor: Send + Sync + Sized + 'static {
     fn name(&self) -> String {
         type_name::<Self>().to_string()
     }
+
+    /// The runner method makes it possible to decide the environment
+    /// of execution of the Actor.
+    ///
+    /// Actor with a handler that may block for more than 50microsecs should
+    /// use the `ActorRunner::DedicatedThread`.
+    fn runner(&self) -> ActorRunner {
+        ActorRunner::GlobalRuntime
+    }
+
     /// The Actor's incoming mailbox queue capacity. It is set when the actor is spawned.
     fn queue_capacity(&self) -> QueueCapacity {
         QueueCapacity::Unbounded
@@ -146,19 +154,40 @@ pub trait Actor: Send + Sync + Sized + 'static {
         info_span!("", actor = %self.name())
     }
 
-    /// Returns (optionally) a context span for the processing of a specific
-    /// message.
+    /// Initialize is called before running the actor.
     ///
-    /// `msg_id` is an autoincremented message id than can be added to the span.
-    /// The counter starts 0 at the beginning of the life of an actor instance.
-    fn message_span(&self, msg_id: u64, _msg: &Self::Message) -> Span {
-        info_span!("", msg_id = &msg_id)
+    /// This function is useful for instance to schedule an initial message in a looping
+    /// actor.
+    ///
+    /// It can be compared just to an implicit Initial message.
+    ///
+    /// Returning an ActorExitStatus will therefore have the same effect as if it
+    /// was in `process_message` (e.g. the actor will stop, the finalize method will be called.
+    /// the kill switch may be activated etc.)
+    async fn initialize(&mut self, _ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+        Ok(())
+    }
+
+    /// Hook  that can be set up to define what should happen upon actor exit.
+    /// This hook is called only once.
+    ///
+    /// It is always called regardless of the reason why the actor exited.
+    /// The exit status is passed as an argument to make it possible to act conditionnally
+    /// upon it.
+    ///
+    /// It is recommended to do as little work as possible on a killed actor.
+    async fn finalize(
+        &mut self,
+        _exit_status: &ActorExitStatus,
+        _ctx: &ActorContext<Self>,
+    ) -> anyhow::Result<()> {
+        Ok(())
     }
 }
 
 // TODO hide all of this public stuff
 pub struct ActorContext<A: Actor> {
-    inner: Arc<ActorContextInner<A::Message>>,
+    inner: Arc<ActorContextInner<A>>,
     phantom_data: PhantomData<A>,
 }
 
@@ -172,26 +201,26 @@ impl<A: Actor> Clone for ActorContext<A> {
 }
 
 impl<A: Actor> Deref for ActorContext<A> {
-    type Target = ActorContextInner<A::Message>;
+    type Target = ActorContextInner<A>;
 
     fn deref(&self) -> &Self::Target {
         self.inner.as_ref()
     }
 }
 
-pub struct ActorContextInner<Message> {
-    self_mailbox: Mailbox<Message>,
+pub struct ActorContextInner<A: Actor> {
+    self_mailbox: Mailbox<A>,
     progress: Progress,
     kill_switch: KillSwitch,
-    scheduler_mailbox: Mailbox<SchedulerMessage>,
+    scheduler_mailbox: Mailbox<Scheduler>,
     actor_state: AtomicState,
 }
 
 impl<A: Actor> ActorContext<A> {
     pub(crate) fn new(
-        self_mailbox: Mailbox<A::Message>,
+        self_mailbox: Mailbox<A>,
         kill_switch: KillSwitch,
-        scheduler_mailbox: Mailbox<SchedulerMessage>,
+        scheduler_mailbox: Mailbox<Scheduler>,
     ) -> Self {
         ActorContext {
             inner: ActorContextInner {
@@ -206,7 +235,7 @@ impl<A: Actor> ActorContext<A> {
         }
     }
 
-    pub fn mailbox(&self) -> &Mailbox<A::Message> {
+    pub fn mailbox(&self) -> &Mailbox<A> {
         &self.self_mailbox
     }
 
@@ -301,63 +330,7 @@ fn should_activate_kill_switch(exit_status: &ActorExitStatus) -> bool {
     }
 }
 
-impl<A: Actor + SyncActor> ActorContext<A> {
-    /// Blocking version version of `send_message`. See `.send_message(...)`.
-    pub fn send_message_blocking<M: fmt::Debug>(
-        &self,
-        mailbox: &Mailbox<M>,
-        msg: M,
-    ) -> Result<(), crate::SendError> {
-        let _guard = self.protect_zone();
-        debug!(from=%self.self_mailbox.actor_instance_id(), to=%mailbox.actor_instance_id(), msg=?msg, "send");
-        mailbox.send_message_blocking(msg)
-    }
-
-    /// Blocking version of `send_exit_with_success`. See `send_exit_with_success`.
-    pub fn send_exit_with_success_blocking<M>(
-        &self,
-        mailbox: &Mailbox<M>,
-    ) -> Result<(), crate::SendError> {
-        let _guard = self.protect_zone();
-        debug!(from=%self.self_mailbox.actor_instance_id(), to=%mailbox.actor_instance_id(), "success");
-        mailbox.send_with_priority_blocking(
-            CommandOrMessage::Command(Command::ExitWithSuccess),
-            Priority::Low,
-        )
-    }
-
-    /// Sends a message to itself.
-    ///
-    /// Since it is very easy to deadlock an actor, the behavior is quite
-    /// different from `send_message_blocking`.
-    ///
-    /// If the message queue does not have the capacity to accept the message,
-    /// instead of blocking forever, we return an error right away.
-    pub fn send_self_message_blocking(&self, msg: A::Message) -> Result<(), crate::SendError> {
-        debug!(self=%self.self_mailbox.actor_instance_id(), msg=?msg, "self_send");
-        let send_res = self.self_mailbox.try_send_message(msg);
-        if let Err(crate::SendError::Full) = &send_res {
-            error!(self=%self.self_mailbox.actor_instance_id(),
-                   "Attempted to send self message while the channel was full. This would have triggered a deadlock");
-        }
-        send_res
-    }
-
-    pub fn schedule_self_msg_blocking(&self, after_duration: Duration, msg: A::Message) {
-        let self_mailbox = self.inner.self_mailbox.clone();
-        let scheduler_msg = SchedulerMessage::ScheduleEvent {
-            timeout: after_duration,
-            callback: Callback(Box::pin(async move {
-                let _ = self_mailbox
-                    .send_with_priority(CommandOrMessage::Message(msg), Priority::High)
-                    .await;
-            })),
-        };
-        let _ = self.send_message_blocking(&self.inner.scheduler_mailbox, scheduler_msg);
-    }
-}
-
-impl<A: Actor + AsyncActor> ActorContext<A> {
+impl<A: Actor> ActorContext<A> {
     /// Posts a message in an actor's mailbox.
     ///
     /// Regular messages (as opposed to commands) are queued and guaranteed
@@ -366,23 +339,45 @@ impl<A: Actor + AsyncActor> ActorContext<A> {
     /// This method hides logic to prevent an actor from being identified
     /// as frozen if the destination actor channel is saturated, and we
     /// are simply experiencing back pressure.
-    pub async fn send_message<M: fmt::Debug>(
+    pub async fn send_message<DestActor: Actor, M>(
         &self,
-        mailbox: &Mailbox<M>,
+        mailbox: &Mailbox<DestActor>,
         msg: M,
-    ) -> Result<(), crate::SendError> {
+    ) -> Result<oneshot::Receiver<DestActor::Reply>, crate::SendError>
+    where
+        DestActor: Handler<M>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg);
         mailbox.send_message(msg).await
+    }
+
+    pub async fn ask<DestActor: Actor, M>(
+        &self,
+        mailbox: &Mailbox<DestActor>,
+        msg: M,
+    ) -> Result<DestActor::Reply, crate::SendError>
+    where
+        DestActor: Handler<M>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
+        let _guard = self.protect_zone();
+        debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg, "ask");
+        mailbox
+            .send_message(msg)
+            .await?
+            .await
+            .map_err(|_| crate::SendError::Disconnected)
     }
 
     /// Send the Success message to terminate the destination actor with the Success exit status.
     ///
     /// The message is queued like any regular message, so that pending messages will be processed
     /// first.
-    pub async fn send_exit_with_success<M>(
+    pub async fn send_exit_with_success<Dest: Actor>(
         &self,
-        mailbox: &Mailbox<M>,
+        mailbox: &Mailbox<Dest>,
     ) -> Result<(), crate::SendError> {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), to=%mailbox.actor_instance_id(), "success");
@@ -395,19 +390,31 @@ impl<A: Actor + AsyncActor> ActorContext<A> {
     }
 
     /// `async` version of `send_self_message`.
-    pub async fn send_self_message(&self, msg: A::Message) -> Result<(), crate::SendError> {
+    pub async fn send_self_message<M>(
+        &self,
+        msg: M,
+    ) -> Result<oneshot::Receiver<A::Reply>, crate::SendError>
+    where
+        A: Handler<M>,
+        M: 'static + Sync + Send + fmt::Debug,
+    {
         debug!(self=%self.self_mailbox.actor_instance_id(), msg=?msg, "self_send");
         self.self_mailbox.send_message(msg).await
     }
 
-    pub async fn schedule_self_msg(&self, after_duration: Duration, msg: A::Message) {
+    pub async fn schedule_self_msg<M>(&self, after_duration: Duration, msg: M)
+    where
+        A: Handler<M>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
         let self_mailbox = self.inner.self_mailbox.clone();
+        let (envelope, _response_rx) = wrap_in_envelope(msg);
         let callback = Callback(Box::pin(async move {
             let _ = self_mailbox
-                .send_with_priority(CommandOrMessage::Message(msg), Priority::High)
+                .send_with_priority(CommandOrMessage::Message(envelope), Priority::High)
                 .await;
         }));
-        let scheduler_msg = SchedulerMessage::ScheduleEvent {
+        let scheduler_msg = ScheduleEvent {
             timeout: after_duration,
             callback,
         };
@@ -444,4 +451,29 @@ pub(crate) fn process_command<A: Actor>(
             None
         }
     }
+}
+
+#[async_trait::async_trait]
+pub trait Handler<M>: Actor {
+    type Reply: 'static + Send;
+
+    /// Returns a context span for the processing of a specific
+    /// message.
+    ///
+    /// `msg_id` is an autoincremented message id than can be added to the span.
+    /// The counter starts 0 at the beginning of the life of an actor instance.
+    fn message_span(&self, msg_id: u64, _msg: &M) -> Span {
+        info_span!("", msg_id = &msg_id)
+    }
+
+    /// Processes a message.
+    ///
+    /// If an exit status is returned as an error, the actor will exit.
+    /// It will stop processing more message, the finalize method will be called,
+    /// and its exit status will be the one defined in the error.
+    async fn handle(
+        &mut self,
+        message: M,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus>;
 }

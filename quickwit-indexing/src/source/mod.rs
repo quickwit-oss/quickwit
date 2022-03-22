@@ -60,13 +60,12 @@
 mod file_source;
 #[cfg(feature = "kafka")]
 mod kafka_source;
-#[cfg(feature = "kinesis")]
-mod kinesis;
+// #[cfg(feature = "kinesis")]
+// mod kinesis;
 mod source_factory;
 mod vec_source;
 mod void_source;
 
-use std::fmt;
 use std::path::Path;
 
 use anyhow::bail;
@@ -75,13 +74,13 @@ pub use file_source::{FileSource, FileSourceFactory};
 #[cfg(feature = "kafka")]
 pub use kafka_source::{KafkaSource, KafkaSourceFactory};
 use once_cell::sync::OnceCell;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, AsyncActor, Mailbox};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_config::{SourceConfig, SourceParams};
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 pub use vec_source::{VecSource, VecSourceFactory};
 pub use void_source::{VoidSource, VoidSourceFactory};
 
-use crate::models::IndexerMessage;
+use crate::actors::Indexer;
 
 /// Reserved source id used for the CLI ingest command.
 pub const INGEST_SOURCE_ID: &str = ".cli-ingest-source";
@@ -124,7 +123,7 @@ pub trait Source: Send + Sync + 'static {
     /// In that case, `batch_sink` will block.
     async fn emit_batches(
         &mut self,
-        batch_sink: &Mailbox<IndexerMessage>,
+        batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus>;
 
@@ -147,29 +146,19 @@ pub trait Source: Send + Sync + 'static {
     fn observable_state(&self) -> serde_json::Value;
 }
 
-/// The SourceActor acts as a thin wrapper over a source trait object to execute
-/// it as an `AsyncActor`.
+/// The SourceActor acts as a thin wrapper over a source trait object to execute.
 ///
 /// It mostly takes care of running a loop calling `emit_batches(...)`.
 pub struct SourceActor {
     pub source: Box<dyn Source>,
-    pub batch_sink: Mailbox<IndexerMessage>,
+    pub batch_sink: Mailbox<Indexer>,
 }
 
-/// The goal of this struct is simply to prevent the construction of a Loop object.
-struct PrivateToken;
+#[derive(Debug)]
+struct Loop;
 
-/// Message used for the SourceActor.
-pub struct Loop(PrivateToken);
-
-impl fmt::Debug for Loop {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("Loop").finish()
-    }
-}
-
+#[async_trait]
 impl Actor for SourceActor {
-    type Message = Loop;
     type ObservableState = serde_json::Value;
 
     fn name(&self) -> String {
@@ -179,23 +168,10 @@ impl Actor for SourceActor {
     fn observable_state(&self) -> Self::ObservableState {
         self.source.observable_state()
     }
-}
 
-#[async_trait]
-impl AsyncActor for SourceActor {
     async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
         self.source.initialize(ctx).await?;
-        self.process_message(Loop(PrivateToken), ctx).await?;
-        Ok(())
-    }
-
-    async fn process_message(
-        &mut self,
-        _message: Loop,
-        ctx: &SourceContext,
-    ) -> Result<(), ActorExitStatus> {
-        self.source.emit_batches(&self.batch_sink, ctx).await?;
-        ctx.send_self_message(Loop(PrivateToken)).await?;
+        self.handle(Loop, ctx).await?;
         Ok(())
     }
 
@@ -205,6 +181,17 @@ impl AsyncActor for SourceActor {
         ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         self.source.finalize(exit_status, ctx).await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<Loop> for SourceActor {
+    type Reply = ();
+
+    async fn handle(&mut self, _message: Loop, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
+        self.source.emit_batches(&self.batch_sink, ctx).await?;
+        ctx.send_self_message(Loop).await?;
         Ok(())
     }
 }

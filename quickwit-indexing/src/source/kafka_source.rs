@@ -43,8 +43,9 @@ use serde_json::json;
 use tokio::task::spawn_blocking;
 use tracing::{debug, info, warn};
 
+use crate::actors::Indexer;
 use crate::models::RawDocBatch;
-use crate::source::{IndexerMessage, Source, SourceContext, TypedSourceFactory};
+use crate::source::{Source, SourceContext, TypedSourceFactory};
 
 /// We try to emit chewable batches for the indexer.
 /// One batch = one message to the indexer actor.
@@ -168,7 +169,7 @@ impl KafkaSource {
 impl Source for KafkaSource {
     async fn emit_batches(
         &mut self,
-        batch_sink: &Mailbox<IndexerMessage>,
+        batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         let mut docs = Vec::new();
@@ -237,8 +238,7 @@ impl Source for KafkaSource {
                 docs,
                 checkpoint_delta,
             };
-            ctx.send_message(batch_sink, IndexerMessage::from(batch))
-                .await?;
+            ctx.send_message(batch_sink, batch).await?;
         }
         if self.state.num_active_partitions == 0 {
             info!(topic = %self.topic, "Reached end of topic.");
@@ -770,15 +770,13 @@ mod kafka_broker_tests {
         format!("Message #{}", id)
     }
 
-    fn merge_messages(messages: Vec<IndexerMessage>) -> anyhow::Result<RawDocBatch> {
+    fn merge_messages(batches: Vec<RawDocBatch>) -> anyhow::Result<RawDocBatch> {
         let mut merged_batch = RawDocBatch::default();
-        for message in messages {
-            if let IndexerMessage::Batch(batch) = message {
-                merged_batch.docs.extend(batch.docs);
-                merged_batch
-                    .checkpoint_delta
-                    .extend(batch.checkpoint_delta)?;
-            }
+        for batch in batches {
+            merged_batch.docs.extend(batch.docs);
+            merged_batch
+                .checkpoint_delta
+                .extend(batch.checkpoint_delta)?;
         }
         merged_batch.docs.sort();
         Ok(merged_batch)
@@ -821,11 +819,11 @@ mod kafka_broker_tests {
                 source,
                 batch_sink: sink.clone(),
             };
-            let (_mailbox, handle) = universe.spawn_actor(actor).spawn_async();
+            let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages = inbox.drain_available_message_for_test();
+            let messages = inbox.drain_for_test();
             assert!(messages.is_empty());
 
             let expected_current_positions: Vec<(i32, i64)> = vec![];
@@ -868,11 +866,11 @@ mod kafka_broker_tests {
                 source,
                 batch_sink: sink.clone(),
             };
-            let (_mailbox, handle) = universe.spawn_actor(actor).spawn_async();
+            let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages = inbox.drain_available_message_for_test();
+            let messages = inbox.drain_for_test();
             assert!(messages.len() >= 1);
 
             let batch = merge_messages(messages)?;
@@ -922,11 +920,11 @@ mod kafka_broker_tests {
                 source,
                 batch_sink: sink.clone(),
             };
-            let (_mailbox, handle) = universe.spawn_actor(actor).spawn_async();
+            let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages = inbox.drain_available_message_for_test();
+            let messages = inbox.drain_for_test();
             assert!(messages.len() >= 1);
 
             let batch = merge_messages(messages)?;

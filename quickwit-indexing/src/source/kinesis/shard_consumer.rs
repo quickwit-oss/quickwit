@@ -213,7 +213,7 @@ mod kinesis_localstack_tests {
             Box::new(kinesis_client.clone()),
             sink.clone(),
         );
-        let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn_async();
+        let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn();
         let (exit_status, exit_state) = handle.join().await;
         assert!(exit_status.is_success());
 
@@ -258,7 +258,7 @@ mod kinesis_localstack_tests {
             Box::new(kinesis_client.clone()),
             sink.clone(),
         );
-        let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn_async();
+        let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn();
         let (exit_status, exit_state) = handle.join().await;
         assert!(exit_status.is_success());
 
@@ -315,7 +315,7 @@ mod kinesis_localstack_tests {
             Box::new(kinesis_client.clone()),
             sink.clone(),
         );
-        let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn_async();
+        let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn();
         let (exit_status, exit_state) = handle.join().await;
         assert!(exit_status.is_success());
 
@@ -368,7 +368,7 @@ mod kinesis_localstack_tests {
                 Box::new(kinesis_client.clone()),
                 sink.clone(),
             );
-            let (_mailbox, handle) = universe.spawn_actor(shard_consumer_0).spawn_async();
+            let (_mailbox, handle) = universe.spawn_actor(shard_consumer_0).spawn();
             let (exit_status, _exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
@@ -393,7 +393,7 @@ mod kinesis_localstack_tests {
                 Box::new(kinesis_client.clone()),
                 sink.clone(),
             );
-            let (_mailbox, handle) = universe.spawn_actor(shard_consumer_1).spawn_async();
+            let (_mailbox, handle) = universe.spawn_actor(shard_consumer_1).spawn();
             let (exit_status, _exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
@@ -428,7 +428,7 @@ mod kinesis_localstack_tests {
             Box::new(kinesis_client.clone()),
             sink.clone(),
         );
-        let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn_async();
+        let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn();
         let (exit_status, _exit_state) = handle.join().await;
         assert!(exit_status.is_success());
 

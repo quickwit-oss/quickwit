@@ -19,7 +19,7 @@
 
 use std::time::Duration;
 
-use flume::{RecvTimeoutError, TryRecvError};
+use flume::TryRecvError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -115,16 +115,6 @@ impl<T> Sender<T> {
         self.channel(priority).send_async(msg).await?;
         Ok(())
     }
-
-    pub fn send_blocking(&self, msg: T, priority: Priority) -> Result<(), SendError> {
-        self.channel(priority).send(msg)?;
-        Ok(())
-    }
-
-    pub fn try_send(&self, msg: T, priority: Priority) -> Result<(), SendError> {
-        self.channel(priority).try_send(msg)?;
-        Ok(())
-    }
 }
 
 pub struct Receiver<T> {
@@ -158,14 +148,6 @@ impl<T> Receiver<T> {
                 Err(RecvError::Timeout)
             }
         }
-    }
-
-    pub fn recv_high_priority_timeout_blocking(
-        &mut self,
-        duration: Duration,
-    ) -> Result<T, RecvError> {
-        let msg = self.high_priority_rx.recv_timeout(duration)?;
-        Ok(msg)
     }
 
     pub async fn recv_timeout(&mut self, duration: Duration) -> Result<T, RecvError> {
@@ -211,53 +193,10 @@ impl<T> Receiver<T> {
         }
     }
 
-    pub fn recv_timeout_blocking(&mut self, duration: Duration) -> Result<T, RecvError> {
-        if let Some(msg) = self.try_recv_high_priority_message() {
-            return Ok(msg);
-        }
-        if let Some(pending_msg) = self.pending.take() {
-            return Ok(pending_msg);
-        }
-        match self.low_priority_rx.recv_timeout(duration) {
-            Ok(low_priority_msg) => {
-                if let Some(high_priority_msg) = self.try_recv_high_priority_message() {
-                    self.pending = Some(low_priority_msg);
-                    Ok(high_priority_msg)
-                } else {
-                    Ok(low_priority_msg)
-                }
-            }
-            Err(RecvTimeoutError::Timeout) => {
-                if let Some(high_priority_msg) = self.try_recv_high_priority_message() {
-                    Ok(high_priority_msg)
-                } else {
-                    Err(RecvError::Timeout)
-                }
-            }
-            Err(RecvTimeoutError::Disconnected) => {
-                if let Some(high_priority_msg) = self.try_recv_high_priority_message() {
-                    Ok(high_priority_msg)
-                } else {
-                    Err(RecvError::Disconnected)
-                }
-            }
-        }
-    }
-
     /// Drain all of the pending low priority messages and return them.
     pub fn drain_low_priority(&self) -> Vec<T> {
         let mut messages = Vec::new();
         while let Ok(msg) = self.low_priority_rx.try_recv() {
-            messages.push(msg);
-        }
-        messages
-    }
-
-    /// Drains all the pending low priority messages and returns them.
-    pub fn drain_all(&mut self) -> Vec<T> {
-        let mut messages = Vec::new();
-        let timeout = Duration::from_millis(10);
-        while let Ok(msg) = self.recv_timeout_blocking(timeout) {
             messages.push(msg);
         }
         messages
@@ -345,86 +284,6 @@ mod tests {
         assert_eq!(receiver.recv_timeout(TEST_TIMEOUT).await, Ok(2));
         assert_eq!(
             receiver.recv_timeout(TEST_TIMEOUT).await,
-            Err(RecvError::Disconnected)
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_recv_timeout_prority_blocking() -> anyhow::Result<()> {
-        let (sender, mut receiver) = super::channel::<usize>(QueueCapacity::Unbounded);
-        sender.send_blocking(1, Priority::Low)?;
-        sender.send_blocking(2, Priority::High)?;
-        assert_eq!(receiver.recv_timeout_blocking(TEST_TIMEOUT), Ok(2));
-        assert_eq!(receiver.recv_timeout_blocking(TEST_TIMEOUT), Ok(1));
-        assert_eq!(
-            receiver.recv_timeout_blocking(TEST_TIMEOUT),
-            Err(RecvError::Timeout)
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_recv_high_priority_timeout_blocking() -> anyhow::Result<()> {
-        let (sender, mut receiver) = super::channel::<usize>(QueueCapacity::Unbounded);
-        sender.send_blocking(1, Priority::Low)?;
-        assert_eq!(
-            receiver.recv_high_priority_timeout_blocking(TEST_TIMEOUT),
-            Err(RecvError::Timeout)
-        );
-        Ok(())
-    }
-
-    // TODO we probably want to change the behavior of this one.
-    // Returning disconnected if the sender has been dropped would be nicer.
-    #[test]
-    fn test_recv_high_priority_ignore_disconnection_blocking() -> anyhow::Result<()> {
-        let (sender, mut receiver) = super::channel::<usize>(QueueCapacity::Unbounded);
-        std::mem::drop(sender);
-        assert_eq!(
-            receiver.recv_high_priority_timeout_blocking(TEST_TIMEOUT),
-            Err(RecvError::Timeout)
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_recv_disconnect_blocking() -> anyhow::Result<()> {
-        let (sender, mut receiver) = super::channel::<usize>(QueueCapacity::Unbounded);
-        std::mem::drop(sender);
-        assert_eq!(
-            receiver.recv_timeout_blocking(TEST_TIMEOUT),
-            Err(RecvError::Disconnected)
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_recv_timeout_simple_blocking() -> anyhow::Result<()> {
-        let (_sender, mut receiver) = super::channel::<usize>(QueueCapacity::Unbounded);
-        let start_time = Instant::now();
-        assert_eq!(
-            receiver.recv_timeout_blocking(TEST_TIMEOUT),
-            Err(RecvError::Timeout)
-        );
-        let elapsed = start_time.elapsed();
-        assert!(elapsed < crate::HEARTBEAT);
-        Ok(())
-    }
-
-    #[test]
-    fn test_try_recv_prority_corner_case_blocking() -> anyhow::Result<()> {
-        let (sender, mut receiver) = super::channel::<usize>(QueueCapacity::Unbounded);
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(10));
-            sender.send_blocking(1, Priority::High)?;
-            sender.send_blocking(2, Priority::Low)?;
-            Result::<(), SendError>::Ok(())
-        });
-        assert_eq!(receiver.recv_timeout_blocking(TEST_TIMEOUT), Ok(1));
-        assert_eq!(receiver.recv_timeout_blocking(TEST_TIMEOUT), Ok(2));
-        assert_eq!(
-            receiver.recv_timeout_blocking(TEST_TIMEOUT),
             Err(RecvError::Disconnected)
         );
         Ok(())

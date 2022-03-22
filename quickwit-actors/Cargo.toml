@@ -21,3 +21,6 @@ futures = "0.3"
 tracing = "0.1.29"
 thiserror = "1"
 quickwit-common = { version = "0.2.1", path = "../quickwit-common" }
+
+[dev-dependencies]
+rand = "0.8"

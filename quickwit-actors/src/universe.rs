@@ -17,13 +17,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt;
 use std::time::Duration;
+
+use tokio::sync::oneshot;
 
 use crate::channel_with_priority::Priority;
 use crate::mailbox::{Command, CommandOrMessage};
-use crate::scheduler::{SchedulerMessage, TimeShift};
+use crate::scheduler::{SimulateAdvanceTime, TimeShift};
 use crate::spawn_builder::SpawnBuilder;
-use crate::{Actor, KillSwitch, Mailbox, QueueCapacity, Scheduler};
+use crate::{Actor, Handler, KillSwitch, Mailbox, QueueCapacity, Scheduler};
 
 /// Universe serves as the top-level context in which Actor can be spawned.
 /// It is *not* a singleton. A typical application will usually have only one universe hosting all
@@ -31,7 +34,7 @@ use crate::{Actor, KillSwitch, Mailbox, QueueCapacity, Scheduler};
 ///
 /// In particular, unit test all have their own universe and hence can be executed in parallel.
 pub struct Universe {
-    scheduler_mailbox: Mailbox<<Scheduler as Actor>::Message>,
+    scheduler_mailbox: Mailbox<Scheduler>,
     // This killswitch is used for the scheduler, and will be used by default for all spawned
     // actors.
     kill_switch: KillSwitch,
@@ -46,7 +49,7 @@ impl Universe {
         let (mailbox, _inbox) =
             crate::create_mailbox("fake-mailbox".to_string(), QueueCapacity::Unbounded);
         let (scheduler_mailbox, _scheduler_inbox) =
-            SpawnBuilder::new(scheduler, mailbox, kill_switch.clone()).spawn_async();
+            SpawnBuilder::new(scheduler, mailbox, kill_switch.clone()).spawn();
         Universe {
             scheduler_mailbox,
             kill_switch,
@@ -68,7 +71,7 @@ impl Universe {
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
         let _ = self
             .scheduler_mailbox
-            .send_message(SchedulerMessage::SimulateAdvanceTime {
+            .send_message(SimulateAdvanceTime {
                 time_shift: TimeShift::ByDuration(duration),
                 tx,
             })
@@ -84,20 +87,42 @@ impl Universe {
         )
     }
 
-    /// `async` version of `send_message`
-    pub async fn send_message<M>(
+    /// Sends a message to a given mailbox.
+    ///
+    /// From an actor context, use `ActorContext::send_message`.
+    ///
+    /// Consider also using `ask` if you want to wait for the reply.
+    pub async fn send_message<A: Actor, M>(
         &self,
-        mailbox: &Mailbox<M>,
+        mailbox: &Mailbox<A>,
         message: M,
-    ) -> Result<(), crate::SendError> {
+    ) -> Result<oneshot::Receiver<A::Reply>, crate::SendError>
+    where
+        A: Handler<M>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
         mailbox.send_message(message).await
+    }
+
+    /// Sends a message to an actor and wait for the reply.
+    pub async fn ask<A: Actor, M>(
+        &self,
+        mailbox: &Mailbox<A>,
+        message: M,
+    ) -> Result<A::Reply, crate::SendError>
+    where
+        A: Handler<M>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
+        let reply_chan = mailbox.send_message(message).await?;
+        reply_chan.await.map_err(|_| crate::SendError::Disconnected)
     }
 
     /// Inform an actor to process pending message and then stop processing new messages
     /// and exit successfully.
-    pub async fn send_exit_with_success<M>(
+    pub async fn send_exit_with_success<A: Actor>(
         &self,
-        mailbox: &Mailbox<M>,
+        mailbox: &Mailbox<A>,
     ) -> Result<(), crate::SendError> {
         mailbox
             .send_with_priority(
@@ -120,36 +145,39 @@ mod tests {
 
     use async_trait::async_trait;
 
-    use crate::{Actor, ActorContext, ActorExitStatus, AsyncActor, Universe};
+    use crate::{Actor, ActorContext, ActorExitStatus, Handler, Universe};
 
     #[derive(Default)]
     pub struct ActorWithSchedule {
         count: usize,
     }
 
+    #[async_trait]
     impl Actor for ActorWithSchedule {
-        type Message = ();
-
         type ObservableState = usize;
 
         fn observable_state(&self) -> usize {
             self.count
         }
+
+        async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+            self.handle(Loop, ctx).await
+        }
     }
 
-    #[async_trait]
-    impl AsyncActor for ActorWithSchedule {
-        async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-            self.process_message((), ctx).await
-        }
+    #[derive(Debug)]
+    struct Loop;
 
-        async fn process_message(
+    #[async_trait]
+    impl Handler<Loop> for ActorWithSchedule {
+        type Reply = ();
+        async fn handle(
             &mut self,
-            _: (),
+            _msg: Loop,
             ctx: &ActorContext<Self>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
-            ctx.schedule_self_msg(Duration::from_secs(60), ()).await;
+            ctx.schedule_self_msg(Duration::from_secs(60), Loop).await;
             Ok(())
         }
     }
@@ -158,7 +186,7 @@ mod tests {
     async fn test_schedule_for_actor() {
         let universe = Universe::new();
         let actor_with_schedule = ActorWithSchedule::default();
-        let (_maibox, handler) = universe.spawn_actor(actor_with_schedule).spawn_async();
+        let (_maibox, handler) = universe.spawn_actor(actor_with_schedule).spawn();
         let count_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(count_after_initialization, 1);
         universe.simulate_time_shift(Duration::from_secs(200)).await;
