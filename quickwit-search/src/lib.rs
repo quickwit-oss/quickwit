@@ -41,7 +41,6 @@ mod thread_pool;
 pub type Result<T> = std::result::Result<T, SearchError>;
 
 use std::cmp::Reverse;
-use std::net::SocketAddr;
 use std::ops::Range;
 
 use anyhow::Context;
@@ -67,15 +66,6 @@ pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 use crate::thread_pool::run_cpu_intensive;
-
-/// Compute the gRPC port from the Scuttlebutt gossip port.
-/// Add 1 to the Scuttlebutt gossip port to get the gRPC port.
-pub fn scuttlebutt_gossip_addr_to_grpc_addr(scuttlebutt_gossip_addr: SocketAddr) -> SocketAddr {
-    SocketAddr::new(
-        scuttlebutt_gossip_addr.ip(),
-        scuttlebutt_gossip_addr.port() + 1,
-    )
-}
 
 /// GlobalDocAddress serves as a hit address.
 #[derive(Clone, Copy, Eq, Debug, PartialEq, Hash, Ord, PartialOrd)]

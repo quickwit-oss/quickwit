@@ -21,8 +21,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_proto::{
-    tonic, LeaveClusterRequest, LeaveClusterResponse, ListMembersRequest, ListMembersResponse,
-    Member as PMember,
+    tonic, ClusterStateRequest, ClusterStateResponse, LeaveClusterRequest, LeaveClusterResponse,
+    ListMembersRequest, ListMembersResponse, Member as PMember,
 };
 
 use crate::cluster::{Cluster, Member};
@@ -50,6 +50,10 @@ pub trait ClusterService: 'static + Send + Sync {
         &self,
         request: LeaveClusterRequest,
     ) -> Result<LeaveClusterResponse, ClusterError>;
+    async fn cluster_state(
+        &self,
+        request: ClusterStateRequest,
+    ) -> Result<ClusterStateResponse, ClusterError>;
 }
 
 /// Cluster service implementation.
@@ -88,6 +92,22 @@ impl ClusterService for ClusterServiceImpl {
     ) -> Result<LeaveClusterResponse, ClusterError> {
         self.cluster.leave().await;
         Ok(LeaveClusterResponse {})
+    }
+
+    /// This is the API to get the cluster state.
+    async fn cluster_state(
+        &self,
+        _request: ClusterStateRequest,
+    ) -> Result<ClusterStateResponse, ClusterError> {
+        let cluster_state = self.cluster.state().await;
+        let state_serialized_json = serde_json::to_string(&cluster_state).map_err(|err| {
+            ClusterError::ClusterStateError {
+                message: err.to_string(),
+            }
+        })?;
+        Ok(ClusterStateResponse {
+            state_serialized_json,
+        })
     }
 }
 
