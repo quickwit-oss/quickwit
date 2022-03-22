@@ -30,7 +30,7 @@ mod scratch_directory;
 
 pub use indexed_split::{IndexedSplit, IndexedSplitBatch};
 pub use indexer_message::IndexerMessage;
-pub use indexing_directory::IndexingDirectory;
+pub use indexing_directory::{IndexingDirectory, CACHE};
 pub use indexing_statistics::IndexingStatistics;
 pub use merge_planner_message::MergePlannerMessage;
 pub use merge_scratch::MergeScratch;

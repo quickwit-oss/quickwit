@@ -36,6 +36,8 @@ use tracing::{error, info};
 
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingStatistics};
 
+pub const INDEXING: &str = "indexing";
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct IndexingPipelineId {
     index_id: String,
@@ -184,7 +186,7 @@ impl IndexingServer {
     ) -> IndexingServerClient {
         let universe = Universe::new();
         let server = Self {
-            indexing_dir_path: data_dir_path.join("indexing"),
+            indexing_dir_path: data_dir_path.join(INDEXING),
             split_store_max_num_bytes: indexer_config.split_store_max_num_bytes.get_bytes()
                 as usize,
             split_store_max_num_splits: indexer_config.split_store_max_num_splits,

@@ -21,6 +21,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use quickwit_indexing::actors::INDEXING;
+use quickwit_indexing::models::CACHE;
 use quickwit_indexing::{
     delete_splits_with_files, run_garbage_collect, FileEntry, IndexingSplitStore,
 };
@@ -118,20 +120,20 @@ pub async fn delete_index(
 
 /// Cleans up split cache in local split store.
 ///
-/// * `metastore_uri` - The metastore URI for accessing the metastore.
+/// * `data_dir_path` - Path to directory where data (tmp data, splits kept for caching purpose) is
+///   persisted.
 /// * `index_id` - The target index Id.
-/// * `grace_period` -  Threshold period after which a staged split can be garbage collected.
-/// * `dry_run` - Should this only return a list of affected files without performing deletion.
+/// * `source_id` -  The source Id.
 pub async fn clean_split_cache(
     data_dir_path: &Path,
     index_id: String,
     source_id: String,
 ) -> anyhow::Result<()> {
     let cache_path = data_dir_path
-        .join("indexing")
+        .join(INDEXING)
         .join(source_id)
         .join(index_id)
-        .join("cache");
+        .join(CACHE);
 
     info!(cache_path = %cache_path.as_path().display(), "cache_path");
     fs::remove_dir_all(cache_path.as_path()).await?;
