@@ -236,7 +236,6 @@ fn test_cmd_ingest_simple() -> Result<()> {
     // cache path still exists
     let cache_path = test_env
         .data_dir_path
-        .clone()
         .join(INDEXING)
         .join(INGEST_SOURCE_ID)
         .join(test_env.index_id.clone())
