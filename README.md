@@ -67,7 +67,7 @@ Quickwit is the next-gen search & analytics engine built for application logs, s
 | You want full-text search in a multi-tenant environment.     	| You provide a public facing search with high QPS.	| 
 | You want to index directly from Kafka (zero-copy). | Search relevancy and scoring is a key feature for your search.
 | You want to add full-text search to your ClickHouse cluster.
-| You ingest an trenmedous amount of logs and don't want to pay huge bills.                                                             	|
+| You ingest an tremendous amount of logs and don't want to pay huge bills.                                                             	|
 | You ingest a tremendous amount of data and you don't want have to waste your time babysitting your cluster.
 |                                                              	|
 
