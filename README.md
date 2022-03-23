@@ -1,12 +1,13 @@
+![CI](https://github.com/quickwit-oss/quickwit/actions/workflows/ci.yml/badge.svg)
 [![codecov](https://codecov.io/gh/quickwit-oss/quickwit/branch/main/graph/badge.svg?token=06SRGAV5SS)](https://codecov.io/gh/quickwit-oss/quickwit)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](CODE_OF_CONDUCT.md)
 [![License: AGPL V3](https://img.shields.io/badge/license-AGPL%20V3-blue)](LICENCE.md)
 ![Twitter Follow](https://img.shields.io/twitter/follow/Quickwit_Inc?color=%231DA1F2&logo=Twitter&style=plastic)
 ![Discord](https://img.shields.io/discord/908281611840282624?logo=Discord&logoColor=%23FFFFFF&style=plastic) 
 ![Rust](https://img.shields.io/badge/Rust-black?logo=rust&style=plastic)
-![CI](https://github.com/quickwit-oss/quickwit/actions/workflows/ci.yml/badge.svg)
-
 <br/>
+
+❗**Disclaimer: you are reading the README of Quickwit 0.3 version that will be shipped by the end of April 2022.**
 <br/>
 <br/>
 <p align="center">
@@ -27,12 +28,13 @@ Search more with less.
 </h4>
 <br/>
 
-Quickwit is the next-gen search & analytics engine built for application logs, system logs, access logs, user events logs, and audit trails. It is a highly reliable & cost-efficient alternative to Elasticsearch.
+Quickwit is the next-gen search & analytics engine built for logs. It is a highly reliable & cost-efficient alternative to Elasticsearch.
 
-❗**Disclaimer: you are reading the README of Quickwit 0.3 version that will be shipped by the end of April 2022.**
+<br/>
 
 <img src="docs/assets/images/quickwit-ui-wip.png"> 
 
+<br/>
 
 # 💡 Features
 
@@ -65,11 +67,10 @@ Quickwit is the next-gen search & analytics engine built for application logs, s
 | Your documents are immutable: application logs, system logs, access logs, user actions logs, audit trail, etc.                    	| Your documents are mutable.   	|
 | Your data has a time component. Quickwit includes optimizations and design choices specifically related to time. | You need a low-latency search for e-commerce websites.               	|
 | You want a full-text search in a multi-tenant environment.     	| You provide a public-facing search with high QPS.	| 
-| You want to index directly from Kafka (zero-copy). | Search relevancy and scoring is a key feature for your search.
+| You want to index directly from Kafka. | Search relevancy and scoring is a key feature for your search.
 | You want to add a full-text search to your ClickHouse cluster.
 | You ingest a tremendous amount of logs and don't want to pay huge bills.                                                             	|
 | You ingest a tremendous amount of data and you don't want to have to waste your time babysitting your cluster.
-|                                                              	|
 
 # ⚡  Getting Started
 
@@ -101,7 +102,7 @@ Take a look at our [Quick Start]([https://quickwit.io/docs/get-started/quickstar
 
 # 🙋 FAQ
 ###  How Quickwit is different from traditional search engines like Elasticsearch or Solr?
-The core difference and advantage of Quickwit is its architecture. Built for the cloud, we designed from the ground-up optimized index data structures for object storage, native support, and a highly reliable distribution performant architecture. Last but not least, we put our love in every line of code.
+The core difference and advantage of Quickwit is its architecture built from the ground-up for the cloud. We decoupled compute and storage for search, designed highly-performant index datastructures, optimized IO paths to make it fast on object storage, implemented highly-reliable distributed search so all engineers can sleep at night. Last but not least, we put our love in every line of code.
 ### What license does Quickwit use? 
 Quickwit is open-source under the GNU Affero General Public License Version 3 - AGPLv3. Fundamentally, this means that you are free to use Quickwit for your project, as long as you don't modify Quickwit. If you do, you have to make the modifications public.
 We also provide a commercial license for enterprises to provide support and a voice on our roadmap.
