@@ -133,12 +133,7 @@ impl KafkaSource {
         let partition_ids = fetch_partition_ids(consumer.clone(), &topic).await?;
         let assigned_partition_ids = partition_ids
             .iter()
-            .map(|partition_id| {
-                (
-                    partition_id.clone(),
-                    PartitionId::from(partition_id.clone()),
-                )
-            })
+            .map(|&partition_id| (partition_id, PartitionId::from(partition_id as i64)))
             .collect();
         let timeout = Duration::from_secs(30);
         let watermarks =
@@ -836,12 +831,12 @@ mod kafka_broker_tests {
             let expected_current_positions: Vec<(i32, i64)> = vec![];
             let expected_state = json!({
                 "topic":  topic,
-                "assigned_partition_ids": vec![0, 1, 2],
+                "assigned_partition_ids": vec![0u64, 1u64, 2u64],
                 "current_positions":  expected_current_positions,
-                "num_active_partitions": 0,
-                "num_bytes_processed": 0,
-                "num_messages_processed": 0,
-                "num_invalid_messages": 0,
+                "num_active_partitions": 0u64,
+                "num_bytes_processed": 0u64,
+                "num_messages_processed": 0u64,
+                "num_invalid_messages": 0u64,
             });
             assert_eq!(exit_state, expected_state);
         }
@@ -892,7 +887,7 @@ mod kafka_broker_tests {
             assert_eq!(batch.docs, expected_docs);
 
             let mut expected_checkpoint_delta = CheckpointDelta::default();
-            for partition in 0..3 {
+            for partition in 0u64..3u64 {
                 expected_checkpoint_delta.record_partition_delta(
                     PartitionId::from(partition),
                     Position::Beginning,
@@ -903,18 +898,18 @@ mod kafka_broker_tests {
 
             let expected_state = json!({
                 "topic":  topic,
-                "assigned_partition_ids": vec![0, 1, 2],
-                "current_positions":  vec![(0, 2), (1, 2), (2, 2)],
-                "num_active_partitions": 0,
-                "num_bytes_processed": 72,
-                "num_messages_processed": 9,
-                "num_invalid_messages": 3,
+                "assigned_partition_ids": vec![0u64, 1u64, 2u64],
+                "current_positions":  vec![(0u32, 2u64), (1u32, 2u64), (2u32, 2u64)],
+                "num_active_partitions": 0usize,
+                "num_bytes_processed": 72u64,
+                "num_messages_processed": 9u64,
+                "num_invalid_messages": 3u64,
             });
             assert_eq!(state, expected_state);
         }
         {
             let (sink, inbox) = create_test_mailbox();
-            let checkpoint: SourceCheckpoint = vec![(0, 0), (1, 2)]
+            let checkpoint: SourceCheckpoint = vec![(0u64, 0u64), (1u64, 2u64)]
                 .into_iter()
                 .map(|(partition_id, offset)| {
                     (PartitionId::from(partition_id), Position::from(offset))
@@ -940,12 +935,12 @@ mod kafka_broker_tests {
 
             let mut expected_checkpoint_delta = CheckpointDelta::default();
             expected_checkpoint_delta.record_partition_delta(
-                PartitionId::from(0),
+                PartitionId::from(0u64),
                 Position::from(0u64),
                 Position::from(2u64),
             )?;
             expected_checkpoint_delta.record_partition_delta(
-                PartitionId::from(2),
+                PartitionId::from(2u64),
                 Position::Beginning,
                 Position::from(2u64),
             )?;
@@ -953,12 +948,12 @@ mod kafka_broker_tests {
 
             let expected_exit_state = json!({
                 "topic":  topic,
-                "assigned_partition_ids": vec![0, 1, 2],
-                "current_positions":  vec![(0, 2), (2, 2)],
-                "num_active_partitions": 0,
-                "num_bytes_processed": 36,
-                "num_messages_processed": 5,
-                "num_invalid_messages": 2,
+                "assigned_partition_ids": vec![0u64, 1u64, 2u64],
+                "current_positions":  vec![(0u64, 2u64), (2u64, 2u64)],
+                "num_active_partitions": 0usize,
+                "num_bytes_processed": 36u64,
+                "num_messages_processed": 5u64,
+                "num_invalid_messages": 2u64,
             });
             assert_eq!(exit_state, expected_exit_state);
         }

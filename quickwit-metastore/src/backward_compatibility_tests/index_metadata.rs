@@ -86,9 +86,9 @@ pub(crate) fn test_index_metadata_eq(
 pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
     let mut source_checkpoint = SourceCheckpoint::default();
     let delta = CheckpointDelta::from_partition_delta(
-        PartitionId::from(0),
+        PartitionId::from(0i64),
         Position::Beginning,
-        Position::from(42),
+        Position::from(42u64),
     );
     source_checkpoint.try_apply_delta(delta).unwrap();
     let mut per_source_checkpoint: BTreeMap<String, SourceCheckpoint> = BTreeMap::default();
