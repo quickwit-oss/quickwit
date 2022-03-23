@@ -7,7 +7,6 @@
 ![Rust](https://img.shields.io/badge/Rust-black?logo=rust&style=plastic)
 <br/>
 
-❗**Disclaimer: you are reading the README of Quickwit 0.3 version that will be shipped by the end of April 2022.**
 <br/>
 <br/>
 <p align="center">
@@ -15,10 +14,10 @@
 </p>
 
 <h3 align="center">
-Search more with less.
+Search more with less
 </h3>
   
-<h4 align="center">The new way to manage your logs at any scale.
+<h4 align="center">The new way to manage your logs at any scale
 </h4>
 <h4 align="center">
   <a href="https://quickwit.io/docs/get-started/quickstart">Quickstart</a> |
@@ -28,6 +27,8 @@ Search more with less.
   <a href="https://quickwit.io/docs/get-started/installation">Download</a>
 </h4>
 <br/>
+
+❗**Disclaimer: you are reading the README of Quickwit 0.3 version that will be shipped by the end of April 2022.**
 
 Quickwit is the next-gen search & analytics engine built for logs. It is a highly reliable & cost-efficient alternative to Elasticsearch.
 
