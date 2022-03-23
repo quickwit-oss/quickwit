@@ -41,7 +41,7 @@ Quickwit is the next-gen search & analytics engine built for logs. It is a highl
 # 💡 Features
 
 - Index data persisted on object storage
-- Indexed JSON documents with or without a strict schema
+- Ingest JSON documents with or without a strict schema
 - Ingest, Search & Aggregation API Elasticsearch compatible
 - Lightweight Embedded UI
 - Runs on a fraction of the resources: written in Rust, powered by the mighty tantivy
@@ -71,7 +71,7 @@ Quickwit is the next-gen search & analytics engine built for logs. It is a highl
 | You want to index directly from Kafka. | Search relevancy and scoring is a key feature for your search.
 | You want to add a full-text search to your ClickHouse cluster.
 | You ingest a tremendous amount of logs and don't want to pay huge bills.                                                             	|
-| You ingest a tremendous amount of data and you don't want to have to waste your time babysitting your cluster.
+| You ingest a tremendous amount of data and you don't want to waste your precious time babysitting your cluster.
 
 # ⚡  Getting Started
 
