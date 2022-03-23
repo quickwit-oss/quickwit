@@ -29,7 +29,7 @@ use crate::{Actor, ActorContext, ActorExitStatus, Handler};
 /// An `Envelope` is just a way to capture the handler
 /// of a message and hide its type.
 ///
-/// Message can have different types but need to somehow pushed to a
+/// Message can have different types but somehow need to  be pushed to a
 /// queue with a single type.
 /// Before appending, we capture the right handler implementation
 /// in the form of an Box<dyn Envelope>, and append that to the queue.
