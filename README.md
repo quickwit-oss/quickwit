@@ -48,7 +48,7 @@ Quickwit is the next-gen search & analytics engine built for logs. It is a highl
 - Cloud-native: Kubernetes ready
 - Add and remove nodes in seconds
 - Runs on a fraction of the resources: written in Rust, powered by the mighty tantivy
-- Sleep like a log: all your data is safely stored on object storage (AWS S3...)
+- Sleep like a log: all your indexed data is safely stored on object storage (AWS S3...)
 - Optimized for multi-tenancy. Add and scale tenants with no overhead costs
 - Exactly-once semantics
 - Kafka-native ingestion
