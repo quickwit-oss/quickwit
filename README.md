@@ -40,21 +40,20 @@ Quickwit is the next-gen search & analytics engine built for logs. It is a highl
 
 # 💡 Features
 
-- Up to 10x cheaper on average compared to Elastic - [learn how](https://quickwit.io/blog/commoncrawl)
 - Index data persisted on object storage
-- Indexed JSON documents with or without a strict schema (JSON Field)
+- Indexed JSON documents with or without a strict schema
 - Ingest, Search & Aggregation API Elasticsearch compatible
 - Lightweight Embedded UI
+- Runs on a fraction of the resources: written in Rust, powered by the mighty tantivy
+- Works out of the box with sensible defaults
+- Optimized for multi-tenancy. Add and scale tenants with no overhead costs
 - Cloud-native: Kubernetes ready
 - Add and remove nodes in seconds
-- Runs on a fraction of the resources: written in Rust, powered by the mighty tantivy
+- Decoupled compute & storage
 - Sleep like a log: all your indexed data is safely stored on object storage (AWS S3...)
-- Optimized for multi-tenancy. Add and scale tenants with no overhead costs
-- Exactly-once semantics
+- Ingest your documents with exactly-once semantics
 - Kafka-native ingestion
 - Search stream API that notably unlocks full-text search in ClickHouse
-- Decoupled compute & storage
-- Works out of the box with sensible defaults
 
 
 ### 🔮 Upcoming Features
@@ -105,6 +104,10 @@ Take a look at our [Quick Start]([https://quickwit.io/docs/get-started/quickstar
 # 🙋 FAQ
 ###  How Quickwit is different from traditional search engines like Elasticsearch or Solr?
 The core difference and advantage of Quickwit is its architecture built from the ground-up for the cloud. We decoupled compute and storage for search, designed highly-performant index data structures, optimized IO paths to make it fast on object storage, and implemented highly-reliable distributed search so all engineers can sleep at night. Last but not least, we put our love in every line of code.
+
+### How Quickwit compares to Elastic in terms of cost?
+We estimate that Quicwkit can be up to 10x cheaper on average than Elastic. To understand how, check out our [common crawl demo](common-crawl.quickwit.io).
+
 ### What license does Quickwit use? 
 Quickwit is open-source under the GNU Affero General Public License Version 3 - AGPLv3. Fundamentally, this means that you are free to use Quickwit for your project, as long as you don't modify Quickwit. If you do, you have to make the modifications public.
 We also provide a commercial license for enterprises to provide support and a voice on our roadmap.
