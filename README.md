@@ -14,7 +14,9 @@
   <img src="docs/assets/images/logo_horizontal.svg" alt="Quickwit" height="60">
 </p>
 
-### Search more with less.
+<h3 align="center">
+Search more with less.
+</h3>
   
 <h4 align="center">The new way to manage your logs at any scale.
 </h4>
