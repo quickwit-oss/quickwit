@@ -14,9 +14,8 @@
   <img src="docs/assets/images/logo_horizontal.svg" alt="Quickwit" height="60">
 </p>
 
-<h2 align="center" style="border-bottom: none">
-Search more with less.
-</h2>
+### Search more with less.
+  
 <h4 align="center">The new way to manage your logs at any scale.
 </h4>
 <h4 align="center">
@@ -55,7 +54,7 @@ Quickwit is the next-gen search & analytics engine built for logs. It is a highl
 - Works out of the box with sensible defaults
 
 
-## 🔮 Upcoming Features
+### 🔮 Upcoming Features
 - Ingest your logs from your object storage
 - Distributed indexing
 - Support for tracing
@@ -102,7 +101,7 @@ Take a look at our [Quick Start]([https://quickwit.io/docs/get-started/quickstar
 
 # 🙋 FAQ
 ###  How Quickwit is different from traditional search engines like Elasticsearch or Solr?
-The core difference and advantage of Quickwit is its architecture built from the ground-up for the cloud. We decoupled compute and storage for search, designed highly-performant index datastructures, optimized IO paths to make it fast on object storage, implemented highly-reliable distributed search so all engineers can sleep at night. Last but not least, we put our love in every line of code.
+The core difference and advantage of Quickwit is its architecture built from the ground-up for the cloud. We decoupled compute and storage for search, designed highly-performant index data structures, optimized IO paths to make it fast on object storage, and implemented highly-reliable distributed search so all engineers can sleep at night. Last but not least, we put our love in every line of code.
 ### What license does Quickwit use? 
 Quickwit is open-source under the GNU Affero General Public License Version 3 - AGPLv3. Fundamentally, this means that you are free to use Quickwit for your project, as long as you don't modify Quickwit. If you do, you have to make the modifications public.
 We also provide a commercial license for enterprises to provide support and a voice on our roadmap.
