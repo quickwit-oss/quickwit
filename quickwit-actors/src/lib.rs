@@ -51,6 +51,7 @@ pub use kill_switch::KillSwitch;
 pub use observation::{Observation, ObservationType};
 pub use progress::{Progress, ProtectedZoneGuard};
 pub(crate) use scheduler::Scheduler;
+use thiserror::Error;
 pub use universe::Universe;
 
 pub use self::actor::ActorContext;
@@ -68,4 +69,13 @@ pub const HEARTBEAT: Duration = Duration::from_secs(1);
 
 pub fn message_timeout() -> Duration {
     HEARTBEAT.mul_f32(0.2f32)
+}
+
+/// Error that occured while calling `ActorContext::ask(..)` or `Universe::ask`
+#[derive(Error, Debug)]
+pub enum AskError {
+    #[error("Message could not be delivered")]
+    MessageNotDelivered,
+    #[error("Error while the message was being processed.")]
+    ProcessMessageError,
 }

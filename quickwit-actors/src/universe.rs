@@ -26,7 +26,7 @@ use crate::channel_with_priority::Priority;
 use crate::mailbox::{Command, CommandOrMessage};
 use crate::scheduler::{SimulateAdvanceTime, TimeShift};
 use crate::spawn_builder::SpawnBuilder;
-use crate::{Actor, Handler, KillSwitch, Mailbox, QueueCapacity, Scheduler};
+use crate::{Actor, AskError, Handler, KillSwitch, Mailbox, QueueCapacity, Scheduler};
 
 /// Universe serves as the top-level context in which Actor can be spawned.
 /// It is *not* a singleton. A typical application will usually have only one universe hosting all
@@ -109,13 +109,17 @@ impl Universe {
         &self,
         mailbox: &Mailbox<A>,
         message: M,
-    ) -> Result<A::Reply, crate::SendError>
+    ) -> Result<A::Reply, AskError>
     where
         A: Handler<M>,
         M: 'static + Send + Sync + fmt::Debug,
     {
-        let reply_chan = mailbox.send_message(message).await?;
-        reply_chan.await.map_err(|_| crate::SendError::Disconnected)
+        mailbox
+            .send_message(message)
+            .await
+            .map_err(|_send_error| AskError::MessageNotDelivered)?
+            .await
+            .map_err(|_| AskError::ProcessMessageError)
     }
 
     /// Inform an actor to process pending message and then stop processing new messages

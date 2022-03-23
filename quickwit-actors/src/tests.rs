@@ -547,9 +547,7 @@ struct Adder(u64);
 impl Actor for Adder {
     type ObservableState = ();
 
-    fn observable_state(&self) -> Self::ObservableState {
-        ()
-    }
+    fn observable_state(&self) -> Self::ObservableState {}
 }
 
 #[derive(Debug)]

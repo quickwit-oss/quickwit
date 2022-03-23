@@ -37,7 +37,7 @@ use crate::mailbox::{Command, CommandOrMessage};
 use crate::progress::{Progress, ProtectedZoneGuard};
 use crate::scheduler::{Callback, ScheduleEvent, Scheduler};
 use crate::spawn_builder::SpawnBuilder;
-use crate::{ActorRunner, KillSwitch, Mailbox, QueueCapacity, SendError};
+use crate::{ActorRunner, AskError, KillSwitch, Mailbox, QueueCapacity, SendError};
 
 /// The actor exit status represents the outcome of the execution of an actor,
 /// after the end of the execution.
@@ -174,8 +174,9 @@ pub trait Actor: Send + Sync + Sized + 'static {
     /// It is always called regardless of the reason why the actor exited.
     /// The exit status is passed as an argument to make it possible to act conditionnally
     /// upon it.
-    ///
-    /// It is recommended to do as little work as possible on a killed actor.
+    /// For instance, it is often better to do as little work as possible on a killed actor.
+    /// It can be done by checking the `exit_status` and performing an early-exit if it is
+    /// equal to `ActorExitStatus::Killed`.
     async fn finalize(
         &mut self,
         _exit_status: &ActorExitStatus,
@@ -333,6 +334,17 @@ fn should_activate_kill_switch(exit_status: &ActorExitStatus) -> bool {
 impl<A: Actor> ActorContext<A> {
     /// Posts a message in an actor's mailbox.
     ///
+    /// This method does not wait for the message to be handled by the
+    /// target actor. However, it returns a oneshot receiver that the caller
+    /// that makes it possible to `.await` it.
+    /// If the reply is important, chances are the `.ask(...)` method is
+    /// more indicated.
+    ///
+    /// Droppping the receiver channel will not cancel the
+    /// processing of the messsage. It is a very common usage.
+    /// In fact most actors are expected to send message in a
+    /// fire-and-forget fashion.
+    ///
     /// Regular messages (as opposed to commands) are queued and guaranteed
     /// to be processed in FIFO order.
     ///
@@ -353,11 +365,13 @@ impl<A: Actor> ActorContext<A> {
         mailbox.send_message(msg).await
     }
 
+    /// Similar to `send_message`, except this method
+    /// waits asynchronously for the actor reply.
     pub async fn ask<DestActor: Actor, M>(
         &self,
         mailbox: &Mailbox<DestActor>,
         msg: M,
-    ) -> Result<DestActor::Reply, crate::SendError>
+    ) -> Result<DestActor::Reply, AskError>
     where
         DestActor: Handler<M>,
         M: 'static + Send + Sync + fmt::Debug,
@@ -366,9 +380,10 @@ impl<A: Actor> ActorContext<A> {
         debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg, "ask");
         mailbox
             .send_message(msg)
-            .await?
             .await
-            .map_err(|_| crate::SendError::Disconnected)
+            .map_err(|_send_error| AskError::MessageNotDelivered)?
+            .await
+            .map_err(|_| crate::AskError::ProcessMessageError)
     }
 
     /// Send the Success message to terminate the destination actor with the Success exit status.
