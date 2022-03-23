@@ -27,7 +27,7 @@ Search more with less.
 </h4>
 <br/>
 
-Quickwit is the next-gen search & analytics engine built for application logs, system logs, access logs, user events logs, audit trail. It is a highly reliable & cost-efficient alternative to Elasticsearch.
+Quickwit is the next-gen search & analytics engine built for application logs, system logs, access logs, user events logs, and audit trails. It is a highly reliable & cost-efficient alternative to Elasticsearch.
 
 ❗**Disclaimer: you are reading the README of Quickwit 0.3 version that will be shipped by the end of April 2022.**
 
@@ -36,18 +36,18 @@ Quickwit is the next-gen search & analytics engine built for application logs, s
 
 # 💡 Features
 
--  Up to 10x cheaper on average compared to Elastic - [learn how.](https://quickwit.io/blog/commoncrawl)
+- Up to 10x cheaper on average compared to Elastic - [learn how](https://quickwit.io/blog/commoncrawl)
 - Index data persisted on object storage
-- Indexed JSON documents with or without a strict schema (JSON Field).
+- Indexed JSON documents with or without a strict schema (JSON Field)
 - Ingest, Search & Aggregation API Elasticsearch compatible
 - Lightweight Embedded UI
-- Cloud native: kubernetes ready
+- Cloud-native: Kubernetes ready
 - Add and remove nodes in seconds
-- Runs on a fraction of the resources: written in Rust, powered by the mighty tantivy.
+- Runs on a fraction of the resources: written in Rust, powered by the mighty tantivy
 - Sleep like a log: all your data is safely stored on object storage (AWS S3...)
 - Optimized for multi-tenancy. Add and scale tenants with no overhead costs
 - Exactly-once semantics
-- Kafka native ingestion
+- Kafka-native ingestion
 - Search stream API that notably unlocks full-text search in ClickHouse
 - Decoupled compute & storage
 - Works out of the box with sensible defaults
@@ -64,11 +64,11 @@ Quickwit is the next-gen search & analytics engine built for application logs, s
 |--------------------------------------------------------------	|--------------------------------------------------------------	|
 | Your documents are immutable: application logs, system logs, access logs, user actions logs, audit trail, etc.                    	| Your documents are mutable.   	|
 | Your data has a time component. Quickwit includes optimizations and design choices specifically related to time. | You need a low-latency search for e-commerce websites.               	|
-| You want full-text search in a multi-tenant environment.     	| You provide a public facing search with high QPS.	| 
+| You want a full-text search in a multi-tenant environment.     	| You provide a public-facing search with high QPS.	| 
 | You want to index directly from Kafka (zero-copy). | Search relevancy and scoring is a key feature for your search.
-| You want to add full-text search to your ClickHouse cluster.
-| You ingest an tremendous amount of logs and don't want to pay huge bills.                                                             	|
-| You ingest a tremendous amount of data and you don't want have to waste your time babysitting your cluster.
+| You want to add a full-text search to your ClickHouse cluster.
+| You ingest a tremendous amount of logs and don't want to pay huge bills.                                                             	|
+| You ingest a tremendous amount of data and you don't want to have to waste your time babysitting your cluster.
 |                                                              	|
 
 # ⚡  Getting Started
@@ -101,13 +101,13 @@ Take a look at our [Quick Start]([https://quickwit.io/docs/get-started/quickstar
 
 # 🙋 FAQ
 ###  How Quickwit is different from traditional search engines like Elasticsearch or Solr?
-The core difference and advantage of Quickwit is its architecture. Built for the cloud, we designed from the ground-up optimized index datastrutures for object storage, support natively highly reliable distribution performant  & reliable architecture. Last but not least, and above all our love to write the right code to deliver highly performant and highly reliable distributed search.
+The core difference and advantage of Quickwit is its architecture. Built for the cloud, we designed from the ground-up optimized index data structures for object storage, native support, and a highly reliable distribution performant architecture. Last but not least, we put our love in every line of code.
 ### What license does Quickwit use? 
-Quickwit is open-source under the GNU Affero General Public License Version 3 - AGPLv3. Concretely, it means that are free to use Quickwit for your project, as long as you don't modify Quickwit. If you do, you have to make the modifications public.
+Quickwit is open-source under the GNU Affero General Public License Version 3 - AGPLv3. Fundamentally, this means that you are free to use Quickwit for your project, as long as you don't modify Quickwit. If you do, you have to make the modifications public.
 We also provide a commercial license for enterprises to provide support and a voice on our roadmap.
 
 ### What is Quickwit business model?
-Our business model relies on our commericial license. There is no plan to become SaaS in the near future.
+Our business model relies on our commercial license. There is no plan to become SaaS in the near future.
 
 
 # 🪄 Third Party Integration
@@ -124,7 +124,7 @@ Our business model relies on our commericial license. There is no plan to become
 
 # 🤝 Contribute and spread the word
 
-We are always super happy to have contributions: code, documentation, issues, feedback or even saying hello on discord! Here is how you can get started: 
+We are always super happy to have contributions: code, documentation, issues, feedback, or even saying hello on discord! Here is how you can get started: 
 - Have a look through GitHub issues labeled "Good first issue".
 - Read our [Contributor Covenant Code of Conduct](https://github.com/quickwit-oss/quickwit/blob/0add0562f08e4edd46f5c5537e8ef457d42a508e/CODE_OF_CONDUCT.md)
 - Create a fork of Quickwit and submit your pull request!
