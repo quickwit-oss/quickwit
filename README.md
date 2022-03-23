@@ -103,7 +103,7 @@ Take a look at our [Quick Start]([https://quickwit.io/docs/get-started/quickstar
 
 # 🙋 FAQ
 ###  How Quickwit is different from traditional search engines like Elasticsearch or Solr?
-The core difference and advantage of Quickwit is its architecture built from the ground-up for the cloud. We decoupled compute and storage for search, designed highly-performant index data structures, optimized IO paths to make it fast on object storage, and implemented highly-reliable distributed search so all engineers can sleep at night. Last but not least, we put our love in every line of code.
+The core difference and advantage of Quickwit is its architecture built from the ground-up for the cloud and for logs. We have decoupled compute and storage, designed highly-performant index data structures, optimized IO paths to make search on object storage sub-second, and implemented a highly-reliable distributed search and exactly-once semantics during indexing so that all engineers can sleep at night. Last but not least, we put our love in every line of code.
 
 ### How Quickwit compares to Elastic in terms of cost?
 We estimate that Quicwkit can be up to 10x cheaper on average than Elastic. To understand how, check out our [common crawl demo](common-crawl.quickwit.io).
