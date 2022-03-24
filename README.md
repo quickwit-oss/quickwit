@@ -10,7 +10,8 @@
 <br/>
 <br/>
 <p align="center">
-  <img src="docs/assets/images/logo_horizontal.svg" alt="Quickwit" height="60">
+  <img src="docs/assets/images/logo_horizontal.svg#gh-light-mode-only" alt="Quickwit" height="60">
+  <img src="docs/assets/images/quickwit-dark-theme-logo.png#gh-dark-mode-only" alt="Quickwit" height="60">
 </p>
 
 <h3 align="center">
@@ -34,7 +35,7 @@ Quickwit is the next-gen search & analytics engine built for logs. It is a highl
 
 <br/>
 
-<img src="docs/assets/images/quickwit-ui-wip.png"> 
+<img src="docs/assets/images/quickwit-ui-wipv2.png"> 
 
 <br/>
 
@@ -68,7 +69,7 @@ Quickwit is the next-gen search & analytics engine built for logs. It is a highl
 | Your documents are immutable: application logs, system logs, access logs, user actions logs, audit trail, etc.                    	| Your documents are mutable.   	|
 | Your data has a time component. Quickwit includes optimizations and design choices specifically related to time. | You need a low-latency search for e-commerce websites.               	|
 | You want a full-text search in a multi-tenant environment.     	| You provide a public-facing search with high QPS.	| 
-| You want to index directly from Kafka. | Search relevancy and scoring are key features for your search.
+| You want to index directly from Kafka. | You want to re-score documents at query time.
 | You want to add a full-text search to your ClickHouse cluster.
 | You ingest a tremendous amount of logs and don't want to pay huge bills.                                                             	|
 | You ingest a tremendous amount of data and you don't want to waste your precious time babysitting your cluster.
@@ -103,7 +104,7 @@ Take a look at our [Quick Start]([https://quickwit.io/docs/get-started/quickstar
 
 # 🙋 FAQ
 ###  How is Quickwit different from traditional search engines like Elasticsearch or Solr?
-The core difference and advantage of Quickwit is its architecture that is built from the ground up for cloud and logs. We have decoupled compute and storage, designed highly-performant index data structures, optimized IO paths to make search on object storage sub-second, and implemented a highly-reliable distributed search and exactly-once semantics during indexing so that all engineers can sleep at night. Last but not least, we put our love in every line of code.
+The core difference and advantage of Quickwit is its architecture that is built from the ground up for cloud and logs. Optimized IO paths make search on object storage sub-second and thanks to the true decoupled compute and storage, search instances are stateless, it is possible to add or remove search nodes within seconds. Last but not least, we implemented a highly-reliable distributed search and exactly-once semantics during indexing so that all engineers can sleep at night. 
 
 ### How does Quickwit compare to Elastic in terms of cost?
 We estimate that Quickwit can be up to 10x cheaper on average than Elastic. To understand how, check out our [common crawl demo](common-crawl.quickwit.io).
@@ -118,13 +119,16 @@ Our business model relies on our commercial license. There is no plan to become 
 
 # 🪄 Third-Party Integration
 <p align="left">
-<img align="center" src="https://kafka.apache.org/logos/kafka_logo--simple.png" alt="quickwit_inc" height="30" width="auto" /> &nbsp;
-<img align="center" src="https://www.postgresql.org/media/img/about/press/elephant.png" alt="quickwit_inc" height="30" width="auto"/> &nbsp;&nbsp;&nbsp;
-<img align="center" src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/93/Amazon_Web_Services_Logo.svg/1200px-Amazon_Web_Services_Logo.svg.png" alt="quickwit_inc" height="25" width="auto" /> &nbsp; &nbsp;
-<img align="center" src="https://www.altisconsulting.com/au/wp-content/uploads/sites/4/2018/05/AWS-Kinesis.jpg" alt="quickwit_inc" height="30" width="auto"/> &nbsp;
-<img align="center" src="https://min.io/resources/img/logo.svg" alt="quickwit_inc" height="10" width="auto"/> &nbsp;&nbsp;
-<img align="center" src="https://humancoders-formations.s3.amazonaws.com/uploads/course/logo/180/formation-kubernetes.png" alt="quickwit_inc" height="30" width="auto"/> &nbsp; 
-<img align="center" src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQVNN6B4PQImnG_h6-chmWm4BC7Jm-M31O0-eUW2Ta3elfdyj5udQytjbG_99mNwUl-2tM&usqp=CAU" height="30" width="auto"/>
+<img align="center" src="docs/assets/images/kafka-logo.png#gh-light-mode-only" alt="quickwit_inc" height="30" width="auto"/> 
+<img align="center" src="docs/assets/images/kafka-dark-theme.png#gh-dark-mode-only" alt="quickwit_inc" height="30" width="auto"/> &nbsp;
+<img align="center" src="docs/assets/images/postgresql-logo.png" alt="quickwit_inc" height="30" width="auto"/> &nbsp;&nbsp;
+<img align="center" src="docs/assets/images/aws-logo.png#gh-light-mode-only" alt="quickwit_inc" height="25" width="auto" /> 
+<img align="center" src="docs/assets/images/aws-dark-theme-logo.png#gh-dark-mode-only" alt="quickwit_inc" height="25" width="auto" /> &nbsp; &nbsp;
+<img align="center" src="docs/assets/images/kinesis-logo.svg" alt="quickwit_inc" height="30" width="auto"/> &nbsp;
+<img align="center" src="docs/assets/images/minio-logo.png" alt="quickwit_inc" height="10" width="auto"/> &nbsp;&nbsp;
+<img align="center" src="docs/assets/images/kubernetes-logo.png" alt="quickwit_inc" height="30" width="auto"/> 
+<img align="center" src="docs/assets/images/ceph-logo.png#gh-light-mode-only" height="50" width="auto"/>
+<img align="center" src="docs/assets/images/ceph-dark-mode-logo.png#gh-dark-mode-only" height="50" width="auto"/>
 </p>
  
 
