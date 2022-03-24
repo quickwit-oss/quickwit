@@ -22,13 +22,14 @@ use std::sync::Arc;
 use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
-use quickwit_actors::{Actor, ActorContext, AsyncActor, Mailbox, QueueCapacity};
+use quickwit_actors::{Actor, ActorContext, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::Metastore;
 use tokio::sync::oneshot::Receiver;
 use tracing::info;
 
 use crate::actors::uploader::MAX_CONCURRENT_SPLIT_UPLOAD;
-use crate::models::{MergePlannerMessage, PublishOperation, PublisherMessage};
+use crate::actors::{GarbageCollector, MergePlanner};
+use crate::models::{NewSplits, PublishOperation, PublisherMessage};
 
 #[derive(Debug, Clone, Default)]
 pub struct PublisherCounters {
@@ -61,8 +62,8 @@ pub struct Publisher {
     publisher_type: PublisherType,
     source_id: String,
     metastore: Arc<dyn Metastore>,
-    merge_planner_mailbox: Mailbox<MergePlannerMessage>,
-    garbage_collector_mailbox: Mailbox<()>,
+    merge_planner_mailbox: Mailbox<MergePlanner>,
+    garbage_collector_mailbox: Mailbox<GarbageCollector>,
     counters: PublisherCounters,
 }
 
@@ -71,8 +72,8 @@ impl Publisher {
         publisher_type: PublisherType,
         source_id: String,
         metastore: Arc<dyn Metastore>,
-        merge_planner_mailbox: Mailbox<MergePlannerMessage>,
-        garbage_collector_mailbox: Mailbox<()>,
+        merge_planner_mailbox: Mailbox<MergePlanner>,
+        garbage_collector_mailbox: Mailbox<GarbageCollector>,
     ) -> Publisher {
         Publisher {
             publisher_type,
@@ -131,8 +132,8 @@ impl Publisher {
     }
 }
 
+#[async_trait]
 impl Actor for Publisher {
-    type Message = Receiver<PublisherMessage>;
     type ObservableState = PublisherCounters;
 
     fn observable_state(&self) -> Self::ObservableState {
@@ -146,11 +147,34 @@ impl Actor for Publisher {
     fn name(&self) -> String {
         self.publisher_type.actor_name().to_string()
     }
+
+    async fn finalize(
+        &mut self,
+        _exit_status: &quickwit_actors::ActorExitStatus,
+        ctx: &ActorContext<Self>,
+    ) -> anyhow::Result<()> {
+        // The `garbage_collector` actor runs for ever.
+        // Periodically scheduling new messages for itself.
+        //
+        // The publisher actor being the last standing actor of the pipeline,
+        // its end of life should also means the end of life of never stopping actors.
+        // After all, when the publisher is stopped, there shouldn't be anything to process.
+        // It's fine if the garbage collector is already dead.
+        let _ = ctx
+            .send_exit_with_success(&self.garbage_collector_mailbox)
+            .await;
+        let _ = ctx
+            .send_exit_with_success(&self.merge_planner_mailbox)
+            .await;
+        Ok(())
+    }
 }
 
 #[async_trait]
-impl AsyncActor for Publisher {
-    async fn process_message(
+impl Handler<Receiver<PublisherMessage>> for Publisher {
+    type Reply = ();
+
+    async fn handle(
         &mut self,
         uploaded_split_future: Receiver<PublisherMessage>,
         ctx: &ActorContext<Self>,
@@ -191,34 +215,10 @@ impl AsyncActor for Publisher {
         // has been packaged, the packager finalizer sends a message to the merge
         // planner in order to stop it.
         let _ = ctx
-            .send_message(
-                &self.merge_planner_mailbox,
-                MergePlannerMessage { new_splits },
-            )
+            .send_message(&self.merge_planner_mailbox, NewSplits { new_splits })
             .await;
         self.counters.num_published_splits += 1;
         fail_point!("publisher:after");
-        Ok(())
-    }
-
-    async fn finalize(
-        &mut self,
-        _exit_status: &quickwit_actors::ActorExitStatus,
-        ctx: &ActorContext<Self>,
-    ) -> anyhow::Result<()> {
-        // The `garbage_collector` actor runs for ever.
-        // Periodically scheduling new messages for itself.
-        //
-        // The publisher actor being the last standing actor of the pipeline,
-        // its end of life should also means the end of life of never stopping actors.
-        // After all, when the publisher is stopped, there shouldn't be anything to process.
-        // It's fine if the garbage collector is already dead.
-        let _ = ctx
-            .send_exit_with_success(&self.garbage_collector_mailbox)
-            .await;
-        let _ = ctx
-            .send_exit_with_success(&self.merge_planner_mailbox)
-            .await;
         Ok(())
     }
 }
@@ -268,7 +268,7 @@ mod tests {
             garbage_collector_mailbox,
         );
         let universe = Universe::new();
-        let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn_async();
+        let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
         let (split_future_tx1, split_future_rx1) = oneshot::channel::<PublisherMessage>();
         assert!(universe
             .send_message(&publisher_mailbox, split_future_rx1)
@@ -333,7 +333,7 @@ mod tests {
             garbage_collector_mailbox,
         );
         let universe = Universe::new();
-        let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn_async();
+        let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
         let (split_future_tx, split_future_rx) = oneshot::channel::<PublisherMessage>();
         assert!(universe
             .send_message(&publisher_mailbox, split_future_rx)
@@ -353,11 +353,9 @@ mod tests {
             .is_ok());
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
         assert_eq!(publisher_observation.num_published_splits, 1);
-        let mut merge_planner_msgs = merge_planner_inbox.drain_available_message_for_test();
+        let merge_planner_msgs = merge_planner_inbox.drain_for_test();
         assert_eq!(merge_planner_msgs.len(), 1);
-        let merge_planner_msg = merge_planner_msgs.pop().unwrap();
-        assert!(
-            matches!(merge_planner_msg, MergePlannerMessage { new_splits } if new_splits.len() == 1)
-        )
+        let merge_planner_msg = merge_planner_msgs[0].downcast_ref::<NewSplits>().unwrap();
+        assert_eq!(merge_planner_msg.new_splits.len(), 1);
     }
 }

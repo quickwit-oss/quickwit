@@ -1,69 +1,102 @@
-<!--
- Quickwit
-  Copyright (C) 2021 Quickwit Inc.
+# Quickwit actors
 
-  Quickwit is offered under the AGPL v3.0 and as commercial software.
-  For commercial licensing, contact us at hello@quickwit.io.
+Yet another actor crate for rust.
+This crate exists specifically to answer quickwit needs.
+The API may change in the future.
 
-  AGPL:
-  This program is free software: you can redistribute it and/or modify
-  it under the terms of the GNU Affero General Public License as
-  published by the Free Software Foundation, either version 3 of the
-  License, or (at your option) any later version.
+## Objective
 
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU Affero General Public License for more details.
+- Producing easy-to-reason with code: Quickwit's indexing pipeline is complex as it is.
+- Easy to test actors.
+- Control over the runtime.
 
-  You should have received a copy of the GNU Affero General Public License
-  along with this program.  If not, see <http://www.gnu.org/licenses/>.
--->
+## Non-objective
 
-This crate is yet another actor framework.
-This one was developped by Quickwit.
+- High number of message throughput. Most of message exchanged in quickwit
+are "large". For instance, it can hold a temp directory with gigabytes worth of data.
+The actor dealing with the highest number of messages are the indexer and sources.
+One message then typically holds a batch of records.
 
-# Objective of this quickwit-actors
+# Features
 
-This crate was created to better organize quickwit's indexing.
-Indexing involves different tasks:
-- sourcing
-- indexing
-- packaging
-- uploading
-- publishing
+- Actor message box
+- The framework is meant to run asynchronous actors by default, but it can also run actors that are blocking for long amount of time. The message handler methods are technically asynchronous in both case, but the `Actor::runner` method makes it possible to run an actor with blocking code on a dedicated thread.
+- A scheduler actor that makes it possible to mock simulate time.
 
-All of these task have a very different CPU/IO profile,
-that range from CPU heavy blocking to code that can only be
-asynchronous on the tokio multithreaded runtime (thanks rusoto!).
+# Example
 
-We also have the following extra requirement:
-- We need to be resilient to fault.
-- We also need to be testable.
-- We want the code to be easy to reason with.
-- Finally we need to have good observability.
+```rust
+use std::time::Duration;
+use async_trait::async_trait;
+use quickwit_actors::{Handler, Actor, Universe, ActorContext, ActorExitStatus, Mailbox};
 
-# Why one of the 10000 other existing framework?
+#[derive(Default)]
+struct PingReceiver;
 
-As of today, (2021) 3 framework are standing out.
-- actix
-- riker
-- bastion
+impl Actor for PingReceiver {
+    type ObservableState = ();
+    fn observable_state(&self) -> Self::ObservableState {}
+}
 
-Actix does a lot of what we need. In particular, it really
-addresses the problem of letting the async world discuss with the sync world.
-It has the reputation of being a bit cryptic, but recently it has been largely
-improved.
-The deal breaker here, is that it relies on Tokio's current thread runtime,
-which is incompatible with the use of Rusoto.
+#[async_trait]
+impl Handler<Ping> for PingReceiver {
+    type Reply = String;
+    async fn handle(
+        &mut self,
+        _msg: Ping,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<String, ActorExitStatus> {
+        Ok("Pong".to_string())
+    }
+}
 
-Riker has a nice documentation and a nice website. As of today it does nothing
-to work with async actors.
+struct PingSender {
+    peer: Mailbox<PingReceiver>,
+}
 
-Bastion... I don't understand bastion.
+#[derive(Debug)]
+struct Loop;
 
-There is a 4th one that is well aligned with our need. meio.
-Unfortunately, meio does not have any documentation nor examples.
+#[derive(Debug)]
+struct Ping;
 
+#[async_trait]
+impl Actor for PingSender {
+    type ObservableState = ();
+    fn observable_state(&self) -> Self::ObservableState {}
 
+    async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(),ActorExitStatus> {
+        ctx.send_self_message(Loop).await?;
+        Ok(())
+    }
+}
 
+#[async_trait]
+impl Handler<Loop> for PingSender {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _: Loop,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        let reply_msg = ctx.ask(&self.peer, Ping).await.unwrap();
+        println!("{reply_msg}");
+        ctx.schedule_self_msg(Duration::from_secs(1), Loop).await;
+        Ok(())
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    let universe = Universe::new();
+
+    let (recv_mailbox, _) =
+        universe.spawn_actor(PingReceiver::default()).spawn();
+
+    let ping_sender = PingSender { peer: recv_mailbox };
+    let (_, ping_sender_handler) = universe.spawn_actor(ping_sender).spawn();
+
+    ping_sender_handler.join().await;
+}
+```

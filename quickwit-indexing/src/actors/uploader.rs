@@ -28,14 +28,14 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, AsyncActor, Mailbox, QueueCapacity};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_storage::SplitPayloadBuilder;
 use tantivy::chrono::Utc;
-use tokio::sync::oneshot::Receiver;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::{info, info_span, warn, Instrument, Span};
 
+use crate::actors::Publisher;
 use crate::models::{PackagedSplit, PackagedSplitBatch, PublishOperation, PublisherMessage};
 use crate::split_store::IndexingSplitStore;
 
@@ -45,7 +45,7 @@ pub struct Uploader {
     actor_name: &'static str,
     metastore: Arc<dyn Metastore>,
     index_storage: IndexingSplitStore,
-    publisher_mailbox: Mailbox<Receiver<PublisherMessage>>,
+    publisher_mailbox: Mailbox<Publisher>,
     concurrent_upload_permits: Arc<Semaphore>,
     counters: UploaderCounters,
 }
@@ -55,7 +55,7 @@ impl Uploader {
         actor_name: &'static str,
         metastore: Arc<dyn Metastore>,
         index_storage: IndexingSplitStore,
-        publisher_mailbox: Mailbox<Receiver<PublisherMessage>>,
+        publisher_mailbox: Mailbox<Publisher>,
     ) -> Uploader {
         Uploader {
             actor_name,
@@ -84,9 +84,8 @@ pub struct UploaderCounters {
     pub num_uploaded_splits: Arc<AtomicU64>,
 }
 
+#[async_trait]
 impl Actor for Uploader {
-    type Message = PackagedSplitBatch;
-
     type ObservableState = UploaderCounters;
 
     #[allow(clippy::unused_unit)]
@@ -101,9 +100,91 @@ impl Actor for Uploader {
     fn name(&self) -> String {
         self.actor_name.to_string()
     }
+}
+
+#[async_trait]
+impl Handler<PackagedSplitBatch> for Uploader {
+    type Reply = ();
 
     fn message_span(&self, msg_id: u64, batch: &PackagedSplitBatch) -> Span {
         info_span!("", msg_id=&msg_id, num_splits=%batch.split_ids().len())
+    }
+
+    async fn handle(
+        &mut self,
+        batch: PackagedSplitBatch,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        fail_point!("uploader:before");
+        let (split_uploaded_tx, split_uploaded_rx) = tokio::sync::oneshot::channel();
+
+        // We send the future to the publisher right away.
+        // That way the publisher will process the uploaded split in order as opposed to
+        // publishing in the order splits finish their uploading.
+        ctx.send_message(&self.publisher_mailbox, split_uploaded_rx)
+            .await?;
+
+        // The permit will be added back manually to the semaphore the task after it is finished.
+        // This is not a valid usage of protected zone here.
+        //
+        // Protected zone are supposed to be used when the cause for blocking is
+        // outside of the responsability of the current actor.
+        // For instance, when sending a message on a downstream actor with a saturated
+        // mailbox.
+        // This is meant to be fixed with ParallelActors.
+        let permit_guard = self.acquire_semaphore(ctx).await?;
+        let kill_switch = ctx.kill_switch().clone();
+        let split_ids = batch.split_ids();
+        if kill_switch.is_dead() {
+            warn!(split_ids=?split_ids,"Kill switch was activated. Cancelling upload.");
+            return Err(ActorExitStatus::Killed);
+        }
+        let metastore = self.metastore.clone();
+        let index_storage = self.index_storage.clone();
+        let counters = self.counters.clone();
+        let index_id = batch.index_id();
+        let span = Span::current();
+        info!(split_ids=?split_ids, "start-stage-and-store-splits");
+        tokio::spawn(
+            async move {
+                fail_point!("uploader:intask:before");
+                let mut packaged_splits_and_metadatas = Vec::new();
+                for split in batch.splits {
+                    let upload_result = stage_and_upload_split(
+                        &split,
+                        &index_storage,
+                        &*metastore,
+                        counters.clone(),
+                    )
+                    .await;
+                    if let Err(cause) = upload_result {
+                        warn!(cause=%cause, split_id=%split.split_id, "Failed to upload split. Killing!");
+                        kill_switch.kill();
+                        bail!("Failed to upload split `{}`. Killing!", split.split_id);
+                    }
+                    packaged_splits_and_metadatas.push((split, upload_result.unwrap()));
+                }
+                let operation = make_publish_operation(packaged_splits_and_metadatas);
+                let publisher_message = PublisherMessage {
+                    index_id,
+                    operation,
+                };
+                if let Err(publisher_message) = split_uploaded_tx.send(publisher_message) {
+                    bail!(
+                        "Failed to send upload split `{:?}`. The publisher is probably dead.",
+                        &publisher_message
+                    );
+                }
+                info!("success-stage-and-store-splits");
+                // We explicitely drop it in order to force move the permit guard into the async
+                // task.
+                mem::drop(permit_guard);
+                Result::<(), anyhow::Error>::Ok(())
+            }
+            .instrument(span),
+        );
+        fail_point!("uploader:intask:after");
+        Ok(())
     }
 }
 
@@ -183,86 +264,6 @@ async fn stage_and_upload_split(
     Ok(split_metadata)
 }
 
-#[async_trait]
-impl AsyncActor for Uploader {
-    async fn process_message(
-        &mut self,
-        batch: PackagedSplitBatch,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
-        fail_point!("uploader:before");
-        let (split_uploaded_tx, split_uploaded_rx) = tokio::sync::oneshot::channel();
-
-        // We send the future to the publisher right away.
-        // That way the publisher will process the uploaded split in order as opposed to
-        // publishing in the order splits finish their uploading.
-        ctx.send_message(&self.publisher_mailbox, split_uploaded_rx)
-            .await?;
-
-        // The permit will be added back manually to the semaphore the task after it is finished.
-        // This is not a valid usage of protected zone here.
-        //
-        // Protected zone are supposed to be used when the cause for blocking is
-        // outside of the responsability of the current actor.
-        // For instance, when sending a message on a downstream actor with a saturated
-        // mailbox.
-        // This is meant to be fixed with ParallelActors.
-        let permit_guard = self.acquire_semaphore(ctx).await?;
-        let kill_switch = ctx.kill_switch().clone();
-        let split_ids = batch.split_ids();
-        if kill_switch.is_dead() {
-            warn!(split_ids=?split_ids,"Kill switch was activated. Cancelling upload.");
-            return Err(ActorExitStatus::Killed);
-        }
-        let metastore = self.metastore.clone();
-        let index_storage = self.index_storage.clone();
-        let counters = self.counters.clone();
-        let index_id = batch.index_id();
-        let span = Span::current();
-        info!(split_ids=?split_ids, "start-stage-and-store-splits");
-        tokio::spawn(
-            async move {
-                fail_point!("uploader:intask:before");
-                let mut packaged_splits_and_metadatas = Vec::new();
-                for split in batch.into_iter() {
-                    let upload_result = stage_and_upload_split(
-                        &split,
-                        &index_storage,
-                        &*metastore,
-                        counters.clone(),
-                    )
-                    .await;
-                    if let Err(cause) = upload_result {
-                        warn!(cause=%cause, split_id=%split.split_id, "Failed to upload split. Killing!");
-                        kill_switch.kill();
-                        bail!("Failed to upload split `{}`. Killing!", split.split_id);
-                    }
-                    packaged_splits_and_metadatas.push((split, upload_result.unwrap()));
-                }
-                let operation = make_publish_operation(packaged_splits_and_metadatas);
-                let publisher_message = PublisherMessage {
-                    index_id,
-                    operation,
-                };
-                if let Err(publisher_message) = split_uploaded_tx.send(publisher_message) {
-                    bail!(
-                        "Failed to send upload split `{:?}`. The publisher is probably dead.",
-                        &publisher_message
-                    );
-                }
-                info!("success-stage-and-store-splits");
-                // We explicitely drop it in order to force move the permit guard into the async
-                // task.
-                mem::drop(permit_guard);
-                Result::<(), anyhow::Error>::Ok(())
-            }
-            .instrument(span),
-        );
-        fail_point!("uploader:intask:after");
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -272,6 +273,7 @@ mod tests {
     use quickwit_metastore::checkpoint::CheckpointDelta;
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::RamStorage;
+    use tokio::sync::oneshot;
 
     use super::*;
     use crate::models::ScratchDirectory;
@@ -300,7 +302,7 @@ mod tests {
             index_storage,
             mailbox,
         );
-        let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn_async();
+        let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn();
         let split_scratch_directory = ScratchDirectory::for_test()?;
         universe
             .send_message(
@@ -326,9 +328,13 @@ mod tests {
             uploader_handle.process_pending_and_observe().await.obs_type,
             ObservationType::Alive
         );
-        let publish_futures = inbox.drain_available_message_for_test();
+        let mut publish_futures = inbox.drain_for_test();
         assert_eq!(publish_futures.len(), 1);
-        let publish_future = publish_futures.into_iter().next().unwrap();
+        let publish_future = *publish_futures
+            .pop()
+            .unwrap()
+            .downcast::<oneshot::Receiver<PublisherMessage>>()
+            .unwrap();
         let publisher_message = publish_future.await?;
         assert_eq!(&publisher_message.index_id, "test-index");
         if let PublishOperation::PublishNewSplit {
@@ -373,7 +379,7 @@ mod tests {
             index_storage,
             mailbox,
         );
-        let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn_async();
+        let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn();
         let split_scratch_directory_1 = ScratchDirectory::for_test()?;
         let split_scratch_directory_2 = ScratchDirectory::for_test()?;
         let packaged_split_1 = PackagedSplit {
@@ -422,9 +428,14 @@ mod tests {
             uploader_handle.process_pending_and_observe().await.obs_type,
             ObservationType::Alive
         );
-        let publish_futures = inbox.drain_available_message_for_test();
+        let publish_futures = inbox.drain_for_test();
         assert_eq!(publish_futures.len(), 1);
-        let publish_future = publish_futures.into_iter().next().unwrap();
+        let publish_future = publish_futures
+            .into_iter()
+            .next()
+            .unwrap()
+            .downcast::<oneshot::Receiver<PublisherMessage>>()
+            .unwrap();
         let publisher_message = publish_future.await?;
         assert_eq!(&publisher_message.index_id, "test-index");
         if let PublishOperation::ReplaceSplits {

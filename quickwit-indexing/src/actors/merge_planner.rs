@@ -19,12 +19,15 @@
 
 use std::sync::Arc;
 
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Mailbox, QueueCapacity, SyncActor};
+use async_trait::async_trait;
+use quickwit_actors::{
+    Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, Mailbox, QueueCapacity,
+};
 use quickwit_metastore::SplitMetadata;
 use tracing::info;
 
-use crate::merge_policy::MergeOperation;
-use crate::models::MergePlannerMessage;
+use crate::actors::MergeSplitDownloader;
+use crate::models::NewSplits;
 use crate::MergePolicy;
 
 /// The merge planner decides when to start a merge or a demux task.
@@ -33,12 +36,11 @@ pub struct MergePlanner {
     /// yet and can be candidate to merge and demux operations.
     young_splits: Vec<SplitMetadata>,
     merge_policy: Arc<dyn MergePolicy>,
-    merge_split_downloader_mailbox: Mailbox<MergeOperation>,
+    merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
 }
 
+#[async_trait]
 impl Actor for MergePlanner {
-    type Message = MergePlannerMessage;
-
     type ObservableState = ();
 
     fn observable_state(&self) -> Self::ObservableState {}
@@ -50,12 +52,24 @@ impl Actor for MergePlanner {
     fn queue_capacity(&self) -> QueueCapacity {
         QueueCapacity::Bounded(0)
     }
+
+    fn runner(&self) -> ActorRunner {
+        ActorRunner::DedicatedThread
+    }
+
+    async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+        self.send_operations(ctx).await?;
+        Ok(())
+    }
 }
 
-impl SyncActor for MergePlanner {
-    fn process_message(
+#[async_trait]
+impl Handler<NewSplits> for MergePlanner {
+    type Reply = ();
+
+    async fn handle(
         &mut self,
-        message: MergePlannerMessage,
+        message: NewSplits,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         let mut has_new_young_split = false;
@@ -68,13 +82,9 @@ impl SyncActor for MergePlanner {
             has_new_young_split = true;
         }
         if has_new_young_split {
-            self.send_operations(ctx)?;
+            self.send_operations(ctx).await?;
         }
         Ok(())
-    }
-
-    fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        self.send_operations(ctx)
     }
 }
 
@@ -82,7 +92,7 @@ impl MergePlanner {
     pub fn new(
         young_splits: Vec<SplitMetadata>,
         merge_policy: Arc<dyn MergePolicy>,
-        merge_split_downloader_mailbox: Mailbox<MergeOperation>,
+        merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
     ) -> MergePlanner {
         MergePlanner {
             young_splits,
@@ -91,11 +101,12 @@ impl MergePlanner {
         }
     }
 
-    fn send_operations(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+    async fn send_operations(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         let merge_candidates = self.merge_policy.operations(&mut self.young_splits);
         for merge_operation in merge_candidates {
             info!(merge_operation=?merge_operation, "planning-merge");
-            ctx.send_message_blocking(&self.merge_split_downloader_mailbox, merge_operation)?;
+            ctx.send_message(&self.merge_split_downloader_mailbox, merge_operation)
+                .await?;
         }
         Ok(())
     }
@@ -113,6 +124,7 @@ mod tests {
 
     use super::*;
     use crate::actors::merge_executor::{demux_virtual_split, VirtualSplit};
+    use crate::merge_policy::MergeOperation;
     use crate::{new_split_id, StableMultitenantWithTimestampMergePolicy};
 
     fn merged_timestamp(splits: &[SplitMetadata]) -> Option<RangeInclusive<i64>> {
@@ -234,18 +246,18 @@ mod tests {
         incoming_splits: Vec<SplitMetadata>,
         predicate: Pred,
     ) -> anyhow::Result<()> {
-        let (merge_op_mailbox, merge_op_inbox) = create_test_mailbox::<MergeOperation>();
+        let (merge_op_mailbox, merge_op_inbox) = create_test_mailbox::<MergeSplitDownloader>();
         let merge_planner = MergePlanner::new(Vec::new(), merge_policy, merge_op_mailbox);
         let universe = Universe::new();
         let mut split_index: HashMap<String, SplitMetadata> = HashMap::default();
         let (merge_planner_mailbox, merge_planner_handler) =
-            universe.spawn_actor(merge_planner).spawn_sync();
+            universe.spawn_actor(merge_planner).spawn();
         for split in incoming_splits {
             split_index.insert(split.split_id().to_string(), split.clone());
             universe
                 .send_message(
                     &merge_planner_mailbox,
-                    MergePlannerMessage {
+                    NewSplits {
                         new_splits: vec![split],
                     },
                 )
@@ -253,17 +265,19 @@ mod tests {
             loop {
                 let obs = merge_planner_handler.process_pending_and_observe().await;
                 assert_eq!(obs.obs_type, ObservationType::Alive);
-                let merge_ops = merge_op_inbox.drain_available_message_for_test();
+                let merge_ops: Vec<MergeOperation> = merge_op_inbox
+                    .drain_for_test()
+                    .into_iter()
+                    .flat_map(|op| op.downcast::<MergeOperation>())
+                    .map(|op| *op)
+                    .collect();
                 if merge_ops.is_empty() {
                     break;
                 }
                 for merge_op in merge_ops {
                     let splits = apply_merge(&mut split_index, &merge_op);
                     universe
-                        .send_message(
-                            &merge_planner_mailbox,
-                            MergePlannerMessage { new_splits: splits },
-                        )
+                        .send_message(&merge_planner_mailbox, NewSplits { new_splits: splits })
                         .await?;
                 }
             }

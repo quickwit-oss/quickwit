@@ -17,16 +17,41 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use crate::models::RawDocBatch;
+use quickwit_config::SourceConfig;
 
-#[derive(Debug)]
-pub enum IndexerMessage {
-    Batch(RawDocBatch),
-    CommitTimeout { split_id: String },
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct IndexingPipelineId {
+    pub index_id: String,
+    pub source_id: String,
 }
 
-impl From<RawDocBatch> for IndexerMessage {
-    fn from(batch: RawDocBatch) -> Self {
-        IndexerMessage::Batch(batch)
-    }
+/// Detaches a pipeline from the indexing server. The pipeline is no longer managed by the
+/// server. This is mostly useful for ad-hoc indexing pipelines launched with `quickwit index
+/// ingest ..` and testing.
+#[derive(Debug)]
+pub struct DetachPipeline {
+    pub pipeline_id: IndexingPipelineId,
+}
+
+#[derive(Debug)]
+pub struct ObservePipeline {
+    pub pipeline_id: IndexingPipelineId,
+}
+
+#[derive(Debug)]
+pub struct SpawnMergePipeline {
+    pub index_id: String,
+    pub merge_enabled: bool,
+    pub demux_enabled: bool,
+}
+
+#[derive(Debug)]
+pub struct SpawnPipelines {
+    pub index_id: String,
+}
+
+#[derive(Debug)]
+pub struct SpawnPipeline {
+    pub index_id: String,
+    pub source: SourceConfig,
 }

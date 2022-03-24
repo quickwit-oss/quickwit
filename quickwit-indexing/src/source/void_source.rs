@@ -21,7 +21,7 @@ use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox, HEARTBEAT};
 use quickwit_config::VoidSourceParams;
 
-use crate::models::IndexerMessage;
+use crate::actors::Indexer;
 use crate::source::{Source, SourceContext, TypedSourceFactory};
 
 pub struct VoidSource;
@@ -30,7 +30,7 @@ pub struct VoidSource;
 impl Source for VoidSource {
     async fn emit_batches(
         &mut self,
-        _: &Mailbox<IndexerMessage>,
+        _: &Mailbox<Indexer>,
         _: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         tokio::time::sleep(HEARTBEAT / 2).await;
@@ -99,7 +99,7 @@ mod tests {
             source: Box::new(void_source),
             batch_sink: mailbox,
         };
-        let (_, void_source_handle) = universe.spawn_actor(void_source_actor).spawn_async();
+        let (_, void_source_handle) = universe.spawn_actor(void_source_actor).spawn();
         matches!(void_source_handle.health(), Health::Healthy);
         let (actor_termination, observed_state) = void_source_handle.quit().await;
         assert_eq!(observed_state, json!({}));
