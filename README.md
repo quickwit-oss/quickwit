@@ -64,7 +64,7 @@ Quickwit is the next-gen search & analytics engine built for logs. It is a highl
 - Native support for OpenTelemetry
 
 # Uses & Limitations
-| ✅ When to use                                                  	| ❌ When not to use                                       	|
+| :white_check_mark: &nbsp; When to use                                                  	| :x: &nbsp; When not to use                                       	|
 |--------------------------------------------------------------	|--------------------------------------------------------------	|
 | Your documents are immutable: application logs, system logs, access logs, user actions logs, audit trail, etc.                    	| Your documents are mutable.   	|
 | Your data has a time component. Quickwit includes optimizations and design choices specifically related to time. | You need a low-latency search for e-commerce websites.               	|
