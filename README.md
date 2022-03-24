@@ -68,7 +68,7 @@ Quickwit is the next-gen search & analytics engine built for logs. It is a highl
 | Your documents are immutable: application logs, system logs, access logs, user actions logs, audit trail, etc.                    	| Your documents are mutable.   	|
 | Your data has a time component. Quickwit includes optimizations and design choices specifically related to time. | You need a low-latency search for e-commerce websites.               	|
 | You want a full-text search in a multi-tenant environment.     	| You provide a public-facing search with high QPS.	| 
-| You want to index directly from Kafka. | Search relevancy and scoring is a key feature for your search.
+| You want to index directly from Kafka. | Search relevancy and scoring are key features for your search.
 | You want to add a full-text search to your ClickHouse cluster.
 | You ingest a tremendous amount of logs and don't want to pay huge bills.                                                             	|
 | You ingest a tremendous amount of data and you don't want to waste your precious time babysitting your cluster.
@@ -90,8 +90,8 @@ Take a look at our [Quick Start]([https://quickwit.io/docs/get-started/quickstar
 # 📚 Tutorials
 
 - [Search on logs with timestamp pruning](https://quickwit.io/docs/guides/tutorial-hdfs-logs)
-- [Setup a distributed search on AWS S3](https://quickwit.io/docs/guides/tutorial-hdfs-logs-distributed-search-aws-s3)
-- [Add full-text search to a well-known OLAP database, Clickhouse](https://quickwit.io/docs/guides/add-full-text-search-to-your-olap-db)
+- [Set up a distributed search on AWS S3](https://quickwit.io/docs/guides/tutorial-hdfs-logs-distributed-search-aws-s3)
+- [Add full-text search to a well-known OLAP database, ClickHouse](https://quickwit.io/docs/guides/add-full-text-search-to-your-olap-db)
 
 # 💬 Community
 
@@ -103,9 +103,9 @@ Take a look at our [Quick Start]([https://quickwit.io/docs/get-started/quickstar
 
 # 🙋 FAQ
 ###  How Quickwit is different from traditional search engines like Elasticsearch or Solr?
-The core difference and advantage of Quickwit is its architecture built from the ground-up for the cloud and for logs. We have decoupled compute and storage, designed highly-performant index data structures, optimized IO paths to make search on object storage sub-second, and implemented a highly-reliable distributed search and exactly-once semantics during indexing so that all engineers can sleep at night. Last but not least, we put our love in every line of code.
+The core difference and advantage of Quickwit is its architecture built from the ground-up for the cloud and logs. We have decoupled compute and storage, designed highly-performant index data structures, optimized IO paths to make search on object storage sub-second, and implemented a highly-reliable distributed search and exactly-once semantics during indexing so that all engineers can sleep at night. Last but not least, we put our love in every line of code.
 
-### How Quickwit compares to Elastic in terms of cost?
+### How does Quickwit compare to Elastic in terms of cost?
 We estimate that Quicwkit can be up to 10x cheaper on average than Elastic. To understand how, check out our [common crawl demo](common-crawl.quickwit.io).
 
 ### What license does Quickwit use? 
@@ -116,7 +116,7 @@ We also provide a commercial license for enterprises to provide support and a vo
 Our business model relies on our commercial license. There is no plan to become SaaS in the near future.
 
 
-# 🪄 Third Party Integration
+# 🪄 Third-Party Integration
 <p align="left">
 <img align="center" src="https://kafka.apache.org/logos/kafka_logo--simple.png" alt="quickwit_inc" height="30" width="auto" /> &nbsp;
 <img align="center" src="https://www.postgresql.org/media/img/about/press/elephant.png" alt="quickwit_inc" height="30" width="auto"/> &nbsp;&nbsp;&nbsp;
