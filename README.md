@@ -107,7 +107,7 @@ Take a look at our [Quick Start]([https://quickwit.io/docs/get-started/quickstar
 The core difference and advantage of Quickwit is its architecture that is built from the ground up for cloud and logs. Optimized IO paths make search on object storage sub-second and thanks to the true decoupled compute and storage, search instances are stateless, it is possible to add or remove search nodes within seconds. Last but not least, we implemented a highly-reliable distributed search and exactly-once semantics during indexing so that all engineers can sleep at night. 
 
 ### How does Quickwit compare to Elastic in terms of cost?
-We estimate that Quickwit can be up to 10x cheaper on average than Elastic. To understand how, check out our [common crawl demo](common-crawl.quickwit.io).
+We estimate that Quickwit can be up to 10x cheaper on average than Elastic. To understand how, check out our [blog post about searching the web on AWS S3](https://quickwit.io/blog/commoncrawl/).
 
 ### What license does Quickwit use? 
 Quickwit is open-source under the GNU Affero General Public License Version 3 - AGPLv3. Fundamentally, this means that you are free to use Quickwit for your project, as long as you don't modify Quickwit. If you do, you have to make the modifications public.
