@@ -35,7 +35,7 @@ Quickwit is the next-gen search & analytics engine built for logs. It is a highl
 
 <br/>
 
-<img src="docs/assets/images/quickwit-ui-wipv2.png"> 
+<img src="docs/assets/images/quickwit-ui.png"> 
 
 <br/>
 
