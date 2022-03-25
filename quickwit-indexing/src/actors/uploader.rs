@@ -304,25 +304,22 @@ mod tests {
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn();
         let split_scratch_directory = ScratchDirectory::for_test()?;
-        universe
-            .send_message(
-                &uploader_mailbox,
-                PackagedSplitBatch::new(vec![PackagedSplit {
-                    split_id: "test-split".to_string(),
-                    index_id: "test-index".to_string(),
-                    checkpoint_deltas: vec![CheckpointDelta::from(3..15)],
-                    time_range: Some(1_628_203_589i64..=1_628_203_640i64),
-                    size_in_bytes: 1_000,
-                    split_scratch_directory,
-                    num_docs: 10,
-                    demux_num_ops: 0,
-                    tags: Default::default(),
-                    replaced_split_ids: Vec::new(),
-                    split_date_of_birth: Instant::now(),
-                    hotcache_bytes: vec![],
-                    split_files: vec![],
-                }]),
-            )
+        uploader_mailbox
+            .send_message(PackagedSplitBatch::new(vec![PackagedSplit {
+                split_id: "test-split".to_string(),
+                index_id: "test-index".to_string(),
+                checkpoint_deltas: vec![CheckpointDelta::from(3..15)],
+                time_range: Some(1_628_203_589i64..=1_628_203_640i64),
+                size_in_bytes: 1_000,
+                split_scratch_directory,
+                num_docs: 10,
+                demux_num_ops: 0,
+                tags: Default::default(),
+                replaced_split_ids: Vec::new(),
+                split_date_of_birth: Instant::now(),
+                hotcache_bytes: vec![],
+                split_files: vec![],
+            }]))
             .await?;
         assert_eq!(
             uploader_handle.process_pending_and_observe().await.obs_type,
@@ -418,11 +415,11 @@ mod tests {
             split_files: vec![],
             hotcache_bytes: vec![],
         };
-        universe
-            .send_message(
-                &uploader_mailbox,
-                PackagedSplitBatch::new(vec![packaged_split_1, package_split_2]),
-            )
+        uploader_mailbox
+            .send_message(PackagedSplitBatch::new(vec![
+                packaged_split_1,
+                package_split_2,
+            ]))
             .await?;
         assert_eq!(
             uploader_handle.process_pending_and_observe().await.obs_type,

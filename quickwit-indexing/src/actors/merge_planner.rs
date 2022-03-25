@@ -254,13 +254,10 @@ mod tests {
             universe.spawn_actor(merge_planner).spawn();
         for split in incoming_splits {
             split_index.insert(split.split_id().to_string(), split.clone());
-            universe
-                .send_message(
-                    &merge_planner_mailbox,
-                    NewSplits {
-                        new_splits: vec![split],
-                    },
-                )
+            merge_planner_mailbox
+                .send_message(NewSplits {
+                    new_splits: vec![split],
+                })
                 .await?;
             loop {
                 let obs = merge_planner_handler.process_pending_and_observe().await;
@@ -276,8 +273,8 @@ mod tests {
                 }
                 for merge_op in merge_ops {
                     let splits = apply_merge(&mut split_index, &merge_op);
-                    universe
-                        .send_message(&merge_planner_mailbox, NewSplits { new_splits: splits })
+                    merge_planner_mailbox
+                        .send_message(NewSplits { new_splits: splits })
                         .await?;
                 }
             }

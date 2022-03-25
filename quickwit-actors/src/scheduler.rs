@@ -324,27 +324,21 @@ mod tests {
         let (scheduler_mailbox, scheduler_handler) =
             universe.spawn_actor(Scheduler::default()).spawn();
         let (cb_called, callback) = create_test_callback();
-        universe
-            .send_message(
-                &scheduler_mailbox,
-                ScheduleEvent {
-                    timeout: Duration::from_secs(30),
-                    callback,
-                },
-            )
+        scheduler_mailbox
+            .send_message(ScheduleEvent {
+                timeout: Duration::from_secs(30),
+                callback,
+            })
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_secs(1)).await;
         assert!(!cb_called.load(Ordering::SeqCst));
         let (tx, _rx) = oneshot::channel();
-        universe
-            .send_message(
-                &scheduler_mailbox,
-                SimulateAdvanceTime {
-                    time_shift: TimeShift::ByDuration(Duration::from_secs(31)),
-                    tx,
-                },
-            )
+        scheduler_mailbox
+            .send_message(SimulateAdvanceTime {
+                time_shift: TimeShift::ByDuration(Duration::from_secs(31)),
+                tx,
+            })
             .await
             .unwrap();
         let scheduler_counters: SchedulerCounters =
@@ -368,24 +362,18 @@ mod tests {
             universe.spawn_actor(Scheduler::default()).spawn();
         let (cb_called1, callback1) = create_test_callback();
         let (cb_called2, callback2) = create_test_callback();
-        universe
-            .send_message(
-                &scheduler_mailbox,
-                ScheduleEvent {
-                    timeout: Duration::from_secs(20),
-                    callback: callback2,
-                },
-            )
+        scheduler_mailbox
+            .send_message(ScheduleEvent {
+                timeout: Duration::from_secs(20),
+                callback: callback2,
+            })
             .await
             .unwrap();
-        universe
-            .send_message(
-                &scheduler_mailbox,
-                ScheduleEvent {
-                    timeout: Duration::from_millis(2),
-                    callback: callback1,
-                },
-            )
+        scheduler_mailbox
+            .send_message(ScheduleEvent {
+                timeout: Duration::from_millis(2),
+                callback: callback1,
+            })
             .await
             .unwrap();
         let scheduler_counters = scheduler_handler.process_pending_and_observe().await.state;
@@ -410,27 +398,21 @@ mod tests {
         assert!(cb_called1.load(Ordering::SeqCst));
         assert!(!cb_called2.load(Ordering::SeqCst));
         let (tx, _rx) = oneshot::channel::<()>();
-        universe
-            .send_message(
-                &scheduler_mailbox,
-                SimulateAdvanceTime {
-                    time_shift: TimeShift::ByDuration(Duration::from_secs(10)),
-                    tx,
-                },
-            )
+        scheduler_mailbox
+            .send_message(SimulateAdvanceTime {
+                time_shift: TimeShift::ByDuration(Duration::from_secs(10)),
+                tx,
+            })
             .await
             .unwrap();
         assert!(cb_called1.load(Ordering::SeqCst));
         assert!(!cb_called2.load(Ordering::SeqCst));
         let (tx, _rx) = oneshot::channel::<()>();
-        universe
-            .send_message(
-                &scheduler_mailbox,
-                SimulateAdvanceTime {
-                    time_shift: TimeShift::ByDuration(Duration::from_secs(10)),
-                    tx,
-                },
-            )
+        scheduler_mailbox
+            .send_message(SimulateAdvanceTime {
+                time_shift: TimeShift::ByDuration(Duration::from_secs(10)),
+                tx,
+            })
             .await
             .unwrap();
         let scheduler_counters: SchedulerCounters =
