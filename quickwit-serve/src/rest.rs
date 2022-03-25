@@ -28,6 +28,7 @@ use crate::error::ServiceErrorCode;
 use crate::format::FormatError;
 use crate::health_check_api::liveness_check_handler;
 use crate::indexing_api::indexing_get_handler;
+use crate::push_api::{ingest_handler, tail_handler};
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
 use crate::{Format, QuickwitServices};
 
@@ -55,6 +56,8 @@ pub(crate) async fn start_rest_server(
         .or(search_stream_handler(
             quickwit_services.search_service.clone(),
         ))
+        .or(ingest_handler(quickwit_services.push_api_service.clone()))
+        .or(tail_handler(quickwit_services.push_api_service.clone()))
         .or(metrics_service)
         .with(request_counter)
         .recover(recover_fn);

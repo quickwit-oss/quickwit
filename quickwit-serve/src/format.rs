@@ -56,6 +56,15 @@ pub(crate) struct FormatError {
     pub error: String,
 }
 
+impl FormatError {
+    pub fn wrap<E: ServiceError>(err: E) -> FormatError {
+        FormatError {
+            code: err.status_code(),
+            error: err.to_string(),
+        }
+    }
+}
+
 impl ToString for FormatError {
     fn to_string(&self) -> String {
         self.error.clone()

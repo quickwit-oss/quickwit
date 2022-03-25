@@ -28,6 +28,7 @@ mod rest;
 mod cluster_api;
 mod health_check_api;
 mod indexing_api;
+mod push_api;
 mod search_api;
 
 use std::collections::HashSet;
@@ -41,6 +42,7 @@ use quickwit_config::QuickwitConfig;
 use quickwit_indexing::actors::IndexingServer;
 use quickwit_indexing::start_indexer_service;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
+use quickwit_pushapi::{spawn_push_api_actor, PushApiService};
 use quickwit_search::{start_searcher_service, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use warp::{Filter, Rejection};
@@ -88,6 +90,7 @@ struct QuickwitServices {
     pub cluster_service: Arc<dyn ClusterService>,
     pub search_service: Option<Arc<dyn SearchService>>,
     pub indexer_service: Option<Mailbox<IndexingServer>>,
+    pub push_api_service: Option<Mailbox<PushApiService>>,
 }
 
 pub async fn serve_quickwit(
@@ -102,6 +105,7 @@ pub async fn serve_quickwit(
     let cluster_service = quickwit_cluster::start_cluster_service(config).await?;
 
     let universe = Universe::new();
+
     let indexer_service: Option<Mailbox<IndexingServer>> =
         if services.contains(&QuickwitService::Indexer) {
             let indexer_service = start_indexer_service(
@@ -112,6 +116,15 @@ pub async fn serve_quickwit(
             )
             .await?;
             Some(indexer_service)
+        } else {
+            None
+        };
+
+    let push_api_service: Option<Mailbox<PushApiService>> =
+        if services.contains(&QuickwitService::Indexer) {
+            let push_api_service =
+                spawn_push_api_actor(&universe, &config.data_dir_path.join("queues"))?;
+            Some(push_api_service)
         } else {
             None
         };
@@ -131,6 +144,7 @@ pub async fn serve_quickwit(
         };
 
     let quickwit_services = QuickwitServices {
+        push_api_service,
         cluster_service,
         search_service,
         indexer_service,
