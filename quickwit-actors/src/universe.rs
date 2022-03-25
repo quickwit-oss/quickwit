@@ -17,16 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::fmt;
 use std::time::Duration;
-
-use tokio::sync::oneshot;
 
 use crate::channel_with_priority::Priority;
 use crate::mailbox::{Command, CommandOrMessage};
 use crate::scheduler::{SimulateAdvanceTime, TimeShift};
 use crate::spawn_builder::SpawnBuilder;
-use crate::{Actor, AskError, Handler, KillSwitch, Mailbox, QueueCapacity, Scheduler};
+use crate::{Actor, KillSwitch, Mailbox, QueueCapacity, Scheduler};
 
 /// Universe serves as the top-level context in which Actor can be spawned.
 /// It is *not* a singleton. A typical application will usually have only one universe hosting all
@@ -85,41 +82,6 @@ impl Universe {
             self.scheduler_mailbox.clone(),
             self.kill_switch.clone(),
         )
-    }
-
-    /// Sends a message to a given mailbox.
-    ///
-    /// From an actor context, use `ActorContext::send_message`.
-    ///
-    /// Consider also using `ask` if you want to wait for the reply.
-    pub async fn send_message<A: Actor, M>(
-        &self,
-        mailbox: &Mailbox<A>,
-        message: M,
-    ) -> Result<oneshot::Receiver<A::Reply>, crate::SendError>
-    where
-        A: Handler<M>,
-        M: 'static + Send + Sync + fmt::Debug,
-    {
-        mailbox.send_message(message).await
-    }
-
-    /// Sends a message to an actor and wait for the reply.
-    pub async fn ask<A: Actor, M>(
-        &self,
-        mailbox: &Mailbox<A>,
-        message: M,
-    ) -> Result<A::Reply, AskError>
-    where
-        A: Handler<M>,
-        M: 'static + Send + Sync + fmt::Debug,
-    {
-        mailbox
-            .send_message(message)
-            .await
-            .map_err(|_send_error| AskError::MessageNotDelivered)?
-            .await
-            .map_err(|_| AskError::ProcessMessageError)
     }
 
     /// Inform an actor to process pending message and then stop processing new messages

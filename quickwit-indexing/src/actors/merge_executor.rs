@@ -894,9 +894,7 @@ mod tests {
         let universe = Universe::new();
         let (merge_executor_mailbox, merge_executor_handle) =
             universe.spawn_actor(merge_executor).spawn();
-        universe
-            .send_message(&merge_executor_mailbox, merge_scratch)
-            .await?;
+        merge_executor_mailbox.send_message(merge_scratch).await?;
         merge_executor_handle.process_pending_and_observe().await;
         let mut packager_msgs = merge_packager_inbox.drain_for_test();
         assert_eq!(packager_msgs.len(), 1);
@@ -1003,9 +1001,7 @@ mod tests {
         let universe = Universe::new();
         let (merge_executor_mailbox, merge_executor_handle) =
             universe.spawn_actor(merge_executor).spawn();
-        universe
-            .send_message(&merge_executor_mailbox, merge_scratch)
-            .await?;
+        merge_executor_mailbox.send_message(merge_scratch).await?;
         mem::drop(merge_executor_mailbox);
         let _ = merge_executor_handle.join().await;
         let mut packager_msgs = merge_packager_inbox.drain_for_test();

@@ -32,7 +32,7 @@ pub use indexed_split::{IndexedSplit, IndexedSplitBatch};
 pub use indexing_directory::IndexingDirectory;
 pub use indexing_server_message::{
     DetachPipeline, IndexingPipelineId, ObservePipeline, SpawnMergePipeline, SpawnPipeline,
-    SpawnPipelines,
+    SpawnPipelinesForIndex,
 };
 pub use indexing_statistics::IndexingStatistics;
 pub use merge_planner_message::NewSplits;

@@ -21,116 +21,35 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::{bail, Context};
 use async_trait::async_trait;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox, Observation,
-    Supervisable, Universe,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Observation, Supervisable,
 };
 use quickwit_config::{IndexerConfig, SourceConfig, SourceParams, VecSourceParams};
-use quickwit_metastore::{IndexMetadata, Metastore};
-use quickwit_storage::StorageUriResolver;
+use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
+use quickwit_storage::{StorageResolverError, StorageUriResolver};
 use serde::Serialize;
+use thiserror::Error;
 use tracing::{error, info};
 
 use crate::models::{
     DetachPipeline, IndexingPipelineId, ObservePipeline, SpawnMergePipeline, SpawnPipeline,
-    SpawnPipelines,
+    SpawnPipelinesForIndex,
 };
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingStatistics};
 
-pub struct IndexingServerClient {
-    universe: Universe,
-    mailbox: Mailbox<IndexingServer>,
-    handle: ActorHandle<IndexingServer>,
-}
-
-impl IndexingServerClient {
-    /// Spawns an indexing pipeline for a particular source.
-    pub async fn spawn_pipeline(
-        &self,
-        index_id: String,
-        source: SourceConfig,
-    ) -> anyhow::Result<IndexingPipelineId> {
-        let message = SpawnPipeline { index_id, source };
-        self.universe.ask(&self.mailbox, message).await?
-    }
-
-    /// Spawns an indexing pipeline for each source defined for the index.
-    pub async fn spawn_pipelines(
-        &self,
-        index_id: String,
-    ) -> anyhow::Result<Vec<IndexingPipelineId>> {
-        let message = SpawnPipelines { index_id };
-        self.universe.ask(&self.mailbox, message).await?
-    }
-
-    /// Spawns a merge pipeline.
-    pub async fn spawn_merge_pipeline(
-        &self,
-        index_id: String,
-        merge_enabled: bool,
-        demux_enabled: bool,
-    ) -> anyhow::Result<IndexingPipelineId> {
-        let message = SpawnMergePipeline {
-            index_id,
-            merge_enabled,
-            demux_enabled,
-        };
-        self.universe.ask(&self.mailbox, message).await?
-    }
-
-    /// Retrieves the indexing statistics of a pipeline.
-    pub async fn observe_pipeline(
-        &self,
-        pipeline_id: &IndexingPipelineId,
-    ) -> anyhow::Result<Observation<IndexingStatistics>> {
-        let message = ObservePipeline {
-            pipeline_id: pipeline_id.clone(),
-        };
-        self.universe.ask(&self.mailbox, message).await?
-    }
-
-    /// Detaches a pipeline from the indexing server. The pipeline is no longer managed by the
-    /// server. This is mostly useful for ad-hoc indexing pipelines launched with `quickwit index
-    /// ingest ..` and testing.
-    pub async fn detach_pipeline(
-        &self,
-        pipeline_id: &IndexingPipelineId,
-    ) -> anyhow::Result<ActorHandle<IndexingPipeline>> {
-        let message = DetachPipeline {
-            pipeline_id: pipeline_id.clone(),
-        };
-        self.universe.ask(&self.mailbox, message).await?
-    }
-
-    pub async fn observe_server(&self) -> Observation<<IndexingServer as Actor>::ObservableState> {
-        self.handle.observe().await
-    }
-
-    /// Waits for the indexing server to exit, which may never happen :)
-    pub async fn join_server(
-        self,
-    ) -> (ActorExitStatus, <IndexingServer as Actor>::ObservableState) {
-        self.handle.join().await
-    }
-
-    /// Waits for the server's state to satisfy the given predicate.
-    #[cfg(test)]
-    pub async fn wait_for_server<F>(
-        &self,
-        mut predicate: F,
-        timeout_after: std::time::Duration,
-    ) -> anyhow::Result<()>
-    where
-        F: FnMut(&Observation<<IndexingServer as Actor>::ObservableState>) -> bool,
-    {
-        tokio::time::timeout(timeout_after, async {
-            while !predicate(&self.observe_server().await) {}
-        })
-        .await?;
-        Ok(())
-    }
+#[derive(Error, Debug)]
+pub enum IndexingServerError {
+    #[error("Indexing pipeline `{index_id}` for source `{source_id}` does not exist.")]
+    MissingPipeline { index_id: String, source_id: String },
+    #[error("Pipeline `{index_id}` for source `{source_id}` already exists.")]
+    PipelineAlreadyExists { index_id: String, source_id: String },
+    #[error("Failed to resolve the storage `{0}`.")]
+    StorageError(#[from] StorageResolverError),
+    #[error("Metastore error `{0}`.")]
+    MetastoreError(#[from] MetastoreError),
+    #[error("Invalid params `{0}`.")]
+    InvalidParams(anyhow::Error),
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -156,14 +75,13 @@ impl IndexingServer {
         Health::Healthy
     }
 
-    pub fn spawn(
+    pub fn new(
         data_dir_path: PathBuf,
         indexer_config: IndexerConfig,
         metastore: Arc<dyn Metastore>,
         storage_resolver: StorageUriResolver,
-    ) -> IndexingServerClient {
-        let universe = Universe::new();
-        let server = Self {
+    ) -> IndexingServer {
+        Self {
             indexing_dir_path: data_dir_path.join("indexing"),
             split_store_max_num_bytes: indexer_config.split_store_max_num_bytes.get_bytes()
                 as usize,
@@ -172,24 +90,18 @@ impl IndexingServer {
             storage_resolver,
             pipeline_handles: Default::default(),
             state: Default::default(),
-        };
-        let (mailbox, handle) = universe.spawn_actor(server).spawn();
-        IndexingServerClient {
-            universe,
-            mailbox,
-            handle,
         }
     }
 
     async fn detach_pipeline(
         &mut self,
         pipeline_id: &IndexingPipelineId,
-    ) -> anyhow::Result<ActorHandle<IndexingPipeline>> {
-        let pipeline_handle = self.pipeline_handles.remove(pipeline_id).with_context(|| {
-            format!(
-                "Indexing pipeline `{}` for source `{}` does not exist.",
-                pipeline_id.index_id, pipeline_id.source_id
-            )
+    ) -> Result<ActorHandle<IndexingPipeline>, IndexingServerError> {
+        let pipeline_handle = self.pipeline_handles.remove(pipeline_id).ok_or_else(|| {
+            IndexingServerError::MissingPipeline {
+                index_id: pipeline_id.index_id.clone(),
+                source_id: pipeline_id.source_id.clone(),
+            }
         })?;
         self.state.num_running_pipelines -= 1;
         Ok(pipeline_handle)
@@ -198,12 +110,12 @@ impl IndexingServer {
     async fn observe_pipeline(
         &mut self,
         pipeline_id: &IndexingPipelineId,
-    ) -> anyhow::Result<Observation<IndexingStatistics>> {
-        let pipeline_handle = self.pipeline_handles.get(pipeline_id).with_context(|| {
-            format!(
-                "Indexing pipeline `{}` for source `{}` does not exist.",
-                pipeline_id.index_id, pipeline_id.source_id
-            )
+    ) -> Result<Observation<IndexingStatistics>, IndexingServerError> {
+        let pipeline_handle = self.pipeline_handles.get(pipeline_id).ok_or_else(|| {
+            IndexingServerError::MissingPipeline {
+                index_id: pipeline_id.index_id.clone(),
+                source_id: pipeline_id.source_id.clone(),
+            }
         })?;
         let observation = pipeline_handle.observe().await;
         Ok(observation)
@@ -214,7 +126,7 @@ impl IndexingServer {
         index_id: String,
         source: SourceConfig,
         ctx: &ActorContext<Self>,
-    ) -> anyhow::Result<IndexingPipelineId> {
+    ) -> Result<IndexingPipelineId, IndexingServerError> {
         let pipeline_id = IndexingPipelineId {
             index_id,
             source_id: source.source_id.clone(),
@@ -229,7 +141,7 @@ impl IndexingServer {
         &mut self,
         index_id: String,
         ctx: &ActorContext<Self>,
-    ) -> anyhow::Result<Vec<IndexingPipelineId>> {
+    ) -> Result<Vec<IndexingPipelineId>, IndexingServerError> {
         let mut pipeline_ids = Vec::new();
 
         let index_metadata = self.index_metadata(&index_id, ctx).await?;
@@ -260,16 +172,14 @@ impl IndexingServer {
         index_metadata: IndexMetadata,
         source: SourceConfig,
         ctx: &ActorContext<Self>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), IndexingServerError> {
         if self.pipeline_handles.contains_key(&pipeline_id) {
-            bail!(
-                "An indexing pipeline `{}` for source `{}` is already running.",
-                pipeline_id.index_id,
-                pipeline_id.source_id
-            );
+            return Err(IndexingServerError::PipelineAlreadyExists {
+                index_id: pipeline_id.index_id.clone(),
+                source_id: pipeline_id.source_id.clone(),
+            });
         }
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
-
         let pipeline_params = IndexingPipelineParams::try_new(
             index_metadata,
             source,
@@ -279,7 +189,8 @@ impl IndexingServer {
             self.metastore.clone(),
             storage,
         )
-        .await?;
+        .await
+        .map_err(IndexingServerError::InvalidParams)?;
 
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor(pipeline).spawn();
@@ -294,7 +205,7 @@ impl IndexingServer {
         merge_enabled: bool,
         demux_enabled: bool,
         ctx: &ActorContext<Self>,
-    ) -> anyhow::Result<IndexingPipelineId> {
+    ) -> Result<IndexingPipelineId, IndexingServerError> {
         let pipeline_id = IndexingPipelineId {
             index_id,
             source_id: "void-source".to_string(),
@@ -316,7 +227,7 @@ impl IndexingServer {
         &self,
         index_id: &str,
         ctx: &ActorContext<Self>,
-    ) -> anyhow::Result<IndexMetadata> {
+    ) -> Result<IndexMetadata, IndexingServerError> {
         let _protect_guard = ctx.protect_zone();
         let index_metadata = self.metastore.index_metadata(index_id).await?;
         Ok(index_metadata)
@@ -325,7 +236,7 @@ impl IndexingServer {
 
 #[async_trait]
 impl Handler<ObservePipeline> for IndexingServer {
-    type Reply = anyhow::Result<Observation<IndexingStatistics>>;
+    type Reply = Result<Observation<IndexingStatistics>, IndexingServerError>;
 
     async fn handle(
         &mut self,
@@ -339,7 +250,7 @@ impl Handler<ObservePipeline> for IndexingServer {
 
 #[async_trait]
 impl Handler<DetachPipeline> for IndexingServer {
-    type Reply = anyhow::Result<ActorHandle<IndexingPipeline>>;
+    type Reply = Result<ActorHandle<IndexingPipeline>, IndexingServerError>;
 
     async fn handle(
         &mut self,
@@ -402,12 +313,12 @@ impl Actor for IndexingServer {
 
 #[async_trait]
 impl Handler<SpawnMergePipeline> for IndexingServer {
-    type Reply = anyhow::Result<IndexingPipelineId>;
+    type Reply = Result<IndexingPipelineId, IndexingServerError>;
     async fn handle(
         &mut self,
         message: SpawnMergePipeline,
         ctx: &ActorContext<Self>,
-    ) -> Result<anyhow::Result<IndexingPipelineId>, ActorExitStatus> {
+    ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self
             .spawn_merge_pipeline(
                 message.index_id,
@@ -421,12 +332,12 @@ impl Handler<SpawnMergePipeline> for IndexingServer {
 
 #[async_trait]
 impl Handler<SpawnPipeline> for IndexingServer {
-    type Reply = anyhow::Result<IndexingPipelineId>;
+    type Reply = Result<IndexingPipelineId, IndexingServerError>;
     async fn handle(
         &mut self,
         message: SpawnPipeline,
         ctx: &ActorContext<Self>,
-    ) -> Result<anyhow::Result<IndexingPipelineId>, ActorExitStatus> {
+    ) -> Result<Result<IndexingPipelineId, IndexingServerError>, ActorExitStatus> {
         Ok(self
             .spawn_pipeline(message.index_id, message.source, ctx)
             .await)
@@ -434,13 +345,13 @@ impl Handler<SpawnPipeline> for IndexingServer {
 }
 
 #[async_trait]
-impl Handler<SpawnPipelines> for IndexingServer {
-    type Reply = anyhow::Result<Vec<IndexingPipelineId>>;
+impl Handler<SpawnPipelinesForIndex> for IndexingServer {
+    type Reply = Result<Vec<IndexingPipelineId>, IndexingServerError>;
     async fn handle(
         &mut self,
-        message: SpawnPipelines,
+        message: SpawnPipelinesForIndex,
         ctx: &ActorContext<Self>,
-    ) -> Result<anyhow::Result<Vec<IndexingPipelineId>>, ActorExitStatus> {
+    ) -> Result<Result<Vec<IndexingPipelineId>, IndexingServerError>, ActorExitStatus> {
         Ok(self.spawn_pipelines(message.index_id, ctx).await)
     }
 }
@@ -449,7 +360,7 @@ impl Handler<SpawnPipelines> for IndexingServer {
 mod tests {
     use std::time::Duration;
 
-    use quickwit_actors::ObservationType;
+    use quickwit_actors::{ObservationType, Universe};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::VecSourceParams;
     use quickwit_metastore::quickwit_metastore_uri_resolver;
@@ -460,6 +371,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexing_server() {
+        quickwit_common::setup_logging_for_tests();
         let index_id = append_random_suffix("test-indexing-server");
         let index_uri = format!("{}/{}", METASTORE_URI, index_id);
         let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
@@ -475,13 +387,16 @@ mod tests {
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
         let storage_resolver = StorageUriResolver::for_test();
-        let client = IndexingServer::spawn(
+        let indexing_server = IndexingServer::new(
             data_dir_path.clone(),
             indexer_config,
             metastore.clone(),
             storage_resolver.clone(),
         );
-        let observation = client.observe_server().await;
+        let universe = Universe::new();
+        let (indexing_server_mailbox, indexing_server_handle) =
+            universe.spawn_actor(indexing_server).spawn();
+        let observation = indexing_server_handle.observe().await;
         assert_eq!(observation.num_running_pipelines, 0);
         assert_eq!(observation.num_failed_pipelines, 0);
         assert_eq!(observation.num_successful_pipelines, 0);
@@ -491,46 +406,94 @@ mod tests {
             source_id: "test-indexing-server--source-1".to_string(),
             source_params: SourceParams::void(),
         };
-        let pipeline_id1 = client
-            .spawn_pipeline(index_id.clone(), source_1.clone())
+        let spawn_pipeline_msg = SpawnPipeline {
+            index_id: index_id.clone(),
+            source: source_1.clone(),
+        };
+        let pipeline_id1 = indexing_server_mailbox
+            .ask_for_res(spawn_pipeline_msg.clone())
             .await
             .unwrap();
-        client
-            .spawn_pipeline(index_id.clone(), source_1.clone())
+        indexing_server_mailbox
+            .ask_for_res(spawn_pipeline_msg)
             .await
             .unwrap_err();
         assert_eq!(pipeline_id1.index_id, index_id);
         assert_eq!(pipeline_id1.source_id, source_1.source_id);
-        assert_eq!(client.observe_server().await.num_running_pipelines, 1);
+        assert_eq!(
+            indexing_server_handle.observe().await.num_running_pipelines,
+            1
+        );
 
         // Test `observe_pipeline`.
-        let observation = client.observe_pipeline(&pipeline_id1).await.unwrap();
+        let observation = indexing_server_mailbox
+            .ask_for_res(ObservePipeline {
+                pipeline_id: pipeline_id1.clone(),
+            })
+            .await
+            .unwrap();
         assert_eq!(observation.obs_type, ObservationType::Alive);
 
         // Test `detach_pipeline`.
-        client.detach_pipeline(&pipeline_id1).await.unwrap();
-        assert_eq!(client.observe_server().await.num_running_pipelines, 0);
+        indexing_server_mailbox
+            .ask_for_res(DetachPipeline {
+                pipeline_id: pipeline_id1,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            indexing_server_handle.observe().await.num_running_pipelines,
+            0
+        );
 
         // Test `spawn_pipelines`.
         metastore.add_source(&index_id, source_1).await.unwrap();
-        client.spawn_pipelines(index_id.clone()).await.unwrap();
-        assert_eq!(client.observe_server().await.num_running_pipelines, 1);
+        indexing_server_mailbox
+            .ask_for_res(SpawnPipelinesForIndex {
+                index_id: index_id.clone(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            indexing_server_handle.observe().await.num_running_pipelines,
+            1
+        );
 
         let source_2 = SourceConfig {
             source_id: "test-indexing-server--source-2".to_string(),
             source_params: SourceParams::void(),
         };
         metastore.add_source(&index_id, source_2).await.unwrap();
-        client.spawn_pipelines(index_id.clone()).await.unwrap();
-        assert_eq!(client.observe_server().await.num_running_pipelines, 2);
-
-        // Test `spawn_merge_pipeline`.
-        let merge_pipeline_id = client
-            .spawn_merge_pipeline(index_id.clone(), true, false)
+        indexing_server_mailbox
+            .ask_for_res(SpawnPipelinesForIndex {
+                index_id: index_id.clone(),
+            })
             .await
             .unwrap();
-        assert_eq!(client.observe_server().await.num_running_pipelines, 3);
-        let pipeline_observation = client.observe_pipeline(&merge_pipeline_id).await.unwrap();
+        assert_eq!(
+            indexing_server_handle.observe().await.num_running_pipelines,
+            2
+        );
+
+        // Test `spawn_merge_pipeline`.
+        let merge_pipeline_id = indexing_server_mailbox
+            .ask_for_res(SpawnMergePipeline {
+                index_id: index_id.clone(),
+                merge_enabled: true,
+                demux_enabled: false,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            indexing_server_handle.observe().await.num_running_pipelines,
+            3
+        );
+        let pipeline_observation = indexing_server_mailbox
+            .ask_for_res(ObservePipeline {
+                pipeline_id: merge_pipeline_id,
+            })
+            .await
+            .unwrap();
         assert_eq!(pipeline_observation.generation, 1);
         assert_eq!(pipeline_observation.num_spawn_attempts, 1);
 
@@ -543,16 +506,20 @@ mod tests {
                 partition: "0".to_string(),
             }),
         };
-        client
-            .spawn_pipeline(index_id.clone(), source_3)
+        indexing_server_mailbox
+            .ask_for_res(SpawnPipeline {
+                index_id: index_id.clone(),
+                source: source_3,
+            })
             .await
             .unwrap();
-        client
-            .wait_for_server(
-                |state| state.num_successful_pipelines == 2,
-                Duration::from_secs(5),
-            )
-            .await
-            .unwrap();
+        for _ in 0..2000 {
+            let obs = indexing_server_handle.observe().await;
+            if obs.num_successful_pipelines == 2 {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        panic!("Sleep");
     }
 }

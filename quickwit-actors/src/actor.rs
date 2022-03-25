@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::any::type_name;
+use std::convert::Infallible;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Deref;
@@ -365,25 +366,34 @@ impl<A: Actor> ActorContext<A> {
         mailbox.send_message(msg).await
     }
 
-    /// Similar to `send_message`, except this method
-    /// waits asynchronously for the actor reply.
-    pub async fn ask<DestActor: Actor, M>(
+    pub async fn ask<DestActor: Actor, M, T>(
         &self,
         mailbox: &Mailbox<DestActor>,
         msg: M,
-    ) -> Result<DestActor::Reply, AskError>
+    ) -> Result<T, AskError<Infallible>>
     where
-        DestActor: Handler<M>,
+        DestActor: Handler<M, Reply = T>,
         M: 'static + Send + Sync + fmt::Debug,
     {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg, "ask");
-        mailbox
-            .send_message(msg)
-            .await
-            .map_err(|_send_error| AskError::MessageNotDelivered)?
-            .await
-            .map_err(|_| crate::AskError::ProcessMessageError)
+        mailbox.ask(msg).await
+    }
+
+    /// Similar to `send_message`, except this method
+    /// waits asynchronously for the actor reply.
+    pub async fn ask_for_res<DestActor: Actor, M, T, E: fmt::Debug>(
+        &self,
+        mailbox: &Mailbox<DestActor>,
+        msg: M,
+    ) -> Result<T, AskError<E>>
+    where
+        DestActor: Handler<M, Reply = Result<T, E>>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
+        let _guard = self.protect_zone();
+        debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg, "ask");
+        mailbox.ask_for_res(msg).await
     }
 
     /// Send the Success message to terminate the destination actor with the Success exit status.

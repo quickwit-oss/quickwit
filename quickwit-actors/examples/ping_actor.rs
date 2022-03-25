@@ -144,12 +144,12 @@ async fn main() {
     let (ping_sender_mailbox, ping_sender_handler) =
         universe.spawn_actor(PingSender::default()).spawn();
 
-    universe
-        .send_message(&ping_sender_mailbox, AddPeer(roger_mailbox))
+    ping_sender_mailbox
+        .send_message(AddPeer(roger_mailbox))
         .await
         .unwrap();
-    universe
-        .send_message(&ping_sender_mailbox, AddPeer(myriam_mailbox))
+    ping_sender_mailbox
+        .send_message(AddPeer(myriam_mailbox))
         .await
         .unwrap();
 

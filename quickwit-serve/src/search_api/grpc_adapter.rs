@@ -30,6 +30,8 @@ use quickwit_search::SearchService;
 use tracing::{instrument, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
+use crate::error::{convert_to_grpc_result, ServiceError};
+
 // The `MetadataMap` thing here is used to extract open telemetry
 // tracing keys from request's headers.
 
@@ -74,12 +76,8 @@ impl grpc::SearchService for GrpcSearchAdapter {
             global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
         Span::current().set_parent(parent_cx);
         let search_request = request.into_inner();
-        let search_response = self
-            .0
-            .root_search(search_request)
-            .await
-            .map_err(Into::<tonic::Status>::into)?;
-        Ok(tonic::Response::new(search_response))
+        let search_res = self.0.root_search(search_request).await;
+        convert_to_grpc_result(search_res)
     }
 
     #[instrument(skip(self, request))]
@@ -91,12 +89,8 @@ impl grpc::SearchService for GrpcSearchAdapter {
             global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
         Span::current().set_parent(parent_cx);
         let leaf_search_request = request.into_inner();
-        let leaf_search_response = self
-            .0
-            .leaf_search(leaf_search_request)
-            .await
-            .map_err(Into::<tonic::Status>::into)?;
-        Ok(tonic::Response::new(leaf_search_response))
+        let leaf_search_res = self.0.leaf_search(leaf_search_request).await;
+        convert_to_grpc_result(leaf_search_res)
     }
 
     #[instrument(skip(self, request))]
@@ -108,12 +102,8 @@ impl grpc::SearchService for GrpcSearchAdapter {
             global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
         Span::current().set_parent(parent_cx);
         let fetch_docs_request = request.into_inner();
-        let fetch_docs_response = self
-            .0
-            .fetch_docs(fetch_docs_request)
-            .await
-            .map_err(Into::<tonic::Status>::into)?;
-        Ok(tonic::Response::new(fetch_docs_response))
+        let fetch_docs_res = self.0.fetch_docs(fetch_docs_request).await;
+        convert_to_grpc_result(fetch_docs_res)
     }
 
     type LeafSearchStreamStream = std::pin::Pin<
@@ -136,8 +126,8 @@ impl grpc::SearchService for GrpcSearchAdapter {
             .0
             .leaf_search_stream(leaf_search_request)
             .await
-            .map_err(Into::<tonic::Status>::into)?
-            .map_err(Into::<tonic::Status>::into);
+            .map_err(|err| err.grpc_error())?
+            .map_err(|err| err.grpc_error());
         Ok(tonic::Response::new(Box::pin(leaf_search_result)))
     }
 }

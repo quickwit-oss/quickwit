@@ -25,6 +25,8 @@
 //! - make these task modular and testable
 //! - detect when some task is stuck and does not progress anymore
 
+use std::fmt;
+
 use tokio::time::Duration;
 mod actor;
 mod actor_handle;
@@ -73,9 +75,11 @@ pub fn message_timeout() -> Duration {
 
 /// Error that occured while calling `ActorContext::ask(..)` or `Universe::ask`
 #[derive(Error, Debug)]
-pub enum AskError {
+pub enum AskError<E: fmt::Debug> {
     #[error("Message could not be delivered")]
     MessageNotDelivered,
     #[error("Error while the message was being processed.")]
     ProcessMessageError,
+    #[error("The handler returned an error: `{0:?}`.")]
+    ErrorReply(#[from] E),
 }
