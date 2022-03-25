@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::any::Any;
+use std::convert::Infallible;
 use std::fmt;
 use std::hash::Hash;
 use std::sync::Arc;
@@ -25,7 +26,12 @@ use std::sync::Arc;
 use tokio::sync::oneshot;
 
 use crate::channel_with_priority::{Priority, Receiver, Sender};
+<<<<<<< Updated upstream
 use crate::{QueueCapacity, RecvError, SendError};
+=======
+use crate::envelope::{wrap_in_envelope, Envelope};
+use crate::{Actor, AskError, Handler, QueueCapacity, RecvError, SendError};
+>>>>>>> Stashed changes
 
 /// A mailbox is the object that makes it possible to send a message
 /// to an actor.
@@ -205,6 +211,7 @@ impl<Message> Mailbox<Message> {
         self.inner.tx.send(cmd_or_msg, priority).await
     }
 
+<<<<<<< Updated upstream
     pub(crate) fn send_with_priority_blocking(
         &self,
         cmd_or_msg: CommandOrMessage<Message>,
@@ -225,17 +232,70 @@ impl<Message> Mailbox<Message> {
     /// When possible, prefer using [Self::send()].
     pub(crate) fn send_message_blocking(&self, msg: Message) -> Result<(), SendError> {
         self.send_with_priority_blocking(CommandOrMessage::Message(msg), Priority::Low)
+=======
+    /// Sends a message to the actor owning the associated inbox.
+    ///
+    /// From an actor context, use the `ActorContext::send_message` method instead.
+    ///
+    /// SendError is returned if the actor has already exited.
+    pub async fn send_message<M>(
+        &self,
+        message: M,
+    ) -> Result<oneshot::Receiver<A::Reply>, SendError>
+    where
+        A: Handler<M>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
+        let (envelope, response_rx) = wrap_in_envelope(message);
+        self.send_with_priority(CommandOrMessage::Message(envelope), Priority::Low)
+            .await?;
+        Ok(response_rx)
+>>>>>>> Stashed changes
     }
 
-    pub(crate) async fn send_command(&self, command: Command) -> Result<(), SendError> {
+    pub async fn send_command(&self, command: Command) -> Result<(), SendError> {
         self.send_with_priority(command.into(), Priority::High)
             .await
     }
 
+<<<<<<< Updated upstream
     pub fn try_send_message(&self, message: Message) -> Result<(), SendError> {
         self.inner
             .tx
             .try_send(CommandOrMessage::Message(message), Priority::Low)
+=======
+    /// Similar to `send_message`, except this method
+    /// waits asynchronously for the actor reply.
+    ///
+    /// From an actor context, use the `ActorContext::ask` method instead.
+    pub async fn ask<M, T>(&self, message: M) -> Result<T, AskError<Infallible>>
+    where
+        A: Handler<M, Reply = T>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
+        self.send_message(message)
+            .await
+            .map_err(|_send_error| AskError::MessageNotDelivered)?
+            .await
+            .map_err(|_| AskError::ProcessMessageError)
+    }
+
+    /// Similar to `send_message`, except this method
+    /// waits asynchronously for the actor reply.
+    ///
+    /// From an actor context, use the `ActorContext::ask` method instead.
+    pub async fn ask_for_res<M, T, E: fmt::Debug>(&self, message: M) -> Result<T, AskError<E>>
+    where
+        A: Handler<M, Reply = Result<T, E>>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
+        self.send_message(message)
+            .await
+            .map_err(|_send_error| AskError::MessageNotDelivered)?
+            .await
+            .map_err(|_| AskError::ProcessMessageError)?
+            .map_err(AskError::from)
+>>>>>>> Stashed changes
     }
 }
 

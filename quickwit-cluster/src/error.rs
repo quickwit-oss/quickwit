@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_proto::tonic;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -55,6 +54,7 @@ pub enum ClusterError {
     },
 }
 
+<<<<<<< Updated upstream
 impl From<ClusterError> for tonic::Status {
     fn from(error: ClusterError) -> tonic::Status {
         let code = match error {
@@ -68,5 +68,7 @@ impl From<ClusterError> for tonic::Status {
     }
 }
 
+=======
+>>>>>>> Stashed changes
 /// Generic Result type for cluster operations.
 pub type ClusterResult<T> = Result<T, ClusterError>;

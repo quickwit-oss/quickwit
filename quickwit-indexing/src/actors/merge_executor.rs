@@ -879,10 +879,15 @@ mod tests {
         );
         let universe = Universe::new();
         let (merge_executor_mailbox, merge_executor_handle) =
+<<<<<<< Updated upstream
             universe.spawn_actor(merge_executor).spawn_sync();
         universe
             .send_message(&merge_executor_mailbox, merge_scratch)
             .await?;
+=======
+            universe.spawn_actor(merge_executor).spawn();
+        merge_executor_mailbox.send_message(merge_scratch).await?;
+>>>>>>> Stashed changes
         merge_executor_handle.process_pending_and_observe().await;
         let mut packager_msgs = merge_packager_inbox.drain_available_message_for_test();
         assert_eq!(packager_msgs.len(), 1);
@@ -985,10 +990,15 @@ mod tests {
         );
         let universe = Universe::new();
         let (merge_executor_mailbox, merge_executor_handle) =
+<<<<<<< Updated upstream
             universe.spawn_actor(merge_executor).spawn_sync();
         universe
             .send_message(&merge_executor_mailbox, merge_scratch)
             .await?;
+=======
+            universe.spawn_actor(merge_executor).spawn();
+        merge_executor_mailbox.send_message(merge_scratch).await?;
+>>>>>>> Stashed changes
         mem::drop(merge_executor_mailbox);
         let _ = merge_executor_handle.join().await;
         let mut packager_msgs = merge_packager_inbox.drain_available_message_for_test();

@@ -26,10 +26,15 @@ mod packager;
 mod publisher;
 mod uploader;
 
+<<<<<<< Updated upstream
 pub use indexing_pipeline::{
     IndexingPipeline, IndexingPipelineHandler, IndexingPipelineMessage, IndexingPipelineParams,
 };
 pub use indexing_server::{IndexingPipelineId, IndexingServer, IndexingServerClient};
+=======
+pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineHandler, IndexingPipelineParams};
+pub use indexing_server::IndexingServer;
+>>>>>>> Stashed changes
 use tantivy::schema::{Field, FieldType};
 mod merge_executor;
 mod merge_planner;

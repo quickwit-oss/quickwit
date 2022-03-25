@@ -25,15 +25,15 @@ use hyper::header::HeaderValue;
 use hyper::HeaderMap;
 use quickwit_doc_mapper::{SortByField, SortOrder};
 use quickwit_proto::{OutputFormat, SortOrder as ProtoSortOrder};
-use quickwit_search::{SearchResponseRest, SearchService};
+use quickwit_search::{SearchError, SearchResponseRest, SearchService};
 use serde::{de, Deserialize, Deserializer};
 use tracing::info;
 use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
 
-use crate::error::ApiError;
-use crate::format::Format;
+use crate::error::ServiceError;
+use crate::Format;
 
 fn sort_by_field_mini_dsl<'de, D>(deserializer: D) -> Result<Option<SortByField>, D::Error>
 where D: Deserializer<'de> {
@@ -130,7 +130,7 @@ async fn search_endpoint<TSearchService: SearchService>(
     index_id: String,
     search_request: SearchRequestQueryString,
     search_service: &TSearchService,
-) -> Result<SearchResponseRest, ApiError> {
+) -> Result<SearchResponseRest, SearchError> {
     let (sort_order, sort_by_field) = get_proto_search_by(&search_request);
     let search_request = quickwit_proto::SearchRequest {
         index_id,
@@ -174,7 +174,7 @@ async fn search<TSearchService: SearchService>(
     info!(index_id = %index_id, request =? search_request, "search");
     Ok(search_request
         .format
-        .make_reply(search_endpoint(index_id, search_request, &*search_service).await))
+        .make_rest_reply(search_endpoint(index_id, search_request, &*search_service).await))
 }
 
 /// REST GET search handler.
@@ -238,7 +238,7 @@ async fn search_stream_endpoint<TSearchService: SearchService>(
     index_id: String,
     search_request: SearchStreamRequestQueryString,
     search_service: &TSearchService,
-) -> Result<hyper::Body, ApiError> {
+) -> Result<hyper::Body, SearchError> {
     let request = quickwit_proto::SearchStreamRequest {
         index_id,
         query: search_request.query,
@@ -284,7 +284,7 @@ async fn search_stream_endpoint<TSearchService: SearchService>(
     Ok(body)
 }
 
-fn make_streaming_reply(result: Result<hyper::Body, ApiError>) -> impl Reply {
+fn make_streaming_reply(result: Result<hyper::Body, SearchError>) -> impl Reply {
     let status_code: StatusCode;
     let body = match result {
         Ok(body) => {
@@ -292,7 +292,7 @@ fn make_streaming_reply(result: Result<hyper::Body, ApiError>) -> impl Reply {
             warp::reply::Response::new(body)
         }
         Err(err) => {
-            status_code = err.http_status_code();
+            status_code = err.status_code().to_http_status_code();
             warp::reply::Response::new(hyper::Body::from(err.to_string()))
         }
     };
@@ -550,7 +550,11 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
+<<<<<<< Updated upstream
             "error": "InvalidArgument: failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `aggregations`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`, `sortByField`."
+=======
+            "error": "unknown field `end_unix_timestamp`, expected one of `query`, `aggregations`, `search_field`, `start_timestamp`, `end_timestamp`, `max_hits`, `start_offset`, `format`, `sort_by_field`"
+>>>>>>> Stashed changes
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())

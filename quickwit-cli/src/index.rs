@@ -28,14 +28,16 @@ use chrono::Utc;
 use clap::{arg, App, AppSettings, ArgMatches};
 use colored::Colorize;
 use itertools::Itertools;
-use quickwit_actors::{ActorHandle, ObservationType};
+use quickwit_actors::{ActorHandle, ObservationType, Universe};
 use quickwit_common::uri::Uri;
 use quickwit_common::{run_checklist, GREEN_COLOR};
 use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig, SourceParams};
 use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
 use quickwit_doc_mapper::tag_pruning::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingServer};
-use quickwit_indexing::models::IndexingStatistics;
+use quickwit_indexing::models::{
+    DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
+};
 use quickwit_indexing::source::INGEST_SOURCE_ID;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
@@ -776,14 +778,23 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
-    let client = IndexingServer::spawn(
+    let universe = Universe::new();
+    let indexing_server = IndexingServer::new(
         config.data_dir_path,
         indexer_config,
         metastore,
         storage_resolver,
     );
-    let pipeline_id = client.spawn_pipeline(args.index_id.clone(), source).await?;
-    let pipeline_handle = client.detach_pipeline(&pipeline_id).await?;
+    let (indexing_server_mailbox, _) = universe.spawn_actor(indexing_server).spawn();
+    let pipeline_id = indexing_server_mailbox
+        .ask_for_res(SpawnPipeline {
+            index_id: args.index_id.clone(),
+            source,
+        })
+        .await?;
+    let pipeline_handle = indexing_server_mailbox
+        .ask_for_res(DetachPipeline { pipeline_id })
+        .await?;
 
     let is_stdin_atty = atty::is(atty::Stream::Stdin);
     if args.input_path_opt.is_none() && is_stdin_atty {
@@ -857,16 +868,24 @@ pub async fn merge_or_demux_cli(
         .resolve(&config.metastore_uri())
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
-    let client = IndexingServer::spawn(
+    let indexing_server = IndexingServer::new(
         config.data_dir_path,
         indexer_config,
         metastore,
         storage_resolver,
     );
-    let pipeline_id = client
-        .spawn_merge_pipeline(args.index_id.clone(), merge_enabled, demux_enabled)
+    let universe = Universe::new();
+    let (indexing_server_mailbox, _) = universe.spawn_actor(indexing_server).spawn();
+    let pipeline_id = indexing_server_mailbox
+        .ask_for_res(SpawnMergePipeline {
+            index_id: args.index_id.clone(),
+            merge_enabled,
+            demux_enabled,
+        })
         .await?;
-    let pipeline_handle = client.detach_pipeline(&pipeline_id).await?;
+    let pipeline_handle = indexing_server_mailbox
+        .ask_for_res(DetachPipeline { pipeline_id })
+        .await?;
     let (pipeline_exit_status, _pipeline_statistics) = pipeline_handle.join().await;
     if !pipeline_exit_status.is_success() {
         bail!(pipeline_exit_status);

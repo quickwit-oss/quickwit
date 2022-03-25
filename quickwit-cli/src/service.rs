@@ -20,10 +20,16 @@
 use std::path::PathBuf;
 
 use anyhow::bail;
+<<<<<<< Updated upstream
 use clap::{arg, App, AppSettings, ArgMatches};
+=======
+use clap::{arg, ArgMatches, Command};
+use quickwit_actors::Universe;
+>>>>>>> Stashed changes
 use quickwit_common::run_checklist;
 use quickwit_common::uri::Uri;
 use quickwit_indexing::actors::IndexingServer;
+use quickwit_indexing::models::SpawnPipelinesForIndex;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_serve::run_searcher;
 use quickwit_storage::quickwit_storage_uri_resolver;
@@ -156,16 +162,22 @@ async fn run_indexer_cli(args: RunIndexerArgs) -> anyhow::Result<()> {
         .resolve(&config.metastore_uri())
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
-    let client = IndexingServer::spawn(
+    let indexing_server = IndexingServer::new(
         config.data_dir_path,
         config.indexer_config,
         metastore,
         storage_resolver,
     );
+    let universe = Universe::new();
+    let (indexing_server_mailbox, indexing_server_handle) =
+        universe.spawn_actor(indexing_server).spawn();
+
     for index_id in args.index_ids {
-        client.spawn_pipelines(index_id).await?;
+        indexing_server_mailbox
+            .ask_for_res(SpawnPipelinesForIndex { index_id })
+            .await?;
     }
-    let (exit_status, _) = client.join_server().await;
+    let (exit_status, _) = indexing_server_handle.join().await;
     if exit_status.is_success() {
         bail!(exit_status)
     }

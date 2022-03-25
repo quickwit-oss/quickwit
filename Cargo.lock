@@ -2478,6 +2478,7 @@ dependencies = [
  "once_cell",
  "opentelemetry",
  "prometheus",
+ "quickwit-actors",
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
@@ -2694,9 +2695,15 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
+<<<<<<< Updated upstream
 version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8383f39639269cde97d255a32bdb68c047337295414940c68bdd30c2e13203ff"
+=======
+version = "0.2.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ae183fc1b06c149f0c1793e1eb447c8b04bfe46d48e9e48bfb8d2d7ed64ecf0"
+>>>>>>> Stashed changes
 dependencies = [
  "bitflags",
 ]

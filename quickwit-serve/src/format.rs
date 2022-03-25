@@ -19,10 +19,12 @@
 
 use hyper::header::CONTENT_TYPE;
 use hyper::StatusCode;
-use serde::Deserialize;
-use warp::{reply, Reply};
+use serde::{self, Deserialize, Serialize};
+use warp::reply::{self, WithHeader, WithStatus};
 
-use crate::error::ApiError;
+use crate::error::{ServiceError, ServiceErrorCode};
+
+const JSON_SERIALIZATION_ERROR: &str = "JSON serialization failed.";
 
 /// Output format for the search results.
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
@@ -47,31 +49,72 @@ impl ToString for Format {
     }
 }
 
+#[derive(Serialize)]
+pub(crate) struct FormatError {
+    #[serde(skip_serializing)]
+    pub code: ServiceErrorCode,
+    pub error: String,
+}
+
+impl ToString for FormatError {
+    fn to_string(&self) -> String {
+        self.error.clone()
+    }
+}
+
+impl ServiceError for FormatError {
+    fn status_code(&self) -> ServiceErrorCode {
+        self.code
+    }
+}
+
 impl Format {
-    fn resp_body<T: serde::Serialize>(self, val: T) -> serde_json::Result<String> {
+    fn resp_body<T: serde::Serialize>(self, val: &T) -> serde_json::Result<String> {
         match self {
-            Format::Json => serde_json::to_string(&val),
+            Format::Json => serde_json::to_string(val),
             Format::PrettyJson => serde_json::to_string_pretty(&val),
         }
     }
 
-    pub fn make_reply<T: serde::Serialize>(self, result: Result<T, ApiError>) -> impl Reply {
-        let status_code: StatusCode;
-        let body_json = match result {
-            Ok(success) => {
-                status_code = StatusCode::OK;
-                self.resp_body(success)
-            }
-            Err(err) => {
-                status_code = err.http_status_code();
-                self.resp_body(err)
-            } //< yeah it is lame it is not formatted, but it should never happen really.
-        }
-        .unwrap_or_else(|_| {
+    pub(crate) fn make_reply_for_err<E: crate::error::ServiceError + Serialize>(
+        &self,
+        err: E,
+    ) -> WithStatus<WithHeader<String>> {
+        let status_code: StatusCode = err.status_code().to_http_status_code();
+        let body_json = self.resp_body(&err).unwrap_or_else(|_| {
             tracing::error!("Error: the response serialization failed.");
             "Error: Failed to serialize response.".to_string()
         });
         let reply_with_header = reply::with_header(body_json, CONTENT_TYPE, "application/json");
         reply::with_status(reply_with_header, status_code)
+    }
+
+    pub(crate) fn make_rest_reply<
+        T: serde::Serialize,
+        E: crate::error::ServiceError + Serialize,
+    >(
+        self,
+        result: Result<T, E>,
+    ) -> WithStatus<WithHeader<String>> {
+        match result {
+            Ok(success) => {
+                let body_json_res = self.resp_body(&success);
+                match body_json_res {
+                    Ok(body_json) => {
+                        let reply_with_header =
+                            reply::with_header(body_json, CONTENT_TYPE, "application/json");
+                        reply::with_status(reply_with_header, StatusCode::OK)
+                    }
+                    Err(_) => {
+                        tracing::error!("Error: the response serialization failed.");
+                        self.make_reply_for_err(FormatError {
+                            code: ServiceErrorCode::Internal,
+                            error: JSON_SERIALIZATION_ERROR.to_string(),
+                        })
+                    }
+                }
+            }
+            Err(err) => self.make_reply_for_err(err),
+        }
     }
 }

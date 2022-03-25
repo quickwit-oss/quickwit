@@ -368,8 +368,13 @@ mod tests {
         let universe = Universe::new();
         let (mailbox, handle) = universe
             .spawn_actor(PanickingActor::default())
+<<<<<<< Updated upstream
             .spawn_async();
         universe.send_message(&mailbox, ()).await?;
+=======
+            .spawn_with_forced_runner(runner);
+        mailbox.send_message(Panic).await?;
+>>>>>>> Stashed changes
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Panicked));
         assert!(matches!(count, 1)); //< Upon panick we cannot get a post mortem state.
@@ -390,8 +395,15 @@ mod tests {
     #[tokio::test]
     async fn test_exit_in_async_actor() -> anyhow::Result<()> {
         let universe = Universe::new();
+<<<<<<< Updated upstream
         let (mailbox, handle) = universe.spawn_actor(ExitActor::default()).spawn_async();
         universe.send_message(&mailbox, ()).await?;
+=======
+        let (mailbox, handle) = universe
+            .spawn_actor(ExitActor::default())
+            .spawn_with_forced_runner(runner);
+        mailbox.send_message(Exit).await?;
+>>>>>>> Stashed changes
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::DownstreamClosed));
         assert!(matches!(count, 1)); //< Upon panick we cannot get a post mortem state.

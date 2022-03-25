@@ -20,11 +20,11 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 
+use quickwit_cluster::error::ClusterError;
 use quickwit_cluster::service::ClusterService;
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 
-use crate::error::ApiError;
 use crate::Format;
 
 /// Cluster handler.
@@ -60,12 +60,12 @@ async fn list_members<TClusterService: ClusterService>(
 ) -> Result<impl warp::Reply, Infallible> {
     Ok(request
         .format
-        .make_reply(list_members_endpoint(&*cluster_service).await))
+        .make_rest_reply(list_members_endpoint(&*cluster_service).await))
 }
 
 async fn list_members_endpoint<TClusterService: ClusterService>(
     cluster_service: &TClusterService,
-) -> Result<quickwit_proto::ListMembersResponse, ApiError> {
+) -> Result<quickwit_proto::ListMembersResponse, ClusterError> {
     let list_members_req = quickwit_proto::ListMembersRequest {};
     let list_members_resp = cluster_service.list_members(list_members_req).await?;
     Ok(list_members_resp)

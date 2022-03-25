@@ -20,6 +20,7 @@
 use crate::models::RawDocBatch;
 
 #[derive(Debug)]
+<<<<<<< Updated upstream:quickwit-indexing/src/models/indexer_message.rs
 pub enum IndexerMessage {
     Batch(RawDocBatch),
     CommitTimeout { split_id: String },
@@ -29,4 +30,14 @@ impl From<RawDocBatch> for IndexerMessage {
     fn from(batch: RawDocBatch) -> Self {
         IndexerMessage::Batch(batch)
     }
+=======
+pub struct SpawnPipelinesForIndex {
+    pub index_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SpawnPipeline {
+    pub index_id: String,
+    pub source: SourceConfig,
+>>>>>>> Stashed changes:quickwit-indexing/src/models/indexing_server_message.rs
 }

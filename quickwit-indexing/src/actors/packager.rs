@@ -457,6 +457,7 @@ mod tests {
             &["tag_str", "tag_many", "tag_u64", "tag_i64", "tag_f64"],
         );
         let packager = Packager::new("TestPackager", tag_fields, mailbox);
+<<<<<<< Updated upstream
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(
@@ -465,6 +466,13 @@ mod tests {
                     splits: vec![indexed_split],
                 },
             )
+=======
+        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn();
+        packager_mailbox
+            .send_message(IndexedSplitBatch {
+                splits: vec![indexed_split],
+            })
+>>>>>>> Stashed changes
             .await?;
         assert_eq!(
             packager_handle.process_pending_and_observe().await.obs_type,
@@ -498,6 +506,7 @@ mod tests {
         let indexed_split = make_indexed_split_for_test(&[&[1628203589], &[1628203640]])?;
         let tag_fields = get_tag_fields(indexed_split.index.schema(), &[]);
         let packager = Packager::new("TestPackager", tag_fields, mailbox);
+<<<<<<< Updated upstream
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(
@@ -506,6 +515,13 @@ mod tests {
                     splits: vec![indexed_split],
                 },
             )
+=======
+        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn();
+        packager_mailbox
+            .send_message(IndexedSplitBatch {
+                splits: vec![indexed_split],
+            })
+>>>>>>> Stashed changes
             .await?;
         assert_eq!(
             packager_handle.process_pending_and_observe().await.obs_type,
@@ -525,6 +541,7 @@ mod tests {
         let indexed_split_2 = make_indexed_split_for_test(&[&[1628204589], &[1629203640]])?;
         let tag_fields = get_tag_fields(indexed_split_1.index.schema(), &[]);
         let packager = Packager::new("TestPackager", tag_fields, mailbox);
+<<<<<<< Updated upstream
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(
@@ -533,6 +550,13 @@ mod tests {
                     splits: vec![indexed_split_1, indexed_split_2],
                 },
             )
+=======
+        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn();
+        packager_mailbox
+            .send_message(IndexedSplitBatch {
+                splits: vec![indexed_split_1, indexed_split_2],
+            })
+>>>>>>> Stashed changes
             .await?;
         assert_eq!(
             packager_handle.process_pending_and_observe().await.obs_type,

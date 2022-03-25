@@ -84,6 +84,7 @@ impl Universe {
         )
     }
 
+<<<<<<< Updated upstream
     /// `async` version of `send_message`
     pub async fn send_message<M>(
         &self,
@@ -93,6 +94,8 @@ impl Universe {
         mailbox.send_message(message).await
     }
 
+=======
+>>>>>>> Stashed changes
     /// Inform an actor to process pending message and then stop processing new messages
     /// and exit successfully.
     pub async fn send_exit_with_success<M>(
