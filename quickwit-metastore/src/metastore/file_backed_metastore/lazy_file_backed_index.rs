@@ -39,7 +39,7 @@ pub struct LazyFileBackedIndex {
     index_id: String,
     storage: Arc<dyn Storage>,
     polling_interval_opt: Option<Duration>,
-    index: OnceCell<Arc<Mutex<FileBackedIndex>>>,
+    lazy_index: OnceCell<Arc<Mutex<FileBackedIndex>>>,
 }
 
 impl LazyFileBackedIndex {
@@ -67,13 +67,13 @@ impl LazyFileBackedIndex {
             index_id,
             storage,
             polling_interval_opt,
-            index: OnceCell::new_with(index_mutex_opt),
+            lazy_index: OnceCell::new_with(index_mutex_opt),
         }
     }
 
     /// Get `FileBackedIndex`.
     pub async fn get(&self) -> MetastoreResult<Arc<Mutex<FileBackedIndex>>> {
-        self.index
+        self.lazy_index
             .get_or_try_init(|| {
                 load_file_backed_index(
                     self.storage.clone(),

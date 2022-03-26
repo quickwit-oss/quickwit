@@ -299,12 +299,10 @@ impl Metastore for FileBackedMetastore {
 
         // Set state to Creating` and rollback on metastore error.
         per_index_metastores_wlock.insert(index_id.clone(), IndexState::Creating);
-        put_indexes_states(&*self.storage, &per_index_metastores_wlock)
-            .await
-            .map_err(|error| {
-                per_index_metastores_wlock.remove(&index_id);
-                error
-            })?;
+        if let Err(error) = put_indexes_states(&*self.storage, &per_index_metastores_wlock).await {
+            per_index_metastores_wlock.remove(&index_id);
+            return Err(error);
+        }
 
         // Put index metadata on storage.
         let index = FileBackedIndex::from(index_metadata);
@@ -347,16 +345,14 @@ impl Metastore for FileBackedMetastore {
         let index_state_opt =
             per_index_metastores_wlock.insert(index_id.to_string(), IndexState::Deleting);
         // On a put error, reinsert the previous state if any.
-        put_indexes_states(&*self.storage, &per_index_metastores_wlock)
-            .await
-            .map_err(|error| {
-                if let Some(index_state) = index_state_opt {
-                    per_index_metastores_wlock.insert(index_id.to_string(), index_state);
-                } else {
-                    per_index_metastores_wlock.remove(index_id);
-                }
-                error
-            })?;
+        if let Err(error) = put_indexes_states(&*self.storage, &per_index_metastores_wlock).await {
+            if let Some(index_state) = index_state_opt {
+                per_index_metastores_wlock.insert(index_id.to_string(), index_state);
+            } else {
+                per_index_metastores_wlock.remove(index_id);
+            }
+            return Err(error);
+        }
 
         let delete_res = delete_index(&*self.storage, index_id).await;
 
@@ -366,12 +362,10 @@ impl Metastore for FileBackedMetastore {
             // but it makes sense to ensure that the index state is removed.
             Err(MetastoreError::IndexDoesNotExist { .. }) => {
                 per_index_metastores_wlock.remove(index_id);
-                put_indexes_states(&*self.storage, &per_index_metastores_wlock)
-                    .await
-                    .map_err(|error| {
-                        per_index_metastores_wlock.insert(index_id.to_string(), IndexState::Deleting);
-                        error
-                    })?;
+                if let Err(error) = put_indexes_states(&*self.storage, &per_index_metastores_wlock).await {
+                    per_index_metastores_wlock.insert(index_id.to_string(), IndexState::Deleting);
+                    return Err(error);
+                }
             },
             _ => {}
         }
