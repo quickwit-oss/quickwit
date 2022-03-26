@@ -95,8 +95,10 @@ export class Client {
     // TODO: call the API.
     await new Promise(resolve => setTimeout(resolve, 300));
     const metadata = INDEXES_METADATA.filter(metadata => metadata.index_id === indexId)[0];
+    // @ts-ignore:next-line
     const splits: SplitMetadata[] = INDEXES_SPLITS_METADATA[metadata.index_id];
     return {
+      // @ts-ignore:next-line
       metadata: metadata,
       splits: splits
     }
@@ -108,6 +110,7 @@ export class Client {
     return INDEXES_METADATA;
   }
 
+  // @ts-ignore:next-line
   private defaultGetRequestParams(): RequestInit{
     return {
       method: "GET",
@@ -117,6 +120,7 @@ export class Client {
     }
   }
 
+  // @ts-ignore:next-line
   private buildSearchUrl(request: SearchRequest): URL {
     const url: URL = new URL("search", this.apiRoot());
     url.searchParams.append("query", request.query);

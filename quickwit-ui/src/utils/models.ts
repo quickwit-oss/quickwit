@@ -88,7 +88,7 @@ export function guessTimeUnit(index: Index): TimeUnit {
   }
   // Not possible in theory as guessTimeUnit function is 
   // called only on index with a timestamp field.
-  if (index.splits.length == 0 || index.splits[0] === undefined || index.splits[0].time_range === null) {
+  if (index.splits.length === 0 || index.splits[0] === undefined || index.splits[0].time_range === null) {
     return TimeUnit.MILLI_SECOND;
   }
   let range_start_values = index.splits.map(split => split.time_range === null ? 0 : split.time_range.start);

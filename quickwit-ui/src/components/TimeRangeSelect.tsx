@@ -167,6 +167,7 @@ export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
                   return  <ListItem
                     key={idx}
                     button
+                    // @ts-ignore:next-line
                     onClick={() => handleTimeRangeChoiceClick(+value[1])}
                     >
                     <ListItemText primary={value[0]} />
