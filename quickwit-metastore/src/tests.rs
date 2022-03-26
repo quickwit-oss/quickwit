@@ -1877,7 +1877,7 @@ pub mod test_suite {
             .await
             .unwrap();
 
-        // Get an index metadata
+        // Get list indexes metadata.
         let result = metastore
             .list_indexes_metadatas()
             .await
