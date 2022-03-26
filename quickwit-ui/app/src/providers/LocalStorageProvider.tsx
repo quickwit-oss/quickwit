@@ -1,4 +1,4 @@
-import { createContext, PropsWithChildren, useContext, useEffect, useRef, useState } from "react"
+import { createContext, PropsWithChildren, useContext, useEffect, useState } from "react"
 import { EMPTY_SEARCH_REQUEST, SearchRequest } from "../utils/models"
 
 type Props = {};

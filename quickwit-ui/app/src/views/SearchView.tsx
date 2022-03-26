@@ -83,7 +83,7 @@ function SearchView() {
     quickwitClient.getIndex(searchRequest.indexId).then((fetchedIndex) => {
       setIndex(fetchedIndex);
     });
-  }, [searchRequest, quickwitClient]);
+  }, [searchRequest, quickwitClient, index]);
 
   return (
       <ViewUnderAppBarBox sx={{ flexDirection: 'row'}}>

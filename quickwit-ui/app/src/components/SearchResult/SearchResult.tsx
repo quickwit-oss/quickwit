@@ -20,7 +20,7 @@
 import { Typography } from "@mui/material";
 import { Box } from "@mui/system";
 import NumberFormat from "react-number-format";
-import { Index, IndexMetadata, SearchResponse } from "../../utils/models";
+import { Index, SearchResponse } from "../../utils/models";
 import Loader from "../Loader";
 import { ResultTable } from "./ResultTable";
 

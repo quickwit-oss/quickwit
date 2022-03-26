@@ -21,7 +21,7 @@ import { Autocomplete, Chip, CircularProgress, IconButton, List, ListItem, ListI
 import { Box } from '@mui/system';
 import React, { useEffect, useMemo, useState } from 'react';
 import styled from '@emotion/styled';
-import { EMPTY_INDEX_METADATA, FieldMapping, getAllFields, IndexMetadata } from '../utils/models';
+import { FieldMapping, getAllFields, IndexMetadata } from '../utils/models';
 import { ChevronRight, KeyboardArrowDown } from '@mui/icons-material';
 import { Client } from '../services/client';
 
@@ -60,7 +60,7 @@ function IndexAutocomplete(props: IndexMetadataProps) {
         setOptions([props.indexMetadata]);
       }
     }
-  }, [open]);
+  }, [open, props.indexMetadata, options.length]);
 
   useEffect(() => {
     if (props.indexMetadata !== null) {

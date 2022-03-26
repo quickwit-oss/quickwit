@@ -19,7 +19,6 @@
 
 import AppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
-import Typography from '@mui/material/Typography';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import { IconButton, Link, styled, SvgIcon } from '@mui/material';
 import { Discord } from '@styled-icons/fa-brands/Discord';

@@ -19,6 +19,12 @@
 
 export type RawDoc = Record<string, any>
 
+export enum TimeUnit {
+  MICRO_SECOND,
+  MILLI_SECOND,
+  SECOND,
+}
+
 export type FieldMapping = {
   name: string;
   type: string;
@@ -206,10 +212,4 @@ export type Member = {
 
 export type MemberList = {
   members: Member[];
-}
-
-export enum TimeUnit {
-  MICRO_SECOND,
-  MILLI_SECOND,
-  SECOND,
 }

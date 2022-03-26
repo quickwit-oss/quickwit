@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Box,
   Button,
@@ -33,7 +33,7 @@ import { AccessTime, ChevronRight, DateRange } from "@mui/icons-material";
 import { default as dayjs } from 'dayjs';
 import relativeTime from "dayjs/plugin/relativeTime"
 import { DateTimePicker } from "@mui/lab";
-import { guessTimeUnit, SearchRequest, TimeUnit } from "../utils/models";
+import { guessTimeUnit, TimeUnit } from "../utils/models";
 import { SearchComponentProps } from "../utils/SearchComponentProps";
 import DateAdapter from '@mui/lab/AdapterDayjs';
 import LocalizationProvider from '@mui/lab/LocalizationProvider';
@@ -57,7 +57,7 @@ interface TimeRangeSelectState {
 }
 
 function getDateTimeFormat(timeUnit: TimeUnit): string {
-  if (timeUnit ==  TimeUnit.SECOND) {
+  if (timeUnit === TimeUnit.SECOND) {
     return "YYYY/MM/DD HH:mm:ss";
   }
   return "YYYY/MM/DD HH:mm:ss:SSS";
@@ -92,7 +92,8 @@ function convertToMilliSecond(value: number | null, valueTimeUnit: TimeUnit): nu
 }
 
 export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
-  const initialState = {width: 220, anchor: null, customDatesPanelOpen: false};
+  const getInitialState = () => {return {width: 220, anchor: null, customDatesPanelOpen: false}};
+  const initialState = useMemo(() => {return getInitialState(); }, []);
   const [state, setState] = useState<TimeRangeSelectState>(initialState);
   const timeUnit = props.index === null ? TimeUnit.MILLI_SECOND : guessTimeUnit(props.index);
 
@@ -110,7 +111,7 @@ export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
 
   useEffect(() => {
     setState(initialState);
-  }, [props.queryRunning])
+  }, [props.queryRunning, initialState])
 
   const handleClose = () => {
     setState(initialState);
@@ -205,7 +206,7 @@ function CustomDatesPanel(props: SearchComponentProps): JSX.Element {
     const initEndTimeStamp = convertToMilliSecond(props.searchRequest.endTimestamp, timeUnit);
     setStartDate(initStartTimestamp ? new Date(initStartTimestamp) : null);
     setEndDate(initEndTimeStamp ? new Date(initEndTimeStamp) : null);
-  }, [props.searchRequest]);
+  }, [props.searchRequest, timeUnit]);
   const handleReset = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     setStartDate(null);
@@ -280,7 +281,7 @@ function DateTimeRangeLabel(props: DateTimeRangeLabelProps): JSX.Element {
   useEffect(() => {
     setStartTimestamp(convertToMilliSecond(props.startTimestamp, props.timeUnit));
     setEndTimestamp(convertToMilliSecond(props.endTimestamp, props.timeUnit));
-  }, [props.startTimestamp, props.endTimestamp])
+  }, [props.startTimestamp, props.endTimestamp, props.timeUnit])
 
   function Label() {
     if (startTimestamp !== null && endTimestamp !== null) {

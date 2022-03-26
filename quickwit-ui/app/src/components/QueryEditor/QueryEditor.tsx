@@ -22,8 +22,7 @@ import { useEffect, useRef } from 'react';
 import Editor, { useMonaco } from "@monaco-editor/react";
 import { LANGUAGE_CONFIG, LanguageFeatures, createIndexCompletionProvider } from './config';
 import { SearchComponentProps } from '../../utils/SearchComponentProps';
-import { getAllFields } from '../../utils/models';
-import { EDITOR_THEME, QUICKWIT_BLUE, QUICKWIT_LIGHT_GREY } from '../../utils/theme';
+import { EDITOR_THEME } from '../../utils/theme';
 
 export function QueryEditor(props: SearchComponentProps) {
   const monaco = useMonaco();

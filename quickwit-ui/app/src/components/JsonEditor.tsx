@@ -40,7 +40,7 @@ export function JsonEditor({content, resizeOnMount}: {content: any, resizeOnMoun
 
     editorElement.style.height = `${height}px`;
     editor.layout();
-  }, []);
+  }, [resizeOnMount]);
 
   function beforeMount(monaco: any) {
     monaco.editor.defineTheme('quickwit-light', EDITOR_THEME);
