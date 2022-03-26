@@ -76,7 +76,7 @@ function IndexAutocomplete(props: IndexMetadataProps) {
       sx={{ width: 210 }}
       open={open}
       value={value}
-      onChange={(event, updatedValue) => {
+      onChange={(_, updatedValue) => {
         if (updatedValue === null) {
           setValue(null);
         } else {
@@ -123,7 +123,12 @@ export interface IndexMetadataProps {
 }
 
 function fieldTypeLabel(fieldMapping: FieldMapping): string {
-  return fieldMapping.type[0].toUpperCase()
+  if (fieldMapping.type[0] !== undefined) {
+    return fieldMapping.type[0].toUpperCase();
+    
+  } else {
+    return "";
+  }
 }
 
 export function IndexSideBar(props: IndexMetadataProps) {

@@ -47,7 +47,7 @@ function IndexView() {
   const [index, setIndex] = useState<Index>()
   const quickwitClient = useMemo(() => new Client(), []);
 
-  const handleTabIndexChange = (event: React.SyntheticEvent, newValue: string) => {
+  const handleTabIndexChange = (_: React.SyntheticEvent, newValue: string) => {
     setTabIndex(newValue);
   };
 

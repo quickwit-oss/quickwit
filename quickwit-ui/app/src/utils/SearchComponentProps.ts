@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { Index, IndexMetadata, SearchRequest } from "./models";
+import { Index, SearchRequest } from "./models";
 
 export interface SearchComponentProps {
   searchRequest: SearchRequest;
