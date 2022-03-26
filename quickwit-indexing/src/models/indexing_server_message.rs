@@ -46,11 +46,11 @@ pub struct SpawnMergePipeline {
 }
 
 #[derive(Debug)]
-pub struct SpawnPipelines {
+pub struct SpawnPipelinesForIndex {
     pub index_id: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SpawnPipeline {
     pub index_id: String,
     pub source: SourceConfig,

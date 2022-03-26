@@ -17,56 +17,91 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_cluster::error::ClusterError;
-use quickwit_search::SearchError;
-use serde::ser::SerializeMap;
-use thiserror::Error;
-use warp::http;
-use warp::hyper::StatusCode;
+use std::error::Error;
 
-#[derive(Debug, Error)]
-pub enum ApiError {
-    #[error("InvalidArgument: {0}.")]
-    InvalidArgument(String),
-    // TODO rely on some an error serialization in the message
-    // to rebuild a structured SearchError, (the tonic Code is pretty useless)
-    // and build a meaningful ApiError instead of this
-    // silly wrapping.
-    #[error("Search error. {0}")]
-    SearchError(#[from] SearchError),
-    #[error("Cluster error. {0}.")]
-    ClusterError(#[from] ClusterError),
-    #[error("Route not found")]
+use quickwit_actors::AskError;
+use quickwit_cluster::error::ClusterError;
+use quickwit_proto::tonic;
+use quickwit_search::SearchError;
+use warp::http;
+
+/// This enum serves as a Rosetta stone of
+/// gRPC and Http status code.
+///
+/// It is voluntarily a restricted subset.
+#[derive(Clone, Copy)]
+pub enum ServiceErrorCode {
     NotFound,
+    Internal,
+    BadRequest,
+    PermissionDenied,
 }
 
-impl ApiError {
-    pub fn http_status_code(&self) -> http::StatusCode {
-        match &self {
-            ApiError::SearchError(search_error) => match search_error {
-                SearchError::IndexDoesNotExist { .. } => http::StatusCode::NOT_FOUND,
-                SearchError::InternalError(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
-                SearchError::StorageResolverError(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
-                SearchError::InvalidQuery(_) => http::StatusCode::BAD_REQUEST,
-            },
-            ApiError::ClusterError(_cluster_error) => http::StatusCode::INTERNAL_SERVER_ERROR,
-            ApiError::InvalidArgument(_err) => StatusCode::BAD_REQUEST,
-            ApiError::NotFound => http::StatusCode::NOT_FOUND,
+impl ServiceErrorCode {
+    pub(crate) fn to_grpc_status_code(self) -> tonic::Code {
+        match self {
+            ServiceErrorCode::NotFound => tonic::Code::NotFound,
+            ServiceErrorCode::Internal => tonic::Code::Internal,
+            ServiceErrorCode::BadRequest => tonic::Code::InvalidArgument,
+            ServiceErrorCode::PermissionDenied => tonic::Code::PermissionDenied,
         }
     }
-
-    pub fn message(&self) -> String {
-        self.to_string()
+    pub(crate) fn to_http_status_code(self) -> http::StatusCode {
+        match self {
+            ServiceErrorCode::NotFound => http::StatusCode::NOT_FOUND,
+            ServiceErrorCode::Internal => http::StatusCode::INTERNAL_SERVER_ERROR,
+            ServiceErrorCode::BadRequest => http::StatusCode::BAD_REQUEST,
+            ServiceErrorCode::PermissionDenied => http::StatusCode::FORBIDDEN,
+        }
     }
 }
 
-// TODO implement nicer serialization of errors.
-impl serde::Serialize for ApiError {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer {
-        let mut map = serializer.serialize_map(Some(2))?;
-        map.serialize_key("error")?;
-        map.serialize_value(&self.message())?;
-        map.end()
+impl ServiceError for SearchError {
+    fn status_code(&self) -> ServiceErrorCode {
+        match self {
+            SearchError::IndexDoesNotExist { .. } => ServiceErrorCode::NotFound,
+            SearchError::InternalError(_) => ServiceErrorCode::Internal,
+            SearchError::StorageResolverError(_) => ServiceErrorCode::BadRequest,
+            SearchError::InvalidQuery(_) => ServiceErrorCode::BadRequest,
+        }
     }
+}
+
+impl ServiceError for ClusterError {
+    fn status_code(&self) -> ServiceErrorCode {
+        match self {
+            ClusterError::CreateClusterError { .. } => ServiceErrorCode::Internal,
+            ClusterError::UDPPortBindingError { .. } => ServiceErrorCode::PermissionDenied,
+            ClusterError::ReadHostIdError { .. } => ServiceErrorCode::Internal,
+            ClusterError::WriteHostIdError { .. } => ServiceErrorCode::Internal,
+            ClusterError::ClusterStateError { .. } => ServiceErrorCode::Internal,
+        }
+    }
+}
+
+impl<E: Error + ServiceError> ServiceError for AskError<E> {
+    fn status_code(&self) -> ServiceErrorCode {
+        match self {
+            AskError::MessageNotDelivered => ServiceErrorCode::Internal,
+            AskError::ProcessMessageError => ServiceErrorCode::Internal,
+            AskError::ErrorReply(err) => err.status_code(),
+        }
+    }
+}
+
+pub(crate) trait ServiceError: ToString {
+    fn grpc_error(&self) -> tonic::Status {
+        let grpc_code = self.status_code().to_grpc_status_code();
+        let error_msg = self.to_string();
+        tonic::Status::new(grpc_code, error_msg)
+    }
+
+    fn status_code(&self) -> ServiceErrorCode;
+}
+
+pub(crate) fn convert_to_grpc_result<T, E: ServiceError>(
+    res: Result<T, E>,
+) -> Result<tonic::Response<T>, tonic::Status> {
+    res.map(|outcome| tonic::Response::new(outcome))
+        .map_err(|err| err.grpc_error())
 }

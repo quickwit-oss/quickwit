@@ -270,13 +270,13 @@ mod tests {
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
         let (split_future_tx1, split_future_rx1) = oneshot::channel::<PublisherMessage>();
-        assert!(universe
-            .send_message(&publisher_mailbox, split_future_rx1)
+        assert!(publisher_mailbox
+            .send_message(split_future_rx1)
             .await
             .is_ok());
         let (split_future_tx2, split_future_rx2) = oneshot::channel::<PublisherMessage>();
-        assert!(universe
-            .send_message(&publisher_mailbox, split_future_rx2)
+        assert!(publisher_mailbox
+            .send_message(split_future_rx2)
             .await
             .is_ok());
         // note the future is resolved in the inverse of the expected order.
@@ -335,8 +335,8 @@ mod tests {
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
         let (split_future_tx, split_future_rx) = oneshot::channel::<PublisherMessage>();
-        assert!(universe
-            .send_message(&publisher_mailbox, split_future_rx)
+        assert!(publisher_mailbox
+            .send_message(split_future_rx)
             .await
             .is_ok());
         assert!(split_future_tx

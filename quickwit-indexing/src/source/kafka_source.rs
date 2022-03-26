@@ -770,7 +770,7 @@ mod kafka_broker_tests {
         format!("Message #{}", id)
     }
 
-    fn merge_messages(batches: Vec<RawDocBatch>) -> anyhow::Result<RawDocBatch> {
+    fn merge_doc_batches(batches: Vec<RawDocBatch>) -> anyhow::Result<RawDocBatch> {
         let mut merged_batch = RawDocBatch::default();
         for batch in batches {
             merged_batch.docs.extend(batch.docs);
@@ -870,10 +870,15 @@ mod kafka_broker_tests {
             let (exit_status, state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages = inbox.drain_for_test();
+            let messages: Vec<RawDocBatch> = inbox
+                .drain_for_test()
+                .into_iter()
+                .flat_map(|box_any| box_any.downcast::<RawDocBatch>().ok())
+                .map(|box_raw_doc_batch| *box_raw_doc_batch)
+                .collect();
             assert!(messages.len() >= 1);
 
-            let batch = merge_messages(messages)?;
+            let batch = merge_doc_batches(messages)?;
             let expected_docs = vec![
                 "Message #000",
                 "Message #002",
@@ -924,10 +929,15 @@ mod kafka_broker_tests {
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages = inbox.drain_for_test();
+            let messages: Vec<RawDocBatch> = inbox
+                .drain_for_test()
+                .into_iter()
+                .flat_map(|box_message| box_message.downcast::<RawDocBatch>())
+                .map(|box_raw_batch| *box_raw_batch)
+                .collect();
             assert!(messages.len() >= 1);
 
-            let batch = merge_messages(messages)?;
+            let batch = merge_doc_batches(messages)?;
             let expected_docs = vec!["Message #002", "Message #200", "Message #202"];
             assert_eq!(batch.docs, expected_docs);
 

@@ -27,7 +27,8 @@ use tracing::info;
 use warp::{Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
-use crate::error::ApiError;
+use crate::error::ServiceErrorCode;
+use crate::format::FormatError;
 use crate::health_check_api::liveness_check_handler;
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
 use crate::Format;
@@ -62,13 +63,15 @@ pub async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
     // TODO handle more errors.
     match rejection.find::<serde_qs::Error>() {
         Some(err) => {
-            // The querystring was incorrect.
-            Ok(
-                Format::PrettyJson.make_reply(Err::<(), ApiError>(ApiError::InvalidArgument(
-                    err.to_string(),
-                ))),
-            )
+            let err_msg = err.to_string();
+            Ok(Format::PrettyJson.make_reply_for_err(FormatError {
+                code: ServiceErrorCode::BadRequest,
+                error: err_msg,
+            }))
         }
-        None => Ok(Format::PrettyJson.make_reply(Err::<(), ApiError>(ApiError::NotFound))),
+        None => Ok(Format::PrettyJson.make_reply_for_err(FormatError {
+            code: ServiceErrorCode::NotFound,
+            error: "Route not found".to_string(),
+        })),
     }
 }

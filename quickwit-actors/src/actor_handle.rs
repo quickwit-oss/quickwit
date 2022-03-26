@@ -355,7 +355,7 @@ mod tests {
         let (mailbox, handle) = universe
             .spawn_actor(PanickingActor::default())
             .spawn_with_forced_runner(runner);
-        universe.send_message(&mailbox, Panic).await?;
+        mailbox.send_message(Panic).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Panicked));
         assert!(matches!(count, 1)); //< Upon panick we cannot get a post mortem state.
@@ -380,7 +380,7 @@ mod tests {
         let (mailbox, handle) = universe
             .spawn_actor(ExitActor::default())
             .spawn_with_forced_runner(runner);
-        universe.send_message(&mailbox, Exit).await?;
+        mailbox.send_message(Exit).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::DownstreamClosed));
         assert!(matches!(count, 1)); //< Upon panick we cannot get a post mortem state.

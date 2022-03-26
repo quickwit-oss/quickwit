@@ -21,12 +21,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::bail;
+use quickwit_actors::Universe;
 use quickwit_config::{IndexerConfig, SourceConfig};
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
 
 use crate::actors::{IndexingPipeline, IndexingPipelineParams, IndexingServer};
-use crate::models::IndexingStatistics;
+use crate::models::{DetachPipeline, IndexingStatistics, SpawnPipeline};
 pub use crate::split_store::{
     get_tantivy_directory_from_split_bundle, IndexingSplitStore, IndexingSplitStoreParams,
     SplitFolder,
@@ -55,9 +56,17 @@ pub async fn index_data(
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
 ) -> anyhow::Result<IndexingStatistics> {
-    let client = IndexingServer::spawn(data_dir_path, indexer_config, metastore, storage_resolver);
-    let pipeline_id = client.spawn_pipeline(index_id, source).await?;
-    let pipeline_handle = client.detach_pipeline(&pipeline_id).await?;
+    let universe = Universe::new();
+    let indexing_server =
+        IndexingServer::new(data_dir_path, indexer_config, metastore, storage_resolver);
+    let (indexing_server_mailbox, _indexing_server_handle) =
+        universe.spawn_actor(indexing_server).spawn();
+    let pipeline_id = indexing_server_mailbox
+        .ask_for_res(SpawnPipeline { index_id, source })
+        .await?;
+    let pipeline_handle = indexing_server_mailbox
+        .ask_for_res(DetachPipeline { pipeline_id })
+        .await?;
     let (exit_status, statistics) = pipeline_handle.join().await;
     if !exit_status.is_success() {
         bail!(exit_status);

@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_proto::tonic;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -60,20 +59,6 @@ pub enum ClusterError {
         /// Underlying error message.
         message: String,
     },
-}
-
-impl From<ClusterError> for tonic::Status {
-    fn from(error: ClusterError) -> tonic::Status {
-        let code = match error {
-            ClusterError::CreateClusterError { .. } => tonic::Code::Internal,
-            ClusterError::UDPPortBindingError { .. } => tonic::Code::PermissionDenied,
-            ClusterError::ReadHostIdError { .. } => tonic::Code::Internal,
-            ClusterError::WriteHostIdError { .. } => tonic::Code::Internal,
-            ClusterError::ClusterStateError { .. } => tonic::Code::Internal,
-        };
-        let message = error.to_string();
-        tonic::Status::new(code, message)
-    }
 }
 
 /// Generic Result type for cluster operations.

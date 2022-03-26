@@ -458,19 +458,16 @@ mod tests {
         );
         let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
-        universe
-            .send_message(
-                &indexer_mailbox,
-                RawDocBatch {
-                    docs: vec![
+        indexer_mailbox
+            .send_message(RawDocBatch {
+                docs: vec![
                         r#"{"body": "happy", "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string(), // missing timestamp
                         r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#.to_string(), // ok
                         r#"{"body": "happy2", "timestamp": 1628837062, "response_date": "2021-12-19T16:40:57+00:00", "response_time": 13, "response_payload": "YWJj"}"#.to_string(), // ok
                         "{".to_string(),                    // invalid json
                     ],
-                    checkpoint_delta: CheckpointDelta::from(0..4),
-                },
-            )
+                checkpoint_delta: CheckpointDelta::from(0..4),
+            })
             .await?;
         let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
         assert_eq!(
@@ -484,9 +481,8 @@ mod tests {
                 overall_num_bytes: 387
             }
         );
-        universe
+        indexer_mailbox
             .send_message(
-                &indexer_mailbox,
                 RawDocBatch {
                     docs: vec![r#"{"body": "happy3", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
                     checkpoint_delta: CheckpointDelta::from(4..5),
@@ -534,9 +530,8 @@ mod tests {
         );
         let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
-        universe
+        indexer_mailbox
             .send_message(
-                &indexer_mailbox,
                 RawDocBatch {
                     docs: vec![r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
                     checkpoint_delta: CheckpointDelta::from(0..1),
@@ -593,9 +588,8 @@ mod tests {
         );
         let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
-        universe
+        indexer_mailbox
             .send_message(
-                &indexer_mailbox,
                 RawDocBatch {
                     docs: vec![r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
                     checkpoint_delta: CheckpointDelta::from(0..1),

@@ -40,19 +40,6 @@ pub enum SearchError {
     InvalidQuery(String),
 }
 
-impl From<SearchError> for tonic::Status {
-    fn from(error: SearchError) -> tonic::Status {
-        let code = match error {
-            SearchError::IndexDoesNotExist { .. } => tonic::Code::NotFound,
-            SearchError::InternalError(_) => tonic::Code::Internal,
-            SearchError::StorageResolverError(_) => tonic::Code::Internal,
-            SearchError::InvalidQuery(_) => tonic::Code::InvalidArgument,
-        };
-        let message = error.to_string();
-        tonic::Status::new(code, message)
-    }
-}
-
 /// Parse tonic error and returns `SearchError`.
 pub fn parse_grpc_error(grpc_error: &tonic::Status) -> SearchError {
     serde_json::from_str(grpc_error.message())
