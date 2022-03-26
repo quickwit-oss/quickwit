@@ -85,6 +85,7 @@ async fn test_cmd_create() -> Result<()> {
     create_logs_index(&test_env);
     let index_metadata = test_env
         .metastore()
+        .await?
         .index_metadata(&test_env.index_id)
         .await
         .unwrap();
@@ -105,6 +106,7 @@ async fn test_cmd_create() -> Result<()> {
     .success();
     let index_metadata = test_env
         .metastore()
+        .await?
         .index_metadata(&test_env.index_id)
         .await
         .unwrap();
@@ -437,6 +439,7 @@ async fn test_cmd_delete() -> Result<()> {
     .success();
     assert!(test_env
         .metastore()
+        .await?
         .index_metadata(&test_env.index_id)
         .await
         .is_err(),);
@@ -558,7 +561,7 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
     create_logs_index(&test_env);
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
-    let metastore = test_env.metastore();
+    let metastore = test_env.metastore().await?;
     let splits = metastore.list_all_splits(&test_env.index_id).await?;
     assert_eq!(splits.len(), 1);
     make_command(
@@ -808,6 +811,7 @@ async fn test_cmd_all_with_s3_localstack_cli() -> Result<()> {
 
     test_env
         .metastore()
+        .await?
         .index_metadata(&test_env.index_id)
         .await
         .unwrap();
@@ -893,6 +897,7 @@ async fn test_cmd_all_with_s3_localstack_internal_api() -> Result<()> {
     create_index_cli(args).await?;
     let index_metadata = test_env
         .metastore()
+        .await?
         .index_metadata(&test_env.index_id)
         .await;
     assert_eq!(index_metadata.is_ok(), true);

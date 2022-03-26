@@ -28,7 +28,7 @@ use assert_cmd::Command;
 use predicates::str;
 use quickwit_common::net::find_available_port;
 use quickwit_common::uri::Uri;
-use quickwit_metastore::FileBackedMetastore;
+use quickwit_metastore::{FileBackedMetastore, MetastoreResult};
 use quickwit_storage::{LocalFileStorage, S3CompatibleObjectStorage, Storage};
 use tempfile::{tempdir, TempDir};
 
@@ -144,8 +144,8 @@ pub struct TestEnv {
 
 impl TestEnv {
     // For cache reason, it's safer to always create an instance and then make your assertions.
-    pub fn metastore(&self) -> FileBackedMetastore {
-        FileBackedMetastore::new(self.storage.clone())
+    pub async fn metastore(&self) -> MetastoreResult<FileBackedMetastore> {
+        FileBackedMetastore::try_new(self.storage.clone(), None).await
     }
 }
 

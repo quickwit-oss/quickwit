@@ -72,9 +72,13 @@ pub trait Metastore: Send + Sync + 'static {
     }
 
     /// Creates an index.
-    /// This API creates  in the metastore.
+    /// This API creates index in the metastore.
     /// An error will occur if an index that already exists in the storage is specified.
     async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()>;
+
+    /// List indexes.
+    /// This API returns the list of [`Index`] stored in the metastore.
+    async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>>;
 
     /// Returns the index_metadata for a given index.
     ///
