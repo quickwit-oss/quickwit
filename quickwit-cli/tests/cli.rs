@@ -30,13 +30,13 @@ use predicates::prelude::*;
 use quickwit_cli::index::{create_index_cli, search_index, CreateIndexArgs, SearchIndexArgs};
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
-use quickwit_indexing::actors::INDEXING;
-use quickwit_indexing::models::CACHE;
+use quickwit_core::get_cache_path;
 use quickwit_indexing::source::INGEST_SOURCE_ID;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore};
 use serde_json::{json, Number, Value};
 use serial_test::serial;
 use tokio::time::{sleep, Duration};
+use std::fs;
 
 use crate::helpers::{create_test_env, make_command, spawn_command};
 
@@ -65,26 +65,16 @@ fn ingest_docs_with_options(input_path: &Path, test_env: &TestEnv, options: &str
         .as_str(),
     )
     .assert()
-    .success();
-}
-
-fn ingest_docs(input_path: &Path, test_env: &TestEnv) {
-    make_command(
-        format!(
-            "index ingest --index {} --input-path {} --config {}",
-            test_env.index_id,
-            input_path.display(),
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
     .success()
     .stdout(predicate::str::contains("Indexed"))
     .stdout(predicate::str::contains("documents in"))
     .stdout(predicate::str::contains(
         "Now, you can query the index with",
     ));
+}
+
+fn ingest_docs(input_path: &Path, test_env: &TestEnv) {
+    ingest_docs_with_options(input_path, test_env, "");
 }
 
 #[test]
@@ -215,12 +205,9 @@ fn test_cmd_ingest_clean_cache() -> Result<()> {
         "--clean_cache",
     );
     //
-    let cache_path = test_env
-        .data_dir_path
-        .join(INDEXING)
-        .join(INGEST_SOURCE_ID)
-        .join(test_env.index_id)
-        .join(CACHE);
+    let cache_path = get_cache_path(&test_env.data_dir_path, 
+                                    test_env.index_id, 
+                                    INGEST_SOURCE_ID.to_string());
     assert_eq!(false, cache_path.exists());
 
     Ok(())
@@ -229,17 +216,15 @@ fn test_cmd_ingest_clean_cache() -> Result<()> {
 #[test]
 fn test_cmd_ingest_simple() -> Result<()> {
     let index_id = append_random_suffix("test-index-simple");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem)?;
     create_logs_index(&test_env);
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
+
     // cache path still exists
-    let cache_path = test_env
-        .data_dir_path
-        .join(INDEXING)
-        .join(INGEST_SOURCE_ID)
-        .join(test_env.index_id.clone())
-        .join(CACHE);
+    let cache_path = get_cache_path(&test_env.data_dir_path, 
+                                    test_env.index_id.clone(), 
+                                    INGEST_SOURCE_ID.to_string());
     assert_eq!(true, cache_path.exists());
 
     // Using piped input
