@@ -120,11 +120,11 @@ pub async fn delete_index(
 
 /// Helper function to get the cache path.
 pub fn get_cache_path(data_dir_path: &Path,
-                        index_id: String,
-                        source_id: String,) -> PathBuf {
+                        index_id: &str,
+                        source_id: &str,) -> PathBuf {
     return data_dir_path.join(INDEXING)
-                        .join(source_id)
                         .join(index_id)
+                        .join(source_id)
                         .join(CACHE);
 }
 
@@ -139,7 +139,7 @@ pub async fn clean_split_cache(
     index_id: String,
     source_id: String,
 ) -> anyhow::Result<()> {
-    let cache_path = get_cache_path(data_dir_path, index_id, source_id);
+    let cache_path = get_cache_path(data_dir_path, &index_id, &source_id);
     info!(cache_path = %cache_path.as_path().display(), "cache_path");
     fs::remove_dir_all(cache_path.as_path()).await?;
     Ok(())
