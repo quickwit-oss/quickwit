@@ -109,7 +109,7 @@ pub struct LocalSplitStore {
     /// SplitId -> (Split Num Bytes, BundledSplitFile)
     split_files: HashMap<String, (usize, SplitFolder)>,
     /// The root folder where all data is moved into.
-    split_store_folder: PathBuf,
+    pub split_store_folder: PathBuf,
 }
 
 impl LocalSplitStore {

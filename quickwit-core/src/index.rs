@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -118,6 +118,16 @@ pub async fn delete_index(
     Ok(deleted_entries)
 }
 
+/// Helper function to get the cache path.
+pub fn get_cache_path(data_dir_path: &Path,
+                        index_id: String,
+                        source_id: String,) -> PathBuf {
+    return data_dir_path.join(INDEXING)
+                        .join(source_id)
+                        .join(index_id)
+                        .join(CACHE);
+}
+
 /// Cleans up split cache in local split store.
 ///
 /// * `data_dir_path` - Path to directory where data (tmp data, splits kept for caching purpose) is
@@ -129,12 +139,7 @@ pub async fn clean_split_cache(
     index_id: String,
     source_id: String,
 ) -> anyhow::Result<()> {
-    let cache_path = data_dir_path
-        .join(INDEXING)
-        .join(source_id)
-        .join(index_id)
-        .join(CACHE);
-
+    let cache_path = get_cache_path(data_dir_path, index_id, source_id);
     info!(cache_path = %cache_path.as_path().display(), "cache_path");
     fs::remove_dir_all(cache_path.as_path()).await?;
     Ok(())

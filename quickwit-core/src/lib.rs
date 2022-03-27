@@ -29,7 +29,7 @@
 mod index;
 
 pub use index::{
-    clean_split_cache, create_index, delete_index, garbage_collect_index, reset_index,
+    get_cache_path, clean_split_cache, create_index, delete_index, garbage_collect_index, reset_index,
 };
 
 #[cfg(test)]

@@ -169,9 +169,12 @@ impl IndexingSplitStore {
                     .move_into_cache(split.split_id(), tantivy_dir, split_num_bytes as usize)
                     .await?
                 {
+                    info!(split_store_folder = %split_store_lock.split_store_folder.as_path().display(),
+                            "split-store-folder" );
                     return Ok(());
                 }
             }
+
         }
 
         tokio::fs::remove_dir_all(split_folder).await?;
