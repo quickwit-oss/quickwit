@@ -70,15 +70,6 @@ fn ingest_docs_with_options(input_path: &Path, test_env: &TestEnv, options: &str
     .stdout(predicate::str::contains(
         "Now, you can query the index with",
     ));
-    // check cache path
-    let cache_path = get_cache_path(&test_env.data_dir_path, 
-                                    &test_env.index_id, 
-                                    INGEST_SOURCE_ID);
-    if options == "--clean_cache" {
-        assert_eq!(false, cache_path.exists());
-    } else {
-        assert_eq!(true, cache_path.exists());
-    }
 }
 
 fn ingest_docs(input_path: &Path, test_env: &TestEnv) {
@@ -213,19 +204,34 @@ fn test_cmd_ingest_clean_cache() -> Result<()> {
         "--clean_cache",
     );
 
+    // check cache path
+    let cache_path = get_cache_path(
+        &test_env.data_dir_path,
+        &test_env.index_id,
+        INGEST_SOURCE_ID,
+    );
+    assert_eq!(false, cache_path.exists());
+
     Ok(())
 }
 
 #[test]
 fn test_cmd_ingest_simple() -> Result<()> {
     let index_id = append_random_suffix("test-index-simple");
-    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let log_path = test_env.resource_files["logs"].clone();
     create_logs_index(&test_env);
-
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
+    // check cache path
+    let cache_path = get_cache_path(
+        &test_env.data_dir_path,
+        &test_env.index_id,
+        INGEST_SOURCE_ID,
+    );
+    assert_eq!(true, cache_path.exists());
+
     // Using piped input
-    let log_path = test_env.resource_files["logs"].clone();
     make_command(
         format!(
             "index ingest --index {} --config {}",

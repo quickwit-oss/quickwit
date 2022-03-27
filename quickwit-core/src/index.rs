@@ -119,13 +119,12 @@ pub async fn delete_index(
 }
 
 /// Helper function to get the cache path.
-pub fn get_cache_path(data_dir_path: &Path,
-                        index_id: &str,
-                        source_id: &str,) -> PathBuf {
-    return data_dir_path.join(INDEXING)
-                        .join(index_id)
-                        .join(source_id)
-                        .join(CACHE);
+pub fn get_cache_path(data_dir_path: &Path, index_id: &str, source_id: &str) -> PathBuf {
+    data_dir_path
+        .join(INDEXING)
+        .join(index_id)
+        .join(source_id)
+        .join(CACHE)
 }
 
 /// Cleans up split cache in local split store.
