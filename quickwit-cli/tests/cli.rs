@@ -30,6 +30,8 @@ use predicates::prelude::*;
 use quickwit_cli::index::{create_index_cli, search_index, CreateIndexArgs, SearchIndexArgs};
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
+use quickwit_core::get_cache_path;
+use quickwit_indexing::source::INGEST_SOURCE_ID;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore};
 use serde_json::{json, Number, Value};
 use serial_test::serial;
@@ -50,13 +52,14 @@ fn create_logs_index(test_env: &TestEnv) {
     .success();
 }
 
-fn ingest_docs(input_path: &Path, test_env: &TestEnv) {
+fn ingest_docs_with_options(input_path: &Path, test_env: &TestEnv, options: &str) {
     make_command(
         format!(
-            "index ingest --index {} --input-path {} --config {}",
+            "index ingest --index {} --input-path {} --config {} {}",
             test_env.index_id,
             input_path.display(),
             test_env.resource_files["config"].display(),
+            options
         )
         .as_str(),
     )
@@ -67,6 +70,10 @@ fn ingest_docs(input_path: &Path, test_env: &TestEnv) {
     .stdout(predicate::str::contains(
         "Now, you can query the index with",
     ));
+}
+
+fn ingest_docs(input_path: &Path, test_env: &TestEnv) {
+    ingest_docs_with_options(input_path, test_env, "");
 }
 
 #[test]
@@ -188,12 +195,42 @@ fn test_cmd_ingest_on_non_existing_file() -> Result<()> {
 }
 
 #[test]
+fn test_cmd_ingest_clean_cache() -> Result<()> {
+    let index_id = append_random_suffix("test-index-clean-cache");
+    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    create_logs_index(&test_env);
+
+    ingest_docs_with_options(
+        test_env.resource_files["logs"].as_path(),
+        &test_env,
+        "--clean_cache",
+    );
+
+    // check cache path
+    let cache_path = get_cache_path(
+        &test_env.data_dir_path,
+        &test_env.index_id,
+        INGEST_SOURCE_ID,
+    );
+    assert_eq!(false, cache_path.exists());
+
+    Ok(())
+}
+
+#[test]
 fn test_cmd_ingest_simple() -> Result<()> {
     let index_id = append_random_suffix("test-index-simple");
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
     create_logs_index(&test_env);
-
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
+
+    // check cache path
+    let cache_path = get_cache_path(
+        &test_env.data_dir_path,
+        &test_env.index_id,
+        INGEST_SOURCE_ID,
+    );
+    assert_eq!(true, cache_path.exists());
 
     // Using piped input
     let log_path = test_env.resource_files["logs"].clone();

@@ -29,7 +29,7 @@ mod raw_doc_batch;
 mod scratch_directory;
 
 pub use indexed_split::{IndexedSplit, IndexedSplitBatch};
-pub use indexing_directory::IndexingDirectory;
+pub use indexing_directory::{IndexingDirectory, CACHE};
 pub use indexing_server_message::{
     DetachPipeline, IndexingPipelineId, ObservePipeline, SpawnMergePipeline, SpawnPipeline,
     SpawnPipelinesForIndex,

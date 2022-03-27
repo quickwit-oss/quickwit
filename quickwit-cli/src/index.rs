@@ -33,7 +33,9 @@ use quickwit_actors::{ActorHandle, ObservationType, Universe};
 use quickwit_common::uri::Uri;
 use quickwit_common::{run_checklist, GREEN_COLOR};
 use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig, SourceParams};
-use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
+use quickwit_core::{
+    clean_split_cache, create_index, delete_index, garbage_collect_index, reset_index,
+};
 use quickwit_doc_mapper::tag_pruning::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingServer};
 use quickwit_indexing::models::{
@@ -81,6 +83,8 @@ pub fn build_index_command<'a>() -> Command<'a> {
                     arg!(--"input-path" <INPUT_PATH> "Location of the input file.")
                         .required(false),
                     arg!(--overwrite "Overwrites pre-existing index.")
+                        .required(false),
+                    arg!(--clean_cache "Clean up local cache splits after indexing.")
                         .required(false),
                 ])
             )
@@ -198,6 +202,7 @@ pub struct IngestDocsArgs {
     pub config_uri: Uri,
     pub data_dir: Option<PathBuf>,
     pub overwrite: bool,
+    pub clean_cache: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -330,6 +335,7 @@ impl IndexCliCommand {
             .expect("`config` is a required arg.")?;
         let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         let overwrite = matches.is_present("overwrite");
+        let clean_cache = matches.is_present("clean_cache");
 
         Ok(Self::Ingest(IngestDocsArgs {
             index_id,
@@ -337,6 +343,7 @@ impl IndexCliCommand {
             overwrite,
             config_uri,
             data_dir,
+            clean_cache,
         }))
     }
 
@@ -782,7 +789,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     };
     let universe = Universe::new();
     let indexing_server = IndexingServer::new(
-        config.data_dir_path,
+        config.clone().data_dir_path,
         indexer_config,
         metastore,
         storage_resolver,
@@ -818,6 +825,17 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
             args.index_id
         );
     }
+
+    if args.clean_cache {
+        println!("Cleaning up split cache ...");
+        clean_split_cache(
+            &config.data_dir_path,
+            index_metadata.index_id.clone(),
+            INGEST_SOURCE_ID.to_string(),
+        )
+        .await?;
+    }
+
     Ok(())
 }
 

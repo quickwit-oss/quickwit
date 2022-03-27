@@ -38,6 +38,8 @@ use crate::models::{
 };
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingStatistics};
 
+pub const INDEXING: &str = "indexing";
+
 #[derive(Error, Debug)]
 pub enum IndexingServerError {
     #[error("Indexing pipeline `{index_id}` for source `{source_id}` does not exist.")]
@@ -82,7 +84,7 @@ impl IndexingServer {
         storage_resolver: StorageUriResolver,
     ) -> IndexingServer {
         Self {
-            indexing_dir_path: data_dir_path.join("indexing"),
+            indexing_dir_path: data_dir_path.join(INDEXING),
             split_store_max_num_bytes: indexer_config.split_store_max_num_bytes.get_bytes()
                 as usize,
             split_store_max_num_splits: indexer_config.split_store_max_num_splits,
