@@ -36,7 +36,6 @@ use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore};
 use serde_json::{json, Number, Value};
 use serial_test::serial;
 use tokio::time::{sleep, Duration};
-use std::fs;
 
 use crate::helpers::{create_test_env, make_command, spawn_command};
 
@@ -71,6 +70,15 @@ fn ingest_docs_with_options(input_path: &Path, test_env: &TestEnv, options: &str
     .stdout(predicate::str::contains(
         "Now, you can query the index with",
     ));
+    // check cache path
+    let cache_path = get_cache_path(&test_env.data_dir_path, 
+                                    &test_env.index_id, 
+                                    INGEST_SOURCE_ID);
+    if options == "--clean_cache" {
+        assert_eq!(false, cache_path.exists());
+    } else {
+        assert_eq!(true, cache_path.exists());
+    }
 }
 
 fn ingest_docs(input_path: &Path, test_env: &TestEnv) {
@@ -204,11 +212,6 @@ fn test_cmd_ingest_clean_cache() -> Result<()> {
         &test_env,
         "--clean_cache",
     );
-    //
-    let cache_path = get_cache_path(&test_env.data_dir_path, 
-                                    test_env.index_id, 
-                                    INGEST_SOURCE_ID.to_string());
-    assert_eq!(false, cache_path.exists());
 
     Ok(())
 }
@@ -220,12 +223,6 @@ fn test_cmd_ingest_simple() -> Result<()> {
     create_logs_index(&test_env);
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
-
-    // cache path still exists
-    let cache_path = get_cache_path(&test_env.data_dir_path, 
-                                    test_env.index_id.clone(), 
-                                    INGEST_SOURCE_ID.to_string());
-    assert_eq!(true, cache_path.exists());
 
     // Using piped input
     let log_path = test_env.resource_files["logs"].clone();
