@@ -219,7 +219,6 @@ fn test_cmd_ingest_clean_cache() -> Result<()> {
 fn test_cmd_ingest_simple() -> Result<()> {
     let index_id = append_random_suffix("test-index-simple");
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
-    let log_path = test_env.resource_files["logs"].clone();
     create_logs_index(&test_env);
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
@@ -232,6 +231,7 @@ fn test_cmd_ingest_simple() -> Result<()> {
     assert_eq!(true, cache_path.exists());
 
     // Using piped input
+    let log_path = test_env.resource_files["logs"].clone();
     make_command(
         format!(
             "index ingest --index {} --config {}",
