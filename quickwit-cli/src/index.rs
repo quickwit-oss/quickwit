@@ -831,7 +831,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         clean_split_cache(
             &config.data_dir_path,
             index_metadata.index_id.clone(),
-            source.source_id.clone(),
+            INGEST_SOURCE_ID.to_string(),
         )
         .await?;
     }
