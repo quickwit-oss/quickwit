@@ -297,7 +297,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     );
     let universe = Universe::new();
     let (merge_executor_mailbox, merge_executor_handle) =
-        universe.spawn_actor(merge_executor).spawn_sync();
+        universe.spawn_actor(merge_executor).spawn();
 
     // We want to make sure that the processing of the message gets
     // aborted not by the actor framework, before the message is being processed.

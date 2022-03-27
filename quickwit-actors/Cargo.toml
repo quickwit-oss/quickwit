@@ -16,8 +16,11 @@ documentation = "https://quickwit.io/docs/"
 tokio = { version = "^1.16", features = ["full"] }
 async-trait = "0.1"
 anyhow = "1"
+thiserror = "1"
 flume = "0.10"
 futures = "0.3"
 tracing = "0.1.29"
-thiserror = "1"
 quickwit-common = { version = "0.2.1", path = "../quickwit-common" }
+
+[dev-dependencies]
+rand = "0.8"

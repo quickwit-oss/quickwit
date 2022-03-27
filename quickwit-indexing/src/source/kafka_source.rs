@@ -43,8 +43,9 @@ use serde_json::json;
 use tokio::task::spawn_blocking;
 use tracing::{debug, info, warn};
 
+use crate::actors::Indexer;
 use crate::models::RawDocBatch;
-use crate::source::{IndexerMessage, Source, SourceContext, TypedSourceFactory};
+use crate::source::{Source, SourceContext, TypedSourceFactory};
 
 /// We try to emit chewable batches for the indexer.
 /// One batch = one message to the indexer actor.
@@ -133,12 +134,7 @@ impl KafkaSource {
         let partition_ids = fetch_partition_ids(consumer.clone(), &topic).await?;
         let assigned_partition_ids = partition_ids
             .iter()
-            .map(|partition_id| {
-                (
-                    partition_id.clone(),
-                    PartitionId::from(partition_id.clone()),
-                )
-            })
+            .map(|&partition_id| (partition_id, PartitionId::from(partition_id as i64)))
             .collect();
         let timeout = Duration::from_secs(30);
         let watermarks =
@@ -173,7 +169,7 @@ impl KafkaSource {
 impl Source for KafkaSource {
     async fn emit_batches(
         &mut self,
-        batch_sink: &Mailbox<IndexerMessage>,
+        batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         let mut docs = Vec::new();
@@ -242,8 +238,7 @@ impl Source for KafkaSource {
                 docs,
                 checkpoint_delta,
             };
-            ctx.send_message(batch_sink, IndexerMessage::from(batch))
-                .await?;
+            ctx.send_message(batch_sink, batch).await?;
         }
         if self.state.num_active_partitions == 0 {
             info!(topic = %self.topic, "Reached end of topic.");
@@ -775,15 +770,13 @@ mod kafka_broker_tests {
         format!("Message #{}", id)
     }
 
-    fn merge_messages(messages: Vec<IndexerMessage>) -> anyhow::Result<RawDocBatch> {
+    fn merge_doc_batches(batches: Vec<RawDocBatch>) -> anyhow::Result<RawDocBatch> {
         let mut merged_batch = RawDocBatch::default();
-        for message in messages {
-            if let IndexerMessage::Batch(batch) = message {
-                merged_batch.docs.extend(batch.docs);
-                merged_batch
-                    .checkpoint_delta
-                    .extend(batch.checkpoint_delta)?;
-            }
+        for batch in batches {
+            merged_batch.docs.extend(batch.docs);
+            merged_batch
+                .checkpoint_delta
+                .extend(batch.checkpoint_delta)?;
         }
         merged_batch.docs.sort();
         Ok(merged_batch)
@@ -826,22 +819,22 @@ mod kafka_broker_tests {
                 source,
                 batch_sink: sink.clone(),
             };
-            let (_mailbox, handle) = universe.spawn_actor(actor).spawn_async();
+            let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages = inbox.drain_available_message_for_test();
+            let messages = inbox.drain_for_test();
             assert!(messages.is_empty());
 
             let expected_current_positions: Vec<(i32, i64)> = vec![];
             let expected_state = json!({
                 "topic":  topic,
-                "assigned_partition_ids": vec![0, 1, 2],
+                "assigned_partition_ids": vec![0u64, 1u64, 2u64],
                 "current_positions":  expected_current_positions,
-                "num_active_partitions": 0,
-                "num_bytes_processed": 0,
-                "num_messages_processed": 0,
-                "num_invalid_messages": 0,
+                "num_active_partitions": 0u64,
+                "num_bytes_processed": 0u64,
+                "num_messages_processed": 0u64,
+                "num_invalid_messages": 0u64,
             });
             assert_eq!(exit_state, expected_state);
         }
@@ -873,14 +866,19 @@ mod kafka_broker_tests {
                 source,
                 batch_sink: sink.clone(),
             };
-            let (_mailbox, handle) = universe.spawn_actor(actor).spawn_async();
+            let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages = inbox.drain_available_message_for_test();
+            let messages: Vec<RawDocBatch> = inbox
+                .drain_for_test()
+                .into_iter()
+                .flat_map(|box_any| box_any.downcast::<RawDocBatch>().ok())
+                .map(|box_raw_doc_batch| *box_raw_doc_batch)
+                .collect();
             assert!(messages.len() >= 1);
 
-            let batch = merge_messages(messages)?;
+            let batch = merge_doc_batches(messages)?;
             let expected_docs = vec![
                 "Message #000",
                 "Message #002",
@@ -892,7 +890,7 @@ mod kafka_broker_tests {
             assert_eq!(batch.docs, expected_docs);
 
             let mut expected_checkpoint_delta = CheckpointDelta::default();
-            for partition in 0..3 {
+            for partition in 0u64..3u64 {
                 expected_checkpoint_delta.record_partition_delta(
                     PartitionId::from(partition),
                     Position::Beginning,
@@ -903,18 +901,18 @@ mod kafka_broker_tests {
 
             let expected_state = json!({
                 "topic":  topic,
-                "assigned_partition_ids": vec![0, 1, 2],
-                "current_positions":  vec![(0, 2), (1, 2), (2, 2)],
-                "num_active_partitions": 0,
-                "num_bytes_processed": 72,
-                "num_messages_processed": 9,
-                "num_invalid_messages": 3,
+                "assigned_partition_ids": vec![0u64, 1u64, 2u64],
+                "current_positions":  vec![(0u32, 2u64), (1u32, 2u64), (2u32, 2u64)],
+                "num_active_partitions": 0usize,
+                "num_bytes_processed": 72u64,
+                "num_messages_processed": 9u64,
+                "num_invalid_messages": 3u64,
             });
             assert_eq!(state, expected_state);
         }
         {
             let (sink, inbox) = create_test_mailbox();
-            let checkpoint: SourceCheckpoint = vec![(0, 0), (1, 2)]
+            let checkpoint: SourceCheckpoint = vec![(0u64, 0u64), (1u64, 2u64)]
                 .into_iter()
                 .map(|(partition_id, offset)| {
                     (PartitionId::from(partition_id), Position::from(offset))
@@ -927,25 +925,30 @@ mod kafka_broker_tests {
                 source,
                 batch_sink: sink.clone(),
             };
-            let (_mailbox, handle) = universe.spawn_actor(actor).spawn_async();
+            let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages = inbox.drain_available_message_for_test();
+            let messages: Vec<RawDocBatch> = inbox
+                .drain_for_test()
+                .into_iter()
+                .flat_map(|box_message| box_message.downcast::<RawDocBatch>())
+                .map(|box_raw_batch| *box_raw_batch)
+                .collect();
             assert!(messages.len() >= 1);
 
-            let batch = merge_messages(messages)?;
+            let batch = merge_doc_batches(messages)?;
             let expected_docs = vec!["Message #002", "Message #200", "Message #202"];
             assert_eq!(batch.docs, expected_docs);
 
             let mut expected_checkpoint_delta = CheckpointDelta::default();
             expected_checkpoint_delta.record_partition_delta(
-                PartitionId::from(0),
+                PartitionId::from(0u64),
                 Position::from(0u64),
                 Position::from(2u64),
             )?;
             expected_checkpoint_delta.record_partition_delta(
-                PartitionId::from(2),
+                PartitionId::from(2u64),
                 Position::Beginning,
                 Position::from(2u64),
             )?;
@@ -953,12 +956,12 @@ mod kafka_broker_tests {
 
             let expected_exit_state = json!({
                 "topic":  topic,
-                "assigned_partition_ids": vec![0, 1, 2],
-                "current_positions":  vec![(0, 2), (2, 2)],
-                "num_active_partitions": 0,
-                "num_bytes_processed": 36,
-                "num_messages_processed": 5,
-                "num_invalid_messages": 2,
+                "assigned_partition_ids": vec![0u64, 1u64, 2u64],
+                "current_positions":  vec![(0u64, 2u64), (2u64, 2u64)],
+                "num_active_partitions": 0usize,
+                "num_bytes_processed": 36u64,
+                "num_messages_processed": 5u64,
+                "num_invalid_messages": 2u64,
             });
             assert_eq!(exit_state, expected_exit_state);
         }

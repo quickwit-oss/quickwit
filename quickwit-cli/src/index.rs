@@ -27,8 +27,9 @@ use anyhow::{bail, Context};
 use chrono::Utc;
 use clap::{arg, ArgMatches, Command};
 use colored::Colorize;
+use humantime::format_duration;
 use itertools::Itertools;
-use quickwit_actors::{ActorHandle, ObservationType};
+use quickwit_actors::{ActorHandle, ObservationType, Universe};
 use quickwit_common::uri::Uri;
 use quickwit_common::{run_checklist, GREEN_COLOR};
 use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig, SourceParams};
@@ -37,13 +38,16 @@ use quickwit_core::{
 };
 use quickwit_doc_mapper::tag_pruning::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingServer};
-use quickwit_indexing::models::IndexingStatistics;
+use quickwit_indexing::models::{
+    DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
+};
 use quickwit_indexing::source::INGEST_SOURCE_ID;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
 use quickwit_telemetry::payload::TelemetryEvent;
+use thousands::Separable;
 use tracing::{debug, info, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
@@ -783,16 +787,23 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
-    let client = IndexingServer::spawn(
+    let universe = Universe::new();
+    let indexing_server = IndexingServer::new(
         config.clone().data_dir_path,
         indexer_config,
         metastore,
         storage_resolver,
     );
-    let pipeline_id = client
-        .spawn_pipeline(args.index_id.clone(), source.clone())
+    let (indexing_server_mailbox, _) = universe.spawn_actor(indexing_server).spawn();
+    let pipeline_id = indexing_server_mailbox
+        .ask_for_res(SpawnPipeline {
+            index_id: args.index_id.clone(),
+            source,
+        })
         .await?;
-    let pipeline_handle = client.detach_pipeline(&pipeline_id).await?;
+    let pipeline_handle = indexing_server_mailbox
+        .ask_for_res(DetachPipeline { pipeline_id })
+        .await?;
 
     let is_stdin_atty = atty::is(atty::Stream::Stdin);
     if args.input_path_opt.is_none() && is_stdin_atty {
@@ -877,16 +888,24 @@ pub async fn merge_or_demux_cli(
         .resolve(&config.metastore_uri())
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
-    let client = IndexingServer::spawn(
+    let indexing_server = IndexingServer::new(
         config.data_dir_path,
         indexer_config,
         metastore,
         storage_resolver,
     );
-    let pipeline_id = client
-        .spawn_merge_pipeline(args.index_id.clone(), merge_enabled, demux_enabled)
+    let universe = Universe::new();
+    let (indexing_server_mailbox, _) = universe.spawn_actor(indexing_server).spawn();
+    let pipeline_id = indexing_server_mailbox
+        .ask_for_res(SpawnMergePipeline {
+            index_id: args.index_id.clone(),
+            merge_enabled,
+            demux_enabled,
+        })
         .await?;
-    let pipeline_handle = client.detach_pipeline(&pipeline_id).await?;
+    let pipeline_handle = indexing_server_mailbox
+        .ask_for_res(DetachPipeline { pipeline_id })
+        .await?;
     let (pipeline_exit_status, _pipeline_statistics) = pipeline_handle.join().await;
     if !pipeline_exit_status.is_success() {
         bail!(pipeline_exit_status);
@@ -1012,21 +1031,13 @@ pub async fn start_statistics_reporting_loop(
     }
     // display end of task report
     println!();
-    let elapsed_secs = start_time.elapsed().as_secs();
-    if elapsed_secs >= 60 {
-        println!(
-            "Indexed {} documents in {:.2$}min.",
-            pipeline_statistics.num_docs,
-            elapsed_secs.max(1) as f64 / 60f64,
-            2
-        );
-    } else {
-        println!(
-            "Indexed {} documents in {}s.",
-            pipeline_statistics.num_docs,
-            elapsed_secs.max(1)
-        );
-    }
+    let secs = Duration::from_secs(start_time.elapsed().as_secs());
+    println!(
+        "Indexed {} documents in {}",
+        pipeline_statistics.num_docs.separate_with_commas(),
+        format_duration(secs)
+    );
+
     Ok(pipeline_statistics)
 }
 

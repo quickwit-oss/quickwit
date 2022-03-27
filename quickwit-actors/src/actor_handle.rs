@@ -23,12 +23,12 @@ use std::fmt;
 use std::sync::Arc;
 
 use tokio::sync::{oneshot, watch};
-use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tracing::error;
 
 use crate::actor_state::ActorState;
 use crate::channel_with_priority::Priority;
+use crate::join_handle::{JoinHandle, JoinOutcome};
 use crate::mailbox::Command;
 use crate::observation::ObservationType;
 use crate::{Actor, ActorContext, ActorExitStatus, Mailbox, Observation};
@@ -37,7 +37,7 @@ use crate::{Actor, ActorContext, ActorExitStatus, Mailbox, Observation};
 pub struct ActorHandle<A: Actor> {
     actor_context: ActorContext<A>,
     last_state: watch::Receiver<A::ObservableState>,
-    join_handle: JoinHandle<()>,
+    join_handle: JoinHandle,
     pub actor_exit_status: watch::Receiver<Option<ActorExitStatus>>,
 }
 
@@ -101,7 +101,7 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
 impl<A: Actor> ActorHandle<A> {
     pub(crate) fn new(
         last_state: watch::Receiver<A::ObservableState>,
-        join_handle: JoinHandle<()>,
+        join_handle: JoinHandle,
         actor_context: ActorContext<A>,
         actor_exit_status: watch::Receiver<Option<ActorExitStatus>>,
     ) -> Self {
@@ -198,9 +198,9 @@ impl<A: Actor> ActorHandle<A> {
     }
 
     /// Waits until the actor exits by itself. This is the equivalent of `Thread::join`.
-    pub async fn join(self) -> (ActorExitStatus, A::ObservableState) {
-        let exit_status = match self.join_handle.await {
-            Ok(()) => self
+    pub async fn join(mut self) -> (ActorExitStatus, A::ObservableState) {
+        let exit_status = match self.join_handle.join().await {
+            JoinOutcome::Ok => self
                 .actor_exit_status
                 .borrow()
                 .as_ref()
@@ -210,9 +210,10 @@ impl<A: Actor> ActorHandle<A> {
                         "Could not find exit status"
                     )))
                 }),
-            Err(join_err) if join_err.is_panic() => ActorExitStatus::Panicked,
-            Err(_) => ActorExitStatus::Killed,
+            JoinOutcome::Error => ActorExitStatus::Killed,
+            JoinOutcome::Panic => ActorExitStatus::Panicked,
         };
+        // TODO fixme
         let observation = self.last_state.borrow().clone();
         (exit_status, observation)
     }
@@ -279,7 +280,7 @@ impl<A: Actor> ActorHandle<A> {
         }
     }
 
-    pub fn mailbox(&self) -> &Mailbox<A::Message> {
+    pub fn mailbox(&self) -> &Mailbox<A> {
         self.actor_context.mailbox()
     }
 }
@@ -289,7 +290,7 @@ mod tests {
     use async_trait::async_trait;
 
     use super::*;
-    use crate::{AsyncActor, SyncActor, Universe};
+    use crate::{ActorRunner, Handler, Universe};
 
     #[derive(Default)]
     struct PanickingActor {
@@ -297,29 +298,21 @@ mod tests {
     }
 
     impl Actor for PanickingActor {
-        type Message = ();
         type ObservableState = usize;
         fn observable_state(&self) -> usize {
             self.count
         }
     }
 
-    impl SyncActor for PanickingActor {
-        fn process_message(
-            &mut self,
-            _message: Self::Message,
-            _ctx: &ActorContext<Self>,
-        ) -> Result<(), ActorExitStatus> {
-            self.count += 1;
-            panic!("Oops");
-        }
-    }
+    #[derive(Debug)]
+    struct Panic;
 
     #[async_trait]
-    impl AsyncActor for PanickingActor {
-        async fn process_message(
+    impl Handler<Panic> for PanickingActor {
+        type Reply = ();
+        async fn handle(
             &mut self,
-            _message: Self::Message,
+            _message: Panic,
             _ctx: &ActorContext<Self>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
@@ -333,29 +326,22 @@ mod tests {
     }
 
     impl Actor for ExitActor {
-        type Message = ();
         type ObservableState = usize;
         fn observable_state(&self) -> usize {
             self.count
         }
     }
 
-    impl SyncActor for ExitActor {
-        fn process_message(
-            &mut self,
-            _message: Self::Message,
-            _ctx: &ActorContext<Self>,
-        ) -> Result<(), ActorExitStatus> {
-            self.count += 1;
-            Err(ActorExitStatus::DownstreamClosed)
-        }
-    }
+    #[derive(Debug)]
+    struct Exit;
 
     #[async_trait]
-    impl AsyncActor for ExitActor {
-        async fn process_message(
+    impl Handler<Exit> for ExitActor {
+        type Reply = ();
+
+        async fn handle(
             &mut self,
-            _message: Self::Message,
+            _msg: Exit,
             _ctx: &ActorContext<Self>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
@@ -363,13 +349,13 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_panic_in_async_actor() -> anyhow::Result<()> {
+    #[track_caller]
+    async fn test_panic_in_actor_aux(runner: ActorRunner) -> anyhow::Result<()> {
         let universe = Universe::new();
         let (mailbox, handle) = universe
             .spawn_actor(PanickingActor::default())
-            .spawn_async();
-        universe.send_message(&mailbox, ()).await?;
+            .spawn_with_forced_runner(runner);
+        mailbox.send_message(Panic).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Panicked));
         assert!(matches!(count, 1)); //< Upon panick we cannot get a post mortem state.
@@ -377,21 +363,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_panic_in_sync_actor() -> anyhow::Result<()> {
-        let universe = Universe::new();
-        let (mailbox, handle) = universe.spawn_actor(PanickingActor::default()).spawn_sync();
-        universe.send_message(&mailbox, ()).await?;
-        let (exit_status, count) = handle.join().await;
-        assert!(matches!(exit_status, ActorExitStatus::Panicked));
-        assert!(matches!(count, 1));
+    async fn test_panic_in_actor_dedicated_thread() -> anyhow::Result<()> {
+        test_panic_in_actor_aux(ActorRunner::DedicatedThread).await?;
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_exit_in_async_actor() -> anyhow::Result<()> {
+    async fn test_panic_in_actor_tokio_task() -> anyhow::Result<()> {
+        test_panic_in_actor_aux(ActorRunner::GlobalRuntime).await?;
+        Ok(())
+    }
+
+    #[track_caller]
+    async fn test_exit_aux(runner: ActorRunner) -> anyhow::Result<()> {
         let universe = Universe::new();
-        let (mailbox, handle) = universe.spawn_actor(ExitActor::default()).spawn_async();
-        universe.send_message(&mailbox, ()).await?;
+        let (mailbox, handle) = universe
+            .spawn_actor(ExitActor::default())
+            .spawn_with_forced_runner(runner);
+        mailbox.send_message(Exit).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::DownstreamClosed));
         assert!(matches!(count, 1)); //< Upon panick we cannot get a post mortem state.
@@ -399,13 +388,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_exit_in_sync_actor() -> anyhow::Result<()> {
-        let universe = Universe::new();
-        let (mailbox, handle) = universe.spawn_actor(ExitActor::default()).spawn_sync();
-        universe.send_message(&mailbox, ()).await?;
-        let (exit_status, count) = handle.join().await;
-        assert!(matches!(exit_status, ActorExitStatus::DownstreamClosed));
-        assert!(matches!(count, 1));
-        Ok(())
+    async fn test_exit_dedicated_thread() -> anyhow::Result<()> {
+        test_exit_aux(ActorRunner::DedicatedThread).await
+    }
+
+    #[tokio::test]
+    async fn test_exit_tokio_task() -> anyhow::Result<()> {
+        test_exit_aux(ActorRunner::GlobalRuntime).await
     }
 }

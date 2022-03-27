@@ -23,9 +23,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{bail, Context};
+use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
-use quickwit_actors::{Actor, ActorContext, Mailbox, QueueCapacity, SyncActor};
+use quickwit_actors::{
+    Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, Mailbox, QueueCapacity,
+};
 use quickwit_directories::write_hotcache;
 use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
 use tantivy::schema::FieldType;
@@ -40,6 +43,7 @@ const MAX_VALUES_PER_TAG_FIELD: usize = if cfg!(any(test, feature = "testsuite")
 };
 
 use super::NamedField;
+use crate::actors::Uploader;
 use crate::models::{
     IndexedSplit, IndexedSplitBatch, PackagedSplit, PackagedSplitBatch, ScratchDirectory,
 };
@@ -57,7 +61,7 @@ use crate::models::{
 /// The split format is described in `internals/split-format.md`
 pub struct Packager {
     actor_name: &'static str,
-    uploader_mailbox: Mailbox<PackagedSplitBatch>,
+    uploader_mailbox: Mailbox<Uploader>,
     /// List of tag fields ([`Vec<NamedField>`]) defined in the index config.
     tag_fields: Vec<NamedField>,
 }
@@ -66,7 +70,7 @@ impl Packager {
     pub fn new(
         actor_name: &'static str,
         tag_fields: Vec<NamedField>,
-        uploader_mailbox: Mailbox<PackagedSplitBatch>,
+        uploader_mailbox: Mailbox<Uploader>,
     ) -> Packager {
         Packager {
             actor_name,
@@ -75,22 +79,21 @@ impl Packager {
         }
     }
 
-    pub fn process_indexed_split(
+    pub async fn process_indexed_split(
         &self,
         mut split: IndexedSplit,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<PackagedSplit> {
         commit_split(&mut split, ctx)?;
-        let segment_metas = merge_segments_if_required(&mut split, ctx)?;
+        let segment_metas = merge_segments_if_required(&mut split, ctx).await?;
         let packaged_split =
             create_packaged_split(&segment_metas[..], split, &self.tag_fields, ctx)?;
         Ok(packaged_split)
     }
 }
 
+#[async_trait]
 impl Actor for Packager {
-    type Message = IndexedSplitBatch;
-
     type ObservableState = ();
 
     #[allow(clippy::unused_unit)]
@@ -106,8 +109,46 @@ impl Actor for Packager {
         self.actor_name.to_string()
     }
 
+    fn runner(&self) -> ActorRunner {
+        ActorRunner::DedicatedThread
+    }
+}
+
+#[async_trait]
+impl Handler<IndexedSplitBatch> for Packager {
+    type Reply = ();
+
     fn message_span(&self, msg_id: u64, batch: &IndexedSplitBatch) -> Span {
         info_span!("", msg_id=&msg_id, num_splits=%batch.splits.len())
+    }
+
+    async fn handle(
+        &mut self,
+        batch: IndexedSplitBatch,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        info!(split_ids=?batch.splits.iter().map(|split| split.split_id.clone()).collect_vec(), "start-packaging-splits");
+        for split in &batch.splits {
+            if let Some(controlled_directory) = split.controlled_directory_opt.as_ref() {
+                controlled_directory.set_progress_and_kill_switch(
+                    ctx.progress().clone(),
+                    ctx.kill_switch().clone(),
+                );
+            }
+        }
+        fail_point!("packager:before");
+        let mut packaged_splits = Vec::new();
+        for split in batch.splits {
+            let packaged_split = self.process_indexed_split(split, ctx).await?;
+            packaged_splits.push(packaged_split);
+        }
+        ctx.send_message(
+            &self.uploader_mailbox,
+            PackagedSplitBatch::new(packaged_splits),
+        )
+        .await?;
+        fail_point!("packager:after");
+        Ok(())
     }
 }
 
@@ -167,7 +208,7 @@ fn list_split_files(
 ///
 /// Note this function implicitly drops the IndexWriter
 /// which potentially olds a lot of RAM.
-fn merge_segments_if_required(
+async fn merge_segments_if_required(
     split: &mut IndexedSplit,
     ctx: &ActorContext<Packager>,
 ) -> anyhow::Result<Vec<SegmentMeta>> {
@@ -185,7 +226,7 @@ fn merge_segments_if_required(
         info!(split_id=split.split_id.as_str(), segment_ids=?segment_ids, "merging-segments");
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
         let _protected_zone_guard = ctx.protect_zone();
-        futures::executor::block_on(split.index_writer.merge(&segment_ids))?;
+        split.index_writer.merge(&segment_ids).await?;
     }
     let segment_metas_after_merge: Vec<SegmentMeta> = split.index.searchable_segment_metas()?;
     Ok(segment_metas_after_merge)
@@ -311,36 +352,6 @@ fn create_packaged_split(
     Ok(packaged_split)
 }
 
-impl SyncActor for Packager {
-    fn process_message(
-        &mut self,
-        batch: IndexedSplitBatch,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), quickwit_actors::ActorExitStatus> {
-        info!(split_ids=?batch.splits.iter().map(|split| split.split_id.clone()).collect_vec(), "start-packaging-splits");
-        for split in &batch.splits {
-            if let Some(controlled_directory) = split.controlled_directory_opt.as_ref() {
-                controlled_directory.set_progress_and_kill_switch(
-                    ctx.progress().clone(),
-                    ctx.kill_switch().clone(),
-                );
-            }
-        }
-        fail_point!("packager:before");
-        let packaged_splits = batch
-            .splits
-            .into_iter()
-            .map(|split| self.process_indexed_split(split, ctx))
-            .try_collect()?;
-        ctx.send_message_blocking(
-            &self.uploader_mailbox,
-            PackagedSplitBatch::new(packaged_splits),
-        )?;
-        fail_point!("packager:after");
-        Ok(())
-    }
-}
-
 /// Reads u64 from stored term data.
 fn u64_from_term_data(data: &[u8]) -> anyhow::Result<u64> {
     let u64_bytes: [u8; 8] = data[0..8]
@@ -457,23 +468,22 @@ mod tests {
             &["tag_str", "tag_many", "tag_u64", "tag_i64", "tag_f64"],
         );
         let packager = Packager::new("TestPackager", tag_fields, mailbox);
-        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
-        universe
-            .send_message(
-                &packager_mailbox,
-                IndexedSplitBatch {
-                    splits: vec![indexed_split],
-                },
-            )
+        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn();
+        packager_mailbox
+            .send_message(IndexedSplitBatch {
+                splits: vec![indexed_split],
+            })
             .await?;
         assert_eq!(
             packager_handle.process_pending_and_observe().await.obs_type,
             ObservationType::Alive
         );
-        let packaged_splits = inbox.drain_available_message_for_test();
+        let packaged_splits = inbox.drain_for_test();
         assert_eq!(packaged_splits.len(), 1);
-
-        let split = &packaged_splits[0].splits[0];
+        let packaged_split = packaged_splits[0]
+            .downcast_ref::<PackagedSplitBatch>()
+            .unwrap();
+        let split = &packaged_split.splits[0];
         assert_eq!(
             &split.tags.iter().map(|s| s.as_str()).collect::<Vec<&str>>(),
             &[
@@ -498,20 +508,17 @@ mod tests {
         let indexed_split = make_indexed_split_for_test(&[&[1628203589], &[1628203640]])?;
         let tag_fields = get_tag_fields(indexed_split.index.schema(), &[]);
         let packager = Packager::new("TestPackager", tag_fields, mailbox);
-        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
-        universe
-            .send_message(
-                &packager_mailbox,
-                IndexedSplitBatch {
-                    splits: vec![indexed_split],
-                },
-            )
+        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn();
+        packager_mailbox
+            .send_message(IndexedSplitBatch {
+                splits: vec![indexed_split],
+            })
             .await?;
         assert_eq!(
             packager_handle.process_pending_and_observe().await.obs_type,
             ObservationType::Alive
         );
-        let packaged_splits = inbox.drain_available_message_for_test();
+        let packaged_splits = inbox.drain_for_test();
         assert_eq!(packaged_splits.len(), 1);
         Ok(())
     }
@@ -525,22 +532,26 @@ mod tests {
         let indexed_split_2 = make_indexed_split_for_test(&[&[1628204589], &[1629203640]])?;
         let tag_fields = get_tag_fields(indexed_split_1.index.schema(), &[]);
         let packager = Packager::new("TestPackager", tag_fields, mailbox);
-        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
-        universe
-            .send_message(
-                &packager_mailbox,
-                IndexedSplitBatch {
-                    splits: vec![indexed_split_1, indexed_split_2],
-                },
-            )
+        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn();
+        packager_mailbox
+            .send_message(IndexedSplitBatch {
+                splits: vec![indexed_split_1, indexed_split_2],
+            })
             .await?;
         assert_eq!(
             packager_handle.process_pending_and_observe().await.obs_type,
             ObservationType::Alive
         );
-        let mut packaged_splits = inbox.drain_available_message_for_test();
+        let packaged_splits = inbox.drain_for_test();
         assert_eq!(packaged_splits.len(), 1);
-        assert_eq!(packaged_splits.pop().unwrap().into_iter().count(), 2);
+        assert_eq!(
+            packaged_splits[0]
+                .downcast_ref::<PackagedSplitBatch>()
+                .unwrap()
+                .splits
+                .len(),
+            2
+        );
         Ok(())
     }
 }
