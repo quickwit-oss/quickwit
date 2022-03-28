@@ -73,6 +73,7 @@ fn require<T: Clone + Send>(
 pub enum QuickwitService {
     Indexer,
     Searcher,
+    IndexManagement,
 }
 
 impl TryFrom<&str> for QuickwitService {
