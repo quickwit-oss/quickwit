@@ -27,19 +27,25 @@ use tracing::*;
 
 use crate::cluster_api::GrpcClusterAdapter;
 use crate::search_api::GrpcSearchAdapter;
+use crate::QuickwitServices;
 
 /// Start gRPC service given a gRPC address and a search service and cluster service.
-pub async fn start_grpc_service(
+pub(crate) async fn start_grpc_server(
     grpc_addr: SocketAddr,
-    search_service: GrpcSearchAdapter,
-    cluster_service: GrpcClusterAdapter,
+    quickwit_services: &QuickwitServices,
 ) -> anyhow::Result<()> {
     info!(grpc_addr=?grpc_addr, "Start gRPC service.");
-    Server::builder()
-        .add_service(ClusterServiceServer::new(cluster_service))
-        .add_service(SearchServiceServer::new(search_service))
-        .serve(grpc_addr)
-        .await?;
 
+    let mut server = Server::builder();
+
+    let grpc_cluster_service = GrpcClusterAdapter::from(quickwit_services.cluster_service.clone());
+    let mut server_router = server.add_service(ClusterServiceServer::new(grpc_cluster_service));
+
+    if let Some(search_service) = quickwit_services.search_service.clone() {
+        let grpc_search_service = GrpcSearchAdapter::from(search_service);
+        server_router = server_router.add_service(SearchServiceServer::new(grpc_search_service));
+    }
+
+    server_router.serve(grpc_addr).await?;
     Ok(())
 }

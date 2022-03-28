@@ -4,7 +4,7 @@ sidebar_position: 2
 ---
 
 Quickwit compiles to a single binary, we provide different methods to install it.
-We notably provide musl builds to provide static binaries with no dependencies. 
+We notably provide musl builds to provide static binaries with no dependencies.
 
 
 ## Download
@@ -25,8 +25,8 @@ Checkout all builds on [github](https://github.com/quickwit-oss/quickwit/release
 
 Quickwit depends on the following external libraries to work correctly:
 - `libpq`: the Postgres client library.
-- `libssl`: the industry defacto cryptography library. 
-These libraries can be installed on your system using the native package manager. 
+- `libssl`: the industry defacto cryptography library.
+These libraries can be installed on your system using the native package manager.
 On Ubuntu for instance, you can install these dependencies using the following command:
 
 ```bash
@@ -35,7 +35,7 @@ apt-get -y update && apt-get -y install libpq-dev libssl-dev
 
 :::note
 
-Quickwit static binary packages are also provided as `musl` builds. These packages don't require you to install any external library and can be automatically picked during installation on your system if the required libc version is not present. You can also download and manually install a static binary package. 
+Quickwit static binary packages are also provided as `musl` builds. These packages don't require you to install any external library and can be automatically picked during installation on your system if the required libc version is not present. You can also download and manually install a static binary package.
 
 :::
 
@@ -65,14 +65,14 @@ quickwit-{version}
 - `config/quickwit.yaml`: is the default configuration file.
 - `LICENSE_AGPLv3.0.txt`: the license file.
 - `quickwit`: the quickwit executable binary.
-- `qwdata/`: the default data directory. 
+- `qwdata/`: the default data directory.
 
 
 ## Use the docker image
 
-If you use docker, this might be one of the quickest way to get going. 
+If you use docker, this might be one of the quickest way to get going.
 The following command will pull the image from [dockerhub](https://hub.docker.com/r/quickwit/quickwit)
-and gets you right in the shell of the running container ready to execute Quickwit commands. 
+and gets you right in the shell of the running container ready to execute Quickwit commands.
 Note that we are also mounting the working directory as volume. This is useful when you already have your dataset ready on your machine and want to work with Quickwit docker image.
 
 ```bash
@@ -90,14 +90,14 @@ mkdir data && cd data
 curl -o wikipedia_index_config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/wikipedia/index-config.yaml
 curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
 
-# create, index and search using the container 
+# create, index and search using the container
 docker run -v "$(pwd)":"/quickwit/qwdata" quickwit/quickwit index create --index-config ./qwdata/wikipedia_index_config.yaml
 
 docker run -v "$(pwd)":"/quickwit/qwdata" quickwit/quickwit index ingest --index wikipedia --input-path ./qwdata/wiki-articles-10000.json
 
 docker run -v "$(pwd)":"/quickwit/qwdata" quickwit/quickwit index search --index wikipedia --query "barack obama"
 
-docker run -v "$(pwd)":"/quickwit/qwdata" --expose 7280 -p 7280:7280 quickwit/quickwit service run searcher
+docker run -v "$(pwd)":"/quickwit/qwdata" --expose 7280 -p 7280:7280 quickwit/quickwit run --service searcher
 ```
 
 Now you can make HTTP requests to the searcher service API.

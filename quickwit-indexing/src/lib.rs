@@ -21,13 +21,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::bail;
-use quickwit_actors::Universe;
-use quickwit_config::{IndexerConfig, SourceConfig};
+use quickwit_actors::{Mailbox, Universe};
+use quickwit_config::{IndexerConfig, QuickwitConfig, SourceConfig};
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
+use tracing::info;
 
+pub use crate::actors::IndexingServerError;
 use crate::actors::{IndexingPipeline, IndexingPipelineParams, IndexingServer};
-use crate::models::{DetachPipeline, IndexingStatistics, SpawnPipeline};
+use crate::models::{DetachPipeline, IndexingStatistics, SpawnPipeline, SpawnPipelinesForIndex};
 pub use crate::split_store::{
     get_tantivy_directory_from_split_bundle, IndexingSplitStore, IndexingSplitStoreParams,
     SplitFolder,
@@ -45,7 +47,7 @@ mod test_utils;
 pub use test_utils::{mock_split, mock_split_meta, TestSandbox};
 
 pub use self::garbage_collection::{delete_splits_with_files, run_garbage_collect, FileEntry};
-pub use self::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
+use self::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 pub use self::source::check_source_connectivity;
 
 pub async fn index_data(
@@ -76,4 +78,30 @@ pub async fn index_data(
 
 pub fn new_split_id() -> String {
     ulid::Ulid::new().to_string()
+}
+
+pub async fn start_indexer_service(
+    universe: &Universe,
+    config: &QuickwitConfig,
+    metastore: Arc<dyn Metastore>,
+    storage_uri_resolver: StorageUriResolver,
+) -> anyhow::Result<Mailbox<IndexingServer>> {
+    info!("start-indexer-service");
+    let index_metadatas = metastore.list_indexes_metadatas().await?;
+    let indexing_server = IndexingServer::new(
+        config.data_dir_path.to_path_buf(),
+        config.indexer_config.clone(),
+        metastore,
+        storage_uri_resolver,
+    );
+    let (indexer_service_mailbox, _) = universe.spawn_actor(indexing_server).spawn();
+    for index_metadata in index_metadatas {
+        info!(index_id=%index_metadata.index_id, "spawn-indexing-pipeline");
+        indexer_service_mailbox
+            .ask_for_res(SpawnPipelinesForIndex {
+                index_id: index_metadata.index_id,
+            })
+            .await?;
+    }
+    Ok(indexer_service_mailbox)
 }

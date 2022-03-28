@@ -41,3 +41,6 @@ pub use packaged_split::{PackagedSplit, PackagedSplitBatch};
 pub use publisher_message::{PublishOperation, PublisherMessage};
 pub use raw_doc_batch::RawDocBatch;
 pub use scratch_directory::ScratchDirectory;
+
+#[derive(Debug, Copy, Clone)]
+pub struct Observe;

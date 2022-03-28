@@ -20,16 +20,15 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 
-use quickwit_cluster::error::ClusterError;
-use quickwit_cluster::service::ClusterService;
+use quickwit_cluster::{ClusterError, ClusterService};
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 
 use crate::Format;
 
 /// Cluster handler.
-pub fn cluster_handler<TClusterService: ClusterService>(
-    cluster_service: Arc<TClusterService>,
+pub fn cluster_handler(
+    cluster_service: Arc<dyn ClusterService>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     list_members_filter()
         .and(warp::any().map(move || cluster_service.clone()))
@@ -53,17 +52,17 @@ fn list_members_filter(
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 
-async fn list_members<TClusterService: ClusterService>(
+async fn list_members(
     request: ListMembersRequestQueryString,
-    cluster_service: Arc<TClusterService>,
+    cluster_service: Arc<dyn ClusterService>,
 ) -> Result<impl warp::Reply, Infallible> {
     Ok(request
         .format
         .make_rest_reply(list_members_endpoint(&*cluster_service).await))
 }
 
-async fn list_members_endpoint<TClusterService: ClusterService>(
-    cluster_service: &TClusterService,
+async fn list_members_endpoint(
+    cluster_service: &dyn ClusterService,
 ) -> Result<quickwit_proto::ListMembersResponse, ClusterError> {
     let list_members_req = quickwit_proto::ListMembersRequest {};
     let list_members_resp = cluster_service.list_members(list_members_req).await?;

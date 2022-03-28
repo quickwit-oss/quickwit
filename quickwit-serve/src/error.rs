@@ -17,10 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::error::Error;
+use std::convert::Infallible;
+use std::fmt;
 
 use quickwit_actors::AskError;
-use quickwit_cluster::error::ClusterError;
+use quickwit_cluster::ClusterError;
+use quickwit_indexing::IndexingServerError;
 use quickwit_proto::tonic;
 use quickwit_search::SearchError;
 use warp::http;
@@ -79,13 +81,31 @@ impl ServiceError for ClusterError {
     }
 }
 
-impl<E: Error + ServiceError> ServiceError for AskError<E> {
+impl ServiceError for IndexingServerError {
+    fn status_code(&self) -> ServiceErrorCode {
+        match self {
+            Self::MissingPipeline { .. } => ServiceErrorCode::NotFound,
+            Self::PipelineAlreadyExists { .. } => ServiceErrorCode::BadRequest,
+            Self::StorageError(_) => ServiceErrorCode::Internal,
+            Self::MetastoreError(_) => ServiceErrorCode::Internal,
+            Self::InvalidParams(_) => ServiceErrorCode::BadRequest,
+        }
+    }
+}
+
+impl<E: fmt::Debug + ServiceError> ServiceError for AskError<E> {
     fn status_code(&self) -> ServiceErrorCode {
         match self {
             AskError::MessageNotDelivered => ServiceErrorCode::Internal,
             AskError::ProcessMessageError => ServiceErrorCode::Internal,
             AskError::ErrorReply(err) => err.status_code(),
         }
+    }
+}
+
+impl ServiceError for Infallible {
+    fn status_code(&self) -> ServiceErrorCode {
+        unreachable!()
     }
 }
 
