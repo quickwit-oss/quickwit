@@ -152,14 +152,14 @@ async fn search_endpoint(
 
 fn search_get_filter(
 ) -> impl Filter<Extract = (String, SearchRequestQueryString), Error = Rejection> + Clone {
-    warp::path!("api" / "v1" / String / "search")
+    warp::path!(String / "search")
         .and(warp::get())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 
 fn search_post_filter(
 ) -> impl Filter<Extract = (String, SearchRequestQueryString), Error = Rejection> + Clone {
-    warp::path!("api" / "v1" / String / "search")
+    warp::path!(String / "search")
         .and(warp::post())
         .and(warp::body::content_length_limit(1024 * 1024))
         .and(warp::body::json())
@@ -315,7 +315,7 @@ async fn search_stream(
 
 fn search_stream_filter(
 ) -> impl Filter<Extract = (String, SearchStreamRequestQueryString), Error = Rejection> + Clone {
-    warp::path!("api" / "v1" / String / "search" / "stream")
+    warp::path!(String / "search" / "stream")
         .and(warp::get())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
@@ -358,7 +358,7 @@ mod tests {
         let rest_search_api_filter = search_post_filter();
         let (index, req) = warp::test::request()
             .method("POST")
-            .path("/api/v1/quickwit-demo-index/search?query=*&max_hits=10")
+            .path("/quickwit-demo-index/search?query=*&max_hits=10")
             .json(&true)
             .body(r#"{"query": "*", "max_hits":10, "aggregations": {"range":[]} }"#)
             .filter(&rest_search_api_filter)
@@ -385,7 +385,7 @@ mod tests {
         let rest_search_api_filter = search_get_filter();
         let (index, req) = warp::test::request()
             .path(
-                "/api/v1/quickwit-demo-index/search?query=*&end_timestamp=1450720000&max_hits=10&\
+                "/quickwit-demo-index/search?query=*&end_timestamp=1450720000&max_hits=10&\
                  start_offset=22",
             )
             .filter(&rest_search_api_filter)
@@ -413,8 +413,8 @@ mod tests {
         let rest_search_api_filter = search_get_filter();
         let (index, req) = warp::test::request()
             .path(
-                "/api/v1/quickwit-demo-index/search?query=*&end_timestamp=1450720000&\
-                 search_field=title,body",
+                "/quickwit-demo-index/search?query=*&end_timestamp=1450720000&search_field=title,\
+                 body",
             )
             .filter(&rest_search_api_filter)
             .await
@@ -440,7 +440,7 @@ mod tests {
     async fn test_rest_search_api_route_simple_format() {
         let rest_search_api_filter = search_get_filter();
         let (index, req) = warp::test::request()
-            .path("/api/v1/quickwit-demo-index/search?query=*&format=json")
+            .path("/quickwit-demo-index/search?query=*&format=json")
             .filter(&rest_search_api_filter)
             .await
             .unwrap();
@@ -465,7 +465,7 @@ mod tests {
     async fn test_rest_search_api_route_sort_by() {
         let rest_search_api_filter = search_get_filter();
         let (_, req) = warp::test::request()
-            .path("/api/v1/quickwit-demo-index/search?query=*&format=json&sort_by_field=field")
+            .path("/quickwit-demo-index/search?query=*&format=json&sort_by_field=field")
             .filter(&rest_search_api_filter)
             .await
             .unwrap();
@@ -489,7 +489,7 @@ mod tests {
 
         let rest_search_api_filter = search_get_filter();
         let (_, req) = warp::test::request()
-            .path("/api/v1/quickwit-demo-index/search?query=*&format=json&sort_by_field=+field")
+            .path("/quickwit-demo-index/search?query=*&format=json&sort_by_field=+field")
             .filter(&rest_search_api_filter)
             .await
             .unwrap();
@@ -513,7 +513,7 @@ mod tests {
 
         let rest_search_api_filter = search_get_filter();
         let (_, req) = warp::test::request()
-            .path("/api/v1/quickwit-demo-index/search?query=*&format=json&sort_by_field=-field")
+            .path("/quickwit-demo-index/search?query=*&format=json&sort_by_field=-field")
             .filter(&rest_search_api_filter)
             .await
             .unwrap();
@@ -542,7 +542,7 @@ mod tests {
         let rest_search_api_handler =
             super::search_get_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
         let resp = warp::test::request()
-            .path("/api/v1/quickwit-demo-index/search?query=*&end_unix_timestamp=1450720000")
+            .path("/quickwit-demo-index/search?query=*&end_unix_timestamp=1450720000")
             .reply(&rest_search_api_handler)
             .await;
         assert_eq!(resp.status(), 400);
@@ -569,7 +569,7 @@ mod tests {
         let rest_search_api_handler =
             super::search_get_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
         let resp = warp::test::request()
-            .path("/api/v1/quickwit-demo-index/search?query=*")
+            .path("/quickwit-demo-index/search?query=*")
             .reply(&rest_search_api_handler)
             .await;
         assert_eq!(resp.status(), 200);
@@ -598,7 +598,7 @@ mod tests {
             super::search_get_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
         assert_eq!(
             warp::test::request()
-                .path("/api/v1/quickwit-demo-index/search?query=*&start_offset=5&max_hits=30")
+                .path("/quickwit-demo-index/search?query=*&start_offset=5&max_hits=30")
                 .reply(&rest_search_api_handler)
                 .await
                 .status(),
@@ -619,7 +619,7 @@ mod tests {
             super::search_get_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
         assert_eq!(
             warp::test::request()
-                .path("/api/v1/index-does-not-exist/search?query=myfield:test")
+                .path("/index-does-not-exist/search?query=myfield:test")
                 .reply(&rest_search_api_handler)
                 .await
                 .status(),
@@ -638,7 +638,7 @@ mod tests {
             super::search_get_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
         assert_eq!(
             warp::test::request()
-                .path("/api/v1/index-does-not-exist/search?query=myfield:test")
+                .path("/index-does-not-exist/search?query=myfield:test")
                 .reply(&rest_search_api_handler)
                 .await
                 .status(),
@@ -657,7 +657,7 @@ mod tests {
             super::search_get_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
         assert_eq!(
             warp::test::request()
-                .path("/api/v1/my-index/search?query=myfield:test")
+                .path("/my-index/search?query=myfield:test")
                 .reply(&rest_search_api_handler)
                 .await
                 .status(),
@@ -680,10 +680,7 @@ mod tests {
         let rest_search_stream_api_handler =
             super::search_stream_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
         let response = warp::test::request()
-            .path(
-                "/api/v1/my-index/search/stream?query=obama&fast_field=external_id&\
-                 output_format=csv",
-            )
+            .path("/my-index/search/stream?query=obama&fast_field=external_id&output_format=csv")
             .reply(&rest_search_stream_api_handler)
             .await;
         assert_eq!(response.status(), 200);
@@ -695,10 +692,7 @@ mod tests {
     #[tokio::test]
     async fn test_rest_search_stream_api_csv() {
         let (index, req) = warp::test::request()
-            .path(
-                "/api/v1/my-index/search/stream?query=obama&fast_field=external_id&\
-                 output_format=csv",
-            )
+            .path("/my-index/search/stream?query=obama&fast_field=external_id&output_format=csv")
             .filter(&super::search_stream_filter())
             .await
             .unwrap();
@@ -721,7 +715,7 @@ mod tests {
     async fn test_rest_search_stream_api_click_house_row_binary() {
         let (index, req) = warp::test::request()
             .path(
-                "/api/v1/my-index/search/stream?query=obama&fast_field=external_id&\
+                "/my-index/search/stream?query=obama&fast_field=external_id&\
                  output_format=clickHouseRowBinary",
             )
             .filter(&super::search_stream_filter())
@@ -746,7 +740,7 @@ mod tests {
     async fn test_rest_search_stream_api_error() {
         let rejection = warp::test::request()
             .path(
-                "/api/v1/my-index/search/stream?query=obama&fast_field=external_id&\
+                "/my-index/search/stream?query=obama&fast_field=external_id&\
                  output_format=click_house_row_binary",
             )
             .filter(&super::search_stream_filter())
@@ -763,8 +757,7 @@ mod tests {
     async fn test_rest_search_stream_api_error_empty_fastfield() {
         let rejection = warp::test::request()
             .path(
-                "/api/v1/my-index/search/stream?query=obama&fast_field=&\
-                 output_format=clickHouseRowBinary",
+                "/my-index/search/stream?query=obama&fast_field=&output_format=clickHouseRowBinary",
             )
             .filter(&super::search_stream_filter())
             .await

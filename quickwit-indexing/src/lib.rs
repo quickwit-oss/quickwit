@@ -46,7 +46,9 @@ mod test_utils;
 
 pub use test_utils::{mock_split, mock_split_meta, TestSandbox};
 
-pub use self::garbage_collection::{delete_splits_with_files, run_garbage_collect, FileEntry};
+pub use self::garbage_collection::{
+    delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
+};
 use self::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 pub use self::source::check_source_connectivity;
 
