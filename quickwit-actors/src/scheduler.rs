@@ -25,11 +25,11 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use futures::Future;
-use tokio::sync::oneshot::Sender;
+use tokio::sync::oneshot::{self, Sender};
 use tokio::task::JoinHandle;
 use tracing::info;
 
-use crate::{Actor, ActorContext, AsyncActor};
+use crate::{Actor, ActorContext, ActorExitStatus, Handler};
 
 pub(crate) struct Callback(pub Pin<Box<dyn Future<Output = ()> + Sync + Send + 'static>>);
 
@@ -70,33 +70,31 @@ pub enum TimeShift {
     ByDuration(Duration),
 }
 
-pub(crate) enum SchedulerMessage {
-    ScheduleEvent {
-        timeout: Duration,
-        callback: Callback,
-    },
-    Timeout,
-    SimulateAdvanceTime {
-        time_shift: TimeShift,
-        tx: tokio::sync::oneshot::Sender<()>,
-    },
+/// Schedules a callback to be executed after `timeout` is elapsed.
+///
+/// The callback is required to not block.
+pub(crate) struct ScheduleEvent {
+    pub(crate) timeout: Duration,
+    pub(crate) callback: Callback,
 }
 
-impl fmt::Debug for SchedulerMessage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SchedulerMessage::ScheduleEvent {
-                timeout,
-                callback: _,
-            } => f
-                .debug_struct("ScheduleEvent")
-                .field("timeout", timeout)
-                .finish(),
-            SchedulerMessage::Timeout => f.write_str("Timeout"),
-            SchedulerMessage::SimulateAdvanceTime { .. } => {
-                f.debug_struct("SimulateAdvanceTime").finish()
-            }
-        }
+/// Identifies elapsed events and triggers their associated callback.
+#[derive(Debug)]
+struct Timeout;
+
+/// Advance through time.
+/// `tx` is called once `time_shift` is entirely elapsed.
+#[derive(Debug)]
+pub(crate) struct SimulateAdvanceTime {
+    pub(crate) time_shift: TimeShift,
+    pub(crate) tx: oneshot::Sender<()>,
+}
+
+impl fmt::Debug for ScheduleEvent {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("ScheduleEvent")
+            .field("timeout", &self.timeout)
+            .finish()
     }
 }
 
@@ -115,8 +113,6 @@ pub(crate) struct Scheduler {
 }
 
 impl Actor for Scheduler {
-    type Message = SchedulerMessage;
-
     type ObservableState = SchedulerCounters;
 
     fn observable_state(&self) -> Self::ObservableState {
@@ -132,22 +128,45 @@ impl Actor for Scheduler {
 }
 
 #[async_trait]
-impl AsyncActor for Scheduler {
-    async fn process_message(
+impl Handler<SimulateAdvanceTime> for Scheduler {
+    type Reply = ();
+
+    async fn handle(
         &mut self,
-        message: SchedulerMessage,
-        ctx: &crate::ActorContext<Self>,
-    ) -> Result<(), crate::ActorExitStatus> {
-        match message {
-            SchedulerMessage::ScheduleEvent { timeout, callback } => {
-                self.process_schedule_event(timeout, callback, ctx).await;
-            }
-            SchedulerMessage::Timeout => self.process_timeout(ctx).await,
-            SchedulerMessage::SimulateAdvanceTime { time_shift, tx } => {
-                self.process_simulate_advance_time(time_shift, tx, ctx)
-                    .await
-            }
-        }
+        message: SimulateAdvanceTime,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        self.process_simulate_advance_time(message.time_shift, message.tx, ctx)
+            .await;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<ScheduleEvent> for Scheduler {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        message: ScheduleEvent,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        self.process_schedule_event(message.timeout, message.callback, ctx)
+            .await;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<Timeout> for Scheduler {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _message: Timeout,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        self.process_timeout(ctx).await;
         Ok(())
     }
 }
@@ -203,7 +222,7 @@ impl Scheduler {
             // A good way could be to wait for the overall actors in the universe to be idle.
             tokio::time::sleep(Duration::from_millis(100)).await;
             let _ = ctx
-                .send_self_message(SchedulerMessage::SimulateAdvanceTime {
+                .send_self_message(SimulateAdvanceTime {
                     time_shift: TimeShift::ToInstant(deadline),
                     tx,
                 })
@@ -269,7 +288,7 @@ impl Scheduler {
                 tokio::time::sleep(timeout).await;
             }
             // We ignore the send error here. The scheduler was just terminated
-            let _ = self_mailbox.send_message(SchedulerMessage::Timeout).await;
+            let _ = self_mailbox.send_message(Timeout).await;
         });
         self.next_timeout = Some(new_join_handle);
     }
@@ -283,8 +302,8 @@ mod tests {
 
     use tokio::sync::oneshot;
 
-    use super::{Callback, Scheduler, SchedulerMessage};
-    use crate::scheduler::{SchedulerCounters, TimeShift};
+    use super::{Callback, Scheduler};
+    use crate::scheduler::{ScheduleEvent, SchedulerCounters, SimulateAdvanceTime, TimeShift};
     use crate::Universe;
 
     fn create_test_callback() -> (Arc<AtomicBool>, Callback) {
@@ -303,29 +322,23 @@ mod tests {
         // It might be a bit confusing. We spawn a scheduler like a regular actor to test it.
         // The scheduler is usually spawned from within the universe.
         let (scheduler_mailbox, scheduler_handler) =
-            universe.spawn_actor(Scheduler::default()).spawn_async();
+            universe.spawn_actor(Scheduler::default()).spawn();
         let (cb_called, callback) = create_test_callback();
-        universe
-            .send_message(
-                &scheduler_mailbox,
-                SchedulerMessage::ScheduleEvent {
-                    timeout: Duration::from_secs(30),
-                    callback,
-                },
-            )
+        scheduler_mailbox
+            .send_message(ScheduleEvent {
+                timeout: Duration::from_secs(30),
+                callback,
+            })
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_secs(1)).await;
         assert!(!cb_called.load(Ordering::SeqCst));
         let (tx, _rx) = oneshot::channel();
-        universe
-            .send_message(
-                &scheduler_mailbox,
-                SchedulerMessage::SimulateAdvanceTime {
-                    time_shift: TimeShift::ByDuration(Duration::from_secs(31)),
-                    tx,
-                },
-            )
+        scheduler_mailbox
+            .send_message(SimulateAdvanceTime {
+                time_shift: TimeShift::ByDuration(Duration::from_secs(31)),
+                tx,
+            })
             .await
             .unwrap();
         let scheduler_counters: SchedulerCounters =
@@ -346,27 +359,21 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let (scheduler_mailbox, scheduler_handler) =
-            universe.spawn_actor(Scheduler::default()).spawn_async();
+            universe.spawn_actor(Scheduler::default()).spawn();
         let (cb_called1, callback1) = create_test_callback();
         let (cb_called2, callback2) = create_test_callback();
-        universe
-            .send_message(
-                &scheduler_mailbox,
-                SchedulerMessage::ScheduleEvent {
-                    timeout: Duration::from_secs(20),
-                    callback: callback2,
-                },
-            )
+        scheduler_mailbox
+            .send_message(ScheduleEvent {
+                timeout: Duration::from_secs(20),
+                callback: callback2,
+            })
             .await
             .unwrap();
-        universe
-            .send_message(
-                &scheduler_mailbox,
-                SchedulerMessage::ScheduleEvent {
-                    timeout: Duration::from_millis(2),
-                    callback: callback1,
-                },
-            )
+        scheduler_mailbox
+            .send_message(ScheduleEvent {
+                timeout: Duration::from_millis(2),
+                callback: callback1,
+            })
             .await
             .unwrap();
         let scheduler_counters = scheduler_handler.process_pending_and_observe().await.state;
@@ -391,27 +398,21 @@ mod tests {
         assert!(cb_called1.load(Ordering::SeqCst));
         assert!(!cb_called2.load(Ordering::SeqCst));
         let (tx, _rx) = oneshot::channel::<()>();
-        universe
-            .send_message(
-                &scheduler_mailbox,
-                SchedulerMessage::SimulateAdvanceTime {
-                    time_shift: TimeShift::ByDuration(Duration::from_secs(10)),
-                    tx,
-                },
-            )
+        scheduler_mailbox
+            .send_message(SimulateAdvanceTime {
+                time_shift: TimeShift::ByDuration(Duration::from_secs(10)),
+                tx,
+            })
             .await
             .unwrap();
         assert!(cb_called1.load(Ordering::SeqCst));
         assert!(!cb_called2.load(Ordering::SeqCst));
         let (tx, _rx) = oneshot::channel::<()>();
-        universe
-            .send_message(
-                &scheduler_mailbox,
-                SchedulerMessage::SimulateAdvanceTime {
-                    time_shift: TimeShift::ByDuration(Duration::from_secs(10)),
-                    tx,
-                },
-            )
+        scheduler_mailbox
+            .send_message(SimulateAdvanceTime {
+                time_shift: TimeShift::ByDuration(Duration::from_secs(10)),
+                tx,
+            })
             .await
             .unwrap();
         let scheduler_counters: SchedulerCounters =

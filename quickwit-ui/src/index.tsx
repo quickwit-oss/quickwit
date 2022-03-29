@@ -17,16 +17,23 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use crate::models::RawDocBatch;
+import React from 'react';
+import ReactDOM from 'react-dom';
+import './index.css';
+import App from './views/App';
+import reportWebVitals from './reportWebVitals';
+import { BrowserRouter } from 'react-router-dom';
 
-#[derive(Debug)]
-pub enum IndexerMessage {
-    Batch(RawDocBatch),
-    CommitTimeout { split_id: String },
-}
+ReactDOM.render(
+  <React.StrictMode>
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
+  </React.StrictMode>,
+  document.getElementById('root')
+);
 
-impl From<RawDocBatch> for IndexerMessage {
-    fn from(batch: RawDocBatch) -> Self {
-        IndexerMessage::Batch(batch)
-    }
-}
+// If you want to start measuring performance in your app, pass a function
+// to log results (for example: reportWebVitals(console.log))
+// or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
+reportWebVitals();

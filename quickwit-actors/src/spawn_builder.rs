@@ -17,27 +17,23 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use crate::async_actor::spawn_async_actor;
 use crate::mailbox::Inbox;
-use crate::scheduler::SchedulerMessage;
-use crate::sync_actor::spawn_sync_actor;
-use crate::{
-    create_mailbox, Actor, ActorContext, ActorHandle, AsyncActor, KillSwitch, Mailbox, SyncActor,
-};
+use crate::scheduler::Scheduler;
+use crate::{create_mailbox, Actor, ActorContext, ActorHandle, ActorRunner, KillSwitch, Mailbox};
 
 /// `SpawnBuilder` makes it possible to configure misc parameters before spawning an actor.
 pub struct SpawnBuilder<A: Actor> {
     actor: A,
-    scheduler_mailbox: Mailbox<SchedulerMessage>,
+    scheduler_mailbox: Mailbox<Scheduler>,
     kill_switch: KillSwitch,
     #[allow(clippy::type_complexity)]
-    mailboxes: Option<(Mailbox<A::Message>, Inbox<A::Message>)>,
+    mailboxes: Option<(Mailbox<A>, Inbox<A>)>,
 }
 
 impl<A: Actor> SpawnBuilder<A> {
     pub(crate) fn new(
         actor: A,
-        scheduler_mailbox: Mailbox<SchedulerMessage>,
+        scheduler_mailbox: Mailbox<Scheduler>,
         kill_switch: KillSwitch,
     ) -> Self {
         SpawnBuilder {
@@ -64,12 +60,12 @@ impl<A: Actor> SpawnBuilder<A> {
     ///
     /// This function makes it possible to create non-DAG networks
     /// of actors.
-    pub fn set_mailboxes(mut self, mailbox: Mailbox<A::Message>, inbox: Inbox<A::Message>) -> Self {
+    pub fn set_mailboxes(mut self, mailbox: Mailbox<A>, inbox: Inbox<A>) -> Self {
         self.mailboxes = Some((mailbox, inbox));
         self
     }
 
-    fn create_actor_context_and_inbox(mut self) -> (A, ActorContext<A>, Inbox<A::Message>) {
+    fn create_actor_context_and_inbox(mut self) -> (A, ActorContext<A>, Inbox<A>) {
         let (mailbox, inbox) = self.mailboxes.take().unwrap_or_else(|| {
             let actor_name = self.actor.name();
             let queue_capacity = self.actor.queue_capacity();
@@ -84,22 +80,18 @@ impl<A: Actor> SpawnBuilder<A> {
     }
 }
 
-impl<A: AsyncActor> SpawnBuilder<A> {
+impl<A: Actor> SpawnBuilder<A> {
     /// Spawns an async actor.
-    pub fn spawn_async(self) -> (Mailbox<A::Message>, ActorHandle<A>) {
-        let (actor, ctx, inbox) = self.create_actor_context_and_inbox();
-        let mailbox = ctx.mailbox().clone();
-        let actor_handle = spawn_async_actor(actor, ctx, inbox);
-        (mailbox, actor_handle)
+    pub fn spawn(self) -> (Mailbox<A>, ActorHandle<A>) {
+        let runner = self.actor.runner();
+        self.spawn_with_forced_runner(runner)
     }
-}
 
-impl<A: SyncActor> SpawnBuilder<A> {
-    /// Spawns an async actor.
-    pub fn spawn_sync(self) -> (Mailbox<A::Message>, ActorHandle<A>) {
+    /// Ignore the actor default runner, and run the actor on a specific one.
+    pub fn spawn_with_forced_runner(self, runner: ActorRunner) -> (Mailbox<A>, ActorHandle<A>) {
         let (actor, ctx, inbox) = self.create_actor_context_and_inbox();
         let mailbox = ctx.mailbox().clone();
-        let actor_handle = spawn_sync_actor(actor, ctx, inbox);
+        let actor_handle = runner.spawn_actor(actor, ctx, inbox);
         (mailbox, actor_handle)
     }
 }

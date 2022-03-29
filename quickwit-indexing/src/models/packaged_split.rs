@@ -99,13 +99,3 @@ impl PackagedSplitBatch {
             .collect::<Vec<_>>()
     }
 }
-
-impl IntoIterator for PackagedSplitBatch {
-    type Item = PackagedSplit;
-
-    type IntoIter = std::vec::IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.splits.into_iter()
-    }
-}

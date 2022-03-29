@@ -22,33 +22,33 @@ use clap::{ArgMatches, Command};
 use tracing::Level;
 
 use crate::index::{build_index_command, IndexCliCommand};
-use crate::service::{build_service_command, ServiceCliCommand};
+use crate::service::{build_run_command, RunCliCommand};
 use crate::source::{build_source_command, SourceCliCommand};
 use crate::split::{build_split_command, SplitCliCommand};
 
 pub fn build_cli<'a>() -> Command<'a> {
     Command::new("Quickwit")
-        .subcommand(build_source_command())
-        .subcommand(build_service_command())
-        .subcommand(build_split_command())
-        .subcommand(build_index_command())
+        .subcommand(build_run_command().display_order(1))
+        .subcommand(build_index_command().display_order(2))
+        .subcommand(build_source_command().display_order(3))
+        .subcommand(build_split_command().display_order(4))
         .disable_help_subcommand(true)
         .arg_required_else_help(true)
 }
 
 #[derive(Debug, PartialEq)]
 pub enum CliCommand {
+    Run(RunCliCommand),
     Index(IndexCliCommand),
-    Service(ServiceCliCommand),
-    Source(SourceCliCommand),
     Split(SplitCliCommand),
+    Source(SourceCliCommand),
 }
 
 impl CliCommand {
     pub fn default_log_level(&self) -> Level {
         match self {
+            CliCommand::Run(_) => Level::INFO,
             CliCommand::Index(subcommand) => subcommand.default_log_level(),
-            CliCommand::Service(_) => Level::INFO,
             CliCommand::Source(_) => Level::ERROR,
             CliCommand::Split(_) => Level::ERROR,
         }
@@ -60,7 +60,7 @@ impl CliCommand {
             .ok_or_else(|| anyhow::anyhow!("Failed to parse command arguments."))?;
         match subcommand {
             "index" => IndexCliCommand::parse_cli_args(submatches).map(CliCommand::Index),
-            "service" => ServiceCliCommand::parse_cli_args(submatches).map(CliCommand::Service),
+            "run" => RunCliCommand::parse_cli_args(submatches).map(CliCommand::Run),
             "source" => SourceCliCommand::parse_cli_args(submatches).map(CliCommand::Source),
             "split" => SplitCliCommand::parse_cli_args(submatches).map(CliCommand::Split),
             _ => bail!("Subcommand `{}` is not implemented.", subcommand),
@@ -70,7 +70,7 @@ impl CliCommand {
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
             CliCommand::Index(subcommand) => subcommand.execute().await,
-            CliCommand::Service(subcommand) => subcommand.execute().await,
+            CliCommand::Run(subcommand) => subcommand.execute().await,
             CliCommand::Source(subcommand) => subcommand.execute().await,
             CliCommand::Split(subcommand) => subcommand.execute().await,
         }

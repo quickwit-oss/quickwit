@@ -17,9 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use quickwit_indexing::actors::INDEXING;
+use quickwit_indexing::models::CACHE;
 use quickwit_indexing::{
     delete_splits_with_files, run_garbage_collect, FileEntry, IndexingSplitStore,
 };
@@ -27,7 +30,8 @@ use quickwit_metastore::{
     quickwit_metastore_uri_resolver, IndexMetadata, Metastore, SplitMetadata, SplitState,
 };
 use quickwit_storage::{quickwit_storage_uri_resolver, Storage};
-use tracing::error;
+use tokio::fs;
+use tracing::{error, info};
 
 /// Creates an index at `index-path` extracted from `metastore_uri`. The command fails if an index
 /// already exists at `index-path`.
@@ -112,6 +116,32 @@ pub async fn delete_index(
     .await?;
     metastore.delete_index(index_id).await?;
     Ok(deleted_entries)
+}
+
+/// Helper function to get the cache path.
+pub fn get_cache_path(data_dir_path: &Path, index_id: &str, source_id: &str) -> PathBuf {
+    data_dir_path
+        .join(INDEXING)
+        .join(index_id)
+        .join(source_id)
+        .join(CACHE)
+}
+
+/// Cleans up split cache in local split store.
+///
+/// * `data_dir_path` - Path to directory where data (tmp data, splits kept for caching purpose) is
+///   persisted.
+/// * `index_id` - The target index Id.
+/// * `source_id` -  The source Id.
+pub async fn clean_split_cache(
+    data_dir_path: &Path,
+    index_id: String,
+    source_id: String,
+) -> anyhow::Result<()> {
+    let cache_path = get_cache_path(data_dir_path, &index_id, &source_id);
+    info!(cache_path = %cache_path.as_path().display(), "cache_path");
+    fs::remove_dir_all(cache_path.as_path()).await?;
+    Ok(())
 }
 
 /// Detect all dangling splits and associated files from the index and removes them.

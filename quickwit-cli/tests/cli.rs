@@ -30,6 +30,8 @@ use predicates::prelude::*;
 use quickwit_cli::index::{create_index_cli, search_index, CreateIndexArgs, SearchIndexArgs};
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
+use quickwit_core::get_cache_path;
+use quickwit_indexing::source::INGEST_SOURCE_ID;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore};
 use serde_json::{json, Number, Value};
 use serial_test::serial;
@@ -50,13 +52,14 @@ fn create_logs_index(test_env: &TestEnv) {
     .success();
 }
 
-fn ingest_docs(input_path: &Path, test_env: &TestEnv) {
+fn ingest_docs_with_options(input_path: &Path, test_env: &TestEnv, options: &str) {
     make_command(
         format!(
-            "index ingest --index {} --input-path {} --config {}",
+            "index ingest --index {} --input-path {} --config {} {}",
             test_env.index_id,
             input_path.display(),
             test_env.resource_files["config"].display(),
+            options
         )
         .as_str(),
     )
@@ -67,6 +70,10 @@ fn ingest_docs(input_path: &Path, test_env: &TestEnv) {
     .stdout(predicate::str::contains(
         "Now, you can query the index with",
     ));
+}
+
+fn ingest_docs(input_path: &Path, test_env: &TestEnv) {
+    ingest_docs_with_options(input_path, test_env, "");
 }
 
 #[test]
@@ -85,6 +92,7 @@ async fn test_cmd_create() -> Result<()> {
     create_logs_index(&test_env);
     let index_metadata = test_env
         .metastore()
+        .await?
         .index_metadata(&test_env.index_id)
         .await
         .unwrap();
@@ -105,6 +113,7 @@ async fn test_cmd_create() -> Result<()> {
     .success();
     let index_metadata = test_env
         .metastore()
+        .await?
         .index_metadata(&test_env.index_id)
         .await
         .unwrap();
@@ -186,12 +195,42 @@ fn test_cmd_ingest_on_non_existing_file() -> Result<()> {
 }
 
 #[test]
+fn test_cmd_ingest_clean_cache() -> Result<()> {
+    let index_id = append_random_suffix("test-index-clean-cache");
+    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    create_logs_index(&test_env);
+
+    ingest_docs_with_options(
+        test_env.resource_files["logs"].as_path(),
+        &test_env,
+        "--clean_cache",
+    );
+
+    // check cache path
+    let cache_path = get_cache_path(
+        &test_env.data_dir_path,
+        &test_env.index_id,
+        INGEST_SOURCE_ID,
+    );
+    assert_eq!(false, cache_path.exists());
+
+    Ok(())
+}
+
+#[test]
 fn test_cmd_ingest_simple() -> Result<()> {
     let index_id = append_random_suffix("test-index-simple");
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
     create_logs_index(&test_env);
-
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
+
+    // check cache path
+    let cache_path = get_cache_path(
+        &test_env.data_dir_path,
+        &test_env.index_id,
+        INGEST_SOURCE_ID,
+    );
+    assert_eq!(true, cache_path.exists());
 
     // Using piped input
     let log_path = test_env.resource_files["logs"].clone();
@@ -437,6 +476,7 @@ async fn test_cmd_delete() -> Result<()> {
     .success();
     assert!(test_env
         .metastore()
+        .await?
         .index_metadata(&test_env.index_id)
         .await
         .is_err(),);
@@ -558,7 +598,7 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
     create_logs_index(&test_env);
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
-    let metastore = test_env.metastore();
+    let metastore = test_env.metastore().await?;
     let splits = metastore.list_all_splits(&test_env.index_id).await?;
     assert_eq!(splits.len(), 1);
     make_command(
@@ -737,7 +777,7 @@ async fn test_all_local_index() -> Result<()> {
     // serve & api-search
     let mut server_process = spawn_command(
         format!(
-            "service run searcher --config {}",
+            "run --service searcher --config {}",
             test_env.resource_files["config"].display(),
         )
         .as_str(),
@@ -808,6 +848,7 @@ async fn test_cmd_all_with_s3_localstack_cli() -> Result<()> {
 
     test_env
         .metastore()
+        .await?
         .index_metadata(&test_env.index_id)
         .await
         .unwrap();
@@ -893,6 +934,7 @@ async fn test_cmd_all_with_s3_localstack_internal_api() -> Result<()> {
     create_index_cli(args).await?;
     let index_metadata = test_env
         .metastore()
+        .await?
         .index_metadata(&test_env.index_id)
         .await;
     assert_eq!(index_metadata.is_ok(), true);

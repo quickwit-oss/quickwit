@@ -20,7 +20,6 @@
 use std::convert::TryFrom;
 
 use anyhow::bail;
-use chrono::{FixedOffset, Utc};
 use itertools::{process_results, Itertools};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
@@ -28,6 +27,9 @@ use tantivy::schema::{
     BytesOptions, Cardinality, DocParsingError as TantivyDocParser, FieldType, IndexRecordOption,
     NumericOptions, TextFieldIndexing, TextOptions, Value,
 };
+use tantivy::time::format_description::well_known::Rfc3339;
+use tantivy::time::OffsetDateTime;
+use tantivy::DateTime;
 use thiserror::Error;
 
 use super::{default_as_true, FieldMappingType};
@@ -357,17 +359,16 @@ impl FieldMappingEntry {
                 )?
             }
             JsonValue::String(value_as_str) => {
-                let dt_with_fixed_tz: chrono::DateTime<FixedOffset> =
-                    chrono::DateTime::parse_from_rfc3339(&value_as_str).map_err(|err| {
+                let date_time_utc = DateTime::new_utc(
+                    OffsetDateTime::parse(&value_as_str, &Rfc3339).map_err(|err| {
                         DocParsingError::ValueError(
                             self.name.clone(),
                             format!("Expected RFC 3339 date, got '{}'. {:?}", value_as_str, err),
                         )
-                    })?;
-                vec![(
-                    FieldPath::new(&self.name),
-                    Value::Date(dt_with_fixed_tz.with_timezone(&Utc)),
-                )]
+                    })?,
+                );
+
+                vec![(FieldPath::new(&self.name), Value::Date(date_time_utc))]
             }
             JsonValue::Null => {
                 vec![]
@@ -770,10 +771,11 @@ impl From<TantivyDocParser> for DocParsingError {
 #[cfg(test)]
 mod tests {
     use anyhow::bail;
-    use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
     use matches::matches;
     use serde_json::json;
     use tantivy::schema::{Cardinality, Value};
+    use tantivy::time::{Date, Month, PrimitiveDateTime, Time};
+    use tantivy::DateTime;
 
     use super::FieldMappingEntry;
     use crate::default_doc_mapper::FieldMappingType;
@@ -1355,11 +1357,14 @@ mod tests {
 
         // Successful parsing
         let parsed_value = entry.parse(json!("2021-12-19T16:39:57-01:00"))?;
-        let datetime = NaiveDateTime::new(
-            NaiveDate::from_ymd(2021, 12, 19),
-            NaiveTime::from_hms(17, 39, 57),
+
+        let datetime = PrimitiveDateTime::new(
+            Date::from_calendar_date(2021, Month::December, 19).unwrap(),
+            Time::from_hms(17, 39, 57).unwrap(),
         );
-        let datetime_utc = Utc.from_utc_datetime(&datetime);
+        // let datetime = datetime!(2021-12-19 17:39:57);
+
+        let datetime_utc = DateTime::new_primitive(datetime); // Utc.from_utc_datetime(&datetime);
         assert_eq!(parsed_value.len(), 1);
         assert_eq!(parsed_value[0].1, Value::Date(datetime_utc));
 

@@ -475,6 +475,7 @@ mod tests {
         {
             "timestamp": 1586960586000,
             "body": "20200415T072306-0700 INFO This is a great log",
+            "response_date2": "2021-12-19T16:39:57+00:00",
             "response_date": "2021-12-19T16:39:57Z",
             "response_time": 2.3,
             "response_payload": "YWJj",
@@ -490,7 +491,7 @@ mod tests {
     const EXPECTED_JSON_PATHS_AND_VALUES: &str = r#"{
             "timestamp": [1586960586000],
             "body": ["20200415T072306-0700 INFO This is a great log"],
-            "response_date": ["2021-12-19T16:39:57+00:00"],
+            "response_date": ["2021-12-19T16:39:57Z"],
             "response_time": [2.3],
             "response_payload": [[97,98,99]],
             "owner": ["foo"],
@@ -567,6 +568,12 @@ mod tests {
                     .iter()
                     .map(|expected_value| format!("{}", expected_value))
                     .any(|expected_value| expected_value == value);
+                if !is_value_in_expected_values {
+                    panic!(
+                        "Could not find: {:?} in {:?}",
+                        value, expected_json_paths_and_values
+                    );
+                }
                 assert!(is_value_in_expected_values);
             }
         });

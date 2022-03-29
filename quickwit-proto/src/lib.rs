@@ -19,11 +19,16 @@
 
 mod cluster;
 mod quickwit;
+mod quickwit_push_api;
+
+pub mod push_api {
+    pub use crate::quickwit_push_api::*;
+}
 
 #[macro_use]
 extern crate serde;
 
-use std::fmt::{self, Display};
+use std::fmt;
 
 pub use cluster::*;
 pub use quickwit::*;
@@ -46,7 +51,7 @@ impl From<SearchStreamRequest> for SearchRequest {
     }
 }
 
-impl Display for SplitSearchError {
+impl fmt::Display for SplitSearchError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "({}, split_id: {})", self.error, self.split_id)
     }

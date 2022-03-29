@@ -45,8 +45,8 @@ message Member {
   /// If true, it means self.
   bool is_self = 3;
 
-  /// member reincarnation 
-  int64 generation = 4;
+  /// member reincarnation
+  uint64 generation = 4;
 }
 
 message ListMembersRequest {
