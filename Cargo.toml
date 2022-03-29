@@ -11,6 +11,7 @@ members = [
   "quickwit-directories",
   "quickwit-metastore",
   "quickwit-proto",
+  "quickwit-pushapi",
   "quickwit-search",
   "quickwit-serve",
   "quickwit-storage",

@@ -20,6 +20,7 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=proto/cluster.proto");
     println!("cargo:rerun-if-changed=proto/search_api.proto");
+    println!("cargo:rerun-if-changed=proto/push_api.proto");
 
     let mut prost_config = prost_build::Config::default();
     // prost_config.type_attribute("LeafSearchResponse", "#[derive(Default)]");
@@ -32,7 +33,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .out_dir("src/")
         .compile_with_config(
             prost_config,
-            &["./proto/cluster.proto", "./proto/search_api.proto"],
+            &[
+                "./proto/cluster.proto",
+                "./proto/search_api.proto",
+                "./proto/push_api.proto",
+            ],
             &["./proto"],
         )?;
     Ok(())
