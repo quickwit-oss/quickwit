@@ -81,7 +81,6 @@ quickwit index create
     --index-config <index-config>
     --config <config>
     [--overwrite]
-    [--clean_cache]
 ```
 
 *Options*
@@ -89,7 +88,6 @@ quickwit index create
 `--index-config` Location of the index config file.
 `--config` Quickwit config file.
 `--overwrite` Overwrites pre-existing index.
-`--clean_cache` Remove local cache splits after indexing.
 
 *Examples*
 
