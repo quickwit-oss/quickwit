@@ -817,7 +817,7 @@ checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 [[package]]
 name = "fastfield_codecs"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=46d5de9#46d5de920dd1ac86fa7a74baa0debd933bcb6574"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=447811c#447811c1117a4c87182077958d09761574df5e21"
 dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
@@ -1943,7 +1943,7 @@ dependencies = [
 [[package]]
 name = "ownedbytes"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=46d5de9#46d5de920dd1ac86fa7a74baa0debd933bcb6574"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=447811c#447811c1117a4c87182077958d09761574df5e21"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -2476,7 +2476,6 @@ version = "0.2.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "chrono",
  "crossbeam",
  "futures",
  "once_cell",
@@ -2487,6 +2486,7 @@ dependencies = [
  "tantivy",
  "tempfile",
  "thiserror",
+ "time 0.3.9",
  "tokio",
  "tracing",
  "uuid 0.8.2",
@@ -2551,6 +2551,7 @@ dependencies = [
  "tantivy",
  "tempfile",
  "thiserror",
+ "time 0.3.9",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -3606,14 +3607,13 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.17.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=46d5de9#46d5de920dd1ac86fa7a74baa0debd933bcb6574"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=447811c#447811c1117a4c87182077958d09761574df5e21"
 dependencies = [
  "async-trait",
  "base64",
  "bitpacking",
  "byteorder",
  "census",
- "chrono",
  "crc32fast",
  "crossbeam",
  "downcast-rs",
@@ -3650,6 +3650,7 @@ dependencies = [
  "tantivy-query-grammar",
  "tempfile",
  "thiserror",
+ "time 0.3.9",
  "uuid 0.8.2",
  "winapi 0.3.9",
 ]
@@ -3657,12 +3658,12 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.1.1"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=46d5de9#46d5de920dd1ac86fa7a74baa0debd933bcb6574"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=447811c#447811c1117a4c87182077958d09761574df5e21"
 
 [[package]]
 name = "tantivy-common"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=46d5de9#46d5de920dd1ac86fa7a74baa0debd933bcb6574"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=447811c#447811c1117a4c87182077958d09761574df5e21"
 dependencies = [
  "byteorder",
  "ownedbytes",
@@ -3682,7 +3683,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.15.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=46d5de9#46d5de920dd1ac86fa7a74baa0debd933bcb6574"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=447811c#447811c1117a4c87182077958d09761574df5e21"
 dependencies = [
  "combine",
  "once_cell",
@@ -3816,6 +3817,7 @@ dependencies = [
  "itoa",
  "libc",
  "num_threads",
+ "serde",
 ]
 
 [[package]]
