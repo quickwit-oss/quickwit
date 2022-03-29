@@ -105,32 +105,37 @@ jobs:
             ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
             ${{ runner.os }}-cargo-test
 
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          components: clippy, llvm-tools-preview, rustfmt
-
-      - name: Install cargo-llvm-cov
-        run: |
-          curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | \
-          tar xzf - -C ~/.cargo/bin
-
       - name: Install awslocal
         run: pip install awscli-local
 
       - name: Prepare LocalStack S3
         run: ./quickwit-cli/tests/prepare_tests.sh
 
-      - name: Generate code coverage
-        run: |
-          cargo +nightly llvm-cov clean --workspace
-          cargo +nightly llvm-cov --test failpoints --no-report --features fail/failpoints
-          cargo +nightly llvm-cov --no-report --all-features
-          cargo +nightly llvm-cov --no-run --lcov --output-path lcov.info
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v2.1.0
+      - uses: actions-rs/toolchain@v1
         with:
-          token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
-          files: lcov.info
-          fail_ci_if_error: true
+          toolchain: stable
+          profile: minimal
+
+      - uses: Swatinem/rust-cache@v1
+
+      - name: Compile tests
+        run: cargo test --no-run --locked
+
+      - name: Run tests
+        run: cargo test --all-features
+
+      # Code coverage. Was removed due to #1221
+
+      # - name: Generate code coverage
+      #   run: |
+      #     cargo +nightly llvm-cov clean --workspace
+      #     cargo +nightly llvm-cov --test failpoints --no-report --features fail/failpoints
+      #     cargo +nightly llvm-cov --no-report --all-features
+      #     cargo +nightly llvm-cov --no-run --lcov --output-path lcov.info
+
+      # - name: Upload coverage to Codecov
+      #   uses: codecov/codecov-action@v2.1.0
+      #   with:
+      #     token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
+      #     files: lcov.info
+      #     fail_ci_if_error: true
