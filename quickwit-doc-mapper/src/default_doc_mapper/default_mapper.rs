@@ -157,7 +157,7 @@ impl DefaultDocMapperBuilder {
 
         let mut unique_field_names: HashSet<String> = HashSet::new();
         for field_mapping in self.field_mappings.iter() {
-            for (field_path, field_type) in field_mapping.field_entries() {
+            for (field_path, field_type) in &field_mapping.field_entries {
                 let field_name = field_path.field_name();
                 if field_name == SOURCE_FIELD_NAME {
                     bail!(
@@ -192,7 +192,7 @@ impl DefaultDocMapperBuilder {
                     );
                 }
                 unique_field_names.insert(field_name.clone());
-                builder.add_field(FieldEntry::new(field_name, field_type));
+                builder.add_field(FieldEntry::new(field_name, field_type.clone()));
             }
         }
         if self.store_source {
@@ -371,7 +371,7 @@ impl DefaultDocMapper {
         &self,
         field_paths_and_values: &[(FieldPath, Value)],
     ) -> Result<(), DocParsingError> {
-        for (fast_field_path, _) in self.field_mappings.fast_field_entries() {
+        for (fast_field_path, _) in &self.field_mappings.fast_field_entries {
             let fast_field_name = fast_field_path.field_name();
             if !field_paths_and_values
                 .iter()
