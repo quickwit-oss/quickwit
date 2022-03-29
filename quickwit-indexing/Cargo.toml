@@ -34,7 +34,7 @@ rusoto_kinesis = { version = "0.47", default-features = false, features = ["rust
 serde = "1"
 serde_json = "1"
 serde_yaml = "0.8"
-tantivy = { git= "https://github.com/quickwit-oss/tantivy", rev="46d5de9", default-features=false, features = ["mmap", "lz4-compression", "quickwit"] }
+tantivy = { git= "https://github.com/quickwit-oss/tantivy", rev="447811c", default-features=false, features = ["mmap", "lz4-compression", "quickwit"] }
 tempfile = "3.3"
 thiserror = "1"
 tokio = { version = "1", features = ["sync"] }
@@ -42,6 +42,8 @@ tracing = "0.1.29"
 ulid = "0.5"
 tokio-stream = "0.1"
 arc-swap = "1.4"
+time = { version = "0.3.7", features = ["std"] }
+
 
 [features]
 kafka = ["rdkafka"]

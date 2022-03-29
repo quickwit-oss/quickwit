@@ -24,10 +24,10 @@ use std::time::{Duration, Instant};
 use std::{fmt, io, mem};
 
 use async_trait::async_trait;
-use tantivy::chrono::{DateTime, Utc};
 use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, OwnedBytes};
 use tantivy::{Directory, HasLen};
+use time::OffsetDateTime;
 
 use crate::StorageDirectory;
 
@@ -63,14 +63,14 @@ pub struct ReadOperation {
     pub offset: usize,
     /// The number of bytes fetched
     pub num_bytes: usize,
-    /// The date at which the operation was performed.
-    pub start_date: DateTime<Utc>,
+    /// The date at which the operation was performed (UTC timezone).
+    pub start_date: OffsetDateTime,
     /// The elapsed time to run the read operatioon.
     pub duration: Duration,
 }
 
 struct ReadOperationBuilder {
-    start_date: DateTime<Utc>,
+    start_date: OffsetDateTime,
     start_instant: Instant,
     path: PathBuf,
     offset: usize,
@@ -79,7 +79,7 @@ struct ReadOperationBuilder {
 impl ReadOperationBuilder {
     pub fn new(path: &Path) -> Self {
         let start_instant = Instant::now();
-        let start_date = Utc::now();
+        let start_date = OffsetDateTime::now_utc();
         ReadOperationBuilder {
             start_date,
             start_instant,
