@@ -124,14 +124,14 @@ If ports are already taken, the serve command will fail.
 
 [[service.run.searcher.examples]]
 name = "Start a Searcher"
-command = "quickwit service run searcher --config=./config/quickwit.yaml"
+command = "quickwit run --service searcher --config=./config/quickwit.yaml"
 
 [[service.run.searcher.examples]]
 name = "Make a search request on a wikipedia index"
 command = '''
 # To create wikipedia index and ingest data, go to our tutorial https://quickwit.io/docs/get-started/quickstart.
 # Start a searcher.
-quickwit service run searcher --config=./config/quickwit.yaml
+quickwit run --service searcher --config=./config/quickwit.yaml
 # Make a request.
 curl "http://127.0.0.1:7280/api/v1/wikipedia/search?query=barack+obama"
 '''
@@ -146,7 +146,7 @@ quickwit index create --index-config gh_archive_index_config.yaml --config ./con
 # Download a data sample and ingest it.
 curl https://quickwit-datasets-public.s3.amazonaws.com/gh-archive-2022-01-text-only-10000.json.gz | gunzip | cargo r index ingest --index gh-archive --config=./config/quickwit.yaml
 # Start server.
-quickwit service run searcher --config=./config/quickwit.yaml
+quickwit run --service searcher --config=./config/quickwit.yaml
 # Finally make the search stream request.
 curl "http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=log4j&fastField=id&outputFormat=csv"
 # Make a search stream request with HTTP2.
@@ -162,7 +162,7 @@ Starts an indexing server that consumes the sources of index IDs passed in `--in
 name = "Add a source to an index and start an Indexer"
 command = '''
 quickwit source add --index wikipedia --source wikipedia-source --type file --params '{"filepath":"wiki-articles-10000.json"}'
-quickwit service run indexer --indexes wikipedia --config=./config/quickwit.yaml
+quickwit run --service indexer --indexes wikipedia --config=./config/quickwit.yaml
 '''
 
 

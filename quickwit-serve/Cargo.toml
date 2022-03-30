@@ -25,6 +25,8 @@ quickwit-common = { version = "0.2.1", path = "../quickwit-common" }
 quickwit-metastore = { version = "0.2.1", path = "../quickwit-metastore" }
 quickwit-telemetry = { version = "0.2.1", path = "../quickwit-telemetry" }
 quickwit-directories = { version = "0.2.1", path = "../quickwit-directories" }
+quickwit-indexing = { version = "0.2.1", path = "../quickwit-indexing" }
+quickwit-pushapi = { version = "0.2.1", path = "../quickwit-pushapi" }
 thiserror = "1"
 async-trait = "0.1"
 termcolor = "1"

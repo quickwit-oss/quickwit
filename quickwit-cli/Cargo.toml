@@ -35,6 +35,7 @@ quickwit-indexing = { version = "0.2.1", path = "../quickwit-indexing" }
 quickwit-search = { version = "0.2.1", path = "../quickwit-search" }
 quickwit-serve = { version = "0.2.1", path = "../quickwit-serve" }
 quickwit-telemetry = { version = "0.2.1", path = "../quickwit-telemetry" }
+quickwit-pushapi = {version="0.2.1", path = "../quickwit-pushapi" }
 quickwit-proto = { version = "0.2.1", path = "../quickwit-proto" }
 tabled = "0.5"
 tracing = "0.1.29"

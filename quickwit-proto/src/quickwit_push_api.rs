@@ -1,65 +1,96 @@
-//// The member information.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Member {
-    //// Member ID.　A string of the UUID.
-    #[prost(string, tag="1")]
-    pub id: ::prost::alloc::string::String,
-    //// Cluster listen address. string of IP and port number.
-    //// E.g. 127.0.0.1:5000
-    #[prost(string, tag="2")]
-    pub listen_address: ::prost::alloc::string::String,
-    //// If true, it means self.
-    #[prost(bool, tag="3")]
-    pub is_self: bool,
-    //// member reincarnation
-    #[prost(uint64, tag="4")]
-    pub generation: u64,
+pub struct CreateQueueRequest {
+    #[prost(string, optional, tag="1")]
+    pub queue_id: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ListMembersRequest {
+pub struct DropQueueRequest {
+    #[prost(string, optional, tag="1")]
+    pub queue_id: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ListMembersResponse {
+pub struct IngestRequest {
     #[prost(message, repeated, tag="1")]
-    pub members: ::prost::alloc::vec::Vec<Member>,
+    pub doc_batches: ::prost::alloc::vec::Vec<DocBatch>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct LeaveClusterRequest {
+pub struct IngestResponse {
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct LeaveClusterResponse {
-}
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ClusterStateRequest {
-}
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ClusterStateResponse {
+pub struct FetchRequest {
     #[prost(string, tag="1")]
-    pub state_serialized_json: ::prost::alloc::string::String,
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(uint64, optional, tag="2")]
+    pub start_after: ::core::option::Option<u64>,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FetchResponse {
+    #[prost(uint64, optional, tag="1")]
+    pub first_position: ::core::option::Option<u64>,
+    #[prost(message, optional, tag="2")]
+    pub doc_batch: ::core::option::Option<DocBatch>,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DocBatch {
+    #[prost(string, tag="1")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(bytes="vec", tag="2")]
+    pub concat_docs: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint64, repeated, tag="3")]
+    pub doc_lens: ::prost::alloc::vec::Vec<u64>,
+}
+//// Suggest to truncate the queue.
+////
+//// This function allows the queue to remove all records up to and
+//// including `up_to_offset_included`.
+////
+//// The role of this truncation is to release memory and disk space.
+////
+//// There are no guarantees that the record will effectively be removed.
+//// Nothing might happen, or the truncation might be partial.
+////
+//// In other words, truncating from a position, and fetching records starting
+//// earlier than this position can yield undefined result:
+//// the truncated records may or may not be returned.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SuggestTruncateRequest {
+    #[prost(string, tag="1")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag="2")]
+    pub up_to_position_included: u64,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TailRequest {
+    #[prost(string, tag="1")]
+    pub index_id: ::prost::alloc::string::String,
 }
 /// Generated client implementations.
-pub mod cluster_service_client {
+pub mod push_api_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
     #[derive(Debug, Clone)]
-    pub struct ClusterServiceClient<T> {
+    pub struct PushApiServiceClient<T> {
         inner: tonic::client::Grpc<T>,
     }
-    impl ClusterServiceClient<tonic::transport::Channel> {
+    impl PushApiServiceClient<tonic::transport::Channel> {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
@@ -70,7 +101,7 @@ pub mod cluster_service_client {
             Ok(Self::new(conn))
         }
     }
-    impl<T> ClusterServiceClient<T>
+    impl<T> PushApiServiceClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
         T::Error: Into<StdError>,
@@ -84,7 +115,7 @@ pub mod cluster_service_client {
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
-        ) -> ClusterServiceClient<InterceptedService<T, F>>
+        ) -> PushApiServiceClient<InterceptedService<T, F>>
         where
             F: tonic::service::Interceptor,
             T: tonic::codegen::Service<
@@ -97,7 +128,7 @@ pub mod cluster_service_client {
                 http::Request<tonic::body::BoxBody>,
             >>::Error: Into<StdError> + Send + Sync,
         {
-            ClusterServiceClient::new(InterceptedService::new(inner, interceptor))
+            PushApiServiceClient::new(InterceptedService::new(inner, interceptor))
         }
         /// Compress requests with `gzip`.
         ///
@@ -114,11 +145,17 @@ pub mod cluster_service_client {
             self.inner = self.inner.accept_gzip();
             self
         }
-        //// Retrieves members of the cluster.
-        pub async fn list_members(
+        //// Ingests document in a given queue.
+        ////
+        //// Upon any kind of error, the client should
+        //// - retry to get at least once delivery.
+        //// - not retry to get at most once delivery.
+        ////
+        //// Exactly once delivery is not supported yet.
+        pub async fn ingest(
             &mut self,
-            request: impl tonic::IntoRequest<super::ListMembersRequest>,
-        ) -> Result<tonic::Response<super::ListMembersResponse>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::IngestRequest>,
+        ) -> Result<tonic::Response<super::IngestResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -130,16 +167,24 @@ pub mod cluster_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/cluster.ClusterService/ListMembers",
+                "/quickwit_push_api.PushAPIService/Ingest",
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        //// Removes itself from the cluster.
-        //// Removed node will be isolated from the cluster.
-        pub async fn leave_cluster(
+        //// Fetches record from a given queue.
+        ////
+        //// Records are returned in order.
+        ////
+        //// The returned `FetchResponse` object is meant to be read with the
+        //// `crate::iter_records` function.
+        ////
+        //// Fetching does not necessarily return all of the available records.
+        //// If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),
+        //// the reponse will be partial.
+        pub async fn fetch(
             &mut self,
-            request: impl tonic::IntoRequest<super::LeaveClusterRequest>,
-        ) -> Result<tonic::Response<super::LeaveClusterResponse>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::FetchRequest>,
+        ) -> Result<tonic::Response<super::FetchResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -151,14 +196,19 @@ pub mod cluster_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/cluster.ClusterService/LeaveCluster",
+                "/quickwit_push_api.PushAPIService/Fetch",
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        pub async fn cluster_state(
+        //// Returns a batch containing the last records.
+        ////
+        //// It returns the last documents, from the newest
+        //// to the oldest, and stops as soon as `FETCH_PAYLOAD_LIMIT` (2MB)
+        //// is exceeded.
+        pub async fn tail(
             &mut self,
-            request: impl tonic::IntoRequest<super::ClusterStateRequest>,
-        ) -> Result<tonic::Response<super::ClusterStateResponse>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::TailRequest>,
+        ) -> Result<tonic::Response<super::FetchResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -170,43 +220,62 @@ pub mod cluster_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/cluster.ClusterService/ClusterState",
+                "/quickwit_push_api.PushAPIService/Tail",
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
     }
 }
 /// Generated server implementations.
-pub mod cluster_service_server {
+pub mod push_api_service_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    ///Generated trait containing gRPC methods that should be implemented for use with ClusterServiceServer.
+    ///Generated trait containing gRPC methods that should be implemented for use with PushApiServiceServer.
     #[async_trait]
-    pub trait ClusterService: Send + Sync + 'static {
-        //// Retrieves members of the cluster.
-        async fn list_members(
+    pub trait PushApiService: Send + Sync + 'static {
+        //// Ingests document in a given queue.
+        ////
+        //// Upon any kind of error, the client should
+        //// - retry to get at least once delivery.
+        //// - not retry to get at most once delivery.
+        ////
+        //// Exactly once delivery is not supported yet.
+        async fn ingest(
             &self,
-            request: tonic::Request<super::ListMembersRequest>,
-        ) -> Result<tonic::Response<super::ListMembersResponse>, tonic::Status>;
-        //// Removes itself from the cluster.
-        //// Removed node will be isolated from the cluster.
-        async fn leave_cluster(
+            request: tonic::Request<super::IngestRequest>,
+        ) -> Result<tonic::Response<super::IngestResponse>, tonic::Status>;
+        //// Fetches record from a given queue.
+        ////
+        //// Records are returned in order.
+        ////
+        //// The returned `FetchResponse` object is meant to be read with the
+        //// `crate::iter_records` function.
+        ////
+        //// Fetching does not necessarily return all of the available records.
+        //// If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),
+        //// the reponse will be partial.
+        async fn fetch(
             &self,
-            request: tonic::Request<super::LeaveClusterRequest>,
-        ) -> Result<tonic::Response<super::LeaveClusterResponse>, tonic::Status>;
-        async fn cluster_state(
+            request: tonic::Request<super::FetchRequest>,
+        ) -> Result<tonic::Response<super::FetchResponse>, tonic::Status>;
+        //// Returns a batch containing the last records.
+        ////
+        //// It returns the last documents, from the newest
+        //// to the oldest, and stops as soon as `FETCH_PAYLOAD_LIMIT` (2MB)
+        //// is exceeded.
+        async fn tail(
             &self,
-            request: tonic::Request<super::ClusterStateRequest>,
-        ) -> Result<tonic::Response<super::ClusterStateResponse>, tonic::Status>;
+            request: tonic::Request<super::TailRequest>,
+        ) -> Result<tonic::Response<super::FetchResponse>, tonic::Status>;
     }
     #[derive(Debug)]
-    pub struct ClusterServiceServer<T: ClusterService> {
+    pub struct PushApiServiceServer<T: PushApiService> {
         inner: _Inner<T>,
         accept_compression_encodings: (),
         send_compression_encodings: (),
     }
     struct _Inner<T>(Arc<T>);
-    impl<T: ClusterService> ClusterServiceServer<T> {
+    impl<T: PushApiService> PushApiServiceServer<T> {
         pub fn new(inner: T) -> Self {
             Self::from_arc(Arc::new(inner))
         }
@@ -228,9 +297,9 @@ pub mod cluster_service_server {
             InterceptedService::new(Self::new(inner), interceptor)
         }
     }
-    impl<T, B> tonic::codegen::Service<http::Request<B>> for ClusterServiceServer<T>
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for PushApiServiceServer<T>
     where
-        T: ClusterService,
+        T: PushApiService,
         B: Body + Send + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
@@ -246,26 +315,24 @@ pub mod cluster_service_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
-                "/cluster.ClusterService/ListMembers" => {
+                "/quickwit_push_api.PushAPIService/Ingest" => {
                     #[allow(non_camel_case_types)]
-                    struct ListMembersSvc<T: ClusterService>(pub Arc<T>);
+                    struct IngestSvc<T: PushApiService>(pub Arc<T>);
                     impl<
-                        T: ClusterService,
-                    > tonic::server::UnaryService<super::ListMembersRequest>
-                    for ListMembersSvc<T> {
-                        type Response = super::ListMembersResponse;
+                        T: PushApiService,
+                    > tonic::server::UnaryService<super::IngestRequest>
+                    for IngestSvc<T> {
+                        type Response = super::IngestResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ListMembersRequest>,
+                            request: tonic::Request<super::IngestRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
-                            let fut = async move {
-                                (*inner).list_members(request).await
-                            };
+                            let fut = async move { (*inner).ingest(request).await };
                             Box::pin(fut)
                         }
                     }
@@ -274,7 +341,7 @@ pub mod cluster_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = ListMembersSvc(inner);
+                        let method = IngestSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -286,26 +353,23 @@ pub mod cluster_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/cluster.ClusterService/LeaveCluster" => {
+                "/quickwit_push_api.PushAPIService/Fetch" => {
                     #[allow(non_camel_case_types)]
-                    struct LeaveClusterSvc<T: ClusterService>(pub Arc<T>);
+                    struct FetchSvc<T: PushApiService>(pub Arc<T>);
                     impl<
-                        T: ClusterService,
-                    > tonic::server::UnaryService<super::LeaveClusterRequest>
-                    for LeaveClusterSvc<T> {
-                        type Response = super::LeaveClusterResponse;
+                        T: PushApiService,
+                    > tonic::server::UnaryService<super::FetchRequest> for FetchSvc<T> {
+                        type Response = super::FetchResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::LeaveClusterRequest>,
+                            request: tonic::Request<super::FetchRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
-                            let fut = async move {
-                                (*inner).leave_cluster(request).await
-                            };
+                            let fut = async move { (*inner).fetch(request).await };
                             Box::pin(fut)
                         }
                     }
@@ -314,7 +378,7 @@ pub mod cluster_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = LeaveClusterSvc(inner);
+                        let method = FetchSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -326,26 +390,23 @@ pub mod cluster_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/cluster.ClusterService/ClusterState" => {
+                "/quickwit_push_api.PushAPIService/Tail" => {
                     #[allow(non_camel_case_types)]
-                    struct ClusterStateSvc<T: ClusterService>(pub Arc<T>);
+                    struct TailSvc<T: PushApiService>(pub Arc<T>);
                     impl<
-                        T: ClusterService,
-                    > tonic::server::UnaryService<super::ClusterStateRequest>
-                    for ClusterStateSvc<T> {
-                        type Response = super::ClusterStateResponse;
+                        T: PushApiService,
+                    > tonic::server::UnaryService<super::TailRequest> for TailSvc<T> {
+                        type Response = super::FetchResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ClusterStateRequest>,
+                            request: tonic::Request<super::TailRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
-                            let fut = async move {
-                                (*inner).cluster_state(request).await
-                            };
+                            let fut = async move { (*inner).tail(request).await };
                             Box::pin(fut)
                         }
                     }
@@ -354,7 +415,7 @@ pub mod cluster_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = ClusterStateSvc(inner);
+                        let method = TailSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -381,7 +442,7 @@ pub mod cluster_service_server {
             }
         }
     }
-    impl<T: ClusterService> Clone for ClusterServiceServer<T> {
+    impl<T: PushApiService> Clone for PushApiServiceServer<T> {
         fn clone(&self) -> Self {
             let inner = self.inner.clone();
             Self {
@@ -391,7 +452,7 @@ pub mod cluster_service_server {
             }
         }
     }
-    impl<T: ClusterService> Clone for _Inner<T> {
+    impl<T: PushApiService> Clone for _Inner<T> {
         fn clone(&self) -> Self {
             Self(self.0.clone())
         }
@@ -401,7 +462,7 @@ pub mod cluster_service_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: ClusterService> tonic::transport::NamedService for ClusterServiceServer<T> {
-        const NAME: &'static str = "cluster.ClusterService";
+    impl<T: PushApiService> tonic::transport::NamedService for PushApiServiceServer<T> {
+        const NAME: &'static str = "quickwit_push_api.PushAPIService";
     }
 }

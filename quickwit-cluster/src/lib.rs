@@ -17,6 +17,50 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-pub mod cluster;
-pub mod error;
-pub mod service;
+mod cluster;
+mod error;
+mod service;
+
+use std::sync::Arc;
+
+use quickwit_config::QuickwitConfig;
+use scuttlebutt::FailureDetectorConfig;
+
+pub use crate::cluster::{
+    create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster, Member,
+};
+pub use crate::error::{ClusterError, ClusterResult};
+pub use crate::service::ClusterService;
+
+fn unix_timestamp() -> u64 {
+    let duration_since_epoch = std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .expect("SystemTime before UNIX EPOCH!");
+    duration_since_epoch.as_secs()
+}
+
+pub async fn start_cluster_service(
+    quickwit_config: &QuickwitConfig,
+) -> anyhow::Result<Arc<Cluster>> {
+    let seed_nodes = quickwit_config
+        .seed_socket_addrs()?
+        .iter()
+        .map(|addr| addr.to_string())
+        .collect::<Vec<_>>();
+
+    let member = Member::new(
+        quickwit_config.node_id.clone(),
+        unix_timestamp(),
+        quickwit_config.gossip_public_addr()?,
+    );
+
+    let cluster = Arc::new(Cluster::new(
+        member,
+        quickwit_config.gossip_socket_addr()?,
+        quickwit_config.grpc_socket_addr()?,
+        &seed_nodes,
+        FailureDetectorConfig::default(),
+    )?);
+
+    Ok(cluster)
+}

@@ -25,7 +25,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 
 use http::Uri;
-use quickwit_cluster::cluster::Cluster;
+use quickwit_cluster::Cluster;
 use quickwit_proto::tonic;
 use tokio_stream::StreamExt;
 use tonic::transport::Endpoint;
@@ -315,7 +315,7 @@ mod tests {
     use std::time::Duration;
 
     use itertools::Itertools;
-    use quickwit_cluster::cluster::{create_cluster_for_test, grpc_addr_from_listen_addr_for_test};
+    use quickwit_cluster::{create_cluster_for_test, grpc_addr_from_listen_addr_for_test};
 
     use super::create_search_service_client;
     use crate::root::SearchJob;

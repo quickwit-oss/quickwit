@@ -777,7 +777,7 @@ async fn test_all_local_index() -> Result<()> {
     // serve & api-search
     let mut server_process = spawn_command(
         format!(
-            "service run searcher --config {}",
+            "run --service searcher --config {}",
             test_env.resource_files["config"].display(),
         )
         .as_str(),

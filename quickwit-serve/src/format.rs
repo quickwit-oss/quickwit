@@ -56,6 +56,15 @@ pub(crate) struct FormatError {
     pub error: String,
 }
 
+impl FormatError {
+    pub fn wrap<E: ServiceError>(err: E) -> FormatError {
+        FormatError {
+            code: err.status_code(),
+            error: err.to_string(),
+        }
+    }
+}
+
 impl ToString for FormatError {
     fn to_string(&self) -> String {
         self.error.clone()
@@ -116,5 +125,19 @@ impl Format {
             }
             Err(err) => self.make_reply_for_err(err),
         }
+    }
+
+    pub(crate) fn make_rest_reply_non_serializable_error<T, E>(
+        self,
+        result: Result<T, E>,
+    ) -> WithStatus<WithHeader<String>>
+    where
+        T: serde::Serialize,
+        E: ServiceError + ToString,
+    {
+        self.make_rest_reply(result.map_err(|err| FormatError {
+            code: err.status_code(),
+            error: err.to_string(),
+        }))
     }
 }

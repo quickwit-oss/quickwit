@@ -31,7 +31,7 @@ use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_storage::SplitPayloadBuilder;
-use tantivy::chrono::Utc;
+use time::OffsetDateTime;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::{info, info_span, warn, Instrument, Span};
 
@@ -194,7 +194,7 @@ fn create_split_metadata(split: &PackagedSplit, footer_offsets: Range<u64>) -> S
         num_docs: split.num_docs as usize,
         time_range: split.time_range.clone(),
         original_size_in_bytes: split.size_in_bytes,
-        create_timestamp: Utc::now().timestamp(),
+        create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
         tags: split.tags.clone(),
         demux_num_ops: split.demux_num_ops,
         footer_offsets,

@@ -42,10 +42,12 @@ pub type Result<T> = std::result::Result<T, SearchError>;
 
 use std::cmp::Reverse;
 use std::ops::Range;
+use std::sync::Arc;
 
 use anyhow::Context;
 use itertools::Itertools;
-use quickwit_config::build_doc_mapper;
+use quickwit_cluster::Cluster;
+use quickwit_config::{build_doc_mapper, QuickwitConfig, SEARCHER_CONFIG_INSTANCE};
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_metastore::{Metastore, SplitMetadata, SplitState};
 use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
@@ -202,6 +204,27 @@ pub async fn single_node_search(
             .map(|error| format!("{:?}", error))
             .collect_vec(),
     })
+}
+
+/// Starts a search node, aka a `searcher`.
+pub async fn start_searcher_service(
+    quickwit_config: &QuickwitConfig,
+    metastore: Arc<dyn Metastore>,
+    storage_uri_resolver: StorageUriResolver,
+    cluster: Arc<Cluster>,
+) -> anyhow::Result<Arc<dyn SearchService>> {
+    SEARCHER_CONFIG_INSTANCE
+        .set(quickwit_config.searcher_config.clone())
+        .expect("could not set searcher config in global once cell");
+    let client_pool = SearchClientPool::create_and_keep_updated(cluster).await?;
+    let cluster_client = ClusterClient::new(client_pool.clone());
+    let search_service = Arc::new(SearchServiceImpl::new(
+        metastore,
+        storage_uri_resolver,
+        cluster_client,
+        client_pool,
+    ));
+    Ok(search_service)
 }
 
 #[cfg(test)]

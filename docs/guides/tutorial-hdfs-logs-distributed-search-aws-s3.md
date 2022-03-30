@@ -163,7 +163,7 @@ Now let's launch a searcher node for this instance.
 
 ```bash
 # Then start the http server search service.
-./quickwit service run searcher --config ./config.yaml
+./quickwit run --service searcher --config ./config.yaml
 ```
 
 You will see in the terminal the confirmation that the instance has created a new cluster. Example of such a log:

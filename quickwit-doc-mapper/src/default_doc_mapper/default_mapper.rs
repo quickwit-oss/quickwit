@@ -157,7 +157,7 @@ impl DefaultDocMapperBuilder {
 
         let mut unique_field_names: HashSet<String> = HashSet::new();
         for field_mapping in self.field_mappings.iter() {
-            for (field_path, field_type) in field_mapping.field_entries() {
+            for (field_path, field_type) in &field_mapping.field_entries {
                 let field_name = field_path.field_name();
                 if field_name == SOURCE_FIELD_NAME {
                     bail!(
@@ -192,7 +192,7 @@ impl DefaultDocMapperBuilder {
                     );
                 }
                 unique_field_names.insert(field_name.clone());
-                builder.add_field(FieldEntry::new(field_name, field_type));
+                builder.add_field(FieldEntry::new(field_name, field_type.clone()));
             }
         }
         if self.store_source {
@@ -371,7 +371,7 @@ impl DefaultDocMapper {
         &self,
         field_paths_and_values: &[(FieldPath, Value)],
     ) -> Result<(), DocParsingError> {
-        for (fast_field_path, _) in self.field_mappings.fast_field_entries() {
+        for (fast_field_path, _) in &self.field_mappings.fast_field_entries {
             let fast_field_name = fast_field_path.field_name();
             if !field_paths_and_values
                 .iter()
@@ -475,6 +475,7 @@ mod tests {
         {
             "timestamp": 1586960586000,
             "body": "20200415T072306-0700 INFO This is a great log",
+            "response_date2": "2021-12-19T16:39:57+00:00",
             "response_date": "2021-12-19T16:39:57Z",
             "response_time": 2.3,
             "response_payload": "YWJj",
@@ -490,7 +491,7 @@ mod tests {
     const EXPECTED_JSON_PATHS_AND_VALUES: &str = r#"{
             "timestamp": [1586960586000],
             "body": ["20200415T072306-0700 INFO This is a great log"],
-            "response_date": ["2021-12-19T16:39:57+00:00"],
+            "response_date": ["2021-12-19T16:39:57Z"],
             "response_time": [2.3],
             "response_payload": [[97,98,99]],
             "owner": ["foo"],
@@ -567,6 +568,12 @@ mod tests {
                     .iter()
                     .map(|expected_value| format!("{}", expected_value))
                     .any(|expected_value| expected_value == value);
+                if !is_value_in_expected_values {
+                    panic!(
+                        "Could not find: {:?} in {:?}",
+                        value, expected_json_paths_and_values
+                    );
+                }
                 assert!(is_value_in_expected_values);
             }
         });

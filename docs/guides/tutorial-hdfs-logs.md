@@ -125,7 +125,7 @@ The command `service run searcher` starts an http server which provides a [REST 
 
 
 ```bash
-./quickwit service run searcher
+./quickwit run --service searcher
 ```
 
 Let's execute the same query on field `severity_text` but with `cURL`:
@@ -188,17 +188,17 @@ Once the configuration files are downloaded, start a searcher node for each of t
 
 ```bash
 # run this in the first terminal window.
-./quickwit service run searcher --config ./searcher-1.yaml
+./quickwit run --service searcher --config ./searcher-1.yaml
 ```
 
 ```bash
 # run this in the second terminal window.
-./quickwit service run searcher --config ./searcher-2.yaml
+./quickwit run --service searcher --config ./searcher-2.yaml
 ```
 
 ```bash
 # run this in the third terminal window.
-./quickwit service run searcher --config ./searcher-3.yaml
+./quickwit run --service searcher --config ./searcher-3.yaml
 ```
 
 You will see in your terminal the confirmation that the instance has created or joined a cluster. Example of such a log:

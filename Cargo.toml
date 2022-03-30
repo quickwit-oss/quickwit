@@ -1,5 +1,5 @@
 [workspace]
-
+resolver = "2"
 members = [
   "quickwit-actors",
   "quickwit-common",
@@ -11,9 +11,13 @@ members = [
   "quickwit-directories",
   "quickwit-metastore",
   "quickwit-proto",
+  "quickwit-pushapi",
   "quickwit-search",
   "quickwit-serve",
   "quickwit-storage",
   "quickwit-telemetry",
   "quickwit-indexing",
 ]
+
+[profile.dev]
+debug = 0
