@@ -10,7 +10,7 @@ homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
-prost = { version = "0.9", default-features = false, features = ["prost-derive"] }
+prost = { version = "0.10", default-features = false, features = ["prost-derive"] }
 serde = { version = "1.0", features = ["derive"] }
 tonic = {git="https://github.com/hyperium/tonic", rev="01e5be5"}
 
