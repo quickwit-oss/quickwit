@@ -16,5 +16,5 @@ tonic = {git="https://github.com/hyperium/tonic", rev="01e5be5"}
 
 [build-dependencies]
 tonic-build = {git="https://github.com/hyperium/tonic", rev="01e5be5"}
-prost-build = "0.9"
+prost-build = "0.10"
 
