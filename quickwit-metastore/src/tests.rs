@@ -23,10 +23,10 @@ pub mod test_suite {
     use std::ops::{Range, RangeInclusive};
 
     use async_trait::async_trait;
-    use chrono::Utc;
     use itertools::Itertools;
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
+    use time::OffsetDateTime;
     use tokio::time::{sleep, Duration};
 
     use crate::checkpoint::{CheckpointDelta, SourceCheckpoint};
@@ -239,7 +239,7 @@ pub mod test_suite {
     pub async fn test_metastore_stage_split<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let current_timestamp = Utc::now().timestamp();
+        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "stage-split-index";
         let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
@@ -287,7 +287,7 @@ pub mod test_suite {
     pub async fn test_metastore_publish_splits<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let current_timestamp = Utc::now().timestamp();
+        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "publish-splits-index";
         let source_id = "publish-splits-source";
@@ -680,7 +680,7 @@ pub mod test_suite {
     pub async fn test_metastore_replace_splits<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let current_timestamp = Utc::now().timestamp();
+        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "replace_splits-index";
         let source_id = "replace_splits-source";
@@ -907,7 +907,7 @@ pub mod test_suite {
     >() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let current_timestamp = Utc::now().timestamp();
+        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "mark-splits-as-deleted-my-index";
         let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
@@ -972,7 +972,7 @@ pub mod test_suite {
     pub async fn test_metastore_delete_splits<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let current_timestamp = Utc::now().timestamp();
+        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "delete-splits-index";
         let source_id = "delete-splits-source";
@@ -1097,7 +1097,7 @@ pub mod test_suite {
     pub async fn test_metastore_list_all_splits<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let current_timestamp = Utc::now().timestamp();
+        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "list-all-splits-index";
         let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
@@ -1212,7 +1212,7 @@ pub mod test_suite {
     pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let current_timestamp = Utc::now().timestamp();
+        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "list-splits-index";
         let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
@@ -1745,7 +1745,7 @@ pub mod test_suite {
     >() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let mut current_timestamp = Utc::now().timestamp();
+        let mut current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "split-update-timestamp-index";
         let source_id = "split-update-timestamp-source";

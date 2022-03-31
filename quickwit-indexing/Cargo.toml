@@ -42,7 +42,7 @@ tracing = "0.1.29"
 ulid = "0.5"
 tokio-stream = "0.1"
 arc-swap = "1.4"
-time = { version = "0.3.7", features = ["std"] }
+time = { version = "0.3.9", features = ["std"] }
 
 
 [features]
