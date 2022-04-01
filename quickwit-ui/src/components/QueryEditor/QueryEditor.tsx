@@ -18,15 +18,25 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import { Box } from '@mui/system';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Editor, { useMonaco } from "@monaco-editor/react";
 import { LANGUAGE_CONFIG, LanguageFeatures, createIndexCompletionProvider } from './config';
 import { SearchComponentProps } from '../../utils/SearchComponentProps';
 import { EDITOR_THEME } from '../../utils/theme';
 
+const QUICKWIT_EDITOR_THEME_ID = 'quickwit-light';
+
+function getLanguageId(indexId: string | null): string {
+  if (indexId === null) {
+    return '';
+  }
+  return `${indexId}-query-language`;
+}
+
 export function QueryEditor(props: SearchComponentProps) {
   const monaco = useMonaco();
   const editorRef = useRef(null);
+  const [languageId, setLanguageId] = useState<string>('');
   const runSearchRef = useRef(props.runSearch);
   const searchRequestRef = useRef(props.searchRequest);
   const defaultValue = props.searchRequest.query === null ? `// Select an index and type your query. Example: field_name:"phrase query"` : props.searchRequest.query;
@@ -47,21 +57,21 @@ export function QueryEditor(props: SearchComponentProps) {
   }
 
   useEffect(() => {
-    searchRequestRef.current = props.searchRequest;
-    if (monaco && props.searchRequest.indexId !== '' && props.index !== null) {
-      const languageId = props.searchRequest.indexId + '-query-language';
+    const updatedLanguageId = getLanguageId(props.searchRequest.indexId);
+    if (monaco && updatedLanguageId !== '' && props.index !== null) {
       if (!monaco.languages.getLanguages().some(({ id }: {id :string }) => id === languageId)) {
-        console.log('register language', languageId);
-        monaco.languages.register({'id': languageId});
-        monaco.languages.setMonarchTokensProvider(languageId, LanguageFeatures())
+        console.log('register language', updatedLanguageId);
+        monaco.languages.register({'id': updatedLanguageId});
+        monaco.languages.setMonarchTokensProvider(updatedLanguageId, LanguageFeatures())
+        if (props.index != null) {
+          monaco.languages.registerCompletionItemProvider(updatedLanguageId, createIndexCompletionProvider(props.index.metadata));
+        }
         monaco.languages.setLanguageConfiguration(
-          languageId,
+          updatedLanguageId,
           LANGUAGE_CONFIG,
         );
-        if (props.index != null) {
-          monaco.languages.registerCompletionItemProvider(languageId, createIndexCompletionProvider(props.index.metadata));
-        }
       }
+      setLanguageId(updatedLanguageId);
     }
   }, [monaco, props.searchRequest, props.index]);
 
@@ -73,11 +83,12 @@ export function QueryEditor(props: SearchComponentProps) {
 
   function handleEditorChange(value: any) {
     const updatedSearchRequest = Object.assign({}, props.searchRequest, {query: value});
+    searchRequestRef.current = updatedSearchRequest;
     props.onSearchRequestUpdate(updatedSearchRequest);
   }
 
   function handleEditorWillMount(monaco: any) {
-    monaco.editor.defineTheme('quickwit-light', EDITOR_THEME);
+    monaco.editor.defineTheme(QUICKWIT_EDITOR_THEME_ID, EDITOR_THEME);
   }
 
   return (
@@ -86,7 +97,7 @@ export function QueryEditor(props: SearchComponentProps) {
         beforeMount={handleEditorWillMount}
         onMount={handleEditorDidMount}
         onChange={handleEditorChange}
-        language={props.searchRequest.indexId + '-query-language'}
+        language={languageId}
         value={defaultValue}
         options={{
           fontFamily: 'monospace',
@@ -98,7 +109,7 @@ export function QueryEditor(props: SearchComponentProps) {
           fixedOverflowWidgets: true,
           scrollBeyondLastLine: false,
       }}
-      theme='quickwit-light'
+      theme={QUICKWIT_EDITOR_THEME_ID}
       />
     </Box>
   );

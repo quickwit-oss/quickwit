@@ -792,7 +792,6 @@ async fn test_all_local_index() -> Result<()> {
     .text()
     .await?;
 
-    println!("{}", &query_response);
     let result: Value =
         serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
     assert_eq!(result["num_hits"], Value::Number(Number::from(2i64)));

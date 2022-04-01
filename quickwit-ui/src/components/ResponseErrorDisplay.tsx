@@ -17,23 +17,18 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import React from 'react';
-import ReactDOM from 'react-dom';
-import './index.css';
-import App from './views/App';
-import reportWebVitals from './reportWebVitals';
-import { BrowserRouter } from 'react-router-dom';
+import { Box } from '@mui/material';
+import { ResponseError } from '../utils/models';
+import SentimentVeryDissatisfiedIcon from '@mui/icons-material/SentimentVeryDissatisfied';
 
-ReactDOM.render(
-  <React.StrictMode>
-    <BrowserRouter basename="/ui">
-      <App />
-    </BrowserRouter>
-  </React.StrictMode>,
-  document.getElementById('root')
-);
-
-// If you want to start measuring performance in your app, pass a function
-// to log results (for example: reportWebVitals(console.log))
-// or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
-reportWebVitals();
+export default function ErrorResponseDisplay(error: ResponseError) {
+  return <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', alignItems: 'center' }} >
+    <SentimentVeryDissatisfiedIcon sx={{ fontSize: 60 }} />
+      <Box sx={{fontSize: 16, pt: 2, }}>
+        {error.status && <span>Status: {error.status}</span>}
+      </Box>
+      <Box sx={{ fontSize: 14, pt: 1, alignItems: 'center'}}>
+        Error: {error.message}
+      </Box>
+    </Box>
+}

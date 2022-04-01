@@ -20,9 +20,10 @@
 import { Typography } from "@mui/material";
 import { Box } from "@mui/system";
 import NumberFormat from "react-number-format";
-import { Index, SearchResponse } from "../../utils/models";
+import { Index, ResponseError, SearchResponse } from "../../utils/models";
 import Loader from "../Loader";
 import { ResultTable } from "./ResultTable";
+import ErrorResponseDisplay from "../ResponseErrorDisplay";
 
 function HitCount({searchResponse}: {searchResponse: SearchResponse}) {
   return (
@@ -30,14 +31,14 @@ function HitCount({searchResponse}: {searchResponse: SearchResponse}) {
       <Typography variant="body2" color="textSecondary">
         <NumberFormat
           displayType="text"
-          value={searchResponse.count}
+          value={searchResponse.num_hits}
           thousandSeparator=","
         />{" "}
         hits found in&nbsp;
         <NumberFormat
           decimalScale={2}
           displayType="text"
-          value={searchResponse.numMicrosecs / 1000000}
+          value={searchResponse.elapsed_time_micros / 1000000}
           thousandSeparator=","
         />{" "}
         seconds
@@ -50,11 +51,15 @@ interface SearchResultProps {
   queryRunning: boolean;
   index: null | Index;
   searchResponse: null | SearchResponse;
+  searchError: null | ResponseError;
 }
 
 export default function SearchResult(props: SearchResultProps) {
   if (props.queryRunning) {
     return <Loader />
+  }
+  if (props.searchError !== null) {
+    return ErrorResponseDisplay(props.searchError);
   }
   if (props.searchResponse == null || props.index == null) {
     return <></>

@@ -26,5 +26,5 @@
   },
   "include": [
     "src", "typings"
-  ]
+, "tests", "tests/integration/index.test.ts"  ]
 }

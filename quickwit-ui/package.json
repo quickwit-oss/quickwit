@@ -3,21 +3,27 @@
   "version": "0.1.0",
   "license": "AGPL-3.0",
   "private": true,
+  "proxy": "http://127.0.0.1:7280",
+  "homepage": "/ui",
   "dependencies": {
     "@emotion/react": "^11.8.2",
     "@emotion/styled": "^11.8.1",
-    "@monaco-editor/react": "^4.3.1",
-    "@mui/icons-material": "^5.3.0",
-    "@mui/lab": "^5.0.0-alpha.65",
-    "@mui/material": "^5.5.2",
+    "@monaco-editor/react": "^4.4.2",
+    "@mui/icons-material": "^5.6.2",
+    "@mui/lab": "^5.0.0-alpha.78",
+    "@mui/material": "^5.6.2",
     "@testing-library/jest-dom": "^5.14.1",
     "@testing-library/react": "^12.0.0",
     "@testing-library/user-event": "^13.2.1",
-    "@types/jest": "^27.0.1",
+    "@types/jest": "^27.4.1",
     "@types/node": "^16.7.13",
     "@types/react": "^17.0.20",
     "@types/react-dom": "^17.0.9",
+    "@typescript-eslint/eslint-plugin": "^5.17.0",
+    "@typescript-eslint/parser": "^5.17.0",
     "dayjs": "^1.10.7",
+    "eslint": "^8.12.0",
+    "prettier": "2.6.2",
     "react": "^17.0.2",
     "react-dom": "^17.0.2",
     "react-number-format": "^4.9.1",
@@ -31,8 +37,11 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
+    "postbuild": "cp .gitignore_for_build_directory build/.gitignore",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "lint": "eslint . --ext .ts",
+    "e2e-test": "cypress run"
   },
   "eslintConfig": {
     "extends": [
@@ -51,5 +60,10 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "cypress": "8.5",
+    "jest": "^27.5.1",
+    "ts-jest": "^27.1.4"
   }
 }

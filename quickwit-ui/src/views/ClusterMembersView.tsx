@@ -23,38 +23,40 @@ import ApiUrlFooter from '../components/ApiUrlFooter';
 import { JsonEditor } from '../components/JsonEditor';
 import { ViewUnderAppBarBox, FullBoxContainer, QBreadcrumbs } from '../components/LayoutUtils';
 import Loader from '../components/Loader';
+import ErrorResponseDisplay from '../components/ResponseErrorDisplay';
 import { Client } from '../services/client';
-import { Member } from '../utils/models';
-import { ErrorResult } from './IndexesView';
+import { Member, ResponseError } from '../utils/models';
 
 
 function ClusterView() {
   const [loading, setLoading] = useState(false);
   const [members, setMembers] = useState<null | Member[]>(null);
-  const [ , setLoadingError] = useState<ErrorResult | null>(null);
+  const [responseError, setResponseError] = useState<ResponseError | null>(null);
   const quickwitClient = useMemo(() => new Client(), []);
 
   useEffect(() => {
     setLoading(true);
     quickwitClient.clusterMembers().then(
       (clusterMembers) => {
-        setLoadingError(null);
+        setResponseError(null);
         setLoading(false);
         setMembers(clusterMembers.members);
       },
       (error) => {
         setLoading(false);
-        setLoadingError({error: error});
+        setResponseError(error);
       }
     );
   }, [quickwitClient]);
 
   const renderResult = () => {
+    if (responseError !== null) {
+      return ErrorResponseDisplay(responseError);
+    }
     if (loading || members == null) {
       return <Loader />;
-    } else {
-      return <JsonEditor content={members} resizeOnMount={false} />
     }
+    return <JsonEditor content={members} resizeOnMount={false} />
   }
 
   return (

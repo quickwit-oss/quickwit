@@ -78,7 +78,6 @@ const SideBar = () => {
   if (lastSearchRequest.indexId || lastSearchRequest.query) {
     searchUrl = '/search?' + toUrlSearchRequestParams(lastSearchRequest).toString();
   }
-  console.log('lastSearchRequest', lastSearchRequest);
   return (
     <SideBarWrapper sx={{ px: 0, py: 2 }}>
       <List dense={ true } sx={{ py: 0 }}>

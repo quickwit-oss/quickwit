@@ -22,44 +22,45 @@ import { useEffect, useMemo, useState } from 'react';
 import IndexesTable from '../components/IndexesTable';
 import { Client } from '../services/client';
 import Loader from '../components/Loader';
-import { IndexMetadata } from '../utils/models';
+import { IndexMetadata, ResponseError } from '../utils/models';
 import { ViewUnderAppBarBox, FullBoxContainer, QBreadcrumbs } from '../components/LayoutUtils';
 import ApiUrlFooter from '../components/ApiUrlFooter';
+import ErrorResponseDisplay from '../components/ResponseErrorDisplay';
 
-export type ErrorResult = {
-  error: string;
-}
 function IndexesView() {
   const [loading, setLoading] = useState(false);
-  const [, setLoadingError] = useState<ErrorResult | null>(null);
+  const [responseError, setResponseError] = useState<ResponseError | null>(null);
   const [indexesMetadata, setIndexesMetadata] = useState<IndexMetadata[]>();
   const quickwitClient = useMemo(() => new Client(), []);
 
   const renderFetchIndexesResult = () => {
+    if (responseError !== null) {
+      return ErrorResponseDisplay(responseError);
+    }
     if (loading || indexesMetadata === undefined) {
       return <Loader />;
-    } else if (indexesMetadata.length > 0) {
+    }
+    if (indexesMetadata.length > 0) {
       return <FullBoxContainer sx={{ px: 0 }}>
           <IndexesTable indexesMetadata={indexesMetadata} />
         </FullBoxContainer>
-    } else {
-      return <Box>
-          You have no index registered in your metastore.
-        </Box>
     }
+    return <Box>
+        You have no index registered in your metastore.
+      </Box>
   }
 
   useEffect(() => {
     setLoading(true);
     quickwitClient.listIndexes().then(
       (indexesMetadata) => {
-        setLoadingError(null);
+        setResponseError(null);
         setLoading(false);
         setIndexesMetadata(indexesMetadata);
       },
       (error) => {
         setLoading(false);
-        setLoadingError({error: error});
+        setResponseError(error);
       }
     );
   }, [quickwitClient]);

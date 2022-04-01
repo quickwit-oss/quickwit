@@ -26,9 +26,15 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 # Development
 ## Setup & run tests
 1. Install Docker (https://docs.docker.com/engine/install/) and Docker Compose (https://docs.docker.com/compose/install/)
-2. Install awslocal https://github.com/localstack/awscli-local
-3. Start the external services with `make docker-compose-up`
+2. Install node@16 and `npm install -g yarn`
+3. Install awslocal https://github.com/localstack/awscli-local
+4. Start the external services with `make docker-compose-up`
 5. Run `QW_S3_ENDPOINT=http://localhost:4566 cargo test --all-features`
+6. Run UI tests `cd quickwit-ui && yarn test`
+
+## Running UI e2e tests
+1. Ensure to run a searcher `cargo r run --service searcher --config config/quickwit.yaml`
+2. Run `cd quickwit-ui && yarn e2e-test`
 
 ## Running services such as Amazon Kinesis or S3, Kafka, or PostgreSQL locally.
 1. Ensure Docker and Docker Compose are correctly installed on your machine (see above)
@@ -51,6 +57,9 @@ Currently, we use [cross](https://github.com/rust-embedded/cross) to build Quick
 For this to work, we've had to customize the docker images cross uses. These customizations can be found in docker files located in `./cross-images` folder. To make cross take into account any change on those
 docker files, you will need to build and push the images on dockerhub by running `make cross-images`.
 We also have nightly builds that are pushed to dockerhub. This helps continiously check our binaries are still built even with external dependency update. Successful builds let you accessed the artifacts for the next three days. Release builds always have their artifacts attached to the release.
+
+### Notes on the embedded UI
+As the react UI is embedded in the rust binary, we need to build the react app before building the binary. Hence `make cross-image` depends on the command `build-ui`.
 
 ## Testing release (alpha, beta, rc)
 

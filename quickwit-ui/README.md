@@ -27,6 +27,11 @@ You will also see any lint errors in the console.
 Launches the test runner in the interactive watch mode.\
 See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
 
+### `yarn e2e-test`
+
+Launches the e2e test runner with [cypress](https://www.cypress.io/). To make them work, you need to start a
+searcher beforehand with `cargo r run --service searcher --config config/quickwit.yaml`.
+
 ### `yarn build`
 
 Builds the app for production to the `build` folder.\

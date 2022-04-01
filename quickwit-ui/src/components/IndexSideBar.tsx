@@ -169,4 +169,4 @@ export function IndexSideBar(props: IndexMetadataProps) {
       </Box>
     </IndexBarWrapper>
   );
-};
+}

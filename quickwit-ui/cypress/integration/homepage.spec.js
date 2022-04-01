@@ -17,23 +17,18 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import React from 'react';
-import ReactDOM from 'react-dom';
-import './index.css';
-import App from './views/App';
-import reportWebVitals from './reportWebVitals';
-import { BrowserRouter } from 'react-router-dom';
-
-ReactDOM.render(
-  <React.StrictMode>
-    <BrowserRouter basename="/ui">
-      <App />
-    </BrowserRouter>
-  </React.StrictMode>,
-  document.getElementById('root')
-);
-
-// If you want to start measuring performance in your app, pass a function
-// to log results (for example: reportWebVitals(console.log))
-// or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
-reportWebVitals();
+describe('Home navigation', () => {
+  it('Should display sidebar links', () => {
+    cy.visit('http://127.0.0.1:7280/ui');
+    cy.get('a')
+        .should('be.visible')
+        .should('contain.text', 'Query editor')
+        .should('contain.text', 'Indexes')
+        .should('contain.text', 'Cluster');
+  });
+  it('Should navigate to cluster members', () => {
+    cy.visit('http://127.0.0.1:7280/ui');
+    cy.get('a').contains('Cluster').click();
+    cy.get('p').should('contain.text', 'Cluster members');
+  });
+})

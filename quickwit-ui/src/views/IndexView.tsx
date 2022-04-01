@@ -40,7 +40,7 @@ height: 100%;
 `;
 
 function IndexView() {
-  let { indexId } = useParams();
+  const { indexId } = useParams();
   const [loading, setLoading] = useState(false)
   const [, setLoadingError] = useState<ErrorResult | null>(null)
   const [tabIndex, setTabIndex] = useState('1');
@@ -51,7 +51,7 @@ function IndexView() {
     setTabIndex(newValue);
   };
 
-  const fetchIndexMetadata = useCallback(() => {
+  const fetchIndex = useCallback(() => {
     setLoading(true);
     if (indexId === undefined) {
       console.warn("`indexId` should always be set.");
@@ -75,10 +75,11 @@ function IndexView() {
     if (loading || index === undefined) {
       return <Loader />;
     } else {
+      // TODO: remove this css with magic number `48px`.
       return <Box sx={{ display: 'flex', flexDirection: 'column', height: 'calc(100% - 48px)' }}>
         <TabContext value={tabIndex}>
           <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-            <TabList onChange={handleTabIndexChange} aria-label="lab API tabs example">
+            <TabList onChange={handleTabIndexChange} aria-label="Index tabs">
               <Tab label="Summary" value="1" />
               <Tab label="Sources" value="2" />
               <Tab label="Doc Mapping" value="3" />
@@ -88,7 +89,7 @@ function IndexView() {
             </TabList>
           </Box>
           <CustomTabPanel value="1">
-            <IndexSummary indexMetadata={index.metadata} />
+            <IndexSummary index={index} />
           </CustomTabPanel>
           <CustomTabPanel value="2">
             <JsonEditor content={index.metadata.sources} resizeOnMount={false} />
@@ -103,7 +104,7 @@ function IndexView() {
             <JsonEditor content={index.metadata.search_settings} resizeOnMount={false} />
           </CustomTabPanel>
           <CustomTabPanel value="6">
-            <JsonEditor content={[]} resizeOnMount={false} />
+            <JsonEditor content={index.splits} resizeOnMount={false} />
           </CustomTabPanel>
         </TabContext>
       </Box>
@@ -111,8 +112,8 @@ function IndexView() {
   }
 
   useEffect(() => {
-    fetchIndexMetadata();
-  }, [fetchIndexMetadata]);
+    fetchIndex();
+  }, [fetchIndex]);
 
   return (
     <ViewUnderAppBarBox>

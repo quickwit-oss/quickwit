@@ -20,7 +20,7 @@
 use std::net::SocketAddr;
 
 use quickwit_common::metrics;
-use tracing::info;
+use tracing::{error, info};
 use warp::{Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
@@ -31,6 +31,7 @@ use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::push_api::{bulk_handler, elastic_bulk_handler, ingest_handler, tail_handler};
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
+use crate::ui_handler::ui_handler;
 use crate::{Format, QuickwitServices};
 
 /// Start REST service given a HTTP address and a search service.
@@ -68,6 +69,7 @@ pub(crate) async fn start_rest_server(
         ));
     let rest_routes = api_v1_root_url
         .and(api_v1_routes)
+        .or(ui_handler())
         .or(liveness_check_handler())
         .or(metrics_service)
         .with(request_counter)
@@ -102,9 +104,11 @@ pub async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
             error: error.to_string(),
         }))
     } else {
+        error!("REST server error: {:?}", rejection);
         Ok(Format::PrettyJson.make_reply_for_err(FormatError {
             code: ServiceErrorCode::Internal,
             error: "Internal server error.".to_string(),
         }))
     }
+    // TODO: handle more error types like Rejection([UnsupportedMediaType, MethodNotAllowed])
 }

@@ -31,6 +31,7 @@ mod index_api;
 mod indexing_api;
 mod push_api;
 mod search_api;
+mod ui_handler;
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -73,7 +74,6 @@ fn require<T: Clone + Send>(
 pub enum QuickwitService {
     Indexer,
     Searcher,
-    IndexManagement,
 }
 
 impl TryFrom<&str> for QuickwitService {
