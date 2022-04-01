@@ -49,6 +49,7 @@ Search for documents matching a query in the given index `<index id>`.
 | Variable                  | Type                 | Description                                                                                                | Default value                                                                                   |
 | ------------------------- | -------------------- | -------------------------------------------------------------------------------------------------          | ----------------------------------------------------------------------------------------------- |
 | **query**                 | `String`             | Query text. See the [query language doc](query-language.md) (mandatory)                                    |                                                                                                 |
+| **aggregations**          | `String`             | The aggregation JSON string                                                                                |                                                                                                 |
 | **start_timestamp**       | `i64`                | If set, restrict search to documents with a `timestamp >= start_timestamp`                                 |                                                                                                 |
 | **end_timestamp**         | `i64`                | If set, restrict search to documents with a `timestamp < end_timestamp`                                    |                                                                                                 |
 | **start_offset**          | `Integer`            | Number of documents to skip                                                                                | `0`                                                                                             |
@@ -66,7 +67,7 @@ The response for the is a JSON object, and the content type is `application/json
 | **hits**                | Results of the query           | `[hit]`    |
 | **num_hits**            | Total number of matches        | `number`   |
 | **elapsed_time_micros** | Processing time of the query   | `number`   |
-
+| **aggregations**        | Aggregations                   | `String`   |
 
 ### Search stream in an index
 
