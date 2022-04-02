@@ -22,7 +22,6 @@ use std::ops::{Range, RangeInclusive};
 use std::path::PathBuf;
 
 use anyhow::{bail, Context};
-use chrono::{NaiveDate, NaiveDateTime};
 use clap::{arg, ArgMatches, Command};
 use humansize::{file_size_opts, FileSize};
 use itertools::Itertools;
@@ -33,6 +32,7 @@ use quickwit_directories::{
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Split, SplitState};
 use quickwit_storage::{quickwit_storage_uri_resolver, BundleStorage, Storage};
 use tabled::{Table, Tabled};
+use time::{format_description, Date, OffsetDateTime, PrimitiveDateTime};
 use tracing::debug;
 
 use crate::{load_quickwit_config, make_table};
@@ -159,28 +159,31 @@ impl SplitCliCommand {
             .into_iter()
             .collect::<Result<Vec<_>, _>>()
             .map_err(|err_str| anyhow::anyhow!(err_str))?;
-        let start_date = if let Some(date_str) = matches.value_of("start-date") {
-            let from_date_time = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-                .map(|date| date.and_hms(0, 0, 0))
-                .or_else(|_err| NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S"))
+
+        let format1 = format_description::parse("[year]-[month]-[day]")?;
+        let format2 = format_description::parse("[year]-[month]-[day]T[hour]:[minute]:[second]")?;
+
+        let parse_date = |date_str: &str| {
+            Date::parse(date_str, &format1)
+                .map(|date| date.with_hms(0, 0, 0).expect("could not create date time"))
+                .or_else(|_err| PrimitiveDateTime::parse(date_str, &format2))
+                .map(|date| date.assume_utc())
                 .context(format!(
-                    "'start-date' `{}` should be of the format `2020-10-31` or \
+                    "'start/end-date' `{}` should be of the format `2020-10-31` or \
                      `2020-10-31T02:00:00`",
                     date_str
-                ))?;
-            Some(from_date_time.timestamp())
+                ))
+        };
+
+        let start_date = if let Some(date_str) = matches.value_of("start-date") {
+            let from_date_time = parse_date(date_str)?;
+            Some(from_date_time.unix_timestamp())
         } else {
             None
         };
         let end_date = if let Some(date_str) = matches.value_of("end-date") {
-            let to_date_time = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-                .map(|date| date.and_hms(0, 0, 0))
-                .or_else(|_err| NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S"))
-                .context(format!(
-                    "'end-date' `{}` should be of the format `2020-10-31` or `2020-10-31T02:00:00`",
-                    date_str
-                ))?;
-            Some(to_date_time.timestamp())
+            let to_date_time = parse_date(date_str)?;
+            Some(to_date_time.unix_timestamp())
         } else {
             None
         };
@@ -427,8 +430,12 @@ fn make_list_splits_table(splits: Vec<Split>) -> Table {
                 id: split.split_metadata.split_id,
                 num_docs: split.split_metadata.num_docs,
                 size_mega_bytes: split.split_metadata.original_size_in_bytes / 1_000_000,
-                create_at: NaiveDateTime::from_timestamp(split.split_metadata.create_timestamp, 0),
-                updated_at: NaiveDateTime::from_timestamp(split.update_timestamp, 0),
+                create_at: OffsetDateTime::from_unix_timestamp(
+                    split.split_metadata.create_timestamp,
+                )
+                .expect("could not create OffsetDateTime from timestamp"),
+                updated_at: OffsetDateTime::from_unix_timestamp(split.update_timestamp)
+                    .expect("could not create OffsetDateTime from timestamp"),
                 time_range,
             }
         })
@@ -457,9 +464,9 @@ struct SplitRow {
     #[header("Size (MB)")]
     size_mega_bytes: u64,
     #[header("Created At")]
-    create_at: NaiveDateTime,
+    create_at: OffsetDateTime,
     #[header("Updated At")]
-    updated_at: NaiveDateTime,
+    updated_at: OffsetDateTime,
     #[header("Time Range")]
     time_range: String,
 }
@@ -468,8 +475,8 @@ struct SplitRow {
 mod tests {
     use std::path::PathBuf;
 
-    use chrono::NaiveDateTime;
     use quickwit_metastore::SplitMetadata;
+    use time::format_description;
 
     use super::*;
     use crate::cli::{build_cli, CliCommand};
@@ -494,14 +501,17 @@ mod tests {
             "file:///config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
+        let format =
+            format_description::parse("[year]-[month]-[day]T[hour]:[minute]:[second]").unwrap();
+
         assert!(matches!(
             command,
             CliCommand::Split(SplitCliCommand::List(ListSplitArgs {
                 index_id, states, start_date, end_date, tags, ..
             })) if &index_id == "wikipedia"
             && states == vec![SplitState::Published, SplitState::Staged]
-            && start_date == Some(NaiveDateTime::parse_from_str("2021-12-03T00:00:00", "%Y-%m-%dT%H:%M:%S").unwrap().timestamp())
-            && end_date == Some(NaiveDateTime::parse_from_str("2021-12-05T00:30:25", "%Y-%m-%dT%H:%M:%S").unwrap().timestamp())
+            && start_date == Some(PrimitiveDateTime::parse("2021-12-03T00:00:00", &format).unwrap().assume_utc().unix_timestamp())
+            && end_date == Some(PrimitiveDateTime::parse("2021-12-05T00:30:25", &format).unwrap().assume_utc().unix_timestamp())
             && tags == BTreeSet::from(["foo:bar".to_string(), "bar:baz".to_string()])
         ));
 

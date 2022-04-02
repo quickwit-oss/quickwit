@@ -37,7 +37,6 @@ opentelemetry = "0.17"
 tracing-opentelemetry = "0.17"
 prometheus = "0.13"
 once_cell = '1'
-chrono = "0.4"
 scuttlebutt = { git = "https://github.com/quickwit-oss/scuttlebutt", version = "0.1.0", rev="fb799bd" }
 quickwit-actors = {version="0.2.1", path="../quickwit-actors"}
 

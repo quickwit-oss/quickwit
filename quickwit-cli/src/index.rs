@@ -24,7 +24,6 @@ use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
-use chrono::Utc;
 use clap::{arg, ArgMatches, Command};
 use colored::Colorize;
 use humantime::format_duration;
@@ -48,6 +47,7 @@ use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
 use quickwit_telemetry::payload::TelemetryEvent;
 use thousands::Separable;
+use time::OffsetDateTime;
 use tracing::{debug, info, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
@@ -748,8 +748,8 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         doc_mapping: index_config.doc_mapping,
         indexing_settings: index_config.indexing_settings,
         search_settings: index_config.search_settings,
-        create_timestamp: Utc::now().timestamp(),
-        update_timestamp: Utc::now().timestamp(),
+        create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
+        update_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
     };
     create_index(&quickwit_config.metastore_uri(), index_metadata.clone()).await?;
     println!("Index `{}` successfully created.", index_config.index_id);
@@ -1066,12 +1066,12 @@ fn display_statistics(
     throughput_calculator: &mut ThroughputCalculator,
     statistics: &IndexingStatistics,
 ) -> anyhow::Result<()> {
-    let elapsed_duration = chrono::Duration::from_std(throughput_calculator.elapsed_time())?;
+    let elapsed_duration = time::Duration::try_from(throughput_calculator.elapsed_time())?;
     let elapsed_time = format!(
         "{:02}:{:02}:{:02}",
-        elapsed_duration.num_hours(),
-        elapsed_duration.num_minutes() % 60,
-        elapsed_duration.num_seconds() % 60
+        elapsed_duration.whole_hours(),
+        elapsed_duration.whole_minutes() % 60,
+        elapsed_duration.whole_seconds() % 60
     );
     let throughput_mb_s = throughput_calculator.calculate(statistics.total_bytes_processed);
     let mut printer = Printer { stdout };

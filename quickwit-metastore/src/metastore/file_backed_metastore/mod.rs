@@ -538,10 +538,10 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
 
-    use chrono::Utc;
     use futures::executor::block_on;
     use quickwit_storage::{MockStorage, RamStorage, Storage, StorageErrorKind};
     use rand::Rng;
+    use time::OffsetDateTime;
     use tokio::time::Duration;
 
     use super::lazy_file_backed_index::LazyFileBackedIndex;
@@ -623,7 +623,7 @@ mod tests {
         // The file-backed metastore should not update its internal state if the storage fails.
         let mut mock_storage = MockStorage::default();
 
-        let current_timestamp = Utc::now().timestamp();
+        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let ram_storage = RamStorage::default();
         let ram_storage_clone = ram_storage.clone();
@@ -809,7 +809,7 @@ mod tests {
         for i in 1..=20 {
             let sleep_duration = Duration::from_millis(random_generator.gen_range(0..=200));
             let metastore = metastore.clone();
-            let current_timestamp = Utc::now().timestamp();
+            let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
             let handle = tokio::spawn(async move {
                 let split_metadata = SplitMetadata {
                     footer_offsets: 1000..2000,
