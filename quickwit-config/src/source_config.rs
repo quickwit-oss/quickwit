@@ -91,7 +91,6 @@ pub enum SourceParams {
     File(FileSourceParams),
     #[serde(rename = "kafka")]
     Kafka(KafkaSourceParams),
-    #[doc(hidden)]
     #[serde(rename = "kinesis")]
     Kinesis(KinesisSourceParams),
     #[serde(rename = "vec")]
@@ -163,10 +162,45 @@ pub struct KafkaSourceParams {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RegionOrEndpoint {
+    Region(String),
+    Endpoint(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "KinesisSourceParamsInner")]
 pub struct KinesisSourceParams {
+    pub stream_name: String,
+    pub region_or_endpoint: Option<RegionOrEndpoint>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct KinesisSourceParamsInner {
     pub stream_name: String,
     pub region: Option<String>,
     pub endpoint: Option<String>,
+}
+
+impl TryFrom<KinesisSourceParamsInner> for KinesisSourceParams {
+    type Error = &'static str;
+
+    fn try_from(value: KinesisSourceParamsInner) -> Result<Self, Self::Error> {
+        if value.region.is_some() && value.endpoint.is_some() {
+            return Err(
+                "Kinesis source parameters `region` and `endpoint` are mutually exclusive.",
+            );
+        }
+        let region = value.region.map(RegionOrEndpoint::Region);
+        let endpoint = value.endpoint.map(RegionOrEndpoint::Endpoint);
+        let region_or_endpoint = region.or(endpoint);
+
+        Ok(KinesisSourceParams {
+            stream_name: value.stream_name,
+            region_or_endpoint,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -186,20 +220,61 @@ pub struct VoidSourceParams;
 mod tests {
     use quickwit_common::uri::Uri;
 
-    use crate::FileSourceParams;
+    use crate::source_config::RegionOrEndpoint;
+    use crate::{FileSourceParams, KinesisSourceParams};
 
     #[test]
     fn test_file_source_params_serialization() {
         {
-            let json = r#"{
-                "filepath": "source-path.json"
-            }"#;
-            let file_params = serde_yaml::from_str::<FileSourceParams>(json).unwrap();
+            let yaml = r#"
+                filepath: source-path.json
+            "#;
+            let file_params = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
             let uri = Uri::try_new("source-path.json").unwrap();
             assert_eq!(
                 file_params.filepath.unwrap().as_path(),
                 uri.filepath().unwrap()
             )
+        }
+    }
+
+    #[test]
+    fn test_kinesis_source_params_serialization() {
+        {
+            {
+                let yaml = r#"
+                    stream_name: my-stream
+                "#;
+                assert_eq!(
+                    serde_yaml::from_str::<KinesisSourceParams>(yaml).unwrap(),
+                    KinesisSourceParams {
+                        stream_name: "my-stream".to_string(),
+                        region_or_endpoint: None,
+                    }
+                );
+            }
+            {
+                let yaml = r#"
+                    stream_name: my-stream
+                    region: us-west-1
+                "#;
+                assert_eq!(
+                    serde_yaml::from_str::<KinesisSourceParams>(yaml).unwrap(),
+                    KinesisSourceParams {
+                        stream_name: "my-stream".to_string(),
+                        region_or_endpoint: Some(RegionOrEndpoint::Region("us-west-1".to_string())),
+                    }
+                );
+            }
+            {
+                let yaml = r#"
+                    stream_name: my-stream
+                    region: us-west-1
+                    endpoint: https://localhost:4566
+                "#;
+                let error = serde_yaml::from_str::<KinesisSourceParams>(yaml).unwrap_err();
+                assert!(error.to_string().starts_with("Kinesis source parameters "));
+            }
         }
     }
 }
