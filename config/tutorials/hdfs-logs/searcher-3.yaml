@@ -1,0 +1,8 @@
+version: 0
+node_id: searcher-3
+listen_address: 127.0.0.1
+rest_listen_port: 7300
+peer_seeds:
+  - 127.0.0.1:7280 # searcher-1
+  - 127.0.0.1:7290 # searcher-2
+

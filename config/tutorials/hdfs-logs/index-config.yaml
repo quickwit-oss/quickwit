@@ -1,0 +1,36 @@
+#
+# Index config file for hdfs-logs dataset.
+#
+
+version: 0
+
+index_id: hdfs-logs
+
+doc_mapping:
+  field_mappings:
+    - name: timestamp
+      type: i64
+      fast: true
+    - name: tenant_id
+      type: u64
+    - name: severity_text
+      type: text
+      tokenizer: raw
+    - name: body
+      type: text
+      tokenizer: default
+      record: position
+    - name: resource
+      type: object
+      field_mappings:
+        - name: service
+          type: text
+          tokenizer: raw
+  tag_fields: [tenant_id]
+  store_source: true
+
+indexing_settings:
+  timestamp_field: timestamp
+
+search_settings:
+  default_search_fields: [severity_text, body]
