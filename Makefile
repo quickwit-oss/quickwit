@@ -25,6 +25,7 @@ fmt:
 # `make -k test-all docker-compose-down`, tears down the Docker services after running all the tests.
 test-all: docker-compose-up
 	QW_S3_ENDPOINT=http://localhost:4566 AWS_ACCESS_KEY_ID=ignored AWS_SECRET_ACCESS_KEY=ignored cargo test --all-features
+	cargo test --test failpoints --features fail/failpoints
 
 # This will build and push all custom cross images for cross-compilation.
 # You will need to login into Docker Hub with the `quickwit` account.

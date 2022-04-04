@@ -312,9 +312,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     // Before the controlled directory, the merge operation would have continued until it
     // finished, taking hundreds of millisecs to terminate.
     fail::cfg("before-merge-split", "pause").unwrap();
-    universe
-        .send_message(&merge_executor_mailbox, merge_scratch)
-        .await?;
+    merge_executor_mailbox.send_message(merge_scratch).await?;
 
     std::mem::drop(merge_executor_mailbox);
 
