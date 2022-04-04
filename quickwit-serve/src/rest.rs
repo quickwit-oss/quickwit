@@ -70,9 +70,16 @@ pub(crate) async fn start_rest_server(
     Ok(())
 }
 
-/// This function returns a formated error based on the given rejection reason.
+/// This function returns a formatted error based on the given rejection reason.
 pub async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
     // TODO handle more errors.
+    if let Some(error) = rejection.find::<crate::push_api::BulkApiError>() {
+        return Ok(Format::PrettyJson.make_reply_for_err(FormatError {
+            code: ServiceErrorCode::BadRequest,
+            error: error.to_string(),
+        }));
+    };
+
     match rejection.find::<serde_qs::Error>() {
         Some(err) => {
             let err_msg = err.to_string();

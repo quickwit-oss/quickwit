@@ -45,10 +45,38 @@ struct PushApiServiceUnavailable;
 impl warp::reject::Reject for PushApiServiceUnavailable {}
 
 #[derive(Debug, Error)]
-#[error("Could not parse a bulk source `{0}`.")]
-struct InvalidBulkSource(String);
+pub enum BulkApiError {
+    #[error("Could not parse action `{0}`.")]
+    InvalidAction(String),
+    #[error("Could not parse the source `{0}`.")]
+    InvalidSource(String),
+}
 
-impl warp::reject::Reject for InvalidBulkSource {}
+impl warp::reject::Reject for BulkApiError {}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(rename_all(deserialize = "lowercase"))]
+enum BulkAction {
+    Index(BulkActionMeta),
+    Create(BulkActionMeta),
+}
+
+impl BulkAction {
+    fn index(self) -> String {
+        match self {
+            BulkAction::Index(meta) => meta.index,
+            BulkAction::Create(meta) => meta.index,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+struct BulkActionMeta {
+    #[serde(alias = "_index")]
+    index: String,
+    #[serde(alias = "_id")]
+    id: String,
+}
 
 pub fn ingest_handler(
     push_api_mailbox_opt: Option<Mailbox<PushApiService>>,
@@ -165,57 +193,6 @@ pub fn elastic_bulk_handler(
         .and_then(elastic_ingest)
 }
 
-#[derive(Clone, Deserialize, PartialEq)]
-struct BulkCommand {
-    action: BulkAction,
-    source: Option<Value>,
-}
-
-#[derive(Debug, Clone, Deserialize, PartialEq)]
-#[serde(rename_all(deserialize = "lowercase"))]
-enum BulkAction {
-    Index(BulkActionMeta),
-    Create(BulkActionMeta),
-    Delete(BulkActionMeta),
-    Update(BulkActionMeta),
-}
-
-impl BulkCommand {
-    /// Returns a json string of the command and it params.
-    fn doc(self) -> String {
-        // TODO: discuss specs
-        // if we are to support all elastic verbs (delete, update)
-        self.source
-            .map_or("".to_string(), |json_value| json_value.to_string())
-    }
-}
-
-impl BulkAction {
-    fn has_source_option(&self) -> bool {
-        match &self {
-            BulkAction::Index(_) | BulkAction::Create(_) | BulkAction::Update(_) => true,
-            BulkAction::Delete(_) => false,
-        }
-    }
-
-    fn meta(&self) -> &BulkActionMeta {
-        match &self {
-            BulkAction::Index(meta) => meta,
-            BulkAction::Create(meta) => meta,
-            BulkAction::Update(meta) => meta,
-            BulkAction::Delete(meta) => meta,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, PartialEq)]
-struct BulkActionMeta {
-    #[serde(alias = "_index")]
-    index: String,
-    #[serde(alias = "_id")]
-    id: String,
-}
-
 async fn elastic_ingest(
     payload: String,
     push_api_mailbox: Mailbox<PushApiService>,
@@ -224,19 +201,25 @@ async fn elastic_ingest(
     let mut payload_lines = lines(&payload);
 
     while let Some(json_str) = payload_lines.next() {
-        let action = serde_json::from_str::<BulkAction>(json_str).unwrap();
-        let source = extract_source(&mut payload_lines, &action)?;
+        let action = serde_json::from_str::<BulkAction>(json_str)
+            .map_err(|e| BulkApiError::InvalidAction(e.to_string()))?;
+        let source = payload_lines
+            .next()
+            .ok_or_else(|| {
+                BulkApiError::InvalidSource("Expected source for the action.".to_string())
+            })
+            .and_then(|source| {
+                serde_json::from_str::<Value>(source)
+                    .map_err(|err| BulkApiError::InvalidSource(err.to_string()))
+            })?;
 
-        let command = BulkCommand { action, source };
-
-        let index_id = command.action.meta().index.clone();
+        let index_id = action.index();
         let doc_batch = batches.entry(index_id.clone()).or_insert(DocBatch {
             index_id,
             ..Default::default()
         });
 
-        // TODO: we only support append for now (discuss)
-        add_doc(command.doc().as_bytes(), doc_batch);
+        add_doc(source.to_string().as_bytes(), doc_batch);
     }
 
     let ingest_req = IngestRequest {
@@ -246,27 +229,7 @@ async fn elastic_ingest(
         .ask_for_res(ingest_req)
         .await
         .map_err(FormatError::wrap);
-
     Ok(Format::PrettyJson.make_rest_reply(ingest_resp))
-}
-
-fn extract_source<'a>(
-    payload_lines: &mut impl Iterator<Item = &'a str>,
-    action: &BulkAction,
-) -> Result<Option<Value>, InvalidBulkSource> {
-    if !action.has_source_option() {
-        return Result::<Option<Value>, InvalidBulkSource>::Ok(None);
-    }
-
-    payload_lines
-        .next()
-        .ok_or_else(|| {
-            InvalidBulkSource("Expected source of the previous bulk action.".to_string())
-        })
-        .and_then(|source| {
-            serde_json::from_str::<Value>(source).map_err(|err| InvalidBulkSource(err.to_string()))
-        })
-        .map(Some)
 }
 
 #[cfg(test)]
@@ -285,5 +248,8 @@ mod tests {
                 id: "2".to_string()
             })
         );
+
+        let json_str = r#"{ "delete" : { "_index" : "test", "_id" : "2" } }"#;
+        assert!(serde_json::from_str::<BulkAction>(json_str).is_err());
     }
 }

@@ -30,6 +30,7 @@ use crate::{iter_doc_payloads, Position, Queues};
 
 pub struct PushApiService {
     queues: Queues,
+    metastore: Arc<Metastore>,
 }
 
 impl PushApiService {
