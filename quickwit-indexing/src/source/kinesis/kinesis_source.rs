@@ -24,7 +24,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
-use quickwit_config::KinesisSourceParams;
+use quickwit_config::{KinesisSourceParams, RegionOrEndpoint};
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use rusoto_core::Region;
 use rusoto_kinesis::KinesisClient;
@@ -102,7 +102,7 @@ impl KinesisSource {
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
         let stream_name = params.stream_name;
-        let region = get_region(params.region, params.endpoint);
+        let region = get_region(params.region_or_endpoint)?;
         let kinesis_client = KinesisClient::new(region);
         let (shard_consumers_tx, shard_consumers_rx) = mpsc::channel(1_000);
         let state = KinesisSourceState::default();
@@ -309,17 +309,17 @@ impl Source for KinesisSource {
     }
 }
 
-fn get_region(region_opt: Option<String>, endpoint_opt: Option<String>) -> Region {
-    if let Some(endpoint) = endpoint_opt {
-        return Region::Custom {
+fn get_region(region_or_endpoint: Option<RegionOrEndpoint>) -> anyhow::Result<Region> {
+    match region_or_endpoint {
+        Some(RegionOrEndpoint::Endpoint(endpoint)) => Ok(Region::Custom {
             name: "Custom".to_string(),
             endpoint,
-        };
+        }),
+        Some(RegionOrEndpoint::Region(region_str)) => region_str
+            .parse()
+            .with_context(|| format!("Failed to parse region: `{}`", region_str)),
+        None => Ok(Region::default()),
     }
-    if let Some(Ok(region)) = region_opt.map(|rgn| rgn.parse()) {
-        return region;
-    }
-    Region::default()
 }
 
 #[cfg(all(test, feature = "kinesis-localstack-tests"))]
@@ -354,8 +354,7 @@ mod tests {
         let (kinesis_client, stream_name) = setup("test-kinesis-source", 3).await.unwrap();
         let params = KinesisSourceParams {
             stream_name: stream_name.clone(),
-            region: None,
-            endpoint: Some("http://localhost:4566".to_string()),
+            region_or_endpoint: Some(RegionOrEndpoint::Endpoint("http://localhost:4566".to_string())),
         };
         {
             let checkpoint = SourceCheckpoint::default();
