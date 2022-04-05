@@ -50,7 +50,7 @@ pub fn ingest_handler(
 }
 
 fn ingest_filter() -> impl Filter<Extract = (String, String), Error = Rejection> + Clone {
-    warp::path!("api" / "v1" / String / "ingest")
+    warp::path!(String / "ingest")
         .and(warp::post())
         .and(warp::body::bytes().and_then(|body: Bytes| async move {
             if let Ok(body_str) = std::str::from_utf8(&*body) {
@@ -102,7 +102,7 @@ pub fn tail_handler(
 }
 
 fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {
-    warp::path!("api" / "v1" / String / "fetch").and(warp::get())
+    warp::path!(String / "fetch").and(warp::get())
 }
 
 async fn tail_endpoint(

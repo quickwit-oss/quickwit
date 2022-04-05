@@ -31,7 +31,7 @@ pub fn cluster_handler(
     cluster_service: Arc<dyn ClusterService>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     list_members_filter()
-        .and(warp::any().map(move || cluster_service.clone()))
+        .and(warp::path::end().map(move || cluster_service.clone()))
         .and_then(list_members)
 }
 

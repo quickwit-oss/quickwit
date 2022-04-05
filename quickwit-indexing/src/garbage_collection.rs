@@ -24,6 +24,7 @@ use futures::StreamExt;
 use quickwit_actors::ActorContext;
 use quickwit_metastore::{Metastore, MetastoreError, SplitMetadata, SplitState};
 use quickwit_storage::StorageError;
+use serde::Serialize;
 use thiserror::Error;
 use time::OffsetDateTime;
 use tracing::error;
@@ -45,7 +46,7 @@ pub enum SplitDeletionError {
 }
 
 #[allow(missing_docs)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct FileEntry {
     /// The file_name is a file name, within an index directory.
     pub file_name: String,
