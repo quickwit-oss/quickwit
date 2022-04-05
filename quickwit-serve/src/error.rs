@@ -98,7 +98,9 @@ impl ServiceError for PushApiError {
     fn status_code(&self) -> ServiceErrorCode {
         match self {
             PushApiError::Corruption { .. } => ServiceErrorCode::Internal,
-            PushApiError::QueueDoesNotExist { .. } => ServiceErrorCode::NotFound,
+            PushApiError::QueueDoesNotExist { .. } | PushApiError::IndexDoesNotExist { .. } => {
+                ServiceErrorCode::NotFound
+            }
             PushApiError::QueueAlreadyExists { .. } => ServiceErrorCode::BadRequest,
             PushApiError::PushAPIServiceDown => ServiceErrorCode::Internal,
         }

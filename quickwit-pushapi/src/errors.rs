@@ -31,6 +31,8 @@ pub enum PushApiError {
     QueueAlreadyExists { queue_id: String },
     #[error("PushAPI service is down")]
     PushAPIServiceDown,
+    #[error("The following indexes `{queue_ids:?}` don't exist.")]
+    IndexDoesNotExist { queue_ids: Vec<String> },
 }
 
 #[derive(Error, Debug)]
@@ -57,7 +59,9 @@ impl From<PushApiError> for tonic::Status {
     fn from(error: PushApiError) -> tonic::Status {
         let code = match &error {
             PushApiError::Corruption { .. } => tonic::Code::Internal,
-            PushApiError::QueueDoesNotExist { .. } => tonic::Code::NotFound,
+            PushApiError::QueueDoesNotExist { .. } | PushApiError::IndexDoesNotExist { .. } => {
+                tonic::Code::NotFound
+            }
             PushApiError::QueueAlreadyExists { .. } => tonic::Code::AlreadyExists,
             PushApiError::PushAPIServiceDown => tonic::Code::Internal,
         };

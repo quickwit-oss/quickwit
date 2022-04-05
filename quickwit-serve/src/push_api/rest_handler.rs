@@ -234,8 +234,7 @@ async fn elastic_ingest(
 
 #[cfg(test)]
 mod tests {
-    use super::BulkAction;
-    use crate::push_api::rest_handler::BulkActionMeta;
+    use super::{BulkAction, BulkActionMeta};
 
     #[test]
     fn test_deserialize() {
@@ -252,4 +251,6 @@ mod tests {
         let json_str = r#"{ "delete" : { "_index" : "test", "_id" : "2" } }"#;
         assert!(serde_json::from_str::<BulkAction>(json_str).is_err());
     }
+
+    // TODO: find a way to refactor/mock PushApiService for testing the endpoint.
 }
