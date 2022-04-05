@@ -44,8 +44,8 @@ pub(super) enum ShardConsumerMessage {
     },
     /// The shard is closed after a merge or a split. There are no new records available.
     ShardClosed(String),
-    /// The consumer has reached the latest record in the shard and stops if `eof_enabled` is set
-    /// to true.
+    /// The consumer has reached the latest record in the shard and stops if
+    /// `shutdown_at_shard_eof` is set to true.
     ShardEOF(String),
 }
 
@@ -69,9 +69,9 @@ pub(super) struct ShardConsumer {
     /// Sequence number of the last record processed. Consumption of the shard is resumed right
     /// after this sequence number.
     from_sequence_number_exclusive: Option<String>,
-    /// When this value is set to true, the consumer stops after reaching the last (most recent)
-    /// record in the shard.
-    eof_enabled: bool,
+    /// When this value is set to true, the consumer shuts down after reaching the last (most
+    /// recent) record in the shard.
+    shutdown_at_shard_eof: bool,
     state: ShardConsumerState,
     kinesis_client: KinesisClient,
     sink: mpsc::Sender<ShardConsumerMessage>,
@@ -92,7 +92,7 @@ impl ShardConsumer {
         stream_name: String,
         shard_id: String,
         from_sequence_number_exclusive: Option<String>,
-        eof_enabled: bool,
+        shutdown_at_shard_eof: bool,
         kinesis_client: KinesisClient,
         sink: mpsc::Sender<ShardConsumerMessage>,
     ) -> Self {
@@ -101,7 +101,7 @@ impl ShardConsumer {
             shard_id,
             from_sequence_number_exclusive,
             state: Default::default(),
-            eof_enabled,
+            shutdown_at_shard_eof,
             kinesis_client,
             sink,
         }
@@ -214,7 +214,7 @@ impl Handler<Loop> for ShardConsumer {
                     self.send_message(ctx, message).await?;
                 }
             }
-            if self.eof_enabled && response.millis_behind_latest == Some(0) {
+            if self.shutdown_at_shard_eof && response.millis_behind_latest == Some(0) {
                 let message = ShardConsumerMessage::ShardEOF(self.shard_id.clone());
                 self.send_message(ctx, message).await?;
                 return Err(ActorExitStatus::Success);
