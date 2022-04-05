@@ -875,7 +875,7 @@ async fn test_cmd_all_with_s3_localstack_cli() -> Result<()> {
     // TODO: ditto.
     let mut server_process = spawn_command(
         format!(
-            "service run searcher --config {}",
+            "run --service searcher --config {}",
             test_env.resource_files["config"].display(),
         )
         .as_str(),
@@ -960,7 +960,7 @@ async fn test_cmd_all_with_s3_localstack_internal_api() -> Result<()> {
     // TODO: ditto.
     let mut server_process = spawn_command(
         format!(
-            "service run searcher --config {}",
+            "run --service searcher --config {}",
             test_env.resource_files["config"].display(),
         )
         .as_str(),

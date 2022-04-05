@@ -823,7 +823,13 @@ mod kafka_broker_tests {
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages = inbox.drain_for_test();
+            let messages: Vec<RawDocBatch> = inbox
+                .drain_for_test()
+                .into_iter()
+                .flat_map(|msg_any| msg_any.downcast::<RawDocBatch>().ok())
+                .map(|boxed_msg| *boxed_msg)
+                .collect();
+
             assert!(messages.is_empty());
 
             let expected_current_positions: Vec<(i32, i64)> = vec![];
