@@ -173,6 +173,7 @@ pub enum RegionOrEndpoint {
 pub struct KinesisSourceParams {
     pub stream_name: String,
     pub region_or_endpoint: Option<RegionOrEndpoint>,
+    pub shutdown_at_stream_eof: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -181,6 +182,9 @@ struct KinesisSourceParamsInner {
     pub stream_name: String,
     pub region: Option<String>,
     pub endpoint: Option<String>,
+    #[doc(hidden)]
+    #[serde(default)]
+    pub shutdown_at_stream_eof: bool,
 }
 
 impl TryFrom<KinesisSourceParamsInner> for KinesisSourceParams {
@@ -199,6 +203,7 @@ impl TryFrom<KinesisSourceParamsInner> for KinesisSourceParams {
         Ok(KinesisSourceParams {
             stream_name: value.stream_name,
             region_or_endpoint,
+            shutdown_at_stream_eof: value.shutdown_at_stream_eof,
         })
     }
 }
@@ -250,6 +255,7 @@ mod tests {
                     KinesisSourceParams {
                         stream_name: "my-stream".to_string(),
                         region_or_endpoint: None,
+                        shutdown_at_stream_eof: false,
                     }
                 );
             }
@@ -257,12 +263,14 @@ mod tests {
                 let yaml = r#"
                     stream_name: my-stream
                     region: us-west-1
+                    shutdown_at_stream_eof: true
                 "#;
                 assert_eq!(
                     serde_yaml::from_str::<KinesisSourceParams>(yaml).unwrap(),
                     KinesisSourceParams {
                         stream_name: "my-stream".to_string(),
                         region_or_endpoint: Some(RegionOrEndpoint::Region("us-west-1".to_string())),
+                        shutdown_at_stream_eof: true,
                     }
                 );
             }

@@ -78,6 +78,7 @@ pub struct KinesisSourceState {
 }
 
 pub struct KinesisSource {
+    // Target stream to consume.
     stream_name: String,
     // Initialization checkpoint.
     checkpoint: SourceCheckpoint,
@@ -87,6 +88,7 @@ pub struct KinesisSource {
     // Receiver for the communication channel between the source and the shard consumers.
     shard_consumers_rx: mpsc::Receiver<ShardConsumerMessage>,
     state: KinesisSourceState,
+    shutdown_at_stream_eof: bool,
 }
 
 impl fmt::Debug for KinesisSource {
@@ -102,6 +104,7 @@ impl KinesisSource {
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
         let stream_name = params.stream_name;
+        let shutdown_at_stream_eof = params.shutdown_at_stream_eof;
         let region = get_region(params.region_or_endpoint)?;
         let kinesis_client = KinesisClient::new(region);
         let (shard_consumers_tx, shard_consumers_rx) = mpsc::channel(1_000);
@@ -113,6 +116,7 @@ impl KinesisSource {
             shard_consumers_tx,
             shard_consumers_rx,
             state,
+            shutdown_at_stream_eof,
         })
     }
 
@@ -133,7 +137,7 @@ impl KinesisSource {
             self.stream_name.clone(),
             shard_id.clone(),
             from_sequence_number_exclusive,
-            true,
+            self.shutdown_at_stream_eof,
             self.kinesis_client.clone(),
             self.shard_consumers_tx.clone(),
         );
@@ -315,9 +319,9 @@ fn get_region(region_or_endpoint: Option<RegionOrEndpoint>) -> anyhow::Result<Re
             name: "Custom".to_string(),
             endpoint,
         }),
-        Some(RegionOrEndpoint::Region(region_str)) => region_str
+        Some(RegionOrEndpoint::Region(region)) => region
             .parse()
-            .with_context(|| format!("Failed to parse region: `{}`", region_str)),
+            .with_context(|| format!("Failed to parse region: `{}`", region)),
         None => Ok(Region::default()),
     }
 }
@@ -354,7 +358,10 @@ mod tests {
         let (kinesis_client, stream_name) = setup("test-kinesis-source", 3).await.unwrap();
         let params = KinesisSourceParams {
             stream_name: stream_name.clone(),
-            region_or_endpoint: Some(RegionOrEndpoint::Endpoint("http://localhost:4566".to_string())),
+            region_or_endpoint: Some(RegionOrEndpoint::Endpoint(
+                "http://localhost:4566".to_string(),
+            )),
+            shutdown_at_stream_eof: true,
         };
         {
             let checkpoint = SourceCheckpoint::default();
