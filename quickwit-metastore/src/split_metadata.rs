@@ -22,8 +22,8 @@ use std::collections::BTreeSet;
 use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 use crate::VersionedSplitMetadataDeserializeHelper;
 
@@ -167,6 +167,6 @@ pub fn utc_now_timestamp() -> i64 {
     if cfg!(any(test, feature = "testsuite")) {
         1640577000
     } else {
-        Utc::now().timestamp()
+        OffsetDateTime::now_utc().unix_timestamp()
     }
 }

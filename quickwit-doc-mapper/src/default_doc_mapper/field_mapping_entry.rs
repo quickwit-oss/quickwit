@@ -1362,9 +1362,8 @@ mod tests {
             Date::from_calendar_date(2021, Month::December, 19).unwrap(),
             Time::from_hms(17, 39, 57).unwrap(),
         );
-        // let datetime = datetime!(2021-12-19 17:39:57);
 
-        let datetime_utc = DateTime::new_primitive(datetime); // Utc.from_utc_datetime(&datetime);
+        let datetime_utc = DateTime::new_primitive(datetime);
         assert_eq!(parsed_value.len(), 1);
         assert_eq!(parsed_value[0].1, Value::Date(datetime_utc));
 

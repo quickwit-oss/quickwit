@@ -574,7 +574,6 @@ mod tests {
                         value, expected_json_paths_and_values
                     );
                 }
-                assert!(is_value_in_expected_values);
             }
         });
         Ok(())

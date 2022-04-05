@@ -24,11 +24,11 @@
 use std::collections::HashMap;
 use std::ops::{Range, RangeInclusive};
 
-use chrono::Utc;
 use itertools::Itertools;
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 use crate::checkpoint::CheckpointDelta;
 use crate::{IndexMetadata, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
@@ -161,7 +161,7 @@ impl FileBackedIndex {
             });
         }
 
-        let now_timestamp = Utc::now().timestamp();
+        let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let metadata = Split {
             split_state: SplitState::Staged,
             update_timestamp: now_timestamp,
@@ -198,7 +198,8 @@ impl FileBackedIndex {
     ) -> MetastoreResult<bool> {
         let mut is_modified = false;
         let mut split_not_found_ids = vec![];
-        let now_timestamp = Utc::now().timestamp();
+        let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+
         for &split_id in split_ids {
             // Check for the existence of split.
             let metadata = match self.splits.get_mut(split_id) {
@@ -239,7 +240,7 @@ impl FileBackedIndex {
     ) -> MetastoreResult<()> {
         let mut split_not_found_ids = vec![];
         let mut split_not_staged_ids = vec![];
-        let now_timestamp = Utc::now().timestamp();
+        let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         for &split_id in split_ids {
             // Check for the existence of split.
             let metadata = match self.splits.get_mut(split_id) {
@@ -380,7 +381,7 @@ impl FileBackedIndex {
             });
         }
 
-        self.metadata.update_timestamp = Utc::now().timestamp();
+        self.metadata.update_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         Ok(())
     }
 
