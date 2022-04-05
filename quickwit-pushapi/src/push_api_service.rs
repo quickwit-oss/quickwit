@@ -67,7 +67,7 @@ impl PushApiService {
         }
 
         for doc_batch in &request.doc_batches {
-            // Attempt to create the queue if it does not already exist. 
+            // Attempt to create the queue if it does not exist.
             if let Err(error) = self.queues.create_queue(&doc_batch.index_id) {
                 match error {
                     PushApiError::QueueAlreadyExists { .. } => (),
