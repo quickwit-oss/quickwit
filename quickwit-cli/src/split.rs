@@ -430,7 +430,7 @@ fn make_list_splits_table(splits: Vec<Split>) -> Table {
                 id: split.split_metadata.split_id,
                 num_docs: split.split_metadata.num_docs,
                 size_mega_bytes: split.split_metadata.original_size_in_bytes / 1_000_000,
-                create_at: OffsetDateTime::from_unix_timestamp(
+                created_at: OffsetDateTime::from_unix_timestamp(
                     split.split_metadata.create_timestamp,
                 )
                 .expect("could not create OffsetDateTime from timestamp"),
@@ -440,7 +440,7 @@ fn make_list_splits_table(splits: Vec<Split>) -> Table {
             }
         })
         .sorted_by(|left, right| left.id.cmp(&right.id));
-    make_table("Splits", rows)
+    make_table("Splits", rows, false)
 }
 
 fn split_state_from_input_str(input: &str) -> anyhow::Result<SplitState> {
@@ -457,17 +457,17 @@ fn split_state_from_input_str(input: &str) -> anyhow::Result<SplitState> {
 
 #[derive(Tabled)]
 struct SplitRow {
-    #[header("Id")]
+    #[tabled(rename = "ID")]
     id: String,
-    #[header("Num Docs")]
+    #[tabled(rename = "Num docs")]
     num_docs: usize,
-    #[header("Size (MB)")]
+    #[tabled(rename = "Size (MB)")]
     size_mega_bytes: u64,
-    #[header("Created At")]
-    create_at: OffsetDateTime,
-    #[header("Updated At")]
+    #[tabled(rename = "Created at")]
+    created_at: OffsetDateTime,
+    #[tabled(rename = "Updated at")]
     updated_at: OffsetDateTime,
-    #[header("Time Range")]
+    #[tabled(rename = "Time range")]
     time_range: String,
 }
 
