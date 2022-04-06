@@ -295,13 +295,13 @@ where
         source_id: source.source_id.clone(),
         source_type: source.source_type().to_string(),
     }];
-    let source_table = make_table("Source", source_rows);
+    let source_table = make_table("Source", source_rows, true);
 
     let params_rows = flatten_json(source.params())
         .into_iter()
         .map(|(key, value)| ParamsRow { key, value })
         .sorted_by(|left, right| left.key.cmp(&right.key));
-    let params_table = make_table("Parameters", params_rows);
+    let params_table = make_table("Parameters", params_rows, false);
 
     let checkpoint_rows = checkpoint
         .iter()
@@ -310,7 +310,7 @@ where
             offset: position.as_str().to_string(),
         })
         .sorted_by(|left, right| left.partition_id.cmp(&right.partition_id));
-    let checkpoint_table = make_table("Checkpoint", checkpoint_rows);
+    let checkpoint_table = make_table("Checkpoint", checkpoint_rows, false);
     Ok((source_table, params_table, checkpoint_table))
 }
 
@@ -331,30 +331,30 @@ where I: IntoIterator<Item = SourceConfig> {
             source_id: source.source_id,
         })
         .sorted_by(|left, right| left.source_id.cmp(&right.source_id));
-    make_table("Sources", rows)
+    make_table("Sources", rows, false)
 }
 
 #[derive(Tabled)]
 struct SourceRow {
-    #[header("ID")]
-    source_id: String,
-    #[header("Type")]
+    #[tabled(rename = "Type")]
     source_type: String,
+    #[tabled(rename = "ID")]
+    source_id: String,
 }
 
 #[derive(Tabled)]
 struct ParamsRow {
-    #[header("Key")]
+    #[tabled(rename = "Key")]
     key: String,
-    #[header("Value")]
+    #[tabled(rename = "Value")]
     value: Value,
 }
 
 #[derive(Tabled)]
 struct CheckpointRow {
-    #[header("Partition ID")]
+    #[tabled(rename = "Partition ID")]
     partition_id: String,
-    #[header("Offset")]
+    #[tabled(rename = "Offset")]
     offset: String,
 }
 
@@ -558,7 +558,7 @@ mod tests {
         )
         .is_err());
 
-        let checkpoint: SourceCheckpoint = vec![("shard-000", ""), ("shard-001", "42")]
+        let checkpoint: SourceCheckpoint = vec![("shard-000", ""), ("shard-001", "1234567890")]
             .into_iter()
             .map(|(partition_id, offset)| (PartitionId::from(partition_id), Position::from(offset)))
             .collect();
@@ -581,22 +581,22 @@ mod tests {
             },
             CheckpointRow {
                 partition_id: "shard-001".to_string(),
-                offset: "42".to_string(),
+                offset: "1234567890".to_string(),
             },
         ];
         let (source_table, params_table, checkpoint_table) =
             make_describe_source_tables(checkpoint, sources, "foo-source").unwrap();
         assert_eq!(
             source_table.to_string(),
-            make_table("Source", expected_source).to_string()
+            make_table("Source", expected_source, true).to_string()
         );
         assert_eq!(
             params_table.to_string(),
-            make_table("Parameters", expected_params).to_string()
+            make_table("Parameters", expected_params, false).to_string()
         );
         assert_eq!(
             checkpoint_table.to_string(),
-            make_table("Checkpoint", expected_checkpoint).to_string()
+            make_table("Checkpoint", expected_checkpoint, false).to_string()
         );
     }
 
@@ -645,7 +645,7 @@ mod tests {
         ];
         assert_eq!(
             make_list_sources_table(sources).to_string(),
-            make_table("Sources", expected_sources).to_string()
+            make_table("Sources", expected_sources, false).to_string()
         );
     }
 }
