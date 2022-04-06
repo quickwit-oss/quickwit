@@ -203,6 +203,7 @@ impl Queues {
         &self,
         queue_id: &str,
         start_after: Option<Position>,
+        num_bytes_limit: Option<usize>,
     ) -> crate::Result<quickwit_proto::push_api::FetchResponse> {
         let cf =
             self.db
@@ -210,6 +211,7 @@ impl Queues {
                 .ok_or_else(|| crate::PushApiError::QueueDoesNotExist {
                     queue_id: queue_id.to_string(),
                 })?;
+
         let start_position = start_after
             .map(|position| position.inc())
             .unwrap_or_default();
@@ -220,13 +222,14 @@ impl Queues {
         let mut doc_batch = DocBatch::default();
         let mut num_bytes = 0;
         let mut first_key_opt: Option<u64> = None;
+        let size_limit = num_bytes_limit.unwrap_or(FETCH_PAYLOAD_LIMIT);
         for (key, payload) in full_it {
             let position = Position::try_from(&*key)?;
             if first_key_opt.is_none() {
                 first_key_opt = Some(position.into());
             }
             num_bytes += add_doc(&*payload, &mut doc_batch);
-            if num_bytes > FETCH_PAYLOAD_LIMIT {
+            if num_bytes > size_limit {
                 break;
             }
         }
@@ -236,9 +239,7 @@ impl Queues {
         })
     }
 
-    // Streams messages from in `]after_position, +∞[`.
-    //
-    // If after_position is set to None, then fetch from the start of the Stream.
+    // Streams messages from the start of the Stream.
     pub fn tail(&self, queue_id: &str) -> crate::Result<quickwit_proto::push_api::FetchResponse> {
         let cf =
             self.db
@@ -310,7 +311,7 @@ mod tests {
             expected_first_pos_opt: Option<u64>,
             expected: &[&[u8]],
         ) {
-            let fetch_resp = self.fetch(queue_id, start_after).unwrap();
+            let fetch_resp = self.fetch(queue_id, start_after, None).unwrap();
             assert_eq!(fetch_resp.first_position, expected_first_pos_opt);
             let doc_batch = fetch_resp.doc_batch.unwrap();
             let records: Vec<&[u8]> = iter_doc_payloads(&doc_batch).collect();

@@ -50,7 +50,11 @@ impl PushApiService {
 
     fn fetch(&mut self, fetch_req: FetchRequest) -> crate::Result<FetchResponse> {
         let start_from_opt: Option<Position> = fetch_req.start_after.map(Position::from);
-        self.queues.fetch(&fetch_req.index_id, start_from_opt)
+        let num_bytes_limit_opt: Option<usize> = fetch_req
+            .num_bytes_limit
+            .map(|num_bytes_limit| num_bytes_limit as usize);
+        self.queues
+            .fetch(&fetch_req.index_id, start_from_opt, num_bytes_limit_opt)
     }
 
     fn suggest_truncate(&mut self, request: SuggestTruncateRequest) -> crate::Result<()> {

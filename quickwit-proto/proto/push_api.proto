@@ -71,6 +71,7 @@ message IngestResponse {}
 message FetchRequest {
     string index_id = 1;
     optional uint64 start_after = 2;
+    optional uint64 num_bytes_limit = 3;
 }
 
 message FetchResponse {

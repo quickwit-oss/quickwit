@@ -20,6 +20,7 @@
 mod errors;
 mod position;
 mod push_api_service;
+mod pushapi_source;
 mod queue;
 
 use std::path::Path;

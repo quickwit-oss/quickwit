@@ -32,6 +32,8 @@ pub struct FetchRequest {
     pub index_id: ::prost::alloc::string::String,
     #[prost(uint64, optional, tag="2")]
     pub start_after: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag="3")]
+    pub num_bytes_limit: ::core::option::Option<u64>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
