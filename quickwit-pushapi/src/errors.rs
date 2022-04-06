@@ -25,14 +25,12 @@ use thiserror::Error;
 pub enum PushApiError {
     #[error("Rocks DB Error: {msg}.")]
     Corruption { msg: String },
-    #[error("Queue `{queue_id}` does not exist.")]
-    QueueDoesNotExist { queue_id: String },
-    #[error("Queue `{queue_id}` already exists.")]
-    QueueAlreadyExists { queue_id: String },
+    #[error("Index `{index_id}` does not exist.")]
+    IndexDoesNotExist { index_id: String },
+    #[error("Index `{index_id}` already exists.")]
+    IndexAlreadyExists { index_id: String },
     #[error("PushAPI service is down")]
     PushAPIServiceDown,
-    #[error("The following indexes `{queue_ids:?}` don't exist.")]
-    IndexDoesNotExist { queue_ids: Vec<String> },
 }
 
 #[derive(Error, Debug)]
@@ -59,10 +57,8 @@ impl From<PushApiError> for tonic::Status {
     fn from(error: PushApiError) -> tonic::Status {
         let code = match &error {
             PushApiError::Corruption { .. } => tonic::Code::Internal,
-            PushApiError::QueueDoesNotExist { .. } | PushApiError::IndexDoesNotExist { .. } => {
-                tonic::Code::NotFound
-            }
-            PushApiError::QueueAlreadyExists { .. } => tonic::Code::AlreadyExists,
+            PushApiError::IndexDoesNotExist { .. } => tonic::Code::NotFound,
+            PushApiError::IndexAlreadyExists { .. } => tonic::Code::AlreadyExists,
             PushApiError::PushAPIServiceDown => tonic::Code::Internal,
         };
         let message = error.to_string();

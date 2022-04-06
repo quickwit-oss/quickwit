@@ -22,6 +22,7 @@ use std::fmt;
 
 use quickwit_actors::AskError;
 use quickwit_cluster::ClusterError;
+use quickwit_core::IndexServiceError;
 use quickwit_indexing::IndexingServerError;
 use quickwit_proto::tonic;
 use quickwit_pushapi::PushApiError;
@@ -98,10 +99,8 @@ impl ServiceError for PushApiError {
     fn status_code(&self) -> ServiceErrorCode {
         match self {
             PushApiError::Corruption { .. } => ServiceErrorCode::Internal,
-            PushApiError::QueueDoesNotExist { .. } | PushApiError::IndexDoesNotExist { .. } => {
-                ServiceErrorCode::NotFound
-            }
-            PushApiError::QueueAlreadyExists { .. } => ServiceErrorCode::BadRequest,
+            PushApiError::IndexDoesNotExist { .. } => ServiceErrorCode::NotFound,
+            PushApiError::IndexAlreadyExists { .. } => ServiceErrorCode::BadRequest,
             PushApiError::PushAPIServiceDown => ServiceErrorCode::Internal,
         }
     }
@@ -113,6 +112,16 @@ impl<E: fmt::Debug + ServiceError> ServiceError for AskError<E> {
             AskError::MessageNotDelivered => ServiceErrorCode::Internal,
             AskError::ProcessMessageError => ServiceErrorCode::Internal,
             AskError::ErrorReply(err) => err.status_code(),
+        }
+    }
+}
+
+impl ServiceError for IndexServiceError {
+    fn status_code(&self) -> ServiceErrorCode {
+        match self {
+            Self::StorageError(_) => ServiceErrorCode::Internal,
+            Self::MetastoreError(_) => ServiceErrorCode::Internal,
+            Self::SplitDeletionError(_) => ServiceErrorCode::Internal,
         }
     }
 }

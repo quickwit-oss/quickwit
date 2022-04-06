@@ -45,34 +45,33 @@ impl PushApiService {
     }
 
     async fn ingest(&mut self, request: IngestRequest) -> crate::Result<()> {
-        // Check all indexes exist.
-        let tasks = request.doc_batches.iter().map(|batch| {
-            let moved_metastore = self.metastore.clone();
-            let index_id = batch.index_id.clone();
-            tokio::spawn(async move {
-                let result = moved_metastore.check_index_available(&index_id).await;
-                (index_id, result)
-            })
-        });
+        // Check all indexes exist assuming existing queues always have a corresponding index.
+        let tasks = request
+            .doc_batches
+            .iter()
+            .filter(|batch| !self.queues.queue_exists(&batch.index_id))
+            .map(|batch| {
+                let moved_metastore = self.metastore.clone();
+                let moved_index_id = batch.index_id.clone();
+                async move {
+                    let result = moved_metastore.check_index_available(&moved_index_id).await;
+                    (moved_index_id, result)
+                }
+            });
 
-        let queue_ids = futures::future::try_join_all(tasks)
+        let first_non_existing_index_id_opt = futures::future::join_all(tasks)
             .await
-            .unwrap()
             .into_iter()
             .filter(|(_, result)| result.is_err())
             .map(|(index_id, _)| index_id)
-            .collect::<Vec<_>>();
-        if !queue_ids.is_empty() {
-            return Err(PushApiError::IndexDoesNotExist { queue_ids });
+            .next();
+        if let Some(index_id) = first_non_existing_index_id_opt {
+            return Err(PushApiError::IndexDoesNotExist { index_id });
         }
 
         for doc_batch in &request.doc_batches {
-            // Attempt to create the queue if it does not exist.
-            if let Err(error) = self.queues.create_queue(&doc_batch.index_id) {
-                match error {
-                    PushApiError::QueueAlreadyExists { .. } => (),
-                    _ => return Err(error),
-                }
+            if !self.queues.queue_exists(&doc_batch.index_id) {
+                self.queues.create_queue(&doc_batch.index_id)?
             }
 
             // TODO better error handling.

@@ -60,8 +60,8 @@
 mod file_source;
 #[cfg(feature = "kafka")]
 mod kafka_source;
-// #[cfg(feature = "kinesis")]
-// mod kinesis;
+#[cfg(feature = "kinesis")]
+mod kinesis;
 mod source_factory;
 mod vec_source;
 mod void_source;
@@ -73,6 +73,8 @@ use async_trait::async_trait;
 pub use file_source::{FileSource, FileSourceFactory};
 #[cfg(feature = "kafka")]
 pub use kafka_source::{KafkaSource, KafkaSourceFactory};
+#[cfg(feature = "kinesis")]
+pub use kinesis::kinesis_source::{KinesisSource, KinesisSourceFactory};
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_config::{SourceConfig, SourceParams};
@@ -203,6 +205,8 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source("file", FileSourceFactory);
         #[cfg(feature = "kafka")]
         source_factory.add_source("kafka", KafkaSourceFactory);
+        #[cfg(feature = "kinesis")]
+        source_factory.add_source("kinesis", KinesisSourceFactory);
         source_factory.add_source("vec", VecSourceFactory);
         source_factory.add_source("void", VoidSourceFactory);
         source_factory

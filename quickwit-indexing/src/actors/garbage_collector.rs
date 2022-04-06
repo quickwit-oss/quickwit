@@ -26,7 +26,7 @@ use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_metastore::Metastore;
 use tracing::info;
 
-use crate::run_garbage_collect;
+use crate::garbage_collection::run_garbage_collect;
 use crate::split_store::IndexingSplitStore;
 
 const RUN_INTERVAL: Duration = Duration::from_secs(60); // 1 minutes

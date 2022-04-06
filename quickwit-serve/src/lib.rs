@@ -27,6 +27,7 @@ mod rest;
 
 mod cluster_api;
 mod health_check_api;
+mod index_api;
 mod indexing_api;
 mod push_api;
 mod search_api;
@@ -39,6 +40,7 @@ use format::Format;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::ClusterService;
 use quickwit_config::QuickwitConfig;
+use quickwit_core::IndexService;
 use quickwit_indexing::actors::IndexingServer;
 use quickwit_indexing::start_indexer_service;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
@@ -91,6 +93,7 @@ struct QuickwitServices {
     pub search_service: Option<Arc<dyn SearchService>>,
     pub indexer_service: Option<Mailbox<IndexingServer>>,
     pub push_api_service: Option<Mailbox<PushApiService>>,
+    pub index_service: Arc<IndexService>,
 }
 
 pub async fn serve_quickwit(
@@ -137,7 +140,7 @@ pub async fn serve_quickwit(
             let search_service = start_searcher_service(
                 config,
                 metastore.clone(),
-                storage_resolver,
+                storage_resolver.clone(),
                 cluster_service.clone(),
             )
             .await?;
@@ -146,11 +149,19 @@ pub async fn serve_quickwit(
             None
         };
 
+    // Always instanciate index management service.
+    let index_service = Arc::new(IndexService::new(
+        metastore,
+        storage_resolver,
+        config.default_index_root_uri(),
+    ));
+
     let quickwit_services = QuickwitServices {
         push_api_service,
         cluster_service,
         search_service,
         indexer_service,
+        index_service,
     };
 
     let rest_addr = config.rest_socket_addr()?;

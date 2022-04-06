@@ -17,19 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod config;
-mod index_config;
-mod source_config;
+mod rest_handler;
 
-pub use config::{
-    get_searcher_config_instance, IndexerConfig, QuickwitConfig, SearcherConfig,
-    SEARCHER_CONFIG_INSTANCE,
-};
-pub use index_config::{
-    build_doc_mapper, DocMapping, IndexConfig, IndexingResources, IndexingSettings, MergePolicy,
-    SearchSettings,
-};
-pub use source_config::{
-    FileSourceParams, KafkaSourceParams, KinesisSourceParams, RegionOrEndpoint, SourceConfig,
-    SourceParams, VecSourceParams, VoidSourceParams,
-};
+pub use self::rest_handler::index_management_handlers;

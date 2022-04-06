@@ -26,6 +26,7 @@ pub(crate) mod tests {
     use quickwit_common::rand::append_random_suffix;
     use rusoto_core::Region;
     use rusoto_kinesis::{Kinesis, KinesisClient, PutRecordsInput, PutRecordsRequestEntry};
+    use tracing::error;
 
     use crate::source::kinesis::api::list_shards;
     use crate::source::kinesis::api::tests::{
@@ -51,7 +52,7 @@ pub(crate) mod tests {
     }
 
     pub async fn put_records_into_shards<I>(
-        kinesis_client: &dyn Kinesis,
+        kinesis_client: &KinesisClient,
         stream_name: &str,
         records: I,
     ) -> anyhow::Result<HashMap<usize, Vec<String>>>
@@ -109,7 +110,9 @@ pub(crate) mod tests {
     }
 
     pub async fn teardown(kinesis_client: &dyn Kinesis, stream_name: &str) {
-        let _delete_res = delete_stream(kinesis_client, stream_name).await;
+        if let Err(error) = delete_stream(kinesis_client, stream_name).await {
+            error!(stream_name = %stream_name, error = ?error, "Failed to delete stream.")
+        }
     }
 
     pub async fn wait_for_active_stream(

@@ -62,7 +62,7 @@ enum BulkAction {
 }
 
 impl BulkAction {
-    fn index(self) -> String {
+    fn into_index(self) -> String {
         match self {
             BulkAction::Index(meta) => meta.index,
             BulkAction::Create(meta) => meta.index,
@@ -87,7 +87,7 @@ pub fn ingest_handler(
 }
 
 fn ingest_filter() -> impl Filter<Extract = (String, String), Error = Rejection> + Clone {
-    warp::path!("api" / "v1" / String / "ingest")
+    warp::path!(String / "ingest")
         .and(warp::post())
         .and(warp::body::bytes().and_then(|body: Bytes| async move {
             if let Ok(body_str) = std::str::from_utf8(&*body) {
@@ -139,7 +139,7 @@ pub fn tail_handler(
 }
 
 fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {
-    warp::path!("api" / "v1" / String / "fetch").and(warp::get())
+    warp::path!(String / "fetch").and(warp::get())
 }
 
 async fn tail_endpoint(
@@ -213,7 +213,7 @@ async fn elastic_ingest(
                     .map_err(|err| BulkApiError::InvalidSource(err.to_string()))
             })?;
 
-        let index_id = action.index();
+        let index_id = action.into_index();
         let doc_batch = batches.entry(index_id.clone()).or_insert(DocBatch {
             index_id,
             ..Default::default()

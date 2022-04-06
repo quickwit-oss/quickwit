@@ -27,6 +27,7 @@ use crate::cluster_api::cluster_handler;
 use crate::error::ServiceErrorCode;
 use crate::format::FormatError;
 use crate::health_check_api::liveness_check_handler;
+use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::push_api::{bulk_handler, elastic_bulk_handler, ingest_handler, tail_handler};
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
@@ -44,8 +45,8 @@ pub(crate) async fn start_rest_server(
     let metrics_service = warp::path("metrics")
         .and(warp::get())
         .map(metrics::metrics_handler);
-    let rest_routes = liveness_check_handler()
-        .or(cluster_handler(quickwit_services.cluster_service.clone()))
+    let api_v1_root_url = warp::path!("api" / "v1" / ..);
+    let api_v1_routes = cluster_handler(quickwit_services.cluster_service.clone())
         .or(indexing_get_handler(
             quickwit_services.indexer_service.clone(),
         ))
@@ -62,9 +63,16 @@ pub(crate) async fn start_rest_server(
         .or(elastic_bulk_handler(
             quickwit_services.push_api_service.clone(),
         ))
+        .or(index_management_handlers(
+            quickwit_services.index_service.clone(),
+        ));
+    let rest_routes = api_v1_root_url
+        .and(api_v1_routes)
+        .or(liveness_check_handler())
         .or(metrics_service)
         .with(request_counter)
         .recover(recover_fn);
+
     info!("Searcher ready to accept requests at http://{rest_addr}/");
     warp::serve(rest_routes).run(rest_addr).await;
     Ok(())
@@ -72,25 +80,31 @@ pub(crate) async fn start_rest_server(
 
 /// This function returns a formatted error based on the given rejection reason.
 pub async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
-    // TODO handle more errors.
-    if let Some(error) = rejection.find::<crate::push_api::BulkApiError>() {
-        return Ok(Format::PrettyJson.make_reply_for_err(FormatError {
-            code: ServiceErrorCode::BadRequest,
-            error: error.to_string(),
-        }));
-    };
-
-    match rejection.find::<serde_qs::Error>() {
-        Some(err) => {
-            let err_msg = err.to_string();
-            Ok(Format::PrettyJson.make_reply_for_err(FormatError {
-                code: ServiceErrorCode::BadRequest,
-                error: err_msg,
-            }))
-        }
-        None => Ok(Format::PrettyJson.make_reply_for_err(FormatError {
+    if rejection.is_not_found() {
+        Ok(Format::PrettyJson.make_reply_for_err(FormatError {
             code: ServiceErrorCode::NotFound,
             error: "Route not found".to_string(),
-        })),
+        }))
+    } else if let Some(error) = rejection.find::<warp::filters::body::BodyDeserializeError>() {
+        // Happens when the request body could not be deserialized correctly.
+        Ok(Format::PrettyJson.make_reply_for_err(FormatError {
+            code: ServiceErrorCode::BadRequest,
+            error: error.to_string(),
+        }))
+    } else if let Some(error) = rejection.find::<serde_qs::Error>() {
+        Ok(Format::PrettyJson.make_reply_for_err(FormatError {
+            code: ServiceErrorCode::BadRequest,
+            error: error.to_string(),
+        }))
+    } else if let Some(error) = rejection.find::<crate::push_api::BulkApiError>() {
+        Ok(Format::PrettyJson.make_reply_for_err(FormatError {
+            code: ServiceErrorCode::BadRequest,
+            error: error.to_string(),
+        }))
+    } else {
+        Ok(Format::PrettyJson.make_reply_for_err(FormatError {
+            code: ServiceErrorCode::Internal,
+            error: "Internal server error.".to_string(),
+        }))
     }
 }
