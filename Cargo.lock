@@ -2785,6 +2785,7 @@ dependencies = [
  "async-trait",
  "flume",
  "futures",
+ "mockall",
  "once_cell",
  "quickwit-actors",
  "quickwit-indexing",

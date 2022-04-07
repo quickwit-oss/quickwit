@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -49,13 +50,15 @@ impl PushApiService {
         let tasks = request
             .doc_batches
             .iter()
-            .filter(|batch| !self.queues.queue_exists(&batch.index_id))
-            .map(|batch| {
+            .map(|batch| batch.index_id.clone())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .filter(|index_id| !self.queues.queue_exists(index_id))
+            .map(|index_id| {
                 let moved_metastore = self.metastore.clone();
-                let moved_index_id = batch.index_id.clone();
                 async move {
-                    let result = moved_metastore.check_index_available(&moved_index_id).await;
-                    (moved_index_id, result)
+                    let result = moved_metastore.check_index_available(&index_id).await;
+                    (index_id, result)
                 }
             });
 
