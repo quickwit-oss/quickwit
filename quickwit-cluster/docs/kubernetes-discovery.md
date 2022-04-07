@@ -183,13 +183,38 @@ read and write requests.
 
 ### 1b. Use the Kubernetes API to list sibling pods
 
-[TODO]
+The kube-apiserver component exposes API endpoints that can be used to list resources. We could issue 
+[a list pods](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#list-pod-v1-core) request
+with a `labelSelector` parameter matching the cluster's release name to retrieve the IPs of all running pods
+in the cluster (be them in a deployment of a statefulset). 
+
+The `watch` parameter allows to keep the connection open and subscribe to deltas (additions and removals)
+with a low latency. It could be used to remove old nodes from the seeds, but `scuttlebutt` already implements
+a node garbage-collection, that would conflict with this mechanism.
+
+I do not recommend this solution as access to these endpoints can be restricted by cluster admins, because:
+
+- the load on the apiservers (and their backing etcd store) is usually the limit for cluster size,
+  adding load to these servers when alternative solutions exist can be frowned upon
+- these endpoints expose a lot of information about the infrastructure and could be used by intruders for
+  lateral movement and privilege escalation
+
+Also, the DNS solution could be used in other containerized environments (Nomad/Consul or Mesos for example),
+which we might have to support at some point in the future.
 
 ### 1c. Use a stable "seed" pool
 
-[TODO]
+I have seen distributed systems use a set of three idle machines as their seed pool. Their single job is to
+provide stable seeds for the workers coming in and out of the cluster. Once they are up, workers can reach any
+of them via a network-level load-balancer and reach a stable seed. Bootstrapping them in k8s is still non-trivial,
+and I would do so with a headless service.
+
+I do not see any advantage for Quickwit at this time, but we could keep this solution in the back of our mind
+for other environments.
 
 ## Relevant links:
 
 - [Github issue #1238](https://github.com/quickwit-oss/quickwit/issues/1238)
 - [Quickwit architecture overview](https://quickwit.io/docs/current/design/architecture/)
+- [Kubernetes services documentation](https://kubernetes.io/docs/concepts/services-networking/service/)
+- [Helm glossary](https://helm.sh/docs/glossary/)
