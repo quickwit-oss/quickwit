@@ -2784,6 +2784,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "flume",
+ "futures",
  "once_cell",
  "quickwit-actors",
  "quickwit-indexing",

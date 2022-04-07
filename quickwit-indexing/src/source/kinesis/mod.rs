@@ -19,4 +19,5 @@
 
 mod api;
 mod helpers;
+pub mod kinesis_source;
 mod shard_consumer;

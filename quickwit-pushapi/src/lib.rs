@@ -24,12 +24,14 @@ mod pushapi_source;
 mod queue;
 
 use std::path::Path;
+use std::sync::Arc;
 
 pub use errors::PushApiError;
 use errors::Result;
 pub use position::Position;
 use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
+use quickwit_metastore::Metastore;
 use quickwit_proto::push_api::DocBatch;
 use tracing::info;
 
@@ -38,9 +40,10 @@ pub use crate::push_api_service::PushApiService;
 pub fn spawn_push_api_actor(
     universe: &Universe,
     queue_path: &Path,
+    metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<Mailbox<PushApiService>> {
     info!(queue_path=?queue_path, "Spawning push api actor");
-    let push_api_actor = PushApiService::with_queue_path(queue_path)?;
+    let push_api_actor = PushApiService::with_queue_path(queue_path, metastore)?;
     let (push_api_mailbox, _push_api_handle) = universe.spawn_actor(push_api_actor).spawn();
     Ok(push_api_mailbox)
 }

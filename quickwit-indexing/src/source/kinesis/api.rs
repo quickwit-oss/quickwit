@@ -21,13 +21,14 @@
 #![allow(dead_code)]
 
 use rusoto_kinesis::{
-    GetRecordsInput, GetRecordsOutput, GetShardIteratorInput, Kinesis, ListShardsInput, Shard,
+    GetRecordsInput, GetRecordsOutput, GetShardIteratorInput, Kinesis, KinesisClient,
+    ListShardsInput, Shard,
 };
 
 /// Gets records from a Kinesis data stream's shard.
 /// <https://docs.aws.amazon.com/kinesis/latest/APIReference/API_GetRecords.html>
 pub(crate) async fn get_records(
-    kinesis_client: &(dyn Kinesis + Send + Sync),
+    kinesis_client: &KinesisClient,
     shard_iterator: String,
 ) -> anyhow::Result<GetRecordsOutput> {
     let request = GetRecordsInput {
@@ -49,7 +50,7 @@ pub(crate) async fn get_records(
 /// `from_sequence_number_exclusive` if a value is provided. Otherwise, it points to the first
 /// (oldest) record in the shard.
 pub(crate) async fn get_shard_iterator(
-    kinesis_client: &(dyn Kinesis + Send + Sync),
+    kinesis_client: &KinesisClient,
     stream_name: &str,
     shard_id: &str,
     from_sequence_number_exclusive: Option<String>,
@@ -76,7 +77,7 @@ pub(crate) async fn get_shard_iterator(
 /// limit of 1000 transactions per second per data stream.
 /// <https://docs.aws.amazon.com/kinesis/latest/APIReference/API_ListShards.html>
 pub(crate) async fn list_shards(
-    kinesis_client: &dyn Kinesis,
+    kinesis_client: &KinesisClient,
     stream_name: &str,
     limit_per_request: Option<usize>,
 ) -> anyhow::Result<Vec<Shard>> {

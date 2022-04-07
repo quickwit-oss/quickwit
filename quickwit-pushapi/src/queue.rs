@@ -83,14 +83,14 @@ impl Queues {
         })
     }
 
-    fn queue_exists(&self, queue_id: &str) -> bool {
+    pub fn queue_exists(&self, queue_id: &str) -> bool {
         self.db.cf_handle(queue_id).is_some()
     }
 
     pub fn create_queue(&mut self, queue_id: &str) -> crate::Result<()> {
         if self.queue_exists(queue_id) {
-            return Err(crate::PushApiError::QueueAlreadyExists {
-                queue_id: queue_id.to_string(),
+            return Err(crate::PushApiError::IndexAlreadyExists {
+                index_id: queue_id.to_string(),
             });
         }
         let cf_opts = default_rocks_db_options();
@@ -126,8 +126,8 @@ impl Queues {
         let cf_ref = self.db.cf_handle(queue_id).unwrap(); // FIXME
                                                            // We want to keep the last record.
         let last_position_opt = *self.last_position_per_queue.get(queue_id).ok_or_else(|| {
-            crate::PushApiError::QueueDoesNotExist {
-                queue_id: queue_id.to_string(),
+            crate::PushApiError::IndexDoesNotExist {
+                index_id: queue_id.to_string(),
             }
         })?;
 
@@ -165,8 +165,8 @@ impl Queues {
         queue_id: &str,
         records_it: impl Iterator<Item = &'a [u8]>,
     ) -> crate::Result<()> {
-        let column_does_not_exist = || crate::PushApiError::QueueDoesNotExist {
-            queue_id: queue_id.to_string(),
+        let column_does_not_exist = || crate::PushApiError::IndexDoesNotExist {
+            index_id: queue_id.to_string(),
         };
         let last_position_opt = self
             .last_position_per_queue
@@ -208,8 +208,8 @@ impl Queues {
         let cf =
             self.db
                 .cf_handle(queue_id)
-                .ok_or_else(|| crate::PushApiError::QueueDoesNotExist {
-                    queue_id: queue_id.to_string(),
+                .ok_or_else(|| crate::PushApiError::IndexDoesNotExist {
+                    index_id: queue_id.to_string(),
                 })?;
 
         let start_position = start_after
@@ -244,8 +244,8 @@ impl Queues {
         let cf =
             self.db
                 .cf_handle(queue_id)
-                .ok_or_else(|| crate::PushApiError::QueueDoesNotExist {
-                    queue_id: queue_id.to_string(),
+                .ok_or_else(|| crate::PushApiError::IndexDoesNotExist {
+                    index_id: queue_id.to_string(),
                 })?;
         let full_it = self.db.full_iterator_cf(&cf, IteratorMode::End);
         let mut doc_batch = DocBatch::default();
@@ -344,7 +344,7 @@ mod tests {
         let mut queues = QueuesForTest::default();
         queues.create_queue(TEST_QUEUE_ID).unwrap();
         let queue_err = queues.create_queue(TEST_QUEUE_ID).err().unwrap();
-        assert!(matches!(queue_err, PushApiError::QueueAlreadyExists { .. }));
+        assert!(matches!(queue_err, PushApiError::IndexAlreadyExists { .. }));
     }
 
     #[test]
