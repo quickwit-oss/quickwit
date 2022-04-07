@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::env;
+use std::ffi::OsStr;
 use std::fmt::Display;
 use std::path::{Component, Path, PathBuf};
 
@@ -27,6 +28,26 @@ use anyhow::{bail, Context};
 const FILE_PROTOCOL: &str = "file";
 
 const PROTOCOL_SEPARATOR: &str = "://";
+
+#[derive(Debug, PartialEq)]
+pub enum Extension {
+    Json,
+    Toml,
+    Unknown(String),
+    Yaml,
+}
+
+impl Extension {
+    fn maybe_new(extension: &str) -> Option<Self> {
+        match extension {
+            "json" => Some(Self::Json),
+            "toml" => Some(Self::Toml),
+            "yaml" | "yml" => Some(Self::Yaml),
+            "" => None,
+            unknown => Some(Self::Unknown(unknown.to_string())),
+        }
+    }
+}
 
 /// Encapsulates the URI type.
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -80,6 +101,14 @@ impl Uri {
             uri: format!("{}{}{}", protocol, PROTOCOL_SEPARATOR, path),
             protocol_idx: protocol.len(),
         })
+    }
+
+    /// Returns the URI extension.
+    pub fn extension(&self) -> Option<Extension> {
+        Path::new(&self.uri)
+            .extension()
+            .and_then(OsStr::to_str)
+            .and_then(Extension::maybe_new)
     }
 
     /// Returns the uri protocol.
@@ -223,6 +252,24 @@ mod tests {
         assert_eq!(
             Uri::try_new("s3://home/homer/docs/../dognuts")?.to_string(),
             "s3://home/homer/docs/../dognuts"
+        );
+
+        assert!(Uri::try_new("s3://").unwrap().extension().is_none());
+
+        assert_eq!(
+            Uri::try_new("s3://config.json")
+                .unwrap()
+                .extension()
+                .unwrap(),
+            Extension::Json
+        );
+
+        assert_eq!(
+            Uri::try_new("s3://config.foo")
+                .unwrap()
+                .extension()
+                .unwrap(),
+            Extension::Unknown("foo".to_string())
         );
 
         Ok(())

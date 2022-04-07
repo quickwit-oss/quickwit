@@ -19,8 +19,9 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::bail;
-use quickwit_common::uri::Uri;
+use anyhow::{bail, Context};
+use json_comments::StripComments;
+use quickwit_common::uri::{Extension, Uri};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -32,7 +33,49 @@ pub struct SourceConfig {
 }
 
 impl SourceConfig {
-    /// Check the validity of the `SourceConfig` as a "serializable source".
+    /// Parses and validates a [`SourceConfig`] from a given URI and config content.
+    pub async fn load(uri: &Uri, file_content: &[u8]) -> anyhow::Result<Self> {
+        let config = Self::from_uri(uri, file_content).await?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    async fn from_uri(uri: &Uri, file_content: &[u8]) -> anyhow::Result<Self> {
+        let parser_fn = match uri.extension() {
+            Some(Extension::Json) => Self::from_json,
+            Some(Extension::Toml) => Self::from_toml,
+            Some(Extension::Yaml) => Self::from_yaml,
+            Some(Extension::Unknown(extension)) => bail!(
+                "Failed to read source config file `{}`: file extension `.{}` is not supported. \
+                 Supported file formats and extensions are JSON (.json), TOML (.toml), and YAML \
+                 (.yaml or .yml).",
+                uri,
+                extension
+            ),
+            None => bail!(
+                "Failed to read source config file `{}`: file extension is missing. Supported \
+                 file formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or \
+                 .yml).",
+                uri
+            ),
+        };
+        parser_fn(file_content)
+    }
+
+    fn from_json(bytes: &[u8]) -> anyhow::Result<Self> {
+        serde_json::from_reader(StripComments::new(bytes))
+            .context("Failed to parse JSON source config file.")
+    }
+
+    fn from_toml(bytes: &[u8]) -> anyhow::Result<Self> {
+        toml::from_slice(bytes).context("Failed to parse TOML source config file.")
+    }
+
+    fn from_yaml(bytes: &[u8]) -> anyhow::Result<Self> {
+        serde_yaml::from_slice(bytes).context("Failed to parse YAML source config file.")
+    }
+
+    /// Checks the validity of the `SourceConfig` as a "serializable source".
     ///
     /// Two remarks:
     /// - This does not check connectivity. (See `check_connectivity(..)`)
@@ -224,9 +267,57 @@ pub struct VoidSourceParams;
 #[cfg(test)]
 mod tests {
     use quickwit_common::uri::Uri;
+    use serde_json::json;
 
+    use super::*;
     use crate::source_config::RegionOrEndpoint;
     use crate::{FileSourceParams, KinesisSourceParams};
+
+    fn get_source_config_filepath(source_config_filename: &str) -> String {
+        format!(
+            "{}/resources/tests/source_config/{}",
+            env!("CARGO_MANIFEST_DIR"),
+            source_config_filename
+        )
+    }
+
+    #[tokio::test]
+    async fn test_load_kafka_source_config() {
+        let source_config_filepath = get_source_config_filepath("kafka-source.json");
+        let file_content = std::fs::read_to_string(&source_config_filepath).unwrap();
+        let source_config_uri = Uri::try_new(&source_config_filepath).unwrap();
+        let source_config = SourceConfig::from_uri(&source_config_uri, file_content.as_bytes())
+            .await
+            .unwrap();
+        let expected_source_config = SourceConfig {
+            source_id: "hdfs-logs-kafka-source".to_string(),
+            source_params: SourceParams::Kafka(KafkaSourceParams {
+                topic: "cloudera-cluster-logs".to_string(),
+                client_log_level: None,
+                client_params: json! {{"bootstrap.servers": "host:9092"}},
+            }),
+        };
+        assert_eq!(source_config, expected_source_config);
+    }
+
+    #[tokio::test]
+    async fn test_load_kinesis_source_config() {
+        let source_config_filepath = get_source_config_filepath("kinesis-source.yaml");
+        let file_content = std::fs::read_to_string(&source_config_filepath).unwrap();
+        let source_config_uri = Uri::try_new(&source_config_filepath).unwrap();
+        let source_config = SourceConfig::from_uri(&source_config_uri, file_content.as_bytes())
+            .await
+            .unwrap();
+        let expected_source_config = SourceConfig {
+            source_id: "hdfs-logs-kinesis-source".to_string(),
+            source_params: SourceParams::Kinesis(KinesisSourceParams {
+                stream_name: "emr-cluster-logs".to_string(),
+                region_or_endpoint: None,
+                shutdown_at_stream_eof: false,
+            }),
+        };
+        assert_eq!(source_config, expected_source_config);
+    }
 
     #[test]
     fn test_file_source_params_serialization() {
