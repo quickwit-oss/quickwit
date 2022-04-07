@@ -125,8 +125,11 @@ pub async fn serve_quickwit(
 
     let push_api_service: Option<Mailbox<PushApiService>> =
         if services.contains(&QuickwitService::Indexer) {
-            let push_api_service =
-                spawn_push_api_actor(&universe, &config.data_dir_path.join("queues"))?;
+            let push_api_service = spawn_push_api_actor(
+                &universe,
+                &config.data_dir_path.join("queues"),
+                metastore.clone(),
+            )?;
             Some(push_api_service)
         } else {
             None

@@ -94,7 +94,7 @@ fn dedicated_runtime_spawn_named(
         .name(name.to_string())
         .spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_time()
+                .enable_all()
                 .build()
                 .unwrap();
             rt.block_on(task);
