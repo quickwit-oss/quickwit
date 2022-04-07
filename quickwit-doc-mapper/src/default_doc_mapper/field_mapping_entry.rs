@@ -635,7 +635,7 @@ impl FieldMappingEntryForSerialization {
             let mut indexing_options = TextFieldIndexing::default();
             indexing_options = indexing_options.set_fieldnorms(self.fieldnorms.unwrap_or(false));
             if let Some(index_option) = self.record {
-                indexing_options = indexing_options.set_index_option(index_option)
+                indexing_options = indexing_options.set_index_option(index_option);
             }
             if let Some(tokenizer) = &self.tokenizer {
                 indexing_options = indexing_options.set_tokenizer(tokenizer);
