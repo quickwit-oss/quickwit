@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::env;
-use std::ffi::OsStr;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
@@ -28,7 +27,7 @@ use json_comments::StripComments;
 use once_cell::sync::OnceCell;
 use quickwit_common::net::{get_socket_addr, parse_socket_addr_with_default_port};
 use quickwit_common::new_coolid;
-use quickwit_common::uri::Uri;
+use quickwit_common::uri::{Extension, Uri};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
@@ -181,7 +180,7 @@ pub struct QuickwitConfig {
 }
 
 impl QuickwitConfig {
-    // Parses quickwit config from the given config content and validates.
+    /// Parses and validates a [`QuickwitConfig`] from a given URI and config content.
     pub async fn load(
         uri: &Uri,
         config_content: &[u8],
@@ -200,11 +199,11 @@ impl QuickwitConfig {
     }
 
     async fn from_uri(uri: &Uri, config_content: &[u8]) -> anyhow::Result<Self> {
-        let parser_fn = match Path::new(uri.as_ref()).extension().and_then(OsStr::to_str) {
-            Some("json") => Self::from_json,
-            Some("toml") => Self::from_toml,
-            Some("yaml") | Some("yml") => Self::from_yaml,
-            Some(extension) => bail!(
+        let parser_fn = match uri.extension() {
+            Some(Extension::Json) => Self::from_json,
+            Some(Extension::Toml) => Self::from_toml,
+            Some(Extension::Yaml) => Self::from_yaml,
+            Some(Extension::Unknown(extension)) => bail!(
                 "Failed to read quickwit config file `{}`: file extension `.{}` is not supported. \
                  Supported file formats and extensions are JSON (.json), TOML (.toml), and YAML \
                  (.yaml or .yml).",
@@ -387,11 +386,11 @@ mod tests {
 
     use super::*;
 
-    fn get_resource_path(resource_filename: &str) -> String {
+    fn get_config_filepath(config_filename: &str) -> String {
         format!(
             "{}/resources/tests/config/{}",
             env!("CARGO_MANIFEST_DIR"),
-            resource_filename
+            config_filename
         )
     }
 
@@ -404,7 +403,7 @@ mod tests {
             #[tokio::test]
             async fn $test_function_name() -> anyhow::Result<()> {
                 let config_filepath =
-                    get_resource_path(&format!("quickwit.{}", stringify!($file_extension)));
+                    get_config_filepath(&format!("quickwit.{}", stringify!($file_extension)));
                 let config_uri = Uri::try_new(&config_filepath)?;
                 let file = std::fs::read_to_string(&config_filepath).unwrap();
                 let config = QuickwitConfig::from_uri(&config_uri, file.as_bytes()).await?;
@@ -528,7 +527,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_quickwit_config_validate() {
-        let config_filepath = get_resource_path("quickwit.toml");
+        let config_filepath = get_config_filepath("quickwit.toml");
         let file_content = std::fs::read_to_string(&config_filepath).unwrap();
 
         let config_uri = Uri::try_new(&config_filepath).unwrap();
@@ -633,9 +632,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_config_with_validation_error() {
-        let config_path = get_resource_path("quickwit.yaml");
-        let config_uri = Uri::try_new(&config_path).unwrap();
-        let file = std::fs::read_to_string(&config_path).unwrap();
+        let config_filepath = get_config_filepath("quickwit.yaml");
+        let config_uri = Uri::try_new(&config_filepath).unwrap();
+        let file = std::fs::read_to_string(&config_filepath).unwrap();
         let config = QuickwitConfig::load(&config_uri, file.as_bytes(), None)
             .await
             .unwrap_err();
