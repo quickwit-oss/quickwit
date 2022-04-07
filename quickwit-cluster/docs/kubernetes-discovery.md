@@ -206,8 +206,11 @@ which we might have to support at some point in the future.
 
 I have seen distributed systems use a set of three idle machines as their seed pool. Their single job is to
 provide stable seeds for the workers coming in and out of the cluster. Once they are up, workers can reach any
-of them via a network-level load-balancer and reach a stable seed. Bootstrapping them in k8s is still non-trivial,
-and I would do so with a headless service.
+of them via a network-level load-balancer and reach a stable seed.
+
+One topology option would be to run them in a dedicated statefulset, for them to have stable dns entries in the
+form `$release-seeds-$ordinal`, that could be statically be set in the `peer_seeds` config option. Another would
+be to use a headless service as described above.
 
 I do not see any advantage for Quickwit at this time, but we could keep this solution in the back of our mind
 for other environments.
