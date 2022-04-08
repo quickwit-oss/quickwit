@@ -113,7 +113,7 @@ jobs:
 
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly
+          toolchain: stable
           components: clippy, llvm-tools-preview, rustfmt
 
       - name: Install cargo-llvm-cov
@@ -125,10 +125,10 @@ jobs:
 
       - name: Generate code coverage
         run: |
-          cargo +nightly llvm-cov clean --workspace
-          cargo +nightly llvm-cov --test failpoints --no-report --features fail/failpoints
-          cargo +nightly llvm-cov --no-report --all-features
-          cargo +nightly llvm-cov --no-run --lcov --output-path lcov.info
+          cargo llvm-cov clean --workspace
+          cargo llvm-cov --test failpoints --no-report --features fail/failpoints
+          cargo llvm-cov --no-report --all-features
+          cargo llvm-cov --no-run --lcov --output-path lcov.info
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
