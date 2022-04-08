@@ -51,10 +51,11 @@ impl TypedSourceFactory for KinesisSourceFactory {
     type Params = KinesisSourceParams;
 
     async fn typed_create_source(
+        source_id: String,
         params: KinesisSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
-        KinesisSource::try_new(params, checkpoint).await
+        KinesisSource::try_new(source_id, params, checkpoint).await
     }
 }
 
@@ -78,6 +79,8 @@ pub struct KinesisSourceState {
 }
 
 pub struct KinesisSource {
+    // Source ID
+    source_id: String,
     // Target stream to consume.
     stream_name: String,
     // Initialization checkpoint.
@@ -93,13 +96,18 @@ pub struct KinesisSource {
 
 impl fmt::Debug for KinesisSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "KinesisSource {{ stream_name: {} }}", self.stream_name)
+        write!(
+            f,
+            "KinesisSource {{ source_id: {}, stream_name: {} }}",
+            self.source_id, self.stream_name
+        )
     }
 }
 
 impl KinesisSource {
     /// Instantiates a new `KinesisSource`.
     pub async fn try_new(
+        source_id: String,
         params: KinesisSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
@@ -110,6 +118,7 @@ impl KinesisSource {
         let (shard_consumers_tx, shard_consumers_rx) = mpsc::channel(1_000);
         let state = KinesisSourceState::default();
         Ok(KinesisSource {
+            source_id,
             stream_name,
             checkpoint,
             kinesis_client,
@@ -365,9 +374,10 @@ mod tests {
         };
         {
             let checkpoint = SourceCheckpoint::default();
-            let kinesis_source = KinesisSource::try_new(params.clone(), checkpoint)
-                .await
-                .unwrap();
+            let kinesis_source =
+                KinesisSource::try_new("my-kinesis-source".to_string(), params.clone(), checkpoint)
+                    .await
+                    .unwrap();
             let actor = SourceActor {
                 source: Box::new(kinesis_source),
                 batch_sink: mailbox.clone(),
@@ -418,9 +428,10 @@ mod tests {
             .collect();
         {
             let checkpoint = SourceCheckpoint::default();
-            let kinesis_source = KinesisSource::try_new(params.clone(), checkpoint)
-                .await
-                .unwrap();
+            let kinesis_source =
+                KinesisSource::try_new("my-kinesis-source".to_string(), params.clone(), checkpoint)
+                    .await
+                    .unwrap();
             let actor = SourceActor {
                 source: Box::new(kinesis_source),
                 batch_sink: mailbox.clone(),
@@ -488,9 +499,10 @@ mod tests {
             .into_iter()
             .map(|(partition_id, offset)| (PartitionId::from(partition_id), Position::from(offset)))
             .collect();
-            let kinesis_source = KinesisSource::try_new(params.clone(), checkpoint)
-                .await
-                .unwrap();
+            let kinesis_source =
+                KinesisSource::try_new("my-kinesis-source".to_string(), params.clone(), checkpoint)
+                    .await
+                    .unwrap();
             let actor = SourceActor {
                 source: Box::new(kinesis_source),
                 batch_sink: mailbox,
