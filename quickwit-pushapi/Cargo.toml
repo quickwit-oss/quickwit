@@ -8,7 +8,6 @@ license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwi
 tokio = {version="1", features=["full"]}
 async-trait = "0.1"
 quickwit-actors = {path="../quickwit-actors"}
-quickwit-indexing = {path="../quickwit-indexing", version ="0.2.1"}
 quickwit-metastore = {path="../quickwit-metastore", version ="0.2.1"}
 rocksdb = {version="0.18", features=[], default-features= false}
 anyhow = "1"
@@ -25,6 +24,4 @@ futures = "0.3.17"
 tempfile = "3"
 rand = "0.8"
 rand_distr = "0.4"
-mockall = "0.11"
-quickwit-metastore = { version = "0.2.1", path = "../quickwit-metastore", features = ["testsuite"] }
 

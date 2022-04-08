@@ -20,7 +20,6 @@
 mod errors;
 mod position;
 mod push_api_service;
-mod pushapi_source;
 mod queue;
 
 use std::path::Path;
@@ -28,6 +27,7 @@ use std::sync::Arc;
 
 pub use errors::PushApiError;
 use errors::Result;
+use once_cell::sync::OnceCell;
 pub use position::Position;
 use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
@@ -36,6 +36,23 @@ use quickwit_proto::push_api::DocBatch;
 use tracing::info;
 
 pub use crate::push_api_service::PushApiService;
+
+pub static PUSH_API_SERVICE_INSTANCE: OnceCell<Mailbox<PushApiService>> = OnceCell::new();
+
+pub fn init_push_api(
+    universe: &Universe,
+    queue_path: &Path,
+    metastore: Arc<dyn Metastore>,
+) -> anyhow::Result<()> {
+    PUSH_API_SERVICE_INSTANCE
+        .get_or_try_init(|| spawn_push_api_actor(universe, queue_path, metastore))
+        .map_err(|error| anyhow::anyhow!(error))?;
+    Ok(())
+}
+
+pub fn get_push_api_service() -> Option<Mailbox<PushApiService>> {
+    PUSH_API_SERVICE_INSTANCE.get().cloned()
+}
 
 pub fn spawn_push_api_actor(
     universe: &Universe,

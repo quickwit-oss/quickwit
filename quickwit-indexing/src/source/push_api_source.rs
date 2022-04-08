@@ -19,15 +19,15 @@
 
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
-use quickwit_indexing::actors::Indexer;
-use quickwit_indexing::models::RawDocBatch;
-use quickwit_indexing::source::{Source, SourceContext};
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use quickwit_proto::push_api::{FetchRequest, FetchResponse};
+use quickwit_pushapi::{get_push_api_service, iter_doc_payloads, PushApiService};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-use crate::{iter_doc_payloads, PushApiService};
+use super::{Source, SourceContext, TypedSourceFactory};
+use crate::actors::Indexer;
+use crate::models::RawDocBatch;
 
 /// Cut a new batch as soon as we have read BATCH_NUM_BYTES_THRESHOLD.
 const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64; // 0.5MB
@@ -51,7 +51,6 @@ pub struct PushApiSource {
 }
 
 impl PushApiSource {
-    #[allow(dead_code)] // TODO: to be removed
     pub fn make(
         params: PushApiSourceParams,
         push_api_mailbox: Mailbox<PushApiService>,
@@ -155,18 +154,35 @@ impl Source for PushApiSource {
     }
 }
 
+pub struct PushApiSourceFactory;
+
+#[async_trait]
+impl TypedSourceFactory for PushApiSourceFactory {
+    type Source = PushApiSource;
+    type Params = PushApiSourceParams;
+
+    async fn typed_create_source(
+        params: PushApiSourceParams,
+        checkpoint: SourceCheckpoint,
+    ) -> anyhow::Result<Self::Source> {
+        let push_api_mailbox = get_push_api_service()
+            .ok_or_else(|| anyhow::anyhow!("Could not get the `PushApiService` instance."))?;
+        PushApiSource::make(params, push_api_mailbox, checkpoint)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::{create_test_mailbox, Command, Universe};
-    use quickwit_indexing::source::SourceActor;
     use quickwit_metastore::checkpoint::SourceCheckpoint;
     use quickwit_metastore::MockMetastore;
     use quickwit_proto::push_api::{DocBatch, IngestRequest};
+    use quickwit_pushapi::{add_doc, spawn_push_api_actor};
 
     use super::*;
-    use crate::{add_doc, spawn_push_api_actor};
+    use crate::source::SourceActor;
 
     fn make_ingest_request(index_id: String, num_batch: u64, batch_size: usize) -> IngestRequest {
         let mut doc_batches = vec![];
@@ -187,7 +203,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_pushapi_source() -> anyhow::Result<()> {
-        // quickwit_common::setup_logging_for_tests();
+        quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let index_id = "my-index".to_string();
         let queue_path = tempfile::tempdir()?;
@@ -248,7 +264,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_push_api_source_resume_from_checkpoint() -> anyhow::Result<()> {
-        // quickwit_common::setup_logging_for_tests();
+        quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let index_id = "my-index".to_string();
         let queue_path = tempfile::tempdir()?;

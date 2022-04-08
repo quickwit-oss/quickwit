@@ -62,6 +62,7 @@ mod file_source;
 mod kafka_source;
 #[cfg(feature = "kinesis")]
 mod kinesis;
+mod push_api_source;
 mod source_factory;
 mod vec_source;
 mod void_source;
