@@ -175,7 +175,7 @@ impl Source for KafkaSource {
         let mut docs = Vec::new();
         let mut checkpoint_delta = CheckpointDelta::default();
 
-        let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT / 2);
+        let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT);
         let mut message_stream = Box::pin(self.consumer.stream().take_until(deadline));
 
         let mut batch_num_bytes = 0;
@@ -232,6 +232,7 @@ impl Source for KafkaSource {
             if batch_num_bytes >= TARGET_BATCH_NUM_BYTES {
                 break;
             }
+            ctx.record_progress();
         }
         if !checkpoint_delta.is_empty() {
             let batch = RawDocBatch {

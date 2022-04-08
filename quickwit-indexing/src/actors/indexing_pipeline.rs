@@ -246,6 +246,7 @@ impl IndexingPipeline {
             self.params.metastore.clone(),
             merge_planner_mailbox.clone(),
             garbage_collector_mailbox.clone(),
+            None,
         );
         let (merge_publisher_mailbox, merge_publisher_handler) = ctx
             .spawn_actor(merge_publisher)
@@ -325,6 +326,9 @@ impl IndexingPipeline {
             .set_mailboxes(merge_planner_mailbox, merge_planner_inbox)
             .spawn();
 
+        let (source_mailbox, source_inbox) =
+            create_mailbox::<SourceActor>("SourceActor".to_string(), QueueCapacity::Unbounded);
+
         // Publisher
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
@@ -332,6 +336,7 @@ impl IndexingPipeline {
             self.params.metastore.clone(),
             merge_planner_mailbox,
             garbage_collector_mailbox,
+            Some(source_mailbox.clone()),
         );
         let (publisher_mailbox, publisher_handler) = ctx
             .spawn_actor(publisher)
@@ -356,7 +361,6 @@ impl IndexingPipeline {
             .spawn_actor(packager)
             .set_kill_switch(self.kill_switch.clone())
             .spawn();
-
         // Indexer
         let indexer = Indexer::new(
             self.params.index_id.clone(),
@@ -390,6 +394,7 @@ impl IndexingPipeline {
         };
         let (_source_mailbox, source_handler) = ctx
             .spawn_actor(actor_source)
+            .set_mailboxes(source_mailbox, source_inbox)
             .set_kill_switch(self.kill_switch.clone())
             .spawn();
 
