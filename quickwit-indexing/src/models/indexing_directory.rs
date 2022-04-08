@@ -39,7 +39,7 @@ enum Root {
 }
 
 /// An indexing directory is created in the data directory on the local file system for each index
-/// at the following location: `<data dir>/<index name>`.
+/// at the following location: `<data dir>/indexing/<index ID>/<source ID>`.
 /// The indexing directory consists of two directories:
 /// - a scratch directory that stores temporary intermediate files
 /// - a cache directory that stores frequently accessed data structures

@@ -30,7 +30,7 @@ use predicates::prelude::*;
 use quickwit_cli::index::{create_index_cli, search_index, CreateIndexArgs, SearchIndexArgs};
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
-use quickwit_core::get_cache_path;
+use quickwit_core::get_cache_directory_path;
 use quickwit_indexing::source::INGEST_SOURCE_ID;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore};
 use serde_json::{json, Number, Value};
@@ -195,25 +195,24 @@ fn test_cmd_ingest_on_non_existing_file() -> Result<()> {
 }
 
 #[test]
-fn test_cmd_ingest_clean_cache() -> Result<()> {
-    let index_id = append_random_suffix("test-index-clean-cache");
+fn test_cmd_ingest_clear_cache() -> Result<()> {
+    let index_id = append_random_suffix("test-index-clear-cache");
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
     create_logs_index(&test_env);
 
     ingest_docs_with_options(
         test_env.resource_files["logs"].as_path(),
         &test_env,
-        "--clean_cache",
+        "--clear-cache",
     );
 
-    // check cache path
-    let cache_path = get_cache_path(
+    // Ensure cache directory is empty.
+    let cache_directory_path = get_cache_directory_path(
         &test_env.data_dir_path,
         &test_env.index_id,
         INGEST_SOURCE_ID,
     );
-    assert_eq!(false, cache_path.exists());
-
+    assert!(cache_directory_path.read_dir()?.next().is_none());
     Ok(())
 }
 
@@ -223,14 +222,6 @@ fn test_cmd_ingest_simple() -> Result<()> {
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
     create_logs_index(&test_env);
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
-
-    // check cache path
-    let cache_path = get_cache_path(
-        &test_env.data_dir_path,
-        &test_env.index_id,
-        INGEST_SOURCE_ID,
-    );
-    assert_eq!(true, cache_path.exists());
 
     // Using piped input
     let log_path = test_env.resource_files["logs"].clone();
