@@ -78,7 +78,9 @@ pub use kinesis::kinesis_source::{KinesisSource, KinesisSourceFactory};
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_config::{SourceConfig, SourceParams};
+use quickwit_metastore::checkpoint::SourceCheckpoint;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
+use tracing::error;
 pub use vec_source::{VecSource, VecSourceFactory};
 pub use void_source::{VoidSource, VoidSourceFactory};
 
@@ -128,6 +130,28 @@ pub trait Source: Send + Sync + 'static {
         batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus>;
+
+    /// After publication of a split, `suggest_truncate` is called.
+    /// This makes it possible for the implementation of a source to
+    /// release some resources associated to the data that was just published.
+    ///
+    /// This method is for instance useful for the push api, as it is possible
+    /// to delete all message anterior to the checkpoint in the push api queue.
+    ///
+    /// It is perfectly fine for implementation to ignore this function.
+    /// For instance, message queue like kafka are meant to be shared by different
+    /// client, and rely on a retention strategy to delete messages.
+    ///
+    /// Returning an error has no effect on the source actor itself or the
+    /// indexing pipeline, as truncation is just "a suggestion".
+    /// The error will however be logged.
+    async fn suggest_truncate(
+        &self,
+        _checkpoint: SourceCheckpoint,
+        _ctx: &ActorContext<SourceActor>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
 
     /// Finalize is called once after the actor terminates.
     async fn finalize(
@@ -235,6 +259,28 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
             }
         }
         _ => Ok(()),
+    }
+}
+
+#[derive(Debug)]
+pub struct SuggestTruncate(pub SourceCheckpoint);
+
+#[async_trait]
+impl Handler<SuggestTruncate> for SourceActor {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        suggest_truncate: SuggestTruncate,
+        ctx: &SourceContext,
+    ) -> Result<(), ActorExitStatus> {
+        let SuggestTruncate(checkpoint) = suggest_truncate;
+        if let Err(err) = self.source.suggest_truncate(checkpoint, ctx).await {
+            // Failing to process suggest truncate does not
+            // kill the source nor the indexing pipeline, but we log the error.
+            error!(err=?err, "suggest-truncate-error");
+        }
+        Ok(())
     }
 }
 

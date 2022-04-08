@@ -23,13 +23,15 @@ use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
 use quickwit_actors::{Actor, ActorContext, Handler, Mailbox, QueueCapacity};
+use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::Metastore;
 use tokio::sync::oneshot::Receiver;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::actors::uploader::MAX_CONCURRENT_SPLIT_UPLOAD;
 use crate::actors::{GarbageCollector, MergePlanner};
 use crate::models::{NewSplits, PublishOperation, PublisherMessage};
+use crate::source::{SourceActor, SuggestTruncate};
 
 #[derive(Debug, Clone, Default)]
 pub struct PublisherCounters {
@@ -64,6 +66,7 @@ pub struct Publisher {
     metastore: Arc<dyn Metastore>,
     merge_planner_mailbox: Mailbox<MergePlanner>,
     garbage_collector_mailbox: Mailbox<GarbageCollector>,
+    source_mailbox_opt: Option<Mailbox<SourceActor>>,
     counters: PublisherCounters,
 }
 
@@ -74,6 +77,7 @@ impl Publisher {
         metastore: Arc<dyn Metastore>,
         merge_planner_mailbox: Mailbox<MergePlanner>,
         garbage_collector_mailbox: Mailbox<GarbageCollector>,
+        source_mailbox_opt: Option<Mailbox<SourceActor>>,
     ) -> Publisher {
         Publisher {
             publisher_type,
@@ -81,6 +85,7 @@ impl Publisher {
             metastore,
             merge_planner_mailbox,
             garbage_collector_mailbox,
+            source_mailbox_opt,
             counters: PublisherCounters::default(),
         }
     }
@@ -188,6 +193,7 @@ impl Handler<Receiver<PublisherMessage>> for Publisher {
                                                      //< entirely.
         };
         self.run_publish_operation(&publisher_message).await?;
+
         match &publisher_message.operation {
             PublishOperation::PublishNewSplit {
                 new_split,
@@ -195,6 +201,16 @@ impl Handler<Receiver<PublisherMessage>> for Publisher {
                 split_date_of_birth,
             } => {
                 info!(new_split=new_split.split_id(), tts=%split_date_of_birth.elapsed().as_secs_f32(), checkpoint_delta=?checkpoint_delta, "publish-new-splits");
+                let checkpoint: SourceCheckpoint = checkpoint_delta.get_source_checkpoint();
+                if let Some(source_mailbox) = self.source_mailbox_opt.as_ref() {
+                    if ctx
+                        .send_message(source_mailbox, SuggestTruncate(checkpoint))
+                        .await
+                        .is_err()
+                    {
+                        error!("fail-send-suggest-truncate");
+                    }
+                }
             }
             PublishOperation::ReplaceSplits {
                 new_splits,
@@ -228,11 +244,14 @@ mod tests {
     use std::time::Instant;
 
     use quickwit_actors::{create_test_mailbox, Universe};
-    use quickwit_metastore::checkpoint::CheckpointDelta;
+    use quickwit_metastore::checkpoint::{
+        CheckpointDelta, PartitionId, Position, SourceCheckpoint,
+    };
     use quickwit_metastore::{MockMetastore, SplitMetadata};
     use tokio::sync::oneshot;
 
     use super::*;
+    use crate::source::SuggestTruncate;
 
     #[tokio::test]
     async fn test_publisher_publishes_in_order() {
@@ -260,12 +279,16 @@ mod tests {
             .returning(|_, _, _, _| Ok(()));
         let (merge_planner_mailbox, _merge_planner_inbox) = create_test_mailbox();
         let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
+
+        let (source_mailbox, source_inbox) = create_test_mailbox();
+
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
             "source".to_string(),
             Arc::new(mock_metastore),
             merge_planner_mailbox,
             garbage_collector_mailbox,
+            Some(source_mailbox),
         );
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
@@ -279,6 +302,7 @@ mod tests {
             .send_message(split_future_rx2)
             .await
             .is_ok());
+
         // note the future is resolved in the inverse of the expected order.
         assert!(split_future_tx2
             .send(PublisherMessage {
@@ -308,6 +332,26 @@ mod tests {
             .is_ok());
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
         assert_eq!(publisher_observation.num_published_splits, 2);
+
+        let suggest_truncate_checkpoints: Vec<SourceCheckpoint> = source_inbox
+            .drain_for_test()
+            .into_iter()
+            .map(|any_msg| any_msg.downcast::<SuggestTruncate>().unwrap().0)
+            .collect();
+
+        assert_eq!(suggest_truncate_checkpoints.len(), 2);
+        assert_eq!(
+            suggest_truncate_checkpoints[0]
+                .position_for_partition(&PartitionId::default())
+                .unwrap(),
+            &Position::from(2u64)
+        );
+        assert_eq!(
+            suggest_truncate_checkpoints[1]
+                .position_for_partition(&PartitionId::default())
+                .unwrap(),
+            &Position::from(6u64)
+        );
     }
 
     #[tokio::test]
@@ -331,6 +375,7 @@ mod tests {
             Arc::new(mock_metastore),
             merge_planner_mailbox,
             garbage_collector_mailbox,
+            None,
         );
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();

@@ -427,6 +427,13 @@ impl CheckpointDelta {
         delta
     }
 
+    /// Returns the checkpoint associated with the endpoint of the delta.
+    pub fn get_source_checkpoint(&self) -> SourceCheckpoint {
+        let mut source_checkpoint = SourceCheckpoint::default();
+        source_checkpoint.try_apply_delta(self.clone()).unwrap();
+        source_checkpoint
+    }
+
     /// Records a `(from, to]` partition delta for a given partition.
     pub fn record_partition_delta(
         &mut self,
@@ -690,5 +697,20 @@ mod tests {
         assert!(index_checkpoint
             .source_checkpoint("existing_source_with_empty_checkpoint")
             .is_none());
+    }
+
+    #[test]
+    fn test_get_source_checkpoint() {
+        let partition = PartitionId::from("a");
+        let delta = CheckpointDelta::from_partition_delta(
+            partition.clone(),
+            Position::from(42u64),
+            Position::from(43u64),
+        );
+        let checkpoint: SourceCheckpoint = delta.get_source_checkpoint();
+        assert_eq!(
+            checkpoint.position_for_partition(&partition).unwrap(),
+            &Position::from(43u64)
+        );
     }
 }
