@@ -223,7 +223,7 @@ mod tests {
                     input_path_opt: None,
                     overwrite: false,
                     data_dir: None,
-                    clean_cache: false,
+                    clear_cache: false,
                 })) if &index_id == "wikipedia"
                        && config_uri == Uri::try_new("file:///config.yaml").unwrap()
         ));
@@ -248,7 +248,7 @@ mod tests {
                     input_path_opt: None,
                     overwrite: true,
                     data_dir: None,
-                    clean_cache: false
+                    clear_cache: false
                 })) if &index_id == "wikipedia"
                         && config_uri == Uri::try_new("file:///config.yaml").unwrap()
         ));
