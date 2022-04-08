@@ -17,12 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
 use std::convert::Infallible;
 
 use bytes::Bytes;
 use quickwit_actors::Mailbox;
 use quickwit_proto::push_api::{DocBatch, IngestRequest, TailRequest};
 use quickwit_pushapi::{add_doc, PushApiService};
+use serde::Deserialize;
+use serde_json::Value;
 use thiserror::Error;
 use warp::{reject, Filter, Rejection};
 
@@ -40,6 +43,40 @@ impl warp::reject::Reject for InvalidUtf8 {}
 struct PushApiServiceUnavailable;
 
 impl warp::reject::Reject for PushApiServiceUnavailable {}
+
+#[derive(Debug, Error)]
+pub enum BulkApiError {
+    #[error("Could not parse action `{0}`.")]
+    InvalidAction(String),
+    #[error("Could not parse the source `{0}`.")]
+    InvalidSource(String),
+}
+
+impl warp::reject::Reject for BulkApiError {}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(rename_all(deserialize = "lowercase"))]
+enum BulkAction {
+    Index(BulkActionMeta),
+    Create(BulkActionMeta),
+}
+
+impl BulkAction {
+    fn into_index(self) -> String {
+        match self {
+            BulkAction::Index(meta) => meta.index,
+            BulkAction::Create(meta) => meta.index,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+struct BulkActionMeta {
+    #[serde(alias = "_index")]
+    index: String,
+    #[serde(alias = "_id")]
+    id: String,
+}
 
 pub fn ingest_handler(
     push_api_mailbox_opt: Option<Mailbox<PushApiService>>,
@@ -114,4 +151,106 @@ async fn tail_endpoint(
         .await
         .map_err(FormatError::wrap);
     Ok(Format::PrettyJson.make_rest_reply(tail_res))
+}
+
+fn bulk_filter() -> impl Filter<Extract = (String, String), Error = Rejection> + Clone {
+    warp::path!("api" / "v1" / String / "bulk")
+        .and(warp::post())
+        .and(warp::body::bytes().and_then(|body: Bytes| async move {
+            if let Ok(body_str) = std::str::from_utf8(&*body) {
+                Ok(body_str.to_string())
+            } else {
+                Err(reject::custom(InvalidUtf8))
+            }
+        }))
+}
+
+pub fn bulk_handler(
+    push_api_mailbox_opt: Option<Mailbox<PushApiService>>,
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    bulk_filter()
+        .and(require(push_api_mailbox_opt))
+        .and_then(ingest)
+}
+
+fn elastic_bulk_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {
+    warp::path!("api" / "v1" / "_bulk")
+        .and(warp::post())
+        .and(warp::body::bytes().and_then(|body: Bytes| async move {
+            if let Ok(body_str) = std::str::from_utf8(&*body) {
+                Ok(body_str.to_string())
+            } else {
+                Err(reject::custom(InvalidUtf8))
+            }
+        }))
+}
+
+pub fn elastic_bulk_handler(
+    push_api_mailbox_opt: Option<Mailbox<PushApiService>>,
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    elastic_bulk_filter()
+        .and(require(push_api_mailbox_opt))
+        .and_then(elastic_ingest)
+}
+
+async fn elastic_ingest(
+    payload: String,
+    push_api_mailbox: Mailbox<PushApiService>,
+) -> Result<impl warp::Reply, Rejection> {
+    let mut batches = HashMap::new();
+    let mut payload_lines = lines(&payload);
+
+    while let Some(json_str) = payload_lines.next() {
+        let action = serde_json::from_str::<BulkAction>(json_str)
+            .map_err(|e| BulkApiError::InvalidAction(e.to_string()))?;
+        let source = payload_lines
+            .next()
+            .ok_or_else(|| {
+                BulkApiError::InvalidSource("Expected source for the action.".to_string())
+            })
+            .and_then(|source| {
+                serde_json::from_str::<Value>(source)
+                    .map_err(|err| BulkApiError::InvalidSource(err.to_string()))
+            })?;
+
+        let index_id = action.into_index();
+        let doc_batch = batches.entry(index_id.clone()).or_insert(DocBatch {
+            index_id,
+            ..Default::default()
+        });
+
+        add_doc(source.to_string().as_bytes(), doc_batch);
+    }
+
+    let ingest_req = IngestRequest {
+        doc_batches: batches.into_iter().map(|(_, batch)| batch).collect(),
+    };
+    let ingest_resp = push_api_mailbox
+        .ask_for_res(ingest_req)
+        .await
+        .map_err(FormatError::wrap);
+    Ok(Format::PrettyJson.make_rest_reply(ingest_resp))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BulkAction, BulkActionMeta};
+
+    #[test]
+    fn test_deserialize() {
+        let json_str = r#"{ "create" : { "_index" : "test", "_id" : "2" } }"#;
+        let bulk_object = serde_json::from_str::<BulkAction>(json_str).unwrap();
+        assert_eq!(
+            bulk_object,
+            BulkAction::Create(BulkActionMeta {
+                index: "test".to_string(),
+                id: "2".to_string()
+            })
+        );
+
+        let json_str = r#"{ "delete" : { "_index" : "test", "_id" : "2" } }"#;
+        assert!(serde_json::from_str::<BulkAction>(json_str).is_err());
+    }
+
+    // TODO: find a way to refactor/mock PushApiService for testing the endpoint.
 }
