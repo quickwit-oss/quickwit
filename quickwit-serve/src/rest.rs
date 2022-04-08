@@ -29,7 +29,7 @@ use crate::format::FormatError;
 use crate::health_check_api::liveness_check_handler;
 use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
-use crate::push_api::{ingest_handler, tail_handler};
+use crate::push_api::{bulk_handler, elastic_bulk_handler, ingest_handler, tail_handler};
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
 use crate::{Format, QuickwitServices};
 
@@ -59,6 +59,10 @@ pub(crate) async fn start_rest_server(
         ))
         .or(ingest_handler(quickwit_services.push_api_service.clone()))
         .or(tail_handler(quickwit_services.push_api_service.clone()))
+        .or(bulk_handler(quickwit_services.push_api_service.clone()))
+        .or(elastic_bulk_handler(
+            quickwit_services.push_api_service.clone(),
+        ))
         .or(index_management_handlers(
             quickwit_services.index_service.clone(),
         ));
@@ -74,7 +78,7 @@ pub(crate) async fn start_rest_server(
     Ok(())
 }
 
-/// This function returns a formated error based on the given rejection reason.
+/// This function returns a formatted error based on the given rejection reason.
 pub async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
     if rejection.is_not_found() {
         Ok(Format::PrettyJson.make_reply_for_err(FormatError {
@@ -88,6 +92,11 @@ pub async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
             error: error.to_string(),
         }))
     } else if let Some(error) = rejection.find::<serde_qs::Error>() {
+        Ok(Format::PrettyJson.make_reply_for_err(FormatError {
+            code: ServiceErrorCode::BadRequest,
+            error: error.to_string(),
+        }))
+    } else if let Some(error) = rejection.find::<crate::push_api::BulkApiError>() {
         Ok(Format::PrettyJson.make_reply_for_err(FormatError {
             code: ServiceErrorCode::BadRequest,
             error: error.to_string(),

@@ -18,28 +18,62 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, QueueCapacity};
+use quickwit_metastore::Metastore;
 use quickwit_proto::push_api::{
     CreateQueueRequest, DropQueueRequest, FetchRequest, FetchResponse, IngestRequest,
     SuggestTruncateRequest, TailRequest,
 };
 
-use crate::{iter_doc_payloads, Position, Queues};
+use crate::{iter_doc_payloads, Position, PushApiError, Queues};
 
 pub struct PushApiService {
     queues: Queues,
+    metastore: Arc<dyn Metastore>,
 }
 
 impl PushApiService {
-    pub fn with_queue_path(queue_path: &Path) -> crate::Result<Self> {
+    pub fn with_queue_path(
+        queue_path: &Path,
+        metastore: Arc<dyn Metastore>,
+    ) -> crate::Result<Self> {
         let queues = Queues::open(queue_path)?;
-        Ok(PushApiService { queues })
+        Ok(PushApiService { queues, metastore })
     }
 
-    fn ingest(&mut self, request: IngestRequest) -> crate::Result<()> {
+    async fn ingest(&mut self, request: IngestRequest) -> crate::Result<()> {
+        // Check all indexes exist assuming existing queues always have a corresponding index.
+        let tasks = request
+            .doc_batches
+            .iter()
+            .filter(|batch| !self.queues.queue_exists(&batch.index_id))
+            .map(|batch| {
+                let moved_metastore = self.metastore.clone();
+                let moved_index_id = batch.index_id.clone();
+                async move {
+                    let result = moved_metastore.check_index_available(&moved_index_id).await;
+                    (moved_index_id, result)
+                }
+            });
+
+        let first_non_existing_index_id_opt = futures::future::join_all(tasks)
+            .await
+            .into_iter()
+            .filter(|(_, result)| result.is_err())
+            .map(|(index_id, _)| index_id)
+            .next();
+        if let Some(index_id) = first_non_existing_index_id_opt {
+            return Err(PushApiError::IndexDoesNotExist { index_id });
+        }
+
         for doc_batch in &request.doc_batches {
+            if !self.queues.queue_exists(&doc_batch.index_id) {
+                self.queues.create_queue(&doc_batch.index_id)?
+            }
+
             // TODO better error handling.
             // If there is an error, we probably want a transactional behavior.
             let records_it = iter_doc_payloads(doc_batch);
@@ -118,7 +152,7 @@ impl Handler<IngestRequest> for PushApiService {
         ingest_req: IngestRequest,
         _ctx: &ActorContext<Self>,
     ) -> Result<crate::Result<()>, ActorExitStatus> {
-        Ok(self.ingest(ingest_req))
+        Ok(self.ingest(ingest_req).await)
     }
 }
 
