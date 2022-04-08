@@ -510,6 +510,8 @@ struct FieldMappingEntryForSerialization {
     #[serde(skip_serializing_if = "Option::is_none")]
     indexed: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    fieldnorms: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     tokenizer: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     record: Option<IndexRecordOption>,
@@ -551,6 +553,7 @@ impl From<FieldMappingEntry> for FieldMappingEntryForSerialization {
         let type_with_cardinality = value.mapping_type.type_with_cardinality();
         let mut fast = false;
         let mut indexed = None;
+        let mut fieldnorms = None;
         let mut record = None;
         let mut stored = false;
         let mut tokenizer: Option<String> = None;
@@ -560,8 +563,11 @@ impl From<FieldMappingEntry> for FieldMappingEntryForSerialization {
                 if let Some(indexing_options) = text_options.get_indexing_options() {
                     tokenizer = Some(indexing_options.tokenizer().to_owned());
                     record = Some(indexing_options.index_option());
+                    indexed = Some(true);
+                    fieldnorms = Some(indexing_options.fieldnorms());
                 } else {
                     indexed = Some(false);
+                    fieldnorms = Some(false);
                 }
             }
             FieldMappingType::I64(options, _)
@@ -585,6 +591,7 @@ impl From<FieldMappingEntry> for FieldMappingEntryForSerialization {
             type_with_cardinality,
             fast,
             indexed,
+            fieldnorms,
             record,
             stored,
             tokenizer,
@@ -623,8 +630,10 @@ impl FieldMappingEntryForSerialization {
             )
         }
         let mut options = TextOptions::default();
+
         if self.indexed.unwrap_or(true) {
             let mut indexing_options = TextFieldIndexing::default();
+            indexing_options = indexing_options.set_fieldnorms(self.fieldnorms.unwrap_or(false));
             if let Some(index_option) = self.record {
                 indexing_options = indexing_options.set_index_option(index_option);
             }
@@ -673,6 +682,9 @@ impl FieldMappingEntryForSerialization {
         }
         if self.indexed.unwrap_or(true) {
             options = options.set_indexed();
+            if self.fieldnorms.unwrap_or(false) {
+                options = options.set_fieldnorms();
+            }
         }
         if self.fast {
             options = options.set_fast();
@@ -720,6 +732,9 @@ impl FieldMappingEntryForSerialization {
         }
         if self.indexed.unwrap_or(true) {
             options = options.set_indexed();
+            if self.fieldnorms.unwrap_or(false) {
+                options = options.set_fieldnorm();
+            }
         }
         Ok(options)
     }
@@ -818,6 +833,32 @@ mod tests {
             }
             _ => panic!("wrong property type"),
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_deserialize_valid_fieldnorms() -> anyhow::Result<()> {
+        let result = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+        {
+            "name": "my_field_name",
+            "type": "text",
+            "stored": true,
+            "indexed": true,
+            "fieldnorms": true,
+            "record": "basic",
+            "tokenizer": "english"
+        }"#,
+        );
+        match result.unwrap().mapping_type {
+            FieldMappingType::Text(options, _) => {
+                assert_eq!(options.is_stored(), true);
+                let index_options = options.get_indexing_options().unwrap();
+                assert_eq!(index_options.fieldnorms(), true);
+            }
+            _ => panic!("wrong property type"),
+        }
+
         Ok(())
     }
 
@@ -963,6 +1004,7 @@ mod tests {
         match result.mapping_type {
             FieldMappingType::I64(options, cardinality) => {
                 assert_eq!(options.is_indexed(), true); // default
+                assert_eq!(options.fieldnorms(), false); // default
                 assert_eq!(options.is_fast(), false); // default
                 assert_eq!(options.is_stored(), true); // default
                 assert_eq!(cardinality, Cardinality::MultiValues);

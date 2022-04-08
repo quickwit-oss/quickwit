@@ -24,6 +24,8 @@
         },
         {
           "fast": false,
+          "fieldnorms": false,
+          "indexed": true,
           "name": "log_level",
           "record": "basic",
           "stored": true,
@@ -32,6 +34,8 @@
         },
         {
           "fast": false,
+          "fieldnorms": false,
+          "indexed": true,
           "name": "message",
           "record": "position",
           "stored": true,
