@@ -107,7 +107,7 @@ pub fn default_doc_mapper_for_tests() -> DefaultDocMapper {
                         },
                         {
                             "name": "server.payload",
-                            "type": "array<bytes>"
+                            "type": "bytes"
                         }
                     ]
                 }

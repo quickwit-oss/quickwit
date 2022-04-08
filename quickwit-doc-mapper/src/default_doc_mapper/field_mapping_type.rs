@@ -17,58 +17,49 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use tantivy::schema::{BytesOptions, Cardinality, NumericOptions, TextOptions};
+use tantivy::schema::{Cardinality, Type};
 
 use super::FieldMappingEntry;
+use crate::default_doc_mapper::field_mapping_entry::{
+    QuickwitFieldType, QuickwitNumericOptions, QuickwitTextOptions,
+};
 
 /// A `FieldMappingType` defines the type and indexing options
 /// of a mapping field.
 #[derive(Clone, Debug)]
 pub enum FieldMappingType {
     /// String mapping type configuration.
-    Text(TextOptions, Cardinality),
+    Text(QuickwitTextOptions, Cardinality),
     /// Signed 64-bit integer mapping type configuration.
-    I64(NumericOptions, Cardinality),
+    I64(QuickwitNumericOptions, Cardinality),
     /// Unsigned 64-bit integer mapping type configuration.
-    U64(NumericOptions, Cardinality),
+    U64(QuickwitNumericOptions, Cardinality),
     /// 64-bit float mapping type configuration.
-    F64(NumericOptions, Cardinality),
+    F64(QuickwitNumericOptions, Cardinality),
     /// RFC 3339 date mapping type configuration.
-    Date(NumericOptions, Cardinality),
+    Date(QuickwitNumericOptions, Cardinality),
     /// Bytes mapping type configuration.
-    Bytes(BytesOptions, Cardinality),
+    Bytes(QuickwitNumericOptions),
     /// Object mapping type configuration.
     Object(Vec<FieldMappingEntry>),
 }
 
 impl FieldMappingType {
-    ///
-    pub fn type_with_cardinality(&self) -> String {
-        let cardinality = match &self {
-            FieldMappingType::I64(_, cardinality)
-            | FieldMappingType::U64(_, cardinality)
-            | FieldMappingType::Date(_, cardinality)
-            | FieldMappingType::F64(_, cardinality) => cardinality,
-            FieldMappingType::Text(_, cardinality) => cardinality,
-            FieldMappingType::Bytes(_, cardinality) => cardinality,
-            FieldMappingType::Object(_) => &Cardinality::SingleValue,
+    pub fn quickwit_field_type(&self) -> QuickwitFieldType {
+        let (primitive_type, cardinality) = match self {
+            FieldMappingType::Text(_, cardinality) => (Type::Str, *cardinality),
+            FieldMappingType::I64(_, cardinality) => (Type::I64, *cardinality),
+            FieldMappingType::U64(_, cardinality) => (Type::U64, *cardinality),
+            FieldMappingType::F64(_, cardinality) => (Type::F64, *cardinality),
+            FieldMappingType::Date(_, cardinality) => (Type::Date, *cardinality),
+            FieldMappingType::Bytes(_) => (Type::Bytes, Cardinality::SingleValue),
+            FieldMappingType::Object(_) => {
+                return QuickwitFieldType::Object;
+            }
         };
-        if cardinality == &Cardinality::MultiValues {
-            format!("array<{}>", self.field_type_str())
-        } else {
-            self.field_type_str().to_string()
-        }
-    }
-
-    fn field_type_str(&self) -> &str {
-        match self {
-            FieldMappingType::Text(..) => "text",
-            FieldMappingType::I64(..) => "i64",
-            FieldMappingType::U64(..) => "u64",
-            FieldMappingType::F64(..) => "f64",
-            FieldMappingType::Date(..) => "date",
-            FieldMappingType::Bytes(..) => "bytes",
-            FieldMappingType::Object(..) => "object",
+        match cardinality {
+            Cardinality::SingleValue => QuickwitFieldType::Simple(primitive_type),
+            Cardinality::MultiValues => QuickwitFieldType::Array(primitive_type),
         }
     }
 }

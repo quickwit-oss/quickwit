@@ -484,7 +484,7 @@ mod tests {
                 "server": "ABC",
                 "tags": [22, 23],
                 "server.status": ["200", "201"],
-                "server.payload": ["YQ==", "Yg=="]
+                "server.payload": "YQ=="
             }
         }"#;
 
@@ -497,7 +497,7 @@ mod tests {
             "owner": ["foo"],
             "body_other_tokenizer": ["20200415T072306-0700 INFO This is a great log"],
             "attributes.server": ["ABC"],
-            "attributes.server.payload": [[97], [98]],
+            "attributes.server.payload": [97],
             "attributes.tags": [22, 23],
             "attributes.server.status": ["200", "201"]
         }"#;
@@ -545,19 +545,31 @@ mod tests {
     }
 
     #[test]
-    fn test_parsing_document() -> anyhow::Result<()> {
+    fn test_parsing_document() {
         let doc_mapper = crate::default_doc_mapper_for_tests();
-        let document = doc_mapper.doc_from_json(JSON_DOC_VALUE.to_string())?;
+        let document = doc_mapper
+            .doc_from_json(JSON_DOC_VALUE.to_string())
+            .unwrap();
         let schema = doc_mapper.schema();
         // 7 property entry + 1 field "_source" + two fields values for "tags" field
-        // + 2 values inf "server.status" field + 2 values in "server.payload" field
-        assert_eq!(document.len(), 14);
+        // + 2 values inf "server.status" field + 1 values in "server.payload" field
+        assert_eq!(document.len(), 13);
         let expected_json_paths_and_values: HashMap<String, JsonValue> =
             serde_json::from_str(EXPECTED_JSON_PATHS_AND_VALUES).unwrap();
         document.field_values().iter().for_each(|field_value| {
             let field_name = schema.get_field_name(field_value.field());
             if field_name == SOURCE_FIELD_NAME {
                 assert_eq!(field_value.value().as_text(), Some(JSON_DOC_VALUE));
+            } else if field_name == "attributes.server.payload" {
+                let payload: Vec<u8> = field_value.value().as_bytes().unwrap().to_vec();
+                let expected_payload: Vec<u8> = serde_json::from_value(
+                    expected_json_paths_and_values
+                        .get(field_name)
+                        .unwrap()
+                        .clone(),
+                )
+                .unwrap();
+                assert_eq!(payload, expected_payload);
             } else {
                 let value = serde_json::to_string(field_value.value()).unwrap();
                 let is_value_in_expected_values = expected_json_paths_and_values
@@ -576,7 +588,6 @@ mod tests {
                 }
             }
         });
-        Ok(())
     }
 
     #[test]
