@@ -57,7 +57,7 @@ impl SourceConfig {
                 // TODO consider any validation opportunity
                 Ok(())
             }
-            SourceParams::Vec(_) | SourceParams::Void(_) => Ok(()),
+            SourceParams::Vec(_) | SourceParams::Void(_) | SourceParams::PushApi(_) => Ok(()),
         }
     }
 
@@ -68,6 +68,7 @@ impl SourceConfig {
             SourceParams::Kinesis(_) => "kinesis",
             SourceParams::Vec(_) => "vec",
             SourceParams::Void(_) => "void",
+            SourceParams::PushApi(_) => "pushapi",
         }
     }
 
@@ -79,6 +80,7 @@ impl SourceConfig {
             SourceParams::Kinesis(params) => serde_json::to_value(params),
             SourceParams::Vec(params) => serde_json::to_value(params),
             SourceParams::Void(params) => serde_json::to_value(params),
+            SourceParams::PushApi(params) => serde_json::to_value(params),
         }
         .unwrap()
     }
@@ -97,6 +99,8 @@ pub enum SourceParams {
     Vec(VecSourceParams),
     #[serde(rename = "void")]
     Void(VoidSourceParams),
+    #[serde(rename = "pushapi")]
+    PushApi(PushApiSourceParams),
 }
 
 impl SourceParams {
@@ -221,12 +225,20 @@ pub struct VecSourceParams {
 #[serde(deny_unknown_fields)]
 pub struct VoidSourceParams;
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PushApiSourceParams {
+    pub index_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub batch_num_bytes_threshold: Option<u64>,
+}
+
 #[cfg(test)]
 mod tests {
     use quickwit_common::uri::Uri;
 
     use crate::source_config::RegionOrEndpoint;
-    use crate::{FileSourceParams, KinesisSourceParams};
+    use crate::{FileSourceParams, KinesisSourceParams, PushApiSourceParams};
 
     #[test]
     fn test_file_source_params_serialization() {
@@ -283,6 +295,19 @@ mod tests {
                 let error = serde_yaml::from_str::<KinesisSourceParams>(yaml).unwrap_err();
                 assert!(error.to_string().starts_with("Kinesis source parameters "));
             }
+        }
+    }
+
+    #[test]
+    fn test_push_api_source_params_serialization() {
+        {
+            let yaml = r#"
+                index_id: wikipedia
+                batch_num_bytes_threshold: 200000
+            "#;
+            let push_api_params = serde_yaml::from_str::<PushApiSourceParams>(yaml).unwrap();
+            assert_eq!(push_api_params.index_id, "wikipedia");
+            assert_eq!(push_api_params.batch_num_bytes_threshold, Some(200000))
         }
     }
 }

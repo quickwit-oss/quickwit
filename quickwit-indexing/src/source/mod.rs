@@ -86,6 +86,7 @@ pub use vec_source::{VecSource, VecSourceFactory};
 pub use void_source::{VoidSource, VoidSourceFactory};
 
 use crate::actors::Indexer;
+use crate::source::push_api_source::PushApiSourceFactory;
 
 /// Reserved source id used for the CLI ingest command.
 pub const INGEST_SOURCE_ID: &str = ".cli-ingest-source";
@@ -234,6 +235,7 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source("kinesis", KinesisSourceFactory);
         source_factory.add_source("vec", VecSourceFactory);
         source_factory.add_source("void", VoidSourceFactory);
+        source_factory.add_source("pushapi", PushApiSourceFactory);
         source_factory
     })
 }

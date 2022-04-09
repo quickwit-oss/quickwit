@@ -19,11 +19,11 @@
 
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_config::PushApiSourceParams;
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use quickwit_proto::push_api::{FetchRequest, FetchResponse};
 use quickwit_pushapi::{get_push_api_service, iter_doc_payloads, PushApiService};
-use serde::{Deserialize, Serialize};
-use tracing::info;
+use serde::Serialize;
 
 use super::{Source, SourceContext, TypedSourceFactory};
 use crate::actors::Indexer;
@@ -33,21 +33,16 @@ use crate::models::RawDocBatch;
 const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64; // 0.5MB
 
 #[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct PushApiSourceTracker {
+pub struct PushApiSourceCounters {
+    pub previous_offset: u64,
     pub current_offset: u64,
     pub num_docs_processed: u64,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct PushApiSourceParams {
-    pub index_id: String,
-    pub batch_num_bytes_threshold: Option<u64>,
 }
 
 pub struct PushApiSource {
     params: PushApiSourceParams,
     push_api_mailbox: Mailbox<PushApiService>,
-    tracker: PushApiSourceTracker,
+    counters: PushApiSourceCounters,
 }
 
 impl PushApiSource {
@@ -68,7 +63,8 @@ impl PushApiSource {
         let push_api_source = PushApiSource {
             params,
             push_api_mailbox,
-            tracker: PushApiSourceTracker {
+            counters: PushApiSourceCounters {
+                previous_offset: offset,
                 current_offset: offset,
                 num_docs_processed: 0,
             },
@@ -84,10 +80,10 @@ impl Source for PushApiSource {
         batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
-        let start_after = if self.tracker.current_offset == 0 {
+        let start_after = if self.counters.current_offset == 0 {
             None
         } else {
-            Some(self.tracker.current_offset)
+            Some(self.counters.current_offset)
         };
 
         let fetch_req = FetchRequest {
@@ -110,9 +106,7 @@ impl Source for PushApiSource {
         } = fetch_resp;
 
         if first_position_opt.is_none() {
-            info!("End of queue");
-            ctx.send_exit_with_success(batch_sink).await?;
-            return Err(ActorExitStatus::Success);
+            return Ok(());
         }
 
         let doc_batch = doc_batch_opt.unwrap();
@@ -122,16 +116,16 @@ impl Source for PushApiSource {
             .collect::<Vec<_>>();
 
         if !docs.is_empty() {
-            self.tracker.num_docs_processed += docs.len() as u64;
-            self.tracker.current_offset = first_position + docs.len() as u64 - 1;
+            self.counters.num_docs_processed += docs.len() as u64;
+            self.counters.current_offset = first_position + docs.len() as u64 - 1;
 
             let mut checkpoint_delta = CheckpointDelta::default();
             let partition_id = PartitionId::from(self.params.index_id.as_str());
             checkpoint_delta
                 .record_partition_delta(
                     partition_id,
-                    Position::from(first_position),
-                    Position::from(self.tracker.current_offset),
+                    Position::from(self.counters.previous_offset),
+                    Position::from(self.counters.current_offset),
                 )
                 .unwrap();
 
@@ -139,6 +133,7 @@ impl Source for PushApiSource {
                 docs,
                 checkpoint_delta,
             };
+            self.counters.previous_offset = self.counters.current_offset;
             ctx.send_message(batch_sink, raw_doc_batch).await?;
         }
 
@@ -150,7 +145,7 @@ impl Source for PushApiSource {
     }
 
     fn observable_state(&self) -> serde_json::Value {
-        serde_json::to_value(&self.tracker).unwrap()
+        serde_json::to_value(&self.counters).unwrap()
     }
 }
 

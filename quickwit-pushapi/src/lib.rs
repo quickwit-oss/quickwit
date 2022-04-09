@@ -43,11 +43,11 @@ pub fn init_push_api(
     universe: &Universe,
     queue_path: &Path,
     metastore: Arc<dyn Metastore>,
-) -> anyhow::Result<()> {
-    PUSH_API_SERVICE_INSTANCE
+) -> anyhow::Result<Mailbox<PushApiService>> {
+    let push_api_service = PUSH_API_SERVICE_INSTANCE
         .get_or_try_init(|| spawn_push_api_actor(universe, queue_path, metastore))
         .map_err(|error| anyhow::anyhow!(error))?;
-    Ok(())
+    Ok(push_api_service.clone())
 }
 
 pub fn get_push_api_service() -> Option<Mailbox<PushApiService>> {
