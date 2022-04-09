@@ -30,7 +30,7 @@ jobs:
           make archive BINARY_FILE=target/x86_64-unknown-linux-gnu/release/quickwit \
             BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }} 
       - name: Save binary archive for few days
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.ASSET_FULL_NAME }}.tar.gz
           path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
@@ -58,7 +58,7 @@ jobs:
           make archive BINARY_FILE=target/x86_64-unknown-linux-musl/release/quickwit \
             BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
       - name: Save binary archive for few days
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.ASSET_FULL_NAME }}.tar.gz
           path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
@@ -86,7 +86,7 @@ jobs:
           make archive BINARY_FILE=target/aarch64-unknown-linux-gnu/release/quickwit \
             BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
       - name: Save binary archive for few days
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.ASSET_FULL_NAME }}.tar.gz
           path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
@@ -114,7 +114,7 @@ jobs:
           make archive BINARY_FILE=target/aarch64-unknown-linux-musl/release/quickwit \
             BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
       - name: Save binary archive for few days
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.ASSET_FULL_NAME }}.tar.gz
           path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
