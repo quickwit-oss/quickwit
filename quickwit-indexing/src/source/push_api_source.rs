@@ -62,8 +62,6 @@ impl PushApiSource {
             0
         };
 
-        // An existing index should have it's corresponding queue created.
-        // Let's not wait for the first document to arrive before creating it.
         ensure_queue_exist_for_index(&push_api_mailbox, params.index_id.clone()).await?;
         let push_api_source = PushApiSource {
             params,
@@ -78,6 +76,7 @@ impl PushApiSource {
     }
 }
 
+/// Creates a queue for the index if it does not exists.
 async fn ensure_queue_exist_for_index(
     push_api_mailbox: &Mailbox<PushApiService>,
     index_id: String,
@@ -93,9 +92,7 @@ async fn ensure_queue_exist_for_index(
         return Ok(());
     }
 
-    let create_queue_req = CreateQueueRequest {
-        queue_id: index_id.clone(),
-    };
+    let create_queue_req = CreateQueueRequest { queue_id: index_id };
     push_api_mailbox
         .ask_for_res(create_queue_req)
         .await
@@ -136,7 +133,7 @@ impl Source for PushApiSource {
 
         if first_position_opt.is_none() {
             // TODO: We are currently waiting for a constant time.
-            // Think of better way, maybe increment this as time
+            // Think of better way, maybe increment this (i.e wait longer) as time
             // goes on without receiving docs.
             return Ok(Some(Duration::from_secs(1)));
         }

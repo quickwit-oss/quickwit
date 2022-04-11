@@ -116,11 +116,6 @@ pub async fn serve_quickwit(
                 &config.data_dir_path.join("queues"),
                 metastore.clone(),
             )?;
-            // let push_api_service = spawn_push_api_actor(
-            //     &universe,
-            //     &config.data_dir_path.join("queues"),
-            //     metastore.clone(),
-            // )?;
             Some(push_api_service)
         } else {
             None

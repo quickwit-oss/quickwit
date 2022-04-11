@@ -129,8 +129,8 @@ pub trait Source: Send + Sync + 'static {
     /// The `batch_sink` is a mailbox that has a bounded capacity.
     /// In that case, `batch_sink` will block.
     ///
-    /// It can return a [`Duration`] to make the batch requester wait
-    /// duration time before pooling.
+    /// It returns an optional duration specifying how long the batch requester
+    /// should wait before pooling gain.
     async fn emit_batches(
         &mut self,
         batch_sink: &Mailbox<Indexer>,
@@ -224,7 +224,8 @@ impl Handler<Loop> for SourceActor {
     async fn handle(&mut self, _message: Loop, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
         let wait_for_opt = self.source.emit_batches(&self.batch_sink, ctx).await?;
         if let Some(wait_for) = wait_for_opt {
-            ctx.protect_zone(); // duration can be more than HEARTBEAT timeout.
+            // wait_for time can be more than a HEARTBEAT timeout.
+            ctx.protect_zone();
             tokio::time::sleep(wait_for).await;
         }
         ctx.send_self_message(Loop).await?;
