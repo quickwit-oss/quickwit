@@ -54,19 +54,25 @@ service PushAPIService {
   rpc Tail(TailRequest) returns (FetchResponse);
 }
 
+message QueueExistsRequest {
+    string queue_id = 1;
+}
+
 message CreateQueueRequest {
-    optional string queue_id = 1;
+    string queue_id = 1;
 }
 
 message DropQueueRequest {
-    optional string queue_id = 1;
+    string queue_id = 1;
 }
 
 message IngestRequest {
     repeated DocBatch doc_batches = 1;
 }
 
-message IngestResponse {}
+message IngestResponse {
+    uint64 num_ingested_docs = 1;
+}
 
 message FetchRequest {
     string index_id = 1;

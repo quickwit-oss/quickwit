@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::time::Duration;
+
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox, HEARTBEAT};
 use quickwit_config::VoidSourceParams;
@@ -32,9 +34,9 @@ impl Source for VoidSource {
         &mut self,
         _: &Mailbox<Indexer>,
         _: &SourceContext,
-    ) -> Result<(), ActorExitStatus> {
+    ) -> Result<Option<Duration>, ActorExitStatus> {
         tokio::time::sleep(HEARTBEAT / 2).await;
-        Ok(())
+        Ok(None)
     }
 
     fn name(&self) -> String {

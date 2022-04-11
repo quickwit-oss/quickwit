@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::time::Duration;
+
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::VecSourceParams;
@@ -68,7 +70,7 @@ impl Source for VecSource {
         &mut self,
         batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
-    ) -> Result<(), ActorExitStatus> {
+    ) -> Result<Option<Duration>, ActorExitStatus> {
         let line_docs: Vec<String> = self.params.items[self.next_item_idx..]
             .iter()
             .take(self.params.batch_num_docs)
@@ -92,7 +94,7 @@ impl Source for VecSource {
             checkpoint_delta,
         };
         ctx.send_message(batch_sink, batch).await?;
-        Ok(())
+        Ok(None)
     }
 
     fn name(&self) -> String {

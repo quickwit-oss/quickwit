@@ -68,6 +68,7 @@ mod vec_source;
 mod void_source;
 
 use std::path::Path;
+use std::time::Duration;
 
 use anyhow::bail;
 use async_trait::async_trait;
@@ -127,11 +128,14 @@ pub trait Source: Send + Sync + 'static {
     ///
     /// The `batch_sink` is a mailbox that has a bounded capacity.
     /// In that case, `batch_sink` will block.
+    ///
+    /// It can return a [`Duration`] to make the batch requester wait
+    /// duration time before pooling.
     async fn emit_batches(
         &mut self,
         batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
-    ) -> Result<(), ActorExitStatus>;
+    ) -> Result<Option<Duration>, ActorExitStatus>;
 
     /// After publication of a split, `suggest_truncate` is called.
     /// This makes it possible for the implementation of a source to
@@ -218,7 +222,11 @@ impl Handler<Loop> for SourceActor {
     type Reply = ();
 
     async fn handle(&mut self, _message: Loop, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        self.source.emit_batches(&self.batch_sink, ctx).await?;
+        let wait_for_opt = self.source.emit_batches(&self.batch_sink, ctx).await?;
+        if let Some(wait_for) = wait_for_opt {
+            ctx.protect_zone(); // duration can be more than HEARTBEAT timeout.
+            tokio::time::sleep(wait_for).await;
+        }
         ctx.send_self_message(Loop).await?;
         Ok(())
     }

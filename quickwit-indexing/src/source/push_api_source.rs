@@ -17,20 +17,22 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::time::Duration;
+
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::PushApiSourceParams;
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
-use quickwit_proto::push_api::{FetchRequest, FetchResponse};
+use quickwit_proto::push_api::{
+    CreateQueueRequest, FetchRequest, FetchResponse, QueueExistsRequest,
+};
 use quickwit_pushapi::{get_push_api_service, iter_doc_payloads, PushApiService};
 use serde::Serialize;
 
+use super::file_source::BATCH_NUM_BYTES_THRESHOLD;
 use super::{Source, SourceContext, TypedSourceFactory};
 use crate::actors::Indexer;
 use crate::models::RawDocBatch;
-
-/// Cut a new batch as soon as we have read BATCH_NUM_BYTES_THRESHOLD.
-const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64; // 0.5MB
 
 #[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct PushApiSourceCounters {
@@ -46,7 +48,7 @@ pub struct PushApiSource {
 }
 
 impl PushApiSource {
-    pub fn make(
+    pub async fn make(
         params: PushApiSourceParams,
         push_api_mailbox: Mailbox<PushApiService>,
         checkpoint: SourceCheckpoint,
@@ -60,6 +62,9 @@ impl PushApiSource {
             0
         };
 
+        // An existing index should have it's corresponding queue created.
+        // Let's not wait for the first document to arrive before creating it.
+        ensure_queue_exist_for_index(&push_api_mailbox, params.index_id.clone()).await?;
         let push_api_source = PushApiSource {
             params,
             push_api_mailbox,
@@ -73,13 +78,37 @@ impl PushApiSource {
     }
 }
 
+async fn ensure_queue_exist_for_index(
+    push_api_mailbox: &Mailbox<PushApiService>,
+    index_id: String,
+) -> anyhow::Result<()> {
+    let queue_exists_req = QueueExistsRequest {
+        queue_id: index_id.clone(),
+    };
+    if push_api_mailbox
+        .ask_for_res(queue_exists_req)
+        .await
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?
+    {
+        return Ok(());
+    }
+
+    let create_queue_req = CreateQueueRequest {
+        queue_id: index_id.clone(),
+    };
+    push_api_mailbox
+        .ask_for_res(create_queue_req)
+        .await
+        .map_err(|err| anyhow::anyhow!(err.to_string()))
+}
+
 #[async_trait]
 impl Source for PushApiSource {
     async fn emit_batches(
         &mut self,
         batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
-    ) -> Result<(), ActorExitStatus> {
+    ) -> Result<Option<Duration>, ActorExitStatus> {
         let start_after = if self.counters.current_offset == 0 {
             None
         } else {
@@ -106,7 +135,10 @@ impl Source for PushApiSource {
         } = fetch_resp;
 
         if first_position_opt.is_none() {
-            return Ok(());
+            // TODO: We are currently waiting for a constant time.
+            // Think of better way, maybe increment this as time
+            // goes on without receiving docs.
+            return Ok(Some(Duration::from_secs(1)));
         }
 
         let doc_batch = doc_batch_opt.unwrap();
@@ -137,7 +169,7 @@ impl Source for PushApiSource {
             ctx.send_message(batch_sink, raw_doc_batch).await?;
         }
 
-        Ok(())
+        Ok(None)
     }
 
     fn name(&self) -> String {
@@ -162,15 +194,16 @@ impl TypedSourceFactory for PushApiSourceFactory {
     ) -> anyhow::Result<Self::Source> {
         let push_api_mailbox = get_push_api_service()
             .ok_or_else(|| anyhow::anyhow!("Could not get the `PushApiService` instance."))?;
-        PushApiSource::make(params, push_api_mailbox, checkpoint)
+        PushApiSource::make(params, push_api_mailbox, checkpoint).await
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::time::Duration;
 
-    use quickwit_actors::{create_test_mailbox, Command, Universe};
+    use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_metastore::checkpoint::SourceCheckpoint;
     use quickwit_metastore::MockMetastore;
     use quickwit_proto::push_api::{DocBatch, IngestRequest};
@@ -228,7 +261,7 @@ mod tests {
             batch_num_bytes_threshold: Some(4 * 500),
         };
         let push_api_source =
-            PushApiSource::make(params, push_api_mailbox, SourceCheckpoint::default())?;
+            PushApiSource::make(params, push_api_mailbox, SourceCheckpoint::default()).await?;
         let push_api_source_actor = SourceActor {
             source: Box::new(push_api_source),
             batch_sink: mailbox,
@@ -236,24 +269,23 @@ mod tests {
         let (_push_api_source_mailbox, push_api_source_handle) =
             universe.spawn_actor(push_api_source_actor).spawn();
 
-        let (actor_termination, tracker) = push_api_source_handle.join().await;
-        assert!(actor_termination.is_success());
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let counters = push_api_source_handle
+            .process_pending_and_observe()
+            .await
+            .state;
         assert_eq!(
-            tracker,
+            counters,
             serde_json::json!({
+                "previous_offset": 1999u64,
                 "current_offset": 1999u64,
                 "num_docs_processed": 2000u64
             })
         );
         let indexer_msgs = inbox.drain_for_test();
-        assert_eq!(indexer_msgs.len(), 5);
+        assert_eq!(indexer_msgs.len(), 4);
         let received_batch = indexer_msgs[1].downcast_ref::<RawDocBatch>().unwrap();
         assert!(received_batch.docs[0].starts_with("0501"));
-
-        assert!(matches!(
-            indexer_msgs[4].downcast_ref::<Command>().unwrap(),
-            Command::ExitWithSuccess
-        ));
         Ok(())
     }
 
@@ -296,7 +328,7 @@ mod tests {
         );
         checkpoint.try_apply_delta(checkpoint_delta)?;
 
-        let push_api_source = PushApiSource::make(params, push_api_mailbox, checkpoint)?;
+        let push_api_source = PushApiSource::make(params, push_api_mailbox, checkpoint).await?;
         let push_api_source_actor = SourceActor {
             source: Box::new(push_api_source),
             batch_sink: mailbox,
@@ -304,17 +336,21 @@ mod tests {
         let (_push_api_source_mailbox, push_api_source_handle) =
             universe.spawn_actor(push_api_source_actor).spawn();
 
-        let (actor_termination, tracker) = push_api_source_handle.join().await;
-        assert!(actor_termination.is_success());
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let counters = push_api_source_handle
+            .process_pending_and_observe()
+            .await
+            .state;
         assert_eq!(
-            tracker,
+            counters,
             serde_json::json!({
+                "previous_offset": 3999u64,
                 "current_offset": 3999u64,
                 "num_docs_processed": 2799u64
             })
         );
         let indexer_msgs = inbox.drain_for_test();
-        assert_eq!(indexer_msgs.len(), 2);
+        assert_eq!(indexer_msgs.len(), 1);
         let received_batch = indexer_msgs[0].downcast_ref::<RawDocBatch>().unwrap();
         assert!(received_batch.docs[0].starts_with("1201"));
         Ok(())

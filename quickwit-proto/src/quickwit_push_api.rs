@@ -1,16 +1,23 @@
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueueExistsRequest {
+    #[prost(string, tag="1")]
+    pub queue_id: ::prost::alloc::string::String,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateQueueRequest {
-    #[prost(string, optional, tag="1")]
-    pub queue_id: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag="1")]
+    pub queue_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DropQueueRequest {
-    #[prost(string, optional, tag="1")]
-    pub queue_id: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag="1")]
+    pub queue_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,6 +30,8 @@ pub struct IngestRequest {
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestResponse {
+    #[prost(uint64, tag="1")]
+    pub num_ingested_docs: u64,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
