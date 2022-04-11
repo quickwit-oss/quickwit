@@ -111,12 +111,6 @@ jobs:
       - name: Prepare LocalStack S3
         run: ./quickwit-cli/tests/prepare_tests.sh
 
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          default: true
-          components: clippy, llvm-tools-preview, rustfmt
-
       - name: Install cargo-llvm-cov
         run: |
           curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | \
