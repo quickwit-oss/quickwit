@@ -108,7 +108,7 @@ impl Source for VecSource {
     }
 
     fn name(&self) -> String {
-        "VecSource".to_string()
+        format!("VecSource{{source_id={}}}", self.source_id)
     }
 
     fn observable_state(&self) -> serde_json::Value {
@@ -149,7 +149,10 @@ mod tests {
             source: Box::new(vec_source),
             batch_sink: mailbox,
         };
-        assert_eq!(vec_source_actor.name(), "VecSource");
+        assert_eq!(
+            vec_source_actor.name(),
+            "VecSource{source_id=my-vec-source}"
+        );
         let (_vec_source_mailbox, vec_source_handle) =
             universe.spawn_actor(vec_source_actor).spawn();
         let (actor_termination, last_observation) = vec_source_handle.join().await;
