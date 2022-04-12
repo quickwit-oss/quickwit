@@ -39,7 +39,7 @@ use crate::{DocParsingError, QueryParserError, SortBy};
 #[typetag::serde(tag = "type")]
 pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// Returns the document built from an owned JSON string.
-    fn doc_from_json(&self, doc_json: String) -> Result<Document, DocParsingError>;
+    fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError>;
 
     /// Returns the schema.
     ///

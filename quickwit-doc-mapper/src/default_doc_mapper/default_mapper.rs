@@ -406,7 +406,7 @@ impl std::fmt::Debug for DefaultDocMapper {
 
 #[typetag::serde(name = "default")]
 impl DocMapper for DefaultDocMapper {
-    fn doc_from_json(&self, doc_json: String) -> Result<Document, DocParsingError> {
+    fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
         let mut document = Document::default();
         let json_obj: JsonValue = serde_json::from_str(&doc_json).map_err(|_| {
             // FIXME: the error contains some useful information (line, column, ...) that we could
@@ -552,7 +552,7 @@ mod tests {
     fn test_parsing_document() {
         let doc_mapper = crate::default_doc_mapper_for_tests();
         let document = doc_mapper
-            .doc_from_json(JSON_DOC_VALUE.to_string())
+            .doc_from_json(JSON_DOC_VALUE)
             .unwrap();
         let schema = doc_mapper.schema();
         // 7 property entry + 1 field "_source" + two fields values for "tags" field
@@ -595,7 +595,6 @@ mod tests {
                 "response_time": 12,
                 "response_payload": "YWJj"
             }"#
-            .to_string(),
         )?;
         Ok(())
     }
@@ -610,7 +609,6 @@ mod tests {
                 "response_date": "2021-12-19T16:39:57+00:00",
                 "response_time": 12
             }"#
-            .to_string(),
         );
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -628,7 +626,6 @@ mod tests {
                 "timestamp": 1586960586000,
                 "body": ["text 1", "text 2"]
             }"#
-            .to_string(),
         );
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -647,7 +644,6 @@ mod tests {
                 "timestamp": 1586960586000,
                 "body": 1
             }"#
-            .to_string(),
         );
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -752,7 +748,6 @@ mod tests {
             "city": "paris",
             "image": "invalid base64 data"
         }"#
-            .to_string(),
         );
         let expected_msg = "The field 'image' could not be parsed: Expected Base64 string, got \
                             'invalid base64 data'.";
@@ -791,7 +786,7 @@ mod tests {
             "image": "YWJj"
         }"#;
         let document = doc_mapper
-            .doc_from_json(JSON_DOC_VALUE.to_string())
+            .doc_from_json(JSON_DOC_VALUE)
             .unwrap();
 
         // 2 properties, + 1 value for "_source"
