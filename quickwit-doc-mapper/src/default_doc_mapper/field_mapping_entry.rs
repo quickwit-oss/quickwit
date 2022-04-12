@@ -109,7 +109,7 @@ impl FieldMappingEntry {
                 let opt = get_numeric_options(options, *cardinality);
                 vec![(field_path, FieldType::Date(opt))]
             }
-            FieldMappingType::Bytes(options) => {
+            FieldMappingType::Bytes(options, _cardinality) => {
                 let bytes_options = get_bytes_options(options);
                 vec![(field_path, FieldType::Bytes(bytes_options))]
             }
@@ -155,15 +155,23 @@ impl FieldMappingEntry {
     pub fn parse(&self, json_value: JsonValue) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
         match &self.mapping_type {
             FieldMappingType::Text(_options, cardinality) => {
-                self.parse_text(json_value, cardinality)
+                self.parse_text(json_value, *cardinality)
             }
-            FieldMappingType::I64(_options, cardinality) => self.parse_i64(json_value, cardinality),
-            FieldMappingType::U64(_options, cardinality) => self.parse_u64(json_value, cardinality),
-            FieldMappingType::F64(_options, cardinality) => self.parse_f64(json_value, cardinality),
+            FieldMappingType::I64(_options, cardinality) => {
+                self.parse_i64(json_value, *cardinality)
+            }
+            FieldMappingType::U64(_options, cardinality) => {
+                self.parse_u64(json_value, *cardinality)
+            }
+            FieldMappingType::F64(_options, cardinality) => {
+                self.parse_f64(json_value, *cardinality)
+            }
             FieldMappingType::Date(_options, cardinality) => {
                 self.parse_date(json_value, cardinality)
             }
-            FieldMappingType::Bytes(_options) => self.parse_bytes(json_value),
+            FieldMappingType::Bytes(_options, cardinality) => {
+                self.parse_bytes(json_value, *cardinality)
+            }
             FieldMappingType::Object(options) => self.parse_object(json_value, options),
         }
     }
@@ -171,11 +179,11 @@ impl FieldMappingEntry {
     fn parse_text(
         &self,
         json_value: JsonValue,
-        cardinality: &Cardinality,
+        cardinality: Cardinality,
     ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
         let parsed_values = match json_value {
             JsonValue::Array(array) => {
-                if cardinality != &Cardinality::MultiValues {
+                if cardinality != Cardinality::MultiValues {
                     return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
                 }
                 process_results(
@@ -204,11 +212,11 @@ impl FieldMappingEntry {
     fn parse_i64(
         &self,
         json_value: JsonValue,
-        cardinality: &Cardinality,
+        cardinality: Cardinality,
     ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
         let parsed_values = match json_value {
             JsonValue::Array(array) => {
-                if cardinality != &Cardinality::MultiValues {
+                if cardinality != Cardinality::MultiValues {
                     return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
                 }
                 process_results(
@@ -247,11 +255,11 @@ impl FieldMappingEntry {
     fn parse_u64(
         &self,
         json_value: JsonValue,
-        cardinality: &Cardinality,
+        cardinality: Cardinality,
     ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
         let parsed_values = match json_value {
             JsonValue::Array(array) => {
-                if cardinality != &Cardinality::MultiValues {
+                if cardinality != Cardinality::MultiValues {
                     return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
                 }
                 process_results(
@@ -290,11 +298,11 @@ impl FieldMappingEntry {
     fn parse_f64(
         &self,
         json_value: JsonValue,
-        cardinality: &Cardinality,
+        cardinality: Cardinality,
     ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
         let parsed_values = match json_value {
             JsonValue::Array(array) => {
-                if cardinality != &Cardinality::MultiValues {
+                if cardinality != Cardinality::MultiValues {
                     return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
                 }
                 process_results(
@@ -378,10 +386,19 @@ impl FieldMappingEntry {
     fn parse_bytes(
         &self,
         json_value: JsonValue,
+        cardinality: Cardinality,
     ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
         let parsed_values = match json_value {
-            JsonValue::Array(_) => {
-                return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
+            JsonValue::Array(array) => {
+                if cardinality != Cardinality::MultiValues {
+                    return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
+                }
+                process_results(
+                    array
+                        .into_iter()
+                        .map(|element| self.parse_bytes(element, cardinality)),
+                    |iter| iter.flatten().collect(),
+                )?
             }
             JsonValue::String(value_as_str) => {
                 let value = base64::decode(&value_as_str)
@@ -619,11 +636,11 @@ fn deserialize_mapping_type(
         }
         Type::Facet => unimplemented!("Facet are not supported in quickwit yet."),
         Type::Bytes => {
-            if cardinality == Cardinality::MultiValues {
-                bail!("array<bytes> is not supported.");
-            }
             let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
-            Ok(FieldMappingType::Bytes(numeric_options))
+            if numeric_options.fast && cardinality == Cardinality::MultiValues {
+                bail!("fast field is not allowed for array<bytes>.");
+            }
+            Ok(FieldMappingType::Bytes(numeric_options, cardinality))
         }
         Type::Json => todo!(),
     }
@@ -670,7 +687,7 @@ fn typed_mapping_to_json_params(
         FieldMappingType::U64(options, _)
         | FieldMappingType::I64(options, _)
         | FieldMappingType::Date(options, _)
-        | FieldMappingType::Bytes(options)
+        | FieldMappingType::Bytes(options, _)
         | FieldMappingType::F64(options, _) => {
             extract_map_from_json(serde_json::to_value(&options).unwrap()).unwrap()
         }
@@ -1433,20 +1450,43 @@ mod tests {
     }
 
     #[test]
-    fn test_mutivalued_bytes_are_forbidden() {
-        let field_mapping_entry_error = serde_json::from_str::<FieldMappingEntry>(
+    fn test_parse_mutivalued_bytes() -> anyhow::Result<()> {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
                 "name": "my_field_name",
                 "type": "array<bytes>"
             }
             "#,
+        )?;
+
+        // Successful parsing
+        let parsed_value = entry.parse(json!([
+            "dGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHN0cmluZw==",
+            "dGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHN0cmluZw=="
+        ]))?;
+        assert_eq!(parsed_value.len(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_multivalued_bytes_fast_forbidden() -> anyhow::Result<()> {
+        let field_mapping_entry_parse_error = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "array<bytes>",
+                "fast": true
+            }
+            "#,
         )
         .unwrap_err()
         .to_string();
         assert_eq!(
-            field_mapping_entry_error,
-            "Error while parsing field `my_field_name`: array<bytes> is not supported."
+            field_mapping_entry_parse_error,
+            "Error while parsing field `my_field_name`: fast field is not allowed for \
+             array<bytes>."
         );
+        Ok(())
     }
 }

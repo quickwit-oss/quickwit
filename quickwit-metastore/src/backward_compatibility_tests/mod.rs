@@ -51,7 +51,9 @@ where
 
 fn test_backward_compatibility<T>(test_dir: &Path, test: impl Fn(&T, &T)) -> anyhow::Result<()>
 where for<'a> T: Deserialize<'a> {
-    for entry in fs::read_dir(&test_dir).with_context(|| format!("Failed to read {}", test_dir.display()))? {
+    for entry in
+        fs::read_dir(&test_dir).with_context(|| format!("Failed to read {}", test_dir.display()))?
+    {
         let entry = entry?;
         let path = entry.path();
         if path.to_string_lossy().ends_with(".expected.json") {
@@ -90,7 +92,8 @@ where for<'a> T: Deserialize<'a> + Serialize {
             continue;
         }
         if test_and_update_expected_files_single_case::<T>(&path)
-            .with_context(|| format!("test filepath {}", path.display()))? {
+            .with_context(|| format!("test filepath {}", path.display()))?
+        {
             updated_expected_files.push(path);
         }
     }
@@ -139,11 +142,8 @@ where
     for<'a> T: Deserialize<'a> + Serialize,
 {
     let test_dir = Path::new("test-data").join(test_name);
-    test_backward_compatibility(&test_dir, test)
-        .context("backward-compatiblitity")?;
-    test_and_update_expected_files::<T>(&test_dir)
-        .context("test-and-update")?;
-    test_and_create_new_test(&test_dir, sample_instance)
-        .context("test-and-create-new-test")?;
+    test_backward_compatibility(&test_dir, test).context("backward-compatiblitity")?;
+    test_and_update_expected_files::<T>(&test_dir).context("test-and-update")?;
+    test_and_create_new_test(&test_dir, sample_instance).context("test-and-create-new-test")?;
     Ok(())
 }

@@ -114,7 +114,7 @@ impl IndexMetadata {
                         },
                         {
                             "name": "server.payload",
-                            "type": "bytes"
+                            "type": "array<bytes>"
                         }
                     ]
                 }

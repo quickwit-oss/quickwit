@@ -43,7 +43,7 @@ pub enum FieldMappingType {
     /// RFC 3339 date mapping type configuration.
     Date(QuickwitNumericOptions, Cardinality),
     /// Bytes mapping type configuration.
-    Bytes(QuickwitNumericOptions),
+    Bytes(QuickwitNumericOptions, Cardinality),
     /// Object mapping type configuration.
     Object(QuickwitObjectOptions),
 }
@@ -56,7 +56,7 @@ impl FieldMappingType {
             FieldMappingType::U64(_, cardinality) => (Type::U64, *cardinality),
             FieldMappingType::F64(_, cardinality) => (Type::F64, *cardinality),
             FieldMappingType::Date(_, cardinality) => (Type::Date, *cardinality),
-            FieldMappingType::Bytes(_) => (Type::Bytes, Cardinality::SingleValue),
+            FieldMappingType::Bytes(_, cardinality) => (Type::Bytes, *cardinality),
             FieldMappingType::Object(_) => {
                 return QuickwitFieldType::Object;
             }
