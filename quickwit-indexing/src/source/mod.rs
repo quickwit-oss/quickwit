@@ -223,6 +223,10 @@ impl Handler<Loop> for SourceActor {
 
     async fn handle(&mut self, _message: Loop, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
         let wait_for = self.source.emit_batches(&self.batch_sink, ctx).await?;
+        if wait_for.is_zero() {
+            ctx.send_self_message(Loop).await?;
+            return Ok(());
+        }
         ctx.schedule_self_msg(wait_for, Loop).await;
         Ok(())
     }

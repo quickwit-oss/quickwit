@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -47,13 +48,21 @@ pub struct PushApiSourceCounters {
 }
 
 pub struct PushApiSource {
+    source_id: String,
     params: PushApiSourceParams,
     push_api_mailbox: Mailbox<PushApiService>,
     counters: PushApiSourceCounters,
 }
 
+impl fmt::Debug for PushApiSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "PushApiSource {{ source_id: {} }}", self.source_id)
+    }
+}
+
 impl PushApiSource {
     pub async fn make(
+        source_id: String,
         params: PushApiSourceParams,
         push_api_mailbox: Mailbox<PushApiService>,
         checkpoint: SourceCheckpoint,
@@ -71,6 +80,7 @@ impl PushApiSource {
         // It's safe to create the corresponding queue if it does not exist.
         ensure_queue_exist_for_index(&push_api_mailbox, params.index_id.clone()).await?;
         let push_api_source = PushApiSource {
+            source_id,
             params,
             push_api_mailbox,
             counters: PushApiSourceCounters {
@@ -80,6 +90,12 @@ impl PushApiSource {
             },
         };
         Ok(push_api_source)
+    }
+
+    fn update_counters(&mut self, current_offset: u64, num_docs: u64) {
+        self.counters.num_docs_processed += num_docs;
+        self.counters.current_offset = current_offset;
+        self.counters.previous_offset = current_offset;
     }
 }
 
@@ -149,26 +165,23 @@ impl Source for PushApiSource {
         let docs = iter_doc_payloads(&doc_batch)
             .map(|buff| String::from_utf8_lossy(buff).to_string())
             .collect::<Vec<_>>();
-        self.counters.num_docs_processed += docs.len() as u64;
-        self.counters.current_offset = first_position + docs.len() as u64 - 1;
-
+        let current_offset = first_position + docs.len() as u64 - 1;
         let mut checkpoint_delta = CheckpointDelta::default();
         let partition_id = PartitionId::from(self.params.index_id.as_str());
         checkpoint_delta
             .record_partition_delta(
                 partition_id,
                 Position::from(self.counters.previous_offset),
-                Position::from(self.counters.current_offset),
+                Position::from(current_offset),
             )
             .unwrap();
-
         let raw_doc_batch = RawDocBatch {
             docs,
             checkpoint_delta,
         };
-        self.counters.previous_offset = self.counters.current_offset;
-        ctx.send_message(batch_sink, raw_doc_batch).await?;
 
+        self.update_counters(current_offset, raw_doc_batch.docs.len() as u64);
+        ctx.send_message(batch_sink, raw_doc_batch).await?;
         Ok(Duration::default())
     }
 
@@ -189,12 +202,17 @@ impl TypedSourceFactory for PushApiSourceFactory {
     type Params = PushApiSourceParams;
 
     async fn typed_create_source(
+        source_id: String,
         params: PushApiSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
-        let push_api_mailbox = get_push_api_service()
-            .ok_or_else(|| anyhow::anyhow!("Could not get the `PushApiService` instance."))?;
-        PushApiSource::make(params, push_api_mailbox, checkpoint).await
+        let push_api_mailbox = get_push_api_service().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Could not get the `PushApiSource {{ source_id: {} }}` instance.",
+                source_id
+            )
+        })?;
+        PushApiSource::make(source_id, params, push_api_mailbox, checkpoint).await
     }
 }
 
@@ -260,8 +278,13 @@ mod tests {
             index_id,
             batch_num_bytes_threshold: Some(4 * 500),
         };
-        let push_api_source =
-            PushApiSource::make(params, push_api_mailbox, SourceCheckpoint::default()).await?;
+        let push_api_source = PushApiSource::make(
+            "my-source".to_string(),
+            params,
+            push_api_mailbox,
+            SourceCheckpoint::default(),
+        )
+        .await?;
         let push_api_source_actor = SourceActor {
             source: Box::new(push_api_source),
             batch_sink: mailbox,
@@ -328,7 +351,13 @@ mod tests {
         );
         checkpoint.try_apply_delta(checkpoint_delta)?;
 
-        let push_api_source = PushApiSource::make(params, push_api_mailbox, checkpoint).await?;
+        let push_api_source = PushApiSource::make(
+            "my-source".to_string(),
+            params,
+            push_api_mailbox,
+            checkpoint,
+        )
+        .await?;
         let push_api_source_actor = SourceActor {
             source: Box::new(push_api_source),
             batch_sink: mailbox,
