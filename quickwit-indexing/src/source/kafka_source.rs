@@ -28,6 +28,7 @@ use backoff::ExponentialBackoff;
 use futures::{StreamExt, TryFutureExt};
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_common::new_coolid;
 use quickwit_config::KafkaSourceParams;
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
@@ -67,10 +68,11 @@ impl TypedSourceFactory for KafkaSourceFactory {
     type Params = KafkaSourceParams;
 
     async fn typed_create_source(
+        source_id: String,
         params: KafkaSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
-        KafkaSource::try_new(params, checkpoint).await
+        KafkaSource::try_new(source_id, params, checkpoint).await
     }
 }
 
@@ -112,6 +114,7 @@ pub struct KafkaSourceState {
 
 /// A `KafkaSource` consumes a topic and forwards its messages to an `Indexer`.
 pub struct KafkaSource {
+    source_id: String,
     topic: String,
     consumer: Arc<KafkaSourceConsumer>,
     state: KafkaSourceState,
@@ -119,18 +122,23 @@ pub struct KafkaSource {
 
 impl fmt::Debug for KafkaSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "KafkaSource {{ topic: {} }}", self.topic)
+        write!(
+            f,
+            "KafkaSource {{ source_id: {}, topic: {} }}",
+            self.source_id, self.topic
+        )
     }
 }
 
 impl KafkaSource {
     /// Instantiates a new `KafkaSource`.
     pub async fn try_new(
+        source_id: String,
         params: KafkaSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
         let topic = params.topic;
-        let consumer = create_consumer(params.client_log_level, params.client_params)?;
+        let consumer = create_consumer(&source_id, params.client_log_level, params.client_params)?;
         let partition_ids = fetch_partition_ids(consumer.clone(), &topic).await?;
         let assigned_partition_ids = partition_ids
             .iter()
@@ -158,6 +166,7 @@ impl KafkaSource {
             ..Default::default()
         };
         Ok(KafkaSource {
+            source_id,
             topic,
             consumer,
             state,
@@ -292,18 +301,25 @@ fn previous_position_for_offset(offset: i64) -> Position {
 
 /// Checks if connecting with the given parameters works.
 pub(super) async fn check_connectivity(params: KafkaSourceParams) -> anyhow::Result<()> {
-    let consumer = create_consumer(params.client_log_level, params.client_params)?;
+    let source_id = "quickwit-connectivity-check";
+    let consumer = create_consumer(source_id, params.client_log_level, params.client_params)?;
     fetch_partition_ids(consumer, &params.topic).await?;
     Ok(())
 }
 
 /// Creates a new `KafkaSourceConsumer`.
 fn create_consumer(
+    source_id: &str,
     client_log_level: Option<String>,
     client_params: serde_json::Value,
 ) -> anyhow::Result<Arc<KafkaSourceConsumer>> {
-    let log_level = parse_client_log_level(client_log_level)?;
     let mut client_config = parse_client_params(client_params)?;
+    // We assign partitions manually: we always want one consumer per consumer group.
+    let mut group_id = new_coolid(&format!("quickwit-{}", source_id));
+    group_id.truncate(255); // Group ID is limited to 255 characters.
+    client_config.set("group.id", group_id);
+
+    let log_level = parse_client_log_level(client_log_level)?;
     let consumer: KafkaSourceConsumer = client_config
         .set_log_level(log_level)
         .create_with_context(KafkaSourceContext)
@@ -704,14 +720,12 @@ mod kafka_broker_tests {
 
     fn create_consumer_for_test(
         bootstrap_servers: &str,
-        group_id: &str,
     ) -> anyhow::Result<Arc<KafkaSourceConsumer>> {
         let client_params = json!({
             "bootstrap.servers": bootstrap_servers,
-            "group.id": group_id,
             "enable.partition.eof": true,
         });
-        create_consumer(Some("info".to_string()), client_params)
+        create_consumer("my-kinesis-source", Some("info".to_string()), client_params)
     }
 
     async fn populate_topic<K, M, J, Q>(
@@ -790,7 +804,6 @@ mod kafka_broker_tests {
         let universe = Universe::new();
 
         let bootstrap_servers = "localhost:9092".to_string();
-        let group_id = append_random_suffix("test-kafka-source-consumer-group");
         let topic = append_random_suffix("test-kafka-source-topic");
 
         let admin_client = create_admin_client(&bootstrap_servers)?;
@@ -803,7 +816,6 @@ mod kafka_broker_tests {
                 client_log_level: None,
                 client_params: json!({
                     "bootstrap.servers": bootstrap_servers,
-                    "group.id": group_id,
                     "enable.partition.eof": true,
                 }),
             }),
@@ -978,13 +990,12 @@ mod kafka_broker_tests {
     #[tokio::test]
     async fn test_fetch_partition_ids() -> anyhow::Result<()> {
         let bootstrap_servers = "localhost:9092".to_string();
-        let group_id = append_random_suffix("test-fetch-partitions-consumer-group");
         let topic = append_random_suffix("test-fetch-partitions-topic");
 
         let admin_client = create_admin_client(&bootstrap_servers)?;
         create_topic(&admin_client, &topic, 2).await?;
 
-        let consumer = create_consumer_for_test(&bootstrap_servers, &group_id)?;
+        let consumer = create_consumer_for_test(&bootstrap_servers)?;
         assert!(
             fetch_partition_ids(consumer.clone(), "topic-does-not-exist")
                 .await
@@ -999,13 +1010,12 @@ mod kafka_broker_tests {
     #[tokio::test]
     async fn test_fetch_watermarks() -> anyhow::Result<()> {
         let bootstrap_servers = "localhost:9092".to_string();
-        let group_id = append_random_suffix("test-fetch-watermarks-consumer-group");
         let topic = append_random_suffix("test-fetch-watermarks-topic");
 
         let admin_client = create_admin_client(&bootstrap_servers)?;
         create_topic(&admin_client, &topic, 2).await?;
 
-        let consumer = create_consumer_for_test(&bootstrap_servers, &group_id)?;
+        let consumer = create_consumer_for_test(&bootstrap_servers)?;
         let timeout = Duration::from_secs(1);
         assert!(
             fetch_watermarks(consumer.clone(), "topic-does-not-exist", &[0], timeout)

@@ -31,6 +31,7 @@ use crate::source::SourceConfig;
 pub trait SourceFactory: 'static + Send + Sync {
     async fn create_source(
         &self,
+        source_id: String,
         params: serde_json::Value,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Box<dyn Source>>;
@@ -41,6 +42,7 @@ pub trait TypedSourceFactory: Send + Sync + 'static {
     type Source: Source;
     type Params: serde::de::DeserializeOwned + Send + Sync + 'static;
     async fn typed_create_source(
+        source_id: String,
         params: Self::Params,
         checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
     ) -> anyhow::Result<Self::Source>;
@@ -50,11 +52,12 @@ pub trait TypedSourceFactory: Send + Sync + 'static {
 impl<T: TypedSourceFactory> SourceFactory for T {
     async fn create_source(
         &self,
+        source_id: String,
         params: serde_json::Value,
         checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
     ) -> anyhow::Result<Box<dyn Source>> {
         let typed_params: T::Params = serde_json::from_value(params)?;
-        let file_source = Self::typed_create_source(typed_params, checkpoint).await?;
+        let file_source = Self::typed_create_source(source_id, typed_params, checkpoint).await?;
         Ok(Box::new(file_source))
     }
 }
@@ -102,7 +105,11 @@ impl SourceLoader {
                 available_source_types: self.type_to_factory.keys().join(", "),
             })?;
         source_factory
-            .create_source(source_config.params(), checkpoint)
+            .create_source(
+                source_config.source_id.clone(),
+                source_config.params(),
+                checkpoint,
+            )
             .await
             .map_err(|error| SourceLoaderError::FailedToCreateSource {
                 source_type: source_config.source_type().to_string(),
