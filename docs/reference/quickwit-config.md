@@ -17,6 +17,7 @@ A commented example is accessible here: [quickwit.yaml](https://github.com/quick
 | --- | --- | --- |
 | version | Config file version. 0 is the only available value. |  |
 | node_id | Node ID of the instance (searcher or indexer). It must be unique in your cluster. If not set, a random ID is generated at each boot. |  |
+| cluster_name | Name for the cluster this node will be joining. Should be set to a unique name to ensure clusters do not accidentally merge together. | "Test cluster" |
 | listen_address | The IP address or hostname that Quickwit service binds to for starting REST and GRPC server and connecting this node to other nodes. By default, Quickwit binds itself to 127.0.0.1 (localhost). This default is not valid when trying to form a cluster. | 127.0.0.1 |
 | rest_listen_port | The port which to listen for HTTP REST API. | 7280 |
 | peer_seeds | List of IP addresses used by gossip for bootstrapping new nodes joining a cluster. This list may contain the current node address, and it does not need to be exhaustive on every node. |  |
