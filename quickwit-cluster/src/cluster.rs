@@ -403,6 +403,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_cluster_name_isolation() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+
+        let cluster1a = create_cluster_for_test_with_id("node_1a".to_string(), "cluster1".to_string(), &[])?;
+        let cluster2a = create_cluster_for_test_with_id("node_2a".to_string(), "cluster2".to_string(), &[cluster1a.listen_addr.to_string()])?;
+
+        let cluster1b = create_cluster_for_test_with_id("node_1b".to_string(), "cluster1".to_string(), &[cluster1a.listen_addr.to_string(), cluster2a.listen_addr.to_string()])?;
+        let cluster2b = create_cluster_for_test_with_id("node_2b".to_string(), "cluster2".to_string(), &[cluster1a.listen_addr.to_string(), cluster2a.listen_addr.to_string()])?;
+
+        let wait_secs = Duration::from_secs(10);
+        for cluster in [&cluster1a, &cluster2a, &cluster1b, &cluster2b] {
+            cluster
+                .wait_for_members(|members| members.len() == 2, wait_secs)
+                .await
+                .unwrap();
+        }
+
+        let members_a: Vec<SocketAddr> = cluster1a
+            .members()
+            .iter()
+            .map(|member| member.gossip_public_address)
+            .sorted()
+            .collect();
+        let mut expected_members_a = vec![
+            cluster1a.listen_addr,
+            cluster1b.listen_addr,
+        ];
+        expected_members_a.sort();
+        assert_eq!(members_a, expected_members_a);
+
+        let members_b: Vec<SocketAddr> = cluster2a
+            .members()
+            .iter()
+            .map(|member| member.gossip_public_address)
+            .sorted()
+            .collect();
+        let mut expected_members_b = vec![
+            cluster2a.listen_addr,
+            cluster2b.listen_addr,
+        ];
+        expected_members_b.sort();
+        assert_eq!(members_b, expected_members_b);
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_cluster_rejoin_with_different_id_issue_1018() -> anyhow::Result<()> {
         let cluster_name = "unified-cluster";
         quickwit_common::setup_logging_for_tests();
