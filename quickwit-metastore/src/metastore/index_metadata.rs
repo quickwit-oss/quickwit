@@ -18,25 +18,24 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use itertools::Itertools;
 use quickwit_config::{
     DocMapping, IndexingResources, IndexingSettings, SearchSettings, SourceConfig,
 };
-use quickwit_doc_mapper::{
-    DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, SortBy, SortByConfig, SortOrder,
-};
-use serde::{Deserialize, Deserializer, Serialize};
+use quickwit_doc_mapper::{DefaultDocMapperBuilder, DocMapper, SortBy, SortByConfig, SortOrder};
+use serde::{Deserialize, Serialize};
 
-use crate::checkpoint::{IndexCheckpoint, SourceCheckpoint};
+use crate::checkpoint::IndexCheckpoint;
 use crate::split_metadata::utc_now_timestamp;
 use crate::{MetastoreError, MetastoreResult};
 
 /// An index metadata carries all meta data about an index.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(into = "VersionedIndexMetadata")]
+#[serde(from = "VersionedIndexMetadata")]
 pub struct IndexMetadata {
     /// Index ID, uniquely identifies an index when querying the metastore.
     pub index_id: String,
@@ -193,23 +192,10 @@ impl IndexMetadata {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct UnversionedIndexMetadata {
-    pub index_id: String,
-    pub index_uri: String,
-    #[serde(alias = "index_config")]
-    pub doc_mapper: DefaultDocMapper,
-    pub checkpoint: SourceCheckpoint,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedIndexMetadata {
-    #[serde(rename = "0")]
-    V0(IndexMetadataV0),
     #[serde(rename = "1")]
     V1(IndexMetadataV1),
-    #[serde(rename = "unversioned")]
-    Unversioned(UnversionedIndexMetadata),
 }
 
 impl From<IndexMetadata> for VersionedIndexMetadata {
@@ -221,8 +207,6 @@ impl From<IndexMetadata> for VersionedIndexMetadata {
 impl From<VersionedIndexMetadata> for IndexMetadata {
     fn from(index_metadata: VersionedIndexMetadata) -> Self {
         match index_metadata {
-            VersionedIndexMetadata::Unversioned(unversioned) => unversioned.into(),
-            VersionedIndexMetadata::V0(v0) => v0.into(),
             VersionedIndexMetadata::V1(v1) => v1.into(),
         }
     }
@@ -285,124 +269,5 @@ impl From<IndexMetadataV1> for IndexMetadata {
             create_timestamp: v1.create_timestamp,
             update_timestamp: v1.update_timestamp,
         }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct IndexMetadataV0 {
-    pub index_id: String,
-    pub index_uri: String,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "SourceCheckpoint::is_empty")]
-    pub checkpoint: SourceCheckpoint,
-    pub doc_mapping: DocMapping,
-    #[serde(default)]
-    pub indexing_settings: IndexingSettings,
-    pub search_settings: SearchSettings,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub sources: Vec<SourceConfig>,
-    #[serde(default = "utc_now_timestamp")]
-    pub create_timestamp: i64,
-    #[serde(default = "utc_now_timestamp")]
-    pub update_timestamp: i64,
-}
-
-impl From<IndexMetadataV0> for IndexMetadata {
-    fn from(v0: IndexMetadataV0) -> Self {
-        assert!(
-            v0.sources.len() <= 1,
-            "Failed to convert the Index metadata. Multiple sources was not really supported. \
-             Contact Quickwit for help."
-        );
-        let mut source_checkpoints: BTreeMap<String, SourceCheckpoint> = Default::default();
-        let mut sources: HashMap<String, SourceConfig> = Default::default();
-        if let Some(single_source) = v0.sources.into_iter().next() {
-            source_checkpoints.insert(single_source.source_id.clone(), v0.checkpoint);
-            sources.insert(single_source.source_id.clone(), single_source);
-        } else {
-            // That's weird. We have a checkpoint but no sources.
-            // Well just record the checkpoint for extra safety with the source_id `default-source`.
-            if !v0.checkpoint.is_empty() {
-                source_checkpoints.insert("default-source".to_string(), v0.checkpoint);
-            }
-        }
-        let checkpoint = IndexCheckpoint::from(source_checkpoints);
-        Self {
-            index_id: v0.index_id,
-            index_uri: v0.index_uri,
-            checkpoint,
-            doc_mapping: v0.doc_mapping,
-            indexing_settings: v0.indexing_settings,
-            search_settings: v0.search_settings,
-            sources,
-            create_timestamp: v0.create_timestamp,
-            update_timestamp: v0.update_timestamp,
-        }
-    }
-}
-
-impl From<UnversionedIndexMetadata> for IndexMetadataV0 {
-    fn from(unversioned: UnversionedIndexMetadata) -> Self {
-        let doc_mapping = DocMapping {
-            field_mappings: unversioned
-                .doc_mapper
-                .field_mappings
-                .field_mappings()
-                .unwrap_or_default(),
-            tag_fields: unversioned.doc_mapper.tag_field_names,
-            store_source: unversioned.doc_mapper.store_source,
-        };
-        let (sort_field, sort_order) = match unversioned.doc_mapper.sort_by {
-            SortBy::DocId => (None, None),
-            SortBy::FastField { field_name, order } => (Some(field_name), Some(order)),
-        };
-        let indexing_settings = IndexingSettings {
-            demux_field: unversioned.doc_mapper.demux_field_name,
-            timestamp_field: unversioned.doc_mapper.timestamp_field_name,
-            sort_field,
-            sort_order,
-            ..Default::default()
-        };
-        let search_settings = SearchSettings {
-            default_search_fields: unversioned.doc_mapper.default_search_field_names,
-        };
-        let now_timestamp = utc_now_timestamp();
-        Self {
-            index_id: unversioned.index_id,
-            index_uri: unversioned.index_uri,
-            checkpoint: unversioned.checkpoint,
-            doc_mapping,
-            indexing_settings,
-            search_settings,
-            sources: Default::default(),
-            create_timestamp: now_timestamp,
-            update_timestamp: now_timestamp,
-        }
-    }
-}
-
-impl From<UnversionedIndexMetadata> for IndexMetadata {
-    fn from(unversioned: UnversionedIndexMetadata) -> Self {
-        IndexMetadataV0::from(unversioned).into()
-    }
-}
-
-impl<'de> Deserialize<'de> for IndexMetadata {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de> {
-        let value: serde_json::value::Value = serde_json::value::Value::deserialize(deserializer)?;
-        let has_version_tag = value
-            .as_object()
-            .map(|obj| obj.contains_key("version"))
-            .unwrap_or(false);
-        if has_version_tag {
-            return Ok(serde_json::from_value::<VersionedIndexMetadata>(value)
-                .map_err(serde::de::Error::custom)?
-                .into());
-        };
-        Ok(serde_json::from_value::<UnversionedIndexMetadata>(value)
-            .map_err(serde::de::Error::custom)?
-            .into())
     }
 }

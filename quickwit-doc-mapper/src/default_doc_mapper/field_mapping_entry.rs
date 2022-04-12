@@ -20,7 +20,7 @@
 use std::convert::TryFrom;
 
 use anyhow::bail;
-use itertools::{process_results, Itertools};
+use itertools::process_results;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::schema::{
@@ -48,22 +48,18 @@ pub struct FieldMappingEntry {
     pub name: String,
     /// Property parameters which defines the type and the way the value must be indexed.
     pub mapping_type: FieldMappingType,
-    /// Returns the field entries that must be added to the schema.
-    pub field_entries: Vec<(FieldPath, FieldType)>,
     /// Returns the fields entries that map to fast fields.
-    pub fast_field_entries: Vec<(FieldPath, FieldType)>,
+    pub fast_field_entries: Vec<FieldPath>,
 }
 
 impl FieldMappingEntry {
     /// Creates a new [`FieldMappingEntry`].
     pub fn new(name: String, mapping_type: FieldMappingType) -> Self {
         assert!(validate_field_mapping_name(&name).is_ok());
-        let field_entries = Self::compute_field_entries(name.as_str(), &mapping_type);
-        let fast_field_entries = Self::compute_fast_field_entries(&field_entries);
+        let fast_field_entries = Vec::new();
         FieldMappingEntry {
             name,
             mapping_type,
-            field_entries,
             fast_field_entries,
         }
     }
@@ -71,12 +67,10 @@ impl FieldMappingEntry {
     /// Creates a new root [`FieldMappingEntry`].
     pub fn root(mapping_type: FieldMappingType) -> Self {
         let name = "".to_string();
-        let field_entries = Self::compute_field_entries(name.as_str(), &mapping_type);
-        let fast_field_entries = Self::compute_fast_field_entries(&field_entries);
+        let fast_field_entries = Vec::new();
         FieldMappingEntry {
             name,
             mapping_type,
-            field_entries,
             fast_field_entries,
         }
     }
@@ -84,12 +78,9 @@ impl FieldMappingEntry {
     /// Returns the field entries that must be added to the schema.
     // TODO: can be more efficient to pass a collector in argument (a schema builder)
     // on which we add entry fields.
-    pub fn compute_field_entries(
-        name: &str,
-        mapping_type: &FieldMappingType,
-    ) -> Vec<(FieldPath, FieldType)> {
-        let field_path = FieldPath::new(name);
-        match &mapping_type {
+    pub(crate) fn compute_field_entries(&self) -> Vec<(FieldPath, FieldType)> {
+        let field_path = FieldPath::new(&self.name);
+        match &self.mapping_type {
             FieldMappingType::Text(text_options, _) => {
                 vec![(field_path, FieldType::Str(text_options.clone().into()))]
             }
@@ -116,28 +107,10 @@ impl FieldMappingEntry {
             FieldMappingType::Object(field_mappings) => field_mappings
                 .field_mappings
                 .iter()
-                .flat_map(|entry| &entry.field_entries)
-                .map(|(path, entry)| (path.clone().with_parent(name), entry.clone()))
+                .flat_map(|entry| entry.compute_field_entries())
+                .map(|(path, entry)| (path.with_parent(&self.name), entry))
                 .collect(),
         }
-    }
-
-    /// Returns the fields entries that map to fast fields.
-    pub fn compute_fast_field_entries(
-        field_entries: &[(FieldPath, FieldType)],
-    ) -> Vec<(FieldPath, FieldType)> {
-        field_entries
-            .iter()
-            .filter(|(_, field_type)| match field_type {
-                FieldType::U64(options)
-                | FieldType::I64(options)
-                | FieldType::F64(options)
-                | FieldType::Date(options) => options.is_fast(),
-                FieldType::Bytes(option) => option.is_fast(),
-                _ => false,
-            })
-            .cloned()
-            .collect_vec()
     }
 
     /// Returns the field mappings.

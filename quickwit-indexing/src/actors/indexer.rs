@@ -145,7 +145,7 @@ impl IndexerState {
         Ok(current_index_split)
     }
 
-    fn prepare_document(&self, doc_json: &str) -> PrepareDocumentOutcome {
+    fn prepare_document(&self, doc_json: String) -> PrepareDocumentOutcome {
         // Parse the document
         let doc_parsing_result = self.doc_mapper.doc_from_json(doc_json);
         let document = match doc_parsing_result {
@@ -194,7 +194,7 @@ impl IndexerState {
             .checkpoint_delta
             .extend(batch.checkpoint_delta)
             .with_context(|| "Batch delta does not follow indexer checkpoint")?;
-        for doc_json in &batch.docs {
+        for doc_json in batch.docs {
             counters.overall_num_bytes += doc_json.len() as u64;
             indexed_split.docs_size_in_bytes += doc_json.len() as u64;
             let prepared_doc = {
