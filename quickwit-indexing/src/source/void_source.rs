@@ -55,8 +55,9 @@ impl TypedSourceFactory for VoidSourceFactory {
     type Params = VoidSourceParams;
 
     async fn typed_create_source(
-        _: VoidSourceParams,
-        _: quickwit_metastore::checkpoint::SourceCheckpoint,
+        _source_id: String,
+        _params: VoidSourceParams,
+        _checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
     ) -> anyhow::Result<VoidSource> {
         Ok(VoidSource)
     }
@@ -91,6 +92,7 @@ mod tests {
         let universe = Universe::new();
         let (mailbox, _) = create_test_mailbox();
         let void_source = VoidSourceFactory::typed_create_source(
+            "my-void-source".to_string(),
             VoidSourceParams {},
             SourceCheckpoint::default(),
         )

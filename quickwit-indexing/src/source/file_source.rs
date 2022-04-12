@@ -17,8 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::io;
 use std::io::SeekFrom;
+use std::{fmt, io};
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -45,9 +45,16 @@ pub struct FileSourceCounters {
 }
 
 pub struct FileSource {
+    source_id: String,
     params: FileSourceParams,
     counters: FileSourceCounters,
     reader: BufReader<Box<dyn AsyncRead + Send + Sync + Unpin>>,
+}
+
+impl fmt::Debug for FileSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "FileSource {{ source_id: {} }}", self.source_id)
+    }
 }
 
 #[async_trait]
@@ -125,6 +132,7 @@ impl TypedSourceFactory for FileSourceFactory {
 
     // TODO handle checkpoint for files.
     async fn typed_create_source(
+        source_id: String,
         params: FileSourceParams,
         checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
     ) -> anyhow::Result<FileSource> {
@@ -147,6 +155,7 @@ impl TypedSourceFactory for FileSourceFactory {
                 Box::new(tokio::io::stdin())
             };
         let file_source = FileSource {
+            source_id,
             counters: FileSourceCounters {
                 previous_offset: offset,
                 current_offset: offset,
@@ -175,8 +184,12 @@ mod tests {
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
         let params = FileSourceParams::file("data/test_corpus.json");
-        let file_source =
-            FileSourceFactory::typed_create_source(params, SourceCheckpoint::default()).await?;
+        let file_source = FileSourceFactory::typed_create_source(
+            "my-file-source".to_string(),
+            params,
+            SourceCheckpoint::default(),
+        )
+        .await?;
         let file_source_actor = SourceActor {
             source: Box::new(file_source),
             batch_sink: mailbox,
@@ -222,8 +235,12 @@ mod tests {
             .unwrap()
             .to_string_lossy()
             .to_string();
-        let source =
-            FileSourceFactory::typed_create_source(params, SourceCheckpoint::default()).await?;
+        let source = FileSourceFactory::typed_create_source(
+            "my-file-source".to_string(),
+            params,
+            SourceCheckpoint::default(),
+        )
+        .await?;
         let file_source_actor = SourceActor {
             source: Box::new(source),
             batch_sink: mailbox,
@@ -292,7 +309,12 @@ mod tests {
             Position::from(4u64),
         );
         checkpoint.try_apply_delta(checkpoint_delta)?;
-        let source = FileSourceFactory::typed_create_source(params, checkpoint).await?;
+        let source = FileSourceFactory::typed_create_source(
+            "my-file-source".to_string(),
+            params,
+            checkpoint,
+        )
+        .await?;
         let file_source_actor = SourceActor {
             source: Box::new(source),
             batch_sink: mailbox,
