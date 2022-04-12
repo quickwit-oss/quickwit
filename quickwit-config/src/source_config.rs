@@ -300,14 +300,12 @@ mod tests {
 
     #[test]
     fn test_push_api_source_params_serialization() {
-        {
-            let yaml = r#"
-                index_id: wikipedia
-                batch_num_bytes_threshold: 200000
-            "#;
-            let push_api_params = serde_yaml::from_str::<PushApiSourceParams>(yaml).unwrap();
-            assert_eq!(push_api_params.index_id, "wikipedia");
-            assert_eq!(push_api_params.batch_num_bytes_threshold, Some(200000))
-        }
+        let yaml = r#"
+            index_id: wikipedia
+            batch_num_bytes_threshold: 200000
+        "#;
+        let push_api_params = serde_yaml::from_str::<PushApiSourceParams>(yaml).unwrap();
+        assert_eq!(push_api_params.index_id, "wikipedia");
+        assert_eq!(push_api_params.batch_num_bytes_threshold, Some(200000))
     }
 }

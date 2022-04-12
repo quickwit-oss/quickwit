@@ -25,6 +25,7 @@ mod queue;
 use std::path::Path;
 use std::sync::Arc;
 
+use anyhow::Context;
 pub use errors::PushApiError;
 use errors::Result;
 use once_cell::sync::OnceCell;
@@ -47,7 +48,7 @@ pub fn init_push_api(
 ) -> anyhow::Result<Mailbox<PushApiService>> {
     let push_api_service = PUSH_API_SERVICE_INSTANCE
         .get_or_try_init(|| spawn_push_api_actor(universe, queue_path, metastore))
-        .map_err(|error| anyhow::anyhow!(error))?;
+        .context("Failed to initialize the PushApi")?;
     Ok(push_api_service.clone())
 }
 

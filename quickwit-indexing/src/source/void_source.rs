@@ -34,9 +34,9 @@ impl Source for VoidSource {
         &mut self,
         _: &Mailbox<Indexer>,
         _: &SourceContext,
-    ) -> Result<Option<Duration>, ActorExitStatus> {
+    ) -> Result<Duration, ActorExitStatus> {
         tokio::time::sleep(HEARTBEAT / 2).await;
-        Ok(None)
+        Ok(Duration::default())
     }
 
     fn name(&self) -> String {

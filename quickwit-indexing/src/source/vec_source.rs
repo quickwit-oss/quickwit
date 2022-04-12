@@ -70,7 +70,7 @@ impl Source for VecSource {
         &mut self,
         batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
-    ) -> Result<Option<Duration>, ActorExitStatus> {
+    ) -> Result<Duration, ActorExitStatus> {
         let line_docs: Vec<String> = self.params.items[self.next_item_idx..]
             .iter()
             .take(self.params.batch_num_docs)
@@ -94,7 +94,7 @@ impl Source for VecSource {
             checkpoint_delta,
         };
         ctx.send_message(batch_sink, batch).await?;
-        Ok(None)
+        Ok(Duration::default())
     }
 
     fn name(&self) -> String {

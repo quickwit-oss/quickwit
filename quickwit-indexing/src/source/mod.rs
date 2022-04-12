@@ -135,7 +135,7 @@ pub trait Source: Send + Sync + 'static {
         &mut self,
         batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
-    ) -> Result<Option<Duration>, ActorExitStatus>;
+    ) -> Result<Duration, ActorExitStatus>;
 
     /// After publication of a split, `suggest_truncate` is called.
     /// This makes it possible for the implementation of a source to
@@ -222,13 +222,8 @@ impl Handler<Loop> for SourceActor {
     type Reply = ();
 
     async fn handle(&mut self, _message: Loop, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        let wait_for_opt = self.source.emit_batches(&self.batch_sink, ctx).await?;
-        if let Some(wait_for) = wait_for_opt {
-            // wait_for time can be more than a HEARTBEAT timeout.
-            ctx.protect_zone();
-            tokio::time::sleep(wait_for).await;
-        }
-        ctx.send_self_message(Loop).await?;
+        let wait_for = self.source.emit_batches(&self.batch_sink, ctx).await?;
+        ctx.schedule_self_msg(wait_for, Loop).await;
         Ok(())
     }
 }

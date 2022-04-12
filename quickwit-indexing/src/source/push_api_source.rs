@@ -34,6 +34,11 @@ use super::{Source, SourceContext, TypedSourceFactory};
 use crate::actors::Indexer;
 use crate::models::RawDocBatch;
 
+/// Wait time for SourceActor before pooling for new documents.
+/// TODO: Think of better way, maybe increment this (i.e wait longer) as time
+/// goes on without receiving docs.
+const PUSHAPI_POLLING_COOL_DOWN: Duration = Duration::from_secs(1);
+
 #[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct PushApiSourceCounters {
     pub previous_offset: u64,
@@ -62,6 +67,8 @@ impl PushApiSource {
             0
         };
 
+        // The PushApiSource is instantiated for an existing index.
+        // It's safe to create the corresponding queue if it does not exist.
         ensure_queue_exist_for_index(&push_api_mailbox, params.index_id.clone()).await?;
         let push_api_source = PushApiSource {
             params,
@@ -105,7 +112,7 @@ impl Source for PushApiSource {
         &mut self,
         batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
-    ) -> Result<Option<Duration>, ActorExitStatus> {
+    ) -> Result<Duration, ActorExitStatus> {
         let start_after = if self.counters.current_offset == 0 {
             None
         } else {
@@ -120,53 +127,49 @@ impl Source for PushApiSource {
                 .batch_num_bytes_threshold
                 .or(Some(BATCH_NUM_BYTES_THRESHOLD)),
         };
-        let fetch_resp = self
+        let FetchResponse {
+            first_position: first_position_opt,
+            doc_batch: doc_batch_opt,
+        } = self
             .push_api_mailbox
             .ask_for_res(fetch_req)
             .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
 
-        let FetchResponse {
-            first_position: first_position_opt,
-            doc_batch: doc_batch_opt,
-        } = fetch_resp;
+        // The `first_position_opt` being none means the doc_batch is empty and there is
+        // no more document available, at least for the time being.
+        // That is, we have consumed all pending docs in the queue and need to
+        // make the client wait a bit before pooling again.
+        let (first_position, doc_batch) = if let Some(first_position) = first_position_opt {
+            (first_position, doc_batch_opt.unwrap())
+        } else {
+            return Ok(PUSHAPI_POLLING_COOL_DOWN);
+        };
 
-        if first_position_opt.is_none() {
-            // TODO: We are currently waiting for a constant time.
-            // Think of better way, maybe increment this (i.e wait longer) as time
-            // goes on without receiving docs.
-            return Ok(Some(Duration::from_secs(1)));
-        }
-
-        let doc_batch = doc_batch_opt.unwrap();
-        let first_position = first_position_opt.unwrap();
         let docs = iter_doc_payloads(&doc_batch)
             .map(|buff| String::from_utf8_lossy(buff).to_string())
             .collect::<Vec<_>>();
+        self.counters.num_docs_processed += docs.len() as u64;
+        self.counters.current_offset = first_position + docs.len() as u64 - 1;
 
-        if !docs.is_empty() {
-            self.counters.num_docs_processed += docs.len() as u64;
-            self.counters.current_offset = first_position + docs.len() as u64 - 1;
+        let mut checkpoint_delta = CheckpointDelta::default();
+        let partition_id = PartitionId::from(self.params.index_id.as_str());
+        checkpoint_delta
+            .record_partition_delta(
+                partition_id,
+                Position::from(self.counters.previous_offset),
+                Position::from(self.counters.current_offset),
+            )
+            .unwrap();
 
-            let mut checkpoint_delta = CheckpointDelta::default();
-            let partition_id = PartitionId::from(self.params.index_id.as_str());
-            checkpoint_delta
-                .record_partition_delta(
-                    partition_id,
-                    Position::from(self.counters.previous_offset),
-                    Position::from(self.counters.current_offset),
-                )
-                .unwrap();
+        let raw_doc_batch = RawDocBatch {
+            docs,
+            checkpoint_delta,
+        };
+        self.counters.previous_offset = self.counters.current_offset;
+        ctx.send_message(batch_sink, raw_doc_batch).await?;
 
-            let raw_doc_batch = RawDocBatch {
-                docs,
-                checkpoint_delta,
-            };
-            self.counters.previous_offset = self.counters.current_offset;
-            ctx.send_message(batch_sink, raw_doc_batch).await?;
-        }
-
-        Ok(None)
+        Ok(Duration::default())
     }
 
     fn name(&self) -> String {

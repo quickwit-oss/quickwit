@@ -174,7 +174,7 @@ impl Source for KinesisSource {
         &mut self,
         batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
-    ) -> Result<Option<Duration>, ActorExitStatus> {
+    ) -> Result<Duration, ActorExitStatus> {
         let mut batch_num_bytes = 0;
         let mut docs = Vec::new();
         let mut checkpoint_delta = CheckpointDelta::default();
@@ -287,7 +287,7 @@ impl Source for KinesisSource {
             ctx.send_exit_with_success(batch_sink).await?;
             return Err(ActorExitStatus::Success);
         }
-        Ok(None)
+        Ok(Duration::default())
     }
 
     fn name(&self) -> String {

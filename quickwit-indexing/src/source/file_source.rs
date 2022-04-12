@@ -57,7 +57,7 @@ impl Source for FileSource {
         &mut self,
         batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
-    ) -> Result<Option<Duration>, ActorExitStatus> {
+    ) -> Result<Duration, ActorExitStatus> {
         // We collect batches of documents before sending them to the indexer.
         let limit_num_bytes = self.counters.previous_offset + BATCH_NUM_BYTES_THRESHOLD;
         let mut reached_eof = false;
@@ -105,7 +105,7 @@ impl Source for FileSource {
             ctx.send_exit_with_success(batch_sink).await?;
             return Err(ActorExitStatus::Success);
         }
-        Ok(None)
+        Ok(Duration::default())
     }
 
     fn name(&self) -> String {

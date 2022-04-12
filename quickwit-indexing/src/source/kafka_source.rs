@@ -171,7 +171,7 @@ impl Source for KafkaSource {
         &mut self,
         batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
-    ) -> Result<Option<Duration>, ActorExitStatus> {
+    ) -> Result<Duration, ActorExitStatus> {
         let mut docs = Vec::new();
         let mut checkpoint_delta = CheckpointDelta::default();
 
@@ -246,7 +246,7 @@ impl Source for KafkaSource {
             ctx.send_exit_with_success(batch_sink).await?;
             return Err(ActorExitStatus::Success);
         }
-        Ok(None)
+        Ok(Duration::default())
     }
 
     fn name(&self) -> String {
