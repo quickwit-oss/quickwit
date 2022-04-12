@@ -81,7 +81,7 @@ pub fn build_index_command<'a>() -> Command<'a> {
                         .required(false),
                     arg!(--overwrite "Overwrites pre-existing index.")
                         .required(false),
-                    arg!(--"clear-cache" "Clear local cache directory upon completion.")
+                    arg!(--"keep-cache" "Does not clear local cache directory upon completion.")
                         .required(false),
                 ])
             )
@@ -332,7 +332,7 @@ impl IndexCliCommand {
             .expect("`config` is a required arg.")?;
         let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         let overwrite = matches.is_present("overwrite");
-        let clear_cache = matches.is_present("clear-cache");
+        let clear_cache = !matches.is_present("keep-cache");
 
         Ok(Self::Ingest(IngestDocsArgs {
             index_id,

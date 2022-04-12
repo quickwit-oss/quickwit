@@ -223,7 +223,7 @@ mod tests {
                     input_path_opt: None,
                     overwrite: false,
                     data_dir: None,
-                    clear_cache: false,
+                    clear_cache: true,
                 })) if &index_id == "wikipedia"
                        && config_uri == Uri::try_new("file:///config.yaml").unwrap()
         ));
@@ -236,6 +236,7 @@ mod tests {
             "wikipedia",
             "--config",
             "/config.yaml",
+            "--keep-cache",
             "--overwrite",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;

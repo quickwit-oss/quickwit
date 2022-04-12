@@ -195,24 +195,24 @@ fn test_cmd_ingest_on_non_existing_file() -> Result<()> {
 }
 
 #[test]
-fn test_cmd_ingest_clear_cache() -> Result<()> {
-    let index_id = append_random_suffix("test-index-clear-cache");
+fn test_cmd_ingest_keep_cache() -> Result<()> {
+    let index_id = append_random_suffix("test-index-keep-cache");
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
     create_logs_index(&test_env);
 
     ingest_docs_with_options(
         test_env.resource_files["logs"].as_path(),
         &test_env,
-        "--clear-cache",
+        "--keep-cache",
     );
 
-    // Ensure cache directory is empty.
+    // Ensure cache directory is not empty.
     let cache_directory_path = get_cache_directory_path(
         &test_env.data_dir_path,
         &test_env.index_id,
         INGEST_SOURCE_ID,
     );
-    assert!(cache_directory_path.read_dir()?.next().is_none());
+    assert!(cache_directory_path.read_dir()?.next().is_some());
     Ok(())
 }
 
@@ -239,7 +239,15 @@ fn test_cmd_ingest_simple() -> Result<()> {
     .stdout(predicate::str::contains("Indexed"))
     .stdout(predicate::str::contains("documents in"))
     .stdout(predicate::str::contains("Now, you can query the index"));
-    println!("piped input");
+
+    // Ensure cache directory is empty.
+    let cache_directory_path = get_cache_directory_path(
+        &test_env.data_dir_path,
+        &test_env.index_id,
+        INGEST_SOURCE_ID,
+    );
+    assert!(cache_directory_path.read_dir()?.next().is_none());
+
     Ok(())
 }
 
