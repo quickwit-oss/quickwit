@@ -57,6 +57,7 @@ pub async fn start_cluster_service(
     let cluster = Arc::new(Cluster::new(
         member,
         quickwit_config.gossip_socket_addr()?,
+        quickwit_config.cluster_name.clone(),
         quickwit_config.grpc_socket_addr()?,
         &seed_nodes,
         FailureDetectorConfig::default(),

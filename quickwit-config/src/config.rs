@@ -50,6 +50,10 @@ fn default_metastore_and_index_root_uri(data_dir_path: &Path) -> String {
         .to_string()
 }
 
+fn default_cluster_name() -> String {
+    "Test cluster".to_string()
+}
+
 fn default_node_id() -> String {
     new_coolid("node")
 }
@@ -154,6 +158,8 @@ pub struct StorageConfig {
 #[serde(deny_unknown_fields)]
 pub struct QuickwitConfig {
     pub version: usize,
+    #[serde(default = "default_cluster_name")]
+    pub cluster_name: String,
     #[serde(default = "default_node_id")]
     pub node_id: String,
     #[serde(default = "default_listen_address")]
@@ -347,6 +353,7 @@ impl Default for QuickwitConfig {
             gossip_listen_port: None,
             grpc_listen_port: None,
             peer_seeds: Vec::new(),
+            cluster_name: default_cluster_name(),
             node_id: default_node_id(),
             metastore_uri: None,
             default_index_root_uri: None,
@@ -364,6 +371,7 @@ impl std::fmt::Debug for QuickwitConfig {
             .debug_struct("QuickwitConfig")
             .field("version", &self.version)
             .field("node_id", &self.node_id)
+            .field("cluster_name", &self.cluster_name)
             .field("listen_address", &self.listen_address)
             .field("rest_listen_port", &self.rest_listen_port)
             .field("gossip_listen_port", &self.gossip_listen_port())
@@ -408,6 +416,7 @@ mod tests {
                 let file = std::fs::read_to_string(&config_filepath).unwrap();
                 let config = QuickwitConfig::from_uri(&config_uri, file.as_bytes()).await?;
                 assert_eq!(config.version, 0);
+                assert_eq!(config.cluster_name, "quickwit-cluster");
                 assert_eq!(config.listen_address, "0.0.0.0".to_string());
                 assert_eq!(config.rest_listen_port, 1111);
                 assert_eq!(
@@ -477,6 +486,7 @@ mod tests {
         "#;
             let config = serde_yaml::from_str::<QuickwitConfig>(config_yaml).unwrap();
             assert_eq!(config.version, 0);
+            assert_eq!(config.cluster_name, "Test cluster");
             assert_eq!(config.node_id, "1");
             assert_eq!(
                 config.metastore_uri(),
