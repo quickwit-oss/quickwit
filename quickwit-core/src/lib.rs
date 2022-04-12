@@ -29,7 +29,7 @@
 
 mod index;
 
-pub use index::{clean_split_cache, get_cache_path, IndexService, IndexServiceError};
+pub use index::{clear_cache_directory, get_cache_directory_path, IndexService, IndexServiceError};
 
 #[cfg(test)]
 mod tests {

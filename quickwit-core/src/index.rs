@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
+use quickwit_common::fs::empty_dir;
 use quickwit_config::IndexConfig;
 use quickwit_indexing::actors::INDEXING;
 use quickwit_indexing::models::CACHE;
@@ -32,7 +33,6 @@ use quickwit_indexing::{
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
 use quickwit_storage::{StorageResolverError, StorageUriResolver};
 use thiserror::Error;
-use tokio::fs;
 use tracing::{error, info};
 
 #[derive(Error, Debug)]
@@ -252,7 +252,7 @@ impl IndexService {
 }
 
 /// Helper function to get the cache path.
-pub fn get_cache_path(data_dir_path: &Path, index_id: &str, source_id: &str) -> PathBuf {
+pub fn get_cache_directory_path(data_dir_path: &Path, index_id: &str, source_id: &str) -> PathBuf {
     data_dir_path
         .join(INDEXING)
         .join(index_id)
@@ -260,19 +260,19 @@ pub fn get_cache_path(data_dir_path: &Path, index_id: &str, source_id: &str) -> 
         .join(CACHE)
 }
 
-/// Cleans up split cache in local split store.
+/// Clears the cache directory of a given source.
 ///
 /// * `data_dir_path` - Path to directory where data (tmp data, splits kept for caching purpose) is
 ///   persisted.
 /// * `index_id` - The target index Id.
 /// * `source_id` -  The source Id.
-pub async fn clean_split_cache(
+pub async fn clear_cache_directory(
     data_dir_path: &Path,
     index_id: String,
     source_id: String,
 ) -> anyhow::Result<()> {
-    let cache_path = get_cache_path(data_dir_path, &index_id, &source_id);
-    info!(cache_path = %cache_path.as_path().display(), "cache_path");
-    fs::remove_dir_all(cache_path.as_path()).await?;
+    let cache_directory_path = get_cache_directory_path(data_dir_path, &index_id, &source_id);
+    info!(path = %cache_directory_path.display(), "Clearing cache directory.");
+    empty_dir(&cache_directory_path).await?;
     Ok(())
 }

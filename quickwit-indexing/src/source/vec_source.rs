@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::time::Duration;
+use std::fmt;
 
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
@@ -30,10 +31,18 @@ use crate::models::RawDocBatch;
 use crate::source::{Source, SourceContext, TypedSourceFactory};
 
 pub struct VecSource {
+    source_id: String,
     next_item_idx: usize,
     params: VecSourceParams,
     partition: PartitionId,
 }
+
+impl fmt::Debug for VecSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "VecSource {{ source_id: {} }}", self.source_id)
+    }
+}
+
 pub struct VecSourceFactory;
 
 #[async_trait]
@@ -41,6 +50,7 @@ impl TypedSourceFactory for VecSourceFactory {
     type Source = VecSource;
     type Params = VecSourceParams;
     async fn typed_create_source(
+        source_id: String,
         params: VecSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
@@ -50,6 +60,7 @@ impl TypedSourceFactory for VecSourceFactory {
             Some(Position::Beginning) | None => 0,
         };
         Ok(VecSource {
+            source_id,
             next_item_idx,
             params,
             partition,
@@ -129,8 +140,12 @@ mod tests {
             batch_num_docs: 3,
             partition: "partition".to_string(),
         };
-        let vec_source =
-            VecSourceFactory::typed_create_source(params, SourceCheckpoint::default()).await?;
+        let vec_source = VecSourceFactory::typed_create_source(
+            "my-vec-source".to_string(),
+            params,
+            SourceCheckpoint::default(),
+        )
+        .await?;
         let vec_source_actor = SourceActor {
             source: Box::new(vec_source),
             batch_sink: mailbox,
@@ -169,7 +184,9 @@ mod tests {
         let mut checkpoint = SourceCheckpoint::default();
         checkpoint.try_apply_delta(CheckpointDelta::from(0u64..2u64))?;
 
-        let vec_source = VecSourceFactory::typed_create_source(params, checkpoint).await?;
+        let vec_source =
+            VecSourceFactory::typed_create_source("my-vec-source".to_string(), params, checkpoint)
+                .await?;
         let vec_source_actor = SourceActor {
             source: Box::new(vec_source),
             batch_sink: mailbox,

@@ -32,7 +32,7 @@ use quickwit_actors::{ActorHandle, ObservationType, Universe};
 use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig, SourceParams};
-use quickwit_core::{clean_split_cache, IndexService};
+use quickwit_core::{clear_cache_directory, IndexService};
 use quickwit_doc_mapper::tag_pruning::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingServer};
 use quickwit_indexing::models::{
@@ -81,7 +81,7 @@ pub fn build_index_command<'a>() -> Command<'a> {
                         .required(false),
                     arg!(--overwrite "Overwrites pre-existing index.")
                         .required(false),
-                    arg!(--clean_cache "Clean up local cache splits after indexing.")
+                    arg!(--"keep-cache" "Does not clear local cache directory upon completion.")
                         .required(false),
                 ])
             )
@@ -199,7 +199,7 @@ pub struct IngestDocsArgs {
     pub config_uri: Uri,
     pub data_dir: Option<PathBuf>,
     pub overwrite: bool,
-    pub clean_cache: bool,
+    pub clear_cache: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -332,7 +332,7 @@ impl IndexCliCommand {
             .expect("`config` is a required arg.")?;
         let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         let overwrite = matches.is_present("overwrite");
-        let clean_cache = matches.is_present("clean_cache");
+        let clear_cache = !matches.is_present("keep-cache");
 
         Ok(Self::Ingest(IngestDocsArgs {
             index_id,
@@ -340,7 +340,7 @@ impl IndexCliCommand {
             overwrite,
             config_uri,
             data_dir,
-            clean_cache,
+            clear_cache,
         }))
     }
 
@@ -798,9 +798,9 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         );
     }
 
-    if args.clean_cache {
-        println!("Cleaning up split cache ...");
-        clean_split_cache(
+    if args.clear_cache {
+        println!("Clearing local cache directory...");
+        clear_cache_directory(
             &config.data_dir_path,
             args.index_id.clone(),
             INGEST_SOURCE_ID.to_string(),

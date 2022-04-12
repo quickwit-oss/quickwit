@@ -116,6 +116,7 @@ quickwit index ingest
     [--data-dir <data-dir>]
     [--input-path <input-path>]
     [--overwrite]
+    [--keep-cache]
 ```
 
 *Options*
@@ -125,6 +126,7 @@ quickwit index ingest
 `--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
 `--input-path` Location of the input file.
 `--overwrite` Overwrites pre-existing index.
+`--keep-cache` Does not clear local cache directory upon completion.
 
 *Examples*
 
