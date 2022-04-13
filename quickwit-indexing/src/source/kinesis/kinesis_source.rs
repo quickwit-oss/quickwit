@@ -300,7 +300,7 @@ impl Source for KinesisSource {
     }
 
     fn name(&self) -> String {
-        "KinesisSource".to_string()
+        format!("KinesisSource{{source_id={}}}", self.source_id)
     }
 
     fn observable_state(&self) -> serde_json::Value {

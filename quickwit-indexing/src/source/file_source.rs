@@ -116,7 +116,7 @@ impl Source for FileSource {
     }
 
     fn name(&self) -> String {
-        "FileSource".to_string()
+        format!("FileSource{{source_id={}}}", self.source_id)
     }
 
     fn observable_state(&self) -> serde_json::Value {
