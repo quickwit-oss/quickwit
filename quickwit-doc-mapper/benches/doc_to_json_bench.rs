@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use quickwit_doc_mapper::DocMapper;
 
 const JSON_TEST_DATA: &str = include_str!("data/simple-parse-bench.json");
@@ -37,12 +37,15 @@ const DOC_MAPPER_CONF: &str = r#"{
 pub fn simple_json_to_doc_benchmark(c: &mut Criterion) {
     let doc_mapper: Box<dyn DocMapper> = serde_json::from_str(DOC_MAPPER_CONF).unwrap();
     let lines: Vec<&str> = JSON_TEST_DATA.lines().map(|line| line.trim()).collect();
-    c.bench_function("simple-json-to-doc-donothing", |b| {
+
+    let mut group = c.benchmark_group("simple-json-to-doc");
+    group.throughput(Throughput::Bytes(JSON_TEST_DATA.len() as u64));
+    group.bench_function("simple-json-to-doc-donothing", |b| {
         b.iter(|| {
             let _lines: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
         })
     });
-    c.bench_function("simple-json-to-doc", |b| {
+    group.bench_function("simple-json-to-doc", |b| {
         b.iter(|| {
             let lines: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
             for line in lines {
