@@ -53,6 +53,15 @@ pub fn simple_json_to_doc_benchmark(c: &mut Criterion) {
             }
         })
     });
+    group.bench_function("simple-json-to-doc-tantivy", |b| {
+        b.iter(|| {
+            let lines: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
+            let schema = doc_mapper.schema();
+            for line in lines {
+                let doc = schema.parse_document(&line).unwrap();
+            }
+        })
+    });
 }
 
 criterion_group!(benches, simple_json_to_doc_benchmark);
