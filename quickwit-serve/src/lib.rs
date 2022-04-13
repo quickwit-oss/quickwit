@@ -44,7 +44,7 @@ use quickwit_core::IndexService;
 use quickwit_indexing::actors::IndexingServer;
 use quickwit_indexing::start_indexer_service;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
-use quickwit_pushapi::{spawn_push_api_actor, PushApiService};
+use quickwit_pushapi::{init_push_api, PushApiService};
 use quickwit_search::{start_searcher_service, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use warp::{Filter, Rejection};
@@ -109,6 +109,18 @@ pub async fn serve_quickwit(
 
     let universe = Universe::new();
 
+    let push_api_service: Option<Mailbox<PushApiService>> =
+        if services.contains(&QuickwitService::Indexer) {
+            let push_api_service = init_push_api(
+                &universe,
+                &config.data_dir_path.join("queues"),
+                metastore.clone(),
+            )?;
+            Some(push_api_service)
+        } else {
+            None
+        };
+
     let indexer_service: Option<Mailbox<IndexingServer>> =
         if services.contains(&QuickwitService::Indexer) {
             let indexer_service = start_indexer_service(
@@ -119,18 +131,6 @@ pub async fn serve_quickwit(
             )
             .await?;
             Some(indexer_service)
-        } else {
-            None
-        };
-
-    let push_api_service: Option<Mailbox<PushApiService>> =
-        if services.contains(&QuickwitService::Indexer) {
-            let push_api_service = spawn_push_api_actor(
-                &universe,
-                &config.data_dir_path.join("queues"),
-                metastore.clone(),
-            )?;
-            Some(push_api_service)
         } else {
             None
         };

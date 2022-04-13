@@ -7,16 +7,17 @@ license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwi
 [dependencies]
 tokio = {version="1", features=["full"]}
 async-trait = "0.1"
-quickwit-actors = {path="../quickwit-actors"}
+quickwit-actors = {path="../quickwit-actors", version ="0.2.1"}
+quickwit-metastore = {path="../quickwit-metastore", version ="0.2.1"}
+quickwit-proto = {path="../quickwit-proto", version ="0.2.1"}
 rocksdb = {version="0.18", features=[], default-features= false}
 anyhow = "1"
 thiserror = "1"
 tracing = "0.1"
-quickwit-proto = {path="../quickwit-proto", version ="0.2.1"}
 flume = "0.10"
 once_cell = "1"
 serde = { version = "1.0", features = ["derive", "rc"] }
-quickwit-metastore = { version = "0.2.1", path = "../quickwit-metastore" }
+serde_json = "1"
 futures = "0.3.17"
 
 [dev-dependencies]

@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -25,7 +26,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorRunner, Handler
 use quickwit_metastore::Metastore;
 use quickwit_proto::push_api::{
     CreateQueueRequest, DropQueueRequest, FetchRequest, FetchResponse, IngestRequest,
-    SuggestTruncateRequest, TailRequest,
+    IngestResponse, QueueExistsRequest, SuggestTruncateRequest, TailRequest,
 };
 
 use crate::{iter_doc_payloads, Position, PushApiError, Queues};
@@ -44,18 +45,20 @@ impl PushApiService {
         Ok(PushApiService { queues, metastore })
     }
 
-    async fn ingest(&mut self, request: IngestRequest) -> crate::Result<()> {
+    async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse> {
         // Check all indexes exist assuming existing queues always have a corresponding index.
         let tasks = request
             .doc_batches
             .iter()
-            .filter(|batch| !self.queues.queue_exists(&batch.index_id))
-            .map(|batch| {
+            .map(|batch| batch.index_id.clone())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .filter(|index_id| !self.queues.queue_exists(index_id))
+            .map(|index_id| {
                 let moved_metastore = self.metastore.clone();
-                let moved_index_id = batch.index_id.clone();
                 async move {
-                    let result = moved_metastore.check_index_available(&moved_index_id).await;
-                    (moved_index_id, result)
+                    let result = moved_metastore.check_index_available(&index_id).await;
+                    (index_id, result)
                 }
             });
 
@@ -69,6 +72,7 @@ impl PushApiService {
             return Err(PushApiError::IndexDoesNotExist { index_id });
         }
 
+        let mut num_docs = 0usize;
         for doc_batch in &request.doc_batches {
             if !self.queues.queue_exists(&doc_batch.index_id) {
                 self.queues.create_queue(&doc_batch.index_id)?
@@ -78,13 +82,20 @@ impl PushApiService {
             // If there is an error, we probably want a transactional behavior.
             let records_it = iter_doc_payloads(doc_batch);
             self.queues.append_batch(&doc_batch.index_id, records_it)?;
+            num_docs += doc_batch.doc_lens.len();
         }
-        Ok(())
+        Ok(IngestResponse {
+            num_ingested_docs: num_docs as u64,
+        })
     }
 
     fn fetch(&mut self, fetch_req: FetchRequest) -> crate::Result<FetchResponse> {
         let start_from_opt: Option<Position> = fetch_req.start_after.map(Position::from);
-        self.queues.fetch(&fetch_req.index_id, start_from_opt)
+        let num_bytes_limit_opt: Option<usize> = fetch_req
+            .num_bytes_limit
+            .map(|num_bytes_limit| num_bytes_limit as usize);
+        self.queues
+            .fetch(&fetch_req.index_id, start_from_opt, num_bytes_limit_opt)
     }
 
     fn suggest_truncate(&mut self, request: SuggestTruncateRequest) -> crate::Result<()> {
@@ -113,18 +124,26 @@ impl Actor for PushApiService {
 }
 
 #[async_trait]
+impl Handler<QueueExistsRequest> for PushApiService {
+    type Reply = crate::Result<bool>;
+    async fn handle(
+        &mut self,
+        queue_exists_req: QueueExistsRequest,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(Ok(self.queues.queue_exists(&queue_exists_req.queue_id)))
+    }
+}
+
+#[async_trait]
 impl Handler<CreateQueueRequest> for PushApiService {
     type Reply = crate::Result<()>;
     async fn handle(
         &mut self,
         create_queue_req: CreateQueueRequest,
         _ctx: &ActorContext<Self>,
-    ) -> Result<crate::Result<()>, ActorExitStatus> {
-        if let Some(queue_id) = create_queue_req.queue_id.as_ref() {
-            Ok(self.queues.create_queue(queue_id))
-        } else {
-            Ok(Ok(()))
-        }
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.queues.create_queue(&create_queue_req.queue_id))
     }
 }
 
@@ -135,23 +154,19 @@ impl Handler<DropQueueRequest> for PushApiService {
         &mut self,
         drop_queue_req: DropQueueRequest,
         _ctx: &ActorContext<Self>,
-    ) -> Result<crate::Result<()>, ActorExitStatus> {
-        if let Some(queue_id) = drop_queue_req.queue_id.as_ref() {
-            Ok(self.queues.drop_queue(queue_id))
-        } else {
-            Ok(Ok(()))
-        }
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.queues.drop_queue(&drop_queue_req.queue_id))
     }
 }
 
 #[async_trait]
 impl Handler<IngestRequest> for PushApiService {
-    type Reply = crate::Result<()>;
+    type Reply = crate::Result<IngestResponse>;
     async fn handle(
         &mut self,
         ingest_req: IngestRequest,
         _ctx: &ActorContext<Self>,
-    ) -> Result<crate::Result<()>, ActorExitStatus> {
+    ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self.ingest(ingest_req).await)
     }
 }
@@ -163,7 +178,7 @@ impl Handler<FetchRequest> for PushApiService {
         &mut self,
         request: FetchRequest,
         _ctx: &ActorContext<Self>,
-    ) -> Result<crate::Result<FetchResponse>, ActorExitStatus> {
+    ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self.fetch(request))
     }
 }
@@ -175,7 +190,7 @@ impl Handler<TailRequest> for PushApiService {
         &mut self,
         request: TailRequest,
         _ctx: &ActorContext<Self>,
-    ) -> Result<crate::Result<FetchResponse>, ActorExitStatus> {
+    ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self.queues.tail(&request.index_id))
     }
 }
@@ -187,7 +202,7 @@ impl Handler<SuggestTruncateRequest> for PushApiService {
         &mut self,
         request: SuggestTruncateRequest,
         _ctx: &ActorContext<Self>,
-    ) -> Result<crate::Result<()>, ActorExitStatus> {
+    ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self.suggest_truncate(request))
     }
 }
