@@ -24,9 +24,7 @@ use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::PushApiSourceParams;
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
-use quickwit_proto::push_api::{
-    CreateQueueRequest, FetchRequest, FetchResponse, QueueExistsRequest,
-};
+use quickwit_proto::push_api::{FetchRequest, FetchResponse};
 use quickwit_pushapi::{get_push_api_service, iter_doc_payloads, PushApiService};
 use serde::Serialize;
 
@@ -76,9 +74,6 @@ impl PushApiSource {
             0
         };
 
-        // The PushApiSource is instantiated for an existing index.
-        // It's safe to create the corresponding queue if it does not exist.
-        ensure_queue_exist_for_index(&push_api_mailbox, params.index_id.clone()).await?;
         let push_api_source = PushApiSource {
             source_id,
             params,
@@ -97,29 +92,6 @@ impl PushApiSource {
         self.counters.current_offset = current_offset;
         self.counters.previous_offset = current_offset;
     }
-}
-
-/// Creates a queue for the index if it does not exists.
-async fn ensure_queue_exist_for_index(
-    push_api_mailbox: &Mailbox<PushApiService>,
-    index_id: String,
-) -> anyhow::Result<()> {
-    let queue_exists_req = QueueExistsRequest {
-        queue_id: index_id.clone(),
-    };
-    if push_api_mailbox
-        .ask_for_res(queue_exists_req)
-        .await
-        .map_err(|err| anyhow::anyhow!(err.to_string()))?
-    {
-        return Ok(());
-    }
-
-    let create_queue_req = CreateQueueRequest { queue_id: index_id };
-    push_api_mailbox
-        .ask_for_res(create_queue_req)
-        .await
-        .map_err(|err| anyhow::anyhow!(err.to_string()))
 }
 
 #[async_trait]
