@@ -122,7 +122,7 @@ impl Source for PushApiSource {
             .push_api_mailbox
             .ask_for_res(fetch_req)
             .await
-            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+            .map_err(anyhow::Error::from)?;
 
         // The `first_position_opt` being none means the doc_batch is empty and there is
         // no more document available, at least for the time being.
