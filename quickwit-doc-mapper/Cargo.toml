@@ -33,6 +33,7 @@ optional = true
 
 [dev-dependencies]
 mockall = "0.11"
+criterion = "0.3"
 
 [dev-dependencies.matches]
 version = "0.1.8"
@@ -40,3 +41,6 @@ version = "0.1.8"
 [features]
 testsuite = ["mockall"]
 
+[[bench]]
+name = "doc_to_json_bench"
+harness = false
