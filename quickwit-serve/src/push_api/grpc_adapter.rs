@@ -44,11 +44,7 @@ impl grpc::PushApiService for GrpcPushApiAdapter {
         request: tonic::Request<IngestRequest>,
     ) -> Result<tonic::Response<IngestResponse>, tonic::Status> {
         let ingest_req = request.into_inner();
-        let ingest_reply = self
-            .0
-            .ask_for_res(ingest_req)
-            .await
-            .map(|_| IngestResponse {});
+        let ingest_reply = self.0.ask_for_res(ingest_req).await;
         convert_to_grpc_result(ingest_reply)
     }
 

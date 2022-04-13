@@ -62,11 +62,13 @@ mod file_source;
 mod kafka_source;
 #[cfg(feature = "kinesis")]
 mod kinesis;
+mod push_api_source;
 mod source_factory;
 mod vec_source;
 mod void_source;
 
 use std::path::Path;
+use std::time::Duration;
 
 use anyhow::bail;
 use async_trait::async_trait;
@@ -85,6 +87,7 @@ pub use vec_source::{VecSource, VecSourceFactory};
 pub use void_source::{VoidSource, VoidSourceFactory};
 
 use crate::actors::Indexer;
+use crate::source::push_api_source::PushApiSourceFactory;
 
 /// Reserved source id used for the CLI ingest command.
 pub const INGEST_SOURCE_ID: &str = ".cli-ingest-source";
@@ -125,11 +128,14 @@ pub trait Source: Send + Sync + 'static {
     ///
     /// The `batch_sink` is a mailbox that has a bounded capacity.
     /// In that case, `batch_sink` will block.
+    ///
+    /// It returns an optional duration specifying how long the batch requester
+    /// should wait before pooling gain.
     async fn emit_batches(
         &mut self,
         batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
-    ) -> Result<(), ActorExitStatus>;
+    ) -> Result<Duration, ActorExitStatus>;
 
     /// After publication of a split, `suggest_truncate` is called.
     /// This makes it possible for the implementation of a source to
@@ -216,8 +222,12 @@ impl Handler<Loop> for SourceActor {
     type Reply = ();
 
     async fn handle(&mut self, _message: Loop, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        self.source.emit_batches(&self.batch_sink, ctx).await?;
-        ctx.send_self_message(Loop).await?;
+        let wait_for = self.source.emit_batches(&self.batch_sink, ctx).await?;
+        if wait_for.is_zero() {
+            ctx.send_self_message(Loop).await?;
+            return Ok(());
+        }
+        ctx.schedule_self_msg(wait_for, Loop).await;
         Ok(())
     }
 }
@@ -233,6 +243,7 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source("kinesis", KinesisSourceFactory);
         source_factory.add_source("vec", VecSourceFactory);
         source_factory.add_source("void", VoidSourceFactory);
+        source_factory.add_source("pushapi", PushApiSourceFactory);
         source_factory
     })
 }

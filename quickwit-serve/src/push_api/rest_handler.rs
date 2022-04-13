@@ -154,7 +154,7 @@ async fn tail_endpoint(
 }
 
 fn bulk_filter() -> impl Filter<Extract = (String, String), Error = Rejection> + Clone {
-    warp::path!("api" / "v1" / String / "bulk")
+    warp::path!(String / "bulk")
         .and(warp::post())
         .and(warp::body::bytes().and_then(|body: Bytes| async move {
             if let Ok(body_str) = std::str::from_utf8(&*body) {
@@ -174,7 +174,7 @@ pub fn bulk_handler(
 }
 
 fn elastic_bulk_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {
-    warp::path!("api" / "v1" / "_bulk")
+    warp::path!("_bulk")
         .and(warp::post())
         .and(warp::body::bytes().and_then(|body: Bytes| async move {
             if let Ok(body_str) = std::str::from_utf8(&*body) {

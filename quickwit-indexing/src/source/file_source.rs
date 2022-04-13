@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::io::SeekFrom;
+use std::time::Duration;
 use std::{fmt, io};
 
 use anyhow::Context;
@@ -35,7 +36,7 @@ use crate::models::RawDocBatch;
 use crate::source::{Source, SourceContext, TypedSourceFactory};
 
 /// Cut a new batch as soon as we have read BATCH_NUM_BYTES_THRESHOLD.
-const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
+pub(crate) const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
 
 #[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FileSourceCounters {
@@ -63,7 +64,7 @@ impl Source for FileSource {
         &mut self,
         batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
-    ) -> Result<(), ActorExitStatus> {
+    ) -> Result<Duration, ActorExitStatus> {
         // We collect batches of documents before sending them to the indexer.
         let limit_num_bytes = self.counters.previous_offset + BATCH_NUM_BYTES_THRESHOLD;
         let mut reached_eof = false;
@@ -111,7 +112,7 @@ impl Source for FileSource {
             ctx.send_exit_with_success(batch_sink).await?;
             return Err(ActorExitStatus::Success);
         }
-        Ok(())
+        Ok(Duration::default())
     }
 
     fn name(&self) -> String {

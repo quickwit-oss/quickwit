@@ -25,8 +25,10 @@ mod queue;
 use std::path::Path;
 use std::sync::Arc;
 
+use anyhow::Context;
 pub use errors::PushApiError;
 use errors::Result;
+use once_cell::sync::OnceCell;
 pub use position::Position;
 use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
@@ -36,6 +38,26 @@ use tracing::info;
 
 pub use crate::push_api_service::PushApiService;
 
+pub static PUSH_API_SERVICE_INSTANCE: OnceCell<Mailbox<PushApiService>> = OnceCell::new();
+
+/// Initializes the PushApiService single instance.
+pub fn init_push_api(
+    universe: &Universe,
+    queue_path: &Path,
+    metastore: Arc<dyn Metastore>,
+) -> anyhow::Result<Mailbox<PushApiService>> {
+    let push_api_service = PUSH_API_SERVICE_INSTANCE
+        .get_or_try_init(|| spawn_push_api_actor(universe, queue_path, metastore))
+        .context("Failed to initialize the PushApi")?;
+    Ok(push_api_service.clone())
+}
+
+/// Gets the instance of the single PushApiService via a copy of it's Mailbox.
+pub fn get_push_api_service() -> Option<Mailbox<PushApiService>> {
+    PUSH_API_SERVICE_INSTANCE.get().cloned()
+}
+
+/// Creates a push api service actor.
 pub fn spawn_push_api_actor(
     universe: &Universe,
     queue_path: &Path,
@@ -47,6 +69,7 @@ pub fn spawn_push_api_actor(
     Ok(push_api_mailbox)
 }
 
+/// Adds a document raw bytes to a [`DocBatch`]
 pub fn add_doc(payload: &[u8], fetch_resp: &mut DocBatch) -> usize {
     fetch_resp.concat_docs.extend_from_slice(payload);
     fetch_resp.doc_lens.push(payload.len() as u64);
