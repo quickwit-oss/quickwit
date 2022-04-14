@@ -640,9 +640,9 @@ impl TryFrom<FieldMappingEntryForSerialization> for FieldMappingEntry {
     }
 }
 
-fn extract_map_from_json(
-    json_val: serde_json::Value,
-) -> Option<serde_json::Map<String, serde_json::Value>> {
+/// Serialize object into a `Map` of json values.
+fn serialize_to_map<S: Serialize>(val: &S) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let json_val = serde_json::to_value(val).ok()?;
     if let serde_json::Value::Object(map) = json_val {
         Some(map)
     } else {
@@ -654,20 +654,15 @@ fn typed_mapping_to_json_params(
     field_mapping_type: FieldMappingType,
 ) -> serde_json::Map<String, serde_json::Value> {
     match field_mapping_type {
-        FieldMappingType::Text(text_options, _) => {
-            extract_map_from_json(serde_json::to_value(&text_options).unwrap()).unwrap()
-        }
+        FieldMappingType::Text(text_options, _) => serialize_to_map(&text_options),
         FieldMappingType::U64(options, _)
         | FieldMappingType::I64(options, _)
         | FieldMappingType::Date(options, _)
         | FieldMappingType::Bytes(options, _)
-        | FieldMappingType::F64(options, _) => {
-            extract_map_from_json(serde_json::to_value(&options).unwrap()).unwrap()
-        }
-        FieldMappingType::Object(options) => {
-            extract_map_from_json(serde_json::to_value(&options).unwrap()).unwrap()
-        }
+        | FieldMappingType::F64(options, _) => serialize_to_map(&options),
+        FieldMappingType::Object(object_options) => serialize_to_map(&object_options),
     }
+    .unwrap()
 }
 
 impl From<FieldMappingEntry> for FieldMappingEntryForSerialization {
