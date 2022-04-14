@@ -332,7 +332,7 @@ impl FieldMappingEntry {
                 )?
             }
             JsonValue::String(value_as_str) => {
-                let date_time_utc = DateTime::new_utc(
+                let date_time_utc = DateTime::from_utc(
                     OffsetDateTime::parse(&value_as_str, &Rfc3339).map_err(|err| {
                         DocParsingError::ValueError(
                             self.name.clone(),
@@ -1340,7 +1340,7 @@ mod tests {
             Time::from_hms(17, 39, 57).unwrap(),
         );
 
-        let datetime_utc = DateTime::new_primitive(datetime);
+        let datetime_utc = DateTime::from_primitive(datetime);
         assert_eq!(parsed_value.len(), 1);
         assert_eq!(parsed_value[0].1, Value::Date(datetime_utc));
 

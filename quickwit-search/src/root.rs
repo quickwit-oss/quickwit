@@ -21,6 +21,7 @@ use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
 use futures::future::try_join_all;
+use itertools::Itertools;
 use quickwit_config::build_doc_mapper;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::{
@@ -176,6 +177,10 @@ pub async fn root_search(
 
     // Merging is a cpu-bound task.
     // It should be executed by Tokio's blocking threads.
+
+    // Wrap into result for merge_fruits
+    let leaf_search_responses: Vec<tantivy::Result<LeafSearchResponse>> =
+        leaf_search_responses.into_iter().map(Ok).collect_vec();
     let leaf_search_response =
         spawn_blocking(move || merge_collector.merge_fruits(leaf_search_responses))
             .await?
