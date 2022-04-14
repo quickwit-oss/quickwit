@@ -42,7 +42,7 @@ pub fn build_split_command<'a>() -> Command<'a> {
         .about("Operations (list, add, delete, describe...) on splits.")
         .subcommand(
             Command::new("list")
-                .about("List the splits of an index.")
+                .about("Lists the splits of an index.")
                 .args(&[
                     arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
@@ -78,7 +78,7 @@ pub fn build_split_command<'a>() -> Command<'a> {
             )
         .subcommand(
             Command::new("describe")
-                .about("Displays metadata about the split.")
+                .about("Displays metadata about a split.")
                 .args(&[
                     arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
@@ -87,6 +87,24 @@ pub fn build_split_command<'a>() -> Command<'a> {
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
                         .required(false),
+                ])
+            )
+        .subcommand(
+            Command::new("mark-for-deletion")
+                .about("Marks one or multiple splits of an index for deletion.")
+                .alias("mark")
+                .args(&[
+                    arg!(--config <CONFIG> "Config file location")
+                        .display_order(1)
+                        .env("QW_CONFIG")
+                        .required(true),
+                    arg!(--index <INDEX_ID> "Target index ID")
+                        .display_order(2)
+                        .required(true),
+                    arg!(--splits <SPLIT_IDS> "Comma-separated list of split IDs")
+                        .display_order(3)
+                        .required(true)
+                        .use_value_delimiter(true),
                 ])
             )
         .arg_required_else_help(true)
@@ -101,6 +119,13 @@ pub struct ListSplitArgs {
     pub start_date: Option<i64>,
     pub end_date: Option<i64>,
     pub tags: BTreeSet<String>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct MarkForDeletionArgs {
+    pub config_uri: Uri,
+    pub index_id: String,
+    pub split_ids: Vec<String>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -124,6 +149,7 @@ pub struct ExtractSplitArgs {
 #[derive(Debug, PartialEq)]
 pub enum SplitCliCommand {
     List(ListSplitArgs),
+    MarkForDeletion(MarkForDeletionArgs),
     Describe(DescribeSplitArgs),
     Extract(ExtractSplitArgs),
 }
@@ -135,6 +161,7 @@ impl SplitCliCommand {
             .ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
         match subcommand {
             "list" => Self::parse_list_args(submatches),
+            "mark-for-deletion" => Self::parse_mark_for_deletion_args(submatches),
             "describe" => Self::parse_describe_args(submatches),
             "extract" => Self::parse_extract_split_args(submatches),
             _ => bail!("Subcommand `{}` is not implemented.", subcommand),
@@ -206,15 +233,38 @@ impl SplitCliCommand {
         }))
     }
 
+    fn parse_mark_for_deletion_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let config_uri = matches
+            .value_of("config")
+            .map(Uri::try_new)
+            .expect("`config` is a required arg.")?;
+        let index_id = matches
+            .value_of("index")
+            .map(String::from)
+            .expect("`index` is a required arg.");
+        let split_ids = matches
+            .values_of("splits")
+            .expect("`splits` is a required arg.")
+            .into_iter()
+            .map(String::from)
+            .collect();
+
+        Ok(Self::MarkForDeletion(MarkForDeletionArgs {
+            config_uri,
+            index_id,
+            split_ids,
+        }))
+    }
+
     fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
             .value_of("index")
             .map(String::from)
-            .expect("'index-id' is a required arg.");
+            .expect("`index` is a required arg.");
         let split_id = matches
             .value_of("split")
             .map(String::from)
-            .expect("'split-id' is a required arg.");
+            .expect("`split` is a required arg.");
         let config_uri = matches
             .value_of("config")
             .map(Uri::try_new)
@@ -235,11 +285,11 @@ impl SplitCliCommand {
         let index_id = matches
             .value_of("index")
             .map(String::from)
-            .expect("'index-id' is a required arg.");
+            .expect("`index` is a required arg.");
         let split_id = matches
             .value_of("split")
             .map(String::from)
-            .expect("'split-id' is a required arg.");
+            .expect("`split` is a required arg.");
         let config_uri = matches
             .value_of("config")
             .map(Uri::try_new)
@@ -261,6 +311,7 @@ impl SplitCliCommand {
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
             Self::List(args) => list_split_cli(args).await,
+            Self::MarkForDeletion(args) => mark_splits_for_deletion_cli(args).await,
             Self::Describe(args) => describe_split_cli(args).await,
             Self::Extract(args) => extract_split_cli(args).await,
         }
@@ -288,6 +339,25 @@ async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
 
     println!("{filtered_splits_table}");
 
+    Ok(())
+}
+
+async fn mark_splits_for_deletion_cli(args: MarkForDeletionArgs) -> anyhow::Result<()> {
+    debug!(args = ?args, "mark-splits-for-deletion");
+
+    let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
+    let metastore = metastore_uri_resolver
+        .resolve(&quickwit_config.metastore_uri())
+        .await?;
+    let split_ids: Vec<&str> = args
+        .split_ids
+        .iter()
+        .map(|split_id| split_id.as_ref())
+        .collect();
+    metastore
+        .mark_splits_for_deletion(&args.index_id, &split_ids)
+        .await?;
     Ok(())
 }
 
@@ -530,6 +600,33 @@ mod tests {
         ])?;
         assert!(matches!(CliCommand::parse_cli_args(&matches), Err { .. }));
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_split_mark_for_deletion_args() -> anyhow::Result<()> {
+        let app = build_cli().no_binary_name(true);
+        let matches = app.try_get_matches_from(vec![
+            "split",
+            "mark",
+            "--config",
+            "file:///config.yaml",
+            "--index",
+            "wikipedia",
+            "--splits",
+            "split1,split2",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Split(SplitCliCommand::MarkForDeletion(MarkForDeletionArgs {
+                config_uri,
+                index_id,
+                split_ids,
+            })) if config_uri == Uri::try_new("file:///config.yaml").unwrap()
+                && index_id == "wikipedia"
+                && split_ids == vec!["split1".to_string(), "split2".to_string()]
+        ));
         Ok(())
     }
 
