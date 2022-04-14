@@ -23,7 +23,8 @@
           "type": "i64"
         },
         {
-          "fast": false,
+          "fieldnorms": false,
+          "indexed": true,
           "name": "log_level",
           "record": "basic",
           "stored": true,
@@ -31,7 +32,8 @@
           "type": "text"
         },
         {
-          "fast": false,
+          "fieldnorms": false,
+          "indexed": true,
           "name": "message",
           "record": "position",
           "stored": true,

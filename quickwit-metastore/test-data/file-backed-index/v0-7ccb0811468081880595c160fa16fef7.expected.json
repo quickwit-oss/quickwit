@@ -2,7 +2,7 @@
   "index": {
     "checkpoint": {
       "kafka-source": {
-        "0000000000": "0000000042"
+        "00000000000000000000": "00000000000000000042"
       }
     },
     "create_timestamp": 1789,
@@ -23,7 +23,6 @@
           "type": "i64"
         },
         {
-          "fast": false,
           "fieldnorms": false,
           "indexed": true,
           "name": "log_level",
@@ -33,7 +32,6 @@
           "type": "text"
         },
         {
-          "fast": false,
           "fieldnorms": false,
           "indexed": true,
           "name": "message",

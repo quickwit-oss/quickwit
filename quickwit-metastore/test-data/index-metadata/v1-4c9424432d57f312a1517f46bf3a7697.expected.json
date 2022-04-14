@@ -1,6 +1,8 @@
 {
   "checkpoint": {
-    "0000000000": "0000000042"
+    "kafka-source": {
+      "00000000000000000000": "00000000000000000042"
+    }
   },
   "create_timestamp": 1789,
   "doc_mapping": {
@@ -20,7 +22,8 @@
         "type": "i64"
       },
       {
-        "fast": false,
+        "fieldnorms": false,
+        "indexed": true,
         "name": "log_level",
         "record": "basic",
         "stored": true,
@@ -28,7 +31,8 @@
         "type": "text"
       },
       {
-        "fast": false,
+        "fieldnorms": false,
+        "indexed": true,
         "name": "message",
         "record": "position",
         "stored": true,
@@ -71,11 +75,13 @@
   "sources": [
     {
       "params": {
+        "client_params": {},
         "topic": "kafka-topic"
       },
       "source_id": "kafka-source",
       "source_type": "kafka"
     }
   ],
-  "version": "0"
+  "update_timestamp": 1789,
+  "version": "1"
 }
