@@ -262,13 +262,17 @@ pub async fn leaf_search(
         .collect();
     let split_search_results = futures::future::join_all(leaf_search_single_split_futures).await;
 
-    let (split_search_responses, errors): (Vec<LeafSearchResponse>, Vec<(String, SearchError)>) =
-        split_search_results
-            .into_iter()
-            .partition_map(|split_search_res| match split_search_res {
-                Ok(split_search_resp) => Either::Left(split_search_resp),
-                Err(err) => Either::Right(err),
-            });
+    // the result wrapping is only for the collector api merge_fruits
+    // (Vec<tantivy::Result<LeafSearchResponse>>)
+    let (split_search_responses, errors): (
+        Vec<tantivy::Result<LeafSearchResponse>>,
+        Vec<(String, SearchError)>,
+    ) = split_search_results
+        .into_iter()
+        .partition_map(|split_search_res| match split_search_res {
+            Ok(split_search_resp) => Either::Left(Ok(split_search_resp)),
+            Err(err) => Either::Right(err),
+        });
 
     // Creates a collector which merges responses into one
     let merge_collector = make_merge_collector(request);

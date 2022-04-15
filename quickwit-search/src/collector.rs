@@ -179,7 +179,7 @@ impl QuickwitSegmentCollector {
 }
 
 impl SegmentCollector for QuickwitSegmentCollector {
-    type Fruit = LeafSearchResponse;
+    type Fruit = tantivy::Result<LeafSearchResponse>;
 
     fn collect(&mut self, doc_id: DocId, _score: Score) {
         if !self.accept_document(doc_id) {
@@ -193,7 +193,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
         }
     }
 
-    fn harvest(self) -> LeafSearchResponse {
+    fn harvest(self) -> Self::Fruit {
         let segment_ord = self.segment_ord;
         // TODO use into_iter_sorted() once it gets stable.
         let split_id = self.split_id;
@@ -208,16 +208,23 @@ impl SegmentCollector for QuickwitSegmentCollector {
                 split_id: split_id.clone(),
             })
             .collect();
-        LeafSearchResponse {
-            intermediate_aggregation_result: self.aggregation.map(|collector| {
-                serde_json::to_string(&collector.harvest())
-                    .expect("could not serialize aggreation to json")
-            }),
+
+        let intermediate_aggregation_result = if let Some(collector) = self.aggregation {
+            Some(
+                serde_json::to_string(&collector.harvest()?)
+                    .expect("could not serialize aggregation to json"),
+            )
+        } else {
+            None
+        };
+
+        Ok(LeafSearchResponse {
+            intermediate_aggregation_result,
             num_hits: self.num_hits,
             partial_hits,
             failed_splits: vec![],
             num_attempted_splits: 1,
-        }
+        })
     }
 }
 
@@ -305,13 +312,15 @@ impl Collector for QuickwitCollector {
 
     fn merge_fruits(
         &self,
-        segment_fruits: Vec<LeafSearchResponse>,
+        segment_fruits: Vec<tantivy::Result<LeafSearchResponse>>,
     ) -> tantivy::Result<Self::Fruit> {
+        let segment_fruits: tantivy::Result<Vec<LeafSearchResponse>> =
+            segment_fruits.into_iter().collect();
         // We want the hits in [start_offset..start_offset + max_hits).
         // All leaves will return their top [0..max_hits) documents.
         // We compute the overall [0..start_offset + max_hits) documents ...
         let num_hits = self.start_offset + self.max_hits;
-        let mut merged_leaf_response = merge_leaf_responses(segment_fruits, num_hits)?;
+        let mut merged_leaf_response = merge_leaf_responses(segment_fruits?, num_hits)?;
         // ... and drop the first [..start_offsets) hits.
         merged_leaf_response
             .partial_hits
