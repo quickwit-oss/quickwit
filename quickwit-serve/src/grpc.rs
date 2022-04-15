@@ -20,6 +20,8 @@
 use std::net::SocketAddr;
 
 use quickwit_proto::cluster_service_server::ClusterServiceServer;
+use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsServiceServer;
+use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;
 use quickwit_proto::search_service_server::SearchServiceServer;
 use quickwit_proto::tonic;
 use tonic::transport::Server;
@@ -44,6 +46,10 @@ pub(crate) async fn start_grpc_server(
     if let Some(search_service) = quickwit_services.search_service.clone() {
         let grpc_search_service = GrpcSearchAdapter::from(search_service);
         server_router = server_router.add_service(SearchServiceServer::new(grpc_search_service));
+    }
+    if let Some(oltp_service) = &quickwit_services.oltp_service {
+        server_router = server_router.add_service(LogsServiceServer::new(oltp_service.clone()));
+        server_router = server_router.add_service(TraceServiceServer::new(oltp_service.clone()));
     }
 
     server_router.serve(grpc_addr).await?;

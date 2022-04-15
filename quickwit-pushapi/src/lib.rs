@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod errors;
+mod oltp;
 mod position;
 mod push_api_service;
 mod queue;
@@ -28,6 +29,7 @@ use std::sync::Arc;
 use anyhow::Context;
 pub use errors::PushApiError;
 use errors::Result;
+pub use oltp::OltpService;
 use once_cell::sync::OnceCell;
 pub use position::Position;
 use queue::Queues;

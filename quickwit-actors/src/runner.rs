@@ -21,7 +21,7 @@ use std::future::Future;
 
 use anyhow::Context;
 use tokio::sync::watch;
-use tracing::{debug, error, info, Instrument};
+use tracing::{debug, error, info};
 
 use crate::actor::process_command;
 use crate::actor_with_state_tx::ActorWithStateTx;
@@ -61,14 +61,12 @@ impl ActorRunner {
         debug!(actor_id = %ctx.actor_instance_id(), "spawn-async");
         let (state_tx, state_rx) = watch::channel(actor.observable_state());
         let ctx_clone = ctx.clone();
-        let span = actor.span(&ctx_clone);
         let (exit_status_tx, exit_status_rx) = watch::channel(None);
         let actor_instance_id = ctx.actor_instance_id().to_string();
         let loop_async_actor_future = async move {
             let exit_status = async_actor_loop(actor, inbox, ctx, state_tx).await;
             let _ = exit_status_tx.send(Some(exit_status));
-        }
-        .instrument(span);
+        };
         let join_handle = self.spawn_named_task(loop_async_actor_future, &actor_instance_id);
         ActorHandle::new(state_rx, join_handle, ctx_clone, exit_status_rx)
     }
@@ -124,7 +122,6 @@ fn tokio_task_runtime_spawn_named(
 
 async fn process_msg<A: Actor>(
     actor: &mut A,
-    msg_id: u64,
     inbox: &mut Inbox<A>,
     ctx: &mut ActorContext<A>,
     state_tx: &watch::Sender<A::ObservableState>,
@@ -153,7 +150,7 @@ async fn process_msg<A: Actor>(
         }
         Ok(CommandOrMessage::Message(mut msg)) => {
             ctx.process();
-            msg.handle_message(msg_id, actor, ctx).await.err()
+            msg.handle_message(actor, ctx).await.err()
         }
         Err(RecvError::Disconnected) => Some(ActorExitStatus::Success),
         Err(RecvError::Timeout) => {
@@ -182,7 +179,6 @@ async fn async_actor_loop<A: Actor>(
     let mut exit_status_opt: Option<ActorExitStatus> =
         actor_with_state_tx.actor.initialize(&ctx).await.err();
 
-    let mut msg_id: u64 = 1;
     let mut exit_status: ActorExitStatus = loop {
         tokio::task::yield_now().await;
         if let Some(exit_status) = exit_status_opt {
@@ -190,13 +186,11 @@ async fn async_actor_loop<A: Actor>(
         }
         exit_status_opt = process_msg(
             &mut actor_with_state_tx.actor,
-            msg_id,
             &mut inbox,
             &mut ctx,
             &actor_with_state_tx.state_tx,
         )
         .await;
-        msg_id += 1;
     };
     ctx.record_progress();
     if let Err(finalize_error) = actor_with_state_tx

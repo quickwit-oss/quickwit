@@ -28,7 +28,7 @@ use quickwit_metastore::SplitMetadata;
 use quickwit_storage::{PutPayload, Storage, StorageResult};
 use tantivy::Directory;
 use tokio::sync::Mutex;
-use tracing::info;
+use tracing::{info, instrument};
 
 use super::LocalSplitStore;
 use crate::split_store::SPLIT_CACHE_DIR_NAME;
@@ -194,6 +194,7 @@ impl IndexingSplitStore {
     /// Gets a split from the split store, and makes it available to the given `output_path`.
     ///
     /// The output_path is expected to be a directory path.
+    #[instrument("fetch-split", skip(self, output_dir_path))]
     pub async fn fetch_split(
         &self,
         split_id: &str,

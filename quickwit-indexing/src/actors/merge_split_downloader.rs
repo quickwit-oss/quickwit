@@ -23,7 +23,7 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::SplitMetadata;
 use tantivy::Directory;
-use tracing::{info, info_span, warn, Span};
+use tracing::{info, instrument, warn};
 
 use crate::actors::MergeExecutor;
 use crate::merge_policy::MergeOperation;
@@ -53,33 +53,7 @@ impl Actor for MergeSplitDownloader {
 impl Handler<MergeOperation> for MergeSplitDownloader {
     type Reply = ();
 
-    fn message_span(&self, msg_id: u64, merge_operation: &MergeOperation) -> Span {
-        match merge_operation {
-            MergeOperation::Merge {
-                merge_split_id,
-                splits,
-            } => {
-                let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
-                info_span!("merge",
-                    msg_id=&msg_id,
-                    merge_split_id=%merge_split_id,
-                    num_docs=num_docs,
-                    num_splits=splits.len())
-            }
-            MergeOperation::Demux {
-                demux_split_ids,
-                splits,
-            } => {
-                let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
-                info_span!("demux",
-                    msg_id=&msg_id,
-                    demux_split_ids=?demux_split_ids,
-                    num_docs=num_docs,
-                    num_splits=splits.len())
-            }
-        }
-    }
-
+    #[instrument("merge-split-downloader", skip(self, merge_operation, ctx))]
     async fn handle(
         &mut self,
         merge_operation: MergeOperation,

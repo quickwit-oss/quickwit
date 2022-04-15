@@ -44,7 +44,7 @@ use quickwit_core::IndexService;
 use quickwit_indexing::actors::IndexingServer;
 use quickwit_indexing::start_indexer_service;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
-use quickwit_pushapi::{init_push_api, PushApiService};
+use quickwit_pushapi::{init_push_api, OltpService, PushApiService};
 use quickwit_search::{start_searcher_service, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use warp::{Filter, Rejection};
@@ -91,6 +91,7 @@ impl TryFrom<&str> for QuickwitService {
 struct QuickwitServices {
     pub cluster_service: Arc<dyn ClusterService>,
     pub search_service: Option<Arc<dyn SearchService>>,
+    pub oltp_service: Option<OltpService>,
     pub indexer_service: Option<Mailbox<IndexingServer>>,
     pub push_api_service: Option<Mailbox<PushApiService>>,
     pub index_service: Arc<IndexService>,
@@ -162,6 +163,7 @@ pub async fn serve_quickwit(
         search_service,
         indexer_service,
         index_service,
+        oltp_service: Some(OltpService::default()),
     };
 
     let rest_addr = config.rest_socket_addr()?;

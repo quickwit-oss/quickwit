@@ -33,7 +33,7 @@ use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_storage::SplitPayloadBuilder;
 use time::OffsetDateTime;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
-use tracing::{info, info_span, warn, Instrument, Span};
+use tracing::{info, info_span, instrument, warn, Instrument, Span};
 
 use crate::actors::Publisher;
 use crate::models::{PackagedSplit, PackagedSplitBatch, PublishOperation, PublisherMessage};
@@ -106,10 +106,7 @@ impl Actor for Uploader {
 impl Handler<PackagedSplitBatch> for Uploader {
     type Reply = ();
 
-    fn message_span(&self, msg_id: u64, batch: &PackagedSplitBatch) -> Span {
-        info_span!("", msg_id=&msg_id, num_splits=%batch.split_ids().len())
-    }
-
+    #[instrument(name="upload", fields(num_splits=%batch.split_ids().len()), skip_all)]
     async fn handle(
         &mut self,
         batch: PackagedSplitBatch,
@@ -229,6 +226,7 @@ fn make_publish_operation(
     }
 }
 
+#[instrument("stage_and_upload", fields(split_id=%packaged_split.split_id), skip_all)]
 async fn stage_and_upload_split(
     packaged_split: &PackagedSplit,
     split_store: &IndexingSplitStore,
@@ -246,19 +244,19 @@ async fn stage_and_upload_split(
     );
     let index_id = packaged_split.index_id.clone();
     let split_metadata = split_metadata.clone();
-    info!(split_id = packaged_split.split_id.as_str(), "staging-split");
     metastore
         .stage_split(&index_id, split_metadata.clone())
+        .instrument(info_span!("stage"))
         .await?;
     counters.num_staged_splits.fetch_add(1, Ordering::SeqCst);
 
-    info!(split_id = packaged_split.split_id.as_str(), "storing-split");
     split_store
         .store_split(
             &split_metadata,
             packaged_split.split_scratch_directory.path(),
             Box::new(split_streamer),
         )
+        .instrument(info_span!("store"))
         .await?;
     counters.num_uploaded_splits.fetch_add(1, Ordering::SeqCst);
     Ok(split_metadata)
