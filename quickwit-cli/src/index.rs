@@ -56,6 +56,20 @@ pub fn build_index_command<'a>() -> Command<'a> {
     Command::new("index")
         .about("Create your index, ingest data, search, describe... every command you need to manage indexes.")
         .subcommand(
+            Command::new("list")
+                .about("List indexes.")
+                .alias("ls")
+                .args(&[
+                    arg!(--config <CONFIG> "Quickwit config file")
+                        .env("QW_CONFIG"),
+                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
+                        .env("QW_DATA_DIR")
+                        .required(false),
+                    arg!(--"metastore-uri" <METASTORE_URI> "MetaStore URI. Override metastore_uri defined in config file, default to file-backed, but could S3 or Postgresql.")
+                        .required(false)
+                ])
+            )
+        .subcommand(
             Command::new("create")
                 .about("Creates an index from an index config file.")
                 .args(&[
@@ -240,8 +254,16 @@ pub struct MergeOrDemuxArgs {
     pub data_dir: Option<PathBuf>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct ListIndexesArgs {
+    pub config_uri: Uri,
+    pub data_dir: Option<PathBuf>,
+    pub metastore_uri: Option<Uri>,
+}
+
 #[derive(Debug, PartialEq)]
 pub enum IndexCliCommand {
+    List(ListIndexesArgs),
     Create(CreateIndexArgs),
     Describe(DescribeIndexArgs),
     Delete(DeleteIndexArgs),
@@ -265,6 +287,7 @@ impl IndexCliCommand {
             .subcommand()
             .ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
         match subcommand {
+            "list" => Self::parse_list_args(submatches),
             "create" => Self::parse_create_args(submatches),
             "delete" => Self::parse_delete_args(submatches),
             "search" => Self::parse_search_args(submatches),
@@ -275,6 +298,24 @@ impl IndexCliCommand {
             "ingest" => Self::parse_ingest_args(submatches),
             _ => bail!("Index subcommand `{}` is not implemented.", subcommand),
         }
+    }
+
+    fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let config_uri = matches
+            .value_of("config")
+            .map(Uri::try_new)
+            .expect("`config` is a required arg.")?;
+        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
+
+        let metastore_uri = matches
+                    .value_of("metastore-uri")
+                    .map(|uri| Uri::try_new(uri).unwrap());
+
+        Ok(Self::List(ListIndexesArgs {
+            config_uri,
+            data_dir,
+            metastore_uri,
+        }))
     }
 
     fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<Self> {
@@ -468,6 +509,7 @@ impl IndexCliCommand {
 
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
+            Self::List(args) => list_index_cli(args).await,
             Self::Create(args) => create_index_cli(args).await,
             Self::Describe(args) => describe_index_cli(args).await,
             Self::Ingest(args) => ingest_docs_cli(args).await,
@@ -478,6 +520,20 @@ impl IndexCliCommand {
             Self::Delete(args) => delete_index_cli(args).await,
         }
     }
+}
+
+pub async fn list_index_cli(args : ListIndexesArgs) -> anyhow::Result<()> {
+    debug!(args = ?args, "describe");
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
+    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
+    let metastore = metastore_uri_resolver
+        .resolve(&quickwit_config.metastore_uri())
+        .await?;
+
+    println!();
+    println!("List index called");
+
+    Ok(())
 }
 
 pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {

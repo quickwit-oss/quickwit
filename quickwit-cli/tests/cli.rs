@@ -85,6 +85,37 @@ fn test_cmd_help() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test]
+fn test_cmd_list() -> anyhow::Result<()> {
+    let index_id = append_random_suffix("test-list-cmd");
+    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+
+    make_command(
+        format!(
+            "index list --config {}",
+            test_env.resource_files["config"].display(),
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("List index called"));
+
+    // alias
+    make_command(
+        format!(
+            "index ls --config {}",
+            test_env.resource_files["config"].display(),
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("List index called"));
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_cmd_create() -> Result<()> {
     let index_id = append_random_suffix("test-create-cmd");
