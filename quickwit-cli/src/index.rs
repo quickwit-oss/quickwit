@@ -526,13 +526,21 @@ pub async fn list_index_cli(args : ListIndexesArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "describe");
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
+    let metastore_uri = if let Some(uri) = args.metastore_uri {
+        uri.to_string()
+    } else {
+        quickwit_config.metastore_uri()
+    };
     let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri())
-        .await?;
+            .resolve(&metastore_uri)
+            .await?;
+    let res = metastore.list_indexes_metadatas().await?;
 
     println!();
-    println!("List index called");
-
+    for meta in res {
+        println!("Index {:?}", meta.index_id);
+    }
+    println!();
     Ok(())
 }
 
