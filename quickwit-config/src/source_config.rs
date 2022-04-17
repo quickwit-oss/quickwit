@@ -96,7 +96,7 @@ impl SourceConfig {
                 }
                 Ok(())
             }
-            SourceParams::Kafka(_) | SourceParams::Kinesis(_) => {
+            SourceParams::Kafka(_) | SourceParams::Kinesis(_) | SourceParams::LogRotate(_) => {
                 // TODO consider any validation opportunity
                 Ok(())
             }
@@ -109,6 +109,7 @@ impl SourceConfig {
             SourceParams::File(_) => "file",
             SourceParams::Kafka(_) => "kafka",
             SourceParams::Kinesis(_) => "kinesis",
+            SourceParams::LogRotate(_) => "logrotate",
             SourceParams::Vec(_) => "vec",
             SourceParams::Void(_) => "void",
             SourceParams::PushApi(_) => "pushapi",
@@ -121,6 +122,7 @@ impl SourceConfig {
             SourceParams::File(params) => serde_json::to_value(params),
             SourceParams::Kafka(params) => serde_json::to_value(params),
             SourceParams::Kinesis(params) => serde_json::to_value(params),
+            SourceParams::LogRotate(params) => serde_json::to_value(params),
             SourceParams::Vec(params) => serde_json::to_value(params),
             SourceParams::Void(params) => serde_json::to_value(params),
             SourceParams::PushApi(params) => serde_json::to_value(params),
@@ -138,6 +140,8 @@ pub enum SourceParams {
     Kafka(KafkaSourceParams),
     #[serde(rename = "kinesis")]
     Kinesis(KinesisSourceParams),
+    #[serde(rename = "logrotate")]
+    LogRotate(LogRotateSourceParams),
     #[serde(rename = "vec")]
     Vec(VecSourceParams),
     #[serde(rename = "void")]
@@ -166,12 +170,12 @@ pub struct FileSourceParams {
     /// Path of the file to read. Assume stdin if None.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    #[serde(deserialize_with = "absolute_filepath_from_str")]
+    #[serde(deserialize_with = "absolute_filepath_from_str_opt")]
     pub filepath: Option<PathBuf>, //< If None read from stdin.
 }
 
 // Deserializing a filepath string into an absolute filepath.
-fn absolute_filepath_from_str<'de, D>(deserializer: D) -> Result<Option<PathBuf>, D::Error>
+fn absolute_filepath_from_str_opt<'de, D>(deserializer: D) -> Result<Option<PathBuf>, D::Error>
 where D: Deserializer<'de> {
     let filepath_opt: Option<String> = Deserialize::deserialize(deserializer)?;
     if let Some(filepath) = filepath_opt {
@@ -180,6 +184,12 @@ where D: Deserializer<'de> {
     } else {
         Ok(None)
     }
+}
+
+fn absolute_filepath_from_str<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
+where D: Deserializer<'de> {
+    absolute_filepath_from_str_opt(deserializer)
+        .and_then(|path| path.ok_or_else(|| D::Error::custom("missing file path")))
 }
 
 impl FileSourceParams {
@@ -252,6 +262,37 @@ impl TryFrom<KinesisSourceParamsInner> for KinesisSourceParams {
             region_or_endpoint,
             shutdown_at_stream_eof: value.shutdown_at_stream_eof,
         })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LogRotateSourceParams {
+    /// Path of the current log file.
+    #[serde(deserialize_with = "absolute_filepath_from_str")]
+    pub current_file: PathBuf,
+    /// Path of the directory where rotated logs are stored. If None, assumes it's
+    /// the directory where `latest_file` is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    #[serde(deserialize_with = "absolute_filepath_from_str_opt")]
+    archive_dir: Option<PathBuf>,
+    /// glob pattern of logs that already got rotated
+    pub name_pattern: String,
+}
+
+impl LogRotateSourceParams {
+    pub fn archive_dir(&self) -> PathBuf {
+        if let Some(dir) = &self.archive_dir {
+            dir.clone()
+        } else {
+            let mut dir = self.current_file.clone();
+            dir.pop();
+            dir
+        }
+    }
+    pub fn set_archive_dir(&mut self, dir: PathBuf) {
+        self.archive_dir = Some(dir);
     }
 }
 

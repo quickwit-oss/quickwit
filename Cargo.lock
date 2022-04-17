@@ -2824,6 +2824,7 @@ dependencies = [
  "fail",
  "flume",
  "futures",
+ "glob",
  "itertools",
  "libz-sys",
  "mockall",
