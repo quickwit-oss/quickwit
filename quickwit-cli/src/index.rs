@@ -308,8 +308,8 @@ impl IndexCliCommand {
         let data_dir = matches.value_of("data-dir").map(PathBuf::from);
 
         let metastore_uri = matches
-                    .value_of("metastore-uri")
-                    .map(|uri| Uri::try_new(uri).unwrap());
+            .value_of("metastore-uri")
+            .map(|uri| Uri::try_new(uri).unwrap());
 
         Ok(Self::List(ListIndexesArgs {
             config_uri,
@@ -522,7 +522,7 @@ impl IndexCliCommand {
     }
 }
 
-pub async fn list_index_cli(args : ListIndexesArgs) -> anyhow::Result<()> {
+pub async fn list_index_cli(args: ListIndexesArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "describe");
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
@@ -531,9 +531,7 @@ pub async fn list_index_cli(args : ListIndexesArgs) -> anyhow::Result<()> {
     } else {
         quickwit_config.metastore_uri()
     };
-    let metastore = metastore_uri_resolver
-            .resolve(&metastore_uri)
-            .await?;
+    let metastore = metastore_uri_resolver.resolve(&metastore_uri).await?;
     let res = metastore.list_indexes_metadatas().await?;
 
     println!();
