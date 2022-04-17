@@ -34,7 +34,7 @@ use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position};
 use serde::Serialize;
 use tokio::fs::{self, File};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncSeekExt, BufReader};
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 use crate::actors::Indexer;
 use crate::models::RawDocBatch;
@@ -42,13 +42,6 @@ use crate::source::{Source, SourceContext, TypedSourceFactory};
 
 /// Cut a new batch as soon as we have read BATCH_NUM_BYTES_THRESHOLD.
 const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
-
-pub struct LogRotateSource {
-    source_id: String,
-    params: LogRotateSourceParams,
-    position: LogRotatePosition,
-    reader: BufReader<Box<dyn AsyncRead + Send + Sync + Unpin>>,
-}
 
 #[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct LogRotatePosition {
@@ -281,17 +274,29 @@ async fn find_next_file(
         .unwrap_or(0);
     let mut list_dir = fs::read_dir(dir).await?;
     let mut files = BTreeMap::new();
+    let mut found_current_file = false;
     while let Some(entry) = list_dir.next_entry().await? {
         let filename = if let Ok(name) = entry.file_name().into_string() {
             name
         } else {
             continue;
         };
+        if filename == current_file {
+            found_current_file = true;
+        }
         if pattern.matches(&filename) && filename.as_str() > current_file {
             // this is a log file which is newer than current file
             let len = entry.metadata().await?.len();
             files.insert(filename, len);
         }
+    }
+
+    if !found_current_file && !current_file.is_empty() {
+        warn!(
+            "File after '{}' was requested, but '{}' wasn't found, it's possible some files got \
+             skipped",
+            current_file, current_file
+        );
     }
 
     let first_non_empty = files.into_iter().find(|(_, v)| *v > 0).map(|(k, _)| k);
@@ -317,6 +322,58 @@ async fn find_next_file(
     }
 }
 
+pub struct LogRotateSource {
+    source_id: String,
+    params: LogRotateSourceParams,
+    position: LogRotatePosition,
+    reader: BufReader<Box<dyn AsyncRead + Send + Sync + Unpin>>,
+    first_round_correction: bool,
+}
+
+impl LogRotateSource {
+    async fn correct_first_round(
+        &mut self,
+        batch_sink: &Mailbox<Indexer>,
+        ctx: &SourceContext,
+    ) -> Result<(), anyhow::Error> {
+        let start_pos = self.position.to_position();
+
+        if !self.position.revalidate_next_file().await? {
+            self.position.next_file().await?;
+            // if revalidate returned false/invalid, there **must** be a new file,
+            // so is_next must be unset.
+            assert!(!self.position.is_next);
+            let mut file = File::open(&self.position.filepath())
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to open source file `{}`.",
+                        self.position.filepath().display()
+                    )
+                })?;
+            file.seek(SeekFrom::Start(self.position.offset))
+                .await
+                .context("failed to seek in file")?;
+            self.reader = BufReader::new(Box::new(file));
+
+            let partition_id =
+                PartitionId::from(self.params.current_file.to_string_lossy().to_string());
+            let checkpoint_delta = CheckpointDelta::from_partition_delta(
+                partition_id,
+                start_pos,
+                self.position.to_position(),
+            );
+            trace!("sending empty delta to correct file name");
+            let raw_doc_batch = RawDocBatch {
+                docs: Vec::new(),
+                checkpoint_delta,
+            };
+            ctx.send_message(batch_sink, raw_doc_batch).await?;
+        }
+        Ok(())
+    }
+}
+
 #[async_trait]
 impl Source for LogRotateSource {
     async fn emit_batches(
@@ -324,6 +381,10 @@ impl Source for LogRotateSource {
         batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
+        if self.first_round_correction {
+            self.first_round_correction = false;
+            self.correct_first_round(batch_sink, ctx).await?;
+        }
         // We collect batches of documents before sending them to the indexer.
         let start_pos = self.position.to_position();
         let mut docs = Vec::new();
@@ -427,17 +488,21 @@ impl TypedSourceFactory for LogRotateSourceFactory {
 
         let position = LogRotatePosition::from_position_and_config(position, &params).await?;
 
-        // XXX this can be wrong if we where reading file with is_next, and logs got rotated
-        // between now and then. We can't just update to the newer name as we would then emit
-        // the wrong position delta. For the moment, just raise an error
-        assert!(position.revalidate_next_file().await?);
         let mut file = File::open(&position.filepath()).await.with_context(|| {
             format!(
                 "Failed to open source file `{}`.",
                 position.filepath().display()
             )
         })?;
-        file.seek(SeekFrom::Start(position.offset)).await?;
+
+        // if reading a is_next, and if logs got rotated between now and when last checkpoint,
+        // it's possible that the file changed. This can't be corrected here as we have to send
+        // a checkpoint delta to make position before and after log rotation match.
+        let first_round_correction = !position.revalidate_next_file().await?;
+
+        if !first_round_correction {
+            file.seek(SeekFrom::Start(position.offset)).await?;
+        }
         let reader = Box::new(file);
 
         let log_source = LogRotateSource {
@@ -445,6 +510,7 @@ impl TypedSourceFactory for LogRotateSourceFactory {
             position,
             reader: BufReader::new(reader),
             params,
+            first_round_correction,
         };
         Ok(log_source)
     }
