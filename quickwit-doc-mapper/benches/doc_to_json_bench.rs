@@ -58,7 +58,7 @@ pub fn simple_json_to_doc_benchmark(c: &mut Criterion) {
             let lines: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
             let schema = doc_mapper.schema();
             for line in lines {
-                let doc = schema.parse_document(&line).unwrap();
+                let _doc = schema.parse_document(&line).unwrap();
             }
         })
     });

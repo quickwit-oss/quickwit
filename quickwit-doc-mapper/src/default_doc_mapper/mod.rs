@@ -18,19 +18,22 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod default_mapper;
+mod default_mapper_builder;
 mod field_mapping_entry;
 mod field_mapping_type;
+mod mapping_tree;
 
 use anyhow::bail;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-pub use self::default_mapper::{DefaultDocMapper, DefaultDocMapperBuilder, SortByConfig};
-pub use self::field_mapping_entry::{DocParsingError, FieldMappingEntry};
+pub use self::default_mapper::{DefaultDocMapper, SortByConfig};
+pub use self::default_mapper_builder::{DefaultDocMapperBuilder, ModeType};
+pub use self::field_mapping_entry::{FieldMappingEntry, QuickwitJsonOptions};
 pub use self::field_mapping_type::FieldMappingType;
 
 /// Regular expression validating a field mapping name.
-pub const FIELD_MAPPING_NAME_PATTERN: &str = r#"^[_a-zA-Z][_\.\-a-zA-Z0-9]{0,254}$"#;
+pub const FIELD_MAPPING_NAME_PATTERN: &str = r#"^[a-zA-Z][_\.\-a-zA-Z0-9]{0,254}$"#;
 
 /// Validates a field mapping name.
 /// Returns `Ok(())` if the name can be used for a field mapping. Does not check for reserved field
@@ -38,8 +41,9 @@ pub const FIELD_MAPPING_NAME_PATTERN: &str = r#"^[_a-zA-Z][_\.\-a-zA-Z0-9]{0,254
 ///
 /// A field mapping name:
 /// - may only contain uppercase and lowercase ASCII letters `[a-zA-Z]`, digits `[0-9]`, hyphens
-///   `-`, periods `.`, and underscores `_`;
-/// - must start with an uppercase or lowercase ASCII letter `[a-zA-Z]`, or an underscore `_`;
+///   `-`, and underscores `_`;
+/// - must start with an uppercase or lowercase ASCII letter `[a-zA-Z]`; (fields starting by _ are
+///   reserved by quickwit)
 /// - must not be longer than 255 characters.
 pub fn validate_field_mapping_name(field_mapping_name: &str) -> anyhow::Result<()> {
     static FIELD_MAPPING_NAME_PTN: Lazy<Regex> =
@@ -50,6 +54,9 @@ pub fn validate_field_mapping_name(field_mapping_name: &str) -> anyhow::Result<(
     }
     if field_mapping_name.is_empty() {
         bail!("Field name is empty.");
+    }
+    if field_mapping_name.starts_with('_') {
+        bail!("Field name `{}` may not start by _", field_mapping_name);
     }
     if field_mapping_name.len() > 255 {
         bail!(
@@ -95,7 +102,7 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("must start with"));
-        assert!(validate_field_mapping_name("_my-field!")
+        assert!(validate_field_mapping_name("my-field!")
             .unwrap_err()
             .to_string()
             .contains("illegal characters"));

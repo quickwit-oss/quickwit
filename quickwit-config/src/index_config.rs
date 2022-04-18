@@ -26,7 +26,8 @@ use byte_unit::Byte;
 use json_comments::StripComments;
 use quickwit_common::uri::{Extension, Uri};
 use quickwit_doc_mapper::{
-    DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, SortBy, SortByConfig, SortOrder,
+    DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, ModeType, QuickwitJsonOptions, SortBy,
+    SortByConfig, SortOrder,
 };
 use serde::{Deserialize, Serialize};
 
@@ -45,6 +46,10 @@ pub struct DocMapping {
     pub tag_fields: BTreeSet<String>,
     #[serde(default)]
     pub store_source: bool,
+    #[serde(default)]
+    pub mode: ModeType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dynamic_mapping: Option<QuickwitJsonOptions>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -306,17 +311,21 @@ pub fn build_doc_mapper(
     search_settings: &SearchSettings,
     indexing_settings: &IndexingSettings,
 ) -> anyhow::Result<Arc<dyn DocMapper>> {
-    let mut builder = DefaultDocMapperBuilder::new();
-    builder.default_search_fields = search_settings.default_search_fields.clone();
-    builder.demux_field = indexing_settings.demux_field.clone();
-    builder.sort_by = match indexing_settings.sort_by() {
+    let sort_by = match indexing_settings.sort_by() {
         SortBy::DocId => None,
         SortBy::FastField { field_name, order } => Some(SortByConfig { field_name, order }),
     };
-    builder.timestamp_field = indexing_settings.timestamp_field.clone();
-    builder.field_mappings = doc_mapping.field_mappings.clone();
-    builder.tag_fields = doc_mapping.tag_fields.iter().cloned().collect();
-    builder.store_source = doc_mapping.store_source;
+    let builder = DefaultDocMapperBuilder {
+        store_source: doc_mapping.store_source,
+        default_search_fields: search_settings.default_search_fields.clone(),
+        timestamp_field: indexing_settings.timestamp_field.clone(),
+        sort_by,
+        field_mappings: doc_mapping.field_mappings.clone(),
+        tag_fields: doc_mapping.tag_fields.iter().cloned().collect(),
+        demux_field: indexing_settings.demux_field.clone(),
+        mode: doc_mapping.mode,
+        dynamic_mapping: doc_mapping.dynamic_mapping.clone(),
+    };
     Ok(Arc::new(builder.build()?))
 }
 

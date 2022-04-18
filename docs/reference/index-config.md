@@ -28,6 +28,7 @@ index_id: "hdfs"
 index_uri: "s3://my-bucket/hdfs"
 
 doc_mapping:
+  mode: lenient
   field_mappings:
     - name: timestamp
       type: i64
@@ -88,11 +89,12 @@ The doc mapping defines how a document and the fields it contains are stored and
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | `field_mappings` | Collection of field mapping, each having its own data type (text, binary, date, i64, u64, f64).   | [] |
+| `mode`        | Defines how quickwit should handle document fields that are not present in the `field_mappings`. In particular, the "dynamic" mode makes it possible to use quickwit in a schemaless manner. (See [mode](#mode)) | `lenient`
+| `dynamic_mapping` | This parameter is only allowed when `mode` is set to `dynamic`. It then defines whether dynamically mapped fields should be indexed, stored, etc.  | (See [mode](#mode))
 | `tag_fields` | Collection of fields already defined in `field_mappings` whose values will be stored in a dedicated `tags` (1) | [] |
 | `store_source` | Whether or not the original JSON document is stored or not in the index.   | false |
 
 (1) [Learn more on the tags usage](../design/querying.md).
-
 
 ### Field types
 
@@ -208,6 +210,54 @@ fast: true
 | `indexed`   | Whether value is indexed | `true` |
 | `fast`     | Whether value is stored in a fast field | `false` |
 
+#### `json` type
+
+The `json` type accepts a json object.
+
+Example of a mapping for a json field:
+
+```yaml
+name: parameters,
+type: json,
+stored: true,
+indexed: true,
+tokenizer: "default"
+```
+
+**Parameters for json field**
+
+| Variable      | Description   | Default value |
+| ------------- | ------------- | ------------- |
+| `stored`    | Whether value is stored in the document store | `true` |
+| `indexed`   | Whether value is indexed | `true` |
+| `tokenizer` | **Only affects strings in the json object**. Name of the `Tokenizer`, choices between `raw`, `default` and `stem_en` | `default` |
+| `record`    | **Only affects strings in the json object**. Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
+
+Note that the `tokenizer` and the `record` have the same definition and the same effect as for the text field.
+
+To search into a json object, one then needs to extend the field name with the path that will lead to the target value.
+
+For instance, when indexing the following object:
+```json
+{
+    "product_name": "droopy t-shirt",
+    "attributes": {
+        "color": ["red", "green", "white"],
+        "size:": "L"
+    }
+}
+```
+
+Assuming `attributes` as been defined as a field mapping as follows:
+```yaml
+- type: json
+  name: attributes
+```
+
+`attributes.color:red` is then a valid query.
+
+If in addition attributes is set as a default search field, then `color:red` is a valid query.
+
 ### Composite types
 
 #### **array**
@@ -227,13 +277,88 @@ field_mappings:
   - name: service
     type: text
 ```
+### Mode
+
+The `mode` describes how quickwit should behaves when it receives a field that is not defined in the field mapping.
+
+Quickwit offers you three different modes
+- `lenient`: unmapped fields are simply dismissed by quickwit.
+- `strict`: if a document contains a field that is not mapped, quickwit will dismiss it, and count it as an error.
+- `dynamic`: unmapped fields are gathered by quickwit and handled as defined in the  `dynamic_mapping` parameter.
+
+`dynamic_mapping` offers the same configuration options as when configuring a `json` field. It defaults to:
+
+```yaml
+- indexed: true
+- stored: true
+- tokenizer: raw
+- record: basic
+```
+
+The `dynamic` mode makes it possible to operate Quickwit in a schemaless manner, or with a partial schema.
+
+If the `dynamic_mapping` has been set as indexed (this is this default),
+fields that were mapped thanks to the dynamic mode can be searched, by
+target the path required to reach them from the root of the json object.
+
+For instance, in a entirely schemaless settings, a minimal index configuration could be:
+
+```yaml
+version: 0
+index_id: my-dynamic-index
+# note we did not map anything.
+doc_mapping:
+  mode: dynamic
+```
+
+We could then index a complex document like the following:
+
+```json
+{
+  "endpoint": "/admine",
+  "query_params": {
+    "ctk": "e42bb897d",
+    "page": "eeb"
+  },
+  "src": {
+    "ip": "8.8.8.8",
+    "port": 53,
+  },
+  //...
+}
+```
+
+The following queries are then valid, and match the document above.
+
+```bash
+// Fields can be searched simply
+endpoint:/admine
+
+// Nested object can be queried by specifying a `.` separated
+// path from the root of the json object to the given field.
+query_params.ctk:e42bb897d
+
+// numbers are searchable too
+src.port:53
+
+// and of course we can combine them with boolean operators.
+src.port:53 AND query_params.ctk:e42bb897d
+```
+
+
+
+
+
 
 ### Field name validation rules
 
-Currently Quickwit only accepts field name that matches the following rules:
+Currently Quickwit only accepts field name that matches the following regular expression:
+`[a-zA-Z][_\.\-a-zA-Z0-9]*$`
 
-- do not start with character `-`
-- matches regex `[_a-zA-Z][_\\.\\-a-zA-Z0-9]*$`
+In plain language:
+- it needs to have at least one character.
+- it should only contain latin letter `[a-zA-Z]` digits `[0-9]` or (`.`, `-`, `_`).
+- the first character needs to be a letter.
 
 ### Behavior with fields not defined in the config
 

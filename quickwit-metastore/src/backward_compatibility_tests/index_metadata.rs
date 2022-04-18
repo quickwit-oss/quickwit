@@ -24,7 +24,7 @@ use quickwit_config::{
     DocMapping, IndexingResources, IndexingSettings, KafkaSourceParams, MergePolicy,
     SearchSettings, SourceConfig, SourceParams,
 };
-use quickwit_doc_mapper::SortOrder;
+use quickwit_doc_mapper::{ModeType, SortOrder};
 
 use crate::checkpoint::{
     CheckpointDelta, IndexCheckpoint, PartitionId, Position, SourceCheckpoint,
@@ -139,6 +139,8 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
             .map(|tag_field| tag_field.to_string())
             .collect::<BTreeSet<String>>(),
         store_source: true,
+        mode: ModeType::Dynamic,
+        dynamic_mapping: None,
     };
     let merge_policy = MergePolicy {
         demux_factor: 7,
