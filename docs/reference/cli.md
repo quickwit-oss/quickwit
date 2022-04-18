@@ -61,33 +61,76 @@ The CLI is structured into high-level commands with subcommands.
 
 
 
+## run
+Runs quickwit services. By default, `indexer` and `searcher` are started.
+
 ## index
 Create your index, ingest data, search, describe... every command you need to manage indexes.
+
+### index list
+
+List indexes.  
+`quickwit index list [args]`
+
+*Synopsis*
+
+```bash
+quickwit index list
+    --config <config>
+    [--metastore-uri <metastore-uri>]
+```
+
+*Options*
+
+`--config`     
+`--metastore-uri`     
+
+*Examples*
+
+*List indexes*
+```bash
+quickwit index list --config ./config/quickwit.yaml
+# Or with alias.
+quickwit index ls --config ./config/quickwit.yaml
+
+                                    Indexes                                     
++-----------+--------------------------------------------------------+
+| Index ID  |                       Index URI                        |
++-----------+--------------------------------------------------------+
+| hdfs-logs | file:///home/quickwit-indices/qwdata/indexes/hdfs-logs |
++-----------+--------------------------------------------------------+
+| wikipedia | file:///home/quickwit-indices/qwdata/indexes/wikipedia |
++-----------+--------------------------------------------------------+
+
+
+```
 
 ### index create
 
 Creates an index of ID `index` at `index-uri` configured by a [YAML config file](index-config.md) located at `index-config`.
 The index config lets you define the mapping of your document on the index and how each field is stored and indexed.
-If `index-uri` is omitted, `index-uri` will be set to `{default_index_root_uri}/{index}`, more info on [Quickwit config docs](quickwit-config.md).
+If `index-uri` is omitted, `index-uri` will be set to `{default_index_root_uri}/{index}`, more info on [Quickwit config docs](config.md).
 The command fails if an index already exists unless `overwrite` is passed.
 When `overwrite` is enabled, the command deletes all the files stored at `index-uri` before creating a new index.
-
+  
 `quickwit index create [args]`
 
 *Synopsis*
 
 ```bash
 quickwit index create
-    --index-config <index-config>
     --config <config>
+    --index-config <index-config>
+    [--data-dir <data-dir>]
     [--overwrite]
 ```
 
 *Options*
 
-`--index-config` Location of the index config file.
-`--config` Quickwit config file.
-`--overwrite` Overwrites pre-existing index.
+`--config`     
+`--index-config`     
+`--data-dir`     
+`--overwrite`     
 
 *Examples*
 
@@ -104,15 +147,15 @@ Indexes a dataset consisting of newline-delimited JSON objects located at `input
 The data is appended to the target index of ID `index` unless `overwrite` is passed. `input-path` can be a file or another command output piped into stdin.
 Currently, only local datasets are supported.
 By default, Quickwit's indexer will work with a heap of 2 GiB of memory. Learn how to change `heap-size` in the [index config doc page](index-config.md).
-
+  
 `quickwit index ingest [args]`
 
 *Synopsis*
 
 ```bash
 quickwit index ingest
-    --index <index>
     --config <config>
+    --index <index>
     [--data-dir <data-dir>]
     [--input-path <input-path>]
     [--overwrite]
@@ -121,12 +164,12 @@ quickwit index ingest
 
 *Options*
 
-`--index` ID of the target index.
-`--config` Quickwit config file.
-`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-`--input-path` Location of the input file.
-`--overwrite` Overwrites pre-existing index.
-`--keep-cache` Does not clear local cache directory upon completion.
+`--config`     
+`--index`     
+`--data-dir`     
+`--input-path`     
+`--overwrite`     
+`--keep-cache`     
 
 *Examples*
 
@@ -144,21 +187,23 @@ cat hdfs-log.json | quickwit index ingest --index wikipedia --config=./config/qu
 
 ### index describe
 
-Displays descriptive statistics of an index: number of published splits, number of documents, splits min/max timestamps, size of splits.
+Displays descriptive statistics of an index: number of published splits, number of documents, splits min/max timestamps, size of splits.  
 `quickwit index describe [args]`
 
 *Synopsis*
 
 ```bash
 quickwit index describe
-    --index <index>
     --config <config>
+    --index <index>
+    [--data-dir <data-dir>]
 ```
 
 *Options*
 
-`--index` ID of the target index.
-`--config` Quickwit config file.
+`--config`     
+`--index`     
+`--data-dir`     
 
 *Examples*
 
@@ -194,16 +239,18 @@ The offset of the first hit returned and the number of hits returned can be set 
 It's possible to override the default search fields `search-fields` option to define the list of fields that Quickwit will search into if the user query does not explicitly target a field in the query.
 Search can also be limited to a time range using the `start-timestamp` and `end-timestamp` options.
 These timestamp options are useful for boosting query performance when using a time series dataset.
-
+  
 `quickwit index search [args]`
 
 *Synopsis*
 
 ```bash
 quickwit index search
-    --index <index>
     --config <config>
+    --index <index>
+    [--data-dir <data-dir>]
     --query <query>
+    [--aggregation <aggregation>]
     [--max-hits <max-hits>]
     [--start-offset <start-offset>]
     [--search-fields <search-fields>]
@@ -213,14 +260,16 @@ quickwit index search
 
 *Options*
 
-`--index` ID of the target index.
-`--config` Quickwit config file.
-`--query` Query expressed in natural query language (barack AND obama) OR "president of united states"). Learn more on [query language](./query-language)
-`--max-hits` Maximum number of hits returned. (Default: 20)
-`--start-offset` Offset in the global result set of the first hit returned. (Default: 0)
-`--search-fields` List of fields that Quickwit will search into if the user query does not explicitly target a field in the query. It overrides the default search fields defined in the index config. Space-separated list, e.g. "field1 field2".
-`--start-timestamp` Filters out documents before that timestamp (time-series indexes only).
-`--end-timestamp` Filters out documents after that timestamp (time-series indexes only).
+`--config`     
+`--index`     
+`--data-dir`     
+`--query`     
+`--aggregation`     
+`--max-hits`  (Default: 20)    
+`--start-offset`  (Default: 0)    
+`--search-fields`     
+`--start-timestamp`     
+`--end-timestamp`     
 
 *Examples*
 
@@ -250,7 +299,7 @@ quickwit index search --index wikipedia --query "search" --search-fields title -
 
 ### index gc
 
-Garbage collects stale staged splits and splits marked for deletion.
+Garbage collects stale staged splits and splits marked for deletion.  
 :::note
 Intermediate files are created while executing Quickwit commands.
 These intermediate files are always cleaned at the end of each successfully executed command.
@@ -265,8 +314,8 @@ In practice, you can settle with the default value (1 hour) and only specify a l
 
 ```bash
 quickwit index gc
-    --index <index>
     --config <config>
+    --index <index>
     [--data-dir <data-dir>]
     [--grace-period <grace-period>]
     [--dry-run]
@@ -274,32 +323,32 @@ quickwit index gc
 
 *Options*
 
-`--index` ID of the target index.
-`--config` Quickwit config file.
-`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-`--grace-period` Threshold period after which stale staged splits are garbage collected. (Default: 1h)
-`--dry-run` Executes the command in dry run mode and only displays the list of splits candidates for garbage collection.
+`--config`     
+`--index`     
+`--data-dir`     
+`--grace-period`  (Default: 1h)    
+`--dry-run`     
 ### index delete
 
-Delete an index.
+Delete an index.  
 `quickwit index delete [args]`
 
 *Synopsis*
 
 ```bash
 quickwit index delete
-    --index <index>
     --config <config>
+    --index <index>
     [--data-dir <data-dir>]
     [--dry-run]
 ```
 
 *Options*
 
-`--index` ID of the target index.
-`--config` Quickwit config file.
-`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-`--dry-run` Executes the command in dry run mode and only displays the list of splits candidate for deletion.
+`--config`     
+`--index`     
+`--data-dir`     
+`--dry-run`     
 
 *Examples*
 
@@ -308,234 +357,140 @@ quickwit index delete
 quickwit index delete --index wikipedia --config ./config/quickwit.yaml
 ```
 
-## split
-Operations (list, add, delete, describe...) on splits.
-
-### split list
-
-Lists the splits of an index.
-`quickwit split list [args]`
-
-*Synopsis*
-
-```bash
-quickwit split list
-    --index <index>
-    [--states <states>]
-    [--start-date <start-date>]
-    [--end-date <end-date>]
-    [--tags <tags>]
-    --config <config>
-    [--data-dir <data-dir>]
-```
-
-*Options*
-
-`--index` ID of the target index.
-`--states` Comma-separated list of split states to filter on.
-Possible values are `staged`, `published`, and `marked`.
-
-`--start-date` Filters out splits containing documents from this timestamp onwards (time-series indexes only).
-`--end-date` Filters out splits containing documents before this timestamp (time-series indexes only).
-`--tags` Comma-separated list of tags, only splits that contain all of the tags will be returned.
-`--config` Quickwit config file.
-`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-
-
-## run
-
-Starts quickwit services. By default, both `search` and `indexing` will be started.
-It is however possible to specifically run only one of these services by adding a `--service` parameter.
-
-:::
-`quickwit run [args]`
-
-*Options*
-
-`--service` Selects a specific service to run. (searcher or indexer)
-`--config` Quickwit config file.
-`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-
-### Searcher service
-
-The searcher service starts a web server at `rest_listing_address:rest_list_port` that exposes the [Quickwit REST API](rest-api.md)
-where `rest_listing_address` and `rest_list_port` are defined in Quickwit config file (quickwit.yaml).
-The node can optionally join a cluster using the `peer_seeds` parameter.
-This list of node addresses is used to discover the remaining peer nodes in the cluster through a gossip protocol (SWIM).
-
-:::note
-Behind the scenes, Quickwit needs to open the following port for cluster formation and workload distribution:
-
-| name        | purpose                                  | protocol | default value |
-|-------------|------------------------------------------|----------|---------------|
-| rest port   | Serves Quickwit's UI and REST API        | TCP      | 7280          |
-| gossip port | Serves for Quickwit's cluster membership | UDP      | rest_port     |
-| grpc port   | Serves Quickwit's gRPC API               | TCP      | rest_port + 1 |
-
-If ports are already taken, the serve command will fail.
-
-*Examples*
-
-*Start a Searcher*
-```bash
-quickwit run --service searcher --config=./config/quickwit.yaml
-```
-
-*Make a search request on a wikipedia index*
-```bash
-# To create wikipedia index and ingest data, go to our tutorial https://quickwit.io/docs/get-started/quickstart.
-# Start a searcher.
-quickwit run --service searcher --config=./config/quickwit.yaml
-# Make a request.
-curl "http://127.0.0.1:7280/api/v1/wikipedia/search?query=barack+obama"
-```
-
-*Make a search stream request on a Github archive index*
-```bash
-# Create gh-archive index.
-curl -o gh_archive_index_config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/gh-archive/index-config.yaml
-quickwit index create --index-config gh_archive_index_config.yaml --config ./config/quickwit.yaml
-# Download a data sample and ingest it.
-curl https://quickwit-datasets-public.s3.amazonaws.com/gh-archive-2022-01-text-only-10000.json.gz | gunzip | cargo r index ingest --index gh-archive --config=./config/quickwit.yaml
-# Start server.
-quickwit run --service searcher --config=./config/quickwit.yaml
-# Finally make the search stream request.
-curl "http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=log4j&fastField=id&outputFormat=csv"
-# Make a search stream request with HTTP2.
-curl --http2-prior-knowledge "http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=log4j&fastField=id&outputFormat=csv"
-```
-
-### Indexer service
-
-The indexer service will list indexes and their associated sources, and run an indexing pipeline for every single source.
-
 ## source
 Manages sources.
 
-### source add
+### source create
 
-Adds a new source.
-`quickwit source add [args]`
+Adds a new source to an index.  
+`quickwit source create [args]`
 
 *Synopsis*
 
 ```bash
-quickwit source add
-    --index <index>
-    --source <source>
-    --type <type>
-    --params <params>
+quickwit source create
     --config <config>
+    --index <index>
+    --source-config <source-config>
 ```
 
 *Options*
 
-`--index` ID of the target index.
-`--source` ID of the source.
-`--type` Type of the source. Available types are: `file` and `kafka`.
-`--params` Parameters for the source formatted as a JSON object passed inline or via a file. Parameters are source-specific. Please, refer to the source's documentation for more details.
-`--config` Quickwit config file.
-
-*Examples*
-
-*Add a file source to `wikipedia` index*
-```bash
-quickwit source add --index wikipedia --source wikipedia-source --type file --params '{"filepath":"wiki-articles-10000.json"}' --config ./config/quickwit.yaml
-```
-
-*Add a Kafka source to `wikipedia` index*
-```bash
-cat << EOF > wikipedia-kafka-source.json
-{
-  "topic": "wikipedia",
-  "client_params": {
-    "bootstrap.servers": "localhost:9092",
-    "group.id": "my-group-id",
-    "security.protocol": "SSL"
-  }
-}
-EOF
-quickwit source add --index wikipedia --source wikipedia-source --type kafka --params wikipedia-kafka-source.json --config ./config/quickwit.yaml
-```
-
+`--config`     
+`--index`     
+`--source-config`     
 ### source delete
 
-Deletes a source.
+Deletes a source from an index.  
 `quickwit source delete [args]`
 
 *Synopsis*
 
 ```bash
 quickwit source delete
+    --config <config>
     --index <index>
     --source <source>
-    --config <config>
 ```
 
 *Options*
 
-`--index` ID of the target index.
-`--source` ID of the target source.
-`--config` Quickwit config file.
+`--config`     
+`--index`     
+`--source`     
 
 *Examples*
 
 *Delete a `wikipedia-source` source*
 ```bash
 quickwit source delete --index wikipedia --source wikipedia-source --config ./config/quickwit.yaml
+
 ```
 
 ### source describe
 
-Describes a source.
+Describes a source.  
 `quickwit source describe [args]`
 
 *Synopsis*
 
 ```bash
 quickwit source describe
+    --config <config>
     --index <index>
     --source <source>
-    --config <config>
 ```
 
 *Options*
 
-`--index` ID of the target index.
-`--source` ID of the target source.
-`--config` Quickwit config file.
+`--config`     
+`--index`     
+`--source`     
 
 *Examples*
 
 *Describe a `wikipedia-source` source*
 ```bash
 quickwit source describe --index wikipedia --source wikipedia-source --config ./config/quickwit.yaml
+
 ```
 
 ### source list
 
-Lists the sources of an index.
+Lists the sources of an index.  
 `quickwit source list [args]`
 
 *Synopsis*
 
 ```bash
 quickwit source list
-    --index <index>
     --config <config>
+    --index <index>
 ```
 
 *Options*
 
-`--index` ID of the target index.
-`--config` Quickwit config file.
+`--config`     
+`--index`     
 
 *Examples*
 
 *List `wikipedia` index sources*
 ```bash
 quickwit source list --index wikipedia --config ./config/quickwit.yaml
+
 ```
+
+## split
+Operations (list, add, delete, describe...) on splits.
+
+### split list
+
+List the splits of an index.  
+`quickwit split list [args]`
+
+*Synopsis*
+
+```bash
+quickwit split list
+    --config <config>
+    --index <index>
+    [--data-dir <data-dir>]
+    [--tags <tags>]
+    [--states <states>]
+    [--start-date <start-date>]
+    [--end-date <end-date>]
+```
+
+*Options*
+
+`--config`     
+`--index`     
+`--data-dir`     
+`--tags`     
+`--states`     
+`--start-date`     
+`--end-date`     
 
 
 
