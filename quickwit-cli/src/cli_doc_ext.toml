@@ -76,6 +76,25 @@ quickwit index search --index wikipedia --query "search" --search-fields title -
 quickwit index search --index wikipedia --query "search" --search-fields title --config ./config/quickwit.yaml | jq '.hits[].title'
 '''
 
+[[index.list.examples]]
+name = "List indexes"
+command = '''
+quickwit index list --config ./config/quickwit.yaml
+# Or with alias.
+quickwit index ls --config ./config/quickwit.yaml
+
+                                    Indexes                                     
++-----------+--------------------------------------------------------+
+| Index ID  |                       Index URI                        |
++-----------+--------------------------------------------------------+
+| hdfs-logs | file:///home/quickwit-indices/qwdata/indexes/hdfs-logs |
++-----------+--------------------------------------------------------+
+| wikipedia | file:///home/quickwit-indices/qwdata/indexes/wikipedia |
++-----------+--------------------------------------------------------+
+
+'''
+
+
 [[index.describe.examples]]
 name = "Displays descriptive statistics of your index"
 command = '''quickwit index describe --index wikipedia --config ./config/quickwit.yaml
