@@ -39,17 +39,19 @@ use quickwit_indexing::models::{
     DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
 };
 use quickwit_indexing::source::INGEST_SOURCE_ID;
-use quickwit_metastore::{quickwit_metastore_uri_resolver, Split, SplitState};
+use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
 use quickwit_telemetry::payload::TelemetryEvent;
+use tabled::{Table, Tabled};
 use thousands::Separable;
 use tracing::{debug, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
 use crate::{
-    load_quickwit_config, parse_duration_with_unit, run_index_checklist, THROUGHPUT_WINDOW_SIZE,
+    load_quickwit_config, make_table, parse_duration_with_unit, run_index_checklist,
+    THROUGHPUT_WINDOW_SIZE,
 };
 
 pub fn build_index_command<'a>() -> Command<'a> {
@@ -62,10 +64,7 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 .args(&[
                     arg!(--config <CONFIG> "Quickwit config file")
                         .env("QW_CONFIG"),
-                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
-                        .env("QW_DATA_DIR")
-                        .required(false),
-                    arg!(--"metastore-uri" <METASTORE_URI> "MetaStore URI. Override metastore_uri defined in config file, default to file-backed, but could S3 or Postgresql.")
+                    arg!(--"metastore-uri" <METASTORE_URI> "Metastore URI. Override the `metastore_uri` parameter defined in the config file. Default to file-backed, but could be Amazon S3 or PostgreSQL.")
                         .required(false)
                 ])
             )
@@ -257,7 +256,6 @@ pub struct MergeOrDemuxArgs {
 #[derive(Debug, PartialEq, Eq)]
 pub struct ListIndexesArgs {
     pub config_uri: Uri,
-    pub data_dir: Option<PathBuf>,
     pub metastore_uri: Option<Uri>,
 }
 
@@ -305,15 +303,14 @@ impl IndexCliCommand {
             .value_of("config")
             .map(Uri::try_new)
             .expect("`config` is a required arg.")?;
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
 
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .map(|uri| Uri::try_new(uri).unwrap());
+            .map(Uri::try_new)
+            .transpose()?;
 
         Ok(Self::List(ListIndexesArgs {
             config_uri,
-            data_dir,
             metastore_uri,
         }))
     }
@@ -523,9 +520,9 @@ impl IndexCliCommand {
 }
 
 pub async fn list_index_cli(args: ListIndexesArgs) -> anyhow::Result<()> {
-    debug!(args = ?args, "describe");
+    debug!(args = ?args, "list");
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
     let metastore_uri = if let Some(uri) = args.metastore_uri {
         uri.to_string()
     } else {
@@ -533,13 +530,32 @@ pub async fn list_index_cli(args: ListIndexesArgs) -> anyhow::Result<()> {
     };
     let metastore = metastore_uri_resolver.resolve(&metastore_uri).await?;
     let res = metastore.list_indexes_metadatas().await?;
+    let index_table = make_list_indexes_table(res);
 
     println!();
-    for meta in res {
-        println!("Index {:?}", meta.index_id);
-    }
+    println!("{}", index_table);
     println!();
     Ok(())
+}
+
+fn make_list_indexes_table<I>(indexes: I) -> Table
+where I: IntoIterator<Item = IndexMetadata> {
+    let rows = indexes
+        .into_iter()
+        .map(|index| IndexRow {
+            index_id: index.index_id,
+            index_uri: index.index_uri,
+        })
+        .sorted_by(|left, right| left.index_id.cmp(&right.index_id));
+    make_table("Indexes", rows, false)
+}
+
+#[derive(Tabled)]
+struct IndexRow {
+    #[tabled(rename = "Index ID")]
+    index_id: String,
+    #[tabled(rename = "Index URI")]
+    index_uri: String,
 }
 
 pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
