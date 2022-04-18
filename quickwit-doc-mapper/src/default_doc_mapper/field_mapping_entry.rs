@@ -54,19 +54,13 @@ impl FieldMappingEntry {
     /// Creates a new [`FieldMappingEntry`].
     pub fn new(name: String, mapping_type: FieldMappingType) -> Self {
         assert!(validate_field_mapping_name(&name).is_ok());
-        FieldMappingEntry {
-            name,
-            mapping_type,
-        }
+        FieldMappingEntry { name, mapping_type }
     }
 
     /// Creates a new root [`FieldMappingEntry`].
     pub fn root(mapping_type: FieldMappingType) -> Self {
         let name = "".to_string();
-        FieldMappingEntry {
-            name,
-            mapping_type,
-        }
+        FieldMappingEntry { name, mapping_type }
     }
 
     /// Returns the field entries that must be added to the schema.
