@@ -48,31 +48,19 @@ pub struct FieldMappingEntry {
     pub name: String,
     /// Property parameters which defines the type and the way the value must be indexed.
     pub mapping_type: FieldMappingType,
-    /// Returns the fields entries that map to fast fields.
-    pub fast_field_entries: Vec<FieldPath>,
 }
 
 impl FieldMappingEntry {
     /// Creates a new [`FieldMappingEntry`].
     pub fn new(name: String, mapping_type: FieldMappingType) -> Self {
         assert!(validate_field_mapping_name(&name).is_ok());
-        let fast_field_entries = Vec::new();
-        FieldMappingEntry {
-            name,
-            mapping_type,
-            fast_field_entries,
-        }
+        FieldMappingEntry { name, mapping_type }
     }
 
     /// Creates a new root [`FieldMappingEntry`].
     pub fn root(mapping_type: FieldMappingType) -> Self {
         let name = "".to_string();
-        let fast_field_entries = Vec::new();
-        FieldMappingEntry {
-            name,
-            mapping_type,
-            fast_field_entries,
-        }
+        FieldMappingEntry { name, mapping_type }
     }
 
     /// Returns the field entries that must be added to the schema.
