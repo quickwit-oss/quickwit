@@ -276,7 +276,7 @@ pub struct LogRotateSourceParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     #[serde(deserialize_with = "absolute_filepath_from_str_opt")]
-    archive_dir: Option<PathBuf>,
+    pub archive_dir: Option<PathBuf>,
     /// glob pattern of logs that already got rotated
     pub name_pattern: String,
 }

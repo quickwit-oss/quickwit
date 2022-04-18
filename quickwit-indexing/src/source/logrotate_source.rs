@@ -30,7 +30,7 @@ use glob::Pattern as GlobPattern;
 use itertools::Either;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::LogRotateSourceParams;
-use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position};
+use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use serde::Serialize;
 use tokio::fs::{self, File};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncSeekExt, BufReader};
@@ -42,6 +42,14 @@ use crate::source::{Source, SourceContext, TypedSourceFactory};
 
 /// Cut a new batch as soon as we have read BATCH_NUM_BYTES_THRESHOLD.
 const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
+
+/// Default name when no log file has been rotated yet. It must be before any name
+/// any log file may have. This works under the assumption only printable name will
+/// be used. Alternatively we could use \0 but it may mess with some debug print.
+const START_FILE: &str = "        ";
+
+/// Time to sleep when there is nothing to do.
+const SLEEP_DURATION: Duration = Duration::from_secs(5);
 
 #[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct LogRotatePosition {
@@ -100,7 +108,7 @@ impl LogRotatePosition {
         let name_pattern = GlobPattern::new(&config.name_pattern)?;
 
         let mut res = LogRotatePosition {
-            filename: "".to_owned(),
+            filename: START_FILE.to_owned(),
             is_next: false,
             offset: 0,
             archived_dir: config.archive_dir(),
@@ -150,18 +158,20 @@ impl LogRotatePosition {
         )
         .await?;
 
-        // if current file was updated between receiving the EOF which caused a call to next_file
-        // and now, we don't actually want to go to the next file. However we do want to report
-        // there is something to read.
-        let meta = fs::metadata(&self.filepath()).await?;
-        if meta.len() != self.offset && meta.is_file() {
-            let len = fs::metadata(&self.filepath()).await?.len();
-            trace!(
-                "current file was modified, keeping it for the moment {} != {}",
-                len,
-                self.offset
-            );
-            return Ok(true);
+        if self.filename != START_FILE {
+            // if current file was updated between receiving the EOF which caused a call to
+            // next_file and now, we don't actually want to go to the next file. However
+            // we do want to report there is something to read.
+            let meta = fs::metadata(&self.filepath()).await?;
+            if meta.len() != self.offset && meta.is_file() {
+                let len = fs::metadata(&self.filepath()).await?.len();
+                trace!(
+                    "current file was modified, keeping it for the moment {} != {}",
+                    len,
+                    self.offset
+                );
+                return Ok(true);
+            }
         }
 
         // If find_next_file returned anything but Right(false), we know no new update can happen
@@ -275,6 +285,7 @@ async fn find_next_file(
     let mut list_dir = fs::read_dir(dir).await?;
     let mut files = BTreeMap::new();
     let mut found_current_file = false;
+    let mut found_any_log = false;
     while let Some(entry) = list_dir.next_entry().await? {
         let filename = if let Ok(name) = entry.file_name().into_string() {
             name
@@ -284,14 +295,17 @@ async fn find_next_file(
         if filename == current_file {
             found_current_file = true;
         }
-        if pattern.matches(&filename) && filename.as_str() > current_file {
-            // this is a log file which is newer than current file
-            let len = entry.metadata().await?.len();
-            files.insert(filename, len);
+        if pattern.matches(&filename) {
+            found_any_log = true;
+            if filename.as_str() > current_file {
+                // this is a log file which is newer than current file
+                let len = entry.metadata().await?.len();
+                files.insert(filename, len);
+            }
         }
     }
 
-    if !found_current_file && !current_file.is_empty() {
+    if !found_current_file && current_file != START_FILE {
         warn!(
             "File after '{}' was requested, but '{}' wasn't found, it's possible some files got \
              skipped",
@@ -306,6 +320,10 @@ async fn find_next_file(
     if let Some(first) = first_non_empty {
         Ok(Either::Left(first))
     } else {
+        // log has never been rotated yet, reading from latest_log_file is safe
+        if current_file == START_FILE && !found_any_log {
+            return Ok(Either::Right(true));
+        }
         // if there is only empty file (including no file), and latest_log_file is non-empty,
         // none of the file will be appended to. It's fine to jump to latest_log_file. However if
         // everything is empty, we can't know which one the daemon might have kept open.
@@ -456,7 +474,7 @@ impl Source for LogRotateSource {
         if read >= BATCH_NUM_BYTES_THRESHOLD {
             Ok(Duration::default())
         } else {
-            Ok(Duration::from_secs(5))
+            Ok(SLEEP_DURATION)
         }
     }
 
@@ -479,7 +497,7 @@ impl TypedSourceFactory for LogRotateSourceFactory {
     async fn typed_create_source(
         source_id: String,
         params: LogRotateSourceParams,
-        checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
+        checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<LogRotateSource> {
         let partition_id = PartitionId::from(params.current_file.to_string_lossy().to_string());
         let position = checkpoint
@@ -518,7 +536,449 @@ impl TypedSourceFactory for LogRotateSourceFactory {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use quickwit_actors::{create_test_mailbox, Command, ObservationType, Universe};
+    use quickwit_metastore::checkpoint::SourceCheckpoint;
+    use tokio::io::AsyncWriteExt;
 
-    // XXX add tests
+    use super::*;
+    use crate::source::SourceActor;
+
+    async fn position_round_trip(pos: &LogRotatePosition, params: &LogRotateSourceParams) {
+        let position = pos.to_position();
+        let parsed = LogRotatePosition::from_position_and_config(&position, params)
+            .await
+            .unwrap();
+        assert_eq!(*pos, parsed);
+    }
+
+    #[tokio::test]
+    async fn test_partition_ordering() {
+        let mut pos_list = Vec::new();
+
+        let params = LogRotateSourceParams {
+            // no I/O is made for this test, we can use any path
+            current_file: "/tmp/file.log".into(),
+            archive_dir: None,
+            name_pattern: "file.*.log".to_owned(),
+        };
+
+        let mut pos = LogRotatePosition {
+            filename: "file.1.log".to_string(),
+            is_next: false,
+            offset: 0,
+            archived_dir: params.archive_dir(),
+            latest_file: params.current_file.clone(),
+            name_pattern: GlobPattern::new(&params.name_pattern).unwrap(),
+        };
+
+        position_round_trip(&pos, &params).await;
+        pos_list.push(pos.to_position());
+        for i in 0..63 {
+            pos.offset = 1 << i;
+            pos_list.push(pos.to_position());
+            position_round_trip(&pos, &params).await;
+        }
+        pos.offset = u64::MAX;
+        pos_list.push(pos.to_position());
+        position_round_trip(&pos, &params).await;
+
+        pos.offset = 0;
+        pos.is_next = true;
+        position_round_trip(&pos, &params).await;
+        pos_list.push(pos.to_position());
+        for i in 0..63 {
+            pos.offset = 1 << i;
+            pos_list.push(pos.to_position());
+            position_round_trip(&pos, &params).await;
+        }
+        pos.offset = u64::MAX;
+        pos_list.push(pos.to_position());
+        position_round_trip(&pos, &params).await;
+
+        pos.offset = 0;
+        pos.filename = "file.2.log".to_owned();
+        pos.is_next = false;
+        pos_list.push(pos.to_position());
+        position_round_trip(&pos, &params).await;
+        pos.offset = 1;
+        pos_list.push(pos.to_position());
+        position_round_trip(&pos, &params).await;
+
+        pos.offset = 0;
+        pos.is_next = true;
+        pos_list.push(pos.to_position());
+        position_round_trip(&pos, &params).await;
+
+        let sorted = pos_list[1..]
+            .iter()
+            .try_fold(pos_list[0].clone(), |previous, current| {
+                if &previous > current {
+                    Err(())
+                } else {
+                    Ok(current.clone())
+                }
+            })
+            .is_ok();
+        assert!(sorted);
+    }
+
+    enum Operation {
+        AppendDoc(usize),
+        Rotate,
+        NoticeRotation,
+        Step,
+        Start,
+        AssertState {
+            file_id: usize,
+            is_next: bool,
+            offset: u64,
+        },
+    }
+
+    // 20 for the digits, one for line break
+    const DOC_SIZE: u64 = 21;
+
+    struct LogWriter {
+        params: LogRotateSourceParams,
+        current_writer: fs::File,
+        doc_id: usize,
+        next_file_id: usize,
+    }
+
+    impl LogWriter {
+        async fn new(params: LogRotateSourceParams) -> Result<Self, io::Error> {
+            let current_writer = File::create(&params.current_file).await?;
+            Ok(LogWriter {
+                params,
+                current_writer,
+                doc_id: 0,
+                next_file_id: 0,
+            })
+        }
+
+        async fn append(&mut self, num_doc: usize) -> Result<(), io::Error> {
+            for _ in 0..num_doc {
+                self.current_writer
+                    .write_all(format!("{:020}\n", self.doc_id).as_bytes())
+                    .await?;
+                self.doc_id += 1;
+            }
+            self.current_writer.flush().await
+        }
+
+        async fn rotate(&mut self) -> Result<(), io::Error> {
+            fs::rename(
+                &self.params.current_file,
+                self.params
+                    .archive_dir()
+                    .join(format!("file.{}.log", self.next_file_id)),
+            )
+            .await?;
+            self.next_file_id += 1;
+            File::create(&self.params.current_file).await?;
+            Ok(())
+        }
+
+        async fn notice_rotation(&mut self) -> Result<(), io::Error> {
+            self.current_writer.flush().await?;
+            self.current_writer = fs::OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(&self.params.current_file)
+                .await?;
+            Ok(())
+        }
+    }
+
+    // run a scenario, returning the docs that got indexed, whose content is a single sequential
+    // id on 20 digits.
+    async fn run_scenario(
+        scenario: &[Operation],
+        initial_pos: Option<Position>,
+    ) -> anyhow::Result<Vec<String>> {
+        quickwit_common::setup_logging_for_tests();
+
+        let mut scenario = scenario.iter();
+
+        let universe = Universe::new();
+        let (mailbox, inbox) = create_test_mailbox();
+        use tempfile::TempDir;
+        let temp_dir = TempDir::new()?;
+
+        let params = LogRotateSourceParams {
+            current_file: temp_dir.path().join("file.log"),
+            archive_dir: None,
+            name_pattern: "file.*.log".to_owned(),
+        };
+
+        let mut log_writer = LogWriter::new(params.clone()).await?;
+
+        let mut checkpoint = SourceCheckpoint::default();
+        if let Some(pos) = initial_pos {
+            let partition_id = PartitionId::from(params.current_file.to_string_lossy().to_string());
+            let checkpoint_delta =
+                CheckpointDelta::from_partition_delta(partition_id, Position::Beginning, pos);
+            checkpoint.try_apply_delta(checkpoint_delta)?;
+        }
+
+        for action in scenario.by_ref() {
+            use Operation::*;
+            match action {
+                Start => break,
+                AppendDoc(n) => log_writer.append(*n).await?,
+                Rotate => log_writer.rotate().await?,
+                NoticeRotation => log_writer.notice_rotation().await?,
+                Step => anyhow::bail!("Step must not be used before Start"),
+                AssertState { .. } => anyhow::bail!("AssertStarte must not be used before Start"),
+            }
+        }
+
+        let source = LogRotateSourceFactory::typed_create_source(
+            "my-logrotate-source".to_string(),
+            params.clone(),
+            checkpoint.clone(),
+        )
+        .await?;
+
+        let logrotate_source_actor = SourceActor {
+            source: Box::new(source),
+            batch_sink: mailbox,
+        };
+
+        let (_logrotate_source_mailbox, logrotate_source_handle) =
+            universe.spawn_actor(logrotate_source_actor).spawn();
+
+        logrotate_source_handle.pause().await;
+
+        for action in scenario {
+            use Operation::*;
+            match action {
+                Start => anyhow::bail!("Start must not be used multiple times"),
+                AppendDoc(n) => log_writer.append(*n).await?,
+                Rotate => log_writer.rotate().await?,
+                NoticeRotation => log_writer.notice_rotation().await?,
+                Step => {
+                    universe.simulate_time_shift(SLEEP_DURATION).await;
+                    logrotate_source_handle.resume().await;
+                    let mut observation =
+                        logrotate_source_handle.process_pending_and_observe().await;
+                    assert_eq!(observation.obs_type, ObservationType::Alive);
+                    let mut count = 0;
+                    loop {
+                        // when testing with many docs, a single call to process_pending_and_observe
+                        // isn't enough, and lead to spurious failures because there is still
+                        // processing to be done.
+                        let new_observation =
+                            logrotate_source_handle.process_pending_and_observe().await;
+                        if observation == new_observation {
+                            break;
+                        }
+                        observation = new_observation;
+                        assert_eq!(observation.obs_type, ObservationType::Alive);
+                        count += 1;
+                        assert!(count < 1000, "test looped");
+                    }
+                    logrotate_source_handle.pause().await;
+                }
+                AssertState {
+                    file_id,
+                    is_next,
+                    offset,
+                } => {
+                    let observation = logrotate_source_handle.observe().await;
+                    let expected = serde_json::json!({
+                        "filename": format!("file.{}.log", file_id),
+                        "is_next": is_next,
+                        "offset": offset,
+                        "archived_dir": params.archive_dir(),
+                        "latest_file": params.current_file,
+                        "name_pattern": params.name_pattern,
+                    });
+                    assert_eq!(observation.obs_type, ObservationType::Alive);
+                    assert_eq!(observation.state, expected);
+                }
+            }
+        }
+
+        let mut result = Vec::new();
+        let indexer_msgs = inbox.drain_for_test();
+        for msg in indexer_msgs {
+            if let Some(doc_batch) = msg.downcast_ref::<RawDocBatch>() {
+                checkpoint.try_apply_delta(doc_batch.checkpoint_delta.clone())?;
+                result.extend_from_slice(&doc_batch.docs);
+                continue;
+            }
+            if msg.downcast_ref::<Command>().is_some() {
+                continue;
+            }
+            anyhow::bail!("Received unexpected message");
+        }
+        Ok(result)
+    }
+
+    #[tokio::test]
+    async fn test_logrotate_source_preexisting_files() -> anyhow::Result<()> {
+        use Operation::*;
+        let scenario = vec![
+            AppendDoc(5),
+            Rotate,
+            NoticeRotation,
+            AppendDoc(5),
+            Rotate,
+            NoticeRotation,
+            AppendDoc(5),
+            Start,
+            Step,
+            AssertState {
+                file_id: 1,
+                is_next: true,
+                offset: DOC_SIZE * 5,
+            },
+        ];
+
+        let res = run_scenario(&scenario, None).await?;
+        assert_eq!(res.len(), 15);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_logrotate_source_preexisting_files_long() -> anyhow::Result<()> {
+        use Operation::*;
+        let scenario = vec![
+            AppendDoc(500_000),
+            Rotate,
+            NoticeRotation,
+            AppendDoc(500_000),
+            Rotate,
+            NoticeRotation,
+            AppendDoc(500_000),
+            Start,
+            Step,
+            AssertState {
+                file_id: 1,
+                is_next: true,
+                offset: DOC_SIZE * 500_000,
+            },
+        ];
+
+        let res = run_scenario(&scenario, None).await?;
+        assert_eq!(res.len(), 500_000 * 3);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_logrotate_source_appearing_content() -> anyhow::Result<()> {
+        use Operation::*;
+        let scenario = vec![
+            Start, // start while no file got rotated yet
+            Step,
+            AppendDoc(2), // push 2 doc to #0
+            Rotate,       // rotate #0 (2 docs)
+            Step,
+            Rotate, // rotate #1 (empty)
+            Step,
+            NoticeRotation,
+            Step,
+            AppendDoc(2), // push 2 doc to #2
+            Step,
+            AppendDoc(2), // push 2 doc to #2
+            Step,
+            Rotate, // rotate #2 (4 docs)
+            Step,
+            AppendDoc(2), // push 2 doc to #2
+            Step,
+            NoticeRotation, // finaly stop writing to #2 (6 docs)
+            Step,
+            AppendDoc(2), // push 2 doc to #3
+            Step,
+        ];
+
+        let res = run_scenario(&scenario, None).await?;
+        assert_eq!(res.len(), 10);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_logrotate_source_appearing_contenat_long() -> anyhow::Result<()> {
+        use Operation::*;
+        let scenario = vec![
+            Start,
+            Step,
+            AppendDoc(200_000),
+            Rotate,
+            Step,
+            Rotate,
+            Step,
+            NoticeRotation,
+            Step,
+            AppendDoc(200_000),
+            Step,
+            AppendDoc(200_000),
+            Step,
+            Rotate,
+            Step,
+            AppendDoc(200_000),
+            Step,
+            NoticeRotation,
+            Step,
+            AppendDoc(200_000),
+            Step,
+        ];
+
+        let res = run_scenario(&scenario, None).await?;
+        assert_eq!(res.len(), 200_000 * 5);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_logrotate_source_checkpoint() -> anyhow::Result<()> {
+        use Operation::*;
+        let scenario = vec![
+            AppendDoc(3), // prefill #0 with 3 docs
+            Rotate,
+            NoticeRotation,
+            AppendDoc(3), // prefill #1 with 3 docs
+            Rotate,
+            NoticeRotation,
+            AppendDoc(2), // prefill #2 (aka 1+is_next) with 2 docs
+            // checkpoint here
+            AppendDoc(1), // push 1 doc to #2 (aka 1+is_next)
+            Rotate,
+            NoticeRotation,
+            Rotate,
+            NoticeRotation, // empty #3
+            AppendDoc(2),   // push 2 doc to #4
+            Start,
+            Step,
+            Rotate,
+            NoticeRotation, // empty #3
+            AppendDoc(2),   // push 2 doc to #5
+            Step,
+        ];
+
+        // try with is_next = true
+        let start_pos = LogRotatePosition {
+            filename: "file.1.log".to_string(),
+            is_next: true,
+            offset: DOC_SIZE * 2,
+            archived_dir: PathBuf::new(),
+            latest_file: PathBuf::new(),
+            name_pattern: GlobPattern::new("").unwrap(),
+        };
+        let res = run_scenario(&scenario, Some(start_pos.to_position())).await?;
+        assert_eq!(res.len(), 5);
+
+        // try with is_next = false
+        let start_pos = LogRotatePosition {
+            filename: "file.2.log".to_string(),
+            is_next: false,
+            offset: DOC_SIZE * 2,
+            archived_dir: PathBuf::new(),
+            latest_file: PathBuf::new(),
+            name_pattern: GlobPattern::new("").unwrap(),
+        };
+        let res = run_scenario(&scenario, Some(start_pos.to_position())).await?;
+        assert_eq!(res.len(), 5);
+        Ok(())
+    }
 }
