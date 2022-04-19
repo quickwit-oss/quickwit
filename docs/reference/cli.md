@@ -64,6 +64,44 @@ The CLI is structured into high-level commands with subcommands.
 ## index
 Create your index, ingest data, search, describe... every command you need to manage indexes.
 
+### index list
+
+List indexes.  
+`quickwit index list [args]`
+
+*Synopsis*
+
+```bash
+quickwit index list
+    --config <config>
+    [--metastore-uri <metastore-uri>]
+```
+
+*Options*
+
+`--config`     
+`--metastore-uri`     
+
+*Examples*
+
+*List indexes*
+```bash
+quickwit index list --config ./config/quickwit.yaml
+# Or with alias.
+quickwit index ls --config ./config/quickwit.yaml
+
+                                    Indexes                                     
++-----------+--------------------------------------------------------+
+| Index ID  |                       Index URI                        |
++-----------+--------------------------------------------------------+
+| hdfs-logs | file:///home/quickwit-indices/qwdata/indexes/hdfs-logs |
++-----------+--------------------------------------------------------+
+| wikipedia | file:///home/quickwit-indices/qwdata/indexes/wikipedia |
++-----------+--------------------------------------------------------+
+
+
+```
+
 ### index create
 
 Creates an index of ID `index` at `index-uri` configured by a [YAML config file](index-config.md) located at `index-config`.
