@@ -147,14 +147,7 @@ impl DefaultDocMapperBuilder {
         let field_entries = root_field_mapping.compute_field_entries();
         let required_fast_fields: Vec<FieldPath> = field_entries
             .into_iter()
-            .filter(|(_, field_type)| match field_type {
-                FieldType::U64(options)
-                | FieldType::I64(options)
-                | FieldType::F64(options)
-                | FieldType::Date(options) => options.is_fast(),
-                FieldType::Bytes(option) => option.is_fast(),
-                _ => false,
-            })
+            .filter(|(_, field_type)| field_type.is_fast())
             .map(|(field_path, _)| field_path)
             .collect();
 

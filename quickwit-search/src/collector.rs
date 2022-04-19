@@ -23,7 +23,9 @@ use std::collections::{BinaryHeap, HashSet};
 use itertools::Itertools;
 use quickwit_doc_mapper::{DocMapper, SortBy, SortOrder};
 use quickwit_proto::{LeafSearchResponse, PartialHit, SearchRequest};
-use tantivy::aggregation::agg_req::{get_fast_field_names, Aggregations};
+use tantivy::aggregation::agg_req::{
+    get_fast_field_names, get_term_dict_field_names, Aggregations,
+};
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::aggregation::AggregationSegmentCollector;
 use tantivy::collector::{Collector, SegmentCollector};
@@ -228,11 +230,6 @@ impl SegmentCollector for QuickwitSegmentCollector {
     }
 }
 
-// TODO: seems not very useful, remove it and refactor it.
-pub trait GenericQuickwitCollector: Collector {
-    fn fast_field_names(&self) -> HashSet<String>;
-}
-
 /// The quickwit collector is the tantivy Collector used in Quickwit.
 ///
 /// It defines the data that should be accumulated about the documents matching
@@ -250,13 +247,20 @@ pub struct QuickwitCollector {
     pub aggregation: Option<Aggregations>,
 }
 
-impl GenericQuickwitCollector for QuickwitCollector {
-    fn fast_field_names(&self) -> HashSet<String> {
+impl QuickwitCollector {
+    pub fn fast_field_names(&self) -> HashSet<String> {
         let mut fast_field_names = self.fast_field_names.clone();
         if let Some(aggregate) = self.aggregation.as_ref() {
             fast_field_names.extend(get_fast_field_names(aggregate));
         }
         fast_field_names
+    }
+    pub fn term_dict_field_names(&self) -> HashSet<String> {
+        let mut term_dict_field_names = HashSet::default();
+        if let Some(aggregate) = self.aggregation.as_ref() {
+            term_dict_field_names.extend(get_term_dict_field_names(aggregate));
+        }
+        term_dict_field_names
     }
 }
 

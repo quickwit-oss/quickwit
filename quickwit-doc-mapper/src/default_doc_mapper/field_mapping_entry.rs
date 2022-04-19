@@ -526,6 +526,8 @@ pub struct QuickwitTextOptions {
     pub fieldnorms: bool,
     #[serde(default = "default_as_true")]
     pub stored: bool,
+    #[serde(default)]
+    pub fast: bool,
 }
 
 impl From<QuickwitTextOptions> for TextOptions {
@@ -533,6 +535,9 @@ impl From<QuickwitTextOptions> for TextOptions {
         let mut text_options = TextOptions::default();
         if quickwit_text_options.stored {
             text_options = text_options.set_stored();
+        }
+        if quickwit_text_options.fast {
+            text_options = text_options.set_fast();
         }
         if quickwit_text_options.indexed {
             let mut text_field_indexing = TextFieldIndexing::default();
