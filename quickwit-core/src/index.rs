@@ -21,7 +21,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::Utc;
 use quickwit_common::fs::empty_dir;
 use quickwit_config::IndexConfig;
 use quickwit_indexing::actors::INDEXING;
@@ -32,6 +31,7 @@ use quickwit_indexing::{
 };
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
 use quickwit_storage::{StorageResolverError, StorageUriResolver};
+use tantivy::time::OffsetDateTime;
 use thiserror::Error;
 use tracing::{error, info};
 
@@ -103,8 +103,8 @@ impl IndexService {
             doc_mapping: index_config.doc_mapping,
             indexing_settings: index_config.indexing_settings,
             search_settings: index_config.search_settings,
-            create_timestamp: Utc::now().timestamp(),
-            update_timestamp: Utc::now().timestamp(),
+            create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
+            update_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
         };
 
         self.metastore.create_index(index_metadata).await?;
