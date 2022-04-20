@@ -121,7 +121,7 @@ impl Cluster {
     pub fn new(
         me: Member,
         listen_addr: SocketAddr,
-        cluster_name: String,
+        cluster_id: String,
         grpc_addr: SocketAddr,
         seed_nodes: &[String],
         failure_detector_config: FailureDetectorConfig,
@@ -131,7 +131,7 @@ impl Cluster {
             NodeId::from(me.clone()),
             seed_nodes,
             listen_addr.to_string(),
-            cluster_name,
+            cluster_id,
             vec![(GRPC_ADDRESS_KEY, grpc_addr)],
             failure_detector_config,
         );
@@ -297,7 +297,7 @@ pub fn grpc_addr_from_listen_addr_for_test(listen_addr: SocketAddr) -> SocketAdd
 
 pub fn create_cluster_for_test_with_id(
     peer_uuid: String,
-    cluster_name: String,
+    cluster_id: String,
     seeds: &[String],
 ) -> anyhow::Result<Cluster> {
     let listen_addr = SocketAddr::new(
@@ -308,7 +308,7 @@ pub fn create_cluster_for_test_with_id(
     let cluster = Cluster::new(
         Member::new(peer_uuid, 1, listen_addr),
         listen_addr,
-        cluster_name,
+        cluster_id,
         grpc_addr_from_listen_addr_for_test(listen_addr),
         seeds,
         failure_detector_config,
@@ -403,7 +403,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cluster_name_isolation() -> anyhow::Result<()> {
+    async fn test_cluster_id_isolation() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
 
         let cluster1a =
@@ -464,14 +464,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_cluster_rejoin_with_different_id_issue_1018() -> anyhow::Result<()> {
-        let cluster_name = "unified-cluster";
+        let cluster_id = "unified-cluster";
         quickwit_common::setup_logging_for_tests();
         let cluster1 =
-            create_cluster_for_test_with_id("node1".to_string(), cluster_name.to_string(), &[])?;
+            create_cluster_for_test_with_id("node1".to_string(), cluster_id.to_string(), &[])?;
         let node_1 = cluster1.listen_addr.to_string();
         let cluster2 = create_cluster_for_test_with_id(
             "node2".to_string(),
-            cluster_name.to_string(),
+            cluster_id.to_string(),
             &[node_1.clone()],
         )?;
 
@@ -509,7 +509,7 @@ mod tests {
         let cluster2 = Cluster::new(
             Member::new("newid".to_string(), 1, cluster2_listen_addr),
             cluster2_listen_addr,
-            cluster_name.to_string(),
+            cluster_id.to_string(),
             grpc_addr,
             &[node_1],
             create_failure_detector_config_for_test(),
@@ -536,20 +536,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_cluster_rejoin_with_different_id_3_nodes_issue_1018() -> anyhow::Result<()> {
-        let cluster_name = "three-nodes-cluster";
+        let cluster_id = "three-nodes-cluster";
         quickwit_common::setup_logging_for_tests();
         let cluster1 =
-            create_cluster_for_test_with_id("node1".to_string(), cluster_name.to_string(), &[])?;
+            create_cluster_for_test_with_id("node1".to_string(), cluster_id.to_string(), &[])?;
         let node_1 = cluster1.listen_addr.to_string();
         let cluster2 = create_cluster_for_test_with_id(
             "node2".to_string(),
-            cluster_name.to_string(),
+            cluster_id.to_string(),
             &[node_1.clone()],
         )?;
         let node_2 = cluster2.listen_addr.to_string();
         let cluster3 = create_cluster_for_test_with_id(
             "node3".to_string(),
-            cluster_name.to_string(),
+            cluster_id.to_string(),
             &[node_2],
         )?;
 
@@ -593,7 +593,7 @@ mod tests {
         let cluster2 = Cluster::new(
             Member::new("newid".to_string(), 1, cluster2_listen_addr),
             cluster2_listen_addr,
-            cluster_name.to_string(),
+            cluster_id.to_string(),
             grpc_addr,
             &[node_1],
             create_failure_detector_config_for_test(),
@@ -603,7 +603,7 @@ mod tests {
         let cluster3 = Cluster::new(
             Member::new("newid2".to_string(), 1, cluster3_listen_addr),
             cluster3_listen_addr,
-            cluster_name.to_string(),
+            cluster_id.to_string(),
             grpc_addr,
             &[node_2],
             create_failure_detector_config_for_test(),

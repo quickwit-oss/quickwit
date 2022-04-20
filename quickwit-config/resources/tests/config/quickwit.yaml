@@ -1,5 +1,5 @@
 version: 0
-cluster_name: quickwit-cluster
+cluster_id: quickwit-cluster
 node_id: my-unique-node-id
 listen_address: 0.0.0.0
 rest_listen_port: 1111
