@@ -22,9 +22,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use chitchat::server::ChitchatServer;
+use chitchat::{FailureDetectorConfig, NodeId, SerializableClusterState};
 use quickwit_common::net::get_socket_addr;
-use scuttlebutt::server::ScuttleServer;
-use scuttlebutt::{FailureDetectorConfig, NodeId, SerializableClusterState};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::time::timeout;
@@ -102,7 +102,7 @@ pub struct Cluster {
     pub listen_addr: SocketAddr,
 
     /// The actual cluster that implement the SWIM protocol.
-    scuttlebutt_server: ScuttleServer,
+    chitchat_server: ChitchatServer,
 
     /// A receiver(channel) for exchanging members in a cluster.
     members: watch::Receiver<Vec<Member>>,
@@ -126,14 +126,16 @@ impl Cluster {
         failure_detector_config: FailureDetectorConfig,
     ) -> ClusterResult<Self> {
         info!(member=?me, listen_addr=?listen_addr, "Create new cluster.");
-        let scuttlebutt_server = ScuttleServer::spawn(
+        let chitchat_server = ChitchatServer::spawn(
             NodeId::from(me.clone()),
             seed_nodes,
             listen_addr.to_string(),
+            // make `cluster_id` configurable
+            "quickwit-cluster-id".to_string(),
             vec![(GRPC_ADDRESS_KEY, grpc_addr)],
             failure_detector_config,
         );
-        let scuttlebutt = scuttlebutt_server.scuttlebutt();
+        let chitchat = chitchat_server.chitchat();
 
         let (members_sender, members_receiver) = watch::channel(Vec::new());
 
@@ -141,7 +143,7 @@ impl Cluster {
         let cluster = Cluster {
             node_id: me.internal_id(),
             listen_addr,
-            scuttlebutt_server,
+            chitchat_server,
             members: members_receiver,
             stop: Arc::new(AtomicBool::new(false)),
         };
@@ -155,7 +157,7 @@ impl Cluster {
         // Prepare to start a task that will monitor cluster events.
         let task_stop = cluster.stop.clone();
         tokio::task::spawn(async move {
-            let mut node_change_receiver = scuttlebutt.lock().await.live_nodes_watcher();
+            let mut node_change_receiver = chitchat.lock().await.live_nodes_watcher();
 
             while let Some(members_set) = node_change_receiver.next().await {
                 let mut members = members_set
@@ -196,11 +198,11 @@ impl Cluster {
         &self,
         members: &[Member],
     ) -> anyhow::Result<Vec<SocketAddr>> {
-        let scuttlebutt = self.scuttlebutt_server.scuttlebutt();
-        let scuttlebutt_guard = scuttlebutt.lock().await;
+        let chitchat = self.chitchat_server.chitchat();
+        let chitchat_guard = chitchat.lock().await;
         let mut grpc_addresses = vec![];
         for member in members {
-            let node_state = scuttlebutt_guard
+            let node_state = chitchat_guard
                 .node_state(&NodeId::from(member.clone()))
                 .unwrap();
 
@@ -222,26 +224,26 @@ impl Cluster {
 
     /// Set a key-value pair on the cluster node's state.
     pub async fn set_key_value<K: ToString, V: ToString>(&self, key: K, value: V) {
-        let scuttlebutt = self.scuttlebutt_server.scuttlebutt();
-        let mut scuttlebutt_guard = scuttlebutt.lock().await;
-        scuttlebutt_guard.self_node_state().set(key, value);
+        let chitchat = self.chitchat_server.chitchat();
+        let mut chitchat_guard = chitchat.lock().await;
+        chitchat_guard.self_node_state().set(key, value);
     }
 
     /// Leave the cluster.
     pub async fn leave(&self) {
         info!(self_addr = ?self.listen_addr, "Leaving the cluster.");
-        // TODO: implements leave/join on ScuttleButt
-        // https://github.com/quickwit-oss/scuttlebutt/issues/30
+        // TODO: implements leave/join on Chitchat
+        // https://github.com/quickwit-oss/chitchat/issues/30
         self.stop.store(true, Ordering::Relaxed);
     }
 
     pub async fn state(&self) -> ClusterState {
-        let scuttlebutt = self.scuttlebutt_server.scuttlebutt();
-        let scuttlebutt_guard = scuttlebutt.lock().await;
+        let chitchat = self.chitchat_server.chitchat();
+        let chitchat_guard = chitchat.lock().await;
 
-        let cluster_state = scuttlebutt_guard.cluster_state();
-        let live_nodes = scuttlebutt_guard.live_nodes().cloned().collect::<Vec<_>>();
-        let dead_nodes = scuttlebutt_guard.dead_nodes().cloned().collect::<Vec<_>>();
+        let cluster_state = chitchat_guard.cluster_state();
+        let live_nodes = chitchat_guard.live_nodes().cloned().collect::<Vec<_>>();
+        let dead_nodes = chitchat_guard.dead_nodes().cloned().collect::<Vec<_>>();
         ClusterState {
             state: SerializableClusterState::from(cluster_state),
             live_nodes,
@@ -252,7 +254,7 @@ impl Cluster {
     /// Leave the cluster.
     pub async fn shutdown(self) {
         info!(self_addr = ?self.listen_addr, "Shutting down the cluster.");
-        let result = self.scuttlebutt_server.shutdown().await;
+        let result = self.chitchat_server.shutdown().await;
         if let Err(error) = result {
             error!(self_addr = ?self.listen_addr, error = ?error, "Error while shuting down.");
         }
@@ -288,7 +290,7 @@ pub struct ClusterState {
     dead_nodes: Vec<NodeId>,
 }
 
-/// Compute the gRPC port from the scuttlebutt listen address for tests.
+/// Compute the gRPC port from the chitchat listen address for tests.
 pub fn grpc_addr_from_listen_addr_for_test(listen_addr: SocketAddr) -> SocketAddr {
     SocketAddr::new(listen_addr.ip(), listen_addr.port() + 1)
 }

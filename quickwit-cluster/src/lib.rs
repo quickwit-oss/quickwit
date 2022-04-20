@@ -23,8 +23,8 @@ mod service;
 
 use std::sync::Arc;
 
+use chitchat::FailureDetectorConfig;
 use quickwit_config::QuickwitConfig;
-use scuttlebutt::FailureDetectorConfig;
 
 pub use crate::cluster::{
     create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster, Member,
