@@ -121,6 +121,7 @@ impl Cluster {
     pub fn new(
         me: Member,
         listen_addr: SocketAddr,
+        cluster_id: String,
         grpc_addr: SocketAddr,
         seed_nodes: &[String],
         failure_detector_config: FailureDetectorConfig,
@@ -130,8 +131,7 @@ impl Cluster {
             NodeId::from(me.clone()),
             seed_nodes,
             listen_addr.to_string(),
-            // make `cluster_id` configurable
-            "quickwit-cluster-id".to_string(),
+            cluster_id,
             vec![(GRPC_ADDRESS_KEY, grpc_addr)],
             failure_detector_config,
         );
@@ -297,6 +297,7 @@ pub fn grpc_addr_from_listen_addr_for_test(listen_addr: SocketAddr) -> SocketAdd
 
 pub fn create_cluster_for_test_with_id(
     peer_uuid: String,
+    cluster_id: String,
     seeds: &[String],
 ) -> anyhow::Result<Cluster> {
     let listen_addr = SocketAddr::new(
@@ -307,6 +308,7 @@ pub fn create_cluster_for_test_with_id(
     let cluster = Cluster::new(
         Member::new(peer_uuid, 1, listen_addr),
         listen_addr,
+        cluster_id,
         grpc_addr_from_listen_addr_for_test(listen_addr),
         seeds,
         failure_detector_config,
@@ -326,7 +328,7 @@ fn create_failure_detector_config_for_test() -> FailureDetectorConfig {
 /// Creates a local cluster listening on a random port.
 pub fn create_cluster_for_test(seeds: &[String]) -> anyhow::Result<Cluster> {
     let peer_uuid = Uuid::new_v4().to_string();
-    let cluster = create_cluster_for_test_with_id(peer_uuid, seeds)?;
+    let cluster = create_cluster_for_test_with_id(peer_uuid, "test-cluster".to_string(), seeds)?;
     Ok(cluster)
 }
 
@@ -401,11 +403,77 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cluster_rejoin_with_different_id_issue_1018() -> anyhow::Result<()> {
+    async fn test_cluster_id_isolation() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let cluster1 = create_cluster_for_test_with_id("cluster1".to_string(), &[])?;
+
+        let cluster1a =
+            create_cluster_for_test_with_id("node_1a".to_string(), "cluster1".to_string(), &[])?;
+        let cluster2a = create_cluster_for_test_with_id(
+            "node_2a".to_string(),
+            "cluster2".to_string(),
+            &[cluster1a.listen_addr.to_string()],
+        )?;
+
+        let cluster1b = create_cluster_for_test_with_id(
+            "node_1b".to_string(),
+            "cluster1".to_string(),
+            &[
+                cluster1a.listen_addr.to_string(),
+                cluster2a.listen_addr.to_string(),
+            ],
+        )?;
+        let cluster2b = create_cluster_for_test_with_id(
+            "node_2b".to_string(),
+            "cluster2".to_string(),
+            &[
+                cluster1a.listen_addr.to_string(),
+                cluster2a.listen_addr.to_string(),
+            ],
+        )?;
+
+        let wait_secs = Duration::from_secs(10);
+        for cluster in [&cluster1a, &cluster2a, &cluster1b, &cluster2b] {
+            cluster
+                .wait_for_members(|members| members.len() == 2, wait_secs)
+                .await
+                .unwrap();
+        }
+
+        let members_a: Vec<SocketAddr> = cluster1a
+            .members()
+            .iter()
+            .map(|member| member.gossip_public_address)
+            .sorted()
+            .collect();
+        let mut expected_members_a = vec![cluster1a.listen_addr, cluster1b.listen_addr];
+        expected_members_a.sort();
+        assert_eq!(members_a, expected_members_a);
+
+        let members_b: Vec<SocketAddr> = cluster2a
+            .members()
+            .iter()
+            .map(|member| member.gossip_public_address)
+            .sorted()
+            .collect();
+        let mut expected_members_b = vec![cluster2a.listen_addr, cluster2b.listen_addr];
+        expected_members_b.sort();
+        assert_eq!(members_b, expected_members_b);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_cluster_rejoin_with_different_id_issue_1018() -> anyhow::Result<()> {
+        let cluster_id = "unified-cluster";
+        quickwit_common::setup_logging_for_tests();
+        let cluster1 =
+            create_cluster_for_test_with_id("node1".to_string(), cluster_id.to_string(), &[])?;
         let node_1 = cluster1.listen_addr.to_string();
-        let cluster2 = create_cluster_for_test_with_id("cluster2".to_string(), &[node_1.clone()])?;
+        let cluster2 = create_cluster_for_test_with_id(
+            "node2".to_string(),
+            cluster_id.to_string(),
+            &[node_1.clone()],
+        )?;
 
         let wait_secs = Duration::from_secs(10);
 
@@ -441,6 +509,7 @@ mod tests {
         let cluster2 = Cluster::new(
             Member::new("newid".to_string(), 1, cluster2_listen_addr),
             cluster2_listen_addr,
+            cluster_id.to_string(),
             grpc_addr,
             &[node_1],
             create_failure_detector_config_for_test(),
@@ -456,23 +525,33 @@ mod tests {
         assert!(!cluster1
             .members()
             .iter()
-            .any(|member| (*member).node_unique_id == "cluster2"));
+            .any(|member| (*member).node_unique_id == "node2"));
         assert!(!cluster2
             .members()
             .iter()
-            .any(|member| (*member).node_unique_id == "cluster2"));
+            .any(|member| (*member).node_unique_id == "node2"));
 
         Ok(())
     }
 
     #[tokio::test]
     async fn test_cluster_rejoin_with_different_id_3_nodes_issue_1018() -> anyhow::Result<()> {
+        let cluster_id = "three-nodes-cluster";
         quickwit_common::setup_logging_for_tests();
-        let cluster1 = create_cluster_for_test_with_id("cluster1".to_string(), &[])?;
+        let cluster1 =
+            create_cluster_for_test_with_id("node1".to_string(), cluster_id.to_string(), &[])?;
         let node_1 = cluster1.listen_addr.to_string();
-        let cluster2 = create_cluster_for_test_with_id("cluster2".to_string(), &[node_1.clone()])?;
+        let cluster2 = create_cluster_for_test_with_id(
+            "node2".to_string(),
+            cluster_id.to_string(),
+            &[node_1.clone()],
+        )?;
         let node_2 = cluster2.listen_addr.to_string();
-        let cluster3 = create_cluster_for_test_with_id("cluster3".to_string(), &[node_2])?;
+        let cluster3 = create_cluster_for_test_with_id(
+            "node3".to_string(),
+            cluster_id.to_string(),
+            &[node_2],
+        )?;
 
         let wait_secs = Duration::from_secs(15);
 
@@ -514,6 +593,7 @@ mod tests {
         let cluster2 = Cluster::new(
             Member::new("newid".to_string(), 1, cluster2_listen_addr),
             cluster2_listen_addr,
+            cluster_id.to_string(),
             grpc_addr,
             &[node_1],
             create_failure_detector_config_for_test(),
@@ -523,6 +603,7 @@ mod tests {
         let cluster3 = Cluster::new(
             Member::new("newid2".to_string(), 1, cluster3_listen_addr),
             cluster3_listen_addr,
+            cluster_id.to_string(),
             grpc_addr,
             &[node_2],
             create_failure_detector_config_for_test(),
@@ -532,28 +613,28 @@ mod tests {
         assert!(!cluster1
             .members()
             .iter()
-            .any(|member| (*member).node_unique_id == "cluster2"));
+            .any(|member| (*member).node_unique_id == "node2"));
         assert!(!cluster2
             .members()
             .iter()
-            .any(|member| (*member).node_unique_id == "cluster2"));
+            .any(|member| (*member).node_unique_id == "node2"));
         assert!(!cluster3
             .members()
             .iter()
-            .any(|member| (*member).node_unique_id == "cluster2"));
+            .any(|member| (*member).node_unique_id == "node2"));
 
         assert!(!cluster1
             .members()
             .iter()
-            .any(|member| (*member).node_unique_id == "cluster3"));
+            .any(|member| (*member).node_unique_id == "node3"));
         assert!(!cluster2
             .members()
             .iter()
-            .any(|member| (*member).node_unique_id == "cluster3"));
+            .any(|member| (*member).node_unique_id == "node3"));
         assert!(!cluster2
             .members()
             .iter()
-            .any(|member| (*member).node_unique_id == "cluster3"));
+            .any(|member| (*member).node_unique_id == "node3"));
 
         Ok(())
     }
