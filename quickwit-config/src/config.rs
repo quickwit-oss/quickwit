@@ -51,7 +51,7 @@ fn default_metastore_and_index_root_uri(data_dir_path: &Path) -> String {
 }
 
 fn default_cluster_id() -> String {
-    "Test cluster".to_string()
+    "quickwit-test-cluster".to_string()
 }
 
 fn default_node_id() -> String {
@@ -486,7 +486,7 @@ mod tests {
         "#;
             let config = serde_yaml::from_str::<QuickwitConfig>(config_yaml).unwrap();
             assert_eq!(config.version, 0);
-            assert_eq!(config.cluster_id, "Test cluster");
+            assert_eq!(config.cluster_id, "quickwit-test-cluster");
             assert_eq!(config.node_id, "1");
             assert_eq!(
                 config.metastore_uri(),
