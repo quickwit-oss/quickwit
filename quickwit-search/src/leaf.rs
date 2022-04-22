@@ -126,7 +126,7 @@ pub(crate) async fn open_index(
 /// The downloaded data depends on the query (which term's posting list is required,
 /// are position required too), and the collector.
 ///
-/// * `query` - query is used to extract the terms and the fields which will be loaded from the
+/// * `query` - query is used to extract the terms and their fields which will be loaded from the
 /// inverted_index.
 ///
 /// * `term_dict_field_names` - A list of fields, where the whole dictionary needs to be loaded.
@@ -189,7 +189,10 @@ async fn warm_up_term_dict_fields(
     Ok(())
 }
 
-pub fn get_fastfield_cardinality(field_type: &FieldType) -> Option<Cardinality> {
+// The field cardinality is not the same as the fast field cardinality.
+//
+// E.g. a single valued bytes field has a multivalued fast field cardinality.
+fn get_fastfield_cardinality(field_type: &FieldType) -> Option<Cardinality> {
     match field_type {
         FieldType::U64(options) | FieldType::I64(options) | FieldType::F64(options) => {
             options.get_fastfield_cardinality()
@@ -233,8 +236,8 @@ async fn warm_up_fastfields(
         fast_fields.push((fast_field, cardinality));
     }
 
-    type SendebleFuture = dyn Future<Output = Result<OwnedBytes, AsyncIoError>> + Send;
-    let mut warm_up_futures: Vec<Pin<Box<SendebleFuture>>> = Vec::new();
+    type SendableFuture = dyn Future<Output = Result<OwnedBytes, AsyncIoError>> + Send;
+    let mut warm_up_futures: Vec<Pin<Box<SendableFuture>>> = Vec::new();
     for (field, cardinality) in fast_fields {
         for segment_reader in searcher.segment_readers() {
             match cardinality {
