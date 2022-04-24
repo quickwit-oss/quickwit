@@ -170,12 +170,12 @@ pub struct FileSourceParams {
     /// Path of the file to read. Assume stdin if None.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    #[serde(deserialize_with = "absolute_filepath_from_str_opt")]
+    #[serde(deserialize_with = "absolute_filepath_opt_from_str")]
     pub filepath: Option<PathBuf>, //< If None read from stdin.
 }
 
 // Deserializing a filepath string into an absolute filepath.
-fn absolute_filepath_from_str_opt<'de, D>(deserializer: D) -> Result<Option<PathBuf>, D::Error>
+fn absolute_filepath_opt_from_str<'de, D>(deserializer: D) -> Result<Option<PathBuf>, D::Error>
 where D: Deserializer<'de> {
     let filepath_opt: Option<String> = Deserialize::deserialize(deserializer)?;
     if let Some(filepath) = filepath_opt {
@@ -188,7 +188,7 @@ where D: Deserializer<'de> {
 
 fn absolute_filepath_from_str<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
 where D: Deserializer<'de> {
-    absolute_filepath_from_str_opt(deserializer)
+    absolute_filepath_opt_from_str(deserializer)
         .and_then(|path| path.ok_or_else(|| D::Error::custom("missing file path")))
 }
 
@@ -275,22 +275,21 @@ pub struct LogRotateSourceParams {
     /// the directory where `latest_file` is.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    #[serde(deserialize_with = "absolute_filepath_from_str_opt")]
+    #[serde(deserialize_with = "absolute_filepath_opt_from_str")]
     pub archive_dir: Option<PathBuf>,
     /// glob pattern of logs that already got rotated
     pub name_pattern: String,
 }
 
 impl LogRotateSourceParams {
-    pub fn archive_dir(&self) -> PathBuf {
+    pub fn archive_dir(&self) -> Option<PathBuf> {
         if let Some(dir) = &self.archive_dir {
-            dir.clone()
+            Some(dir.clone())
         } else {
-            let mut dir = self.current_file.clone();
-            dir.pop();
-            dir
+            self.current_file.parent().map(|dir| dir.to_path_buf())
         }
     }
+
     pub fn set_archive_dir(&mut self, dir: PathBuf) {
         self.archive_dir = Some(dir);
     }

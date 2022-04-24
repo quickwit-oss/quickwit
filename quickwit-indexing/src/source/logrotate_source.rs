@@ -27,7 +27,6 @@ use std::time::Duration;
 use anyhow::Context;
 use async_trait::async_trait;
 use glob::Pattern as GlobPattern;
-use itertools::Either;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::LogRotateSourceParams;
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
@@ -48,16 +47,27 @@ const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
 /// be used. Alternatively we could use \0 but it may mess with some debug print.
 const START_FILE: &str = "        ";
 
-/// Time to sleep when there is nothing to do.
+/// Time to sleep when EOF was reached and there is no newer file to read yet.
 const SLEEP_DURATION: Duration = Duration::from_secs(5);
 
 #[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct LogRotatePosition {
+    /// The name of the file being read from [`archived_dir`]
     pub filename: String,
+    /// Define if we are reading [`filename`], or we are reading the file coming after it, but
+    /// which final name is still unknown until next log rotation. If `is_next` is set, we are
+    /// actually reading from [`latest_file`], and checkpoints contain a marker to show the file
+    /// being processed is the one after [`filename`]
     pub is_next: bool,
+    /// Offset in the file being read
     pub offset: u64,
+    /// Path of the directory containing archived (rotated) logs
     pub archived_dir: PathBuf,
+    /// Path of the current log file being writen to by a daemon. May or may not be in
+    /// [`archived_dir`].
     pub latest_file: PathBuf,
+    /// Pattern for files from [`archived_dir`] which should be considered as archived log files
+    /// to be read. It shouldn't match [`latest_file`] if it is in [`archived_dir`].
     #[serde(serialize_with = "serialize_glob")]
     pub name_pattern: GlobPattern,
 }
@@ -96,7 +106,9 @@ impl LogRotatePosition {
             filename: filename.to_owned(),
             is_next,
             offset,
-            archived_dir: config.archive_dir(),
+            archived_dir: config
+                .archive_dir()
+                .ok_or_else(|| anyhow::anyhow!("Invalid archive path"))?,
             latest_file: config.current_file.clone(),
             name_pattern,
         })
@@ -111,7 +123,9 @@ impl LogRotatePosition {
             filename: START_FILE.to_owned(),
             is_next: false,
             offset: 0,
-            archived_dir: config.archive_dir(),
+            archived_dir: config
+                .archive_dir()
+                .ok_or_else(|| anyhow::anyhow!("Invalid archive path"))?,
             latest_file: config.current_file.clone(),
             name_pattern,
         };
@@ -179,20 +193,20 @@ impl LogRotatePosition {
         // can safely go to a new file.
 
         match next_file {
-            Either::Left(filename) => {
+            NextFile::Name(filename) => {
                 trace!("new file {} was found", filename);
                 self.filename = filename;
                 self.is_next = false;
                 self.offset = 0;
                 Ok(true)
             }
-            Either::Right(true) => {
+            NextFile::CurrentFile => {
                 trace!("no new file found, but non-rotated file isn't empty, reading from it");
                 self.offset = 0;
                 self.is_next = true;
                 Ok(true)
             }
-            Either::Right(false) => {
+            NextFile::Unknown => {
                 trace!("all newer files are empty, don't switch to a newer fail yet");
                 // we don't know for sure the daemon won't write here, as it did not start writing
                 // in any other file yet. Assume this is still the last file, but that sleeping is
@@ -202,12 +216,15 @@ impl LogRotatePosition {
         }
     }
 
-    /// If the position has is_next set, try to resolve the name of the file if it's now available.
-    /// Returns Ok(true) if the file transitioned from having an unknown path to a known path.
+    /// Try to resolve the name of the file if it's now available. Returns Ok(true) if the file
+    /// name is now known.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the name of the file being processed was already known before.
     async fn resolve_next(&mut self) -> Result<bool, anyhow::Error> {
-        if !self.is_next {
-            return Ok(false);
-        }
+        assert!(self.is_next);
+
         let next_file = find_next_file(
             &self.archived_dir,
             &self.filename,
@@ -216,14 +233,14 @@ impl LogRotatePosition {
         )
         .await?;
         match next_file {
-            Either::Left(filename) => {
+            NextFile::Name(filename) => {
                 // we found the final name
                 self.filename = filename;
                 self.is_next = false;
                 Ok(true)
             }
-            Either::Right(true) => Ok(false),
-            Either::Right(false) => {
+            NextFile::CurrentFile => Ok(false),
+            NextFile::Unknown => {
                 anyhow::bail!(
                     "find_next_file said it was fine to read {:?} after {}, but now it says it \
                      isn't",
@@ -251,7 +268,7 @@ impl LogRotatePosition {
             &self.latest_file,
         )
         .await?;
-        let ok = matches!(next_file, Either::Right(true));
+        let ok = matches!(next_file, NextFile::CurrentFile);
         Ok(ok)
     }
 
@@ -267,6 +284,12 @@ impl LogRotatePosition {
     }
 }
 
+enum NextFile {
+    Name(String),
+    CurrentFile,
+    Unknown,
+}
+
 /// Try to find the next file to read from.
 /// Returns Ok(Left(filename)) if a filename was found, Ok(Right(true)) if no file was found,
 /// and it's safe to read from latest_log_file, or Ok(Right(false)) when no file was found and
@@ -276,13 +299,21 @@ async fn find_next_file(
     current_file: &str,
     pattern: &GlobPattern,
     latest_log_file: &Path,
-) -> Result<Either<String, bool>, io::Error> {
+) -> Result<NextFile, io::Error> {
     // first check len of latest log file. Then read data about all file which could interest us.
     let len = fs::metadata(latest_log_file)
         .await
         .map(|f| f.len())
         .unwrap_or(0);
-    let mut list_dir = fs::read_dir(dir).await?;
+    let mut list_dir = match fs::read_dir(dir).await {
+        Ok(list_dir) => list_dir,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            // log hasn't been rotated yet (archive dir wasn't created), reading from
+            // latest_log_file is safe
+            return Ok(NextFile::CurrentFile);
+        }
+        e => e?,
+    };
     let mut files = BTreeMap::new();
     let mut found_current_file = false;
     let mut found_any_log = false;
@@ -318,11 +349,11 @@ async fn find_next_file(
     // If there is a non-empty file, we can skip right to it as any file before this one won't be
     // appended to.
     if let Some(first) = first_non_empty {
-        Ok(Either::Left(first))
+        Ok(NextFile::Name(first))
     } else {
         // log has never been rotated yet, reading from latest_log_file is safe
         if current_file == START_FILE && !found_any_log {
-            return Ok(Either::Right(true));
+            return Ok(NextFile::CurrentFile);
         }
         // if there is only empty file (including no file), and latest_log_file is non-empty,
         // none of the file will be appended to. It's fine to jump to latest_log_file. However if
@@ -336,7 +367,11 @@ async fn find_next_file(
         // It this suggest opening latest_log_file, it's possible logs get rotated between call to
         // this function and File::open. The caller **must** revalidate that no file got moved
         // after calling open, but before reading anything.
-        Ok(Either::Right(len > 0))
+        if len != 0 {
+            Ok(NextFile::CurrentFile)
+        } else {
+            Ok(NextFile::Unknown)
+        }
     }
 }
 
@@ -414,45 +449,45 @@ impl Source for LogRotateSource {
                 .read_line(&mut doc_line)
                 .await
                 .map_err(|io_err: io::Error| anyhow::anyhow!(io_err))?;
-            if num_bytes == 0 {
-                let should_read = self.position.next_file().await?;
-                if should_read {
-                    let mut file =
-                        File::open(&self.position.filepath())
-                            .await
-                            .with_context(|| {
-                                format!(
-                                    "Failed to open source file `{}`.",
-                                    self.position.filepath().display()
-                                )
-                            })?;
-                    if !self.position.revalidate_next_file().await? {
-                        self.position.next_file().await?;
-                        // if revalidate returned false/invalid, there **must** be a new file,
-                        // so is_next must be unset.
-                        assert!(!self.position.is_next);
-                        file = File::open(&self.position.filepath())
-                            .await
-                            .with_context(|| {
-                                format!(
-                                    "Failed to open source file `{}`.",
-                                    self.position.filepath().display()
-                                )
-                            })?;
-                    }
-                    file.seek(SeekFrom::Start(self.position.offset))
-                        .await
-                        .context("failed to seek in file")?;
-                    self.reader = BufReader::new(Box::new(file));
-                    continue;
-                } else {
-                    break;
-                }
+            if num_bytes != 0 {
+                trace!("some doc was read");
+                docs.push(doc_line);
+                read += num_bytes as u64;
+                self.position.offset += num_bytes as u64;
+                continue;
             }
-            trace!("some doc was read");
-            docs.push(doc_line);
-            read += num_bytes as u64;
-            self.position.offset += num_bytes as u64;
+            // we reached EOF.
+            let should_read = self.position.next_file().await?;
+            if !should_read {
+                break;
+            }
+            // there is a new file to read, open it and continue from there.
+            let mut file = File::open(&self.position.filepath())
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to open source file `{}`.",
+                        self.position.filepath().display()
+                    )
+                })?;
+            if !self.position.revalidate_next_file().await? {
+                self.position.next_file().await?;
+                // if revalidate returned false/invalid, there **must** be a new file,
+                // so is_next must be unset.
+                assert!(!self.position.is_next);
+                file = File::open(&self.position.filepath())
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Failed to open source file `{}`.",
+                            self.position.filepath().display()
+                        )
+                    })?;
+            }
+            file.seek(SeekFrom::Start(self.position.offset))
+                .await
+                .context("failed to seek in file")?;
+            self.reader = BufReader::new(Box::new(file));
         }
 
         if !docs.is_empty() {
@@ -566,7 +601,7 @@ mod tests {
             filename: "file.1.log".to_string(),
             is_next: false,
             offset: 0,
-            archived_dir: params.archive_dir(),
+            archived_dir: params.archive_dir().unwrap(),
             latest_file: params.current_file.clone(),
             name_pattern: GlobPattern::new(&params.name_pattern).unwrap(),
         };
@@ -667,10 +702,12 @@ mod tests {
         }
 
         async fn rotate(&mut self) -> Result<(), io::Error> {
+            fs::create_dir_all(self.params.archive_dir().unwrap()).await?;
             fs::rename(
                 &self.params.current_file,
                 self.params
                     .archive_dir()
+                    .unwrap()
                     .join(format!("file.{}.log", self.next_file_id)),
             )
             .await?;
@@ -695,6 +732,7 @@ mod tests {
     async fn run_scenario(
         scenario: &[Operation],
         initial_pos: Option<Position>,
+        separate_archive: bool,
     ) -> anyhow::Result<Vec<String>> {
         quickwit_common::setup_logging_for_tests();
 
@@ -705,9 +743,15 @@ mod tests {
         use tempfile::TempDir;
         let temp_dir = TempDir::new()?;
 
+        let archive_dir = if separate_archive {
+            Some(temp_dir.path().join("archive"))
+        } else {
+            None
+        };
+
         let params = LogRotateSourceParams {
             current_file: temp_dir.path().join("file.log"),
-            archive_dir: None,
+            archive_dir,
             name_pattern: "file.*.log".to_owned(),
         };
 
@@ -836,7 +880,10 @@ mod tests {
             },
         ];
 
-        let res = run_scenario(&scenario, None).await?;
+        let res = run_scenario(&scenario, None, false).await?;
+        assert_eq!(res.len(), 15);
+
+        let res = run_scenario(&scenario, None, true).await?;
         assert_eq!(res.len(), 15);
         Ok(())
     }
@@ -861,7 +908,7 @@ mod tests {
             },
         ];
 
-        let res = run_scenario(&scenario, None).await?;
+        let res = run_scenario(&scenario, None, false).await?;
         assert_eq!(res.len(), 500_000 * 3);
         Ok(())
     }
@@ -893,7 +940,10 @@ mod tests {
             Step,
         ];
 
-        let res = run_scenario(&scenario, None).await?;
+        let res = run_scenario(&scenario, None, false).await?;
+        assert_eq!(res.len(), 10);
+
+        let res = run_scenario(&scenario, None, true).await?;
         assert_eq!(res.len(), 10);
         Ok(())
     }
@@ -925,7 +975,7 @@ mod tests {
             Step,
         ];
 
-        let res = run_scenario(&scenario, None).await?;
+        let res = run_scenario(&scenario, None, false).await?;
         assert_eq!(res.len(), 200_000 * 5);
         Ok(())
     }
@@ -965,7 +1015,7 @@ mod tests {
             latest_file: PathBuf::new(),
             name_pattern: GlobPattern::new("").unwrap(),
         };
-        let res = run_scenario(&scenario, Some(start_pos.to_position())).await?;
+        let res = run_scenario(&scenario, Some(start_pos.to_position()), false).await?;
         assert_eq!(res.len(), 5);
 
         // try with is_next = false
@@ -977,7 +1027,7 @@ mod tests {
             latest_file: PathBuf::new(),
             name_pattern: GlobPattern::new("").unwrap(),
         };
-        let res = run_scenario(&scenario, Some(start_pos.to_position())).await?;
+        let res = run_scenario(&scenario, Some(start_pos.to_position()), true).await?;
         assert_eq!(res.len(), 5);
         Ok(())
     }
