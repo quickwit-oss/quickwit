@@ -1432,7 +1432,7 @@ dependencies = [
  "hyper",
  "log",
  "rustls 0.19.1",
- "rustls-native-certs",
+ "rustls-native-certs 0.5.0",
  "tokio",
  "tokio-rustls 0.22.0",
  "webpki 0.21.4",
@@ -1446,7 +1446,9 @@ checksum = "d87c48c02e0dc5e3b849a2041db3029fd066650f8f717c07bf8ed78ccb895cac"
 dependencies = [
  "http",
  "hyper",
+ "log",
  "rustls 0.20.4",
+ "rustls-native-certs 0.6.2",
  "tokio",
  "tokio-rustls 0.23.3",
 ]
@@ -2801,7 +2803,7 @@ dependencies = [
  "quickwit-storage",
  "rand",
  "rdkafka",
- "rusoto_core",
+ "rusoto_core 0.47.0",
  "rusoto_kinesis",
  "serde",
  "serde_json",
@@ -2982,7 +2984,7 @@ dependencies = [
  "quickwit-config",
  "rand",
  "regex",
- "rusoto_core",
+ "rusoto_core 0.47.0",
  "rusoto_s3",
  "serde",
  "serde_json",
@@ -3221,7 +3223,7 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "rustls 0.20.4",
- "rustls-pemfile",
+ "rustls-pemfile 0.3.0",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -3276,8 +3278,33 @@ dependencies = [
  "hyper-rustls 0.22.1",
  "lazy_static",
  "log",
- "rusoto_credential",
- "rusoto_signature",
+ "rusoto_credential 0.47.0",
+ "rusoto_signature 0.47.0",
+ "rustc_version 0.4.0",
+ "serde",
+ "serde_json",
+ "tokio",
+ "xml-rs",
+]
+
+[[package]]
+name = "rusoto_core"
+version = "0.48.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1db30db44ea73551326269adcf7a2169428a054f14faf9e1768f2163494f2fa2"
+dependencies = [
+ "async-trait",
+ "base64",
+ "bytes",
+ "crc32fast",
+ "futures",
+ "http",
+ "hyper",
+ "hyper-rustls 0.23.0",
+ "lazy_static",
+ "log",
+ "rusoto_credential 0.48.0",
+ "rusoto_signature 0.48.0",
  "rustc_version 0.4.0",
  "serde",
  "serde_json",
@@ -3304,15 +3331,33 @@ dependencies = [
 ]
 
 [[package]]
-name = "rusoto_kinesis"
-version = "0.47.0"
+name = "rusoto_credential"
+version = "0.48.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9060c90faec6784573af8379107ff26de934206231f4431dfa878382e5584e1b"
+checksum = "ee0a6c13db5aad6047b6a44ef023dbbc21a056b6dab5be3b79ce4283d5c02d05"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "dirs-next",
+ "futures",
+ "hyper",
+ "serde",
+ "serde_json",
+ "shlex",
+ "tokio",
+ "zeroize",
+]
+
+[[package]]
+name = "rusoto_kinesis"
+version = "0.48.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e74d7b335ca0c3423eeeade6815f709c05a44b4a078362f29232bfbd88093fb4"
 dependencies = [
  "async-trait",
  "bytes",
  "futures",
- "rusoto_core",
+ "rusoto_core 0.48.0",
  "serde",
  "serde_json",
 ]
@@ -3326,7 +3371,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures",
- "rusoto_core",
+ "rusoto_core 0.47.0",
  "xml-rs",
 ]
 
@@ -3349,7 +3394,33 @@ dependencies = [
  "md-5",
  "percent-encoding",
  "pin-project-lite",
- "rusoto_credential",
+ "rusoto_credential 0.47.0",
+ "rustc_version 0.4.0",
+ "serde",
+ "sha2",
+ "tokio",
+]
+
+[[package]]
+name = "rusoto_signature"
+version = "0.48.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5ae95491c8b4847931e291b151127eccd6ff8ca13f33603eb3d0035ecb05272"
+dependencies = [
+ "base64",
+ "bytes",
+ "chrono",
+ "digest 0.9.0",
+ "futures",
+ "hex",
+ "hmac",
+ "http",
+ "hyper",
+ "log",
+ "md-5",
+ "percent-encoding",
+ "pin-project-lite",
+ "rusoto_credential 0.48.0",
  "rustc_version 0.4.0",
  "serde",
  "sha2",
@@ -3428,10 +3499,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustls-native-certs"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0167bac7a9f490495f3c33013e7722b53cb087ecbe082fb0c6387c96f634ea50"
+dependencies = [
+ "openssl-probe",
+ "rustls-pemfile 1.0.0",
+ "schannel",
+ "security-framework",
+]
+
+[[package]]
 name = "rustls-pemfile"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ee86d63972a7c661d1536fefe8c3c8407321c3df668891286de28abcd087360"
+dependencies = [
+ "base64",
+]
+
+[[package]]
+name = "rustls-pemfile"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7522c9de787ff061458fe9a829dc790a3f5b22dc571694fc5883f448b94d9a9"
 dependencies = [
  "base64",
 ]
