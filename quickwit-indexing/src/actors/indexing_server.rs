@@ -165,6 +165,7 @@ impl IndexingServer {
             .await?;
             pipeline_ids.push(pipeline_id);
         }
+        TODO: - start_indexing_pipeline: 
         Ok(pipeline_ids)
     }
 

@@ -47,37 +47,20 @@ impl PushApiService {
 
     async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse> {
         // Check all indexes exist assuming existing queues always have a corresponding index.
-        let tasks = request
+        let first_non_existing_queue_opt = request
             .doc_batches
             .iter()
             .map(|batch| batch.index_id.clone())
             .collect::<HashSet<_>>()
             .into_iter()
-            .filter(|index_id| !self.queues.queue_exists(index_id))
-            .map(|index_id| {
-                let moved_metastore = self.metastore.clone();
-                async move {
-                    let result = moved_metastore.check_index_available(&index_id).await;
-                    (index_id, result)
-                }
-            });
-
-        let first_non_existing_index_id_opt = futures::future::join_all(tasks)
-            .await
-            .into_iter()
-            .filter(|(_, result)| result.is_err())
-            .map(|(index_id, _)| index_id)
-            .next();
-        if let Some(index_id) = first_non_existing_index_id_opt {
+            .find(|index_id| !self.queues.queue_exists(index_id));
+        
+        if let Some(index_id) = first_non_existing_queue_opt {
             return Err(PushApiError::IndexDoesNotExist { index_id });
         }
 
         let mut num_docs = 0usize;
         for doc_batch in &request.doc_batches {
-            if !self.queues.queue_exists(&doc_batch.index_id) {
-                self.queues.create_queue(&doc_batch.index_id)?
-            }
-
             // TODO better error handling.
             // If there is an error, we probably want a transactional behavior.
             let records_it = iter_doc_payloads(doc_batch);
