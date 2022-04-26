@@ -91,6 +91,9 @@ fn markdown_for_subcommand(
         command_group.join(" "),
         subcommand.get_name()
     );
+    for alias in subcommand.get_all_aliases() {
+        println!("`quickwit {} {} [args]`", command_group.join(" "), alias);
+    }
 
     let arguments = subcommand
         .get_arguments()
