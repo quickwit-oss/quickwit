@@ -52,6 +52,12 @@ impl From<TantivyError> for SearchError {
     }
 }
 
+impl From<serde_json::Error> for SearchError {
+    fn from(serde_error: serde_json::Error) -> Self {
+        SearchError::InternalError(format!("Serde error: {}", serde_error))
+    }
+}
+
 impl From<anyhow::Error> for SearchError {
     fn from(any_err: anyhow::Error) -> Self {
         SearchError::InternalError(format!("{}", any_err))
