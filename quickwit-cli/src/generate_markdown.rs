@@ -122,12 +122,12 @@ fn markdown_for_subcommand(
         println!("\n*Options*\n");
         for arg in arguments {
             let default = if let Some(val) = arg.get_default_values().get(0) {
-                format!(" (Default: {})", val.to_str().unwrap())
+                format!(" (default: {})", val.to_str().unwrap())
             } else {
                 "".to_string()
             };
             println!(
-                "`--{}` {}{}    ", // space is line break
+                "`--{}` {}{}<br>",
                 arg.get_id(),
                 arg.get_help_heading().unwrap_or_default(),
                 default
