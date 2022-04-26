@@ -326,7 +326,7 @@ pub fn build_doc_mapper(
         mode: doc_mapping.mode,
         dynamic_mapping: doc_mapping.dynamic_mapping.clone(),
     };
-    Ok(Arc::new(builder.build()?))
+    Ok(Arc::new(builder.try_build()?))
 }
 
 #[cfg(test)]

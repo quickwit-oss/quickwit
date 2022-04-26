@@ -110,7 +110,7 @@ mod tests {
     fn test_deserialize_doc_mapper() -> anyhow::Result<()> {
         let deserialized_default_doc_mapper =
             serde_json::from_str::<Box<dyn DocMapper>>(JSON_DEFAULT_DOC_MAPPER)?;
-        let expected_default_doc_mapper = DefaultDocMapperBuilder::default().build()?;
+        let expected_default_doc_mapper = DefaultDocMapperBuilder::default().try_build()?;
         assert_eq!(
             format!("{:?}", deserialized_default_doc_mapper),
             format!("{:?}", expected_default_doc_mapper),
@@ -122,7 +122,7 @@ mod tests {
     fn test_serdeserialize_doc_mapper() -> anyhow::Result<()> {
         let deserialized_default_doc_mapper =
             serde_json::from_str::<Box<dyn DocMapper>>(JSON_DEFAULT_DOC_MAPPER)?;
-        let expected_default_doc_mapper = DefaultDocMapperBuilder::default().build()?;
+        let expected_default_doc_mapper = DefaultDocMapperBuilder::default().try_build()?;
         assert_eq!(
             format!("{:?}", deserialized_default_doc_mapper),
             format!("{:?}", expected_default_doc_mapper),
@@ -148,7 +148,7 @@ mod tests {
                 Cardinality::SingleValue,
             ),
         });
-        let doc_mapper = doc_mapper_builder.build().unwrap();
+        let doc_mapper = doc_mapper_builder.try_build().unwrap();
         let schema = doc_mapper.schema();
         let search_request = SearchRequest {
             index_id: "quickwit-index".to_string(),
@@ -182,7 +182,7 @@ mod tests {
         doc_mapper_builder
             .default_search_fields
             .push("json_field".to_string());
-        let doc_mapper = doc_mapper_builder.build().unwrap();
+        let doc_mapper = doc_mapper_builder.try_build().unwrap();
         let schema = doc_mapper.schema();
         let search_request = SearchRequest {
             index_id: "quickwit-index".to_string(),
@@ -216,7 +216,7 @@ mod tests {
             default_search_fields: vec!["json_field".to_string()],
             ..Default::default()
         };
-        let doc_mapper = doc_mapper_builder.build().unwrap();
+        let doc_mapper = doc_mapper_builder.try_build().unwrap();
         let schema = doc_mapper.schema();
         let search_request = SearchRequest {
             index_id: "quickwit-index".to_string(),
