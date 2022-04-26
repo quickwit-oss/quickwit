@@ -129,7 +129,7 @@ fn markdown_for_subcommand(
             println!(
                 "`--{}` {}{}<br>",
                 arg.get_id(),
-                arg.get_help_heading().unwrap_or_default(),
+                arg.get_help().unwrap_or_default(),
                 default
             );
         }
