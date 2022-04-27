@@ -22,6 +22,7 @@
         "type": "i64"
       },
       {
+        "fast": false,
         "fieldnorms": false,
         "indexed": true,
         "name": "log_level",
@@ -31,6 +32,7 @@
         "type": "text"
       },
       {
+        "fast": false,
         "fieldnorms": false,
         "indexed": true,
         "name": "message",
