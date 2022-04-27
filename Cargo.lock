@@ -2756,6 +2756,7 @@ dependencies = [
  "base64",
  "criterion",
  "dyn-clone",
+ "fnv",
  "itertools",
  "matches",
  "mockall",

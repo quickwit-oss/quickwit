@@ -40,7 +40,7 @@
         "type": "text"
       }
     ],
-    "mode": "lenient",
+    "mode": "dynamic",
     "store_source": true,
     "tag_fields": [
       "log_level",

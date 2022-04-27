@@ -17,16 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use serde::{Deserialize, Serialize};
 use tantivy::schema::{Cardinality, Type};
 
-use super::FieldMappingEntry;
-use crate::default_doc_mapper::field_mapping_entry::{QuickwitNumericOptions, QuickwitTextOptions};
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct QuickwitObjectOptions {
-    pub field_mappings: Vec<FieldMappingEntry>,
-}
+use crate::default_doc_mapper::field_mapping_entry::{
+    QuickwitJsonOptions, QuickwitNumericOptions, QuickwitObjectOptions, QuickwitTextOptions,
+};
 
 /// A `FieldMappingType` defines the type and indexing options
 /// of a mapping field.
@@ -44,6 +39,7 @@ pub enum FieldMappingType {
     Date(QuickwitNumericOptions, Cardinality),
     /// Bytes mapping type configuration.
     Bytes(QuickwitNumericOptions, Cardinality),
+    Json(QuickwitJsonOptions, Cardinality),
     /// Object mapping type configuration.
     Object(QuickwitObjectOptions),
 }
@@ -57,6 +53,7 @@ impl FieldMappingType {
             FieldMappingType::F64(_, cardinality) => (Type::F64, *cardinality),
             FieldMappingType::Date(_, cardinality) => (Type::Date, *cardinality),
             FieldMappingType::Bytes(_, cardinality) => (Type::Bytes, *cardinality),
+            FieldMappingType::Json(_, cardinality) => (Type::Json, *cardinality),
             FieldMappingType::Object(_) => {
                 return QuickwitFieldType::Object;
             }
@@ -105,6 +102,7 @@ fn parse_primitive_type(primitive_type_str: &str) -> Option<Type> {
         "f64" => Some(Type::F64),
         "date" => Some(Type::Date),
         "bytes" => Some(Type::Bytes),
+        "json" => Some(Type::Json),
         _unknown_type => None,
     }
 }

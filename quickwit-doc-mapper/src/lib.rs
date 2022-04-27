@@ -34,14 +34,18 @@ mod sort_by;
 pub mod tag_pruning;
 
 pub use default_doc_mapper::{
-    DefaultDocMapper, DefaultDocMapperBuilder, DocParsingError, FieldMappingEntry, SortByConfig,
+    DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry, ModeType, QuickwitJsonOptions,
+    SortByConfig,
 };
 pub use doc_mapper::DocMapper;
-pub use error::QueryParserError;
+pub use error::{DocParsingError, QueryParserError};
 pub use sort_by::{SortBy, SortByField, SortOrder};
 
 /// Field name reserved for storing the source document.
 pub const SOURCE_FIELD_NAME: &str = "_source";
+
+/// Field name reserved for storing the dynamically indexed fields.
+pub const DYNAMIC_FIELD_NAME: &str = "_dynamic";
 
 /// Returns a default `DefaultIndexConfig` for unit tests.
 #[cfg(any(test, feature = "testsuite"))]
@@ -88,6 +92,14 @@ pub fn default_doc_mapper_for_tests() -> DefaultDocMapper {
                     "name": "owner",
                     "type": "text",
                     "tokenizer": "raw"
+                },
+                {
+                    "name": "properties",
+                    "type": "json"
+                },
+                {
+                    "name": "children",
+                    "type": "array<json>"
                 },
                 {
                     "name": "attributes",
