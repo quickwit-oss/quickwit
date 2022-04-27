@@ -46,7 +46,7 @@ pub fn match_tag_field_name(field_name: &str, tag: &str) -> bool {
 /// in the split matches the query.
 pub fn extract_tags_from_query(user_query: &str) -> Result<Option<TagFilterAst>, QueryParserError> {
     let user_input_ast = tantivy_query_grammar::parse_query(user_query)
-        .map_err(|_| TantivyQueryParserError::SyntaxError)?;
+        .map_err(|_| TantivyQueryParserError::SyntaxError(user_query.to_string()))?;
     Ok(user_input_ast_to_tags_filter_ast(user_input_ast))
 }
 

@@ -183,18 +183,19 @@ pub async fn single_node_search(
     .await
     .context("Failed to perform fetch docs.")?;
     let elapsed = start_instant.elapsed();
+    let aggregation = if let Some(intermediate_aggregation_result) =
+        leaf_search_response.intermediate_aggregation_result
+    {
+        let res: IntermediateAggregationResults =
+            serde_json::from_str(&intermediate_aggregation_result)?;
+        let req: Aggregations = serde_json::from_str(search_request.aggregation_request())?;
+        let res: AggregationResults = AggregationResults::from_intermediate_and_req(res, req)?;
+        Some(serde_json::to_string(&res)?)
+    } else {
+        None
+    };
     Ok(SearchResponse {
-        aggregation: leaf_search_response
-            .intermediate_aggregation_result
-            .map(|res| {
-                let res: IntermediateAggregationResults = serde_json::from_str(&res)?;
-                let req: Aggregations = serde_json::from_str(search_request.aggregation_request())?;
-                let res: AggregationResults =
-                    AggregationResults::from_intermediate_and_req(res, req);
-                serde_json::to_string(&res)
-            })
-            .transpose()
-            .map_err(|err| SearchError::InternalError(err.to_string()))?,
+        aggregation,
         num_hits: leaf_search_response.num_hits,
         hits: fetch_docs_response.hits,
         elapsed_time_micros: elapsed.as_micros() as u64,
