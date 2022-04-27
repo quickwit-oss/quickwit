@@ -153,17 +153,17 @@ mod test {
 
     #[test]
     fn test_build_query() -> anyhow::Result<()> {
-        // check_build_query(
-        //     "foo:bar",
-        //     vec![],
-        //     TestExpectation::Err("Field does not exists: '\"foo\"'"),
-        // )?;
+        check_build_query(
+            "foo:bar",
+            vec![],
+            TestExpectation::Err("Field does not exists: '\"foo\"'"),
+        )?;
 
-        // check_build_query(
-        //     "server.type:hpc server.mem:4GB",
-        //     vec![],
-        //     TestExpectation::Err("Field does not exists: '\"server.type\"'"),
-        // )?;
+        check_build_query(
+            "server.type:hpc server.mem:4GB",
+            vec![],
+            TestExpectation::Err("Field does not exists: '\"server.type\"'"),
+        )?;
 
         check_build_query(
             "title:[a TO b]",
