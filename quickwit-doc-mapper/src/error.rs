@@ -20,8 +20,6 @@
 use tantivy::schema::DocParsingError as TantivyDocParsingError;
 use thiserror::Error;
 
-// TODO improve me and my error messages :)
-
 /// Failed to parse query.
 #[derive(Error, Debug)]
 #[error("{0}")]

@@ -88,8 +88,12 @@ impl Default for Mode {
 #[serde(try_from = "DefaultDocMapperBuilder", into = "DefaultDocMapperBuilder")]
 pub struct DefaultDocMapper {
     /// Field in which the source should be stored.
+    /// This field is only valid when using the schema associated with the default
+    /// doc mapper, and therefore cannot be used in the `query` method.
     source_field: Option<Field>,
     /// Field in which the dynamically mapped fields should be stored.
+    /// This field is only valid when using the schema associated with the default
+    /// doc mapper, and therefore cannot be used in the `query` method.
     dynamic_field: Option<Field>,
     /// Default list of field names used for search.
     default_search_field_names: Vec<String>,
