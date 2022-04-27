@@ -76,11 +76,11 @@ impl TypedSourceFactory for KafkaSourceFactory {
     }
 }
 
-struct KafkaSourceContext;
+struct RdKafkaContext;
 
-impl ClientContext for KafkaSourceContext {}
+impl ClientContext for RdKafkaContext {}
 
-impl ConsumerContext for KafkaSourceContext {
+impl ConsumerContext for RdKafkaContext {
     fn pre_rebalance(&self, rebalance: &Rebalance) {
         info!("Pre rebalance {:?}", rebalance);
     }
@@ -94,7 +94,7 @@ impl ConsumerContext for KafkaSourceContext {
     }
 }
 
-type KafkaSourceConsumer = StreamConsumer<KafkaSourceContext>;
+type RdKafkaConsumer = StreamConsumer<RdKafkaContext>;
 
 #[derive(Default)]
 pub struct KafkaSourceState {
@@ -116,7 +116,7 @@ pub struct KafkaSourceState {
 pub struct KafkaSource {
     source_id: String,
     topic: String,
-    consumer: Arc<KafkaSourceConsumer>,
+    consumer: Arc<RdKafkaConsumer>,
     state: KafkaSourceState,
 }
 
@@ -312,7 +312,7 @@ fn create_consumer(
     source_id: &str,
     client_log_level: Option<String>,
     client_params: serde_json::Value,
-) -> anyhow::Result<Arc<KafkaSourceConsumer>> {
+) -> anyhow::Result<Arc<RdKafkaConsumer>> {
     let mut client_config = parse_client_params(client_params)?;
     // We assign partitions manually: we always want one consumer per consumer group.
     let mut group_id = new_coolid(&format!("quickwit-{}", source_id));
@@ -320,9 +320,9 @@ fn create_consumer(
     client_config.set("group.id", group_id);
 
     let log_level = parse_client_log_level(client_log_level)?;
-    let consumer: KafkaSourceConsumer = client_config
+    let consumer: RdKafkaConsumer = client_config
         .set_log_level(log_level)
-        .create_with_context(KafkaSourceContext)
+        .create_with_context(RdKafkaContext)
         .context("Failed to create Kafka consumer.")?;
     Ok(Arc::new(consumer))
 }
@@ -393,7 +393,7 @@ fn kafka_checkpoint_from_checkpoint(
 
 /// Retrieves the list of all partition IDs of a given topic.
 async fn fetch_partition_ids(
-    consumer: Arc<KafkaSourceConsumer>,
+    consumer: Arc<RdKafkaConsumer>,
     topic: &str,
 ) -> anyhow::Result<Vec<i32>> {
     let timeout = Timeout::After(Duration::from_secs(5));
@@ -431,7 +431,7 @@ async fn fetch_partition_ids(
 /// The high watermark is the offset of the latest message in the partition available for
 /// consumption + 1.
 async fn fetch_watermarks(
-    consumer: Arc<KafkaSourceConsumer>,
+    consumer: Arc<RdKafkaConsumer>,
     topic: &str,
     partition_ids: &[i32],
     timeout: Duration,
@@ -454,7 +454,7 @@ async fn fetch_watermarks(
 
 /// Fetches the low and high watermarks for the given topic and partition ID.
 async fn fetch_watermarks_for_partition_id(
-    consumer: Arc<KafkaSourceConsumer>,
+    consumer: Arc<RdKafkaConsumer>,
     topic: String,
     partition_id: i32,
     timeout: Duration,
@@ -679,8 +679,7 @@ mod kafka_broker_tests {
     use rdkafka::producer::{FutureProducer, FutureRecord};
 
     use super::*;
-    use crate::source::{quickwit_supported_sources, SourceActor};
-    use crate::SourceConfig;
+    use crate::source::{quickwit_supported_sources, SourceActor, SourceConfig};
 
     fn create_admin_client(
         bootstrap_servers: &str,
@@ -718,9 +717,7 @@ mod kafka_broker_tests {
         Ok(())
     }
 
-    fn create_consumer_for_test(
-        bootstrap_servers: &str,
-    ) -> anyhow::Result<Arc<KafkaSourceConsumer>> {
+    fn create_consumer_for_test(bootstrap_servers: &str) -> anyhow::Result<Arc<RdKafkaConsumer>> {
         let client_params = json!({
             "bootstrap.servers": bootstrap_servers,
             "enable.partition.eof": true,
