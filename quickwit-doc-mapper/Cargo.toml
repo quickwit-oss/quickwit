@@ -23,6 +23,7 @@ tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev 
 thiserror = "1.0"
 tracing = "0.1.29"
 typetag = "0.1"
+fnv = "1"
 
 [dependencies.quickwit-proto]
 path = '../quickwit-proto'
