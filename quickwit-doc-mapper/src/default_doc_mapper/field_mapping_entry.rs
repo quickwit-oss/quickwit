@@ -113,6 +113,7 @@ impl Default for QuickwitTextOptions {
             record: IndexRecordOption::Basic,
             fieldnorms: false,
             stored: true,
+            fast: false,
         }
     }
 }
@@ -724,6 +725,7 @@ mod tests {
             json!({
                 "name": "my_field_name",
                 "type": "text",
+                "fast": false,
                 "stored": true,
                 "indexed": true,
                 "fieldnorms": false,
@@ -752,6 +754,7 @@ mod tests {
                 "stored": true,
                 "indexed": true,
                 "fieldnorms": false,
+                "fast": false,
                 "record": "basic",
             })
         );
