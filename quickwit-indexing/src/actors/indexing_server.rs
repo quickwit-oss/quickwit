@@ -45,7 +45,8 @@ use crate::{IndexingPipeline, IndexingPipelineParams, IndexingStatistics};
 
 pub const INDEXING: &str = "indexing";
 
-const PUSH_API_SOURCE_ID: &str = "_push-api";
+/// Reserved source id used for the Push API.
+const PUSH_API_SOURCE_ID: &str = ".push-api";
 
 #[derive(Error, Debug)]
 pub enum IndexingServerError {
