@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::sync::Arc;
 use std::time::Duration;
@@ -35,6 +35,7 @@ use diesel::{
 };
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
+use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
 use crate::metastore::CheckpointDelta;
@@ -113,7 +114,7 @@ fn initialize_db(pool: &Pool<ConnectionManager<PgConnection>>) -> anyhow::Result
 #[derive(Clone)]
 pub struct PostgresqlMetastore {
     uri: String,
-    connection_pool: Arc<Pool<ConnectionManager<PgConnection>>>,
+    connection_pool: Pool<ConnectionManager<PgConnection>>,
 }
 
 type Conn = PooledConnection<ConnectionManager<PgConnection>>;
@@ -121,12 +122,12 @@ type Conn = PooledConnection<ConnectionManager<PgConnection>>;
 impl PostgresqlMetastore {
     /// Creates a meta store given a database URI.
     pub async fn new(database_uri: &str) -> MetastoreResult<Self> {
-        let connection_pool = Arc::new(establish_connection(database_uri).map_err(|err| {
+        let connection_pool = establish_connection(database_uri).map_err(|err| {
             error!(err=?err, "Failed to establish connection");
             MetastoreError::ConnectionError {
                 message: err.to_string(),
             }
-        })?);
+        })?;
 
         // Check the connection pool.
         let mut is_status_ok = false;
@@ -161,7 +162,7 @@ impl PostgresqlMetastore {
             });
         }
 
-        initialize_db(&*connection_pool).map_err(|err| MetastoreError::InternalError {
+        initialize_db(&connection_pool).map_err(|err| MetastoreError::InternalError {
             message: "Failed to initialize database".to_string(),
             cause: anyhow::anyhow!(err),
         })?;
@@ -826,18 +827,59 @@ fn tags_filter_expression_helper(
     }
 }
 
-/// A file-backed metastore factory
+/// A postgres metastore factory
 #[derive(Clone, Default)]
-pub struct PostgresqlMetastoreFactory {}
+pub struct PostgresqlMetastoreFactory {
+    // In a normal run, this cache will contain a single Metastore.
+    //
+    // In contrast to the file backe metastore, we use a strong pointer here, so that Metastore
+    // doesn't get dropped. This is done in order to keep the underlying connection pool to
+    // postgres alive.
+    cache: Arc<Mutex<HashMap<String, Arc<dyn Metastore>>>>,
+}
+
+impl PostgresqlMetastoreFactory {
+    async fn get_from_cache(&self, uri: &str) -> Option<Arc<dyn Metastore>> {
+        let cache_lock = self.cache.lock().await;
+        cache_lock.get(uri).map(Arc::clone)
+    }
+
+    /// If there is a valid entry in the cache to begin with, we trash the new
+    /// one and return the old one.
+    ///
+    /// This way we make sure that we keep only one instance associated
+    /// to the key `uri` outside of this struct.
+    async fn cache_metastore(
+        &self,
+        uri: String,
+        metastore: Arc<dyn Metastore>,
+    ) -> Arc<dyn Metastore> {
+        let mut cache_lock = self.cache.lock().await;
+        if let Some(metastore) = cache_lock.get(&uri) {
+            return metastore.clone();
+        }
+        cache_lock.insert(uri, metastore.clone());
+        metastore
+    }
+}
 
 #[async_trait]
 impl MetastoreFactory for PostgresqlMetastoreFactory {
     async fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+        if let Some(metastore) = self.get_from_cache(uri).await {
+            debug!("using metastore from cache");
+            return Ok(metastore);
+        }
+        debug!("metastore not found in cache");
+
         let metastore = PostgresqlMetastore::new(uri)
             .await
             .map_err(MetastoreResolverError::FailedToOpenMetastore)?;
+        let metastore = self
+            .cache_metastore(uri.to_string(), Arc::new(metastore))
+            .await;
 
-        Ok(Arc::new(metastore))
+        Ok(metastore)
     }
 }
 
