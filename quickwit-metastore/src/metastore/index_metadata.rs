@@ -19,13 +19,12 @@
 
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use itertools::Itertools;
 use quickwit_config::{
     DocMapping, IndexingResources, IndexingSettings, SearchSettings, SourceConfig,
 };
-use quickwit_doc_mapper::{DefaultDocMapperBuilder, DocMapper, SortBy, SortByConfig, SortOrder};
+use quickwit_doc_mapper::SortOrder;
 use serde::{Deserialize, Serialize};
 
 use crate::checkpoint::IndexCheckpoint;
@@ -172,22 +171,6 @@ impl IndexMetadata {
             })?;
         self.checkpoint.remove_source(source_id);
         Ok(())
-    }
-
-    /// Builds and returns the doc mapper associated with index.
-    pub fn build_doc_mapper(&self) -> anyhow::Result<Arc<dyn DocMapper>> {
-        let mut builder = DefaultDocMapperBuilder::new();
-        builder.default_search_fields = self.search_settings.default_search_fields.clone();
-        builder.demux_field = self.indexing_settings.demux_field.clone();
-        builder.sort_by = match self.indexing_settings.sort_by() {
-            SortBy::DocId => None,
-            SortBy::FastField { field_name, order } => Some(SortByConfig { field_name, order }),
-        };
-        builder.timestamp_field = self.indexing_settings.timestamp_field.clone();
-        builder.field_mappings = self.doc_mapping.field_mappings.clone();
-        builder.tag_fields = self.doc_mapping.tag_fields.iter().cloned().collect();
-        builder.store_source = self.doc_mapping.store_source;
-        Ok(Arc::new(builder.build()?))
     }
 }
 

@@ -32,7 +32,7 @@ pub(crate) fn build_query(
     default_field_names: &[String],
 ) -> Result<Box<dyn Query>, QueryParserError> {
     let user_input_ast = tantivy_query_grammar::parse_query(&request.query)
-        .map_err(|_| TantivyQueryParserError::SyntaxError)?;
+        .map_err(|_| TantivyQueryParserError::SyntaxError(request.query.to_string()))?;
 
     if has_range_clause(user_input_ast) {
         return Err(anyhow::anyhow!("Range queries are not currently allowed.").into());

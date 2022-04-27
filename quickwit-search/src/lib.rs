@@ -183,18 +183,19 @@ pub async fn single_node_search(
     .await
     .context("Failed to perform fetch docs.")?;
     let elapsed = start_instant.elapsed();
+    let aggregation = if let Some(intermediate_aggregation_result) =
+        leaf_search_response.intermediate_aggregation_result
+    {
+        let res: IntermediateAggregationResults =
+            serde_json::from_str(&intermediate_aggregation_result)?;
+        let req: Aggregations = serde_json::from_str(search_request.aggregation_request())?;
+        let res: AggregationResults = AggregationResults::from_intermediate_and_req(res, req)?;
+        Some(serde_json::to_string(&res)?)
+    } else {
+        None
+    };
     Ok(SearchResponse {
-        aggregation: leaf_search_response
-            .intermediate_aggregation_result
-            .map(|res| {
-                let res: IntermediateAggregationResults = serde_json::from_str(&res)?;
-                let req: Aggregations = serde_json::from_str(search_request.aggregation_request())?;
-                let res: AggregationResults =
-                    AggregationResults::from_intermediate_and_req(res, req);
-                serde_json::to_string(&res)
-            })
-            .transpose()
-            .map_err(|err| SearchError::InternalError(err.to_string()))?,
+        aggregation,
         num_hits: leaf_search_response.num_hits,
         hits: fetch_docs_response.hits,
         elapsed_time_micros: elapsed.as_micros() as u64,
@@ -520,6 +521,76 @@ mod tests {
             vec!["owner!", "owner:adrien", "owner:paul"]
         );
 
+        Ok(())
+    }
+
+    const DYNAMIC_TEST_INDEX_ID: &str = "search_dynamic_mode";
+
+    async fn test_search_dynamic_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
+        let splits = test_sandbox
+            .metastore()
+            .list_all_splits(DYNAMIC_TEST_INDEX_ID)
+            .await
+            .unwrap();
+        let splits_offsets: Vec<_> = splits
+            .into_iter()
+            .map(|split_meta| SplitIdAndFooterOffsets {
+                split_id: split_meta.split_id().to_string(),
+                split_footer_start: split_meta.split_metadata.footer_offsets.start,
+                split_footer_end: split_meta.split_metadata.footer_offsets.end,
+            })
+            .collect();
+        let request = quickwit_proto::SearchRequest {
+            index_id: DYNAMIC_TEST_INDEX_ID.to_string(),
+            query: query.to_string(),
+            max_hits: 100,
+            ..Default::default()
+        };
+        let search_response = leaf_search(
+            &request,
+            test_sandbox.storage(),
+            &splits_offsets,
+            test_sandbox.doc_mapper(),
+        )
+        .await
+        .unwrap();
+        search_response
+            .partial_hits
+            .into_iter()
+            .map(|partial_hit| partial_hit.doc_id)
+            .collect::<Vec<u32>>()
+    }
+
+    #[tokio::test]
+    async fn test_search_dynamic_mode() -> anyhow::Result<()> {
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+                tokenizer: default
+                indexed: true
+            mode: dynamic
+            dynamic_mapping:
+                tokenizer: raw
+        "#;
+        let test_sandbox = TestSandbox::create(DYNAMIC_TEST_INDEX_ID, doc_mapping_yaml, "{}", &[])
+            .await
+            .unwrap();
+        let docs = vec![
+            json!({"body": "hello happy tax payer"}),
+            json!({"body": "hello"}),
+            json!({"body_dynamic": "hello happy tax payer"}),
+            json!({"body_dynamic": "hello"}),
+        ];
+        test_sandbox.add_documents(docs).await.unwrap();
+        {
+            let docs = test_search_dynamic_util(&test_sandbox, "body:hello").await;
+            assert_eq!(&docs[..], &[0u32, 1u32]);
+        }
+        {
+            let docs = test_search_dynamic_util(&test_sandbox, "body_dynamic:hello").await;
+            assert_eq!(&docs[..], &[3u32]); // 1 is not matched due to the raw tokenizer
+        }
         Ok(())
     }
 }

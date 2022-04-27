@@ -972,7 +972,7 @@ checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 [[package]]
 name = "fastfield_codecs"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=c7c3eab#c7c3eab256917e800576f6c8b8dbdebc54da8cfd"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=c305d3a#c305d3a2a2711d6438ad5bcef32c57395e7e40bf"
 dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
@@ -2160,7 +2160,7 @@ dependencies = [
 [[package]]
 name = "ownedbytes"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=c7c3eab#c7c3eab256917e800576f6c8b8dbdebc54da8cfd"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=c305d3a#c305d3a2a2711d6438ad5bcef32c57395e7e40bf"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -2756,6 +2756,7 @@ dependencies = [
  "base64",
  "criterion",
  "dyn-clone",
+ "fnv",
  "itertools",
  "matches",
  "mockall",
@@ -3909,7 +3910,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.17.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=c7c3eab#c7c3eab256917e800576f6c8b8dbdebc54da8cfd"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=c305d3a#c305d3a2a2711d6438ad5bcef32c57395e7e40bf"
 dependencies = [
  "async-trait",
  "base64",
@@ -3953,19 +3954,19 @@ dependencies = [
  "tempfile",
  "thiserror",
  "time 0.3.9",
- "uuid 0.8.2",
+ "uuid 1.0.0",
  "winapi 0.3.9",
 ]
 
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.1.1"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=c7c3eab#c7c3eab256917e800576f6c8b8dbdebc54da8cfd"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=c305d3a#c305d3a2a2711d6438ad5bcef32c57395e7e40bf"
 
 [[package]]
 name = "tantivy-common"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=c7c3eab#c7c3eab256917e800576f6c8b8dbdebc54da8cfd"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=c305d3a#c305d3a2a2711d6438ad5bcef32c57395e7e40bf"
 dependencies = [
  "byteorder",
  "ownedbytes",
@@ -3985,7 +3986,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.15.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=c7c3eab#c7c3eab256917e800576f6c8b8dbdebc54da8cfd"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=c305d3a#c305d3a2a2711d6438ad5bcef32c57395e7e40bf"
 dependencies = [
  "combine",
  "once_cell",
@@ -4682,16 +4683,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1436e58182935dcd9ce0add9ea0b558e8a87befe01c1a301e6020aeb0876363"
 dependencies = [
  "cfg-if 0.1.10",
-]
-
-[[package]]
-name = "uuid"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
-dependencies = [
- "getrandom",
- "serde",
 ]
 
 [[package]]
