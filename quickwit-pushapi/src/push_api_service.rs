@@ -19,30 +19,25 @@
 
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, QueueCapacity};
-use quickwit_metastore::Metastore;
 use quickwit_proto::push_api::{
-    CreateQueueRequest, DropQueueRequest, FetchRequest, FetchResponse, IngestRequest,
-    IngestResponse, QueueExistsRequest, SuggestTruncateRequest, TailRequest,
+    CreateQueueIfNonExistentRequest, CreateQueueRequest, DropQueueRequest, FetchRequest,
+    FetchResponse, IngestRequest, IngestResponse, QueueExistsRequest, SuggestTruncateRequest,
+    TailRequest,
 };
 
 use crate::{iter_doc_payloads, Position, PushApiError, Queues};
 
 pub struct PushApiService {
     queues: Queues,
-    metastore: Arc<dyn Metastore>,
 }
 
 impl PushApiService {
-    pub fn with_queue_path(
-        queue_path: &Path,
-        metastore: Arc<dyn Metastore>,
-    ) -> crate::Result<Self> {
+    pub fn with_queue_path(queue_path: &Path) -> crate::Result<Self> {
         let queues = Queues::open(queue_path)?;
-        Ok(PushApiService { queues, metastore })
+        Ok(PushApiService { queues })
     }
 
     async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse> {
@@ -54,7 +49,7 @@ impl PushApiService {
             .collect::<HashSet<_>>()
             .into_iter()
             .find(|index_id| !self.queues.queue_exists(index_id));
-        
+
         if let Some(index_id) = first_non_existing_queue_opt {
             return Err(PushApiError::IndexDoesNotExist { index_id });
         }
@@ -127,6 +122,21 @@ impl Handler<CreateQueueRequest> for PushApiService {
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self.queues.create_queue(&create_queue_req.queue_id))
+    }
+}
+
+#[async_trait]
+impl Handler<CreateQueueIfNonExistentRequest> for PushApiService {
+    type Reply = crate::Result<()>;
+    async fn handle(
+        &mut self,
+        create_queue_inf_req: CreateQueueIfNonExistentRequest,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        if self.queues.queue_exists(&create_queue_inf_req.queue_id) {
+            return Ok(Ok(()));
+        }
+        Ok(self.queues.create_queue(&create_queue_inf_req.queue_id))
     }
 }
 

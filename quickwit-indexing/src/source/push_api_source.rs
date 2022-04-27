@@ -190,14 +190,12 @@ impl TypedSourceFactory for PushApiSourceFactory {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use std::time::Duration;
 
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_metastore::checkpoint::SourceCheckpoint;
-    use quickwit_metastore::MockMetastore;
     use quickwit_proto::push_api::{DocBatch, IngestRequest};
-    use quickwit_pushapi::{add_doc, spawn_push_api_actor};
+    use quickwit_pushapi::{add_doc, spawn_push_api_actor, Queues};
 
     use super::*;
     use crate::source::SourceActor;
@@ -226,17 +224,12 @@ mod tests {
         let index_id = "my-index".to_string();
         let queue_path = tempfile::tempdir()?;
 
-        let mut mock_metastore = MockMetastore::default();
-        mock_metastore
-            .expect_check_index_available()
-            .times(1)
-            .returning(|index_id| {
-                assert_eq!(index_id, "my-index");
-                Ok(())
-            });
+        // create queue
+        let mut queues = Queues::open(queue_path.path())?;
+        queues.create_queue(&index_id)?;
+        drop(queues);
 
-        let push_api_mailbox =
-            spawn_push_api_actor(&universe, queue_path.path(), Arc::new(mock_metastore))?;
+        let push_api_mailbox = spawn_push_api_actor(&universe, queue_path.path())?;
 
         let ingest_req = make_ingest_request(index_id.clone(), 2, 1000);
 
@@ -291,17 +284,12 @@ mod tests {
         let index_id = "my-index".to_string();
         let queue_path = tempfile::tempdir()?;
 
-        let mut mock_metastore = MockMetastore::default();
-        mock_metastore
-            .expect_check_index_available()
-            .times(1)
-            .returning(|index_id| {
-                assert_eq!(index_id, "my-index");
-                Ok(())
-            });
+        // create queue
+        let mut queues = Queues::open(queue_path.path())?;
+        queues.create_queue(&index_id)?;
+        drop(queues);
 
-        let push_api_mailbox =
-            spawn_push_api_actor(&universe, queue_path.path(), Arc::new(mock_metastore))?;
+        let push_api_mailbox = spawn_push_api_actor(&universe, queue_path.path())?;
 
         let ingest_req = make_ingest_request(index_id.clone(), 4, 1000);
         push_api_mailbox

@@ -23,10 +23,15 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Observation, Supervisable,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox, Observation,
+    Supervisable,
 };
-use quickwit_config::{IndexerConfig, SourceConfig, SourceParams, VecSourceParams};
+use quickwit_config::{
+    IndexerConfig, PushApiSourceParams, SourceConfig, SourceParams, VecSourceParams,
+};
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
+use quickwit_proto::push_api::CreateQueueIfNonExistentRequest;
+use quickwit_pushapi::PushApiService;
 use quickwit_storage::{StorageResolverError, StorageUriResolver};
 use serde::Serialize;
 use thiserror::Error;
@@ -39,6 +44,8 @@ use crate::models::{
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingStatistics};
 
 pub const INDEXING: &str = "indexing";
+
+const PUSH_API_SOURCE_ID: &str = "_push-api";
 
 #[derive(Error, Debug)]
 pub enum IndexingServerError {
@@ -69,6 +76,7 @@ pub struct IndexingServer {
     storage_resolver: StorageUriResolver,
     pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     state: IndexingServerState,
+    push_api_service: Option<Mailbox<PushApiService>>,
 }
 
 impl IndexingServer {
@@ -82,6 +90,7 @@ impl IndexingServer {
         indexer_config: IndexerConfig,
         metastore: Arc<dyn Metastore>,
         storage_resolver: StorageUriResolver,
+        push_api_service: Option<Mailbox<PushApiService>>,
     ) -> IndexingServer {
         Self {
             indexing_dir_path: data_dir_path.join(INDEXING),
@@ -92,6 +101,7 @@ impl IndexingServer {
             storage_resolver,
             pipeline_handles: Default::default(),
             state: Default::default(),
+            push_api_service,
         }
     }
 
@@ -165,7 +175,24 @@ impl IndexingServer {
             .await?;
             pipeline_ids.push(pipeline_id);
         }
-        TODO: - start_indexing_pipeline: 
+
+        // Spawn push-api pipeline for this index if needed.
+        if let Some(push_api_service) = &self.push_api_service {
+            // Ensure the queue exist.
+            let create_queue_req = CreateQueueIfNonExistentRequest {
+                queue_id: index_id.clone(),
+            };
+            push_api_service
+                .ask_for_res(create_queue_req)
+                .await
+                .map_err(|err| IndexingServerError::InvalidParams(err.into()))?;
+
+            let source_id = PUSH_API_SOURCE_ID.to_string();
+            let push_api_pipeline_id = self
+                .spawn_push_api_pipeline(index_id, source_id, index_metadata, ctx)
+                .await?;
+            pipeline_ids.push(push_api_pipeline_id);
+        }
         Ok(pipeline_ids)
     }
 
@@ -200,6 +227,36 @@ impl IndexingServer {
         self.pipeline_handles.insert(pipeline_id, pipeline_handle);
         self.state.num_running_pipelines += 1;
         Ok(())
+    }
+
+    async fn spawn_push_api_pipeline(
+        &mut self,
+        index_id: String,
+        source_id: String,
+        index_metadata: IndexMetadata,
+        ctx: &ActorContext<Self>,
+    ) -> Result<IndexingPipelineId, IndexingServerError> {
+        let push_api_pipeline_id = IndexingPipelineId {
+            index_id: index_id.clone(),
+            source_id: source_id.clone(),
+        };
+        let push_api_source = SourceConfig {
+            source_id,
+            source_params: SourceParams::PushApi(PushApiSourceParams {
+                index_id,
+                batch_num_bytes_threshold: None,
+            }),
+        };
+
+        self.spawn_pipeline_inner(
+            push_api_pipeline_id.clone(),
+            index_metadata.clone(),
+            push_api_source,
+            ctx,
+        )
+        .await?;
+
+        Ok(push_api_pipeline_id)
     }
 
     async fn spawn_merge_pipeline(
@@ -407,6 +464,7 @@ mod tests {
             indexer_config,
             metastore.clone(),
             storage_resolver.clone(),
+            None,
         );
         let universe = Universe::new();
         let (indexing_server_mailbox, indexing_server_handle) =

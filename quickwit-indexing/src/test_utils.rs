@@ -89,6 +89,7 @@ impl TestSandbox {
             indexer_config,
             metastore.clone(),
             storage_resolver.clone(),
+            None,
         );
         let universe = Universe::new();
         let (indexing_server_mailbox, _indexing_server_handle) =
