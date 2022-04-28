@@ -41,6 +41,7 @@ mod thread_pool;
 pub type Result<T> = std::result::Result<T, SearchError>;
 
 use std::cmp::Reverse;
+use std::collections::BTreeMap;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -49,9 +50,11 @@ use itertools::Itertools;
 use quickwit_cluster::Cluster;
 use quickwit_config::{build_doc_mapper, QuickwitConfig, SEARCHER_CONFIG_INSTANCE};
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
+use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{Metastore, SplitMetadata, SplitState};
 use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
+use serde_json::Value as JsonValue;
 use tantivy::aggregation::agg_req::Aggregations;
 use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
@@ -146,6 +149,35 @@ async fn list_relevant_splits(
         .collect::<Vec<_>>())
 }
 
+/// Converts a `LeafHit` into a `Hit`.
+///
+/// Splits may have been created with different DocMappers.
+/// For this reason, leaves are returning a document that is -as much
+/// as possible-, `DocMapper` agnostic.
+///
+/// As a result, all documents will have the actual same schema,
+/// hence facilitating the implementation on the consumer side.
+///
+/// For instance, if the cardinality of a field changed from single-valued
+/// to multivalued, we do want the documents emitted from old splits to
+/// also serialize the fields values as a JsonArray.
+///
+/// The `convert_leaf_hit` is critical and needs to be tested against
+/// allowed DocMapper changes.
+fn convert_leaf_hit(
+    leaf_hit: quickwit_proto::LeafHit,
+    doc_mapper: &dyn DocMapper,
+) -> crate::Result<quickwit_proto::Hit> {
+    let hit_json: BTreeMap<String, Vec<JsonValue>> = serde_json::from_str(&leaf_hit.leaf_json)
+        .map_err(|_| SearchError::InternalError("Invalid leaf json.".to_string()))?;
+    let doc = doc_mapper.doc_to_json(hit_json)?;
+    let json = serde_json::to_string(&doc).expect("Json serialization should never fail.");
+    Ok(quickwit_proto::Hit {
+        json,
+        partial_hit: leaf_hit.partial_hit,
+    })
+}
+
 /// Performs a search on the current node.
 /// See also `[distributed_search]`.
 pub async fn single_node_search(
@@ -171,7 +203,7 @@ pub async fn single_node_search(
         search_request,
         index_storage.clone(),
         &split_metadata[..],
-        doc_mapper,
+        doc_mapper.clone(),
     )
     .await
     .context("Failed to perform leaf search.")?;
@@ -182,6 +214,11 @@ pub async fn single_node_search(
     )
     .await
     .context("Failed to perform fetch docs.")?;
+    let hits: Vec<quickwit_proto::Hit> = fetch_docs_response
+        .hits
+        .into_iter()
+        .map(|leaf_hit| crate::convert_leaf_hit(leaf_hit, &*doc_mapper))
+        .collect::<crate::Result<_>>()?;
     let elapsed = start_instant.elapsed();
     let aggregation = if let Some(intermediate_aggregation_result) =
         leaf_search_response.intermediate_aggregation_result
@@ -197,7 +234,7 @@ pub async fn single_node_search(
     Ok(SearchResponse {
         aggregation,
         num_hits: leaf_search_response.num_hits,
-        hits: fetch_docs_response.hits,
+        hits,
         elapsed_time_micros: elapsed.as_micros() as u64,
         errors: leaf_search_response
             .failed_splits
@@ -234,7 +271,9 @@ mod tests {
     use std::collections::BTreeSet;
 
     use assert_json_diff::assert_json_include;
+    use quickwit_doc_mapper::DefaultDocMapper;
     use quickwit_indexing::TestSandbox;
+    use quickwit_proto::LeafHit;
     use serde_json::json;
 
     use super::*;
@@ -276,7 +315,7 @@ mod tests {
         assert_eq!(single_node_result.num_hits, 1);
         assert_eq!(single_node_result.hits.len(), 1);
         let hit_json: serde_json::Value = serde_json::from_str(&single_node_result.hits[0].json)?;
-        let expected_json: serde_json::Value = json!({"title": ["snoopy"], "body": ["Snoopy is an anthropomorphic beagle[5] in the comic strip..."], "url": ["http://snoopy"]});
+        let expected_json: serde_json::Value = json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"});
         assert_json_include!(actual: hit_json, expected: expected_json);
         assert!(single_node_result.elapsed_time_micros > 10);
         assert!(single_node_result.elapsed_time_micros < 1_000_000);
@@ -592,5 +631,148 @@ mod tests {
             assert_eq!(&docs[..], &[3u32]); // 1 is not matched due to the raw tokenizer
         }
         Ok(())
+    }
+
+    #[track_caller]
+    fn test_convert_leaf_hit_aux(
+        default_doc_mapper_json: serde_json::Value,
+        leaf_hit_json: serde_json::Value,
+        expected_hit_json: serde_json::Value,
+    ) {
+        let default_doc_mapper: DefaultDocMapper =
+            serde_json::from_value(default_doc_mapper_json).unwrap();
+        let hit = convert_leaf_hit(
+            LeafHit {
+                leaf_json: serde_json::to_string(&leaf_hit_json).unwrap(),
+                partial_hit: Default::default(),
+            },
+            &default_doc_mapper,
+        )
+        .unwrap();
+        let hit_json: serde_json::Value = serde_json::from_str(&hit.json).unwrap();
+        assert_eq!(hit_json, expected_hit_json);
+    }
+
+    #[test]
+    fn test_convert_leaf_hit_multiple_cardinality() {
+        test_convert_leaf_hit_aux(
+            json!({
+                "field_mappings": [
+                    { "name": "body", "type": "array<text>" }
+                ],
+                "mode": "lenient"
+            }),
+            json!({ "body": ["hello", "happy"] }),
+            json!({ "body": ["hello", "happy"] }),
+        );
+    }
+
+    #[test]
+    fn test_convert_leaf_hit_simple_cardinality() {
+        test_convert_leaf_hit_aux(
+            json!({
+                "field_mappings": [
+                    { "name": "body", "type": "text" }
+                ],
+                "mode": "lenient"
+            }),
+            json!({ "body": ["hello", "happy"] }),
+            json!({ "body": "hello" }),
+        );
+    }
+
+    #[test]
+    fn test_convert_dynamic() {
+        test_convert_leaf_hit_aux(
+            json!({
+                "field_mappings": [
+                    { "name": "body", "type": "text" }
+                ],
+                "mode": "dynamic"
+            }),
+            json!({ "body": ["hello", "happy"], "_dynamic": [{"title": "hello"}] }),
+            json!({ "body": "hello", "title": "hello" }),
+        );
+    }
+
+    #[test]
+    fn test_convert_leaf_object() {
+        test_convert_leaf_hit_aux(
+            json!({
+                "field_mappings": [
+                    {
+                        "name": "user",
+                        "type": "object",
+                        "field_mappings": [
+                            {"name": "username", "type": "text"},
+                            {"name": "email", "type": "text"}
+                        ]
+                    }
+                ],
+                "mode": "lenient"
+            }),
+            json!({ "user.username": ["fulmicoton"], "user.email": ["werwe33@quickwit.io"]}),
+            json!({ "user": {"username": "fulmicoton", "email": "werwe33@quickwit.io"}}),
+        );
+    }
+
+    #[test]
+    fn test_convert_leaf_object_used_to_be_dynamic() {
+        test_convert_leaf_hit_aux(
+            json!({
+                "field_mappings": [
+                    {
+                        "name": "user",
+                        "type": "object",
+                        "field_mappings": [
+                            {"name": "username", "type": "text"},
+                        ]
+                    }
+                ],
+                "mode": "dynamic"
+            }),
+            json!({ "_dynamic": [{ "user": {"username": "fulmicoton", "email": "werwe33@quickwit.io"}}]}),
+            json!({ "user": {"username": "fulmicoton", "email": "werwe33@quickwit.io"}}),
+        );
+        test_convert_leaf_hit_aux(
+            json!({
+                "field_mappings": [
+                    {
+                        "name": "user",
+                        "type": "object",
+                        "field_mappings": [
+                            {"name": "username", "type": "text"},
+                        ]
+                    }
+                ],
+                "mode": "dynamic"
+            }),
+            json!({ "_dynamic": [{ "user": {"email": "werwe33@quickwit.io"}}], "user.username": ["fulmicoton"] }),
+            json!({ "user": {"username": "fulmicoton", "email": "werwe33@quickwit.io"}}),
+        );
+    }
+
+    // This spec might change in the future. THe mode has no impact on the
+    // output of convert_leaf_doc. In particular, it does not ignore the previously gathered
+    // dynamic field.
+    #[test]
+    fn test_convert_leaf_object_arguable_mode_does_not_affect_format() {
+        test_convert_leaf_hit_aux(
+            json!({ "mode": "strict" }),
+            json!({ "_dynamic": [{ "user": {"username": "fulmicoton", "email": "werwe33@quickwit.io"}}]}),
+            json!({ "user": {"username": "fulmicoton", "email": "werwe33@quickwit.io"}}),
+        );
+    }
+
+    #[test]
+    fn test_convert_leaf_hit_with_source() {
+        test_convert_leaf_hit_aux(
+            json!({
+                "field_mappings": [ {"name": "username", "type": "text"} ],
+                "mode": "strict"
+            }),
+            json!({ "_source": [{"username": "fulmicoton"}], "username": ["fulmicoton"] }),
+            json!({ "username": "fulmicoton", "_source": {"username": "fulmicoton"}}),
+        );
     }
 }

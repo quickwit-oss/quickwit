@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::any::type_name;
+use std::collections::BTreeMap;
 
 use anyhow::bail;
 use serde_json::Value as JsonValue;
@@ -35,6 +36,16 @@ use crate::default_doc_mapper::field_mapping_entry::{
 use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
 use crate::{DocParsingError, FieldMappingEntry, ModeType};
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum JsonType {
+    Null,
+    Bool,
+    Array,
+    Number,
+    String,
+    Object,
+}
+
 #[derive(Clone)]
 pub enum LeafType {
     Text(QuickwitTextOptions),
@@ -47,6 +58,16 @@ pub enum LeafType {
 }
 
 impl LeafType {
+    fn json_type(&self) -> JsonType {
+        match self {
+            LeafType::Text(_) => JsonType::String,
+            LeafType::I64(_) | LeafType::U64(_) | LeafType::F64(_) => JsonType::Number,
+            LeafType::Date(_) => JsonType::String,
+            LeafType::Bytes(_) => JsonType::String,
+            LeafType::Json(_) => JsonType::Object,
+        }
+    }
+
     pub fn is_fast_field(&self) -> bool {
         match self {
             LeafType::Text(_opt) => false, // TODO fixme once we have text fast field
@@ -152,6 +173,19 @@ impl MappingLeaf {
         Ok(())
     }
 
+    fn populate_json<'a>(
+        &'a self,
+        named_doc: &mut BTreeMap<String, Vec<JsonValue>>,
+        field_path: &[&'a str],
+        doc_json: &mut serde_json::Map<String, serde_json::Value>,
+    ) {
+        let json_type = self.typ.json_type();
+        if let Some(json_val) = extract_json_val(json_type, named_doc, field_path, self.cardinality)
+        {
+            insert_json_val(field_path, json_val, doc_json);
+        }
+    }
+
     pub fn field(&self) -> Field {
         self.field
     }
@@ -159,6 +193,53 @@ impl MappingLeaf {
     pub fn get_type(&self) -> &LeafType {
         &self.typ
     }
+}
+
+fn json_type_from_json_value(json_value: &JsonValue) -> JsonType {
+    match json_value {
+        JsonValue::Null => JsonType::Null,
+        JsonValue::Bool(_) => JsonType::Bool,
+        JsonValue::Array(_) => JsonType::Array,
+        JsonValue::Number(_) => JsonType::Number,
+        JsonValue::String(_) => JsonType::String,
+        JsonValue::Object(_) => JsonType::Object,
+    }
+}
+
+fn extract_json_val(
+    json_type: JsonType,
+    named_doc: &mut BTreeMap<String, Vec<JsonValue>>,
+    field_path: &[&str],
+    cardinality: Cardinality,
+) -> Option<JsonValue> {
+    let full_path = field_path.join(".");
+    let vals = named_doc.remove(&full_path)?;
+    let mut vals_with_correct_type_it = vals
+        .into_iter()
+        .filter(|json_val| json_type_from_json_value(json_val) == json_type);
+    match cardinality {
+        Cardinality::SingleValue => vals_with_correct_type_it.next(),
+        Cardinality::MultiValues => Some(JsonValue::Array(vals_with_correct_type_it.collect())),
+    }
+}
+
+fn insert_json_val(
+    field_path: &[&str], //< may not be empty
+    json_val: JsonValue,
+    mut doc_json: &mut serde_json::Map<String, serde_json::Value>,
+) {
+    let (last_field_name, up_to_last) = field_path.split_last().expect("Empty path is forbidden");
+    for &field_name in up_to_last {
+        let entry = doc_json
+            .entry(field_name.to_string())
+            .or_insert_with(|| JsonValue::Object(Default::default()));
+        if let JsonValue::Object(child_json_obj) = entry {
+            doc_json = child_json_obj;
+        } else {
+            return;
+        }
+    }
+    doc_json.insert(last_field_name.to_string(), json_val);
 }
 
 trait NumVal: Sized + Into<Value> {
@@ -290,6 +371,19 @@ impl MappingNode {
         }
         Ok(())
     }
+
+    pub fn populate_json<'a>(
+        &'a self,
+        named_doc: &mut BTreeMap<String, Vec<JsonValue>>,
+        field_path: &mut Vec<&'a str>,
+        doc_json: &mut serde_json::Map<String, serde_json::Value>,
+    ) {
+        for (field_name, field_mapping) in &self.branches {
+            field_path.push(field_name);
+            field_mapping.populate_json(named_doc, field_path, doc_json);
+            field_path.pop();
+        }
+    }
 }
 
 impl From<MappingTree> for FieldMappingType {
@@ -351,6 +445,22 @@ impl MappingTree {
                         format!("Expected an JSON Object, got {}", json_value),
                     ))
                 }
+            }
+        }
+    }
+
+    fn populate_json<'a>(
+        &'a self,
+        named_doc: &mut BTreeMap<String, Vec<JsonValue>>,
+        field_path: &mut Vec<&'a str>,
+        doc_json: &mut serde_json::Map<String, serde_json::Value>,
+    ) {
+        match self {
+            MappingTree::Leaf(mapping_leaf) => {
+                mapping_leaf.populate_json(named_doc, field_path, doc_json)
+            }
+            MappingTree::Node(mapping_node) => {
+                mapping_node.populate_json(named_doc, field_path, doc_json);
             }
         }
     }

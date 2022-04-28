@@ -108,6 +108,30 @@ pub struct SplitIdAndFooterOffsets {
     #[prost(uint64, tag="3")]
     pub split_footer_end: u64,
 }
+//// Hits returned by a FetchDocRequest.
+////
+//// The json that is joined is the raw tantivy json doc.
+//// It is very different from a quickwit json doc.
+////
+//// For instance:
+//// - it may contain a _source and a _dynamic field.
+//// - since tantivy has no notion of cardinality,
+//// all fields is  are arrays.
+//// - since tantivy has no notion of object, the object is
+//// flattened by concatenating the path to the root.
+////
+//// See  `quickwit_search::convert_leaf_hit`
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeafHit {
+    /// The actual content of the hit/
+    #[prost(string, tag="1")]
+    pub leaf_json: ::prost::alloc::string::String,
+    /// The partial hit (ie: the sorting field + the document address)
+    #[prost(message, optional, tag="2")]
+    pub partial_hit: ::core::option::Option<PartialHit>,
+}
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -196,7 +220,7 @@ pub struct FetchDocsRequest {
 pub struct FetchDocsResponse {
     /// List of complete hits.
     #[prost(message, repeated, tag="1")]
-    pub hits: ::prost::alloc::vec::Vec<Hit>,
+    pub hits: ::prost::alloc::vec::Vec<LeafHit>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
