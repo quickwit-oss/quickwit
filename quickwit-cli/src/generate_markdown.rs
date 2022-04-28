@@ -91,6 +91,9 @@ fn markdown_for_subcommand(
         command_group.join(" "),
         subcommand.get_name()
     );
+    for alias in subcommand.get_all_aliases() {
+        println!("`quickwit {} {} [args]`", command_group.join(" "), alias);
+    }
 
     let arguments = subcommand
         .get_arguments()
@@ -119,14 +122,14 @@ fn markdown_for_subcommand(
         println!("\n*Options*\n");
         for arg in arguments {
             let default = if let Some(val) = arg.get_default_values().get(0) {
-                format!(" (Default: {})", val.to_str().unwrap())
+                format!(" (default: {})", val.to_str().unwrap())
             } else {
                 "".to_string()
             };
             println!(
-                "`--{}` {}{}    ", // space is line break
+                "`--{}` {}{}<br>",
                 arg.get_id(),
-                arg.get_help_heading().unwrap_or_default(),
+                arg.get_help().unwrap_or_default(),
                 default
             );
         }

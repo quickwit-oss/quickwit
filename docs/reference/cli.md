@@ -56,10 +56,9 @@ The CLI is structured into high-level commands with subcommands.
 * `command`: `index`, `split`, `source` and `service`.
 
 
-
-{/* Insert auto generated CLI docs from here. */}
-
-
+<!--
+    Insert auto-generated CLI docs here...
+-->
 
 ## index
 Create your index, ingest data, search, describe... every command you need to manage indexes.
@@ -79,8 +78,8 @@ quickwit index list
 
 *Options*
 
-`--config`     
-`--metastore-uri`     
+`--config`<br>
+`--metastore-uri`<br>
 
 *Examples*
 
@@ -123,9 +122,9 @@ quickwit index create
 
 *Options*
 
-`--index-config` Location of the index config file.
-`--config` Quickwit config file.
-`--overwrite` Overwrites pre-existing index.
+`--index-config` Location of the index config file<br>
+`--config` Quickwit config file<br>
+`--overwrite` Overwrites pre-existing index<br>
 
 *Examples*
 
@@ -159,12 +158,12 @@ quickwit index ingest
 
 *Options*
 
-`--index` ID of the target index.
-`--config` Quickwit config file.
-`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-`--input-path` Location of the input file.
-`--overwrite` Overwrites pre-existing index.
-`--keep-cache` Does not clear local cache directory upon completion.
+`--index` ID of the target index.<br>
+`--config` Quickwit config file.<br>
+`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.<br>
+`--input-path` Location of the input file.<br>
+`--overwrite` Overwrites pre-existing index.<br>
+`--keep-cache` Does not clear local cache directory upon completion.<br>
 
 *Examples*
 
@@ -195,8 +194,8 @@ quickwit index describe
 
 *Options*
 
-`--index` ID of the target index.
-`--config` Quickwit config file.
+`--index` ID of the target index.<br>
+`--config` Quickwit config file.<br>
 
 *Examples*
 
@@ -251,14 +250,14 @@ quickwit index search
 
 *Options*
 
-`--index` ID of the target index.
-`--config` Quickwit config file.
+`--index` ID of the target index.<br>
+`--config` Quickwit config file.<br>
 `--query` Query expressed in natural query language (barack AND obama) OR "president of united states"). Learn more on [query language](./query-language)
-`--max-hits` Maximum number of hits returned. (Default: 20)
-`--start-offset` Offset in the global result set of the first hit returned. (Default: 0)
-`--search-fields` List of fields that Quickwit will search into if the user query does not explicitly target a field in the query. It overrides the default search fields defined in the index config. Space-separated list, e.g. "field1 field2".
-`--start-timestamp` Filters out documents before that timestamp (time-series indexes only).
-`--end-timestamp` Filters out documents after that timestamp (time-series indexes only).
+`--max-hits` Maximum number of hits returned. (default: 20)<br>
+`--start-offset` Offset in the global result set of the first hit returned. (default: 0)<br>
+`--search-fields` List of fields that Quickwit will search into if the user query does not explicitly target a field in the query. It overrides the default search fields defined in the index config. Space-separated list, e.g. "field1 field2".<br>
+`--start-timestamp` Filters out documents before that timestamp (time-series indexes only).<br>
+`--end-timestamp` Filters out documents after that timestamp (time-series indexes only).<br>
 
 *Examples*
 
@@ -312,11 +311,12 @@ quickwit index gc
 
 *Options*
 
-`--index` ID of the target index.
-`--config` Quickwit config file.
-`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-`--grace-period` Threshold period after which stale staged splits are garbage collected. (Default: 1h)
-`--dry-run` Executes the command in dry run mode and only displays the list of splits candidates for garbage collection.
+`--index` ID of the target index.<br>
+`--config` Quickwit config file.<br>
+`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.<br>
+`--grace-period` Threshold period after which stale staged splits are garbage collected. (default: 1h)<br>
+`--dry-run` Executes the command in dry run mode and only displays the list of splits candidates for garbage collection.<br>
+
 ### index delete
 
 Delete an index.
@@ -334,10 +334,10 @@ quickwit index delete
 
 *Options*
 
-`--index` ID of the target index.
-`--config` Quickwit config file.
-`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-`--dry-run` Executes the command in dry run mode and only displays the list of splits candidate for deletion.
+`--index` ID of the target index.<br>
+`--config` Quickwit config file.<br>
+`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.<br>
+`--dry-run` Executes the command in dry run mode and only displays the list of splits candidate for deletion.<br>
 
 *Examples*
 
@@ -369,16 +369,34 @@ quickwit split list
 
 *Options*
 
-`--index` ID of the target index.
-`--states` Comma-separated list of split states to filter on.
-Possible values are `staged`, `published`, and `marked`.
+`--index` ID of the target index.<br>
+`--states` Comma-separated list of split states to filter on. Possible values are `staged`, `published`, and `marked`.<br>
+`--start-date` Filters out splits containing documents from this timestamp onwards (time-series indexes only). <br>
+`--end-date` Filters out splits containing documents before this timestamp (time-series indexes only). <br>
+`--tags` Comma-separated list of tags, only splits that contain all of the tags will be returned. <br>
+`--config` Quickwit config file. <br>
+`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`. <br>
 
-`--start-date` Filters out splits containing documents from this timestamp onwards (time-series indexes only).
-`--end-date` Filters out splits containing documents before this timestamp (time-series indexes only).
-`--tags` Comma-separated list of tags, only splits that contain all of the tags will be returned.
-`--config` Quickwit config file.
-`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+### split mark-for-deletion
 
+Marks one or multiple splits of an index for deletion.
+`quickwit split mark-for-deletion [args]`
+`quickwit split mark [args]`
+
+*Synopsis*
+
+```bash
+quickwit split mark-for-deletion
+    --config <config>
+    --index <index>
+    --splits <splits>
+```
+
+*Options*
+
+`--config` Config file location<br>
+`--index` Target index ID<br>
+`--splits` Comma-separated list of split IDs<br>
 
 ## run
 
@@ -390,9 +408,9 @@ It is however possible to specifically run only one of these services by adding 
 
 *Options*
 
-`--service` Selects a specific service to run. (searcher or indexer)
-`--config` Quickwit config file.
-`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+`--service` Selects a specific service to run. (searcher or indexer)<br>
+`--config` Quickwit config file.<br>
+`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.<br>
 
 ### Searcher service
 
@@ -468,11 +486,11 @@ quickwit source add
 
 *Options*
 
-`--index` ID of the target index.
-`--source` ID of the source.
-`--type` Type of the source. Available types are: `file` and `kafka`.
-`--params` Parameters for the source formatted as a JSON object passed inline or via a file. Parameters are source-specific. Please, refer to the source's documentation for more details.
-`--config` Quickwit config file.
+`--index` ID of the target index.<br>
+`--source` ID of the source.<br>
+`--type` Type of the source. Available types are: `file` and `kafka`.<br>
+`--params` Parameters for the source formatted as a JSON object passed inline or via a file. Parameters are source-specific. Please, refer to the source's documentation for more details.<br>
+`--config` Quickwit config file.<br>
 
 *Examples*
 
@@ -512,9 +530,9 @@ quickwit source delete
 
 *Options*
 
-`--index` ID of the target index.
-`--source` ID of the target source.
-`--config` Quickwit config file.
+`--index` ID of the target index.<br>
+`--source` ID of the target source.<br>
+`--config` Quickwit config file.<br>
 
 *Examples*
 
@@ -539,9 +557,9 @@ quickwit source describe
 
 *Options*
 
-`--index` ID of the target index.
-`--source` ID of the target source.
-`--config` Quickwit config file.
+`--index` ID of the target index.<br>
+`--source` ID of the target source.<br>
+`--config` Quickwit config file.<br>
 
 *Examples*
 
@@ -565,8 +583,8 @@ quickwit source list
 
 *Options*
 
-`--index` ID of the target index.
-`--config` Quickwit config file.
+`--index` ID of the target index.<br>
+`--config` Quickwit config file.<br>
 
 *Examples*
 
@@ -575,16 +593,15 @@ quickwit source list
 quickwit source list --index wikipedia --config ./config/quickwit.yaml
 ```
 
-
-
-{/* End of auto generated CLI docs. */}
-
+<!--
+    End of auto-generated CLI docs
+-->
 
 ## Environment Variables
 
 ### QW_CONFIG
 
-Specifies the path to the [quickwit config](quickwit-config.md). Every command requires the `config`, which you can set once for all with `QW_CONFIG` environment variable.
+Specifies the path to the [quickwit config](quickwit-config.md). Every command requires the `config`, which you can set once and for all with the `QW_CONFIG` environment variable.
 
 *Example*
 
@@ -594,3 +611,7 @@ Specifies the path to the [quickwit config](quickwit-config.md). Every command r
 ### QW_DISABLE_TELEMETRY
 
 Disables [telemetry](telemetry.md) when set to any non-empty value.
+
+*Example*
+
+`QW_DISABLE_TELEMETRY=1 quickwit help`
