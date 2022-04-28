@@ -33,7 +33,7 @@ once_cell = "1"
 opentelemetry = "0.17"
 tracing-opentelemetry = "0.17"
 rayon = "1"
-tantivy = { git= "https://github.com/quickwit-oss/tantivy", rev="c305d3a", default-features=false, features = ["mmap", "lz4-compression", "quickwit"] }
+tantivy = { git= "https://github.com/quickwit-oss/tantivy", rev="8c1e1cf", default-features=false, features = ["mmap", "lz4-compression", "quickwit"] }
 
 [dependencies.quickwit-cluster]
 path = '../quickwit-cluster'
