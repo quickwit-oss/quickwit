@@ -101,6 +101,8 @@ pub struct QuickwitTextOptions {
     pub fieldnorms: bool,
     #[serde(default = "default_as_true")]
     pub stored: bool,
+    #[serde(default)]
+    pub fast: bool,
 }
 
 impl Default for QuickwitTextOptions {
@@ -111,6 +113,7 @@ impl Default for QuickwitTextOptions {
             record: IndexRecordOption::Basic,
             fieldnorms: false,
             stored: true,
+            fast: false,
         }
     }
 }
@@ -120,6 +123,9 @@ impl From<QuickwitTextOptions> for TextOptions {
         let mut text_options = TextOptions::default();
         if quickwit_text_options.stored {
             text_options = text_options.set_stored();
+        }
+        if quickwit_text_options.fast {
+            text_options = text_options.set_fast();
         }
         if quickwit_text_options.indexed {
             let mut text_field_indexing = TextFieldIndexing::default();
@@ -719,6 +725,7 @@ mod tests {
             json!({
                 "name": "my_field_name",
                 "type": "text",
+                "fast": false,
                 "stored": true,
                 "indexed": true,
                 "fieldnorms": false,
@@ -747,6 +754,7 @@ mod tests {
                 "stored": true,
                 "indexed": true,
                 "fieldnorms": false,
+                "fast": false,
                 "record": "basic",
             })
         );

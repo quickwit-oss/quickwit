@@ -159,6 +159,7 @@ async fn leaf_search_stream_single_split(
         &*searcher,
         query.as_ref(),
         &request_fields.fast_fields_for_request(),
+        &Default::default(),
     )
     .await?;
 

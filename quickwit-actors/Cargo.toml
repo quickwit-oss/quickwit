@@ -13,7 +13,7 @@ documentation = "https://quickwit.io/docs/"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "^1.16", features = ["full"] }
+tokio = { version = "^1.18", features = ["full"] }
 async-trait = "0.1"
 anyhow = "1"
 thiserror = "1"
