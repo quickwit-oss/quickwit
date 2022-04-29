@@ -21,22 +21,22 @@ use std::fmt;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
 use quickwit_config::PushApiSourceParams;
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
-use quickwit_proto::push_api::{FetchRequest, FetchResponse};
+use quickwit_proto::push_api::{FetchRequest, FetchResponse, SuggestTruncateRequest};
 use quickwit_pushapi::{get_push_api_service, iter_doc_payloads, PushApiService};
 use serde::Serialize;
 
 use super::file_source::BATCH_NUM_BYTES_THRESHOLD;
-use super::{Source, SourceContext, TypedSourceFactory};
+use super::{Source, SourceActor, SourceContext, TypedSourceFactory};
 use crate::actors::Indexer;
 use crate::models::RawDocBatch;
 
 /// Wait time for SourceActor before pooling for new documents.
 /// TODO: Think of better way, maybe increment this (i.e wait longer) as time
 /// goes on without receiving docs.
-const PUSHAPI_POLLING_COOL_DOWN: Duration = Duration::from_secs(1);
+const PUSH_API_POLLING_COOL_DOWN: Duration = Duration::from_secs(1);
 
 #[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct PushApiSourceCounters {
@@ -131,7 +131,7 @@ impl Source for PushApiSource {
         let (first_position, doc_batch) = if let Some(first_position) = first_position_opt {
             (first_position, doc_batch_opt.unwrap())
         } else {
-            return Ok(PUSHAPI_POLLING_COOL_DOWN);
+            return Ok(PUSH_API_POLLING_COOL_DOWN);
         };
 
         let docs = iter_doc_payloads(&doc_batch)
@@ -155,6 +155,28 @@ impl Source for PushApiSource {
         self.update_counters(current_offset, raw_doc_batch.docs.len() as u64);
         ctx.send_message(batch_sink, raw_doc_batch).await?;
         Ok(Duration::default())
+    }
+
+    async fn suggest_truncate(
+        &self,
+        checkpoint: SourceCheckpoint,
+        _ctx: &ActorContext<SourceActor>,
+    ) -> anyhow::Result<()> {
+        let partition_id = PartitionId::from(self.params.index_id.clone());
+        if let Some(Position::Offset(offset_str)) =
+            checkpoint.position_for_partition(&partition_id).cloned()
+        {
+            let up_to_position_included = offset_str.parse::<u64>()?;
+            let suggest_truncate_req = SuggestTruncateRequest {
+                index_id: self.params.index_id.clone(),
+                up_to_position_included,
+            };
+            self.push_api_mailbox
+                .ask_for_res(suggest_truncate_req)
+                .await
+                .map_err(anyhow::Error::from)?;
+        }
+        Ok(())
     }
 
     fn name(&self) -> String {

@@ -250,7 +250,7 @@ impl<A: Actor> ActorContext<A> {
     /// The protection ends when the `ProtectZoneGuard` is dropped.
     ///
     /// In an ideal world, you should never need to call this function.
-    /// It is only useful in some corner like, like a calling a long blocking
+    /// It is only useful in some corner cases, like calling a long blocking
     /// from an external library that you trust.
     pub fn protect_zone(&self) -> ProtectedZoneGuard {
         self.progress.protect_zone()
