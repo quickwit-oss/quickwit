@@ -35,6 +35,8 @@ pub const DEFAULT_QW_CONFIG_PATH: &str = "./config/quickwit.yaml";
 
 const DEFAULT_DATA_DIR_PATH: &str = "./qwdata";
 
+const DEFAULT_CLUSTER_ID: &str = "quickwit-default-cluster";
+
 fn default_data_dir_path() -> PathBuf {
     PathBuf::from(DEFAULT_DATA_DIR_PATH)
 }
@@ -53,7 +55,7 @@ fn default_metastore_and_index_root_uri(data_dir_path: &Path) -> String {
 }
 
 fn default_cluster_id() -> String {
-    "quickwit-test-cluster".to_string()
+    DEFAULT_CLUSTER_ID.to_string()
 }
 
 fn default_node_id() -> String {
@@ -241,10 +243,15 @@ impl QuickwitConfig {
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
-        if self.peer_seeds.is_empty() {
-            warn!("Seed list is empty.")
+        if self.cluster_id == DEFAULT_CLUSTER_ID {
+            warn!(
+                cluster_id = DEFAULT_CLUSTER_ID,
+                "Cluster ID is not set, falling back to default value."
+            );
         }
-
+        if self.peer_seeds.is_empty() {
+            warn!("Seed list is empty.");
+        }
         if !self.data_dir_path.exists() {
             bail!(
                 "Data dir `{}` does not exist.",
@@ -488,7 +495,7 @@ mod tests {
         "#;
             let config = serde_yaml::from_str::<QuickwitConfig>(config_yaml).unwrap();
             assert_eq!(config.version, 0);
-            assert_eq!(config.cluster_id, "quickwit-test-cluster");
+            assert_eq!(config.cluster_id, DEFAULT_CLUSTER_ID);
             assert_eq!(config.node_id, "1");
             assert_eq!(
                 config.metastore_uri(),
