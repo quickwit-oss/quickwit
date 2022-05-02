@@ -672,14 +672,14 @@ mod tests {
 mod kafka_broker_tests {
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_common::rand::append_random_suffix;
-    use quickwit_config::SourceParams;
+    use quickwit_config::{SourceConfig, SourceParams};
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
     use rdkafka::message::ToBytes;
     use rdkafka::producer::{FutureProducer, FutureRecord};
 
     use super::*;
-    use crate::source::{quickwit_supported_sources, SourceActor, SourceConfig};
+    use crate::source::{quickwit_supported_sources, SourceActor};
 
     fn create_admin_client(
         bootstrap_servers: &str,

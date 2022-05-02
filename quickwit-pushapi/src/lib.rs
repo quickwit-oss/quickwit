@@ -23,20 +23,17 @@ mod push_api_service;
 mod queue;
 
 use std::path::Path;
-use std::sync::Arc;
 
 use anyhow::Context;
 pub use errors::PushApiError;
 use errors::Result;
 use once_cell::sync::OnceCell;
 pub use position::Position;
-use queue::Queues;
+pub use push_api_service::PushApiService;
+pub use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
-use quickwit_metastore::Metastore;
 use quickwit_proto::push_api::DocBatch;
 use tracing::info;
-
-pub use crate::push_api_service::PushApiService;
 
 pub static PUSH_API_SERVICE_INSTANCE: OnceCell<Mailbox<PushApiService>> = OnceCell::new();
 
@@ -44,10 +41,9 @@ pub static PUSH_API_SERVICE_INSTANCE: OnceCell<Mailbox<PushApiService>> = OnceCe
 pub fn init_push_api(
     universe: &Universe,
     queue_path: &Path,
-    metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<Mailbox<PushApiService>> {
     let push_api_service = PUSH_API_SERVICE_INSTANCE
-        .get_or_try_init(|| spawn_push_api_actor(universe, queue_path, metastore))
+        .get_or_try_init(|| spawn_push_api_actor(universe, queue_path))
         .context("Failed to initialize the PushApi")?;
     Ok(push_api_service.clone())
 }
@@ -61,10 +57,9 @@ pub fn get_push_api_service() -> Option<Mailbox<PushApiService>> {
 pub fn spawn_push_api_actor(
     universe: &Universe,
     queue_path: &Path,
-    metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<Mailbox<PushApiService>> {
     info!(queue_path=?queue_path, "Spawning push api actor");
-    let push_api_actor = PushApiService::with_queue_path(queue_path, metastore)?;
+    let push_api_actor = PushApiService::with_queue_path(queue_path)?;
     let (push_api_mailbox, _push_api_handle) = universe.spawn_actor(push_api_actor).spawn();
     Ok(push_api_mailbox)
 }

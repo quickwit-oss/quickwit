@@ -218,7 +218,6 @@ pub(crate) async fn delete_index(storage: &dyn Storage, index_id: &str) -> Metas
         .await
         .map_err(|storage_err| convert_error(index_id, storage_err))?;
 
-    println!("file exist {}", file_exists);
     if !file_exists {
         return Err(MetastoreError::IndexDoesNotExist {
             index_id: index_id.to_string(),

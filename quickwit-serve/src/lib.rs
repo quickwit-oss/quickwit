@@ -111,11 +111,7 @@ pub async fn serve_quickwit(
 
     let push_api_service: Option<Mailbox<PushApiService>> =
         if services.contains(&QuickwitService::Indexer) {
-            let push_api_service = init_push_api(
-                &universe,
-                &config.data_dir_path.join("queues"),
-                metastore.clone(),
-            )?;
+            let push_api_service = init_push_api(&universe, &config.data_dir_path.join("queues"))?;
             Some(push_api_service)
         } else {
             None
@@ -128,6 +124,7 @@ pub async fn serve_quickwit(
                 config,
                 metastore.clone(),
                 storage_resolver.clone(),
+                push_api_service.clone(),
             )
             .await?;
             Some(indexer_service)

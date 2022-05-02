@@ -843,6 +843,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         indexer_config,
         metastore,
         quickwit_storage_uri_resolver().clone(),
+        None,
     );
     let (indexing_server_mailbox, _) = universe.spawn_actor(indexing_server).spawn();
     let pipeline_id = indexing_server_mailbox
@@ -943,6 +944,7 @@ pub async fn merge_or_demux_cli(
         indexer_config,
         metastore,
         storage_resolver,
+        None,
     );
     let universe = Universe::new();
     let (indexing_server_mailbox, _) = universe.spawn_actor(indexing_server).spawn();
