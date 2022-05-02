@@ -39,7 +39,7 @@ use tantivy::{
     demux, DemuxMapping, Directory, DocIdToSegmentOrdinal, Index, IndexMeta, Segment, SegmentId,
     SegmentReader, TantivyError,
 };
-use tracing::{debug, info, info_span, Span};
+use tracing::{debug, info, instrument};
 
 use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
@@ -77,45 +77,6 @@ impl Actor for MergeExecutor {
 #[async_trait]
 impl Handler<MergeScratch> for MergeExecutor {
     type Reply = ();
-
-    fn message_span(&self, msg_id: u64, merge_scratch: &MergeScratch) -> Span {
-        match &merge_scratch.merge_operation {
-            MergeOperation::Merge {
-                merge_split_id,
-                splits,
-            } => {
-                let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
-                let in_merge_split_ids: Vec<String> = splits
-                    .iter()
-                    .map(|split| split.split_id().to_string())
-                    .collect();
-                info_span!("merge",
-                    msg_id=&msg_id,
-                    dir=%merge_scratch.merge_scratch_directory.path().display(),
-                    merge_split_id=%merge_split_id,
-                    in_merge_split_ids=?in_merge_split_ids,
-                    num_docs=num_docs,
-                    num_splits=splits.len())
-            }
-            MergeOperation::Demux {
-                demux_split_ids,
-                splits,
-            } => {
-                let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
-                let in_demux_split_idx: Vec<String> = splits
-                    .iter()
-                    .map(|split| split.split_id().to_string())
-                    .collect();
-                info_span!("demux",
-                    msg_id=&msg_id,
-                    dir=%merge_scratch.merge_scratch_directory.path().display(),
-                    demux_split_ids=?demux_split_ids,
-                    in_demux_split_idx=?in_demux_split_idx,
-                    num_docs=num_docs,
-                    num_splits=splits.len())
-            }
-        }
-    }
 
     async fn handle(
         &mut self,
@@ -280,6 +241,7 @@ impl MergeExecutor {
         }
     }
 
+    #[instrument(name = "merge", skip(self, tantivy_dirs, merge_scratch_directory, ctx))]
     async fn process_merge(
         &mut self,
         split_merge_id: String,
@@ -347,6 +309,10 @@ impl MergeExecutor {
         Ok(())
     }
 
+    #[instrument(
+        name = "demux",
+        skip(self, merge_scratch_directory, downloaded_splits_directory, ctx)
+    )]
     async fn process_demux(
         &mut self,
         demux_split_ids: Vec<String>,

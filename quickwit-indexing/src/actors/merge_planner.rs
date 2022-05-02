@@ -24,7 +24,7 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, Mailbox, QueueCapacity,
 };
 use quickwit_metastore::SplitMetadata;
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::actors::MergeSplitDownloader;
 use crate::models::NewSplits;
@@ -67,6 +67,7 @@ impl Actor for MergePlanner {
 impl Handler<NewSplits> for MergePlanner {
     type Reply = ();
 
+    #[instrument(name = "report-new-splits", skip_all)]
     async fn handle(
         &mut self,
         message: NewSplits,

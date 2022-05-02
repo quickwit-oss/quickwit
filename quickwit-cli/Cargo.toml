@@ -43,6 +43,7 @@ tracing-subscriber = {version="0.3", features=["time", "std", "env-filter"]}
 tracing-opentelemetry = "0.17"
 opentelemetry = { version = "0.17", features = ["rt-tokio"] }
 opentelemetry-jaeger = { version = "0.16", features = ["rt-tokio"] }
+opentelemetry-otlp = "0.10"
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["full"] }
 atty = "0.2"

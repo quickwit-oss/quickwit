@@ -26,7 +26,7 @@ use quickwit_actors::{Actor, ActorContext, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::Metastore;
 use tokio::sync::oneshot::Receiver;
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 
 use crate::actors::uploader::MAX_CONCURRENT_SPLIT_UPLOAD;
 use crate::actors::{GarbageCollector, MergePlanner};
@@ -179,6 +179,7 @@ impl Actor for Publisher {
 impl Handler<Receiver<PublisherMessage>> for Publisher {
     type Reply = ();
 
+    #[instrument(name="publish", source_id=self.source_id, skip_all)]
     async fn handle(
         &mut self,
         uploaded_split_future: Receiver<PublisherMessage>,

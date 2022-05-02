@@ -37,8 +37,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "./proto/cluster.proto",
                 "./proto/search_api.proto",
                 "./proto/push_api.proto",
+                // "./oltp/opentelemetry/proto/collector/logs/v1/logs_service.proto",
             ],
-            &["./proto"],
+            &["./proto", "./oltp"],
         )?;
+    tonic_build::configure().out_dir("src/").compile(
+        &[
+            "./oltp/opentelemetry/proto/collector/logs/v1/logs_service.proto",
+            "./oltp/opentelemetry/proto/collector/trace/v1/trace_service.proto",
+        ],
+        &["./oltp"],
+    )?;
     Ok(())
 }

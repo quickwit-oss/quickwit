@@ -30,7 +30,7 @@ use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::{DocMapper, DocParsingError, SortBy};
 use tantivy::schema::{Field, Value};
 use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
-use tracing::{info, warn};
+use tracing::{info, instrument, warn};
 
 use crate::actors::Packager;
 use crate::models::{IndexedSplit, IndexedSplitBatch, IndexingDirectory, RawDocBatch};
@@ -180,6 +180,7 @@ impl IndexerState {
         }
     }
 
+    #[instrument("process-batch", level = "debug", skip_all)]
     async fn process_batch(
         &self,
         batch: RawDocBatch,
@@ -378,6 +379,7 @@ impl Indexer {
         split_id: &str,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        info!("commit-timeout");
         if let Some(split) = self.current_split_opt.as_ref() {
             // This is a timeout for a different split.
             // We can ignore it.

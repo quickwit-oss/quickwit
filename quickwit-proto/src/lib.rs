@@ -25,6 +25,56 @@ pub mod push_api {
     pub use crate::quickwit_push_api::*;
 }
 
+pub mod opentelemetry {
+    pub mod proto {
+        pub mod collector {
+            pub mod logs {
+                pub mod v1 {
+                    include!("opentelemetry.proto.collector.logs.v1.rs");
+                }
+            }
+            // pub mod metrics {
+            //     pub mod v1 {
+            //         include!("opentelemetry.proto.collector.metrics.v1.rs");
+            //     }
+            // }
+            pub mod trace {
+                pub mod v1 {
+                    include!("opentelemetry.proto.collector.trace.v1.rs");
+                }
+            }
+        }
+        pub mod common {
+            pub mod v1 {
+                include!("opentelemetry.proto.common.v1.rs");
+            }
+        }
+        pub mod logs {
+            pub mod v1 {
+                include!("opentelemetry.proto.logs.v1.rs");
+            }
+        }
+        // pub mod metrics {
+        //     pub mod experimental {
+        //         include!("opentelemetry.proto.metrics.experimental.rs");
+        //     }
+        //     pub mod v1 {
+        //         tonic::include_proto!("opentelemetry.proto.metrics.v1");
+        //     }
+        // }
+        pub mod resource {
+            pub mod v1 {
+                include!("opentelemetry.proto.resource.v1.rs");
+            }
+        }
+        pub mod trace {
+            pub mod v1 {
+                include!("opentelemetry.proto.trace.v1.rs");
+            }
+        }
+    }
+}
+
 #[macro_use]
 extern crate serde;
 

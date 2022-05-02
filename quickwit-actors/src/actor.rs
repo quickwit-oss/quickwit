@@ -482,15 +482,6 @@ pub(crate) fn process_command<A: Actor>(
 pub trait Handler<M>: Actor {
     type Reply: 'static + Send;
 
-    /// Returns a context span for the processing of a specific
-    /// message.
-    ///
-    /// `msg_id` is an autoincremented message id than can be added to the span.
-    /// The counter starts 0 at the beginning of the life of an actor instance.
-    fn message_span(&self, msg_id: u64, _msg: &M) -> Span {
-        info_span!("", msg_id = &msg_id)
-    }
-
     /// Processes a message.
     ///
     /// If an exit status is returned as an error, the actor will exit.

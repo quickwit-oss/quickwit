@@ -32,8 +32,8 @@ use quickwit_actors::{
 use quickwit_directories::write_hotcache;
 use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
 use tantivy::schema::FieldType;
-use tantivy::{InvertedIndexReader, ReloadPolicy, SegmentId, SegmentMeta};
-use tracing::{debug, info, info_span, warn, Span};
+use tantivy::{Index, InvertedIndexReader, ReloadPolicy, SegmentId, SegmentMeta};
+use tracing::{debug, info, instrument, warn};
 
 /// Maximum distinct values allowed for a tag field within a split.
 const MAX_VALUES_PER_TAG_FIELD: usize = if cfg!(any(test, feature = "testsuite")) {
@@ -118,10 +118,7 @@ impl Actor for Packager {
 impl Handler<IndexedSplitBatch> for Packager {
     type Reply = ();
 
-    fn message_span(&self, msg_id: u64, batch: &IndexedSplitBatch) -> Span {
-        info_span!("", msg_id=&msg_id, num_splits=%batch.splits.len())
-    }
-
+    #[instrument(name="package", fields(num_splits=%batch.splits.len()), skip_all)]
     async fn handle(
         &mut self,
         batch: IndexedSplitBatch,
@@ -172,8 +169,8 @@ fn is_merge_required(segment_metas: &[SegmentMeta]) -> bool {
 /// It consists in several sequentials phases mixing both
 /// CPU and IO, the longest once being the serialization of
 /// the inverted index. This phase is CPU bound.
+#[instrument(name="commit", fields(split_id=%split.split_id), skip_all)]
 fn commit_split(split: &mut IndexedSplit, ctx: &ActorContext<Packager>) -> anyhow::Result<()> {
-    info!(split_id=%split.split_id, "commit-split");
     let _protect_guard = ctx.protect_zone();
     split
         .index_writer
@@ -232,6 +229,7 @@ async fn merge_segments_if_required(
     Ok(segment_metas_after_merge)
 }
 
+#[instrument(name = "build-hot-cache", skip_all)]
 fn build_hotcache<W: io::Write>(split_path: &Path, out: &mut W) -> anyhow::Result<()> {
     let mmap_directory = tantivy::directory::MmapDirectory::open(split_path)?;
     write_hotcache(mmap_directory, out)?;
@@ -287,25 +285,11 @@ fn try_extract_terms(
     Ok(terms)
 }
 
-fn create_packaged_split(
-    segment_metas: &[SegmentMeta],
-    split: IndexedSplit,
-    tag_fields: &[NamedField],
-    ctx: &ActorContext<Packager>,
-) -> anyhow::Result<PackagedSplit> {
-    info!(split_id = split.split_id.as_str(), "create-packaged-split");
-    let split_files = list_split_files(segment_metas, &split.split_scratch_directory);
-    let num_docs = segment_metas
-        .iter()
-        .map(|segment_meta| segment_meta.num_docs() as u64)
-        .sum();
-
-    // Extracts tag values from inverted indexes only when a field cardinality is less
-    // than `MAX_VALUES_PER_TAG_FIELD`.
-    debug!(split_id = split.split_id.as_str(), tag_fields =? tag_fields, "extract-tags-values");
-    let index_reader = split
-        .index
+#[instrument(name = "extract-tags", skip_all)]
+fn extract_tag_names(tag_fields: &[NamedField], index: &Index) -> anyhow::Result<BTreeSet<String>> {
+    let index_reader = index
         .reader_builder()
+        .num_searchers(1)
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let mut tags = BTreeSet::default();
@@ -316,7 +300,6 @@ fn create_packaged_split(
             .iter()
             .map(|segment| segment.inverted_index(named_field.field))
             .collect::<Result<Vec<_>, _>>()?;
-
         match try_extract_terms(named_field, &inverted_indexes, MAX_VALUES_PER_TAG_FIELD) {
             Ok(terms) => {
                 append_to_tag_set(&named_field.name, &terms, &mut tags);
@@ -326,10 +309,28 @@ fn create_packaged_split(
             }
         }
     }
+    Ok(tags)
+}
+
+#[instrument(name = "create-packaged-split", skip_all)]
+fn create_packaged_split(
+    segment_metas: &[SegmentMeta],
+    split: IndexedSplit,
+    tag_fields: &[NamedField],
+    ctx: &ActorContext<Packager>,
+) -> anyhow::Result<PackagedSplit> {
+    let split_files = list_split_files(segment_metas, &split.split_scratch_directory);
+    let num_docs = segment_metas
+        .iter()
+        .map(|segment_meta| segment_meta.num_docs() as u64)
+        .sum();
+
+    // Extracts tag values from inverted indexes only when a field cardinality is less
+    // than `MAX_VALUES_PER_TAG_FIELD`.
+    let tags = extract_tag_names(tag_fields, &split.index)?;
 
     ctx.record_progress();
 
-    debug!(split_id = split.split_id.as_str(), "build-hotcache");
     let mut hotcache_bytes = vec![];
     build_hotcache(split.split_scratch_directory.path(), &mut hotcache_bytes)?;
     ctx.record_progress();

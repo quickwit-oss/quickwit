@@ -18,10 +18,13 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::env;
+use std::time::Duration;
 
 use anyhow::Context;
-use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
+use opentelemetry::sdk::{self, Resource};
+use opentelemetry::{global, KeyValue};
+use opentelemetry_otlp::WithExportConfig;
 use quickwit_cli::cli::{build_cli, CliCommand};
 use quickwit_cli::QW_JAEGER_ENABLED_ENV_KEY;
 use quickwit_telemetry::payload::TelemetryEvent;
@@ -70,8 +73,28 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
             .try_init()
             .context("Failed to set up tracing.")?
     } else {
+        // Install a new OpenTelemetry trace pipeline
+        let tracer = opentelemetry_otlp::new_pipeline()
+            .tracing()
+            .with_exporter(
+                opentelemetry_otlp::new_exporter()
+                    .tonic()
+                    .with_endpoint("http://127.0.0.1:7281")
+                    .with_timeout(Duration::from_secs(3)),
+            )
+            .with_trace_config(sdk::trace::config().with_resource(Resource::new(vec![
+                KeyValue::new("service.name", "quickwit"),
+                KeyValue::new("version", env!("CARGO_PKG_VERSION")),
+                KeyValue::new("commit", env!("GIT_COMMIT_HASH")),
+            ])))
+            .install_batch(opentelemetry::runtime::Tokio)?;
+
+        // Create a tracing subscriber with the configured tracer
+        let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
+
         registry
             .with(tracing_subscriber::fmt::layer().event_format(event_format))
+            .with(telemetry)
             .try_init()
             .context("Failed to set up tracing.")?
     }
@@ -110,7 +133,6 @@ async fn main() -> anyhow::Result<()> {
         version = env!("CARGO_PKG_VERSION"),
         commit = env!("GIT_COMMIT_HASH"),
     );
-
     let return_code: i32 = if let Err(err) = command.execute().await {
         eprintln!("Command failed: {:?}", err);
         1
