@@ -366,7 +366,7 @@ mod tests {
         let cluster2 = create_cluster_for_test(&[node_1.clone()])?;
         let cluster3 = create_cluster_for_test(&[node_1])?;
 
-        let wait_secs = Duration::from_secs(10);
+        let wait_secs = Duration::from_secs(30);
 
         for cluster in [&cluster1, &cluster2, &cluster3] {
             cluster
@@ -431,7 +431,8 @@ mod tests {
             ],
         )?;
 
-        let wait_secs = Duration::from_secs(10);
+        let wait_secs = Duration::from_secs(30);
+
         for cluster in [&cluster1a, &cluster2a, &cluster1b, &cluster2b] {
             cluster
                 .wait_for_members(|members| members.len() == 2, wait_secs)
@@ -475,7 +476,7 @@ mod tests {
             &[node_1.clone()],
         )?;
 
-        let wait_secs = Duration::from_secs(10);
+        let wait_secs = Duration::from_secs(30);
 
         for cluster in [&cluster1, &cluster2] {
             cluster
@@ -553,7 +554,7 @@ mod tests {
             &[node_2],
         )?;
 
-        let wait_secs = Duration::from_secs(15);
+        let wait_secs = Duration::from_secs(30);
 
         for cluster in [&cluster1, &cluster2] {
             cluster
