@@ -62,8 +62,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 .about("List indexes.")
                 .alias("ls")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file")
-                        .env("QW_CONFIG"),
                     arg!(--"metastore-uri" <METASTORE_URI> "Metastore URI. Override the `metastore_uri` parameter defined in the config file. Default to file-backed, but could be Amazon S3 or PostgreSQL.")
                         .required(false)
                 ])
@@ -72,7 +70,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("create")
                 .about("Creates an index from an index config file.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--"index-config" <INDEX_CONFIG> "Location of the index config file."),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -85,7 +82,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("ingest")
                 .about("Indexes JSON documents read from a file or streamed from stdin.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -102,7 +98,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("describe")
                 .about("Displays descriptive statistics of an index: number of published splits, number of documents, splits min/max timestamps, size of splits.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -113,7 +108,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("search")
                 .about("Searches an index.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -140,7 +134,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("merge")
                 .about("Merges an index.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -151,7 +144,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("demux")
                 .about("Demuxes an index.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -162,7 +154,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("gc")
                 .about("Garbage collects stale staged splits and splits marked for deletion.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -178,7 +169,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("delete")
                 .about("Delete an index.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")

@@ -18,7 +18,8 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use anyhow::bail;
-use clap::{ArgMatches, Command};
+use clap::{Arg, ArgMatches, Command};
+use quickwit_config::DEFAULT_QW_CONFIG_PATH;
 use tracing::Level;
 
 use crate::index::{build_index_command, IndexCliCommand};
@@ -28,6 +29,15 @@ use crate::split::{build_split_command, SplitCliCommand};
 
 pub fn build_cli<'a>() -> Command<'a> {
     Command::new("Quickwit")
+        .arg(
+            Arg::new("config")
+                .long("config")
+                .help("Config file location")
+                .env("QW_CONFIG")
+                .default_value(DEFAULT_QW_CONFIG_PATH)
+                .global(true)
+                .required(false),
+        )
         .subcommand(build_run_command().display_order(1))
         .subcommand(build_index_command().display_order(2))
         .subcommand(build_source_command().display_order(3))
