@@ -24,15 +24,15 @@ export enum CompletionItemKind {
   Operator = 11,
 }
 
+const BRACES: [string, string] = ['{', '}'];
+const BRACKETS: [string, string] = ['[', ']'];
+const PARENTHESES: [string, string] = ['(', ')'];
+
 export const LANGUAGE_CONFIG = {
   comments: {
     lineComment: "//",
   },
-  brackets: [
-    ["{", "}"],
-    ["[", "]"],
-    ["(", ")"],
-  ],
+  brackets: [ BRACES, BRACKETS, PARENTHESES ],
   autoClosingPairs: [
     { open: "{", close: "}" },
     { open: "[", close: "]" },

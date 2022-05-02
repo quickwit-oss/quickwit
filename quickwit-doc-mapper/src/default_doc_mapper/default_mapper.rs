@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{bail, Context};
 use quickwit_proto::SearchRequest;
@@ -291,7 +291,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         let mut schema_builder = Schema::builder();
         let field_mappings = build_mapping_tree(&builder.field_mappings, &mut schema_builder)?;
         let source_field = if builder.store_source {
-            Some(schema_builder.add_text_field(SOURCE_FIELD_NAME, STORED))
+            Some(schema_builder.add_json_field(SOURCE_FIELD_NAME, STORED))
         } else {
             None
         };
@@ -406,6 +406,29 @@ impl std::fmt::Debug for DefaultDocMapper {
     }
 }
 
+fn extract_single_obj(
+    doc: &mut BTreeMap<String, Vec<JsonValue>>,
+    key: &str,
+) -> anyhow::Result<Option<serde_json::Map<String, serde_json::Value>>> {
+    let mut values = if let Some(values) = doc.remove(key) {
+        values
+    } else {
+        return Ok(None);
+    };
+    if values.len() > 1 {
+        bail!(
+            "Invalid named document. There are more than 1 value associated to the `{key}` field."
+        );
+    }
+    match values.pop() {
+        Some(JsonValue::Object(dynamic_json_obj)) => Ok(Some(dynamic_json_obj)),
+        Some(_) => {
+            bail!("The `{key}` value has to be a json object.");
+        }
+        None => Ok(None),
+    }
+}
+
 #[typetag::serde(name = "default")]
 impl DocMapper for DefaultDocMapper {
     fn doc_from_json(&self, doc_json: String) -> Result<Document, DocParsingError> {
@@ -419,6 +442,10 @@ impl DocMapper for DefaultDocMapper {
         let mut field_path = Vec::new();
         let mut document = Document::default();
 
+        if let Some(source_field) = self.source_field {
+            document.add_json_object(source_field, json_obj.clone());
+        }
+
         let mode = self.mode.mode_type();
         self.field_mappings.doc_from_json(
             json_obj,
@@ -428,9 +455,6 @@ impl DocMapper for DefaultDocMapper {
             &mut dynamic_json_obj,
         )?;
 
-        if let Some(source_field) = self.source_field {
-            document.add_text(source_field, doc_json);
-        }
         if let Some(dynamic_field) = self.dynamic_field {
             if !dynamic_json_obj.is_empty() {
                 document.add_json_object(dynamic_field, dynamic_json_obj);
@@ -439,6 +463,26 @@ impl DocMapper for DefaultDocMapper {
 
         self.check_missing_required_fields(&document)?;
         Ok(document)
+    }
+
+    fn doc_to_json(
+        &self,
+        mut named_doc: BTreeMap<String, Vec<serde_json::Value>>,
+    ) -> anyhow::Result<serde_json::Map<String, JsonValue>> {
+        let mut doc_json =
+            extract_single_obj(&mut named_doc, DYNAMIC_FIELD_NAME)?.unwrap_or_default();
+        let mut field_path: Vec<&str> = Vec::new();
+        self.field_mappings
+            .populate_json(&mut named_doc, &mut field_path, &mut doc_json);
+
+        if let Some(source_json) = extract_single_obj(&mut named_doc, SOURCE_FIELD_NAME)? {
+            doc_json.insert(
+                SOURCE_FIELD_NAME.to_string(),
+                JsonValue::Object(source_json),
+            );
+        }
+
+        Ok(doc_json)
     }
 
     fn query(
@@ -489,9 +533,9 @@ mod tests {
         SOURCE_FIELD_NAME,
     };
 
-    const JSON_DOC_VALUE: &str = r#"
-        {
-            "timestamp": 1586960586000,
+    fn example_json_doc_value() -> serde_json::Value {
+        serde_json::json!({
+            "timestamp": 1586960586000i64,
             "body": "20200415T072306-0700 INFO This is a great log",
             "response_date2": "2021-12-19T16:39:57+00:00",
             "response_date": "2021-12-19T16:39:57Z",
@@ -504,7 +548,8 @@ mod tests {
                 "server.status": ["200", "201"],
                 "server.payload": ["YQ==", "Yg=="]
             }
-        }"#;
+        })
+    }
 
     const EXPECTED_JSON_PATHS_AND_VALUES: &str = r#"{
             "timestamp": [1586960586000],
@@ -564,9 +609,8 @@ mod tests {
     #[test]
     fn test_parsing_document() {
         let doc_mapper = crate::default_doc_mapper_for_tests();
-        let document = doc_mapper
-            .doc_from_json(JSON_DOC_VALUE.to_string())
-            .unwrap();
+        let json_doc = example_json_doc_value();
+        let document = doc_mapper.doc_from_json(json_doc.to_string()).unwrap();
         let schema = doc_mapper.schema();
         // 7 property entry + 1 field "_source" + two fields values for "tags" field
         // + 2 values inf "server.status" field + 2 values in "server.payload" field
@@ -576,7 +620,7 @@ mod tests {
         document.field_values().iter().for_each(|field_value| {
             let field_name = schema.get_field_name(field_value.field());
             if field_name == SOURCE_FIELD_NAME {
-                assert_eq!(field_value.value().as_text(), Some(JSON_DOC_VALUE));
+                assert_eq!(field_value.value().as_json(), json_doc.as_object());
             } else if field_name == DYNAMIC_FIELD_NAME {
                 assert_eq!(
                     field_value.value().as_json(),
@@ -797,12 +841,12 @@ mod tests {
         let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
         let doc_mapper = builder.try_build().unwrap();
         let schema = doc_mapper.schema();
-        const JSON_DOC_VALUE: &str = r#"{
+        let json_doc_value: serde_json::Value = serde_json::json!({
             "city": "tokio",
             "image": "YWJj"
-        }"#;
+        });
         let document = doc_mapper
-            .doc_from_json(JSON_DOC_VALUE.to_string())
+            .doc_from_json(json_doc_value.to_string())
             .unwrap();
 
         // 2 properties, + 1 value for "_source"
@@ -817,7 +861,7 @@ mod tests {
         document.field_values().iter().for_each(|field_value| {
             let field_name = schema.get_field_name(field_value.field());
             if field_name == SOURCE_FIELD_NAME {
-                assert_eq!(field_value.value().as_text(), Some(JSON_DOC_VALUE));
+                assert_eq!(field_value.value().as_json(), json_doc_value.as_object());
             } else {
                 let value = serde_json::to_string(field_value.value()).unwrap();
                 let is_value_in_expected_values = expected_json_paths_and_values
