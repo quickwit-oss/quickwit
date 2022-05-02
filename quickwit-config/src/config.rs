@@ -31,7 +31,9 @@ use quickwit_common::uri::{Extension, Uri};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
-static DEFAULT_DATA_DIR_PATH: &str = "./qwdata";
+pub const DEFAULT_QW_CONFIG_PATH: &str = "./config/quickwit.yaml";
+
+const DEFAULT_DATA_DIR_PATH: &str = "./qwdata";
 
 fn default_data_dir_path() -> PathBuf {
     PathBuf::from(DEFAULT_DATA_DIR_PATH)

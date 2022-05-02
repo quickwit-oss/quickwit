@@ -34,7 +34,6 @@ pub fn build_run_command<'a>() -> Command<'a> {
     Command::new("run")
         .about("Runs quickwit services. By default, `indexer` and `searcher` are started.")
         .args(&[
-            arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG").required(true),
             arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.").env("QW_DATA_DIR").required(false),
             arg!(--"service" <SERVICE> "Services (searcher|indexer) to run. If unspecified run both `searcher` and `indexer`.").required(false)
         ])
