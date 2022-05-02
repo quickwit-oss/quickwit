@@ -151,6 +151,26 @@ message SplitIdAndFooterOffsets {
 
 }
 
+/// Hits returned by a FetchDocRequest.
+///
+/// The json that is joined is the raw tantivy json doc.
+/// It is very different from a quickwit json doc.
+///
+/// For instance:
+/// - it may contain a _source and a _dynamic field.
+/// - since tantivy has no notion of cardinality,
+/// all fields is  are arrays.
+/// - since tantivy has no notion of object, the object is
+/// flattened by concatenating the path to the root.
+///
+/// See  `quickwit_search::convert_leaf_hit`
+message LeafHit {
+  // The actual content of the hit/
+  string leaf_json = 1;
+  // The partial hit (ie: the sorting field + the document address)
+  PartialHit partial_hit = 2;
+}
+
 message Hit {
   // The actual content of the hit/
   string json = 1;
@@ -222,7 +242,7 @@ message FetchDocsRequest {
 
 message FetchDocsResponse {
   // List of complete hits.
-  repeated Hit hits = 1;
+  repeated LeafHit hits = 1;
 }
 
 

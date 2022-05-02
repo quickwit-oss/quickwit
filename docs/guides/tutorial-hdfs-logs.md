@@ -141,21 +141,11 @@ which returns the json
   "num_hits": 364,
   "hits": [
     {
-      "attributes.class": [
-        "org.apache.hadoop.hdfs.server.datanode.DataNode"
-      ],
-      "body": [
-        "RECEIVED SIGNAL 15: SIGTERM"
-      ],
-      "resource.service": [
-        "datanode/02"
-      ],
-      "severity_text": [
-        "ERROR"
-      ],
-      "timestamp": [
-        1442629246
-      ]
+      "attributes.class": "org.apache.hadoop.hdfs.server.datanode.DataNode",
+      "body": "RECEIVED SIGNAL 15: SIGTERM",
+      "resource": { "service": "datanode/02" },
+      "severity_text": "ERROR",
+      "timestamp": 1442629246
     }
     ...
   ],
