@@ -58,7 +58,7 @@ async fn get_split_stream_semaphore() -> SemaphorePermit<'static> {
         })
         .acquire()
         .await
-        .expect("Failed to acquire permit. This should never happen. Please report.")
+        .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
 }
 
 /// `leaf` step of search stream.
@@ -284,7 +284,7 @@ fn collect_partitioned_values<TFastValue: FastValue, TPartitionValue: FastValue 
         fast_field_to_collect: request_fields.fast_field_name().to_string(),
         partition_by_fast_field: request_fields
             .partition_by_fast_field_name()
-            .expect("Please report a bug here, the partition_by_fast_field should be defined")
+            .expect("`partition_by_fast_field` is not defined. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
             .to_string(),
         timestamp_field_opt: request_fields.timestamp_field,
         start_timestamp_opt,
