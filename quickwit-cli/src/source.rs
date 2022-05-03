@@ -367,7 +367,7 @@ fn flatten_json(value: Value) -> Vec<(String, Value)> {
     acc
 }
 
-async fn resolve_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<IndexMetadata> {
+async fn resolve_index(metastore_uri: &Uri, index_id: &str) -> anyhow::Result<IndexMetadata> {
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
     let index_metadata = metastore.index_metadata(index_id).await?;

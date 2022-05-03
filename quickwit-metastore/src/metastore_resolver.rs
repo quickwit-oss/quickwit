@@ -126,11 +126,14 @@ impl MetastoreUriResolver {
     }
 
     /// Resolves the given URI.
-    pub async fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
-        let protocol = uri.split("://").next().ok_or_else(|| {
+    pub async fn resolve<S: AsRef<str>>(
+        &self,
+        uri: S,
+    ) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+        let protocol = uri.as_ref().split("://").next().ok_or_else(|| {
             MetastoreResolverError::InvalidUri(format!(
                 "Protocol not found in metastore URI: {}",
-                uri
+                uri.as_ref()
             ))
         })?;
 
@@ -139,7 +142,7 @@ impl MetastoreUriResolver {
             .get(protocol)
             .ok_or_else(|| MetastoreResolverError::ProtocolUnsupported(protocol.to_string()))?;
 
-        let metastore = resolver.resolve(uri).await?;
+        let metastore = resolver.resolve(uri.as_ref()).await?;
         Ok(metastore)
     }
 }

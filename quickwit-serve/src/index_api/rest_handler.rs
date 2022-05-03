@@ -120,6 +120,7 @@ mod tests {
     use std::ops::Range;
 
     use assert_json_diff::assert_json_include;
+    use quickwit_common::uri::Uri;
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
     use quickwit_storage::StorageUriResolver;
@@ -141,7 +142,7 @@ mod tests {
         let index_service = IndexService::new(
             Arc::new(metastore),
             StorageUriResolver::for_test(),
-            "file:///default-index-uri".to_string(),
+            Uri::new("file:///default-index-uri".to_string()),
         );
         let index_management_handler =
             super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
@@ -187,7 +188,7 @@ mod tests {
         let index_service = IndexService::new(
             Arc::new(metastore),
             StorageUriResolver::for_test(),
-            "file:///default-index-uri".to_string(),
+            Uri::new("file:///default-index-uri".to_string()),
         );
         let index_management_handler =
             super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
@@ -218,7 +219,7 @@ mod tests {
         let index_service = IndexService::new(
             Arc::new(metastore),
             StorageUriResolver::for_test(),
-            "file:///default-index-uri".to_string(),
+            Uri::new("file:///default-index-uri".to_string()),
         );
         let index_management_handler =
             super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
@@ -253,7 +254,7 @@ mod tests {
         let index_service = IndexService::new(
             Arc::new(metastore),
             StorageUriResolver::for_test(),
-            "file:///default-index-uri".to_string(),
+            Uri::new("file:///default-index-uri".to_string()),
         );
         let index_management_handler = super::index_management_handlers(Arc::new(index_service));
         let resp = warp::test::request()
@@ -279,7 +280,7 @@ mod tests {
         let index_service = IndexService::new(
             Arc::new(metastore),
             StorageUriResolver::for_test(),
-            "file:///default-index-uri".to_string(),
+            Uri::new("file:///default-index-uri".to_string()),
         );
         let index_management_handler =
             super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
