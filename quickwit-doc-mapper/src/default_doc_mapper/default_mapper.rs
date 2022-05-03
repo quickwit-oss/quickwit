@@ -524,6 +524,7 @@ impl DocMapper for DefaultDocMapper {
 mod tests {
     use std::collections::HashMap;
 
+    use quickwit_proto::SearchRequest;
     use serde_json::{self, json, Value as JsonValue};
     use tantivy::schema::{FieldType, Type, Value};
 
@@ -560,9 +561,9 @@ mod tests {
             "owner": ["foo"],
             "body_other_tokenizer": ["20200415T072306-0700 INFO This is a great log"],
             "attributes.server": ["ABC"],
-            "attributes.server.payload": [[97], [98]],
+            "attributes.server\\.payload": [[97], [98]],
             "attributes.tags": [22, 23],
-            "attributes.server.status": ["200", "201"]
+            "attributes.server\\.status": ["200", "201"]
         }"#;
 
     #[test]
@@ -573,7 +574,7 @@ mod tests {
         default_search_field_names.sort();
         assert_eq!(
             default_search_field_names,
-            ["attributes.server", "attributes.server.status", "body"]
+            ["attributes.server", r#"attributes.server\.status"#, "body"]
         );
         assert_eq!(config.field_mappings.num_fields(), 9);
         Ok(())
@@ -647,19 +648,20 @@ mod tests {
     }
 
     #[test]
-    fn test_accept_parsing_document_with_unknown_fields_and_missing_fields() -> anyhow::Result<()> {
+    fn test_accept_parsing_document_with_unknown_fields_and_missing_fields() {
         let doc_mapper = crate::default_doc_mapper_for_tests();
-        doc_mapper.doc_from_json(
-            r#"{
+        doc_mapper
+            .doc_from_json(
+                r#"{
                 "timestamp": 1586960586000,
                 "unknown_field": "20200415T072306-0700 INFO This is a great log",
                 "response_date": "2021-12-19T16:39:57+00:00",
                 "response_time": 12,
                 "response_payload": "YWJj"
             }"#
-            .to_string(),
-        )?;
-        Ok(())
+                .to_string(),
+            )
+            .unwrap();
     }
 
     #[test]
@@ -1331,5 +1333,98 @@ mod tests {
         } else {
             panic!("Expected json");
         }
+    }
+
+    fn default_doc_mapper_query_aux(
+        doc_mapper: &dyn DocMapper,
+        query: &str,
+    ) -> Result<String, String> {
+        let search_request = SearchRequest {
+            query: query.to_string(),
+            ..Default::default()
+        };
+        let query = doc_mapper
+            .query(doc_mapper.schema(), &search_request)
+            .map_err(|err| err.to_string())?;
+        Ok(format!("{:?}", query))
+    }
+
+    #[test]
+    fn test_doc_mapper_sub_field_query_on_non_json_field_should_error() {
+        let doc_mapper: DefaultDocMapper = serde_json::from_str(
+            r#"{
+            "field_mappings": [{"name": "body", "type": "text"}],
+            "mode": "dynamic"
+        }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            default_doc_mapper_query_aux(&doc_mapper, "body.wrong_field:hello").unwrap_err(),
+            "Field does not exists: 'body.wrong_field'"
+        );
+    }
+
+    #[test]
+    fn test_doc_mapper_accept_sub_field_query_on_json_field() {
+        let doc_mapper: DefaultDocMapper = serde_json::from_str(
+            r#"{
+            "field_mappings": [{"name": "body", "type": "json"}],
+            "mode": "dynamic"
+        }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            default_doc_mapper_query_aux(&doc_mapper, "body.dynamic_field:hello"),
+            Ok(
+                r#"TermQuery(Term(type=Json, field=0, path=dynamic_field, vtype=Str, "hello"))"#
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn test_doc_mapper_object_dot_collision_with_object_field() {
+        let doc_mapper: DefaultDocMapper = serde_json::from_str(
+            r#"{
+            "field_mappings": [
+                {
+                    "name": "identity",
+                    "type": "object",
+                    "field_mappings": [{"type": "text", "name": "username"}]
+                },
+                {"type": "text", "name": "identity.username"}
+            ]
+        }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            default_doc_mapper_query_aux(&doc_mapper, "identity.username:toto").unwrap(),
+            r#"TermQuery(Term(type=Str, field=0, "toto"))"#
+        );
+        assert_eq!(
+            default_doc_mapper_query_aux(&doc_mapper, r#"identity\.username:toto"#).unwrap(),
+            r#"TermQuery(Term(type=Str, field=1, "toto"))"#
+        );
+    }
+
+    #[test]
+    fn test_doc_mapper_object_dot_collision_with_json_field() {
+        let doc_mapper: DefaultDocMapper = serde_json::from_str(
+            r#"{
+            "field_mappings": [
+                {"name": "identity", "type": "json"},
+                {"type": "text", "name": "identity.username"}
+            ]
+        }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            default_doc_mapper_query_aux(&doc_mapper, "identity.username:toto").unwrap(),
+            r#"TermQuery(Term(type=Json, field=0, path=username, vtype=Str, "toto"))"#
+        );
+        assert_eq!(
+            default_doc_mapper_query_aux(&doc_mapper, r#"identity\.username:toto"#).unwrap(),
+            r#"TermQuery(Term(type=Str, field=1, "toto"))"#
+        );
     }
 }
