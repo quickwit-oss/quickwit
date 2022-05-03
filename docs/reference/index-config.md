@@ -124,13 +124,14 @@ record: position
 | `stored`    | Whether value is stored in the document store | `true` |
 | `tokenizer` | Name of the `Tokenizer`, choices between `raw`, `default` and `stem_en` | `default` |
 | `record`    | Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
+| `fast`     | Whether value is stored in a fast field. The fast field will contain the term ids. The effective cardinality depends on the tokenizer. When creating fast fields on text fields it is recommended to use the "raw" tokenizer, since it will store the original text unchanged. The "default" tokenizer will store the terms as lower case and this will be reflected in the dictionary ([see tokenizers](#description-of-available-tokenizers)). | `false` |
 
-**Description of available tokenizers**
+#### **Description of available tokenizers**
 
 | Tokenizer     | Description   |
 | ------------- | ------------- |
 | `raw`         | Does not process nor tokenize text  |
-| `default`     | Chops the text on according to whitespace and punctuation, removes tokens that are too long, and lowercases tokens |
+| `default`     | Chops the text on according to whitespace and punctuation, removes tokens that are too long, and converts to lowercase |
 | `stem_en`     |  Like `default`, but also applies stemming on the resulting tokens  |
 
 **Description of record options**

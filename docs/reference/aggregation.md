@@ -13,12 +13,28 @@ Aggregations can provide answer to questions like:
 
 There are two categories: [Metrics](#metric) and [Buckets](#bucket-aggregations).
 
+#### Prerequisite
+
+To be able to use aggregations on a field, the field needs have a fast field index created. A fast field index is a columnar storage, 
+where documents values are extracted and stored to.
+
+Example to create a fast field on text for term aggregations.
+```yaml
+name: category
+type: text
+tokenizer: raw
+record: basic
+fast: true
+```
+
+See the [index config](./index-config.md) for more details and examples.
+
 #### Format
 
 The aggregation request and result de/serialize into elasticsearch compatible JSON. 
 If not documented otherwise you should be able to drop in your elasticsearch aggregation queries.
 
-In some examples below is not the full request shown, but only the payload for "aggregations".
+In some examples below is not the full request shown, but only the payload for `aggregations`.
 
 #### Example
 
@@ -46,10 +62,6 @@ Request
 }
 ```
 
-#### Limitations
-
-Currently aggregations work only on single value fast fields of type u64, f64 and i64.
-
 
 Response
 ```json
@@ -75,6 +87,10 @@ Response
       "sum_other_doc_count": 1872055
     }
 ```
+#### Limitations
+
+Currently aggregations work only on single value fast fields of type u64, f64, i64 and on string fields.
+
 
 
 ### Supported Aggregations
@@ -98,6 +114,7 @@ These sub-aggregations will be aggregated for the buckets created by their “pa
 There are different bucket aggregators, each with a different “bucketing” strategy. 
 Some define a single bucket, some define fixed number of multiple buckets, and others dynamically create the buckets during the aggregation process.
 
+Example request, histogram with stats in each bucket:
 ```json
 {
   "query": "*",
@@ -165,7 +182,7 @@ The interval to chunk your data range. Each bucket spans a value range of [0..in
 
 ###### **offset**
 
-Intervals implicitely defines an absolute grid of buckets [interval * k, interval * (k + 1)).
+Intervals implicitely defines an absolute grid of buckets `[interval * k, interval * (k + 1))`.
 Offset makes it possible to shift this grid into `[offset + interval * k, offset + interval (k + 1))`. Offset has to be in the range [0, interval).
 
 As an example, if there are two documents with value 8 and 12 and interval 10.0, they would fall into the buckets with the key 0 and 10. With offset 5 and interval 10, they would both fall into the bucket with they key 5 and the range [5..15)
@@ -322,7 +339,6 @@ By default, the top 10 terms with the most documents are returned. Larger values
 
 
 The get more accurate results, we fetch more than size from each segment.
-
 Increasing this value is will increase the cost for more accuracy.
 
 Defaults to 10 * size.
@@ -345,7 +361,6 @@ _Expensive_ : When set to 0, this will return all terms in the field.
 ###### **order**
 
 Set the order. String is here a target, which is either “_count”, “_key”, or the name of a metric sub_aggregation.
-
 Single value metrics like average can be adressed by its name. Multi value metrics like stats are required to adress their field by name e.g. “stats.avg”
 
 
