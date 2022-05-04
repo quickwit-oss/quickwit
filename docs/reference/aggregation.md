@@ -145,7 +145,7 @@ The keyed parameter (elasticsearch) is not yet supported.
 
 ### Histogram
 
-Histogram is a bucket aggregation, where buckets are created dynamically for given interval. Each document value is rounded down to its bucket.
+Histogram is a bucket aggregation, where buckets are created dynamically for the given interval. Each document value is rounded down to its bucket.
 
 E.g. if we have a price 18 and an interval of 5, the document will fall into the bucket with the key 15. The formula used for this is: ((val - offset) / interval).floor() * interval + offset
 
