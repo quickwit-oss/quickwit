@@ -15,7 +15,7 @@ There are two categories: [Metrics](#metric) and [Buckets](#bucket-aggregations)
 
 #### Prerequisite
 
-To be able to use aggregations on a field, the field needs have a fast field index created. A fast field index is a columnar storage, 
+To be able to use aggregations on a field, the field needs to have a fast field index created. A fast field index is a columnar storage, 
 where documents values are extracted and stored to.
 
 Example to create a fast field on text for term aggregations.
