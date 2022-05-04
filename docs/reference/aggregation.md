@@ -286,7 +286,7 @@ The from value is inclusive in the range.
 The to value is not inclusive in the range.
 
 The first bucket can omit the `from` value, and the last bucket the `to` value.
-Note that this aggregation includes the from value and excludes the to value for each range. Extra buckets will be created until the first to, and last from, if necessary.
+Note that this aggregation includes the `from` value and excludes the `to` value for each range. Extra buckets will be created until the first `to`, and last `from`, if necessary.
 
 
 ### Terms
