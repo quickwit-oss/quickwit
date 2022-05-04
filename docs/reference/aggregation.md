@@ -42,7 +42,7 @@ Request
 ```json
 {
   "query": "*",
-  "max_hits": 1,
+  "max_hits": 0,
   "aggregations": {
     "sites_and_aqi": {
       "terms": {
@@ -86,6 +86,7 @@ Response
       ],
       "sum_other_doc_count": 1872055
     }
+}
 ```
 #### Limitations
 
@@ -178,7 +179,7 @@ The field to aggregate on.
 
 ###### **interval**
 
-The interval to chunk your data range. Each bucket spans a value range of [0..interval). Must be a positive value.
+The interval to chunk your data range. Each bucket spans a value range of [0..interval). Must be larger than 0.
 
 ###### **offset**
 
@@ -301,23 +302,19 @@ Creates a bucket for every unique term.
 }
 ```
 
-
-#### Terminology
-Shard parameters are supposed to be equivalent to elasticsearch shard parameter.
-Since they are
-
 #### Document count error
-To improve performance, results from one segment are cut off at `segment_size`. On a index with
-a single segment this is fine. When combining results of multiple segments, terms that
-don't make it in the top n of a shard increase the theoretical upper bound error by lowest
+In quickwit we have one segment per split.
+To improve performance, results from one split are cut off at `segment_size`.
+When combining results of multiple splits, terms that
+don't make it in the top n of a result from a split increase the theoretical upper bound error by lowest
 term-count.
 
 Even with a larger `segment_size` value, doc_count values for a terms aggregation may be
 approximate. As a result, any sub-aggregations on the terms aggregation may also be approximate.
 `sum_other_doc_count` is the number of documents that didn’t make it into the the top size
 terms. If this is greater than 0, you can be sure that the terms agg had to throw away some
-buckets, either because they didn’t fit into size on the root node or they didn’t fit into
-`segment_size` on the segment node.
+buckets, either because they didn’t fit into `size` on the root node or they didn’t fit into
+`segment_size` on the leaf node.
 
 #### Per bucket document count error
 If you set the `show_term_doc_count_error` parameter to true, the terms aggregation will include
