@@ -106,7 +106,7 @@ Currently aggregations work only on single value fast fields of type u64, f64, i
 
 ## Bucket Aggregations
 
-BucketAggregations create buckets of documents. Each bucket is associated with a rule which determines whether or not a document in the falls into it. 
+BucketAggregations create buckets of documents. Each bucket is associated with a rule which determines whether or not a document falls into it. 
 In other words, the buckets effectively define document sets. Buckets are not necessarily disjunct, therefore a document can fall into multiple buckets. 
 In addition to the buckets themselves, the bucket aggregations also compute and return the number of documents for each bucket. 
 Bucket aggregations, as opposed to metric aggregations, can hold sub-aggregations. 
