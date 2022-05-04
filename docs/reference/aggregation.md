@@ -348,7 +348,7 @@ Defaults to 10 * size.
 If you set the show_term_doc_count_error parameter to true, the terms aggregation will include doc_count_error_upper_bound, which is an upper bound to the error on the doc_count returned by each shard. 
 It’s the sum of the size of the largest bucket on each segment that didn’t fit into shard_size.
 
-Defaults to true when ordering by counts desc.
+Defaults to true when ordering by count desc.
 
 
 ###### **min_doc_count**
