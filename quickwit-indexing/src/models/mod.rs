@@ -19,7 +19,7 @@
 
 mod indexed_split;
 mod indexing_directory;
-mod indexing_server_message;
+mod indexing_service_message;
 mod indexing_statistics;
 mod merge_planner_message;
 mod merge_scratch;
@@ -30,7 +30,7 @@ mod scratch_directory;
 
 pub use indexed_split::{IndexedSplit, IndexedSplitBatch};
 pub use indexing_directory::{IndexingDirectory, CACHE};
-pub use indexing_server_message::{
+pub use indexing_service_message::{
     DetachPipeline, IndexingPipelineId, ObservePipeline, SpawnMergePipeline, SpawnPipeline,
     SpawnPipelinesForIndex,
 };

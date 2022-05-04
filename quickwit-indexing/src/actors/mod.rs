@@ -21,13 +21,13 @@ mod indexing_pipeline;
 
 mod garbage_collector;
 mod indexer;
-mod indexing_server;
+mod indexing_service;
 mod packager;
 mod publisher;
 mod uploader;
 
 pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineHandler, IndexingPipelineParams};
-pub use indexing_server::{IndexingServer, IndexingServerError, INDEXING};
+pub use indexing_service::{IndexingService, IndexingServiceError, INDEXING};
 use tantivy::schema::{Field, FieldType};
 mod merge_executor;
 mod merge_planner;
