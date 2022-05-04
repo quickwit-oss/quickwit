@@ -138,7 +138,7 @@ Example request, histogram with stats in each bucket:
 
 Currently aggregations work only on single value fast fields of type u64, f64 and i64.
 
-The keyed parameter (elasticsearch) is not yet supported.
+Elasticsearch `keyed` parameter is not yet supported.
 
 ### Histogram
 
@@ -323,7 +323,7 @@ Creates a bucket for every unique term.
 ```
 
 #### Document count error
-In quickwit we have one segment per split.
+In Quickwit, we have one segment per split.
 To improve performance, results from one split are cut off at `segment_size`.
 When combining results of multiple splits, terms that
 don't make it in the top n of a result from a split increase the theoretical upper bound error by lowest
@@ -378,7 +378,7 @@ _Expensive_ : When set to 0, this will return all terms in the field.
 ###### **order**
 
 Set the order. String is here a target, which is either “_count”, “_key”, or the name of a metric sub_aggregation.
-Single value metrics like average can be adressed by its name. Multi value metrics like stats are required to adress their field by name e.g. “stats.avg”
+Single value metrics like average can be adressed by its name. Multi value metrics like stats are required to adress their field by name e.g. “stats.avg”.
 
 
 Order alphabetically
@@ -405,7 +405,7 @@ Order by sub_aggregation
     "aggs": {
         "articles_by_price": {
             "terms":{ "field": "article_name" },
-            "order":{ “average_price”: “asc” },
+            "order":{ "average_price": "asc" },
             "aggs": {
               "average_price": {
                 "avg": {
@@ -469,7 +469,7 @@ Supported field types are u64, i64, and f64.
 
 ### Stats
 
-A multi-value metric aggregation that computes stats of numeric values that are extracted from the aggregated documents. 
+A multi-value metric aggregation that computes stats (average, count, min, max, standard deviation, and sum) of numeric values that are extracted from the aggregated documents. 
 Supported field types are u64, i64, and f64. 
 
 **Request**
