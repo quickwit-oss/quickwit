@@ -25,7 +25,7 @@ pub struct IndexingPipelineId {
     pub source_id: String,
 }
 
-/// Detaches a pipeline from the indexing server. The pipeline is no longer managed by the
+/// Detaches a pipeline from the indexing service. The pipeline is no longer managed by the
 /// server. This is mostly useful for ad-hoc indexing pipelines launched with `quickwit index
 /// ingest ..` and testing.
 #[derive(Debug)]
