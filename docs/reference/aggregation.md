@@ -41,24 +41,22 @@ In some examples below is not the full request shown, but only the payload for `
 Request
 ```json
 {
-  "query": "*",
-  "max_hits": 0,
-  "aggregations": {
-    "sites_and_aqi": {
-      "terms": {
-        "field": "County",
-        "size": 2,
-        "order": {"average_aqi": "asc"}
-      },
-      "aggs": {
-        "average_aqi": {
-          "avg": {
-            "field": "AQI"
-          }
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "sites_and_aqi": {
+            "terms": {
+                "field": "County",
+                "size": 2,
+                "order": {"average_aqi": "asc"}
+            },
+            "aggs": {
+                "average_aqi": {
+                    "avg": { "field": "AQI" }
+                }
+            }
         }
-      }
     }
-  }
 }
 ```
 
@@ -66,7 +64,7 @@ Request
 Response
 ```json
 ...
-"aggregations": {
+"aggs": {
     "sites_and_aqi": {
       "buckets": [
         {
@@ -118,23 +116,21 @@ Some define a single bucket, some define fixed number of multiple buckets, and o
 Example request, histogram with stats in each bucket:
 ```json
 {
-  "query": "*",
-  "max_hits": 1,
-  "aggregations": {
-    "stats_per_day": {
-      "histogram": {
-        "field": "timestamp",
-        "interval": 86400
-      },
-      "aggs": {
-        "timestamp_stats": {
-          "stats": {
-            "field": "timestamp"
-          }
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "stats_per_day": {
+            "histogram": {
+                "field": "timestamp",
+                "interval": 86400
+            },
+            "aggs": {
+                "timestamp_stats": {
+                    "stats": { "field": "timestamp" }
+                }
+            }
         }
-      }
     }
-  }
 }
 ```
 
@@ -162,10 +158,14 @@ The value range of the buckets can bet extended via extended_bounds or limit the
 
 ```json
 {
-    "prices": {
-        "histogram": {
-            "field": "price",
-            "interval": 10
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "prices": {
+            "histogram": {
+                "field": "price",
+                "interval": 10
+            }
         }
     }
 }
@@ -190,11 +190,15 @@ As an example, if there are two documents with value 8 and 12 and interval 10.0,
 
 ```json
 {
-    "prices": {
-        "histogram": {
-            "field": "price",
-            "interval": 10,
-            "offset": 2.5
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "prices": {
+            "histogram": {
+                "field": "price",
+                "interval": 10,
+                "offset": 2.5
+            }
         }
     }
 }
@@ -213,13 +217,17 @@ hard_bounds only limits the buckets, to force a range set both extended_bounds a
 
 ```json
 {
-    "prices": {
-        "histogram": {
-            "field": "price",
-            "interval": 10,
-            "hard_bounds": {
-                "min": 0,
-                "max": 100
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "prices": {
+            "histogram": {
+                "field": "price",
+                "interval": 10,
+                "hard_bounds": {
+                    "min": 0,
+                    "max": 100
+                }
             }
         }
     }
@@ -233,13 +241,17 @@ Cannot be set in conjunction with min_doc_count > 0, since the empty buckets fro
 
 ```json
 {
-    "prices": {
-        "histogram": {
-            "field": "price",
-            "interval": 10,
-            "extended_bounds": {
-                "min": 0,
-                "max": 100
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "prices": {
+            "histogram": {
+                "field": "price",
+                "interval": 10,
+                "extended_bounds": {
+                    "min": 0,
+                    "max": 100
+                }
             }
         }
     }
@@ -255,14 +267,18 @@ Note that this aggregation includes the from value and excludes the to value for
 
 ```json
 {
-    "my_ranges": {
-        "field": "score",
-        "ranges": [
-            { "to": 3.0 },
-            { "from": 3.0, "to": 7.0 },
-            { "from": 7.0, "to": 20.0 },
-            { "from": 20.0 }
-        ]
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "my_ranges": {
+            "field": "score",
+            "ranges": [
+                { "to": 3.0 },
+                { "from": 3.0, "to": 7.0 },
+                { "from": 7.0, "to": 20.0 },
+                { "from": 20.0 }
+            ]
+        }
     }
 }
 ```
@@ -296,8 +312,12 @@ Creates a bucket for every unique term.
 
 ```json
 {
-    "genres": {
-        "terms":{ "field": "genre" }
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "genres": {
+            "terms":{ "field": "genre" }
+        }
     }
 }
 ```
@@ -364,9 +384,13 @@ Single value metrics like average can be adressed by its name. Multi value metri
 Order alphabetically
 ```json
 {
-    "genres": {
-        "terms":{ "field": "genre" },
-        "order":{ "_key": "asc" }
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "genres": {
+            "terms":{ "field": "genre" },
+            "order":{ "_key": "asc" }
+        }
     }
 }
 ```
@@ -376,15 +400,19 @@ Order by sub_aggregation
 
 ```json
 {
-    "articles_by_price": {
-        "terms":{ "field": "article_name" },
-        "order":{ “average_price”: “asc” },
-        "aggs": {
-          "average_price": {
-            "avg": {
-              "field": "price"
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "articles_by_price": {
+            "terms":{ "field": "article_name" },
+            "order":{ “average_price”: “asc” },
+            "aggs": {
+              "average_price": {
+                "avg": {
+                  "field": "price"
+                }
+              }
             }
-          }
         }
     }
 }
@@ -409,15 +437,15 @@ Supported field types are u64, i64, and f64.
 **Request**
 ```json
 {
-  "query": "*",
-  "max_hits": 1,
-  "aggregations": {
-    "average_price": {
-      "avg": {
-        "field": "price"
-      }
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "average_price": {
+            "avg": {
+                "field": "price"
+            }
+        }
     }
-  }
 }
 
 ```
@@ -429,7 +457,7 @@ Supported field types are u64, i64, and f64.
   "hits": [],
   "elapsed_time_micros": 101942,
   "errors": [],
-  "aggregations": {
+  "aggs": {
     "average_in_range": {
       "value": 1462014948.102553
     }
@@ -447,15 +475,15 @@ Supported field types are u64, i64, and f64.
 **Request**
 ```json
 {
-  "query": "*",
-  "max_hits": 0,
-  "aggregations": {
-    "timestamp_stats": {
-      "avg": {
-        "field": "timestamp"
-      }
+    "query": "*",
+    "max_hits": 0,
+    "aggs": {
+        "timestamp_stats": {
+            "stats": {
+                "field": "timestamp"
+            }
+        }
     }
-  }
 }
 
 ```
@@ -469,7 +497,7 @@ Supported field types are u64, i64, and f64.
   "hits": [],
   "elapsed_time_micros": 65297,
   "errors": [],
-  "aggregations": {
+  "aggs": {
     "timestamp_stats": {
       "avg": 1462320207.9803998,
       "count": 10000783,
