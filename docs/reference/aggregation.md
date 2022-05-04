@@ -353,7 +353,7 @@ Defaults to true when ordering by count desc.
 
 ###### **min_doc_count**
 
-Filter all terms than are lower min_doc_count. Defaults to 1.
+Filter all terms that are lower than `min_doc_count`. Defaults to 1.
 
 _Expensive_ : When set to 0, this will return all terms in the field.
 
