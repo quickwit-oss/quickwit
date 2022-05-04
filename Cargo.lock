@@ -2223,6 +2223,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "path-slash"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3cacbb3c4ff353b534a67fb8d7524d00229da4cb1dc8c79f4db96e375ab5b619"
+
+[[package]]
 name = "peeking_take_while"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2667,9 +2673,12 @@ dependencies = [
  "futures",
  "home",
  "once_cell",
+ "path-slash",
  "prometheus",
  "rand",
  "regex",
+ "serde",
+ "serde_json",
  "tempfile",
  "tokio",
  "tracing",
@@ -2979,6 +2988,7 @@ dependencies = [
  "md5",
  "mockall",
  "once_cell",
+ "path-slash",
  "quickwit-common",
  "quickwit-config",
  "rand",

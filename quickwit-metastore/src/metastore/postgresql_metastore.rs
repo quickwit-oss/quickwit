@@ -33,6 +33,7 @@ use diesel::{
     debug_query, sql_query, BoolExpressionMethods, BoxableExpression, Connection,
     ExpressionMethods, IntoSql, PgConnection, QueryDsl, RunQueryDsl, Table,
 };
+use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use tokio::sync::Mutex;
@@ -865,18 +866,18 @@ impl PostgresqlMetastoreFactory {
 
 #[async_trait]
 impl MetastoreFactory for PostgresqlMetastoreFactory {
-    async fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
-        if let Some(metastore) = self.get_from_cache(uri).await {
+    async fn resolve(&self, uri: Uri) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+        if let Some(metastore) = self.get_from_cache(uri.to_str()).await {
             debug!("using metastore from cache");
             return Ok(metastore);
         }
         debug!("metastore not found in cache");
 
-        let metastore = PostgresqlMetastore::new(uri)
+        let metastore = PostgresqlMetastore::new(uri.to_str())
             .await
             .map_err(MetastoreResolverError::FailedToOpenMetastore)?;
         let metastore = self
-            .cache_metastore(uri.to_string(), Arc::new(metastore))
+            .cache_metastore(uri.into_string(), Arc::new(metastore))
             .await;
 
         Ok(metastore)

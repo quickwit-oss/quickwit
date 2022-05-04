@@ -29,6 +29,7 @@ use async_trait::async_trait;
 use ec2_instance_metadata::{InstanceMetadata, InstanceMetadataClient};
 use futures::{stream, StreamExt};
 use once_cell::sync::OnceCell;
+use quickwit_common::uri::path_buf_to_slash_string;
 use quickwit_common::{chunk_range, into_u64_range};
 use regex::Regex;
 use rusoto_core::credential::{AutoRefreshingProvider, ChainProvider};
@@ -288,7 +289,7 @@ impl S3CompatibleObjectStorage {
 
     fn key(&self, relative_path: &Path) -> String {
         let key_path = self.prefix.join(relative_path);
-        key_path.to_string_lossy().to_string()
+        path_buf_to_slash_string(key_path)
     }
 
     async fn put_single_part_single_try<'a>(

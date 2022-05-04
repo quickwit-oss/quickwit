@@ -490,7 +490,7 @@ async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
     let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&test_env.metastore_uri)
+        .resolve(Uri::new(&test_env.metastore_uri))
         .await?;
 
     let refresh_metastore = |metastore| {
@@ -500,7 +500,7 @@ async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
         //
         // We do that by dropping and recreating our metastore.
         drop(metastore);
-        quickwit_metastore_uri_resolver().resolve(&test_env.metastore_uri)
+        quickwit_metastore_uri_resolver().resolve(Uri::new(&test_env.metastore_uri))
     };
 
     let splits = metastore.list_all_splits(&test_env.index_id).await?;

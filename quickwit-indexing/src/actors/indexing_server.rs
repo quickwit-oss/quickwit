@@ -434,7 +434,7 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::{ObservationType, Universe};
-    use quickwit_common::rand::append_random_suffix;
+    use quickwit_common::{rand::append_random_suffix, uri::Uri};
     use quickwit_config::VecSourceParams;
     use quickwit_metastore::quickwit_metastore_uri_resolver;
 
@@ -450,7 +450,7 @@ mod tests {
         let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
 
         let metastore = quickwit_metastore_uri_resolver()
-            .resolve(METASTORE_URI)
+            .resolve(Uri::new(METASTORE_URI))
             .await
             .unwrap();
         metastore.create_index(index_metadata).await.unwrap();

@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use quickwit_common::uri::path_buf_to_slash;
 use quickwit_storage::{Storage, StorageError, StorageErrorKind};
 use serde::{Deserialize, Serialize};
 
@@ -55,7 +56,9 @@ impl From<&IndexState> for IndexStateValue {
 
 /// Path to the metadata file from the given index ID.
 pub(crate) fn meta_path(index_id: &str) -> PathBuf {
-    Path::new(index_id).join(META_FILENAME)
+    path_buf_to_slash(Path::new(index_id).join(META_FILENAME))
+    // Uri::try_new(index_id).unwrap().join(META_FILENAME).filepath
+    //PathBuf::from(format!("{}/{}", index_id, META_FILENAME))
 }
 
 fn convert_error(index_id: &str, storage_err: StorageError) -> MetastoreError {

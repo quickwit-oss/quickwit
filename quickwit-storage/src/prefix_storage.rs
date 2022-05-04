@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use quickwit_common::uri::path_buf_to_slash;
 
 use crate::{OwnedBytes, Storage};
 
@@ -30,6 +31,14 @@ use crate::{OwnedBytes, Storage};
 struct PrefixStorage {
     pub storage: Arc<dyn Storage>,
     pub prefix: PathBuf,
+}
+
+impl  PrefixStorage {
+
+    fn full_path(&self, path: &Path) -> PathBuf {
+        path_buf_to_slash(self.prefix.join(path))
+    }
+    
 }
 
 #[async_trait]
@@ -43,12 +52,12 @@ impl Storage for PrefixStorage {
         path: &Path,
         payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
-        self.storage.put(&self.prefix.join(path), payload).await
+        self.storage.put(&self.full_path(path), payload).await
     }
 
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> crate::StorageResult<()> {
         self.storage
-            .copy_to_file(&self.prefix.join(path), output_path)
+            .copy_to_file(&self.full_path(path), output_path)
             .await
     }
 
@@ -57,19 +66,19 @@ impl Storage for PrefixStorage {
         path: &Path,
         range: Range<usize>,
     ) -> crate::StorageResult<OwnedBytes> {
-        self.storage.get_slice(&self.prefix.join(path), range).await
+        self.storage.get_slice(&self.full_path(path), range).await
     }
 
     async fn get_all(&self, path: &Path) -> crate::StorageResult<OwnedBytes> {
-        self.storage.get_all(&self.prefix.join(path)).await
+        self.storage.get_all(&self.full_path(path)).await
     }
 
     async fn delete(&self, path: &Path) -> crate::StorageResult<()> {
-        self.storage.delete(&self.prefix.join(path)).await
+        self.storage.delete(&self.full_path(path)).await
     }
 
     async fn exists(&self, path: &Path) -> crate::StorageResult<bool> {
-        self.storage.exists(&self.prefix.join(path)).await
+        self.storage.exists(&self.full_path(path)).await
     }
 
     fn uri(&self) -> String {
@@ -80,7 +89,7 @@ impl Storage for PrefixStorage {
     }
 
     async fn file_num_bytes(&self, path: &Path) -> crate::StorageResult<u64> {
-        self.storage.file_num_bytes(&self.prefix.join(path)).await
+        self.storage.file_num_bytes(&self.full_path(path)).await
     }
 }
 

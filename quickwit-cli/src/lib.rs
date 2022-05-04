@@ -89,7 +89,7 @@ pub async fn run_index_checklist(
 ) -> anyhow::Result<()> {
     let mut checks: Vec<(&str, anyhow::Result<()>)> = Vec::new();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-    let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
+    let metastore = metastore_uri_resolver.resolve(Uri::new(metastore_uri)).await?;
     checks.push(("metastore", metastore.check_connectivity().await));
 
     let index_metadata = metastore.index_metadata(index_id).await?;

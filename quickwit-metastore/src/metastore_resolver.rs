@@ -22,6 +22,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use once_cell::sync::OnceCell;
+use quickwit_common::uri::Uri;
 
 use crate::metastore::file_backed_metastore::FileBackedMetastoreFactory;
 #[cfg(feature = "postgres")]
@@ -33,7 +34,7 @@ use crate::{Metastore, MetastoreResolverError};
 #[async_trait]
 pub trait MetastoreFactory: Send + Sync + 'static {
     /// Given an URI, returns a [`Metastore`] object.
-    async fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError>;
+    async fn resolve(&self, uri: Uri) -> Result<Arc<dyn Metastore>, MetastoreResolverError>;
 }
 
 #[derive(Default)]
@@ -112,7 +113,7 @@ pub struct UnsuportedMetastore {
 
 #[async_trait]
 impl MetastoreFactory for UnsuportedMetastore {
-    async fn resolve(&self, _uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+    async fn resolve(&self, _uri: Uri) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
         Err(MetastoreResolverError::ProtocolUnsupported(
             self.message.to_string(),
         ))
@@ -126,14 +127,8 @@ impl MetastoreUriResolver {
     }
 
     /// Resolves the given URI.
-    pub async fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
-        let protocol = uri.split("://").next().ok_or_else(|| {
-            MetastoreResolverError::InvalidUri(format!(
-                "Protocol not found in metastore URI: {}",
-                uri
-            ))
-        })?;
-
+    pub async fn resolve(&self, uri: Uri) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+        let protocol = uri.protocol();
         let resolver = self
             .per_protocol_resolver
             .get(protocol)
@@ -146,12 +141,14 @@ impl MetastoreUriResolver {
 
 #[cfg(test)]
 mod tests {
+    use quickwit_common::uri::Uri;
+
     use crate::quickwit_metastore_uri_resolver;
 
     #[tokio::test]
     async fn test_metastore_resolver_should_not_raise_errors_on_file() -> anyhow::Result<()> {
         let metastore_resolver = quickwit_metastore_uri_resolver();
-        metastore_resolver.resolve("file://").await?;
+        metastore_resolver.resolve(Uri::new("file://")).await?;
         Ok(())
     }
 
@@ -160,7 +157,7 @@ mod tests {
     async fn test_metastore_resolver_should_raise_error_on_storage_error() {
         let metastore_resolver = quickwit_metastore_uri_resolver();
         metastore_resolver
-            .resolve("s4://bucket/path/to/object")
+            .resolve(Uri::new("s4://bucket/path/to/object"))
             .await
             .unwrap();
     }
@@ -178,7 +175,7 @@ mod tests {
         let (_uri_protocol, uri_path) = test_database_url.split_once("://").unwrap();
         for protocol in &["postgres", "postgresql"] {
             let postgres_uri = format!("{}://{}", protocol, uri_path);
-            metastore_resolver.resolve(&postgres_uri).await.unwrap();
+            metastore_resolver.resolve(Uri::new(&postgres_uri)).await.unwrap();
         }
     }
 }

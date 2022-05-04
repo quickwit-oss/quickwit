@@ -35,6 +35,7 @@ pub use index::{clear_cache_directory, get_cache_directory_path, IndexService, I
 mod tests {
     use std::path::Path;
 
+    use quickwit_common::uri::Uri;
     use quickwit_config::{IndexConfig, IndexingSettings, SearchSettings};
     use quickwit_indexing::{FileEntry, TestSandbox};
     use quickwit_metastore::quickwit_metastore_uri_resolver;
@@ -108,7 +109,7 @@ mod tests {
             sources: Vec::new(),
         };
         let metastore = quickwit_metastore_uri_resolver()
-            .resolve(METASTORE_URI)
+            .resolve(Uri::new(METASTORE_URI))
             .await?;
         let storage_resolver = StorageUriResolver::for_test();
         let index_service = IndexService::new(

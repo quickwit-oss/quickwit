@@ -39,6 +39,7 @@ use anyhow::bail;
 use format::Format;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::ClusterService;
+use quickwit_common::uri::Uri;
 use quickwit_config::QuickwitConfig;
 use quickwit_core::IndexService;
 use quickwit_indexing::actors::IndexingServer;
@@ -101,7 +102,7 @@ pub async fn serve_quickwit(
     services: &HashSet<QuickwitService>,
 ) -> anyhow::Result<()> {
     let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&config.metastore_uri())
+        .resolve(Uri::new(&config.metastore_uri()))
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
 

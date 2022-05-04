@@ -209,7 +209,7 @@ impl SourceCliCommand {
 async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
     let qw_config = load_quickwit_config(&args.config_uri, None).await?;
     let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&qw_config.metastore_uri())
+        .resolve(Uri::new(&qw_config.metastore_uri()))
         .await?;
     let source_config_content = load_file(&args.source_config_uri).await?;
     let source =
@@ -228,7 +228,7 @@ async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
 async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
     let config = load_quickwit_config(&args.config_uri, None).await?;
     let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&config.metastore_uri())
+        .resolve(Uri::new(&config.metastore_uri()))
         .await?;
     metastore
         .delete_source(&args.index_id, &args.source_id)
@@ -373,7 +373,7 @@ fn flatten_json(value: Value) -> Vec<(String, Value)> {
 
 async fn resolve_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<IndexMetadata> {
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-    let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
+    let metastore = metastore_uri_resolver.resolve(Uri::new(metastore_uri)).await?;
     let index_metadata = metastore.index_metadata(index_id).await?;
     Ok(index_metadata)
 }

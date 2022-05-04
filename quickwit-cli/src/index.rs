@@ -528,7 +528,7 @@ pub async fn list_index_cli(args: ListIndexesArgs) -> anyhow::Result<()> {
     } else {
         quickwit_config.metastore_uri()
     };
-    let metastore = metastore_uri_resolver.resolve(&metastore_uri).await?;
+    let metastore = metastore_uri_resolver.resolve(Uri::new(&metastore_uri)).await?;
     let res = metastore.list_indexes_metadatas().await?;
     let index_table = make_list_indexes_table(res);
 
@@ -563,7 +563,7 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri())
+        .resolve(Uri::new(&quickwit_config.metastore_uri()))
         .await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let splits = metastore
@@ -788,7 +788,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     let index_id = index_config.index_id.clone();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri())
+        .resolve(Uri::new(&quickwit_config.metastore_uri()))
         .await?;
     let index_service = IndexService::new(
         metastore,
@@ -823,7 +823,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     run_index_checklist(&config.metastore_uri(), &args.index_id, Some(&source)).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&config.metastore_uri())
+        .resolve(Uri::new(&config.metastore_uri()))
         .await?;
 
     if args.overwrite {
@@ -896,7 +896,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri())
+        .resolve(Uri::new(&quickwit_config.metastore_uri()))
         .await?;
     let search_request = SearchRequest {
         index_id: args.index_id,
@@ -936,7 +936,7 @@ pub async fn merge_or_demux_cli(
     };
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&config.metastore_uri())
+        .resolve(Uri::new(&config.metastore_uri()))
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
     let indexing_server = IndexingServer::new(
@@ -971,7 +971,7 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
 
     let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&quickwit_config.metastore_uri())
+        .resolve(Uri::new(&quickwit_config.metastore_uri()))
         .await?;
     let index_service = IndexService::new(
         metastore,
@@ -1005,7 +1005,7 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
 
     let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&quickwit_config.metastore_uri())
+        .resolve(Uri::new(&quickwit_config.metastore_uri()))
         .await?;
     let index_service = IndexService::new(
         metastore,

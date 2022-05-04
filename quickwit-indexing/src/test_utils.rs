@@ -21,6 +21,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use quickwit_actors::{Mailbox, Universe};
+use quickwit_common::uri::Uri;
 use quickwit_config::{
     build_doc_mapper, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
 };
@@ -80,7 +81,7 @@ impl TestSandbox {
         let temp_dir = tempfile::tempdir()?;
         let indexer_config = IndexerConfig::for_test()?;
         let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-        let metastore = metastore_uri_resolver.resolve(METASTORE_URI).await?;
+        let metastore = metastore_uri_resolver.resolve(Uri::new(METASTORE_URI)).await?;
         metastore.create_index(index_meta.clone()).await?;
         let storage_resolver = StorageUriResolver::for_test();
         let storage = storage_resolver.resolve(&index_uri)?;
