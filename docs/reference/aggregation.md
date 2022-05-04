@@ -281,7 +281,7 @@ The field to aggregate on.
 
 ###### **ranges**
 
-The list of buckets, with from and to values. 
+The list of buckets, with `from` and `to` values. 
 The from value is inclusive in the range.
 The to value is not inclusive in the range.
 
