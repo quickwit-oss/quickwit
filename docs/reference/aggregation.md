@@ -114,7 +114,7 @@ There are different bucket aggregators, each with a different “bucketing” st
 Some define a single bucket, some define fixed number of multiple buckets, and others dynamically create the buckets during the aggregation process.
 
 Example request, histogram with stats in each bucket:
-```json
+```json skip
 {
     "query": "*",
     "max_hits": 0,
