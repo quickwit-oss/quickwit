@@ -35,15 +35,15 @@ pub fn build_cli<'a>() -> Command<'a> {
                 .help("Config file location")
                 .env("QW_CONFIG")
                 .default_value(DEFAULT_QW_CONFIG_PATH)
-                .global(true)
-                .required(false),
+                .global(true),
         )
         .subcommand(build_run_command().display_order(1))
         .subcommand(build_index_command().display_order(2))
         .subcommand(build_source_command().display_order(3))
         .subcommand(build_split_command().display_order(4))
-        .disable_help_subcommand(true)
         .arg_required_else_help(true)
+        .disable_help_subcommand(true)
+        .subcommand_required(true)
 }
 
 #[derive(Debug, PartialEq)]
