@@ -22,9 +22,9 @@ An indexer buffers incoming documents and produces a new split when the size of 
 
 The merge policy controls the merge algorithm, which is mainly driven by the two parameters `split_num_docs_target` and `merge_factor`. Each time a new split is published, the merge policy examines the list of immature splits and attempts to merge `merge_factor` splits together in order to produce larger splits. The merge policy may also decide to merge fewer or more splits together if deemed necessary. Finally, the merge algorithm never merges more than `max_merge_factor` splits together.
 
-## Split store
+### Split store
 
-The split store keeps recently published and immature splits on disk to speed up the merge process. After a successful merge phase, the split store evicts dangling splits.
+The split store is a cache that keeps recently published and immature splits on disk to speed up the merge process. After a successful merge phase, the split store evicts dangling splits.
 
 The disk space allocated to the split store is controlled by the config parameters `split_store_max_num_splits` and `split_store_max_num_bytes`.
 
