@@ -407,11 +407,9 @@ Order by sub_aggregation
             "terms":{ "field": "article_name" },
             "order":{ "average_price": "asc" },
             "aggs": {
-              "average_price": {
-                "avg": {
-                  "field": "price"
+                "average_price": {
+                    "avg": { "field": "price" }
                 }
-              }
             }
         }
     }
@@ -458,8 +456,8 @@ Supported field types are u64, i64, and f64.
   "elapsed_time_micros": 101942,
   "errors": [],
   "aggs": {
-    "average_in_range": {
-      "value": 1462014948.102553
+    "average_price": {
+      "value": 133.7
     }
   }
 }
