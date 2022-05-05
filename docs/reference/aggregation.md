@@ -39,7 +39,7 @@ In some examples below is not the full request shown, but only the payload for `
 #### Example
 
 Request
-```json
+```json skip
 {
     "query": "*",
     "max_hits": 0,
@@ -48,7 +48,7 @@ Request
             "terms": {
                 "field": "County",
                 "size": 2,
-                "order": {"average_aqi": "asc"}
+                "order": { "average_aqi": "asc" }
             },
             "aggs": {
                 "average_aqi": {
@@ -265,7 +265,7 @@ Provide user-defined buckets to aggregate on. Two special buckets will automatic
 The provided buckets have to be continous. During the aggregation, the values extracted from the fast_field field will be checked against each bucket range.
 Note that this aggregation includes the from value and excludes the to value for each range.
 
-```json
+```json skip
 {
     "query": "*",
     "max_hits": 0,
@@ -310,13 +310,13 @@ Note that this aggregation includes the `from` value and excludes the `to` value
 
 Creates a bucket for every unique term.
 
-```json
+```json skip
 {
     "query": "*",
     "max_hits": 0,
     "aggs": {
         "genres": {
-            "terms":{ "field": "genre" }
+            "terms": { "field": "genre" }
         }
     }
 }
@@ -382,14 +382,16 @@ Single value metrics like average can be adressed by its name. Multi value metri
 
 
 Order alphabetically
-```json
+```json skip
 {
     "query": "*",
     "max_hits": 0,
     "aggs": {
         "genres": {
-            "terms":{ "field": "genre" },
-            "order":{ "_key": "asc" }
+            "terms": {
+                "field": "genre",
+                "order": { "_key": "asc" }
+            }
         }
     }
 }
@@ -398,14 +400,16 @@ Order alphabetically
 
 Order by sub_aggregation
 
-```json
+```json skip
 {
     "query": "*",
     "max_hits": 0,
     "aggs": {
         "articles_by_price": {
-            "terms":{ "field": "article_name" },
-            "order":{ "average_price": "asc" },
+            "terms": {
+                "field": "article_name",
+                "order": { "average_price": "asc" }
+            },
             "aggs": {
                 "average_price": {
                     "avg": { "field": "price" }
@@ -433,36 +437,31 @@ Supported field types are u64, i64, and f64.
 
 
 **Request**
-```json
+```json skip
 {
     "query": "*",
     "max_hits": 0,
     "aggs": {
         "average_price": {
-            "avg": {
-                "field": "price"
-            }
+            "avg": { "field": "price" }
         }
     }
 }
-
 ```
 
 **Response**
 ```json
 {
-  "num_hits": 9582098,
-  "hits": [],
-  "elapsed_time_micros": 101942,
-  "errors": [],
-  "aggs": {
-    "average_price": {
-      "value": 133.7
+    "num_hits": 9582098,
+    "hits": [],
+    "elapsed_time_micros": 101942,
+    "errors": [],
+    "aggs": {
+        "average_price": {
+            "value": 133.7
+        }
     }
-  }
 }
-
-
 ```
 
 ### Stats
@@ -471,19 +470,16 @@ A multi-value metric aggregation that computes stats (average, count, min, max, 
 Supported field types are u64, i64, and f64. 
 
 **Request**
-```json
+```json skip
 {
     "query": "*",
     "max_hits": 0,
     "aggs": {
         "timestamp_stats": {
-            "stats": {
-                "field": "timestamp"
-            }
+            "stats": { "field": "timestamp" }
         }
     }
 }
-
 ```
 
 
@@ -491,20 +487,20 @@ Supported field types are u64, i64, and f64.
 **Response**
 ```json
 {
-  "num_hits": 10000783,
-  "hits": [],
-  "elapsed_time_micros": 65297,
-  "errors": [],
-  "aggs": {
-    "timestamp_stats": {
-      "avg": 1462320207.9803998,
-      "count": 10000783,
-      "max": 1475669670.0,
-      "min": 1440670432.0,
-      "standard_deviation": 11867304.28681695,
-      "sum": 1.4624347076526848e16
+    "num_hits": 10000783,
+    "hits": [],
+    "elapsed_time_micros": 65297,
+    "errors": [],
+    "aggs": {
+        "timestamp_stats": {
+            "avg": 1462320207.9803998,
+            "count": 10000783,
+            "max": 1475669670.0,
+            "min": 1440670432.0,
+            "standard_deviation": 11867304.28681695,
+            "sum": 1.4624347076526848e16
+        }
     }
-  }
 }
 ```
 
