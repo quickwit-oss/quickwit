@@ -134,7 +134,7 @@ jobs:
       - run: echo "ASSET_VERSION=nightly" >> $GITHUB_ENV
       - run: echo "NIGHTLY_DATE=$(date '+%Y-%m-%d')" >> $GITHUB_ENV
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@v2
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
       - name: Login to DockerHub
