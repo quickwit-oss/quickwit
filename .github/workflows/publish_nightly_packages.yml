@@ -163,7 +163,7 @@ jobs:
           name: quickwit-${{ env.ASSET_VERSION }}-aarch64-unknown-linux-musl.tar.gz
           path: ./docker
       - name: Build and push
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v3
         with:
           context: ./docker/
           platforms: linux/amd64,linux/arm64
