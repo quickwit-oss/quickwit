@@ -83,9 +83,13 @@ impl Storage for PrefixStorage {
 
     fn uri(&self) -> String {
         Path::new(&self.storage.uri())
-            .join(&self.prefix)
+            .join(self.prefix.as_path())
             .to_string_lossy()
             .to_string()
+        // Uri::new(&self.storage.uri())
+        //     .join(&self.prefix.to_string_lossy())
+        //     .unwrap()
+        //     .into_string()
     }
 
     async fn file_num_bytes(&self, path: &Path) -> crate::StorageResult<u64> {

@@ -34,6 +34,8 @@ const S3_PROTOCOL: &str = "s3";
 
 const PROTOCOL_SEPARATOR: &str = "://";
 
+const PATH_SEPARATOR: &str = "/";
+
 #[derive(Debug, PartialEq)]
 pub enum Extension {
     Json,
@@ -228,14 +230,34 @@ impl From<Uri> for PathBuf {
     }
 }
 
-use path_slash::PathBufExt;
+// use path_slash::PathBufExt;
+use relative_path::RelativePath;
+use unix_path::PathBuf as UnixPathBuf;
+use unix_path::Path as UnixPath;
 
 pub fn path_buf_to_slash_string(path: PathBuf) -> String {
-    path.to_slash_lossy()
+    let mut path_buf = UnixPathBuf::new();
+    for c in path.components() {
+        let v = c.as_os_str().to_string_lossy().to_string();
+        println!("{}", v);
+        let v = UnixPath::new(&v);
+        path_buf.push(v)
+    }
+    path_buf.as_path().to_string_lossy().to_string()
+    // let mut path_str = path.to_string_lossy().to_string();
+    // if std::path::MAIN_SEPARATOR.to_string() != PATH_SEPARATOR {
+    //     path_str = path_str.replace(std::path::MAIN_SEPARATOR, PATH_SEPARATOR);
+    // }
+    // path_str
+    //path.to_slash_lossy()
+    // RelativePath::from_path(path.as_path())
+    //     .unwrap()
+    //     .as_str()
+    //     .to_string()
 }
 
 pub fn path_buf_to_slash(path: PathBuf) -> PathBuf {
-    PathBuf::from(path.to_slash_lossy())
+    PathBuf::from(path_buf_to_slash_string(path))
 }
 
 // fn cross_platform_path_join(mut path: String) -> String {
@@ -411,5 +433,19 @@ mod tests {
             serde_json::to_value(&uri).unwrap(),
             serde_json::Value::String("s3://bucket/key".to_string())
         );
+    }
+
+    #[test]
+    //#[cfg(target_os = "windows")]
+    fn test_pathbuf_slash() {
+        assert_eq!(
+            path_buf_to_slash_string(PathBuf::from("foo\\bar\\baz")),
+            "foo/bar/baz",
+        );
+        
+        // assert_eq!(
+        //     path_buf_to_slash(PathBuf::from("foo\\bar\\baz")),
+        //     PathBuf::from("foo/bar/baz"),
+        // )
     }
 }
