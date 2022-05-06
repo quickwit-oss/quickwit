@@ -14,9 +14,10 @@ on:
 
 
 env:
-  RUSTFLAGS: -Dwarnings
   CARGO_INCREMENTAL: 0
   RUST_BACKTRACE: 1
+  RUSTFLAGS: -Dwarnings
+  RUSTDOCFLAGS: -Dwarnings -Arustdoc::private_intra_doc_links
 
 jobs:
   ci-passes:
