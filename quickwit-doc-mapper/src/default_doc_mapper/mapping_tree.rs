@@ -21,6 +21,7 @@ use std::any::type_name;
 use std::collections::BTreeMap;
 
 use anyhow::bail;
+use itertools::Itertools;
 use serde_json::Value as JsonValue;
 use tantivy::schema::{
     BytesOptions, Cardinality, Field, JsonObjectOptions, NumericOptions, SchemaBuilder,
@@ -520,12 +521,36 @@ fn get_bytes_options(quickwit_numeric_options: &QuickwitNumericOptions) -> Bytes
     bytes_options
 }
 
+/// Creates a tantivy field name for a given field path.
+///
+/// By field path, we mean the list of `field_name` that are crossed
+/// to reach the field starting from the root of the document.
+/// There can be more than one due to quickwit object type.
+///
+/// We simply concatenate these field names, interleaving them with '.'.
+/// If a fieldname itself contains a '.', we escape it with '\'.
+/// ('\' itself is forbidden).
+fn field_name_for_field_path(field_path: &[&str]) -> String {
+    field_path.iter().cloned().map(escape_dots).join(".")
+}
+
+fn escape_dots(field_name: &str) -> String {
+    let mut escaped_field_name = String::new();
+    for chr in field_name.chars() {
+        if chr == '.' {
+            escaped_field_name.push('\\');
+        }
+        escaped_field_name.push(chr);
+    }
+    escaped_field_name
+}
+
 fn build_mapping_from_field_type<'a>(
     field_mapping_type: &'a FieldMappingType,
     field_path: &mut Vec<&'a str>,
     schema_builder: &mut SchemaBuilder,
 ) -> anyhow::Result<MappingTree> {
-    let field_name = field_path.join(".");
+    let field_name = field_name_for_field_path(field_path);
     match field_mapping_type {
         FieldMappingType::Text(options, cardinality) => {
             let text_options: TextOptions = options.clone().into();
@@ -618,6 +643,29 @@ mod tests {
     use crate::default_doc_mapper::field_mapping_entry::{
         QuickwitNumericOptions, QuickwitTextOptions,
     };
+
+    #[test]
+    fn test_field_name_from_field_path() {
+        // not really a possibility, but still, let's test it.
+        assert_eq!(super::field_name_for_field_path(&[]), "");
+        assert_eq!(super::field_name_for_field_path(&["hello"]), "hello");
+        assert_eq!(
+            super::field_name_for_field_path(&["one", "two", "three"]),
+            "one.two.three"
+        );
+        assert_eq!(
+            super::field_name_for_field_path(&["one", "two", "three"]),
+            "one.two.three"
+        );
+        assert_eq!(
+            super::field_name_for_field_path(&["one.two"]),
+            r#"one\.two"#
+        );
+        assert_eq!(
+            super::field_name_for_field_path(&["one.two", "three"]),
+            r#"one\.two.three"#
+        );
+    }
 
     #[test]
     fn test_get_or_insert_path() {

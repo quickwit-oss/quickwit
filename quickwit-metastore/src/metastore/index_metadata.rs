@@ -131,8 +131,8 @@ impl IndexMetadata {
         let search_settings = SearchSettings {
             default_search_fields: vec![
                 "body".to_string(),
-                "attributes.server".to_string(),
-                "attributes.server.status".to_string(),
+                r#"attributes.server"#.to_string(),
+                r#"attributes.server\.status"#.to_string(),
             ],
         };
         let now_timestamp = utc_now_timestamp();
