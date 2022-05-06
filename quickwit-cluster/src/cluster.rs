@@ -98,13 +98,13 @@ impl From<Member> for NodeId {
     }
 }
 
-/// This is an implementation of a cluster using Scuttlebutt.
+/// This is an implementation of a cluster using Chitchat.
 pub struct Cluster {
     pub node_id: String,
     /// A socket address that represents itself.
     pub listen_addr: SocketAddr,
 
-    /// The actual cluster that implement Scuttlebutt.
+    /// The actual cluster that implement Chitchat.
     chitchat_server: ChitchatServer,
 
     /// A receiver(channel) for exchanging members in a cluster.
@@ -207,7 +207,9 @@ impl Cluster {
         self.members.borrow().clone()
     }
 
-    /// Return the grpc addresses corresponding to the list of members.
+    /// Return the grpc addresses corresponding to the list of members
+    /// providing the specified service.
+    /// It returns all members grpc address when service is not specified.
     pub async fn members_grpc_addresses_by_service(
         &self,
         members: &[Member],
