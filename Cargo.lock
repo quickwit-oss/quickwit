@@ -2606,6 +2606,7 @@ dependencies = [
  "opentelemetry-jaeger",
  "predicates",
  "quickwit-actors",
+ "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
  "quickwit-core",

@@ -21,8 +21,10 @@ mod cluster;
 mod error;
 mod service;
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
+use anyhow::bail;
 use chitchat::FailureDetectorConfig;
 use quickwit_config::QuickwitConfig;
 
@@ -39,8 +41,38 @@ fn unix_timestamp() -> u64 {
     duration_since_epoch.as_secs()
 }
 
+#[derive(Debug, PartialEq, Eq, Copy, Hash, Clone)]
+pub enum QuickwitService {
+    Indexer,
+    Searcher,
+}
+
+impl ToString for QuickwitService {
+    fn to_string(&self) -> String {
+        match &self {
+            QuickwitService::Indexer => "indexer".to_string(),
+            QuickwitService::Searcher => "searcher".to_string(),
+        }
+    }
+}
+
+impl TryFrom<&str> for QuickwitService {
+    type Error = anyhow::Error;
+
+    fn try_from(service_str: &str) -> Result<Self, Self::Error> {
+        match service_str {
+            "indexer" => Ok(QuickwitService::Indexer),
+            "searcher" => Ok(QuickwitService::Searcher),
+            _ => {
+                bail!("Service `{service_str}` unknown");
+            }
+        }
+    }
+}
+
 pub async fn start_cluster_service(
     quickwit_config: &QuickwitConfig,
+    services: &HashSet<QuickwitService>,
 ) -> anyhow::Result<Arc<Cluster>> {
     let seed_nodes = quickwit_config
         .seed_socket_addrs()?
@@ -56,6 +88,7 @@ pub async fn start_cluster_service(
 
     let cluster = Arc::new(Cluster::new(
         member,
+        services,
         quickwit_config.gossip_socket_addr()?,
         quickwit_config.cluster_id.clone(),
         quickwit_config.grpc_socket_addr()?,

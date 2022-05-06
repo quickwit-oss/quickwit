@@ -25,7 +25,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 
 use http::Uri;
-use quickwit_cluster::Cluster;
+use quickwit_cluster::{Cluster, QuickwitService};
 use quickwit_proto::tonic;
 use tokio_stream::StreamExt;
 use tonic::transport::Endpoint;
@@ -163,7 +163,9 @@ impl SearchClientPool {
     /// will be started at the same time.
     pub async fn create_and_keep_updated(cluster: Arc<Cluster>) -> anyhow::Result<Self> {
         let search_client_pool = SearchClientPool::default();
-        let members_grpc_addresses = cluster.members_grpc_addresses(&cluster.members()).await?;
+        let members_grpc_addresses = cluster
+            .members_grpc_addresses_by_service(&cluster.members(), Some(QuickwitService::Searcher))
+            .await?;
         search_client_pool
             .update_members(&members_grpc_addresses)
             .await;
@@ -175,7 +177,9 @@ impl SearchClientPool {
         // Start to monitor the cluster members.
         tokio::spawn(async move {
             while let Some(members) = members_watch_channel.next().await {
-                let members_grpc_addresses = cluster.members_grpc_addresses(&members).await?;
+                let members_grpc_addresses = cluster
+                    .members_grpc_addresses_by_service(&members, Some(QuickwitService::Searcher))
+                    .await?;
                 search_clients_pool_clone
                     .update_members(&members_grpc_addresses)
                     .await;
