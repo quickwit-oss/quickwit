@@ -27,11 +27,16 @@ use json_comments::StripComments;
 use once_cell::sync::OnceCell;
 use quickwit_common::net::{get_socket_addr, parse_socket_addr_with_default_port};
 use quickwit_common::new_coolid;
-use quickwit_common::uri::{Extension, Uri};
-use serde::{Deserialize, Serialize};
+use quickwit_common::uri::{Extension, Uri, FILE_PROTOCOL};
+use serde::de::Error;
+use serde::{Deserialize, Deserializer, Serialize};
 use tracing::{info, warn};
 
-static DEFAULT_DATA_DIR_PATH: &str = "./qwdata";
+pub const DEFAULT_QW_CONFIG_PATH: &str = "./config/quickwit.yaml";
+
+const DEFAULT_DATA_DIR_PATH: &str = "./qwdata";
+
+const DEFAULT_CLUSTER_ID: &str = "quickwit-default-cluster";
 
 fn default_data_dir_path() -> PathBuf {
     PathBuf::from(DEFAULT_DATA_DIR_PATH)
@@ -43,15 +48,13 @@ fn default_data_dir_path() -> PathBuf {
 // For a given index `index-id`, it means that we have the metastore file
 // in  `./qwdata/indexes/{index-id}/metastore.json` and splits in
 // dir `./qwdata/indexes/{index-id}/splits`.
-fn default_metastore_and_index_root_uri(data_dir_path: &Path) -> String {
+fn default_metastore_and_index_root_uri(data_dir_path: &Path) -> Uri {
     Uri::try_new(&data_dir_path.join("indexes").to_string_lossy())
-        .expect("Default data dir `./qwdata` value is invalid.")
-        .as_ref()
-        .to_string()
+        .expect("Failed to create default metastore URI. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
 }
 
 fn default_cluster_id() -> String {
-    "quickwit-test-cluster".to_string()
+    DEFAULT_CLUSTER_ID.to_string()
 }
 
 fn default_node_id() -> String {
@@ -170,8 +173,12 @@ pub struct QuickwitConfig {
     pub grpc_listen_port: Option<u16>,
     #[serde(default)]
     pub peer_seeds: Vec<String>,
-    metastore_uri: Option<String>,
-    default_index_root_uri: Option<String>,
+    #[serde(default)]
+    #[serde(deserialize_with = "deser_valid_uri")]
+    metastore_uri: Option<Uri>,
+    #[serde(default)]
+    #[serde(deserialize_with = "deser_valid_uri")]
+    default_index_root_uri: Option<Uri>,
     #[serde(default = "default_data_dir_path")]
     #[serde(rename = "data_dir")]
     pub data_dir_path: PathBuf,
@@ -227,22 +234,32 @@ impl QuickwitConfig {
 
     fn from_json(bytes: &[u8]) -> anyhow::Result<Self> {
         serde_json::from_reader(StripComments::new(bytes))
-            .context("Failed to parse JSON server config file.")
+            .context("Failed to parse JSON config file.")
     }
 
     fn from_toml(bytes: &[u8]) -> anyhow::Result<Self> {
-        toml::from_slice(bytes).context("Failed to parse TOML server config file.")
+        toml::from_slice(bytes).context("Failed to parse TOML config file.")
     }
 
     fn from_yaml(bytes: &[u8]) -> anyhow::Result<Self> {
-        serde_yaml::from_slice(bytes).context("Failed to parse YAML server config file.")
+        serde_yaml::from_slice(bytes).context("Failed to parse YAML config file.")
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
-        if self.peer_seeds.is_empty() {
-            warn!("Seed list is empty.")
+        if self.cluster_id == DEFAULT_CLUSTER_ID {
+            warn!(
+                cluster_id = DEFAULT_CLUSTER_ID,
+                "Cluster ID is not set, falling back to default value."
+            );
         }
+        if self.peer_seeds.is_empty() {
+            warn!("Seed list is empty.");
+        }
+        let data_dir_uri = Uri::try_new(&self.data_dir_path.to_string_lossy())?;
 
+        if data_dir_uri.protocol() != FILE_PROTOCOL {
+            bail!("Data dir must be located on local file system")
+        }
         if !self.data_dir_path.exists() {
             bail!(
                 "Data dir `{}` does not exist.",
@@ -330,17 +347,18 @@ impl QuickwitConfig {
 }
 
 impl QuickwitConfig {
-    pub fn metastore_uri(&self) -> String {
+    pub fn metastore_uri(&self) -> Uri {
         self.metastore_uri
             .as_ref()
-            .unwrap_or(&default_metastore_and_index_root_uri(&self.data_dir_path))
-            .to_string()
+            .cloned()
+            .unwrap_or_else(|| default_metastore_and_index_root_uri(&self.data_dir_path))
     }
-    pub fn default_index_root_uri(&self) -> String {
+
+    pub fn default_index_root_uri(&self) -> Uri {
         self.default_index_root_uri
             .as_ref()
-            .unwrap_or(&default_metastore_and_index_root_uri(&self.data_dir_path))
-            .to_string()
+            .cloned()
+            .unwrap_or_else(|| default_metastore_and_index_root_uri(&self.data_dir_path))
     }
 }
 
@@ -387,10 +405,19 @@ impl std::fmt::Debug for QuickwitConfig {
     }
 }
 
+/// Deserializes and validates a [`Uri`].
+pub(super) fn deser_valid_uri<'de, D>(deserializer: D) -> Result<Option<Uri>, D::Error>
+where D: Deserializer<'de> {
+    let uri_opt: Option<String> = Deserialize::deserialize(deserializer)?;
+    uri_opt
+        .map(|uri| Uri::try_new(&uri))
+        .transpose()
+        .map_err(D::Error::custom)
+}
+
 #[cfg(test)]
 mod tests {
     use std::env;
-    use std::path::PathBuf;
 
     use super::*;
 
@@ -400,10 +427,6 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             config_filename
         )
-    }
-
-    fn set_data_dir_path(config: &mut QuickwitConfig, path: PathBuf) {
-        config.data_dir_path = path;
     }
 
     macro_rules! test_parser {
@@ -486,7 +509,7 @@ mod tests {
         "#;
             let config = serde_yaml::from_str::<QuickwitConfig>(config_yaml).unwrap();
             assert_eq!(config.version, 0);
-            assert_eq!(config.cluster_id, "quickwit-test-cluster");
+            assert_eq!(config.cluster_id, DEFAULT_CLUSTER_ID);
             assert_eq!(config.node_id, "1");
             assert_eq!(
                 config.metastore_uri(),
@@ -544,7 +567,7 @@ mod tests {
         let mut quickwit_config = QuickwitConfig::from_uri(&config_uri, file_content.as_bytes())
             .await
             .unwrap();
-        set_data_dir_path(&mut quickwit_config, env::current_dir().unwrap());
+        quickwit_config.data_dir_path = env::current_dir().unwrap();
         assert!(quickwit_config.validate().is_ok());
     }
 
@@ -649,5 +672,26 @@ mod tests {
             .await
             .unwrap_err();
         assert!(config.to_string().contains("Data dir"));
+    }
+
+    #[test]
+    fn test_config_validates_uris() {
+        {
+            let config_yaml = r#"
+            version: 0
+            node_id: 1
+            metastore_uri: ''
+        "#;
+            serde_yaml::from_str::<QuickwitConfig>(config_yaml).unwrap_err();
+        }
+        {
+            let config_yaml = r#"
+            version: 0
+            node_id: 1
+            metastore_uri: postgres://username:password@host:port/db
+            default_index_root_uri: ''
+        "#;
+            serde_yaml::from_str::<QuickwitConfig>(config_yaml).unwrap_err();
+        }
     }
 }

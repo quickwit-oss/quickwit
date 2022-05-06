@@ -31,6 +31,7 @@ use quickwit_doc_mapper::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::config::deser_valid_uri;
 use crate::source_config::SourceConfig;
 
 // Note(fmassot): `DocMapping` is a struct only used for
@@ -215,7 +216,9 @@ pub struct SearchSettings {
 pub struct IndexConfig {
     pub version: usize,
     pub index_id: String,
-    pub index_uri: Option<String>,
+    #[serde(default)]
+    #[serde(deserialize_with = "deser_valid_uri")]
+    pub index_uri: Option<Uri>,
     pub doc_mapping: DocMapping,
     #[serde(default)]
     pub indexing_settings: IndexingSettings,
@@ -459,8 +462,8 @@ mod tests {
 
             assert_eq!(index_config.index_id, "hdfs-logs");
             assert_eq!(
-                index_config.index_uri,
-                Some("s3://quickwit-indexes/hdfs-logs".to_string())
+                index_config.index_uri.unwrap(),
+                "s3://quickwit-indexes/hdfs-logs"
             );
             assert_eq!(index_config.doc_mapping.field_mappings.len(), 1);
             assert_eq!(index_config.doc_mapping.field_mappings[0].name, "body");
@@ -487,8 +490,8 @@ mod tests {
             assert_eq!(index_config.version, 0);
             assert_eq!(index_config.index_id, "hdfs-logs");
             assert_eq!(
-                index_config.index_uri,
-                Some("s3://quickwit-indexes/hdfs-logs".to_string())
+                index_config.index_uri.unwrap(),
+                "s3://quickwit-indexes/hdfs-logs"
             );
             assert_eq!(index_config.doc_mapping.field_mappings.len(), 2);
             assert_eq!(index_config.doc_mapping.field_mappings[0].name, "body");
@@ -590,5 +593,15 @@ mod tests {
                 .to_string()
                 .contains("Unknown demux field"));
         }
+    }
+
+    #[test]
+    fn test_config_validates_uris() {
+        let config_yaml = r#"
+            version: 0
+            index_id: hdfs-logs
+            index_uri: ''
+        "#;
+        serde_yaml::from_str::<IndexConfig>(config_yaml).unwrap_err();
     }
 }

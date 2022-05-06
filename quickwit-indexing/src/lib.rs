@@ -26,8 +26,8 @@ use quickwit_pushapi::PushApiService;
 use quickwit_storage::StorageUriResolver;
 use tracing::info;
 
-pub use crate::actors::IndexingServerError;
-use crate::actors::{IndexingPipeline, IndexingPipelineParams, IndexingServer};
+pub use crate::actors::IndexingServiceError;
+use crate::actors::{IndexingPipeline, IndexingPipelineParams, IndexingService};
 use crate::models::{IndexingStatistics, SpawnPipelinesForIndex};
 pub use crate::split_store::{
     get_tantivy_directory_from_split_bundle, IndexingSplitStore, IndexingSplitStoreParams,
@@ -61,10 +61,10 @@ pub async fn start_indexer_service(
     metastore: Arc<dyn Metastore>,
     storage_uri_resolver: StorageUriResolver,
     push_api_service: Option<Mailbox<PushApiService>>,
-) -> anyhow::Result<Mailbox<IndexingServer>> {
+) -> anyhow::Result<Mailbox<IndexingService>> {
     info!("start-indexer-service");
     let index_metadatas = metastore.list_indexes_metadatas().await?;
-    let indexing_server = IndexingServer::new(
+    let indexing_server = IndexingService::new(
         config.data_dir_path.to_path_buf(),
         config.indexer_config.clone(),
         metastore,

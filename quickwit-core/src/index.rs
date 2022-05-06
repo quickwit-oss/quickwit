@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use quickwit_common::fs::empty_dir;
+use quickwit_common::uri::Uri;
 use quickwit_config::IndexConfig;
 use quickwit_indexing::actors::INDEXING;
 use quickwit_indexing::models::CACHE;
@@ -49,7 +50,7 @@ pub enum IndexServiceError {
 pub struct IndexService {
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
-    default_index_root_uri: String,
+    default_index_root_uri: Uri,
 }
 
 impl IndexService {
@@ -57,7 +58,7 @@ impl IndexService {
     pub fn new(
         metastore: Arc<dyn Metastore>,
         storage_resolver: StorageUriResolver,
-        default_index_root_uri: String,
+        default_index_root_uri: Uri,
     ) -> Self {
         Self {
             metastore,
@@ -83,21 +84,23 @@ impl IndexService {
         &self,
         index_config: IndexConfig,
     ) -> Result<IndexMetadata, IndexServiceError> {
-        let index_uri = if let Some(index_uri) = index_config.index_uri.as_ref() {
-            index_uri.to_string()
+        let index_id = index_config.index_id.clone();
+        let index_uri = if let Some(index_uri) = &index_config.index_uri {
+            index_uri.clone()
         } else {
-            let default_index_uri =
-                format!("{}/{}", self.default_index_root_uri, index_config.index_id);
-            info!(
-                "`index-uri` is not specified in the index configuration. Setting it to `{}`.",
-                default_index_uri
+            let index_uri = self.default_index_root_uri.join(&index_id).expect(
+                "Failed to create default index URI. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.",
             );
-            default_index_uri
+            info!(
+                index_id = %index_id,
+                index_uri = %index_uri,
+                "Index config does not specify `index_uri`, falling back to default value.",
+            );
+            index_uri
         };
-
         let index_metadata = IndexMetadata {
-            index_id: index_config.index_id.clone(),
-            index_uri,
+            index_id,
+            index_uri: index_uri.into_string(),
             checkpoint: Default::default(),
             sources: index_config.sources(),
             doc_mapping: index_config.doc_mapping,
@@ -106,7 +109,6 @@ impl IndexService {
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
             update_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
         };
-
         self.metastore.create_index(index_metadata).await?;
         let index_metadata = self
             .metastore

@@ -280,7 +280,7 @@ impl SearchClientPool {
             if let Some(client) = socket_to_client.remove(&socket_addr) {
                 client_to_jobs.push((client, jobs));
             } else {
-                error!("Missing client. This should never happen! Please report");
+                error!("Client is missing. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
             }
         }
 

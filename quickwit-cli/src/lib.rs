@@ -83,7 +83,7 @@ async fn load_quickwit_config(
 /// Optionaly, it takes a `SourceConfig` that will be checked instead
 /// of the index's sources.
 pub async fn run_index_checklist(
-    metastore_uri: &str,
+    metastore_uri: &Uri,
     index_id: &str,
     source_to_check: Option<&SourceConfig>,
 ) -> anyhow::Result<()> {

@@ -84,7 +84,7 @@ pub struct SearchRequestQueryString {
     /// Query text. The query language is that of tantivy.
     pub query: String,
     /// The aggregation JSON string.
-    pub aggregations: Option<serde_json::Value>,
+    pub aggs: Option<serde_json::Value>,
     // Fields to search on
     #[serde(default)]
     #[serde(rename(deserialize = "search_field"))]
@@ -140,7 +140,7 @@ async fn search_endpoint(
         max_hits: search_request.max_hits,
         start_offset: search_request.start_offset,
         aggregation_request: search_request
-            .aggregations
+            .aggs
             .map(|agg| serde_json::to_string(&agg).expect("could not serialize serde_json::Value")),
         sort_order,
         sort_by_field,
@@ -360,7 +360,7 @@ mod tests {
             .method("POST")
             .path("/quickwit-demo-index/search?query=*&max_hits=10")
             .json(&true)
-            .body(r#"{"query": "*", "max_hits":10, "aggregations": {"range":[]} }"#)
+            .body(r#"{"query": "*", "max_hits":10, "aggs": {"range":[]} }"#)
             .filter(&rest_search_api_filter)
             .await
             .unwrap();
@@ -374,7 +374,7 @@ mod tests {
                 max_hits: 10,
                 format: Format::default(),
                 sort_by_field: None,
-                aggregations: Some(json!({"range":[]})),
+                aggs: Some(json!({"range":[]})),
                 ..Default::default()
             }
         );
@@ -548,7 +548,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "error": "unknown field `end_unix_timestamp`, expected one of `query`, `aggregations`, `search_field`, `start_timestamp`, `end_timestamp`, `max_hits`, `start_offset`, `format`, `sort_by_field`"
+            "error": "unknown field `end_unix_timestamp`, expected one of `query`, `aggs`, `search_field`, `start_timestamp`, `end_timestamp`, `max_hits`, `start_offset`, `format`, `sort_by_field`"
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())

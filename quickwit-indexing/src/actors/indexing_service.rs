@@ -49,7 +49,7 @@ pub const INDEXING: &str = "indexing";
 const PUSH_API_SOURCE_ID: &str = ".push-api";
 
 #[derive(Error, Debug)]
-pub enum IndexingServerError {
+pub enum IndexingServiceError {
     #[error("Indexing pipeline `{index_id}` for source `{source_id}` does not exist.")]
     MissingPipeline { index_id: String, source_id: String },
     #[error("Pipeline `{index_id}` for source `{source_id}` already exists.")]
@@ -63,24 +63,24 @@ pub enum IndexingServerError {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
-pub struct IndexingServerState {
+pub struct IndexingServiceState {
     num_running_pipelines: usize,
     num_successful_pipelines: usize,
     num_failed_pipelines: usize,
 }
 
-pub struct IndexingServer {
+pub struct IndexingService {
     indexing_dir_path: PathBuf,
     split_store_max_num_bytes: usize,
     split_store_max_num_splits: usize,
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
     pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
-    state: IndexingServerState,
+    state: IndexingServiceState,
     push_api_service: Option<Mailbox<PushApiService>>,
 }
 
-impl IndexingServer {
+impl IndexingService {
     pub fn check_health(&self) -> Health {
         // In the future, check metrics such as available disk space.
         Health::Healthy
@@ -92,7 +92,7 @@ impl IndexingServer {
         metastore: Arc<dyn Metastore>,
         storage_resolver: StorageUriResolver,
         push_api_service: Option<Mailbox<PushApiService>>,
-    ) -> IndexingServer {
+    ) -> IndexingService {
         Self {
             indexing_dir_path: data_dir_path.join(INDEXING),
             split_store_max_num_bytes: indexer_config.split_store_max_num_bytes.get_bytes()
@@ -109,9 +109,9 @@ impl IndexingServer {
     async fn detach_pipeline(
         &mut self,
         pipeline_id: &IndexingPipelineId,
-    ) -> Result<ActorHandle<IndexingPipeline>, IndexingServerError> {
+    ) -> Result<ActorHandle<IndexingPipeline>, IndexingServiceError> {
         let pipeline_handle = self.pipeline_handles.remove(pipeline_id).ok_or_else(|| {
-            IndexingServerError::MissingPipeline {
+            IndexingServiceError::MissingPipeline {
                 index_id: pipeline_id.index_id.clone(),
                 source_id: pipeline_id.source_id.clone(),
             }
@@ -123,9 +123,9 @@ impl IndexingServer {
     async fn observe_pipeline(
         &mut self,
         pipeline_id: &IndexingPipelineId,
-    ) -> Result<Observation<IndexingStatistics>, IndexingServerError> {
+    ) -> Result<Observation<IndexingStatistics>, IndexingServiceError> {
         let pipeline_handle = self.pipeline_handles.get(pipeline_id).ok_or_else(|| {
-            IndexingServerError::MissingPipeline {
+            IndexingServiceError::MissingPipeline {
                 index_id: pipeline_id.index_id.clone(),
                 source_id: pipeline_id.source_id.clone(),
             }
@@ -139,7 +139,7 @@ impl IndexingServer {
         index_id: String,
         source: SourceConfig,
         ctx: &ActorContext<Self>,
-    ) -> Result<IndexingPipelineId, IndexingServerError> {
+    ) -> Result<IndexingPipelineId, IndexingServiceError> {
         let pipeline_id = IndexingPipelineId {
             index_id,
             source_id: source.source_id.clone(),
@@ -154,7 +154,7 @@ impl IndexingServer {
         &mut self,
         index_id: String,
         ctx: &ActorContext<Self>,
-    ) -> Result<Vec<IndexingPipelineId>, IndexingServerError> {
+    ) -> Result<Vec<IndexingPipelineId>, IndexingServiceError> {
         let mut pipeline_ids = Vec::new();
 
         let index_metadata = self.index_metadata(&index_id, ctx).await?;
@@ -186,7 +186,7 @@ impl IndexingServer {
             push_api_service
                 .ask_for_res(create_queue_req)
                 .await
-                .map_err(|err| IndexingServerError::InvalidParams(err.into()))?;
+                .map_err(|err| IndexingServiceError::InvalidParams(err.into()))?;
 
             let source_id = PUSH_API_SOURCE_ID.to_string();
             let push_api_pipeline_id = self
@@ -203,9 +203,9 @@ impl IndexingServer {
         index_metadata: IndexMetadata,
         source: SourceConfig,
         ctx: &ActorContext<Self>,
-    ) -> Result<(), IndexingServerError> {
+    ) -> Result<(), IndexingServiceError> {
         if self.pipeline_handles.contains_key(&pipeline_id) {
-            return Err(IndexingServerError::PipelineAlreadyExists {
+            return Err(IndexingServiceError::PipelineAlreadyExists {
                 index_id: pipeline_id.index_id.clone(),
                 source_id: pipeline_id.source_id.clone(),
             });
@@ -221,7 +221,7 @@ impl IndexingServer {
             storage,
         )
         .await
-        .map_err(IndexingServerError::InvalidParams)?;
+        .map_err(IndexingServiceError::InvalidParams)?;
 
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor(pipeline).spawn();
@@ -236,7 +236,7 @@ impl IndexingServer {
         source_id: String,
         index_metadata: IndexMetadata,
         ctx: &ActorContext<Self>,
-    ) -> Result<IndexingPipelineId, IndexingServerError> {
+    ) -> Result<IndexingPipelineId, IndexingServiceError> {
         let push_api_pipeline_id = IndexingPipelineId {
             index_id: index_id.clone(),
             source_id: source_id.clone(),
@@ -266,7 +266,7 @@ impl IndexingServer {
         merge_enabled: bool,
         demux_enabled: bool,
         ctx: &ActorContext<Self>,
-    ) -> Result<IndexingPipelineId, IndexingServerError> {
+    ) -> Result<IndexingPipelineId, IndexingServiceError> {
         let pipeline_id = IndexingPipelineId {
             index_id,
             source_id: "void-source".to_string(),
@@ -288,7 +288,7 @@ impl IndexingServer {
         &self,
         index_id: &str,
         ctx: &ActorContext<Self>,
-    ) -> Result<IndexMetadata, IndexingServerError> {
+    ) -> Result<IndexMetadata, IndexingServiceError> {
         let _protect_guard = ctx.protect_zone();
         let index_metadata = self.metastore.index_metadata(index_id).await?;
         Ok(index_metadata)
@@ -296,8 +296,8 @@ impl IndexingServer {
 }
 
 #[async_trait]
-impl Handler<ObservePipeline> for IndexingServer {
-    type Reply = Result<Observation<IndexingStatistics>, IndexingServerError>;
+impl Handler<ObservePipeline> for IndexingService {
+    type Reply = Result<Observation<IndexingStatistics>, IndexingServiceError>;
 
     async fn handle(
         &mut self,
@@ -310,8 +310,8 @@ impl Handler<ObservePipeline> for IndexingServer {
 }
 
 #[async_trait]
-impl Handler<DetachPipeline> for IndexingServer {
-    type Reply = Result<ActorHandle<IndexingPipeline>, IndexingServerError>;
+impl Handler<DetachPipeline> for IndexingService {
+    type Reply = Result<ActorHandle<IndexingPipeline>, IndexingServiceError>;
 
     async fn handle(
         &mut self,
@@ -326,7 +326,7 @@ impl Handler<DetachPipeline> for IndexingServer {
 struct SuperviseLoop;
 
 #[async_trait]
-impl Handler<SuperviseLoop> for IndexingServer {
+impl Handler<SuperviseLoop> for IndexingService {
     type Reply = ();
 
     async fn handle(
@@ -360,8 +360,8 @@ impl Handler<SuperviseLoop> for IndexingServer {
 }
 
 #[async_trait]
-impl Actor for IndexingServer {
-    type ObservableState = IndexingServerState;
+impl Actor for IndexingService {
+    type ObservableState = IndexingServiceState;
 
     fn observable_state(&self) -> Self::ObservableState {
         self.state.clone()
@@ -373,8 +373,8 @@ impl Actor for IndexingServer {
 }
 
 #[async_trait]
-impl Handler<SpawnMergePipeline> for IndexingServer {
-    type Reply = Result<IndexingPipelineId, IndexingServerError>;
+impl Handler<SpawnMergePipeline> for IndexingService {
+    type Reply = Result<IndexingPipelineId, IndexingServiceError>;
     async fn handle(
         &mut self,
         message: SpawnMergePipeline,
@@ -392,13 +392,13 @@ impl Handler<SpawnMergePipeline> for IndexingServer {
 }
 
 #[async_trait]
-impl Handler<SpawnPipeline> for IndexingServer {
-    type Reply = Result<IndexingPipelineId, IndexingServerError>;
+impl Handler<SpawnPipeline> for IndexingService {
+    type Reply = Result<IndexingPipelineId, IndexingServiceError>;
     async fn handle(
         &mut self,
         message: SpawnPipeline,
         ctx: &ActorContext<Self>,
-    ) -> Result<Result<IndexingPipelineId, IndexingServerError>, ActorExitStatus> {
+    ) -> Result<Result<IndexingPipelineId, IndexingServiceError>, ActorExitStatus> {
         Ok(self
             .spawn_pipeline(message.index_id, message.source, ctx)
             .await)
@@ -406,7 +406,7 @@ impl Handler<SpawnPipeline> for IndexingServer {
 }
 
 #[async_trait]
-impl Handler<Observe> for IndexingServer {
+impl Handler<Observe> for IndexingService {
     type Reply = Self::ObservableState;
     async fn handle(
         &mut self,
@@ -418,13 +418,13 @@ impl Handler<Observe> for IndexingServer {
 }
 
 #[async_trait]
-impl Handler<SpawnPipelinesForIndex> for IndexingServer {
-    type Reply = Result<Vec<IndexingPipelineId>, IndexingServerError>;
+impl Handler<SpawnPipelinesForIndex> for IndexingService {
+    type Reply = Result<Vec<IndexingPipelineId>, IndexingServiceError>;
     async fn handle(
         &mut self,
         message: SpawnPipelinesForIndex,
         ctx: &ActorContext<Self>,
-    ) -> Result<Result<Vec<IndexingPipelineId>, IndexingServerError>, ActorExitStatus> {
+    ) -> Result<Result<Vec<IndexingPipelineId>, IndexingServiceError>, ActorExitStatus> {
         Ok(self.spawn_pipelines(message.index_id, ctx).await)
     }
 }
@@ -445,7 +445,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_server() {
         quickwit_common::setup_logging_for_tests();
-        let index_id = append_random_suffix("test-indexing-server");
+        let index_id = append_random_suffix("test-indexing-service");
         let index_uri = format!("{}/{}", METASTORE_URI, index_id);
         let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
 
@@ -455,12 +455,12 @@ mod tests {
             .unwrap();
         metastore.create_index(index_metadata).await.unwrap();
 
-        // Test `IndexingServer::spawn`.
+        // Test `IndexingService::new`.
         let temp_dir = tempfile::tempdir().unwrap();
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
         let storage_resolver = StorageUriResolver::for_test();
-        let indexing_server = IndexingServer::new(
+        let indexing_server = IndexingService::new(
             data_dir_path,
             indexer_config,
             metastore.clone(),
@@ -477,7 +477,7 @@ mod tests {
 
         // Test `spawn_pipeline`.
         let source_1 = SourceConfig {
-            source_id: "test-indexing-server--source-1".to_string(),
+            source_id: "test-indexing-service--source-1".to_string(),
             source_params: SourceParams::void(),
         };
         let spawn_pipeline_msg = SpawnPipeline {
@@ -534,7 +534,7 @@ mod tests {
         );
 
         let source_2 = SourceConfig {
-            source_id: "test-indexing-server--source-2".to_string(),
+            source_id: "test-indexing-service--source-2".to_string(),
             source_params: SourceParams::void(),
         };
         metastore.add_source(&index_id, source_2).await.unwrap();
@@ -573,7 +573,7 @@ mod tests {
 
         // Test `supervise_pipelines`
         let source_3 = SourceConfig {
-            source_id: "test-indexing-server--source-3".to_string(),
+            source_id: "test-indexing-service--source-3".to_string(),
             source_params: SourceParams::Vec(VecSourceParams {
                 items: Vec::new(),
                 batch_num_docs: 10,
