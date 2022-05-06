@@ -366,9 +366,12 @@ fn create_failure_detector_config_for_test() -> FailureDetectorConfig {
 }
 
 /// Creates a local cluster listening on a random port.
-pub fn create_cluster_for_test(seeds: &[String]) -> anyhow::Result<Cluster> {
+pub fn create_cluster_for_test(seeds: &[String], services: &[&str]) -> anyhow::Result<Cluster> {
     let peer_uuid = Uuid::new_v4().to_string();
-    let services = vec![QuickwitService::Indexer, QuickwitService::Searcher]
+    let services = services
+        .iter()
+        .map(|service_str| QuickwitService::try_from(*service_str))
+        .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .collect::<HashSet<_>>();
     let cluster =
@@ -388,7 +391,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cluster_single_node() -> anyhow::Result<()> {
-        let cluster = create_cluster_for_test(&[])?;
+        let cluster = create_cluster_for_test(&[], &[])?;
 
         let members: Vec<SocketAddr> = cluster
             .members()
@@ -403,12 +406,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_cluster_available_service() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let cluster1 = create_cluster_for_test(&[], &["searcher"])?;
+        let node_1 = cluster1.listen_addr.to_string();
+        let cluster2 = create_cluster_for_test(&[node_1.clone()], &["searcher", "indexer"])?;
+        let cluster3 = create_cluster_for_test(&[node_1], &["indexer"])?;
+
+        let mut expected_indexers = vec![
+            grpc_addr_from_listen_addr_for_test(cluster2.listen_addr),
+            grpc_addr_from_listen_addr_for_test(cluster3.listen_addr),
+        ];
+        expected_indexers.sort();
+        let mut expected_searchers = vec![
+            grpc_addr_from_listen_addr_for_test(cluster1.listen_addr),
+            grpc_addr_from_listen_addr_for_test(cluster2.listen_addr),
+        ];
+        expected_searchers.sort();
+
+        let wait_secs = Duration::from_secs(30);
+
+        for cluster in [&cluster1, &cluster2, &cluster3] {
+            cluster
+                .wait_for_members(|members| members.len() == 3, wait_secs)
+                .await
+                .unwrap();
+        }
+        let members = cluster1.members();
+
+        let all = cluster1
+            .members_grpc_addresses_by_service(&members, None)
+            .await?;
+        assert_eq!(all.len(), 3);
+
+        let mut indexers = cluster1
+            .members_grpc_addresses_by_service(&members, Some(QuickwitService::Indexer))
+            .await?;
+        indexers.sort();
+        assert_eq!(indexers.len(), 2);
+        assert_eq!(indexers, expected_indexers);
+
+        let mut searchers = cluster1
+            .members_grpc_addresses_by_service(&members, Some(QuickwitService::Searcher))
+            .await?;
+        searchers.sort();
+        assert_eq!(searchers.len(), 2);
+        assert_eq!(searchers, expected_searchers);
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_cluster_multiple_nodes() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let cluster1 = create_cluster_for_test(&[])?;
+        let cluster1 = create_cluster_for_test(&[], &[])?;
         let node_1 = cluster1.listen_addr.to_string();
-        let cluster2 = create_cluster_for_test(&[node_1.clone()])?;
-        let cluster3 = create_cluster_for_test(&[node_1])?;
+        let cluster2 = create_cluster_for_test(&[node_1.clone()], &[])?;
+        let cluster3 = create_cluster_for_test(&[node_1], &[])?;
 
         let wait_secs = Duration::from_secs(30);
 
