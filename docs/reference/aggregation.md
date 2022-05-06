@@ -136,7 +136,7 @@ Example request, histogram with stats in each bucket:
 
 #### Limitations/Compatibility
 
-Currently aggregations work only on single value fast fields of type u64, f64 and i64.
+Currently aggregations work only on single value fast fields of type `u64`, `f64`, `i64` and `text`.
 
 Elasticsearch `keyed` parameter is not yet supported.
 
@@ -213,7 +213,7 @@ The minimum number of documents in a bucket to be returned. Defaults to 0.
 
 Limits the data range to [min, max] closed interval.
 This can be used to filter values if they are not in the data range.
-hard_bounds only limits the buckets, to force a range set both extended_bounds and hard_bounds to the same range.
+hard_bounds only limits the buckets, to force a range set both `extended_bounds` and `hard_bounds` to the same range.
 
 ```json
 {
@@ -237,7 +237,7 @@ hard_bounds only limits the buckets, to force a range set both extended_bounds a
 ###### **extended_bounds**
 
 Can be set to extend your bounds. The range of the buckets is by default defined by the data range of the values of the documents. As the name suggests, this can only be used to extend the value range. If the bounds for min or max are not extending the range, the value has no effect on the returned buckets.
-Cannot be set in conjunction with min_doc_count > 0, since the empty buckets from extended bounds would not be returned.
+Cannot be set in conjunction with `min_doc_count` > 0, since the empty buckets from extended bounds would not be returned.
 
 ```json
 {
@@ -287,7 +287,7 @@ Note that this aggregation includes the from value and excludes the to value for
 
 Overlapping ranges are not yet supported.
 
-The keyed parameter (elasticsearch) is not yet supported.
+Elasticsearch `keyed` parameter is not yet supported.
 
 
 #### Parameters
