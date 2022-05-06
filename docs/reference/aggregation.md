@@ -323,24 +323,24 @@ Creates a bucket for every unique term.
 ```
 
 #### Document count error
-In Quickwit, we have one segment per split.
-To improve performance, results from one split are cut off at `segment_size`.
+In Quickwit, we have one segment per split. Therefore the results returned from a split, is equivalent to results returned from a segment.
+To improve performance, results from one split are cut off at `split_size`.
 When combining results of multiple splits, terms that
 don't make it in the top n of a result from a split increase the theoretical upper bound error by lowest
 term-count.
 
-Even with a larger `segment_size` value, doc_count values for a terms aggregation may be
+Even with a larger `split_size` value, doc_count values for a terms aggregation may be
 approximate. As a result, any sub-aggregations on the terms aggregation may also be approximate.
 `sum_other_doc_count` is the number of documents that didn’t make it into the the top size
 terms. If this is greater than 0, you can be sure that the terms agg had to throw away some
 buckets, either because they didn’t fit into `size` on the root node or they didn’t fit into
-`segment_size` on the leaf node.
+`split_size` on the leaf node.
 
 #### Per bucket document count error
 If you set the `show_term_doc_count_error` parameter to true, the terms aggregation will include
 doc_count_error_upper_bound, which is an upper bound to the error on the doc_count returned by
-each segment. It’s the sum of the size of the largest bucket on each segment that didn’t fit
-into segment_size.
+each split. It’s the sum of the size of the largest bucket on each split that didn’t fit
+into `split_size`.
 
 #### Parameters
 
@@ -352,18 +352,17 @@ The field to aggregate on.
 
 By default, the top 10 terms with the most documents are returned. Larger values for size are more expensive.
 
-###### **segment_size**
+###### **split_size**
 
+The get more accurate results, we fetch more than size from each segment/split.
+Increasing this value is will increase the accuracy, but also the CPU/memory usage.
 
-The get more accurate results, we fetch more than size from each segment.
-Increasing this value is will increase the cost for more accuracy.
-
-Defaults to 10 * size.
+Defaults to size * 1.5 + 10.
 
 ###### **show_term_doc_count_error**
 
-If you set the show_term_doc_count_error parameter to true, the terms aggregation will include doc_count_error_upper_bound, which is an upper bound to the error on the doc_count returned by each shard. 
-It’s the sum of the size of the largest bucket on each segment that didn’t fit into shard_size.
+If you set the show_term_doc_count_error parameter to true, the terms aggregation will include doc_count_error_upper_bound, which is an upper bound to the error on the doc_count returned by each split. 
+It’s the sum of the size of the largest bucket on each split that didn’t fit into split_size.
 
 Defaults to true when ordering by count desc.
 
