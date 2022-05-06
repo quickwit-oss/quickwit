@@ -54,7 +54,7 @@ pub fn default_doc_mapper_for_tests() -> DefaultDocMapper {
         {
             "store_source": true,
             "default_search_fields": [
-                "body", "attributes.server", "attributes.server.status"
+                "body", "attributes.server", "attributes.server\\.status"
             ],
             "timestamp_field": "timestamp",
             "sort_by": {

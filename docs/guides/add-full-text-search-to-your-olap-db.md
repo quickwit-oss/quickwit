@@ -48,7 +48,10 @@ We don't need to index all fields described above as Quickwit. The `title` and `
 ```yaml title="gh-archive-index-config.yaml"
 version: 0
 index_id: gh-archive
-index_uri: INDEX_URI
+# By default, the index will be stored in your data directory,
+# but you can store it on s3 or on a custom path as follows:
+# index_uri: s3://my-bucket/gh-archive
+# index_uri: file://my-big-ssd-harddrive/
 doc_mapping:
   field_mappings:
     - name: id
@@ -70,7 +73,6 @@ doc_mapping:
       record: position
 search_settings:
   default_search_fields: [title, body]
-}
 ```
 
 ```bash

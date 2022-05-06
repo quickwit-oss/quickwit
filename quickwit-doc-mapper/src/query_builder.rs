@@ -98,6 +98,7 @@ mod test {
         schema_builder.build()
     }
 
+    #[track_caller]
     fn check_build_query(
         query_str: &str,
         search_fields: Vec<String>,
@@ -152,54 +153,60 @@ mod test {
     }
 
     #[test]
-    fn test_build_query() -> anyhow::Result<()> {
+    fn test_build_query() {
         check_build_query(
             "foo:bar",
             vec![],
-            TestExpectation::Err("Field does not exists: '\"foo\"'"),
-        )?;
-
+            TestExpectation::Err("Field does not exists: 'foo'"),
+        )
+        .unwrap();
         check_build_query(
             "server.type:hpc server.mem:4GB",
             vec![],
-            TestExpectation::Err("Field does not exists: '\"server.type\"'"),
-        )?;
-
+            TestExpectation::Err("Field does not exists: 'server.type'"),
+        )
+        .unwrap();
         check_build_query(
             "title:[a TO b]",
             vec![],
             TestExpectation::Err("Range queries are not currently allowed."),
-        )?;
+        )
+        .unwrap();
         check_build_query(
             "title:{a TO b} desc:foo",
             vec![],
             TestExpectation::Err("Range queries are not currently allowed."),
-        )?;
+        )
+        .unwrap();
         check_build_query(
             "title:>foo",
             vec![],
             TestExpectation::Err("Range queries are not currently allowed."),
-        )?;
+        )
+        .unwrap();
         check_build_query(
             "title:foo desc:bar _source:baz",
             vec![],
             TestExpectation::Ok("TermQuery"),
-        )?;
+        )
+        .unwrap();
         check_build_query(
             "title:foo desc:bar",
             vec!["url".to_string()],
-            TestExpectation::Err("Field does not exists: '\"url\"'"),
-        )?;
+            TestExpectation::Err("Field does not exists: 'url'"),
+        )
+        .unwrap();
         check_build_query(
             "server.name:\".bar:\" server.mem:4GB",
             vec!["server.name".to_string()],
             TestExpectation::Ok("TermQuery"),
-        )?;
+        )
+        .unwrap();
         check_build_query(
             "server.name:\"for.bar:b\" server.mem:4GB",
             vec![],
             TestExpectation::Ok("TermQuery"),
-        )?;
-        Ok(())
+        )
+        .unwrap();
     }
 }
