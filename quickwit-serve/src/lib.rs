@@ -41,7 +41,7 @@ use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::ClusterService;
 use quickwit_config::QuickwitConfig;
 use quickwit_core::IndexService;
-use quickwit_indexing::actors::IndexingServer;
+use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexer_service;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_pushapi::{init_push_api, PushApiService};
@@ -91,7 +91,7 @@ impl TryFrom<&str> for QuickwitService {
 struct QuickwitServices {
     pub cluster_service: Arc<dyn ClusterService>,
     pub search_service: Option<Arc<dyn SearchService>>,
-    pub indexer_service: Option<Mailbox<IndexingServer>>,
+    pub indexer_service: Option<Mailbox<IndexingService>>,
     pub push_api_service: Option<Mailbox<PushApiService>>,
     pub index_service: Arc<IndexService>,
 }
@@ -117,7 +117,7 @@ pub async fn serve_quickwit(
             None
         };
 
-    let indexer_service: Option<Mailbox<IndexingServer>> =
+    let indexer_service: Option<Mailbox<IndexingService>> =
         if services.contains(&QuickwitService::Indexer) {
             let indexer_service = start_indexer_service(
                 &universe,

@@ -2670,6 +2670,8 @@ dependencies = [
  "prometheus",
  "rand",
  "regex",
+ "serde",
+ "serde_json",
  "tempfile",
  "tokio",
  "tracing",

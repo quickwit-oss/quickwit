@@ -38,7 +38,6 @@ pub fn build_source_command<'a>() -> Command<'a> {
             Command::new("create")
                 .about("Adds a new source to an index.")
                 .args(&[
-                    arg!(--config <CONFIG> "Path to Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX_ID> "ID of the target index"),
                     arg!(--"source-config" <SOURCE_CONFIG> "Path to source config file. Please, refer to the documentation for more details."),
                 ])
@@ -47,7 +46,6 @@ pub fn build_source_command<'a>() -> Command<'a> {
             Command::new("delete")
                 .about("Deletes a source from an index.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX_ID> "ID of the target index"),
                     arg!(--source <SOURCE_ID> "ID of the source."),
                 ])
@@ -56,7 +54,6 @@ pub fn build_source_command<'a>() -> Command<'a> {
             Command::new("describe")
                 .about("Describes a source.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX_ID> "ID of the target index"),
                     arg!(--source <SOURCE_ID> "ID of the source."),
                 ])
@@ -65,7 +62,6 @@ pub fn build_source_command<'a>() -> Command<'a> {
             Command::new("list")
                 .about("Lists the sources of an index.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX_ID> "ID of the target index"),
                 ])
             )
@@ -371,7 +367,7 @@ fn flatten_json(value: Value) -> Vec<(String, Value)> {
     acc
 }
 
-async fn resolve_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<IndexMetadata> {
+async fn resolve_index(metastore_uri: &Uri, index_id: &str) -> anyhow::Result<IndexMetadata> {
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
     let index_metadata = metastore.index_metadata(index_id).await?;

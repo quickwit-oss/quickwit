@@ -43,33 +43,29 @@ pub fn build_split_command<'a>() -> Command<'a> {
             Command::new("list")
                 .about("Lists the splits of an index.")
                 .args(&[
-                    arg!(--config <CONFIG> "Config file location")
-                        .display_order(1)
-                        .required(true)
-                        .env("QW_CONFIG"),
                     arg!(--index <INDEX> "Target index ID")
-                        .display_order(2)
+                        .display_order(1)
                         .required(true),
                     arg!(--states <SPLIT_STATES> "Selects the splits whose states are included in this comma-separated list of states. Possible values are `staged`, `published`, and `marked`.")
-                        .display_order(3)
+                        .display_order(2)
                         .required(false)
                         .use_value_delimiter(true),
                     arg!(--"create-date" <CREATE_DATE> "Selects the splits whose creation dates are before this date.")
-                        .display_order(4)
+                        .display_order(3)
                         .required(false),
                     arg!(--"start-date" <START_DATE> "Selects the splits that contain documents after this date (time-series indexes only).")
-                        .display_order(5)
+                        .display_order(4)
                         .required(false),
                     arg!(--"end-date" <END_DATE> "Selects the splits that contain documents before this date (time-series indexes only).")
-                        .display_order(6)
+                        .display_order(5)
                         .required(false),
                     arg!(--tags <TAGS> "Selects the splits whose tags are all included in this comma-separated list of tags.")
-                        .display_order(7)
+                        .display_order(6)
                         .required(false)
                         .use_value_delimiter(true),
                     Arg::new("mark-for-deletion")
                         .alias("mark")
-                        .display_order(8)
+                        .display_order(7)
                         .long("mark-for-deletion")
                         .help("Marks the selected splits for deletion.")
                 ])
@@ -78,7 +74,6 @@ pub fn build_split_command<'a>() -> Command<'a> {
             Command::new("extract")
                 .about("Downloads and extracts a split to a directory.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--split <SPLIT> "ID of the target split"),
                     arg!(--"target-dir" <TARGET_DIR> "Directory to extract the split to."),
@@ -91,7 +86,6 @@ pub fn build_split_command<'a>() -> Command<'a> {
             Command::new("describe")
                 .about("Displays metadata about a split.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--split <SPLIT> "ID of the target split"),
                     arg!(--verbose "Displays additional metadata about the hotcache."),
@@ -105,10 +99,6 @@ pub fn build_split_command<'a>() -> Command<'a> {
                 .about("Marks one or multiple splits of an index for deletion.")
                 .alias("mark")
                 .args(&[
-                    arg!(--config <CONFIG> "Config file location")
-                        .display_order(1)
-                        .env("QW_CONFIG")
-                        .required(true),
                     arg!(--index <INDEX_ID> "Target index ID")
                         .display_order(2)
                         .required(true),

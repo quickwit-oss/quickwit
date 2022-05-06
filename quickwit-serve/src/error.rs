@@ -23,7 +23,7 @@ use std::fmt;
 use quickwit_actors::AskError;
 use quickwit_cluster::ClusterError;
 use quickwit_core::IndexServiceError;
-use quickwit_indexing::IndexingServerError;
+use quickwit_indexing::IndexingServiceError;
 use quickwit_proto::tonic;
 use quickwit_pushapi::PushApiError;
 use quickwit_search::SearchError;
@@ -83,7 +83,7 @@ impl ServiceError for ClusterError {
     }
 }
 
-impl ServiceError for IndexingServerError {
+impl ServiceError for IndexingServiceError {
     fn status_code(&self) -> ServiceErrorCode {
         match self {
             Self::MissingPipeline { .. } => ServiceErrorCode::NotFound,

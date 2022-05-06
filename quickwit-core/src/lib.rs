@@ -35,6 +35,7 @@ pub use index::{clear_cache_directory, get_cache_directory_path, IndexService, I
 mod tests {
     use std::path::Path;
 
+    use quickwit_common::uri::Uri;
     use quickwit_config::{IndexConfig, IndexingSettings, SearchSettings};
     use quickwit_indexing::{FileEntry, TestSandbox};
     use quickwit_metastore::quickwit_metastore_uri_resolver;
@@ -82,7 +83,7 @@ mod tests {
         let index_service = IndexService::new(
             test_sandbox.metastore(),
             StorageUriResolver::for_test(),
-            "".to_string(),
+            Uri::new("file:///quickwit".to_string()),
         );
         let deleted_file_entries = index_service.delete_index(index_id, false).await?;
         assert_eq!(deleted_file_entries.len(), 1);
@@ -114,7 +115,7 @@ mod tests {
         let index_service = IndexService::new(
             metastore,
             storage_resolver,
-            "ram://test-storage-indexes".to_string(),
+            Uri::new("ram://test-storage-indexes".to_string()),
         );
         let index_metadata = index_service.create_index(index_config).await?;
         assert_eq!(index_metadata.index_id, index_id);

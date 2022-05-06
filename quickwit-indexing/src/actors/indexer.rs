@@ -140,7 +140,7 @@ impl IndexerState {
             *current_split_opt = Some(new_indexed_split);
         }
         let current_index_split = current_split_opt.as_mut().with_context(|| {
-            "No index writer available. Please report: this should never happen."
+            "No index writer available. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."
         })?;
         Ok(current_index_split)
     }

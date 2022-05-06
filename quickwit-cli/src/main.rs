@@ -94,7 +94,6 @@ async fn main() -> anyhow::Result<()> {
     let app = build_cli()
         .version(version_text.as_str())
         .about(about_text.as_str());
-
     let matches = app.get_matches();
 
     let command = match CliCommand::parse_cli_args(&matches) {

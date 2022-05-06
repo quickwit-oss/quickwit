@@ -34,7 +34,7 @@ use quickwit_common::GREEN_COLOR;
 use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig, SourceParams};
 use quickwit_core::{clear_cache_directory, IndexService};
 use quickwit_doc_mapper::tag_pruning::match_tag_field_name;
-use quickwit_indexing::actors::{IndexingPipeline, IndexingServer};
+use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
 use quickwit_indexing::models::{
     DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
 };
@@ -62,8 +62,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 .about("List indexes.")
                 .alias("ls")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file")
-                        .env("QW_CONFIG"),
                     arg!(--"metastore-uri" <METASTORE_URI> "Metastore URI. Override the `metastore_uri` parameter defined in the config file. Default to file-backed, but could be Amazon S3 or PostgreSQL.")
                         .required(false)
                 ])
@@ -72,7 +70,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("create")
                 .about("Creates an index from an index config file.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--"index-config" <INDEX_CONFIG> "Location of the index config file."),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -85,7 +82,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("ingest")
                 .about("Indexes JSON documents read from a file or streamed from stdin.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -102,7 +98,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("describe")
                 .about("Displays descriptive statistics of an index: number of published splits, number of documents, splits min/max timestamps, size of splits.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -113,7 +108,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("search")
                 .about("Searches an index.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -140,7 +134,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("merge")
                 .about("Merges an index.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -151,7 +144,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("demux")
                 .about("Demuxes an index.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -162,7 +154,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("gc")
                 .about("Garbage collects stale staged splits and splits marked for deletion.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -178,7 +169,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("delete")
                 .about("Delete an index.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -523,14 +513,12 @@ pub async fn list_index_cli(args: ListIndexesArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "list");
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
-    let metastore_uri = if let Some(uri) = args.metastore_uri {
-        uri.to_string()
-    } else {
-        quickwit_config.metastore_uri()
-    };
+    let metastore_uri = args
+        .metastore_uri
+        .unwrap_or_else(|| quickwit_config.metastore_uri());
     let metastore = metastore_uri_resolver.resolve(&metastore_uri).await?;
-    let res = metastore.list_indexes_metadatas().await?;
-    let index_table = make_list_indexes_table(res);
+    let indexes = metastore.list_indexes_metadatas().await?;
+    let index_table = make_list_indexes_table(indexes);
 
     println!();
     println!("{}", index_table);
@@ -838,7 +826,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         ..Default::default()
     };
     let universe = Universe::new();
-    let indexing_server = IndexingServer::new(
+    let indexing_server = IndexingService::new(
         config.clone().data_dir_path,
         indexer_config,
         metastore,
@@ -939,7 +927,7 @@ pub async fn merge_or_demux_cli(
         .resolve(&config.metastore_uri())
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
-    let indexing_server = IndexingServer::new(
+    let indexing_server = IndexingService::new(
         config.data_dir_path,
         indexer_config,
         metastore,

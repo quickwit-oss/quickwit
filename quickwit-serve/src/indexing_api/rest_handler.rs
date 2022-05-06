@@ -20,7 +20,7 @@
 use std::convert::Infallible;
 
 use quickwit_actors::Mailbox;
-use quickwit_indexing::actors::IndexingServer;
+use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::models::Observe;
 use warp::{Filter, Rejection};
 
@@ -28,7 +28,7 @@ use crate::format::Format;
 use crate::require;
 
 async fn indexing_endpoint(
-    indexing_service_mailbox: Mailbox<IndexingServer>,
+    indexing_service_mailbox: Mailbox<IndexingService>,
 ) -> Result<impl warp::Reply, Infallible> {
     let obs = indexing_service_mailbox.ask(Observe).await;
     Ok(Format::PrettyJson.make_rest_reply_non_serializable_error(obs))
@@ -39,7 +39,7 @@ fn indexing_get_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone
 }
 
 pub fn indexing_get_handler(
-    indexing_service_mailbox_opt: Option<Mailbox<IndexingServer>>,
+    indexing_service_mailbox_opt: Option<Mailbox<IndexingService>>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     indexing_get_filter()
         .and(require(indexing_service_mailbox_opt))
