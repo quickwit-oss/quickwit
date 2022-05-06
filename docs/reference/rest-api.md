@@ -55,6 +55,7 @@ Search for documents matching a query in the given index `<index id>`.
 | **max_hits**              | `Integer`            | Maximum number of hits to return (by default 20)                                                           | `20`                                                                                            |
 | **search_field**          | `[String]`           | Fields to search on if no field name is specified in the query. Comma-separated list, e.g. "field1,field2" | index_config.search_settings.default_search_fields                                              |
 | **format**                | `Enum`               | The output format. Allowed values are "json" or "prettyjson"                                               | `prettyjson`                                                                                    |
+| **aggs**         				  | `JSON`               | The aggregations request. See the [aggregations doc](aggregation.md) for supported aggregations. 					| 
 
 
 #### Response
