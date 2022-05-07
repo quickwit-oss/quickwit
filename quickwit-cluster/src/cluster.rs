@@ -25,6 +25,7 @@ use std::time::Duration;
 
 use chitchat::server::ChitchatServer;
 use chitchat::{FailureDetectorConfig, NodeId, SerializableClusterState};
+use itertools::Itertools;
 use quickwit_common::net::get_socket_addr;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -104,7 +105,7 @@ pub struct Cluster {
     /// A socket address that represents itself.
     pub listen_addr: SocketAddr,
 
-    /// The actual cluster that implement Chitchat.
+    /// The actual cluster that implements Chitchat.
     chitchat_server: ChitchatServer,
 
     /// A receiver(channel) for exchanging members in a cluster.
@@ -140,11 +141,7 @@ impl Cluster {
                 (GRPC_ADDRESS_KEY, grpc_addr.to_string()),
                 (
                     AVAILABLE_SERVICES_KEY,
-                    services
-                        .iter()
-                        .map(|service| service.to_string())
-                        .collect::<Vec<_>>()
-                        .join(","),
+                    services.iter().map(|service| service.as_str()).join(","),
                 ),
             ],
             failure_detector_config,
@@ -207,9 +204,8 @@ impl Cluster {
         self.members.borrow().clone()
     }
 
-    /// Return the grpc addresses corresponding to the list of members
-    /// providing the specified service.
-    /// It returns all members grpc address when service is not specified.
+    /// Returns the gRPC addresses of the members providing the specified service.
+    /// Returns the addresses of all the members if no service is specified.
     pub async fn members_grpc_addresses_by_service(
         &self,
         members: &[Member],
@@ -373,9 +369,7 @@ pub fn create_cluster_for_test(seeds: &[String], services: &[&str]) -> anyhow::R
     let services = services
         .iter()
         .map(|service_str| QuickwitService::try_from(*service_str))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .collect::<HashSet<_>>();
+        .collect::<Result<HashSet<_>, _>>()?;
     let cluster =
         create_cluster_for_test_with_id(peer_uuid, "test-cluster".to_string(), seeds, &services)?;
     Ok(cluster)

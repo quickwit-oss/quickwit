@@ -47,11 +47,11 @@ pub enum QuickwitService {
     Searcher,
 }
 
-impl ToString for QuickwitService {
-    fn to_string(&self) -> String {
-        match &self {
-            QuickwitService::Indexer => "indexer".to_string(),
-            QuickwitService::Searcher => "searcher".to_string(),
+impl QuickwitService {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            QuickwitService::Indexer => "indexer",
+            QuickwitService::Searcher => "searcher",
         }
     }
 }
