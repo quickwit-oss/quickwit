@@ -29,10 +29,10 @@ use crate::{Actor, ActorContext, ActorExitStatus, Handler};
 /// An `Envelope` is just a way to capture the handler
 /// of a message and hide its type.
 ///
-/// Message can have different types but somehow need to  be pushed to a
+/// Messages can have different types but somehow need to be pushed to a
 /// queue with a single type.
 /// Before appending, we capture the right handler implementation
-/// in the form of an Box<dyn Envelope>, and append that to the queue.
+/// in the form of a `Box<dyn Envelope>`, and append that to the queue.
 #[async_trait]
 pub(crate) trait Envelope<A: Actor>: Send + Sync {
     fn debug_msg(&self) -> String;
