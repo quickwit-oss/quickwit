@@ -17,8 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { Button } from "@mui/material";
-import { Box } from "@mui/system";
+import { Box, Button } from "@mui/material";
 import { TimeRangeSelect } from './TimeRangeSelect';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { SearchComponentProps } from "../utils/SearchComponentProps";

@@ -1,5 +1,4 @@
-import { Breadcrumbs } from "@mui/material";
-import { styled, Box } from "@mui/system";
+import { Box, Breadcrumbs, styled } from "@mui/material";
 
 export const APP_BAR_HEIGHT_PX = '48px';
 export const ViewUnderAppBarBox = styled(Box)`

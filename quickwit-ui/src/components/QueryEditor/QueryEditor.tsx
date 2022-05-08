@@ -17,12 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { Box } from '@mui/system';
 import { useEffect, useRef, useState } from 'react';
 import Editor, { useMonaco } from "@monaco-editor/react";
 import { LANGUAGE_CONFIG, LanguageFeatures, createIndexCompletionProvider } from './config';
 import { SearchComponentProps } from '../../utils/SearchComponentProps';
 import { EDITOR_THEME } from '../../utils/theme';
+import { Box } from '@mui/material';
 
 const QUICKWIT_EDITOR_THEME_ID = 'quickwit-light';
 

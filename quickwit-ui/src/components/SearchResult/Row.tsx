@@ -19,8 +19,7 @@
 
 import { KeyboardArrowDown } from "@mui/icons-material";
 import ChevronRight from "@mui/icons-material/ChevronRight";
-import { IconButton, TableCell, TableRow } from "@mui/material";
-import { styled } from "@mui/system";
+import { IconButton, styled, TableCell, TableRow } from "@mui/material";
 import React, { useState } from "react";
 import { DocMapping, Entry, flattenEntries, RawDoc } from "../../utils/models";
 import { QUICKWIT_INTERMEDIATE_GREY } from "../../utils/theme";
