@@ -43,6 +43,8 @@ fn raw_tokenizer_test() {
                         no one shall find it. I just need some more chars, now you may not pass.";
 
     let tokenizer = get_quickwit_tokenizer_manager().get("raw").unwrap();
-    assert!(tokenizer.token_stream(my_haiku).advance());
+    let mut haiku_stream = tokenizer.token_stream(my_haiku);
+    assert!(haiku_stream.advance());
+    assert!(!haiku_stream.advance());
     assert!(!tokenizer.token_stream(my_long_text).advance());
 }
