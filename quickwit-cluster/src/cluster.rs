@@ -205,35 +205,33 @@ impl Cluster {
     }
 
     /// Returns the gRPC addresses of the members providing the specified service.
-    /// Returns the addresses of all the members if no service is specified.
-    pub async fn members_grpc_addresses_by_service(
+    pub async fn members_grpc_addresses_for_service(
         &self,
-        members: &[Member],
-        service_opt: Option<QuickwitService>,
+        service: QuickwitService,
     ) -> anyhow::Result<Vec<SocketAddr>> {
         let chitchat = self.chitchat_server.chitchat();
         let chitchat_guard = chitchat.lock().await;
         let mut grpc_addresses = vec![];
-        for member in members {
+        for member in self.members() {
             let node_state = chitchat_guard
                 .node_state(&NodeId::from(member.clone()))
                 .unwrap();
 
-            let available_services = node_state
-                .get(AVAILABLE_SERVICES_KEY)
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Could not find `{}` key on node `{}` state.",
-                        AVAILABLE_SERVICES_KEY,
-                        member.internal_id()
-                    )
-                })
-                .map(|services_str| {
-                    services_str
-                        .split(',')
-                        .map(QuickwitService::try_from)
-                        .collect::<Result<Vec<_>, _>>()
-                })??;
+            let available_services_val_opt = node_state.get(AVAILABLE_SERVICES_KEY);
+            if available_services_val_opt.is_none() {
+                error!(
+                    "Could not find `{}` key on node `{}` state.",
+                    AVAILABLE_SERVICES_KEY,
+                    member.internal_id()
+                );
+                continue;
+            }
+
+            let available_services =
+                parse_available_services_val(available_services_val_opt.unwrap(), &member);
+            if !available_services.contains(&service) {
+                continue;
+            }
 
             let grpc_address = node_state
                 .get(GRPC_ADDRESS_KEY)
@@ -245,13 +243,6 @@ impl Cluster {
                     )
                 })
                 .map(|addr_str| get_socket_addr(&addr_str))??;
-
-            if let Some(service) = &service_opt {
-                if available_services.contains(service) {
-                    grpc_addresses.push(grpc_address);
-                }
-                continue;
-            }
             grpc_addresses.push(grpc_address);
         }
 
@@ -317,6 +308,25 @@ impl Cluster {
         .await?;
         Ok(())
     }
+}
+
+fn parse_available_services_val(
+    available_services_val: &str,
+    member: &Member,
+) -> Vec<QuickwitService> {
+    let mut available_services = vec![];
+    let available_services_str = available_services_val.split(',');
+    for service_str in available_services_str {
+        match QuickwitService::try_from(service_str) {
+            Ok(service) => available_services.push(service),
+            Err(_) => error!(
+                "Unknown service found `{}` on node `{}` state.",
+                service_str,
+                member.internal_id()
+            ),
+        }
+    }
+    available_services
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -402,23 +412,49 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cluster_available_service() -> anyhow::Result<()> {
+    async fn test_cluster_available_searcher() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let cluster1 = create_cluster_for_test(&[], &["searcher"])?;
         let node_1 = cluster1.listen_addr.to_string();
-        let cluster2 = create_cluster_for_test(&[node_1.clone()], &["searcher", "indexer"])?;
+        let cluster2 = create_cluster_for_test(&[node_1.clone()], &["searcher"])?;
         let cluster3 = create_cluster_for_test(&[node_1], &["indexer"])?;
 
-        let mut expected_indexers = vec![
-            grpc_addr_from_listen_addr_for_test(cluster2.listen_addr),
-            grpc_addr_from_listen_addr_for_test(cluster3.listen_addr),
-        ];
-        expected_indexers.sort();
         let mut expected_searchers = vec![
             grpc_addr_from_listen_addr_for_test(cluster1.listen_addr),
             grpc_addr_from_listen_addr_for_test(cluster2.listen_addr),
         ];
         expected_searchers.sort();
+
+        let wait_secs = Duration::from_secs(30);
+        for cluster in [&cluster1, &cluster2, &cluster3] {
+            cluster
+                .wait_for_members(|members| members.len() == 3, wait_secs)
+                .await
+                .unwrap();
+        }
+
+        let mut searchers = cluster1
+            .members_grpc_addresses_for_service(QuickwitService::Searcher)
+            .await?;
+        searchers.sort();
+        assert_eq!(searchers, expected_searchers);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_cluster_available_indexer() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let cluster1 = create_cluster_for_test(&[], &["searcher", "indexer"])?;
+        let node_1 = cluster1.listen_addr.to_string();
+        let cluster2 = create_cluster_for_test(&[node_1.clone()], &["indexer"])?;
+        let cluster3 = create_cluster_for_test(&[node_1], &["indexer", "searcher"])?;
+
+        let mut expected_indexers = vec![
+            grpc_addr_from_listen_addr_for_test(cluster1.listen_addr),
+            grpc_addr_from_listen_addr_for_test(cluster2.listen_addr),
+            grpc_addr_from_listen_addr_for_test(cluster3.listen_addr),
+        ];
+        expected_indexers.sort();
 
         let wait_secs = Duration::from_secs(30);
 
@@ -428,26 +464,12 @@ mod tests {
                 .await
                 .unwrap();
         }
-        let members = cluster1.members();
-
-        let all = cluster1
-            .members_grpc_addresses_by_service(&members, None)
-            .await?;
-        assert_eq!(all.len(), 3);
 
         let mut indexers = cluster1
-            .members_grpc_addresses_by_service(&members, Some(QuickwitService::Indexer))
+            .members_grpc_addresses_for_service(QuickwitService::Indexer)
             .await?;
         indexers.sort();
-        assert_eq!(indexers.len(), 2);
         assert_eq!(indexers, expected_indexers);
-
-        let mut searchers = cluster1
-            .members_grpc_addresses_by_service(&members, Some(QuickwitService::Searcher))
-            .await?;
-        searchers.sort();
-        assert_eq!(searchers.len(), 2);
-        assert_eq!(searchers, expected_searchers);
 
         Ok(())
     }

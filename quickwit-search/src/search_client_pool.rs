@@ -164,7 +164,7 @@ impl SearchClientPool {
     pub async fn create_and_keep_updated(cluster: Arc<Cluster>) -> anyhow::Result<Self> {
         let search_client_pool = SearchClientPool::default();
         let members_grpc_addresses = cluster
-            .members_grpc_addresses_by_service(&cluster.members(), Some(QuickwitService::Searcher))
+            .members_grpc_addresses_for_service(QuickwitService::Searcher)
             .await?;
         search_client_pool
             .update_members(&members_grpc_addresses)
@@ -176,9 +176,9 @@ impl SearchClientPool {
 
         // Start to monitor the cluster members.
         tokio::spawn(async move {
-            while let Some(members) = members_watch_channel.next().await {
+            while (members_watch_channel.next().await).is_some() {
                 let members_grpc_addresses = cluster
-                    .members_grpc_addresses_by_service(&members, Some(QuickwitService::Searcher))
+                    .members_grpc_addresses_for_service(QuickwitService::Searcher)
                     .await?;
                 search_clients_pool_clone
                     .update_members(&members_grpc_addresses)
