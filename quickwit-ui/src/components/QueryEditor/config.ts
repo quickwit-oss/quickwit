@@ -49,6 +49,8 @@ export const LANGUAGE_CONFIG = {
   ],
 };
 
+// TODO: clean language features as I (fmassot) did not dig into it yet.
+/* eslint-disable  @typescript-eslint/no-explicit-any */
 export function LanguageFeatures(): any {
   return {
     defaultToken: "invalid",
@@ -60,7 +62,7 @@ export function LanguageFeatures(): any {
     keywords: [
       'AND', 'OR',
     ],
-    symbols:  /[=><!~?:&|+\-*\/\^%]+/,
+    symbols:  /[=><!~?:&|+\-*/^%]+/,
     escapes: /\\(?:[abfnrtv\\"']|x[0-9A-Fa-f]{1,4}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})/,
     tokenizer: {
       root: [
@@ -68,13 +70,13 @@ export function LanguageFeatures(): any {
         [/[a-z_$][\w$]*/, { cases: {
           '@keywords': 'keyword',
           '@default': 'identifier' } }],
-        [/[A-Z][\w\$]*/, 'type.identifier' ],  // to show class names nicely
+        [/[A-Z][\w$]*/, 'type.identifier' ],  // to show class names nicely
 
         // whitespace
         { include: '@whitespace' },
 
         // delimiters and operators
-        [/[{}()\[\]]/, '@brackets'],
+        [/[{}()[]]/, '@brackets'],
         [/[<>](?!@symbols)/, '@brackets'],
         [/@symbols/, { cases: { '@operators': 'operator',
         '@default'  : '' } } ],
@@ -82,10 +84,10 @@ export function LanguageFeatures(): any {
         // @ annotations.
         // As an example, we emit a debugging log message on these tokens.
         // Note: message are supressed during the first load -- change some lines to see them.
-        [/@\s*[a-zA-Z_\$][\w\$]*/, { token: 'annotation', log: 'annotation token: $0' }],
+        [/@\s*[a-zA-Z_$][\w$]*/, { token: 'annotation', log: 'annotation token: $0' }],
 
         // numbers
-        [/\d*\.\d+([eE][\-+]?\d+)?/, 'number.float'],
+        [/\d*\.\d+([eE][-+]?\d+)?/, 'number.float'],
         [/0[xX][0-9a-fA-F]+/, 'number.hex'],
         [/\d+/, 'number'],
 
@@ -102,10 +104,10 @@ export function LanguageFeatures(): any {
         [/'/, 'string.invalid']
       ],
       comment: [
-        [/[^\/*]+/, 'comment' ],
+        [/[^/*]+/, 'comment' ],
         [/\/\*/,    'comment', '@push' ],    // nested comment
         ["\\*/",    'comment', '@pop'  ],
-        [/[\/*]/,   'comment' ]
+        [/[/*]/,   'comment' ]
       ],
       string: [
         [/[^\\"]+/,  'string'],

@@ -17,8 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { Table, TableBody, TableContainer, Box } from "@mui/material";
-import { styled } from "@mui/system";
+import { Table, TableBody, TableContainer, Box, styled } from "@mui/material";
 import { IndexMetadata, SearchResponse } from "../../utils/models";
 import { Row } from "./Row";
 

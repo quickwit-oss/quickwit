@@ -17,65 +17,73 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { List, ListItem, Paper } from "@mui/material";
-import { styled } from "@mui/system";
-import { Box } from "@mui/system";
+import styled from "@emotion/styled";
+import { Paper } from "@mui/material";
 import dayjs from "dayjs";
 import NumberFormat from "react-number-format";
-import { IndexMetadata } from "../utils/models";
+import { Index } from "../utils/models";
 
-const InlineBox = styled(Box)`
-display: inline;
-padding-right: 10px;
+const ItemContainer = styled.div`
+padding: 10px;
+display: flex;
+flex-direction: column;
+`
+const Row = styled.div`
+padding: 5px;
+display: flex;
+flex-direction: row;
+`
+const RowKey = styled.div`
+width: 100px;
 `
 
-const CustomListItem = styled(ListItem)`
-width: inherit;
-`
-
-export function IndexSummary({indexMetadata}: {indexMetadata: IndexMetadata}) {
+export function IndexSummary({index}: {index: Index}) {
+  const total_num_docs = index.splits
+    .map(split => split.num_docs)
+    .reduce((sum, current) => sum + current, 0);
+  const total_num_bytes = index.splits
+    .map(split => split.size_in_bytes)
+    .reduce((sum, current) => sum + current, 0);
   return (
     <Paper variant="outlined" >
-      <List sx={{ display: 'flex', flexDirection: 'row', 'padding': 0 }}>
-        <CustomListItem>
-          <InlineBox>Created at:</InlineBox>
-          <InlineBox>
-            { dayjs.unix(indexMetadata.create_timestamp).format("YYYY/MM/DD HH:MM") }
-          </InlineBox>
-        </CustomListItem>
-        <CustomListItem>
-          <InlineBox>URI:</InlineBox>
-          <InlineBox>
-            { indexMetadata.index_uri }
-          </InlineBox>
-        </CustomListItem>
-        <CustomListItem>
-          <InlineBox>Size:</InlineBox>
-          <InlineBox>
-            { indexMetadata.num_bytes / 1000000 } MB 
-          </InlineBox>
-        </CustomListItem>
-        <CustomListItem>
-          <InlineBox>Documents:</InlineBox>
-          <InlineBox>
-            <NumberFormat value={indexMetadata.num_docs} displayType={'text'} thousandSeparator={true} />
-          </InlineBox>
-        </CustomListItem>
-        <CustomListItem>
-          <InlineBox>Splits:</InlineBox>
-          <InlineBox>
-            { indexMetadata.num_splits }
-          </InlineBox>
-        </CustomListItem>
-      </List>
-      <List sx={{ display: 'flex', flexDirection: 'row', 'padding': 0 }}>
-        <CustomListItem>
-          <InlineBox>Updated at:</InlineBox>
-          <InlineBox>
-            { dayjs.unix(indexMetadata.update_timestamp).format("YYYY/MM/DD HH:MM") }
-          </InlineBox>
-        </CustomListItem>
-      </List>
+      <ItemContainer>
+        <Row>
+          <RowKey>Created at:</RowKey>
+          <div>
+            { dayjs.unix(index.metadata.create_timestamp).format("YYYY/MM/DD HH:MM") }
+          </div>
+        </Row>
+        <Row>
+          <RowKey>Updated at:</RowKey>
+          <div>
+            { dayjs.unix(index.metadata.update_timestamp).format("YYYY/MM/DD HH:MM") }
+          </div>
+        </Row>
+        <Row>
+          <RowKey>URI:</RowKey>
+          <div>
+            { index.metadata.index_uri }
+          </div>
+        </Row>
+        <Row>
+          <RowKey>Size:</RowKey>
+          <div>
+            <NumberFormat value={total_num_bytes / 1000000} displayType={'text'} thousandSeparator={true} suffix='MB' decimalScale={2}/>
+          </div>
+        </Row>
+        <Row>
+          <RowKey>Documents:</RowKey>
+          <div>
+            <NumberFormat value={total_num_docs} displayType={'text'} thousandSeparator={true} />
+          </div>
+        </Row>
+        <Row>
+          <RowKey>Splits:</RowKey>
+          <div>
+            { index.splits.length }
+          </div>
+        </Row>
+      </ItemContainer>
     </Paper>
   )
 }

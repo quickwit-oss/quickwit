@@ -40,6 +40,9 @@ prometheus = "0.13"
 once_cell = '1'
 chitchat = "0.2"
 quickwit-actors = {version="0.2.1", path="../quickwit-actors"}
+rust-embed="6.3.0"
+mime_guess = { version = "2.0.4" }
+regex = "1"
 
 [dev-dependencies]
 mockall = "0.11"

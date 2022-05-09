@@ -17,28 +17,18 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { Box, Button } from "@mui/material";
-import { TimeRangeSelect } from './TimeRangeSelect';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import { SearchComponentProps } from "../utils/SearchComponentProps";
+import { Box } from '@mui/material';
+import { ResponseError } from '../utils/models';
+import SentimentVeryDissatisfiedIcon from '@mui/icons-material/SentimentVeryDissatisfied';
 
-export function QueryEditorActionBar(props: SearchComponentProps) {
-  return (
-    <Box sx={{ display: 'flex'}}>
-      <Box sx={{ flexGrow: 1 }}>
-        <Button
-          onClick={() => props.runSearch(props.searchRequest)}
-          variant="contained"
-          startIcon={<PlayArrowIcon />}
-          disableElevation
-          sx={{ flexGrow: 1}}
-          disabled={props.queryRunning || props.searchRequest.indexId === null}>
-          Run
-        </Button>
+export default function ErrorResponseDisplay(error: ResponseError) {
+  return <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', alignItems: 'center' }} >
+    <SentimentVeryDissatisfiedIcon sx={{ fontSize: 60 }} />
+      <Box sx={{fontSize: 16, pt: 2, }}>
+        {error.status && <span>Status: {error.status}</span>}
       </Box>
-      { props.index?.metadata.indexing_settings.timestamp_field && <TimeRangeSelect 
-        { ...props } /> 
-      }
+      <Box sx={{ fontSize: 14, pt: 1, alignItems: 'center'}}>
+        Error: {error.message}
+      </Box>
     </Box>
-  )
 }

@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import * as React from 'react';
-import { styled } from '@mui/system';
 import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
 import ListItemIcon from '@mui/material/ListItemIcon';
@@ -27,7 +26,7 @@ import {
   Link as RouterLink,
   LinkProps as RouterLinkProps,
 } from 'react-router-dom';
-import { ListSubheader, Typography } from '@mui/material';
+import { ListSubheader, styled, Typography } from '@mui/material';
 import { CodeSSlash } from "@styled-icons/remix-line/CodeSSlash"
 import { GroupWork } from '@styled-icons/material-outlined/GroupWork';
 import { Database } from '@styled-icons/feather/Database';
@@ -78,7 +77,6 @@ const SideBar = () => {
   if (lastSearchRequest.indexId || lastSearchRequest.query) {
     searchUrl = '/search?' + toUrlSearchRequestParams(lastSearchRequest).toString();
   }
-  console.log('lastSearchRequest', lastSearchRequest);
   return (
     <SideBarWrapper sx={{ px: 0, py: 2 }}>
       <List dense={ true } sx={{ py: 0 }}>

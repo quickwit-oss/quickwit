@@ -32,7 +32,7 @@ test-all: docker-compose-up
 IMAGE_TAGS = x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-unknown-linux-musl aarch64-unknown-linux-musl
 
 .PHONY: cross-images
-cross-images:
+cross-images: build-ui
 	@for tag in ${IMAGE_TAGS}; do \
 		docker build --tag quickwit/cross:$$tag --file ./build/cross-images/$$tag.dockerfile ./build/cross-images; \
 		docker push quickwit/cross:$$tag; \
@@ -41,7 +41,7 @@ cross-images:
 # TODO: to be replaced by https://github.com/quickwit-oss/quickwit/issues/237
 TARGET ?= x86_64-unknown-linux-gnu
 .PHONY: build
-build:
+build: build-ui
 	@echo "Building binary for target=${TARGET}"
 	@which cross > /dev/null 2>&1 || (echo "Cross is not installed. Please install using 'cargo install cross'." && exit 1)
 	@case "${TARGET}" in \
@@ -71,3 +71,7 @@ archive:
 
 workspace-deps-tree:
 	cargo tree --all-features --workspace -f "{p}" --prefix depth | cut -f 1 -d ' ' | python3 scripts/dep-tree.py
+
+.PHONY: build-ui
+build-ui:
+	yarn --cwd quickwit-ui build

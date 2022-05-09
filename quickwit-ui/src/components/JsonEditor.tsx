@@ -21,7 +21,7 @@ import Editor from "@monaco-editor/react";
 import { useCallback } from "react";
 import { EDITOR_THEME } from "../utils/theme";
 
-export function JsonEditor({content, resizeOnMount}: {content: any, resizeOnMount: boolean}) {
+export function JsonEditor({content, resizeOnMount}: {content: unknown, resizeOnMount: boolean}) {
   // setting editor height based on lines height and count to stretch and fit its content
   const onMount = useCallback((editor) => {
     if (!resizeOnMount) {

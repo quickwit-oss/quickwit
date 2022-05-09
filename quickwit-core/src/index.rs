@@ -30,7 +30,9 @@ use quickwit_indexing::{
     delete_splits_with_files, run_garbage_collect, FileEntry, IndexingSplitStore,
     SplitDeletionError,
 };
-use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
+use quickwit_metastore::{
+    IndexMetadata, Metastore, MetastoreError, Split, SplitMetadata, SplitState,
+};
 use quickwit_storage::{StorageResolverError, StorageUriResolver};
 use tantivy::time::OffsetDateTime;
 use thiserror::Error;
@@ -66,11 +68,16 @@ impl IndexService {
             default_index_root_uri,
         }
     }
-
     /// Get an index from `index_id`.
     pub async fn get_index(&self, index_id: &str) -> Result<IndexMetadata, IndexServiceError> {
         let index_metadata = self.metastore.index_metadata(index_id).await?;
         Ok(index_metadata)
+    }
+
+    /// Get all splits from index `index_id`.
+    pub async fn get_all_splits(&self, index_id: &str) -> Result<Vec<Split>, IndexServiceError> {
+        let splits = self.metastore.list_all_splits(index_id).await?;
+        Ok(splits)
     }
 
     /// Get all indexes.

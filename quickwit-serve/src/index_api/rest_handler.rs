@@ -34,6 +34,7 @@ pub fn index_management_handlers(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     get_index_metadata_handler(index_service.clone())
         .or(get_indexes_metadatas_handler(index_service.clone()))
+        .or(get_all_splits_handler(index_service.clone()))
         .or(create_index_handler(index_service.clone()))
         .or(delete_index_handler(index_service))
 }
@@ -63,6 +64,24 @@ fn get_indexes_metadatas_handler(
         .and(warp::get())
         .and(warp::path::end().map(move || index_service.clone()))
         .and_then(get_indexes_metadatas)
+}
+
+async fn get_all_splits(
+    index_id: String,
+    index_service: Arc<IndexService>,
+) -> Result<impl warp::Reply, Infallible> {
+    info!(index_id = %index_id, "get-index");
+    let splits = index_service.get_all_splits(&index_id).await;
+    Ok(Format::default().make_rest_reply_non_serializable_error(splits))
+}
+
+fn get_all_splits_handler(
+    index_service: Arc<IndexService>,
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    warp::path!("indexes" / String / "splits")
+        .and(warp::get())
+        .and(warp::path::end().map(move || index_service.clone()))
+        .and_then(get_all_splits)
 }
 
 async fn get_indexes_metadatas(
@@ -156,6 +175,33 @@ mod tests {
             "index_id": "quickwit-demo-index",
             "index_uri": "file:///path/to/index/quickwit-demo-index",
         });
+        assert_json_include!(actual: resp_json, expected: expected_response_json);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_rest_get_all_splits() -> anyhow::Result<()> {
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_list_all_splits()
+            .returning(|_index_id: &str| Ok(vec![mock_split("split_1")]));
+        let index_service = IndexService::new(
+            Arc::new(metastore),
+            StorageUriResolver::for_test(),
+            Uri::try_new("file:///default-index-uri").unwrap(),
+        );
+        let index_management_handler =
+            super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/indexes/quickwit-demo-index/splits")
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
+        let expected_response_json = serde_json::json!([{
+            "create_timestamp": 0,
+            "split_id": "split_1",
+        }]);
         assert_json_include!(actual: resp_json, expected: expected_response_json);
         Ok(())
     }

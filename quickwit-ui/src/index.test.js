@@ -17,28 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { Box, Button } from "@mui/material";
-import { TimeRangeSelect } from './TimeRangeSelect';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import { SearchComponentProps } from "../utils/SearchComponentProps";
+import { render, screen } from '@testing-library/react';
+import { BrowserRouter } from 'react-router-dom';
+import App from './views/App';
 
-export function QueryEditorActionBar(props: SearchComponentProps) {
-  return (
-    <Box sx={{ display: 'flex'}}>
-      <Box sx={{ flexGrow: 1 }}>
-        <Button
-          onClick={() => props.runSearch(props.searchRequest)}
-          variant="contained"
-          startIcon={<PlayArrowIcon />}
-          disableElevation
-          sx={{ flexGrow: 1}}
-          disabled={props.queryRunning || props.searchRequest.indexId === null}>
-          Run
-        </Button>
-      </Box>
-      { props.index?.metadata.indexing_settings.timestamp_field && <TimeRangeSelect 
-        { ...props } /> 
-      }
-    </Box>
-  )
-}
+describe('App', function () {
+  it('Should display side bar links', function () {
+      render(<BrowserRouter><App /></BrowserRouter>);
+      expect(screen.getByText(/Discover/)).toBeInTheDocument();
+      expect(screen.getByText(/Query editor/)).toBeInTheDocument();
+      expect(screen.getByText(/Admin/)).toBeInTheDocument();
+  });
+});
