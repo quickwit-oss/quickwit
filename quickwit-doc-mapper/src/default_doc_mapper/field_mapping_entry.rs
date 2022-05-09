@@ -87,6 +87,26 @@ impl Default for QuickwitNumericOptions {
     }
 }
 
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub enum QuickwitTextTokenizer {
+    #[serde(rename = "raw")]
+    Raw,
+    #[serde(rename = "default")]
+    Default,
+    #[serde(rename = "en_stem")]
+    StemEn,
+}
+
+impl QuickwitTextTokenizer {
+    fn get_name(&self) -> &str {
+        match self {
+            QuickwitTextTokenizer::Raw => "raw",
+            QuickwitTextTokenizer::Default => "default",
+            QuickwitTextTokenizer::StemEn => "en_stem",
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct QuickwitTextOptions {
@@ -94,7 +114,7 @@ pub struct QuickwitTextOptions {
     pub indexed: bool,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tokenizer: Option<String>,
+    pub tokenizer: Option<QuickwitTextTokenizer>,
     #[serde(default)]
     pub record: IndexRecordOption,
     #[serde(default)]
@@ -129,8 +149,8 @@ impl From<QuickwitTextOptions> for TextOptions {
         }
         if quickwit_text_options.indexed {
             let mut text_field_indexing = TextFieldIndexing::default();
-            if let Some(tokenizer_name) = quickwit_text_options.tokenizer {
-                text_field_indexing = text_field_indexing.set_tokenizer(&tokenizer_name);
+            if let Some(tokenizer) = quickwit_text_options.tokenizer {
+                text_field_indexing = text_field_indexing.set_tokenizer(tokenizer.get_name());
             }
             text_field_indexing =
                 text_field_indexing.set_index_option(quickwit_text_options.record);
@@ -140,8 +160,8 @@ impl From<QuickwitTextOptions> for TextOptions {
     }
 }
 
-fn default_json_tokenizer() -> String {
-    "raw".to_string()
+fn default_json_tokenizer() -> QuickwitTextTokenizer {
+    QuickwitTextTokenizer::Raw
 }
 
 /// Options associated to a json field.
@@ -156,7 +176,7 @@ pub struct QuickwitJsonOptions {
     /// Sets the tokenize that should be used with the text fields in the
     /// json object.
     #[serde(default = "default_json_tokenizer")]
-    pub tokenizer: String,
+    pub tokenizer: QuickwitTextTokenizer,
     /// Sets how much information should be added in the index
     /// with each token.
     ///
@@ -172,7 +192,7 @@ impl Default for QuickwitJsonOptions {
     fn default() -> Self {
         QuickwitJsonOptions {
             indexed: true,
-            tokenizer: "raw".to_string(),
+            tokenizer: QuickwitTextTokenizer::Raw,
             record: IndexRecordOption::Basic,
             stored: true,
         }
@@ -188,7 +208,7 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
         if quickwit_json_options.indexed {
             let mut text_field_indexing = TextFieldIndexing::default();
             text_field_indexing =
-                text_field_indexing.set_tokenizer(&quickwit_json_options.tokenizer);
+                text_field_indexing.set_tokenizer(quickwit_json_options.tokenizer.get_name());
             text_field_indexing =
                 text_field_indexing.set_index_option(quickwit_json_options.record);
             json_options = json_options.set_indexing_options(text_field_indexing);
@@ -333,7 +353,9 @@ mod tests {
     use tantivy::schema::{Cardinality, IndexRecordOption};
 
     use super::FieldMappingEntry;
-    use crate::default_doc_mapper::field_mapping_entry::QuickwitJsonOptions;
+    use crate::default_doc_mapper::field_mapping_entry::{
+        QuickwitJsonOptions, QuickwitTextTokenizer,
+    };
     use crate::default_doc_mapper::FieldMappingType;
 
     const TEXT_MAPPING_ENTRY_VALUE: &str = r#"
@@ -342,7 +364,17 @@ mod tests {
             "type": "text",
             "stored": true,
             "record": "basic",
-            "tokenizer": "english"
+            "tokenizer": "en_stem"
+        }
+    "#;
+
+    const TEXT_MAPPING_ENTRY_VALUE_INVALID_TOKENIZER: &str = r#"
+        {
+            "name": "my_field_name",
+            "type": "text",
+            "stored": true,
+            "record": "basic",
+            "tokenizer": "notexist"
         }
     "#;
 
@@ -360,6 +392,20 @@ mod tests {
     "#;
 
     #[test]
+    fn test_deserialize_invalid_text_mapping_entry() -> anyhow::Result<()> {
+        let mapping_entry =
+            serde_json::from_str::<FieldMappingEntry>(TEXT_MAPPING_ENTRY_VALUE_INVALID_TOKENIZER);
+        assert!(mapping_entry.is_err());
+        assert_eq!(
+            mapping_entry.unwrap_err().to_string(),
+            "Error while parsing field `my_field_name`: unknown variant `notexist`, expected one \
+             of `raw`, `default`, `en_stem`"
+                .to_string()
+        );
+        Ok(())
+    }
+
+    #[test]
     fn test_deserialize_text_mapping_entry() -> anyhow::Result<()> {
         let mapping_entry = serde_json::from_str::<FieldMappingEntry>(TEXT_MAPPING_ENTRY_VALUE)?;
         assert_eq!(mapping_entry.name, "my_field_name");
@@ -367,7 +413,7 @@ mod tests {
             FieldMappingType::Text(options, _) => {
                 assert_eq!(options.stored, true);
                 assert_eq!(options.indexed, true);
-                assert_eq!(options.tokenizer.unwrap(), "english");
+                assert_eq!(options.tokenizer.unwrap().get_name(), "en_stem");
                 assert_eq!(options.record, IndexRecordOption::Basic);
             }
             _ => panic!("wrong property type"),
@@ -386,7 +432,7 @@ mod tests {
             "indexed": true,
             "fieldnorms": true,
             "record": "basic",
-            "tokenizer": "english"
+            "tokenizer": "en_stem"
         }"#,
         );
         match result.unwrap().mapping_type {
@@ -890,7 +936,7 @@ mod tests {
         .unwrap();
         let expected_json_options = QuickwitJsonOptions {
             indexed: true,
-            tokenizer: "raw".to_string(),
+            tokenizer: QuickwitTextTokenizer::Raw,
             record: IndexRecordOption::Basic,
             stored: true,
         };
@@ -904,7 +950,7 @@ mod tests {
     #[test]
     fn test_quickwit_json_options_default_tokenizer_is_raw() {
         let quickwit_json_options = QuickwitJsonOptions::default();
-        assert_eq!(quickwit_json_options.tokenizer, "raw");
+        assert_eq!(quickwit_json_options.tokenizer, QuickwitTextTokenizer::Raw);
     }
 
     #[test]
@@ -921,7 +967,7 @@ mod tests {
         .unwrap();
         let expected_json_options = QuickwitJsonOptions {
             indexed: true,
-            tokenizer: "raw".to_string(),
+            tokenizer: QuickwitTextTokenizer::Raw,
             record: IndexRecordOption::Basic,
             stored: false,
         };
