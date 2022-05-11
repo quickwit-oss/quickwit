@@ -37,14 +37,14 @@ use crate::{Actor, AskError, Handler, QueueCapacity, RecvError, SendError};
 /// The actor holds its `Inbox` counterpart.
 ///
 /// The mailbox can accept:
-/// - regular message. Their type depend on the actor and is defined when
-/// implementing the actor trait.  (See [`Actor::Message`](crate::Actor::Message))
+/// - Regular messages wrapped in envelopes. Their type depend on the actor and is defined when
+/// implementing the actor trait. (See [`Envelope`])
 /// - Commands (See [`Command`]). Commands have a higher priority than messages:
 /// whenever a command is available, it is guaranteed to be processed
 /// as soon as possible regardless of the presence of pending regular messages.
 ///
 /// If all mailboxes are dropped, the actor will process all of the pending messages
-/// and gracefully exit with `ActorExitStatus::Success`.
+/// and gracefully exit with [`crate::actor::ActorExitStatus::Success`].
 pub struct Mailbox<A: Actor> {
     pub(crate) inner: Arc<Inner<A>>,
 }

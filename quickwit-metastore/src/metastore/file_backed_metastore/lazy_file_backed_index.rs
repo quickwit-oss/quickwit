@@ -17,10 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-//! [`FileBackedIndex`] module. It is public so that the crate `quickwit-backward-compat` can
-//! import [`FiledBackedIndex`] and run backward-compatibility tests. You should not have to import
-//! anything from here directly.
-
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
@@ -32,10 +28,10 @@ use super::file_backed_index::FileBackedIndex;
 use super::store_operations::fetch_index;
 use crate::MetastoreResult;
 
-/// Lazy `FileBackedIndex`. It loads a `FileBackedIndex`
+/// Lazy [`FileBackedIndex`]. It loads a `FileBackedIndex`
 /// on demand and optionaly spawns a task to poll
 /// regularly the storage and update the index.
-pub struct LazyFileBackedIndex {
+pub(crate) struct LazyFileBackedIndex {
     index_id: String,
     storage: Arc<dyn Storage>,
     polling_interval_opt: Option<Duration>,

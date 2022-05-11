@@ -20,10 +20,9 @@
 import AppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
 import GitHubIcon from '@mui/icons-material/GitHub';
-import { IconButton, Link, styled, SvgIcon } from '@mui/material';
+import { Box, IconButton, Link, styled, SvgIcon } from '@mui/material';
 import { Discord } from '@styled-icons/fa-brands/Discord';
 import { ReactComponent as Logo } from '../assets/img/quickwit-logo.svg';
-import { Box } from '@mui/system';
 
 const StyledAppBar = styled(AppBar)(({ theme })=>({
   zIndex: theme.zIndex.drawer + 1,

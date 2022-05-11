@@ -2938,6 +2938,7 @@ dependencies = [
  "futures",
  "futures-util",
  "hyper",
+ "mime_guess",
  "mockall",
  "once_cell",
  "opentelemetry",
@@ -2956,6 +2957,8 @@ dependencies = [
  "quickwit-search",
  "quickwit-storage",
  "quickwit-telemetry",
+ "regex",
+ "rust-embed",
  "serde",
  "serde_json",
  "serde_qs",
@@ -3358,6 +3361,40 @@ dependencies = [
  "serde",
  "sha2",
  "tokio",
+]
+
+[[package]]
+name = "rust-embed"
+version = "6.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a17e5ac65b318f397182ae94e532da0ba56b88dd1200b774715d36c4943b1c3"
+dependencies = [
+ "rust-embed-impl",
+ "rust-embed-utils",
+ "walkdir",
+]
+
+[[package]]
+name = "rust-embed-impl"
+version = "6.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94e763e24ba2bf0c72bc6be883f967f794a019fafd1b86ba1daff9c91a7edd30"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "rust-embed-utils",
+ "syn",
+ "walkdir",
+]
+
+[[package]]
+name = "rust-embed-utils"
+version = "7.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "756feca3afcbb1487a1d01f4ecd94cf8ec98ea074c55a69e7136d29fb6166029"
+dependencies = [
+ "sha2",
+ "walkdir",
 ]
 
 [[package]]

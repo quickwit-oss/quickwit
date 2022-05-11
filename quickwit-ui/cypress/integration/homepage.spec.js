@@ -17,28 +17,18 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { Box, Button } from "@mui/material";
-import { TimeRangeSelect } from './TimeRangeSelect';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import { SearchComponentProps } from "../utils/SearchComponentProps";
-
-export function QueryEditorActionBar(props: SearchComponentProps) {
-  return (
-    <Box sx={{ display: 'flex'}}>
-      <Box sx={{ flexGrow: 1 }}>
-        <Button
-          onClick={() => props.runSearch(props.searchRequest)}
-          variant="contained"
-          startIcon={<PlayArrowIcon />}
-          disableElevation
-          sx={{ flexGrow: 1}}
-          disabled={props.queryRunning || props.searchRequest.indexId === null}>
-          Run
-        </Button>
-      </Box>
-      { props.index?.metadata.indexing_settings.timestamp_field && <TimeRangeSelect 
-        { ...props } /> 
-      }
-    </Box>
-  )
-}
+describe('Home navigation', () => {
+  it('Should display sidebar links', () => {
+    cy.visit('http://127.0.0.1:7280/ui');
+    cy.get('a')
+        .should('be.visible')
+        .should('contain.text', 'Query editor')
+        .should('contain.text', 'Indexes')
+        .should('contain.text', 'Cluster');
+  });
+  it('Should navigate to cluster members', () => {
+    cy.visit('http://127.0.0.1:7280/ui');
+    cy.get('a').contains('Cluster').click();
+    cy.get('p').should('contain.text', 'Cluster members');
+  });
+})

@@ -3,33 +3,33 @@ import { SearchRequest } from "./models";
 export function hasSearchParams(historySearch: string): boolean {
   const searchParams = new URLSearchParams(historySearch);
 
-  return searchParams.has('indexId') || searchParams.has('query')
-    || searchParams.has('startTimestamp') || searchParams.has('endTimestamp');
+  return searchParams.has('index_id') || searchParams.has('query')
+    || searchParams.has('start_timestamp') || searchParams.has('end_timestamp');
 }
 
 export function parseSearchUrl(historySearch: string): SearchRequest {
   const searchParams = new URLSearchParams(historySearch);
-  const startTimestampString = searchParams.get("startTimestamp");
+  const startTimestampString = searchParams.get("start_timestamp");
   let startTimestamp = null;
-  let startTimeStampParsedInt = parseInt(startTimestampString || "");
+  const startTimeStampParsedInt = parseInt(startTimestampString || "");
   if (!isNaN(startTimeStampParsedInt)) {
     startTimestamp = startTimeStampParsedInt
   }
   let endTimestamp = null;
-  const endTimestampString = searchParams.get("endTimestamp");
-  let endTimestampParsedInt = parseInt(endTimestampString || "");
+  const endTimestampString = searchParams.get("end_timestamp");
+  const endTimestampParsedInt = parseInt(endTimestampString || "");
   if (!isNaN(endTimestampParsedInt)) {
     endTimestamp = endTimestampParsedInt
   }
   let indexId = null;
-  const indexIdParam = searchParams.get("indexId");
+  const indexIdParam = searchParams.get("index_id");
   if (indexIdParam !== null && indexIdParam.length > 0) {
-    indexId = searchParams.get("indexId");
+    indexId = searchParams.get("index_id");
   }
   return {
     indexId: indexId,
     query: searchParams.get("query") || "",
-    numHits: 10,
+    maxHits: 10,
     startTimestamp: startTimestamp,
     endTimestamp: endTimestamp,
   };
@@ -38,18 +38,21 @@ export function parseSearchUrl(historySearch: string): SearchRequest {
 export function toUrlSearchRequestParams(request: SearchRequest): URLSearchParams {
   const params = new URLSearchParams();
   params.append("query", request.query);
-  params.append("indexId", request.indexId || "");
-  if (request.numHits) {
-    params.append("numHits", request.numHits.toString());
+  // We have to set the index ID in url params as it's not present in the UI path params.
+  // This enables the react app to be able to get index ID from url params 
+  // if the user enter directly the UI url.
+  params.append("index_id", request.indexId || "");
+  if (request.maxHits) {
+    params.append("max_hits", request.maxHits.toString());
   }
   if (request.startTimestamp) {
     params.append(
-      "startTimestamp",
+      "start_timestamp",
       request.startTimestamp.toString()
     );
   }
   if (request.endTimestamp) {
-    params.append("endTimestamp", request.endTimestamp.toString());
+    params.append("end_timestamp", request.endTimestamp.toString());
   }
   return params;
 }

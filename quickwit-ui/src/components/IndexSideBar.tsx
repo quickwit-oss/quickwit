@@ -17,8 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { Autocomplete, Chip, CircularProgress, IconButton, List, ListItem, ListItemText, TextField, Typography } from '@mui/material';
-import { Box } from '@mui/system';
+import { Autocomplete, Box, Chip, CircularProgress, IconButton, List, ListItem, ListItemText, TextField, Typography } from '@mui/material';
 import React, { useEffect, useMemo, useState } from 'react';
 import styled from '@emotion/styled';
 import { FieldMapping, getAllFields, IndexMetadata } from '../utils/models';
@@ -169,4 +168,4 @@ export function IndexSideBar(props: IndexMetadataProps) {
       </Box>
     </IndexBarWrapper>
   );
-};
+}

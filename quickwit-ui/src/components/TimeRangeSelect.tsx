@@ -117,7 +117,11 @@ export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
     setState(initialState);
   };
 
-  const handleTimeRangeChoiceClick = (secondsBeforeNow: number) => {
+  const handleTimeRangeChoiceClick = (secondsBeforeNow: number | string | undefined) => {
+    if (secondsBeforeNow === undefined) {
+      return;
+    }
+    secondsBeforeNow = +secondsBeforeNow;
     setState(initialState);
     const startTimestampInMilliSec = Date.now() - secondsBeforeNow * 1000;
     const startTimestamp = convertFromMilliSecond(startTimestampInMilliSec, timeUnit);
@@ -167,8 +171,7 @@ export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
                   return  <ListItem
                     key={idx}
                     button
-                    // @ts-ignore:next-line
-                    onClick={() => handleTimeRangeChoiceClick(+value[1])}
+                    onClick={() => handleTimeRangeChoiceClick(value[1])}
                     >
                     <ListItemText primary={value[0]} />
                   </ListItem>

@@ -27,7 +27,7 @@ import { QueryEditor } from '../components/QueryEditor/QueryEditor';
 import SearchResult from '../components/SearchResult/SearchResult';
 import { useLocalStorage } from '../providers/LocalStorageProvider';
 import { Client } from '../services/client';
-import { EMPTY_SEARCH_REQUEST, Index, IndexMetadata, SearchRequest, SearchResponse } from '../utils/models';
+import { EMPTY_SEARCH_REQUEST, Index, IndexMetadata, ResponseError, SearchRequest, SearchResponse } from '../utils/models';
 import { hasSearchParams, parseSearchUrl, toUrlSearchRequestParams } from '../utils/urls';
 
 function SearchView() {
@@ -36,6 +36,7 @@ function SearchView() {
   const [index, setIndex] = useState<null | Index>(null);
   const prevIndexIdRef = useRef<string | null>();
   const [searchResponse, setSearchResponse] = useState<null | SearchResponse>(null);
+  const [searchError, setSearchError] = useState<null | ResponseError>(null);
   const [queryRunning, setQueryRunning] = useState(false);
   const [searchRequest, setSearchRequest] = useState<SearchRequest>(hasSearchParams(location.search) ? parseSearchUrl(location.search) : EMPTY_SEARCH_REQUEST);
   const updateLastSearchRequest = useLocalStorage().updateLastSearchRequest;
@@ -46,6 +47,7 @@ function SearchView() {
       setSearchRequest(updatedSearchRequest);
     }
     setQueryRunning(true);
+    setSearchError(null);
     quickwitClient.search(updatedSearchRequest).then((response) => {
       navigate('/search?' + toUrlSearchRequestParams(updatedSearchRequest).toString());
       updateLastSearchRequest(updatedSearchRequest);
@@ -53,6 +55,8 @@ function SearchView() {
       setQueryRunning(false);
     }, (error) => {
       setQueryRunning(false);
+      console.log(error);
+      setSearchError(error);
       console.error('Error when running search request', error);
     });
   }
@@ -65,10 +69,13 @@ function SearchView() {
     setSearchRequest(searchRequest);
   }
   useEffect(() => {
+    if (prevIndexIdRef.current !== index?.metadata.index_id) {
+      setSearchResponse(null);
+    }
     prevIndexIdRef.current = index === null ? null : index.metadata.index_id;
   }, [index]);
   useEffect(() => {
-    if (searchRequest.indexId === null || searchRequest.indexId === undefined) {
+    if (searchRequest.indexId === null || searchRequest.indexId === undefined || searchRequest.indexId === '') {
       return;
     }
     if (index !== null && index.metadata.index_id === searchRequest.indexId) {
@@ -104,10 +111,11 @@ function SearchView() {
               queryRunning={queryRunning} />
             <SearchResult
               queryRunning={queryRunning}
+              searchError={searchError}
               searchResponse={searchResponse}
               index={index} />
           </FullBoxContainer>
-          { ApiUrlFooter(`api/v1/indexes/${index?.metadata.index_id}/search?${toUrlSearchRequestParams(searchRequest).toString()}`) }
+          { index !== null && ApiUrlFooter(`api/v1/indexes/${index?.metadata.index_id}/search?${toUrlSearchRequestParams(searchRequest).toString()}`) }
         </FullBoxContainer>
       </ViewUnderAppBarBox>
   );

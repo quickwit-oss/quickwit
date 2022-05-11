@@ -1,7 +1,7 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useState } from "react"
 import { EMPTY_SEARCH_REQUEST, SearchRequest } from "../utils/models"
 
-type Props = {};
+type Props = Record<string, unknown>;
 
 type ContextProps = {
   lastSearchRequest: SearchRequest;
@@ -10,7 +10,7 @@ type ContextProps = {
 
 const defaultValues = {
   lastSearchRequest: EMPTY_SEARCH_REQUEST,
-  updateLastSearchRequest: (_: SearchRequest) => undefined,
+  updateLastSearchRequest: (_: SearchRequest) => undefined,
 }
 
 function parseSearchRequest(value: string | null): SearchRequest {

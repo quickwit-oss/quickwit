@@ -1,11 +1,15 @@
 # quickwit-serve
 
-This project hosts the REST and the gRPC API associated with quickwit.
+This project hosts the REST, the gRPC API associated with quickwit and the react UI. 
 
-The API is split into
-- the search api: the normal and the stream search api.
-- the cluster api: expose information about the cluster, its members etc.
-- the health check api: the health check of the current node. This API is rest only at the moment.
+## REST and gRPC API
+
+The API is split into:
+- the search API: the normal and the stream search api;
+- the index management API: create, delete, list indexes and list splits of an index;
+- the push API;
+- the cluster API: expose information about the cluster, its members etc;
+- the health check API: the health check of the current node. This API is rest only at the moment.
 
 The APIs are usually accessible both via gRPC and REST.
 This is done consistently using the following pattern.
@@ -31,3 +35,10 @@ graph TD
     rest[blop_handler] --> |calls| ser(Go shopping)
     ser[BlopService]
 ```
+
+## UI
+
+The server also exposes at `/ui` all static files located in `quickwit-ui/build` directory. These static files are
+produced by the react app build in `quickwit-ui`.
+During development, the server will serve the local files. When building the binary, these static files will be embedded in it.
+
