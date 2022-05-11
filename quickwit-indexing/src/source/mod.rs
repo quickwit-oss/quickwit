@@ -62,6 +62,7 @@ mod file_source;
 mod kafka_source;
 #[cfg(feature = "kinesis")]
 mod kinesis;
+mod logrotate_source;
 mod push_api_source;
 mod source_factory;
 mod vec_source;
@@ -77,6 +78,7 @@ pub use file_source::{FileSource, FileSourceFactory};
 pub use kafka_source::{KafkaSource, KafkaSourceFactory};
 #[cfg(feature = "kinesis")]
 pub use kinesis::kinesis_source::{KinesisSource, KinesisSourceFactory};
+pub use logrotate_source::{LogRotateSource, LogRotateSourceFactory};
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_config::{SourceConfig, SourceParams};
@@ -241,6 +243,7 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source("kafka", KafkaSourceFactory);
         #[cfg(feature = "kinesis")]
         source_factory.add_source("kinesis", KinesisSourceFactory);
+        source_factory.add_source("logrotate", LogRotateSourceFactory);
         source_factory.add_source("vec", VecSourceFactory);
         source_factory.add_source("void", VoidSourceFactory);
         source_factory.add_source("pushapi", PushApiSourceFactory);
