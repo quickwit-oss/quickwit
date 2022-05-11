@@ -19,8 +19,9 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::bail;
-use quickwit_common::uri::Uri;
+use anyhow::{bail, Context};
+use json_comments::StripComments;
+use quickwit_common::uri::{Extension, Uri};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -32,7 +33,49 @@ pub struct SourceConfig {
 }
 
 impl SourceConfig {
-    /// Check the validity of the `SourceConfig` as a "serializable source".
+    /// Parses and validates a [`SourceConfig`] from a given URI and config content.
+    pub async fn load(uri: &Uri, file_content: &[u8]) -> anyhow::Result<Self> {
+        let config = Self::from_uri(uri, file_content).await?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    async fn from_uri(uri: &Uri, file_content: &[u8]) -> anyhow::Result<Self> {
+        let parser_fn = match uri.extension() {
+            Some(Extension::Json) => Self::from_json,
+            Some(Extension::Toml) => Self::from_toml,
+            Some(Extension::Yaml) => Self::from_yaml,
+            Some(Extension::Unknown(extension)) => bail!(
+                "Failed to read source config file `{}`: file extension `.{}` is not supported. \
+                 Supported file formats and extensions are JSON (.json), TOML (.toml), and YAML \
+                 (.yaml or .yml).",
+                uri,
+                extension
+            ),
+            None => bail!(
+                "Failed to read source config file `{}`: file extension is missing. Supported \
+                 file formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or \
+                 .yml).",
+                uri
+            ),
+        };
+        parser_fn(file_content)
+    }
+
+    fn from_json(bytes: &[u8]) -> anyhow::Result<Self> {
+        serde_json::from_reader(StripComments::new(bytes))
+            .context("Failed to parse JSON source config file.")
+    }
+
+    fn from_toml(bytes: &[u8]) -> anyhow::Result<Self> {
+        toml::from_slice(bytes).context("Failed to parse TOML source config file.")
+    }
+
+    fn from_yaml(bytes: &[u8]) -> anyhow::Result<Self> {
+        serde_yaml::from_slice(bytes).context("Failed to parse YAML source config file.")
+    }
+
+    /// Checks the validity of the `SourceConfig` as a "serializable source".
     ///
     /// Two remarks:
     /// - This does not check connectivity. (See `check_connectivity(..)`)
@@ -57,7 +100,7 @@ impl SourceConfig {
                 // TODO consider any validation opportunity
                 Ok(())
             }
-            SourceParams::Vec(_) | SourceParams::Void(_) => Ok(()),
+            SourceParams::Vec(_) | SourceParams::Void(_) | SourceParams::PushApi(_) => Ok(()),
         }
     }
 
@@ -68,6 +111,7 @@ impl SourceConfig {
             SourceParams::Kinesis(_) => "kinesis",
             SourceParams::Vec(_) => "vec",
             SourceParams::Void(_) => "void",
+            SourceParams::PushApi(_) => "pushapi",
         }
     }
 
@@ -79,6 +123,7 @@ impl SourceConfig {
             SourceParams::Kinesis(params) => serde_json::to_value(params),
             SourceParams::Vec(params) => serde_json::to_value(params),
             SourceParams::Void(params) => serde_json::to_value(params),
+            SourceParams::PushApi(params) => serde_json::to_value(params),
         }
         .unwrap()
     }
@@ -91,13 +136,14 @@ pub enum SourceParams {
     File(FileSourceParams),
     #[serde(rename = "kafka")]
     Kafka(KafkaSourceParams),
-    #[doc(hidden)]
     #[serde(rename = "kinesis")]
     Kinesis(KinesisSourceParams),
     #[serde(rename = "vec")]
     Vec(VecSourceParams),
     #[serde(rename = "void")]
     Void(VoidSourceParams),
+    #[serde(rename = "pushapi")]
+    PushApi(PushApiSourceParams),
 }
 
 impl SourceParams {
@@ -162,10 +208,51 @@ pub struct KafkaSourceParams {
     pub client_params: serde_json::Value,
 }
 
-#[doc(hidden)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RegionOrEndpoint {
+    Region(String),
+    Endpoint(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "KinesisSourceParamsInner")]
 pub struct KinesisSourceParams {
-    stream_name: String,
+    pub stream_name: String,
+    pub region_or_endpoint: Option<RegionOrEndpoint>,
+    pub shutdown_at_stream_eof: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct KinesisSourceParamsInner {
+    pub stream_name: String,
+    pub region: Option<String>,
+    pub endpoint: Option<String>,
+    #[doc(hidden)]
+    #[serde(default)]
+    pub shutdown_at_stream_eof: bool,
+}
+
+impl TryFrom<KinesisSourceParamsInner> for KinesisSourceParams {
+    type Error = &'static str;
+
+    fn try_from(value: KinesisSourceParamsInner) -> Result<Self, Self::Error> {
+        if value.region.is_some() && value.endpoint.is_some() {
+            return Err(
+                "Kinesis source parameters `region` and `endpoint` are mutually exclusive.",
+            );
+        }
+        let region = value.region.map(RegionOrEndpoint::Region);
+        let endpoint = value.endpoint.map(RegionOrEndpoint::Endpoint);
+        let region_or_endpoint = region.or(endpoint);
+
+        Ok(KinesisSourceParams {
+            stream_name: value.stream_name,
+            region_or_endpoint,
+            shutdown_at_stream_eof: value.shutdown_at_stream_eof,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -181,24 +268,135 @@ pub struct VecSourceParams {
 #[serde(deny_unknown_fields)]
 pub struct VoidSourceParams;
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PushApiSourceParams {
+    pub index_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub batch_num_bytes_threshold: Option<u64>,
+}
+
 #[cfg(test)]
 mod tests {
     use quickwit_common::uri::Uri;
+    use serde_json::json;
 
-    use crate::FileSourceParams;
+    use super::*;
+    use crate::source_config::RegionOrEndpoint;
+    use crate::{FileSourceParams, KinesisSourceParams, PushApiSourceParams};
+
+    fn get_source_config_filepath(source_config_filename: &str) -> String {
+        format!(
+            "{}/resources/tests/source_config/{}",
+            env!("CARGO_MANIFEST_DIR"),
+            source_config_filename
+        )
+    }
+
+    #[tokio::test]
+    async fn test_load_kafka_source_config() {
+        let source_config_filepath = get_source_config_filepath("kafka-source.json");
+        let file_content = std::fs::read_to_string(&source_config_filepath).unwrap();
+        let source_config_uri = Uri::try_new(&source_config_filepath).unwrap();
+        let source_config = SourceConfig::from_uri(&source_config_uri, file_content.as_bytes())
+            .await
+            .unwrap();
+        let expected_source_config = SourceConfig {
+            source_id: "hdfs-logs-kafka-source".to_string(),
+            source_params: SourceParams::Kafka(KafkaSourceParams {
+                topic: "cloudera-cluster-logs".to_string(),
+                client_log_level: None,
+                client_params: json! {{"bootstrap.servers": "host:9092"}},
+            }),
+        };
+        assert_eq!(source_config, expected_source_config);
+    }
+
+    #[tokio::test]
+    async fn test_load_kinesis_source_config() {
+        let source_config_filepath = get_source_config_filepath("kinesis-source.yaml");
+        let file_content = std::fs::read_to_string(&source_config_filepath).unwrap();
+        let source_config_uri = Uri::try_new(&source_config_filepath).unwrap();
+        let source_config = SourceConfig::from_uri(&source_config_uri, file_content.as_bytes())
+            .await
+            .unwrap();
+        let expected_source_config = SourceConfig {
+            source_id: "hdfs-logs-kinesis-source".to_string(),
+            source_params: SourceParams::Kinesis(KinesisSourceParams {
+                stream_name: "emr-cluster-logs".to_string(),
+                region_or_endpoint: None,
+                shutdown_at_stream_eof: false,
+            }),
+        };
+        assert_eq!(source_config, expected_source_config);
+    }
 
     #[test]
     fn test_file_source_params_serialization() {
         {
-            let json = r#"{
-                "filepath": "source-path.json"
-            }"#;
-            let file_params = serde_yaml::from_str::<FileSourceParams>(json).unwrap();
+            let yaml = r#"
+                filepath: source-path.json
+            "#;
+            let file_params = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
             let uri = Uri::try_new("source-path.json").unwrap();
             assert_eq!(
                 file_params.filepath.unwrap().as_path(),
                 uri.filepath().unwrap()
             )
         }
+    }
+
+    #[test]
+    fn test_kinesis_source_params_serialization() {
+        {
+            {
+                let yaml = r#"
+                    stream_name: my-stream
+                "#;
+                assert_eq!(
+                    serde_yaml::from_str::<KinesisSourceParams>(yaml).unwrap(),
+                    KinesisSourceParams {
+                        stream_name: "my-stream".to_string(),
+                        region_or_endpoint: None,
+                        shutdown_at_stream_eof: false,
+                    }
+                );
+            }
+            {
+                let yaml = r#"
+                    stream_name: my-stream
+                    region: us-west-1
+                    shutdown_at_stream_eof: true
+                "#;
+                assert_eq!(
+                    serde_yaml::from_str::<KinesisSourceParams>(yaml).unwrap(),
+                    KinesisSourceParams {
+                        stream_name: "my-stream".to_string(),
+                        region_or_endpoint: Some(RegionOrEndpoint::Region("us-west-1".to_string())),
+                        shutdown_at_stream_eof: true,
+                    }
+                );
+            }
+            {
+                let yaml = r#"
+                    stream_name: my-stream
+                    region: us-west-1
+                    endpoint: https://localhost:4566
+                "#;
+                let error = serde_yaml::from_str::<KinesisSourceParams>(yaml).unwrap_err();
+                assert!(error.to_string().starts_with("Kinesis source parameters "));
+            }
+        }
+    }
+
+    #[test]
+    fn test_push_api_source_params_serialization() {
+        let yaml = r#"
+            index_id: wikipedia
+            batch_num_bytes_threshold: 200000
+        "#;
+        let push_api_params = serde_yaml::from_str::<PushApiSourceParams>(yaml).unwrap();
+        assert_eq!(push_api_params.index_id, "wikipedia");
+        assert_eq!(push_api_params.batch_num_bytes_threshold, Some(200000))
     }
 }

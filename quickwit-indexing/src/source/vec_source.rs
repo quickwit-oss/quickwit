@@ -17,20 +17,32 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt;
+use std::time::Duration;
+
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::VecSourceParams;
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use tracing::info;
 
-use crate::models::{IndexerMessage, RawDocBatch};
+use crate::actors::Indexer;
+use crate::models::RawDocBatch;
 use crate::source::{Source, SourceContext, TypedSourceFactory};
 
 pub struct VecSource {
+    source_id: String,
     next_item_idx: usize,
     params: VecSourceParams,
     partition: PartitionId,
 }
+
+impl fmt::Debug for VecSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "VecSource {{ source_id: {} }}", self.source_id)
+    }
+}
+
 pub struct VecSourceFactory;
 
 #[async_trait]
@@ -38,6 +50,7 @@ impl TypedSourceFactory for VecSourceFactory {
     type Source = VecSource;
     type Params = VecSourceParams;
     async fn typed_create_source(
+        source_id: String,
         params: VecSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
@@ -47,6 +60,7 @@ impl TypedSourceFactory for VecSourceFactory {
             Some(Position::Beginning) | None => 0,
         };
         Ok(VecSource {
+            source_id,
             next_item_idx,
             params,
             partition,
@@ -65,9 +79,9 @@ fn position_from_offset(offset: usize) -> Position {
 impl Source for VecSource {
     async fn emit_batches(
         &mut self,
-        batch_sink: &Mailbox<IndexerMessage>,
+        batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
-    ) -> Result<(), ActorExitStatus> {
+    ) -> Result<Duration, ActorExitStatus> {
         let line_docs: Vec<String> = self.params.items[self.next_item_idx..]
             .iter()
             .take(self.params.batch_num_docs)
@@ -90,13 +104,12 @@ impl Source for VecSource {
             docs: line_docs,
             checkpoint_delta,
         };
-        ctx.send_message(batch_sink, IndexerMessage::from(batch))
-            .await?;
-        Ok(())
+        ctx.send_message(batch_sink, batch).await?;
+        Ok(Duration::default())
     }
 
     fn name(&self) -> String {
-        "VecSource".to_string()
+        format!("VecSource{{source_id={}}}", self.source_id)
     }
 
     fn observable_state(&self) -> serde_json::Value {
@@ -108,7 +121,7 @@ impl Source for VecSource {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::{create_test_mailbox, Actor, Command, CommandOrMessage, Universe};
+    use quickwit_actors::{create_test_mailbox, Actor, Command, Universe};
     use serde_json::json;
 
     use super::*;
@@ -127,26 +140,35 @@ mod tests {
             batch_num_docs: 3,
             partition: "partition".to_string(),
         };
-        let vec_source =
-            VecSourceFactory::typed_create_source(params, SourceCheckpoint::default()).await?;
+        let vec_source = VecSourceFactory::typed_create_source(
+            "my-vec-source".to_string(),
+            params,
+            SourceCheckpoint::default(),
+        )
+        .await?;
         let vec_source_actor = SourceActor {
             source: Box::new(vec_source),
             batch_sink: mailbox,
         };
-        assert_eq!(vec_source_actor.name(), "VecSource");
+        assert_eq!(
+            vec_source_actor.name(),
+            "VecSource{source_id=my-vec-source}"
+        );
         let (_vec_source_mailbox, vec_source_handle) =
-            universe.spawn_actor(vec_source_actor).spawn_async();
+            universe.spawn_actor(vec_source_actor).spawn();
         let (actor_termination, last_observation) = vec_source_handle.join().await;
         assert!(actor_termination.is_success());
-        assert_eq!(last_observation, json!({"next_item_idx": 100}));
-        let batches = inbox.drain_available_message_or_command_for_test();
+        assert_eq!(last_observation, json!({"next_item_idx": 100u64}));
+        let batches = inbox.drain_for_test();
         assert_eq!(batches.len(), 35);
-        assert!(
-            matches!(&batches[1], &CommandOrMessage::Message(IndexerMessage::Batch(ref raw_batch)) if format!("{:?}", raw_batch.checkpoint_delta) == "∆(partition:(00000000000000000002..00000000000000000005])")
+        let raw_batch = batches[1].downcast_ref::<RawDocBatch>().unwrap();
+        assert_eq!(
+            format!("{:?}", raw_batch.checkpoint_delta),
+            "∆(partition:(00000000000000000002..00000000000000000005])"
         );
         assert!(matches!(
-            &batches[34],
-            &CommandOrMessage::Command(Command::ExitWithSuccess)
+            &batches[34].downcast_ref::<Command>().unwrap(),
+            &Command::ExitWithSuccess
         ));
         Ok(())
     }
@@ -165,20 +187,21 @@ mod tests {
         let mut checkpoint = SourceCheckpoint::default();
         checkpoint.try_apply_delta(CheckpointDelta::from(0u64..2u64))?;
 
-        let vec_source = VecSourceFactory::typed_create_source(params, checkpoint).await?;
+        let vec_source =
+            VecSourceFactory::typed_create_source("my-vec-source".to_string(), params, checkpoint)
+                .await?;
         let vec_source_actor = SourceActor {
             source: Box::new(vec_source),
             batch_sink: mailbox,
         };
         let (_vec_source_mailbox, vec_source_handle) =
-            universe.spawn_actor(vec_source_actor).spawn_async();
+            universe.spawn_actor(vec_source_actor).spawn();
         let (actor_termination, last_observation) = vec_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(last_observation, json!({"next_item_idx": 10}));
-        let messages = inbox.drain_available_message_for_test();
-        assert!(
-            matches!(&messages[0], &IndexerMessage::Batch(ref raw_batch) if &raw_batch.docs[0] == "2")
-        );
+        let messages = inbox.drain_for_test();
+        let batch = messages[0].downcast_ref::<RawDocBatch>().unwrap();
+        assert_eq!(&batch.docs[0], "2");
         Ok(())
     }
 }

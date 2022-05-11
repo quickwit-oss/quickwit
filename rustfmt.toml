@@ -1,7 +1,7 @@
 ignore = [
   "quickwit-proto/src/cluster.rs",
   "quickwit-proto/src/quickwit.rs",
-  "quickwit-swim",
+  "quickwit-proto/src/quickwit_push_api.rs",
 ]
 
 comment_width = 120

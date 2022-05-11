@@ -17,16 +17,18 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::bail;
-use quickwit_config::{IndexerConfig, SourceConfig};
+use quickwit_actors::{Mailbox, Universe};
+use quickwit_config::QuickwitConfig;
 use quickwit_metastore::Metastore;
+use quickwit_pushapi::PushApiService;
 use quickwit_storage::StorageUriResolver;
+use tracing::info;
 
-use crate::actors::{IndexingPipeline, IndexingPipelineParams, IndexingServer};
-use crate::models::IndexingStatistics;
+pub use crate::actors::IndexingServiceError;
+use crate::actors::{IndexingPipeline, IndexingPipelineParams, IndexingService};
+use crate::models::{IndexingStatistics, SpawnPipelinesForIndex};
 pub use crate::split_store::{
     get_tantivy_directory_from_split_bundle, IndexingSplitStore, IndexingSplitStoreParams,
     SplitFolder,
@@ -43,28 +45,40 @@ mod test_utils;
 
 pub use test_utils::{mock_split, mock_split_meta, TestSandbox};
 
-pub use self::garbage_collection::{delete_splits_with_files, run_garbage_collect, FileEntry};
-pub use self::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
+pub use self::garbage_collection::{
+    delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
+};
+use self::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 pub use self::source::check_source_connectivity;
-
-pub async fn index_data(
-    index_id: String,
-    data_dir_path: PathBuf,
-    indexer_config: IndexerConfig,
-    source: SourceConfig,
-    metastore: Arc<dyn Metastore>,
-    storage_resolver: StorageUriResolver,
-) -> anyhow::Result<IndexingStatistics> {
-    let client = IndexingServer::spawn(data_dir_path, indexer_config, metastore, storage_resolver);
-    let pipeline_id = client.spawn_pipeline(index_id, source).await?;
-    let pipeline_handle = client.detach_pipeline(&pipeline_id).await?;
-    let (exit_status, statistics) = pipeline_handle.join().await;
-    if !exit_status.is_success() {
-        bail!(exit_status);
-    }
-    Ok(statistics)
-}
 
 pub fn new_split_id() -> String {
     ulid::Ulid::new().to_string()
+}
+
+pub async fn start_indexer_service(
+    universe: &Universe,
+    config: &QuickwitConfig,
+    metastore: Arc<dyn Metastore>,
+    storage_uri_resolver: StorageUriResolver,
+    push_api_service: Option<Mailbox<PushApiService>>,
+) -> anyhow::Result<Mailbox<IndexingService>> {
+    info!("start-indexer-service");
+    let index_metadatas = metastore.list_indexes_metadatas().await?;
+    let indexing_server = IndexingService::new(
+        config.data_dir_path.to_path_buf(),
+        config.indexer_config.clone(),
+        metastore,
+        storage_uri_resolver,
+        push_api_service,
+    );
+    let (indexer_service_mailbox, _) = universe.spawn_actor(indexing_server).spawn();
+    for index_metadata in index_metadatas {
+        info!(index_id=%index_metadata.index_id, "spawn-indexing-pipeline");
+        indexer_service_mailbox
+            .ask_for_res(SpawnPipelinesForIndex {
+                index_id: index_metadata.index_id,
+            })
+            .await?;
+    }
+    Ok(indexer_service_mailbox)
 }

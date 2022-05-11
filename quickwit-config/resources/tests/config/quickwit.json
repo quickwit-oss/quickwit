@@ -1,6 +1,7 @@
 # Comments are supported.
 {
     "version": 0,
+    "cluster_id": "quickwit-cluster",
     "node_id": "my-unique-node-id",
     "metastore_uri": "postgres://username:password@host:port/db",
     "data_dir": "/opt/quickwit/data",

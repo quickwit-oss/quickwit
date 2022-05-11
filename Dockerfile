@@ -11,10 +11,12 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
 RUN apt-get -y update \
     && apt-get -y install ca-certificates \
+                          clang \
                           cmake \
                           libpq-dev \
                           libpq5  \
                           libssl-dev \
+                          llvm \
     && rm -rf /var/lib/apt/lists/*
 
 # Required by tonic

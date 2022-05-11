@@ -23,13 +23,13 @@ mod source_config;
 
 pub use config::{
     get_searcher_config_instance, IndexerConfig, QuickwitConfig, SearcherConfig,
-    SEARCHER_CONFIG_INSTANCE,
+    DEFAULT_QW_CONFIG_PATH, SEARCHER_CONFIG_INSTANCE,
 };
 pub use index_config::{
     build_doc_mapper, DocMapping, IndexConfig, IndexingResources, IndexingSettings, MergePolicy,
     SearchSettings,
 };
 pub use source_config::{
-    FileSourceParams, KafkaSourceParams, SourceConfig, SourceParams, VecSourceParams,
-    VoidSourceParams,
+    FileSourceParams, KafkaSourceParams, KinesisSourceParams, PushApiSourceParams,
+    RegionOrEndpoint, SourceConfig, SourceParams, VecSourceParams, VoidSourceParams,
 };

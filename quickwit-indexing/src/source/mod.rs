@@ -62,26 +62,32 @@ mod file_source;
 mod kafka_source;
 #[cfg(feature = "kinesis")]
 mod kinesis;
+mod push_api_source;
 mod source_factory;
 mod vec_source;
 mod void_source;
 
-use std::fmt;
 use std::path::Path;
+use std::time::Duration;
 
 use anyhow::bail;
 use async_trait::async_trait;
 pub use file_source::{FileSource, FileSourceFactory};
 #[cfg(feature = "kafka")]
 pub use kafka_source::{KafkaSource, KafkaSourceFactory};
+#[cfg(feature = "kinesis")]
+pub use kinesis::kinesis_source::{KinesisSource, KinesisSourceFactory};
 use once_cell::sync::OnceCell;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, AsyncActor, Mailbox};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_config::{SourceConfig, SourceParams};
+use quickwit_metastore::checkpoint::SourceCheckpoint;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
+use tracing::error;
 pub use vec_source::{VecSource, VecSourceFactory};
 pub use void_source::{VoidSource, VoidSourceFactory};
 
-use crate::models::IndexerMessage;
+use crate::actors::Indexer;
+use crate::source::push_api_source::PushApiSourceFactory;
 
 /// Reserved source id used for the CLI ingest command.
 pub const INGEST_SOURCE_ID: &str = ".cli-ingest-source";
@@ -122,11 +128,36 @@ pub trait Source: Send + Sync + 'static {
     ///
     /// The `batch_sink` is a mailbox that has a bounded capacity.
     /// In that case, `batch_sink` will block.
+    ///
+    /// It returns an optional duration specifying how long the batch requester
+    /// should wait before pooling gain.
     async fn emit_batches(
         &mut self,
-        batch_sink: &Mailbox<IndexerMessage>,
+        batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
-    ) -> Result<(), ActorExitStatus>;
+    ) -> Result<Duration, ActorExitStatus>;
+
+    /// After publication of a split, `suggest_truncate` is called.
+    /// This makes it possible for the implementation of a source to
+    /// release some resources associated to the data that was just published.
+    ///
+    /// This method is for instance useful for the push api, as it is possible
+    /// to delete all message anterior to the checkpoint in the push api queue.
+    ///
+    /// It is perfectly fine for implementation to ignore this function.
+    /// For instance, message queue like kafka are meant to be shared by different
+    /// client, and rely on a retention strategy to delete messages.
+    ///
+    /// Returning an error has no effect on the source actor itself or the
+    /// indexing pipeline, as truncation is just "a suggestion".
+    /// The error will however be logged.
+    async fn suggest_truncate(
+        &self,
+        _checkpoint: SourceCheckpoint,
+        _ctx: &ActorContext<SourceActor>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
 
     /// Finalize is called once after the actor terminates.
     async fn finalize(
@@ -147,29 +178,19 @@ pub trait Source: Send + Sync + 'static {
     fn observable_state(&self) -> serde_json::Value;
 }
 
-/// The SourceActor acts as a thin wrapper over a source trait object to execute
-/// it as an `AsyncActor`.
+/// The SourceActor acts as a thin wrapper over a source trait object to execute.
 ///
 /// It mostly takes care of running a loop calling `emit_batches(...)`.
 pub struct SourceActor {
     pub source: Box<dyn Source>,
-    pub batch_sink: Mailbox<IndexerMessage>,
+    pub batch_sink: Mailbox<Indexer>,
 }
 
-/// The goal of this struct is simply to prevent the construction of a Loop object.
-struct PrivateToken;
+#[derive(Debug)]
+struct Loop;
 
-/// Message used for the SourceActor.
-pub struct Loop(PrivateToken);
-
-impl fmt::Debug for Loop {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("Loop").finish()
-    }
-}
-
+#[async_trait]
 impl Actor for SourceActor {
-    type Message = Loop;
     type ObservableState = serde_json::Value;
 
     fn name(&self) -> String {
@@ -179,23 +200,10 @@ impl Actor for SourceActor {
     fn observable_state(&self) -> Self::ObservableState {
         self.source.observable_state()
     }
-}
 
-#[async_trait]
-impl AsyncActor for SourceActor {
     async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
         self.source.initialize(ctx).await?;
-        self.process_message(Loop(PrivateToken), ctx).await?;
-        Ok(())
-    }
-
-    async fn process_message(
-        &mut self,
-        _message: Loop,
-        ctx: &SourceContext,
-    ) -> Result<(), ActorExitStatus> {
-        self.source.emit_batches(&self.batch_sink, ctx).await?;
-        ctx.send_self_message(Loop(PrivateToken)).await?;
+        self.handle(Loop, ctx).await?;
         Ok(())
     }
 
@@ -209,6 +217,21 @@ impl AsyncActor for SourceActor {
     }
 }
 
+#[async_trait]
+impl Handler<Loop> for SourceActor {
+    type Reply = ();
+
+    async fn handle(&mut self, _message: Loop, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
+        let wait_for = self.source.emit_batches(&self.batch_sink, ctx).await?;
+        if wait_for.is_zero() {
+            ctx.send_self_message(Loop).await?;
+            return Ok(());
+        }
+        ctx.schedule_self_msg(wait_for, Loop).await;
+        Ok(())
+    }
+}
+
 pub fn quickwit_supported_sources() -> &'static SourceLoader {
     static SOURCE_LOADER: OnceCell<SourceLoader> = OnceCell::new();
     SOURCE_LOADER.get_or_init(|| {
@@ -216,8 +239,11 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source("file", FileSourceFactory);
         #[cfg(feature = "kafka")]
         source_factory.add_source("kafka", KafkaSourceFactory);
+        #[cfg(feature = "kinesis")]
+        source_factory.add_source("kinesis", KinesisSourceFactory);
         source_factory.add_source("vec", VecSourceFactory);
         source_factory.add_source("void", VoidSourceFactory);
+        source_factory.add_source("pushapi", PushApiSourceFactory);
         source_factory
     })
 }
@@ -244,6 +270,28 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
             }
         }
         _ => Ok(()),
+    }
+}
+
+#[derive(Debug)]
+pub struct SuggestTruncate(pub SourceCheckpoint);
+
+#[async_trait]
+impl Handler<SuggestTruncate> for SourceActor {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        suggest_truncate: SuggestTruncate,
+        ctx: &SourceContext,
+    ) -> Result<(), ActorExitStatus> {
+        let SuggestTruncate(checkpoint) = suggest_truncate;
+        if let Err(err) = self.source.suggest_truncate(checkpoint, ctx).await {
+            // Failing to process suggest truncate does not
+            // kill the source nor the indexing pipeline, but we log the error.
+            error!(err=?err, "suggest-truncate-error");
+        }
+        Ok(())
     }
 }
 

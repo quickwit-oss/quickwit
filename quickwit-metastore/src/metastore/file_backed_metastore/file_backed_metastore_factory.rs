@@ -27,6 +27,7 @@ use quickwit_common::uri::Uri;
 use quickwit_storage::{quickwit_storage_uri_resolver, StorageResolverError, StorageUriResolver};
 use regex::Regex;
 use tokio::sync::Mutex;
+use tracing::debug;
 
 use crate::{
     FileBackedMetastore, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
@@ -44,6 +45,8 @@ pub struct FileBackedMetastoreFactory {
     storage_uri_resolver: StorageUriResolver,
     // We almost never garbage collect the dangling Weak pointers
     // here. This is judged to not be much of a problem however.
+    //
+    // In a normal run, this cache will contain a single Metastore.
     cache: Arc<Mutex<HashMap<Uri, Weak<dyn Metastore>>>>,
 }
 
@@ -76,19 +79,12 @@ fn extract_polling_interval_from_uri(uri: &str) -> (String, Option<Duration>) {
 
 impl FileBackedMetastoreFactory {
     async fn get_from_cache(&self, uri: &Uri) -> Option<Arc<dyn Metastore>> {
-        let mut cache_lock = self.cache.lock().await;
-        let metastore_weak: &Weak<dyn Metastore> = cache_lock.get(uri)?;
-        if let Some(metastore_arc) = metastore_weak.upgrade() {
-            Some(metastore_arc.clone())
-        } else {
-            // It does not hurt to do a bit of garbage collecting.
-            cache_lock.remove(uri);
-            None
-        }
+        let cache_lock = self.cache.lock().await;
+        cache_lock.get(uri).and_then(Weak::upgrade)
     }
 
-    /// If there is a valid entry in the cache to begin with, we trash the new
-    /// one and return the old one.
+    /// If there is a valid entry in the cache to begin with, we ignore the new
+    /// metastore and return the old one.
     ///
     /// This way we make sure that we keep only one instance associated
     /// to the key `uri` outside of this struct.
@@ -113,8 +109,10 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
             MetastoreResolverError::InvalidUri(format!("Invalid uri: {}. {:?}", uri, parse_uri_err))
         })?;
         if let Some(metastore) = self.get_from_cache(&uri).await {
+            debug!("using metastore from cache");
             return Ok(metastore);
         }
+        debug!("metastore not found in cache");
         let storage = self
             .storage_uri_resolver
             .resolve(uri.as_ref())
@@ -132,8 +130,9 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
                     })
                 }
             })?;
-        let mut file_backed_metastore = FileBackedMetastore::new(storage);
-        file_backed_metastore.set_polling_interval(polling_interval_opt);
+        let file_backed_metastore = FileBackedMetastore::try_new(storage, polling_interval_opt)
+            .await
+            .map_err(MetastoreResolverError::FailedToOpenMetastore)?;
         let unique_metastore_for_uri = self
             .cache_metastore(uri, Arc::new(file_backed_metastore))
             .await;

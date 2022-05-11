@@ -18,20 +18,20 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeSet, HashMap};
-use std::ffi::OsStr;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use json_comments::StripComments;
-use quickwit_common::uri::Uri;
+use quickwit_common::uri::{Extension, Uri};
 use quickwit_doc_mapper::{
-    DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, SortBy, SortByConfig, SortOrder,
+    DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, ModeType, QuickwitJsonOptions, SortBy,
+    SortByConfig, SortOrder,
 };
 use serde::{Deserialize, Serialize};
 
+use crate::config::deser_valid_uri;
 use crate::source_config::SourceConfig;
 
 // Note(fmassot): `DocMapping` is a struct only used for
@@ -47,6 +47,10 @@ pub struct DocMapping {
     pub tag_fields: BTreeSet<String>,
     #[serde(default)]
     pub store_source: bool,
+    #[serde(default)]
+    pub mode: ModeType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dynamic_mapping: Option<QuickwitJsonOptions>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -212,7 +216,9 @@ pub struct SearchSettings {
 pub struct IndexConfig {
     pub version: usize,
     pub index_id: String,
-    pub index_uri: Option<String>,
+    #[serde(default)]
+    #[serde(deserialize_with = "deser_valid_uri")]
+    pub index_uri: Option<Uri>,
     pub doc_mapping: DocMapping,
     #[serde(default)]
     pub indexing_settings: IndexingSettings,
@@ -223,19 +229,19 @@ pub struct IndexConfig {
 }
 
 impl IndexConfig {
-    // Parses IndexConfig from given uri and config content.
+    /// Parses and validates an [`IndexConfig`] from a given URI and config content.
     pub async fn load(uri: &Uri, file_content: &[u8]) -> anyhow::Result<Self> {
-        let config = IndexConfig::from_uri(uri, file_content).await?;
+        let config = Self::from_uri(uri, file_content).await?;
         config.validate()?;
         Ok(config)
     }
 
     async fn from_uri(uri: &Uri, file_content: &[u8]) -> anyhow::Result<Self> {
-        let parser_fn = match Path::new(uri.as_ref()).extension().and_then(OsStr::to_str) {
-            Some("json") => Self::from_json,
-            Some("toml") => Self::from_toml,
-            Some("yaml") | Some("yml") => Self::from_yaml,
-            Some(extension) => bail!(
+        let parser_fn = match uri.extension() {
+            Some(Extension::Json) => Self::from_json,
+            Some(Extension::Toml) => Self::from_toml,
+            Some(Extension::Yaml) => Self::from_yaml,
+            Some(Extension::Unknown(extension)) => bail!(
                 "Failed to read index config file `{}`: file extension `.{}` is not supported. \
                  Supported file formats and extensions are JSON (.json), TOML (.toml), and YAML \
                  (.yaml or .yml).",
@@ -308,18 +314,22 @@ pub fn build_doc_mapper(
     search_settings: &SearchSettings,
     indexing_settings: &IndexingSettings,
 ) -> anyhow::Result<Arc<dyn DocMapper>> {
-    let mut builder = DefaultDocMapperBuilder::new();
-    builder.default_search_fields = search_settings.default_search_fields.clone();
-    builder.demux_field = indexing_settings.demux_field.clone();
-    builder.sort_by = match indexing_settings.sort_by() {
+    let sort_by = match indexing_settings.sort_by() {
         SortBy::DocId => None,
         SortBy::FastField { field_name, order } => Some(SortByConfig { field_name, order }),
     };
-    builder.timestamp_field = indexing_settings.timestamp_field.clone();
-    builder.field_mappings = doc_mapping.field_mappings.clone();
-    builder.tag_fields = doc_mapping.tag_fields.iter().cloned().collect();
-    builder.store_source = doc_mapping.store_source;
-    Ok(Arc::new(builder.build()?))
+    let builder = DefaultDocMapperBuilder {
+        store_source: doc_mapping.store_source,
+        default_search_fields: search_settings.default_search_fields.clone(),
+        timestamp_field: indexing_settings.timestamp_field.clone(),
+        sort_by,
+        field_mappings: doc_mapping.field_mappings.clone(),
+        tag_fields: doc_mapping.tag_fields.iter().cloned().collect(),
+        demux_field: indexing_settings.demux_field.clone(),
+        mode: doc_mapping.mode,
+        dynamic_mapping: doc_mapping.dynamic_mapping.clone(),
+    };
+    Ok(Arc::new(builder.try_build()?))
 }
 
 #[cfg(test)]
@@ -328,11 +338,11 @@ mod tests {
     use super::*;
     use crate::SourceParams;
 
-    fn get_resource_path(resource_filename: &str) -> String {
+    fn get_index_config_filepath(index_config_filename: &str) -> String {
         format!(
             "{}/resources/tests/index_config/{}",
             env!("CARGO_MANIFEST_DIR"),
-            resource_filename
+            index_config_filename
         )
     }
 
@@ -340,8 +350,10 @@ mod tests {
         ($test_function_name:ident, $file_extension:expr) => {
             #[tokio::test]
             async fn $test_function_name() -> anyhow::Result<()> {
-                let index_config_filepath =
-                    get_resource_path(&format!("hdfs-logs.{}", stringify!($file_extension)));
+                let index_config_filepath = get_index_config_filepath(&format!(
+                    "hdfs-logs.{}",
+                    stringify!($file_extension)
+                ));
                 let file = std::fs::read_to_string(&index_config_filepath).unwrap();
                 let index_config = IndexConfig::load(
                     &Uri::try_new(&index_config_filepath).unwrap(),
@@ -439,19 +451,19 @@ mod tests {
     #[tokio::test]
     async fn test_index_config_default_values() {
         {
-            let index_config_filepath = get_resource_path("minimal-hdfs-logs.yaml");
+            let index_config_filepath = get_index_config_filepath("minimal-hdfs-logs.yaml");
             let file_content = std::fs::read_to_string(&index_config_filepath).unwrap();
 
             let index_config_uri =
-                Uri::try_new(&get_resource_path("minimal-hdfs-logs.yaml")).unwrap();
+                Uri::try_new(&get_index_config_filepath("minimal-hdfs-logs.yaml")).unwrap();
             let index_config = IndexConfig::from_uri(&index_config_uri, file_content.as_bytes())
                 .await
                 .unwrap();
 
             assert_eq!(index_config.index_id, "hdfs-logs");
             assert_eq!(
-                index_config.index_uri,
-                Some("s3://quickwit-indexes/hdfs-logs".to_string())
+                index_config.index_uri.unwrap(),
+                "s3://quickwit-indexes/hdfs-logs"
             );
             assert_eq!(index_config.doc_mapping.field_mappings.len(), 1);
             assert_eq!(index_config.doc_mapping.field_mappings[0].name, "body");
@@ -466,11 +478,11 @@ mod tests {
             assert!(index_config.sources.is_empty());
         }
         {
-            let index_config_filepath = get_resource_path("partial-hdfs-logs.yaml");
+            let index_config_filepath = get_index_config_filepath("partial-hdfs-logs.yaml");
             let file_content = std::fs::read_to_string(&index_config_filepath).unwrap();
 
             let index_config_uri =
-                Uri::try_new(&get_resource_path("partial-hdfs-logs.yaml")).unwrap();
+                Uri::try_new(&get_index_config_filepath("partial-hdfs-logs.yaml")).unwrap();
             let index_config = IndexConfig::from_uri(&index_config_uri, file_content.as_bytes())
                 .await
                 .unwrap();
@@ -478,8 +490,8 @@ mod tests {
             assert_eq!(index_config.version, 0);
             assert_eq!(index_config.index_id, "hdfs-logs");
             assert_eq!(
-                index_config.index_uri,
-                Some("s3://quickwit-indexes/hdfs-logs".to_string())
+                index_config.index_uri.unwrap(),
+                "s3://quickwit-indexes/hdfs-logs"
             );
             assert_eq!(index_config.doc_mapping.field_mappings.len(), 2);
             assert_eq!(index_config.doc_mapping.field_mappings[0].name, "body");
@@ -513,7 +525,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate() {
-        let index_config_filepath = get_resource_path("minimal-hdfs-logs.yaml");
+        let index_config_filepath = get_index_config_filepath("minimal-hdfs-logs.yaml");
         let file_content = std::fs::read_to_string(&index_config_filepath).unwrap();
         let index_config_uri = Uri::try_new(&index_config_filepath).unwrap();
         let index_config = IndexConfig::from_uri(&index_config_uri, file_content.as_bytes())
@@ -581,5 +593,15 @@ mod tests {
                 .to_string()
                 .contains("Unknown demux field"));
         }
+    }
+
+    #[test]
+    fn test_config_validates_uris() {
+        let config_yaml = r#"
+            version: 0
+            index_id: hdfs-logs
+            index_uri: ''
+        "#;
+        serde_yaml::from_str::<IndexConfig>(config_yaml).unwrap_err();
     }
 }

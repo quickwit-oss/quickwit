@@ -64,7 +64,7 @@ A Kafka source reads data from a Kafka stream. Each message in the stream must h
 
 ### Kafka source parameters
 
-The Kafka source consumes a `topic` using the client library [librdkafka](https://github.com/edenhill/librdkafka) and forwards the key-value pairs carried by the parameter `client_params` to the underlying librdkafka consumer. Common `client_params` options are bootstrap servers (`bootstrap.servers`), consumer group ID (`group.id`), or security protocol (`security.protocol`). Please, refer to [Kafka](https://kafka.apache.org/documentation/#consumerconfigs) and [librdkafka](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md) documentation pages for more advanced options.
+The Kafka source consumes a `topic` using the client library [librdkafka](https://github.com/edenhill/librdkafka) and forwards the key-value pairs carried by the parameter `client_params` to the underlying librdkafka consumer. Common `client_params` options are bootstrap servers (`bootstrap.servers`), or security protocol (`security.protocol`). Please, refer to [Kafka](https://kafka.apache.org/documentation/#consumerconfigs) and [librdkafka](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md) documentation pages for more advanced options.
 
 | Property | Description | Default value |
 | --- | --- | --- |
@@ -89,7 +89,6 @@ sources:
       topic: my-topic
       client_params:
         bootstrap.servers: localhost:9092
-        group.id: my-group-id
         security.protocol: SSL
 
 # The rest of your index config here
@@ -104,7 +103,6 @@ cat << EOF > my-kafka-source.json
   "topic": "my-topic",
   "client_params": {
     "bootstrap.servers": "localhost:9092",
-    "group.id": "my-group-id",
     "security.protocol": "SSL"
   }
 }

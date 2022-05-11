@@ -24,8 +24,9 @@ use futures::StreamExt;
 use quickwit_actors::ActorContext;
 use quickwit_metastore::{Metastore, MetastoreError, SplitMetadata, SplitState};
 use quickwit_storage::StorageError;
-use tantivy::chrono::Utc;
+use serde::Serialize;
 use thiserror::Error;
+use time::OffsetDateTime;
 use tracing::error;
 
 use crate::actors::GarbageCollector;
@@ -45,7 +46,7 @@ pub enum SplitDeletionError {
 }
 
 #[allow(missing_docs)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct FileEntry {
     /// The file_name is a file name, within an index directory.
     pub file_name: String,
@@ -83,7 +84,8 @@ pub async fn run_garbage_collect(
     ctx_opt: Option<&ActorContext<GarbageCollector>>,
 ) -> anyhow::Result<Vec<FileEntry>> {
     // Select staged splits with staging timestamp older than grace period timestamp.
-    let grace_period_timestamp = Utc::now().timestamp() - staged_grace_period.as_secs() as i64;
+    let grace_period_timestamp =
+        OffsetDateTime::now_utc().unix_timestamp() - staged_grace_period.as_secs() as i64;
 
     let deletable_staged_splits: Vec<SplitMetadata> = metastore
         .list_splits(index_id, SplitState::Staged, None, None)
@@ -123,7 +125,8 @@ pub async fn run_garbage_collect(
         .await?;
 
     // We wait another 2 minutes until the split is actually deleted.
-    let grace_period_deletion = Utc::now().timestamp() - deletion_grace_period.as_secs() as i64;
+    let grace_period_deletion =
+        OffsetDateTime::now_utc().unix_timestamp() - deletion_grace_period.as_secs() as i64;
     let splits_to_delete = metastore
         .list_splits(index_id, SplitState::MarkedForDeletion, None, None)
         .await?

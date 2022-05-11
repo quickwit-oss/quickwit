@@ -14,8 +14,10 @@ on:
 
 
 env:
-  RUSTFLAGS: -Dwarnings
+  CARGO_INCREMENTAL: 0
   RUST_BACKTRACE: 1
+  RUSTFLAGS: -Dwarnings
+  RUSTDOCFLAGS: -Dwarnings -Arustdoc::private_intra_doc_links
 
 jobs:
   ci-passes:
@@ -34,13 +36,18 @@ jobs:
     runs-on: ubuntu-latest
     container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/cache@v2
+      - uses: actions/checkout@v3
+      - uses: dorny/paths-filter@v2
+        id: filter
         with:
-          path: |
-            ~/.cargo
-            target/
-          key: ${{ runner.os }}-cargolint-${{ hashFiles('Cargo.lock') }}
+          filters: |
+            js:
+              - 'quickwit-ui/**'
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v1
       - name: rustfmt
         run: cargo +nightly fmt --all -- --check
       - uses: actions-rs/clippy-check@v1
@@ -52,6 +59,21 @@ jobs:
         with:
           command: deny
           args: check Licenses # check that all of deps have an ok license.
+      - name: cargo doc
+        uses: actions-rs/cargo@v1
+        with:
+          command: doc
+          args: --no-deps --all-features --document-private-items
+      - uses: c-hive/gha-yarn-cache@v2
+        with:
+          directory: quickwit-ui
+      - name: Install JS dependencies
+        if: ${{ steps.filter.outputs.js == 'true' }}
+        run: yarn --cwd quickwit-ui install
+      - name: Lint react app
+        if: ${{ steps.filter.outputs.js == 'true' }}
+        run: yarn --cwd quickwit-ui lint
+
   test:
     name: Run unit tests (no [ignored])
     runs-on: ubuntu-latest
@@ -75,20 +97,42 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/cache@v2
+      - uses: actions/checkout@v3
+      - uses: dorny/paths-filter@v2
+        id: filter
         with:
-          path: |
-            ~/.cargo
-            target/
-          key: ${{ runner.os }}-cargotest-${{ hashFiles('Cargo.lock') }}
-      - uses: actions-rs/cargo@v1
-        name: cargo test
+          filters: |
+            js:
+              - 'quickwit-ui/**'
+      - uses: actions-rs/toolchain@v1
         with:
-          command: test
-          args: --features=postgres
+          profile: minimal
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v1
+      - name: Compile tests
+        run: cargo test --features=postgres --no-run --locked
+      - name: Run tests
+        run: cargo test --features=postgres -- --nocapture --quiet
         env:
           TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@postgres:5432/quickwit-metastore-dev
+      - uses: c-hive/gha-yarn-cache@v2
+        with:
+          directory: quickwit-ui
+      - name: Install JS dependencies
+        if: ${{ steps.filter.outputs.js == 'true' }}
+        run: yarn --cwd quickwit-ui install
+      - name: Run react tests
+        if: ${{ steps.filter.outputs.js == 'true' }}
+        run: yarn --cwd quickwit-ui test
+      - name: Cypress run
+        if: ${{ steps.filter.outputs.js == 'true' }}
+        run: |
+          CI=false yarn --cwd quickwit-ui build
+          cargo build --features=postgres
+          mkdir qwdata
+          target/debug/quickwit run --service searcher --config config/quickwit.yaml &
+          yarn --cwd quickwit-ui cypress run
+
       # See #473 #472
       # - uses: actions-rs/cargo@v1
       #   name: cargo test failpoints
@@ -115,7 +159,7 @@ jobs:
   #   container:
   #       image: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
   #   steps:
-  #     - uses: actions/checkout@v2
+  #     - uses: actions/checkout@v3
   #     - name: Create bucket in localstack
   #       run: /usr/local/bin/aws --endpoint-url=http://localstack:4566 s3 mb s3://quickwit-integration-tests
   #     - name: Run all tests.

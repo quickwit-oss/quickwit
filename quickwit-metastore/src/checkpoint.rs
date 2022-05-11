@@ -46,22 +46,15 @@ impl From<&str> for PartitionId {
     }
 }
 
-impl From<i32> for PartitionId {
-    fn from(partition_id: i32) -> Self {
-        let partition_id_str = format!("{:0>10}", partition_id);
-        PartitionId(Arc::new(partition_id_str))
-    }
-}
-
-impl From<u16> for PartitionId {
-    fn from(partition_id: u16) -> Self {
-        let partition_id_str = format!("{:0>5}", partition_id);
-        PartitionId(Arc::new(partition_id_str))
-    }
-}
-
 impl From<u64> for PartitionId {
     fn from(partition_id: u64) -> Self {
+        let partition_id_str = format!("{:0>20}", partition_id);
+        PartitionId(Arc::new(partition_id_str))
+    }
+}
+
+impl From<i64> for PartitionId {
+    fn from(partition_id: i64) -> Self {
         let partition_id_str = format!("{:0>20}", partition_id);
         PartitionId(Arc::new(partition_id_str))
     }
@@ -93,14 +86,6 @@ impl Position {
             Position::Beginning => "",
             Position::Offset(offset) => offset,
         }
-    }
-}
-
-impl From<i32> for Position {
-    fn from(offset: i32) -> Self {
-        assert!(offset >= 0);
-        let offset_str = format!("{:0>10}", offset);
-        Position::Offset(Arc::new(offset_str))
     }
 }
 
@@ -225,7 +210,7 @@ impl SourceCheckpoint {
 /// Creates a checkpoint from an iterator of `(PartitionId, Position)` tuples.
 /// ```
 /// use quickwit_metastore::checkpoint::{SourceCheckpoint, PartitionId, Position};
-/// let checkpoint: SourceCheckpoint = vec![(0, 0), (1, 2)]
+/// let checkpoint: SourceCheckpoint = vec![(0u64, 0u64), (1u64, 2u64)]
 ///     .into_iter()
 ///     .map(|(partition_id, offset)| {
 ///         (PartitionId::from(partition_id), Position::from(offset))
@@ -440,6 +425,13 @@ impl CheckpointDelta {
         let mut delta = CheckpointDelta::default();
         let _ = delta.record_partition_delta(partition_id, from_position, to_position);
         delta
+    }
+
+    /// Returns the checkpoint associated with the endpoint of the delta.
+    pub fn get_source_checkpoint(&self) -> SourceCheckpoint {
+        let mut source_checkpoint = SourceCheckpoint::default();
+        source_checkpoint.try_apply_delta(self.clone()).unwrap();
+        source_checkpoint
     }
 
     /// Records a `(from, to]` partition delta for a given partition.
@@ -705,5 +697,20 @@ mod tests {
         assert!(index_checkpoint
             .source_checkpoint("existing_source_with_empty_checkpoint")
             .is_none());
+    }
+
+    #[test]
+    fn test_get_source_checkpoint() {
+        let partition = PartitionId::from("a");
+        let delta = CheckpointDelta::from_partition_delta(
+            partition.clone(),
+            Position::from(42u64),
+            Position::from(43u64),
+        );
+        let checkpoint: SourceCheckpoint = delta.get_source_checkpoint();
+        assert_eq!(
+            checkpoint.position_for_partition(&partition).unwrap(),
+            &Position::from(43u64)
+        );
     }
 }

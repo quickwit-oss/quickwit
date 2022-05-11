@@ -24,39 +24,52 @@ use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
-use chrono::Utc;
 use clap::{arg, ArgMatches, Command};
 use colored::Colorize;
+use humantime::format_duration;
 use itertools::Itertools;
-use quickwit_actors::{ActorHandle, ObservationType};
+use quickwit_actors::{ActorHandle, ObservationType, Universe};
 use quickwit_common::uri::Uri;
-use quickwit_common::{run_checklist, GREEN_COLOR};
+use quickwit_common::GREEN_COLOR;
 use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig, SourceParams};
-use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
+use quickwit_core::{clear_cache_directory, IndexService};
 use quickwit_doc_mapper::tag_pruning::match_tag_field_name;
-use quickwit_indexing::actors::{IndexingPipeline, IndexingServer};
-use quickwit_indexing::models::IndexingStatistics;
+use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
+use quickwit_indexing::models::{
+    DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
+};
 use quickwit_indexing::source::INGEST_SOURCE_ID;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
 use quickwit_telemetry::payload::TelemetryEvent;
-use tracing::{debug, info, Level};
+use tabled::{Table, Tabled};
+use thousands::Separable;
+use tracing::{debug, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
 use crate::{
-    load_quickwit_config, parse_duration_with_unit, run_index_checklist, THROUGHPUT_WINDOW_SIZE,
+    load_quickwit_config, make_table, parse_duration_with_unit, run_index_checklist,
+    THROUGHPUT_WINDOW_SIZE,
 };
 
 pub fn build_index_command<'a>() -> Command<'a> {
     Command::new("index")
         .about("Create your index, ingest data, search, describe... every command you need to manage indexes.")
         .subcommand(
+            Command::new("list")
+                .about("List indexes.")
+                .alias("ls")
+                .args(&[
+                    arg!(--"metastore-uri" <METASTORE_URI> "Metastore URI. Override the `metastore_uri` parameter defined in the config file. Default to file-backed, but could be Amazon S3 or PostgreSQL.")
+                        .required(false)
+                ])
+            )
+        .subcommand(
             Command::new("create")
                 .about("Creates an index from an index config file.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--"index-config" <INDEX_CONFIG> "Location of the index config file."),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -69,7 +82,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("ingest")
                 .about("Indexes JSON documents read from a file or streamed from stdin.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -78,13 +90,14 @@ pub fn build_index_command<'a>() -> Command<'a> {
                         .required(false),
                     arg!(--overwrite "Overwrites pre-existing index.")
                         .required(false),
+                    arg!(--"keep-cache" "Does not clear local cache directory upon completion.")
+                        .required(false),
                 ])
             )
         .subcommand(
             Command::new("describe")
                 .about("Displays descriptive statistics of an index: number of published splits, number of documents, splits min/max timestamps, size of splits.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -95,7 +108,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("search")
                 .about("Searches an index.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -122,7 +134,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("merge")
                 .about("Merges an index.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -133,7 +144,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("demux")
                 .about("Demuxes an index.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -144,7 +154,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("gc")
                 .about("Garbage collects stale staged splits and splits marked for deletion.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -160,7 +169,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("delete")
                 .about("Delete an index.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -194,6 +202,7 @@ pub struct IngestDocsArgs {
     pub config_uri: Uri,
     pub data_dir: Option<PathBuf>,
     pub overwrite: bool,
+    pub clear_cache: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -234,8 +243,15 @@ pub struct MergeOrDemuxArgs {
     pub data_dir: Option<PathBuf>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct ListIndexesArgs {
+    pub config_uri: Uri,
+    pub metastore_uri: Option<Uri>,
+}
+
 #[derive(Debug, PartialEq)]
 pub enum IndexCliCommand {
+    List(ListIndexesArgs),
     Create(CreateIndexArgs),
     Describe(DescribeIndexArgs),
     Delete(DeleteIndexArgs),
@@ -259,6 +275,7 @@ impl IndexCliCommand {
             .subcommand()
             .ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
         match subcommand {
+            "list" => Self::parse_list_args(submatches),
             "create" => Self::parse_create_args(submatches),
             "delete" => Self::parse_delete_args(submatches),
             "search" => Self::parse_search_args(submatches),
@@ -269,6 +286,23 @@ impl IndexCliCommand {
             "ingest" => Self::parse_ingest_args(submatches),
             _ => bail!("Index subcommand `{}` is not implemented.", subcommand),
         }
+    }
+
+    fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let config_uri = matches
+            .value_of("config")
+            .map(Uri::try_new)
+            .expect("`config` is a required arg.")?;
+
+        let metastore_uri = matches
+            .value_of("metastore-uri")
+            .map(Uri::try_new)
+            .transpose()?;
+
+        Ok(Self::List(ListIndexesArgs {
+            config_uri,
+            metastore_uri,
+        }))
     }
 
     fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<Self> {
@@ -326,6 +360,7 @@ impl IndexCliCommand {
             .expect("`config` is a required arg.")?;
         let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         let overwrite = matches.is_present("overwrite");
+        let clear_cache = !matches.is_present("keep-cache");
 
         Ok(Self::Ingest(IngestDocsArgs {
             index_id,
@@ -333,6 +368,7 @@ impl IndexCliCommand {
             overwrite,
             config_uri,
             data_dir,
+            clear_cache,
         }))
     }
 
@@ -460,6 +496,7 @@ impl IndexCliCommand {
 
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
+            Self::List(args) => list_index_cli(args).await,
             Self::Create(args) => create_index_cli(args).await,
             Self::Describe(args) => describe_index_cli(args).await,
             Self::Ingest(args) => ingest_docs_cli(args).await,
@@ -470,6 +507,43 @@ impl IndexCliCommand {
             Self::Delete(args) => delete_index_cli(args).await,
         }
     }
+}
+
+pub async fn list_index_cli(args: ListIndexesArgs) -> anyhow::Result<()> {
+    debug!(args = ?args, "list");
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
+    let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
+    let metastore_uri = args
+        .metastore_uri
+        .unwrap_or_else(|| quickwit_config.metastore_uri());
+    let metastore = metastore_uri_resolver.resolve(&metastore_uri).await?;
+    let indexes = metastore.list_indexes_metadatas().await?;
+    let index_table = make_list_indexes_table(indexes);
+
+    println!();
+    println!("{}", index_table);
+    println!();
+    Ok(())
+}
+
+fn make_list_indexes_table<I>(indexes: I) -> Table
+where I: IntoIterator<Item = IndexMetadata> {
+    let rows = indexes
+        .into_iter()
+        .map(|index| IndexRow {
+            index_id: index.index_id,
+            index_uri: index.index_uri,
+        })
+        .sorted_by(|left, right| left.index_id.cmp(&right.index_id));
+    make_table("Indexes", rows, false)
+}
+
+#[derive(Tabled)]
+struct IndexRow {
+    #[tabled(rename = "Index ID")]
+    index_id: String,
+    #[tabled(rename = "Index URI")]
+    index_uri: String,
 }
 
 pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
@@ -699,49 +773,22 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let file_content = load_file(&args.index_config_uri).await?;
     let index_config = IndexConfig::load(&args.index_config_uri, file_content.as_slice()).await?;
-
-    let index_uri = if let Some(index_uri) = index_config.index_uri.as_ref() {
-        index_uri.to_string()
-    } else {
-        let default_index_uri = format!(
-            "{}/{}",
-            quickwit_config.default_index_root_uri(),
-            index_config.index_id
-        );
-        info!(
-            "`index-uri` is not specified in the index configuration. Setting it to `{}`.",
-            default_index_uri
-        );
-        default_index_uri
-    };
-
-    if args.overwrite {
-        delete_index(
-            &quickwit_config.metastore_uri(),
-            &index_config.index_id,
-            false,
-        )
+    let index_id = index_config.index_id.clone();
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
+    let metastore = metastore_uri_resolver
+        .resolve(&quickwit_config.metastore_uri())
         .await?;
+    let index_service = IndexService::new(
+        metastore,
+        quickwit_storage_uri_resolver().clone(),
+        quickwit_config.default_index_root_uri(),
+    );
+    if args.overwrite {
+        index_service.delete_index(&index_id, false).await?;
     }
 
-    // Check index storage.
-    let storage_uri_resolver = quickwit_storage_uri_resolver();
-    let storage = storage_uri_resolver.resolve(&index_uri)?;
-    run_checklist(vec![("storage", storage.check().await)]);
-
-    let index_metadata = IndexMetadata {
-        index_id: index_config.index_id.clone(),
-        index_uri,
-        checkpoint: Default::default(),
-        sources: index_config.sources(),
-        doc_mapping: index_config.doc_mapping,
-        indexing_settings: index_config.indexing_settings,
-        search_settings: index_config.search_settings,
-        create_timestamp: Utc::now().timestamp(),
-        update_timestamp: Utc::now().timestamp(),
-    };
-    create_index(&quickwit_config.metastore_uri(), index_metadata.clone()).await?;
-    println!("Index `{}` successfully created.", index_config.index_id);
+    index_service.create_index(index_config).await?;
+    println!("Index `{}` successfully created.", index_id);
 
     Ok(())
 }
@@ -766,24 +813,36 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     let metastore = metastore_uri_resolver
         .resolve(&config.metastore_uri())
         .await?;
-    let index_metadata = metastore.index_metadata(&args.index_id).await?;
-    let storage_resolver = quickwit_storage_uri_resolver().clone();
-    let storage = storage_resolver.resolve(&index_metadata.index_uri)?;
 
     if args.overwrite {
-        reset_index(&index_metadata, metastore.clone(), storage.clone()).await?;
+        let index_service = IndexService::new(
+            metastore.clone(),
+            quickwit_storage_uri_resolver().clone(),
+            config.default_index_root_uri(),
+        );
+        index_service.reset_index(&args.index_id).await?;
     }
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
-    let client = IndexingServer::spawn(
-        config.data_dir_path,
+    let universe = Universe::new();
+    let indexing_server = IndexingService::new(
+        config.clone().data_dir_path,
         indexer_config,
         metastore,
-        storage_resolver,
+        quickwit_storage_uri_resolver().clone(),
+        None,
     );
-    let pipeline_id = client.spawn_pipeline(args.index_id.clone(), source).await?;
-    let pipeline_handle = client.detach_pipeline(&pipeline_id).await?;
+    let (indexing_server_mailbox, _) = universe.spawn_actor(indexing_server).spawn();
+    let pipeline_id = indexing_server_mailbox
+        .ask_for_res(SpawnPipeline {
+            index_id: args.index_id.clone(),
+            source,
+        })
+        .await?;
+    let pipeline_handle = indexing_server_mailbox
+        .ask_for_res(DetachPipeline { pipeline_id })
+        .await?;
 
     let is_stdin_atty = atty::is(atty::Stream::Stdin);
     if args.input_path_opt.is_none() && is_stdin_atty {
@@ -805,6 +864,17 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
             args.index_id
         );
     }
+
+    if args.clear_cache {
+        println!("Clearing local cache directory...");
+        clear_cache_directory(
+            &config.data_dir_path,
+            args.index_id.clone(),
+            INGEST_SOURCE_ID.to_string(),
+        )
+        .await?;
+    }
+
     Ok(())
 }
 
@@ -857,16 +927,25 @@ pub async fn merge_or_demux_cli(
         .resolve(&config.metastore_uri())
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
-    let client = IndexingServer::spawn(
+    let indexing_server = IndexingService::new(
         config.data_dir_path,
         indexer_config,
         metastore,
         storage_resolver,
+        None,
     );
-    let pipeline_id = client
-        .spawn_merge_pipeline(args.index_id.clone(), merge_enabled, demux_enabled)
+    let universe = Universe::new();
+    let (indexing_server_mailbox, _) = universe.spawn_actor(indexing_server).spawn();
+    let pipeline_id = indexing_server_mailbox
+        .ask_for_res(SpawnMergePipeline {
+            index_id: args.index_id.clone(),
+            merge_enabled,
+            demux_enabled,
+        })
         .await?;
-    let pipeline_handle = client.detach_pipeline(&pipeline_id).await?;
+    let pipeline_handle = indexing_server_mailbox
+        .ask_for_res(DetachPipeline { pipeline_id })
+        .await?;
     let (pipeline_exit_status, _pipeline_statistics) = pipeline_handle.join().await;
     if !pipeline_exit_status.is_success() {
         bail!(pipeline_exit_status);
@@ -879,12 +958,17 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Delete).await;
 
     let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
-    let affected_files = delete_index(
-        &quickwit_config.metastore_uri(),
-        &args.index_id,
-        args.dry_run,
-    )
-    .await?;
+    let metastore = quickwit_metastore_uri_resolver()
+        .resolve(&quickwit_config.metastore_uri())
+        .await?;
+    let index_service = IndexService::new(
+        metastore,
+        quickwit_storage_uri_resolver().clone(),
+        quickwit_config.default_index_root_uri(),
+    );
+    let affected_files = index_service
+        .delete_index(&args.index_id, args.dry_run)
+        .await?;
     if args.dry_run {
         if affected_files.is_empty() {
             println!("Only the index will be deleted since it does not contains any data file.");
@@ -908,13 +992,17 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::GarbageCollect).await;
 
     let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
-    let deleted_files = garbage_collect_index(
-        &quickwit_config.metastore_uri(),
-        &args.index_id,
-        args.grace_period,
-        args.dry_run,
-    )
-    .await?;
+    let metastore = quickwit_metastore_uri_resolver()
+        .resolve(&quickwit_config.metastore_uri())
+        .await?;
+    let index_service = IndexService::new(
+        metastore,
+        quickwit_storage_uri_resolver().clone(),
+        quickwit_config.default_index_root_uri(),
+    );
+    let deleted_files = index_service
+        .garbage_collect_index(&args.index_id, args.grace_period, args.dry_run)
+        .await?;
     if deleted_files.is_empty() {
         println!("No dangling files to garbage collect.");
         return Ok(());
@@ -992,21 +1080,13 @@ pub async fn start_statistics_reporting_loop(
     }
     // display end of task report
     println!();
-    let elapsed_secs = start_time.elapsed().as_secs();
-    if elapsed_secs >= 60 {
-        println!(
-            "Indexed {} documents in {:.2$}min.",
-            pipeline_statistics.num_docs,
-            elapsed_secs.max(1) as f64 / 60f64,
-            2
-        );
-    } else {
-        println!(
-            "Indexed {} documents in {}s.",
-            pipeline_statistics.num_docs,
-            elapsed_secs.max(1)
-        );
-    }
+    let secs = Duration::from_secs(start_time.elapsed().as_secs());
+    println!(
+        "Indexed {} documents in {}",
+        pipeline_statistics.num_docs.separate_with_commas(),
+        format_duration(secs)
+    );
+
     Ok(pipeline_statistics)
 }
 
@@ -1035,12 +1115,12 @@ fn display_statistics(
     throughput_calculator: &mut ThroughputCalculator,
     statistics: &IndexingStatistics,
 ) -> anyhow::Result<()> {
-    let elapsed_duration = chrono::Duration::from_std(throughput_calculator.elapsed_time())?;
+    let elapsed_duration = time::Duration::try_from(throughput_calculator.elapsed_time())?;
     let elapsed_time = format!(
         "{:02}:{:02}:{:02}",
-        elapsed_duration.num_hours(),
-        elapsed_duration.num_minutes() % 60,
-        elapsed_duration.num_seconds() % 60
+        elapsed_duration.whole_hours(),
+        elapsed_duration.whole_minutes() % 60,
+        elapsed_duration.whole_seconds() % 60
     );
     let throughput_mb_s = throughput_calculator.calculate(statistics.total_bytes_processed);
     let mut printer = Printer { stdout };

@@ -28,6 +28,7 @@ use backoff::ExponentialBackoff;
 use futures::{StreamExt, TryFutureExt};
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_common::new_coolid;
 use quickwit_config::KafkaSourceParams;
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
@@ -43,8 +44,9 @@ use serde_json::json;
 use tokio::task::spawn_blocking;
 use tracing::{debug, info, warn};
 
+use crate::actors::Indexer;
 use crate::models::RawDocBatch;
-use crate::source::{IndexerMessage, Source, SourceContext, TypedSourceFactory};
+use crate::source::{Source, SourceContext, TypedSourceFactory};
 
 /// We try to emit chewable batches for the indexer.
 /// One batch = one message to the indexer actor.
@@ -66,18 +68,19 @@ impl TypedSourceFactory for KafkaSourceFactory {
     type Params = KafkaSourceParams;
 
     async fn typed_create_source(
+        source_id: String,
         params: KafkaSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
-        KafkaSource::try_new(params, checkpoint).await
+        KafkaSource::try_new(source_id, params, checkpoint).await
     }
 }
 
-struct KafkaSourceContext;
+struct RdKafkaContext;
 
-impl ClientContext for KafkaSourceContext {}
+impl ClientContext for RdKafkaContext {}
 
-impl ConsumerContext for KafkaSourceContext {
+impl ConsumerContext for RdKafkaContext {
     fn pre_rebalance(&self, rebalance: &Rebalance) {
         info!("Pre rebalance {:?}", rebalance);
     }
@@ -91,7 +94,7 @@ impl ConsumerContext for KafkaSourceContext {
     }
 }
 
-type KafkaSourceConsumer = StreamConsumer<KafkaSourceContext>;
+type RdKafkaConsumer = StreamConsumer<RdKafkaContext>;
 
 #[derive(Default)]
 pub struct KafkaSourceState {
@@ -111,34 +114,35 @@ pub struct KafkaSourceState {
 
 /// A `KafkaSource` consumes a topic and forwards its messages to an `Indexer`.
 pub struct KafkaSource {
+    source_id: String,
     topic: String,
-    consumer: Arc<KafkaSourceConsumer>,
+    consumer: Arc<RdKafkaConsumer>,
     state: KafkaSourceState,
 }
 
 impl fmt::Debug for KafkaSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "KafkaSource {{ topic:{} }}", self.topic)
+        write!(
+            f,
+            "KafkaSource {{ source_id: {}, topic: {} }}",
+            self.source_id, self.topic
+        )
     }
 }
 
 impl KafkaSource {
     /// Instantiates a new `KafkaSource`.
     pub async fn try_new(
+        source_id: String,
         params: KafkaSourceParams,
         checkpoint: SourceCheckpoint,
-    ) -> anyhow::Result<KafkaSource> {
+    ) -> anyhow::Result<Self> {
         let topic = params.topic;
-        let consumer = create_consumer(params.client_log_level, params.client_params)?;
+        let consumer = create_consumer(&source_id, params.client_log_level, params.client_params)?;
         let partition_ids = fetch_partition_ids(consumer.clone(), &topic).await?;
         let assigned_partition_ids = partition_ids
             .iter()
-            .map(|partition_id| {
-                (
-                    partition_id.clone(),
-                    PartitionId::from(partition_id.clone()),
-                )
-            })
+            .map(|&partition_id| (partition_id, PartitionId::from(partition_id as i64)))
             .collect();
         let timeout = Duration::from_secs(30);
         let watermarks =
@@ -147,7 +151,7 @@ impl KafkaSource {
         let assignment =
             compute_assignment(&topic, &partition_ids, &kafka_checkpoint, &watermarks)?;
 
-        debug!(
+        info!(
             topic = %topic,
             assignment = ?assignment,
             "Starting Kafka source."
@@ -162,6 +166,7 @@ impl KafkaSource {
             ..Default::default()
         };
         Ok(KafkaSource {
+            source_id,
             topic,
             consumer,
             state,
@@ -173,13 +178,13 @@ impl KafkaSource {
 impl Source for KafkaSource {
     async fn emit_batches(
         &mut self,
-        batch_sink: &Mailbox<IndexerMessage>,
+        batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
-    ) -> Result<(), ActorExitStatus> {
+    ) -> Result<Duration, ActorExitStatus> {
         let mut docs = Vec::new();
         let mut checkpoint_delta = CheckpointDelta::default();
 
-        let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT / 2);
+        let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT);
         let mut message_stream = Box::pin(self.consumer.stream().take_until(deadline));
 
         let mut batch_num_bytes = 0;
@@ -216,7 +221,7 @@ impl Source for KafkaSource {
                 .get(&message.partition())
                 .ok_or_else(|| {
                     anyhow::anyhow!(
-                        "Received unexpected message from partition `{}`. Assigned partitions: \
+                        "Received message from unassigned partition `{}`. Assigned partitions: \
                          `{{{}}}`.",
                         message.partition(),
                         self.state.assigned_partition_ids.keys().join(", "),
@@ -236,25 +241,25 @@ impl Source for KafkaSource {
             if batch_num_bytes >= TARGET_BATCH_NUM_BYTES {
                 break;
             }
+            ctx.record_progress();
         }
         if !checkpoint_delta.is_empty() {
             let batch = RawDocBatch {
                 docs,
                 checkpoint_delta,
             };
-            ctx.send_message(batch_sink, IndexerMessage::from(batch))
-                .await?;
+            ctx.send_message(batch_sink, batch).await?;
         }
         if self.state.num_active_partitions == 0 {
             info!(topic = %self.topic, "Reached end of topic.");
             ctx.send_exit_with_success(batch_sink).await?;
             return Err(ActorExitStatus::Success);
         }
-        Ok(())
+        Ok(Duration::default())
     }
 
     fn name(&self) -> String {
-        "KafkaSource".to_string()
+        format!("KafkaSource{{source_id={}}}", self.source_id)
     }
 
     fn observable_state(&self) -> serde_json::Value {
@@ -296,21 +301,28 @@ fn previous_position_for_offset(offset: i64) -> Position {
 
 /// Checks if connecting with the given parameters works.
 pub(super) async fn check_connectivity(params: KafkaSourceParams) -> anyhow::Result<()> {
-    let consumer = create_consumer(params.client_log_level, params.client_params)?;
+    let source_id = "quickwit-connectivity-check";
+    let consumer = create_consumer(source_id, params.client_log_level, params.client_params)?;
     fetch_partition_ids(consumer, &params.topic).await?;
     Ok(())
 }
 
 /// Creates a new `KafkaSourceConsumer`.
 fn create_consumer(
+    source_id: &str,
     client_log_level: Option<String>,
     client_params: serde_json::Value,
-) -> anyhow::Result<Arc<KafkaSourceConsumer>> {
-    let log_level = parse_client_log_level(client_log_level)?;
+) -> anyhow::Result<Arc<RdKafkaConsumer>> {
     let mut client_config = parse_client_params(client_params)?;
-    let consumer: KafkaSourceConsumer = client_config
+    // We assign partitions manually: we always want one consumer per consumer group.
+    let mut group_id = new_coolid(&format!("quickwit-{}", source_id));
+    group_id.truncate(255); // Group ID is limited to 255 characters.
+    client_config.set("group.id", group_id);
+
+    let log_level = parse_client_log_level(client_log_level)?;
+    let consumer: RdKafkaConsumer = client_config
         .set_log_level(log_level)
-        .create_with_context(KafkaSourceContext)
+        .create_with_context(RdKafkaContext)
         .context("Failed to create Kafka consumer.")?;
     Ok(Arc::new(consumer))
 }
@@ -381,7 +393,7 @@ fn kafka_checkpoint_from_checkpoint(
 
 /// Retrieves the list of all partition IDs of a given topic.
 async fn fetch_partition_ids(
-    consumer: Arc<KafkaSourceConsumer>,
+    consumer: Arc<RdKafkaConsumer>,
     topic: &str,
 ) -> anyhow::Result<Vec<i32>> {
     let timeout = Timeout::After(Duration::from_secs(5));
@@ -419,7 +431,7 @@ async fn fetch_partition_ids(
 /// The high watermark is the offset of the latest message in the partition available for
 /// consumption + 1.
 async fn fetch_watermarks(
-    consumer: Arc<KafkaSourceConsumer>,
+    consumer: Arc<RdKafkaConsumer>,
     topic: &str,
     partition_ids: &[i32],
     timeout: Duration,
@@ -442,7 +454,7 @@ async fn fetch_watermarks(
 
 /// Fetches the low and high watermarks for the given topic and partition ID.
 async fn fetch_watermarks_for_partition_id(
-    consumer: Arc<KafkaSourceConsumer>,
+    consumer: Arc<RdKafkaConsumer>,
     topic: String,
     partition_id: i32,
     timeout: Duration,
@@ -660,7 +672,7 @@ mod tests {
 mod kafka_broker_tests {
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_common::rand::append_random_suffix;
-    use quickwit_config::SourceParams;
+    use quickwit_config::{SourceConfig, SourceParams};
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
     use rdkafka::message::ToBytes;
@@ -668,7 +680,6 @@ mod kafka_broker_tests {
 
     use super::*;
     use crate::source::{quickwit_supported_sources, SourceActor};
-    use crate::SourceConfig;
 
     fn create_admin_client(
         bootstrap_servers: &str,
@@ -706,16 +717,12 @@ mod kafka_broker_tests {
         Ok(())
     }
 
-    fn create_consumer_for_test(
-        bootstrap_servers: &str,
-        group_id: &str,
-    ) -> anyhow::Result<Arc<KafkaSourceConsumer>> {
+    fn create_consumer_for_test(bootstrap_servers: &str) -> anyhow::Result<Arc<RdKafkaConsumer>> {
         let client_params = json!({
             "bootstrap.servers": bootstrap_servers,
-            "group.id": group_id,
             "enable.partition.eof": true,
         });
-        create_consumer(Some("info".to_string()), client_params)
+        create_consumer("my-kinesis-source", Some("info".to_string()), client_params)
     }
 
     async fn populate_topic<K, M, J, Q>(
@@ -775,15 +782,13 @@ mod kafka_broker_tests {
         format!("Message #{}", id)
     }
 
-    fn merge_messages(messages: Vec<IndexerMessage>) -> anyhow::Result<RawDocBatch> {
+    fn merge_doc_batches(batches: Vec<RawDocBatch>) -> anyhow::Result<RawDocBatch> {
         let mut merged_batch = RawDocBatch::default();
-        for message in messages {
-            if let IndexerMessage::Batch(batch) = message {
-                merged_batch.docs.extend(batch.docs);
-                merged_batch
-                    .checkpoint_delta
-                    .extend(batch.checkpoint_delta)?;
-            }
+        for batch in batches {
+            merged_batch.docs.extend(batch.docs);
+            merged_batch
+                .checkpoint_delta
+                .extend(batch.checkpoint_delta)?;
         }
         merged_batch.docs.sort();
         Ok(merged_batch)
@@ -796,7 +801,6 @@ mod kafka_broker_tests {
         let universe = Universe::new();
 
         let bootstrap_servers = "localhost:9092".to_string();
-        let group_id = append_random_suffix("test-kafka-source-consumer-group");
         let topic = append_random_suffix("test-kafka-source-topic");
 
         let admin_client = create_admin_client(&bootstrap_servers)?;
@@ -809,7 +813,6 @@ mod kafka_broker_tests {
                 client_log_level: None,
                 client_params: json!({
                     "bootstrap.servers": bootstrap_servers,
-                    "group.id": group_id,
                     "enable.partition.eof": true,
                 }),
             }),
@@ -826,22 +829,28 @@ mod kafka_broker_tests {
                 source,
                 batch_sink: sink.clone(),
             };
-            let (_mailbox, handle) = universe.spawn_actor(actor).spawn_async();
+            let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages = inbox.drain_available_message_for_test();
+            let messages: Vec<RawDocBatch> = inbox
+                .drain_for_test()
+                .into_iter()
+                .flat_map(|msg_any| msg_any.downcast::<RawDocBatch>().ok())
+                .map(|boxed_msg| *boxed_msg)
+                .collect();
+
             assert!(messages.is_empty());
 
             let expected_current_positions: Vec<(i32, i64)> = vec![];
             let expected_state = json!({
                 "topic":  topic,
-                "assigned_partition_ids": vec![0, 1, 2],
+                "assigned_partition_ids": vec![0u64, 1u64, 2u64],
                 "current_positions":  expected_current_positions,
-                "num_active_partitions": 0,
-                "num_bytes_processed": 0,
-                "num_messages_processed": 0,
-                "num_invalid_messages": 0,
+                "num_active_partitions": 0u64,
+                "num_bytes_processed": 0u64,
+                "num_messages_processed": 0u64,
+                "num_invalid_messages": 0u64,
             });
             assert_eq!(exit_state, expected_state);
         }
@@ -873,14 +882,19 @@ mod kafka_broker_tests {
                 source,
                 batch_sink: sink.clone(),
             };
-            let (_mailbox, handle) = universe.spawn_actor(actor).spawn_async();
+            let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages = inbox.drain_available_message_for_test();
+            let messages: Vec<RawDocBatch> = inbox
+                .drain_for_test()
+                .into_iter()
+                .flat_map(|box_any| box_any.downcast::<RawDocBatch>().ok())
+                .map(|box_raw_doc_batch| *box_raw_doc_batch)
+                .collect();
             assert!(messages.len() >= 1);
 
-            let batch = merge_messages(messages)?;
+            let batch = merge_doc_batches(messages)?;
             let expected_docs = vec![
                 "Message #000",
                 "Message #002",
@@ -892,7 +906,7 @@ mod kafka_broker_tests {
             assert_eq!(batch.docs, expected_docs);
 
             let mut expected_checkpoint_delta = CheckpointDelta::default();
-            for partition in 0..3 {
+            for partition in 0u64..3u64 {
                 expected_checkpoint_delta.record_partition_delta(
                     PartitionId::from(partition),
                     Position::Beginning,
@@ -903,18 +917,18 @@ mod kafka_broker_tests {
 
             let expected_state = json!({
                 "topic":  topic,
-                "assigned_partition_ids": vec![0, 1, 2],
-                "current_positions":  vec![(0, 2), (1, 2), (2, 2)],
-                "num_active_partitions": 0,
-                "num_bytes_processed": 72,
-                "num_messages_processed": 9,
-                "num_invalid_messages": 3,
+                "assigned_partition_ids": vec![0u64, 1u64, 2u64],
+                "current_positions":  vec![(0u32, 2u64), (1u32, 2u64), (2u32, 2u64)],
+                "num_active_partitions": 0usize,
+                "num_bytes_processed": 72u64,
+                "num_messages_processed": 9u64,
+                "num_invalid_messages": 3u64,
             });
             assert_eq!(state, expected_state);
         }
         {
             let (sink, inbox) = create_test_mailbox();
-            let checkpoint: SourceCheckpoint = vec![(0, 0), (1, 2)]
+            let checkpoint: SourceCheckpoint = vec![(0u64, 0u64), (1u64, 2u64)]
                 .into_iter()
                 .map(|(partition_id, offset)| {
                     (PartitionId::from(partition_id), Position::from(offset))
@@ -927,25 +941,30 @@ mod kafka_broker_tests {
                 source,
                 batch_sink: sink.clone(),
             };
-            let (_mailbox, handle) = universe.spawn_actor(actor).spawn_async();
+            let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages = inbox.drain_available_message_for_test();
+            let messages: Vec<RawDocBatch> = inbox
+                .drain_for_test()
+                .into_iter()
+                .flat_map(|box_message| box_message.downcast::<RawDocBatch>())
+                .map(|box_raw_batch| *box_raw_batch)
+                .collect();
             assert!(messages.len() >= 1);
 
-            let batch = merge_messages(messages)?;
+            let batch = merge_doc_batches(messages)?;
             let expected_docs = vec!["Message #002", "Message #200", "Message #202"];
             assert_eq!(batch.docs, expected_docs);
 
             let mut expected_checkpoint_delta = CheckpointDelta::default();
             expected_checkpoint_delta.record_partition_delta(
-                PartitionId::from(0),
+                PartitionId::from(0u64),
                 Position::from(0u64),
                 Position::from(2u64),
             )?;
             expected_checkpoint_delta.record_partition_delta(
-                PartitionId::from(2),
+                PartitionId::from(2u64),
                 Position::Beginning,
                 Position::from(2u64),
             )?;
@@ -953,12 +972,12 @@ mod kafka_broker_tests {
 
             let expected_exit_state = json!({
                 "topic":  topic,
-                "assigned_partition_ids": vec![0, 1, 2],
-                "current_positions":  vec![(0, 2), (2, 2)],
-                "num_active_partitions": 0,
-                "num_bytes_processed": 36,
-                "num_messages_processed": 5,
-                "num_invalid_messages": 2,
+                "assigned_partition_ids": vec![0u64, 1u64, 2u64],
+                "current_positions":  vec![(0u64, 2u64), (2u64, 2u64)],
+                "num_active_partitions": 0usize,
+                "num_bytes_processed": 36u64,
+                "num_messages_processed": 5u64,
+                "num_invalid_messages": 2u64,
             });
             assert_eq!(exit_state, expected_exit_state);
         }
@@ -968,13 +987,12 @@ mod kafka_broker_tests {
     #[tokio::test]
     async fn test_fetch_partition_ids() -> anyhow::Result<()> {
         let bootstrap_servers = "localhost:9092".to_string();
-        let group_id = append_random_suffix("test-fetch-partitions-consumer-group");
         let topic = append_random_suffix("test-fetch-partitions-topic");
 
         let admin_client = create_admin_client(&bootstrap_servers)?;
         create_topic(&admin_client, &topic, 2).await?;
 
-        let consumer = create_consumer_for_test(&bootstrap_servers, &group_id)?;
+        let consumer = create_consumer_for_test(&bootstrap_servers)?;
         assert!(
             fetch_partition_ids(consumer.clone(), "topic-does-not-exist")
                 .await
@@ -989,13 +1007,12 @@ mod kafka_broker_tests {
     #[tokio::test]
     async fn test_fetch_watermarks() -> anyhow::Result<()> {
         let bootstrap_servers = "localhost:9092".to_string();
-        let group_id = append_random_suffix("test-fetch-watermarks-consumer-group");
         let topic = append_random_suffix("test-fetch-watermarks-topic");
 
         let admin_client = create_admin_client(&bootstrap_servers)?;
         create_topic(&admin_client, &topic, 2).await?;
 
-        let consumer = create_consumer_for_test(&bootstrap_servers, &group_id)?;
+        let consumer = create_consumer_for_test(&bootstrap_servers)?;
         let timeout = Duration::from_secs(1);
         assert!(
             fetch_watermarks(consumer.clone(), "topic-does-not-exist", &[0], timeout)

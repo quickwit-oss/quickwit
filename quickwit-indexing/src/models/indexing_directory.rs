@@ -27,6 +27,8 @@ use tokio::fs;
 
 use super::ScratchDirectory;
 
+pub const CACHE: &str = "cache";
+
 /// Root of an [`IndexingDirectory`].
 #[derive(Clone)]
 enum Root {
@@ -37,7 +39,7 @@ enum Root {
 }
 
 /// An indexing directory is created in the data directory on the local file system for each index
-/// at the following location: `<data dir>/<index name>`.
+/// at the following location: `<data dir>/indexing/<index ID>/<source ID>`.
 /// The indexing directory consists of two directories:
 /// - a scratch directory that stores temporary intermediate files
 /// - a cache directory that stores frequently accessed data structures
@@ -54,7 +56,7 @@ pub struct IndexingDirectory {
 impl IndexingDirectory {
     pub async fn create_in_dir<P: AsRef<Path>>(dir_path: P) -> anyhow::Result<IndexingDirectory> {
         // Create cache directory if does not exist.
-        let cache_directory_path = dir_path.as_ref().join("cache");
+        let cache_directory_path = dir_path.as_ref().join(CACHE);
         fs::create_dir_all(&cache_directory_path)
             .await
             .with_context(|| {

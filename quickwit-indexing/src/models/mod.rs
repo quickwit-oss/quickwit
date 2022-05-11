@@ -18,8 +18,8 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod indexed_split;
-mod indexer_message;
 mod indexing_directory;
+mod indexing_service_message;
 mod indexing_statistics;
 mod merge_planner_message;
 mod merge_scratch;
@@ -29,12 +29,18 @@ mod raw_doc_batch;
 mod scratch_directory;
 
 pub use indexed_split::{IndexedSplit, IndexedSplitBatch};
-pub use indexer_message::IndexerMessage;
-pub use indexing_directory::IndexingDirectory;
+pub use indexing_directory::{IndexingDirectory, CACHE};
+pub use indexing_service_message::{
+    DetachPipeline, IndexingPipelineId, ObservePipeline, SpawnMergePipeline, SpawnPipeline,
+    SpawnPipelinesForIndex,
+};
 pub use indexing_statistics::IndexingStatistics;
-pub use merge_planner_message::MergePlannerMessage;
+pub use merge_planner_message::NewSplits;
 pub use merge_scratch::MergeScratch;
 pub use packaged_split::{PackagedSplit, PackagedSplitBatch};
 pub use publisher_message::{PublishOperation, PublisherMessage};
 pub use raw_doc_batch::RawDocBatch;
 pub use scratch_directory::ScratchDirectory;
+
+#[derive(Debug, Copy, Clone)]
+pub struct Observe;

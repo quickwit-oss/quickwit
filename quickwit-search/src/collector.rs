@@ -23,7 +23,9 @@ use std::collections::{BinaryHeap, HashSet};
 use itertools::Itertools;
 use quickwit_doc_mapper::{DocMapper, SortBy, SortOrder};
 use quickwit_proto::{LeafSearchResponse, PartialHit, SearchRequest};
-use tantivy::aggregation::agg_req::{get_fast_field_names, Aggregations};
+use tantivy::aggregation::agg_req::{
+    get_fast_field_names, get_term_dict_field_names, Aggregations,
+};
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::aggregation::AggregationSegmentCollector;
 use tantivy::collector::{Collector, SegmentCollector};
@@ -179,7 +181,7 @@ impl QuickwitSegmentCollector {
 }
 
 impl SegmentCollector for QuickwitSegmentCollector {
-    type Fruit = LeafSearchResponse;
+    type Fruit = tantivy::Result<LeafSearchResponse>;
 
     fn collect(&mut self, doc_id: DocId, _score: Score) {
         if !self.accept_document(doc_id) {
@@ -193,7 +195,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
         }
     }
 
-    fn harvest(self) -> LeafSearchResponse {
+    fn harvest(self) -> Self::Fruit {
         let segment_ord = self.segment_ord;
         // TODO use into_iter_sorted() once it gets stable.
         let split_id = self.split_id;
@@ -208,22 +210,24 @@ impl SegmentCollector for QuickwitSegmentCollector {
                 split_id: split_id.clone(),
             })
             .collect();
-        LeafSearchResponse {
-            intermediate_aggregation_result: self.aggregation.map(|collector| {
-                serde_json::to_string(&collector.harvest())
-                    .expect("could not serialize aggreation to json")
-            }),
+
+        let intermediate_aggregation_result = if let Some(collector) = self.aggregation {
+            Some(
+                serde_json::to_string(&collector.harvest()?)
+                    .expect("could not serialize aggregation to json"),
+            )
+        } else {
+            None
+        };
+
+        Ok(LeafSearchResponse {
+            intermediate_aggregation_result,
             num_hits: self.num_hits,
             partial_hits,
             failed_splits: vec![],
             num_attempted_splits: 1,
-        }
+        })
     }
-}
-
-// TODO: seems not very useful, remove it and refactor it.
-pub trait GenericQuickwitCollector: Collector {
-    fn fast_field_names(&self) -> HashSet<String>;
 }
 
 /// The quickwit collector is the tantivy Collector used in Quickwit.
@@ -243,13 +247,20 @@ pub struct QuickwitCollector {
     pub aggregation: Option<Aggregations>,
 }
 
-impl GenericQuickwitCollector for QuickwitCollector {
-    fn fast_field_names(&self) -> HashSet<String> {
+impl QuickwitCollector {
+    pub fn fast_field_names(&self) -> HashSet<String> {
         let mut fast_field_names = self.fast_field_names.clone();
         if let Some(aggregate) = self.aggregation.as_ref() {
             fast_field_names.extend(get_fast_field_names(aggregate));
         }
         fast_field_names
+    }
+    pub fn term_dict_field_names(&self) -> HashSet<String> {
+        let mut term_dict_field_names = HashSet::default();
+        if let Some(aggregate) = self.aggregation.as_ref() {
+            term_dict_field_names.extend(get_term_dict_field_names(aggregate));
+        }
+        term_dict_field_names
     }
 }
 
@@ -305,13 +316,15 @@ impl Collector for QuickwitCollector {
 
     fn merge_fruits(
         &self,
-        segment_fruits: Vec<LeafSearchResponse>,
+        segment_fruits: Vec<tantivy::Result<LeafSearchResponse>>,
     ) -> tantivy::Result<Self::Fruit> {
+        let segment_fruits: tantivy::Result<Vec<LeafSearchResponse>> =
+            segment_fruits.into_iter().collect();
         // We want the hits in [start_offset..start_offset + max_hits).
         // All leaves will return their top [0..max_hits) documents.
         // We compute the overall [0..start_offset + max_hits) documents ...
         let num_hits = self.start_offset + self.max_hits;
-        let mut merged_leaf_response = merge_leaf_responses(segment_fruits, num_hits)?;
+        let mut merged_leaf_response = merge_leaf_responses(segment_fruits?, num_hits)?;
         // ... and drop the first [..start_offsets) hits.
         merged_leaf_response
             .partial_hits
@@ -348,7 +361,7 @@ fn merge_leaf_responses(
         intermediate_aggregation_results
             .into_iter()
             .reduce(|mut res1, res2| {
-                res1.merge_fruits(&res2);
+                res1.merge_fruits(res2);
                 res1
             });
 

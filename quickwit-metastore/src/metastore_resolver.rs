@@ -79,8 +79,44 @@ pub fn quickwit_metastore_uri_resolver() -> &'static MetastoreUriResolver {
                 .register("postgresql", PostgresqlMetastoreFactory::default());
         }
 
+        #[cfg(not(feature = "postgres"))]
+        {
+            builder = builder
+                .register(
+                    "postgres",
+                    UnsuportedMetastore {
+                        message: "postgres unsupported, quickwit was compiled without the \
+                                  'postgres' feature flag"
+                            .to_string(),
+                    },
+                )
+                .register(
+                    "postgresql",
+                    UnsuportedMetastore {
+                        message: "postgresql unsupported, quickwit was compiled without the \
+                                  'postgres' feature flag"
+                            .to_string(),
+                    },
+                )
+        }
+
         builder.build()
     })
+}
+
+/// A postgres metastore factory
+#[derive(Clone, Default)]
+pub struct UnsuportedMetastore {
+    message: String,
+}
+
+#[async_trait]
+impl MetastoreFactory for UnsuportedMetastore {
+    async fn resolve(&self, _uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+        Err(MetastoreResolverError::ProtocolUnsupported(
+            self.message.to_string(),
+        ))
+    }
 }
 
 impl MetastoreUriResolver {
@@ -90,11 +126,14 @@ impl MetastoreUriResolver {
     }
 
     /// Resolves the given URI.
-    pub async fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
-        let protocol = uri.split("://").next().ok_or_else(|| {
+    pub async fn resolve<S: AsRef<str>>(
+        &self,
+        uri: S,
+    ) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+        let protocol = uri.as_ref().split("://").next().ok_or_else(|| {
             MetastoreResolverError::InvalidUri(format!(
                 "Protocol not found in metastore URI: {}",
-                uri
+                uri.as_ref()
             ))
         })?;
 
@@ -103,7 +142,7 @@ impl MetastoreUriResolver {
             .get(protocol)
             .ok_or_else(|| MetastoreResolverError::ProtocolUnsupported(protocol.to_string()))?;
 
-        let metastore = resolver.resolve(uri).await?;
+        let metastore = resolver.resolve(uri.as_ref()).await?;
         Ok(metastore)
     }
 }

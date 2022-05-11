@@ -24,7 +24,7 @@ use quickwit_config::{
     DocMapping, IndexingResources, IndexingSettings, KafkaSourceParams, MergePolicy,
     SearchSettings, SourceConfig, SourceParams,
 };
-use quickwit_doc_mapper::SortOrder;
+use quickwit_doc_mapper::{ModeType, SortOrder};
 
 use crate::checkpoint::{
     CheckpointDelta, IndexCheckpoint, PartitionId, Position, SourceCheckpoint,
@@ -86,9 +86,9 @@ pub(crate) fn test_index_metadata_eq(
 pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
     let mut source_checkpoint = SourceCheckpoint::default();
     let delta = CheckpointDelta::from_partition_delta(
-        PartitionId::from(0),
+        PartitionId::from(0i64),
         Position::Beginning,
-        Position::from(42),
+        Position::from(42u64),
     );
     source_checkpoint.try_apply_delta(delta).unwrap();
     let mut per_source_checkpoint: BTreeMap<String, SourceCheckpoint> = BTreeMap::default();
@@ -139,6 +139,8 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
             .map(|tag_field| tag_field.to_string())
             .collect::<BTreeSet<String>>(),
         store_source: true,
+        mode: ModeType::Dynamic,
+        dynamic_mapping: None,
     };
     let merge_policy = MergePolicy {
         demux_factor: 7,

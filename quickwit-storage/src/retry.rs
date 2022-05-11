@@ -73,7 +73,7 @@ impl<E> IsRetryable for Retry<E> {
 
 // TODO define retry strategy
 /// Retry with exponential backoff and full jitter. Implementation and default values originate from
-/// the Java SDK. See also: https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/.
+/// the Java SDK. See also: <https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/>.
 pub async fn retry<F, U, E, Fut>(f: F) -> Result<U, E>
 where
     F: Fn() -> Fut,

@@ -29,19 +29,25 @@ mod doc_mapper;
 mod error;
 mod query_builder;
 mod sort_by;
+mod tokenizers;
 
 /// Pruning tags manipulation.
 pub mod tag_pruning;
 
 pub use default_doc_mapper::{
-    DefaultDocMapper, DefaultDocMapperBuilder, DocParsingError, FieldMappingEntry, SortByConfig,
+    DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry, ModeType, QuickwitJsonOptions,
+    SortByConfig,
 };
 pub use doc_mapper::DocMapper;
-pub use error::QueryParserError;
+pub use error::{DocParsingError, QueryParserError};
 pub use sort_by::{SortBy, SortByField, SortOrder};
+pub use tokenizers::QUICKWIT_TOKENIZER_MANAGER;
 
 /// Field name reserved for storing the source document.
 pub const SOURCE_FIELD_NAME: &str = "_source";
+
+/// Field name reserved for storing the dynamically indexed fields.
+pub const DYNAMIC_FIELD_NAME: &str = "_dynamic";
 
 /// Returns a default `DefaultIndexConfig` for unit tests.
 #[cfg(any(test, feature = "testsuite"))]
@@ -50,7 +56,7 @@ pub fn default_doc_mapper_for_tests() -> DefaultDocMapper {
         {
             "store_source": true,
             "default_search_fields": [
-                "body", "attributes.server", "attributes.server.status"
+                "body", "attributes.server", "attributes.server\\.status"
             ],
             "timestamp_field": "timestamp",
             "sort_by": {
@@ -88,6 +94,14 @@ pub fn default_doc_mapper_for_tests() -> DefaultDocMapper {
                     "name": "owner",
                     "type": "text",
                     "tokenizer": "raw"
+                },
+                {
+                    "name": "properties",
+                    "type": "json"
+                },
+                {
+                    "name": "children",
+                    "type": "array<json>"
                 },
                 {
                     "name": "attributes",

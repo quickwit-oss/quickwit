@@ -24,7 +24,7 @@ jobs:
           #   asset_name: x86_64-pc-windows.exe
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: ./.github/actions/artifact-name
         with: 
           suffix: ${{ matrix.asset_name }}
@@ -38,7 +38,7 @@ jobs:
           make archive BINARY_FILE=target/release/${{ matrix.artifact_name }} \
             BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
       - name: Save binary archive for few days
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.ASSET_FULL_NAME }}.tar.gz
           path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
@@ -56,7 +56,7 @@ jobs:
     name: Build x86_64-unknown-linux-gnu
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: ./.github/actions/artifact-name
         with: 
           suffix: x86_64-unknown-linux-gnu
@@ -75,7 +75,7 @@ jobs:
           make archive BINARY_FILE=target/x86_64-unknown-linux-gnu/release/quickwit \
             BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }} 
       - name: Save binary archive for few days
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.ASSET_FULL_NAME }}.tar.gz
           path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
@@ -93,7 +93,7 @@ jobs:
     name: Build x86_64-unknown-linux-musl
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: ./.github/actions/artifact-name
         with: 
           suffix: x86_64-unknown-linux-musl
@@ -112,7 +112,7 @@ jobs:
           make archive BINARY_FILE=target/x86_64-unknown-linux-musl/release/quickwit \
             BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
       - name: Save binary archive for few days
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.ASSET_FULL_NAME }}.tar.gz
           path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
@@ -130,7 +130,7 @@ jobs:
     name: Build aarch64-unknown-linux-gnu
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: ./.github/actions/artifact-name
         with: 
           suffix: aarch64-unknown-linux-gnu
@@ -149,7 +149,7 @@ jobs:
           make archive BINARY_FILE=target/aarch64-unknown-linux-gnu/release/quickwit \
             BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
       - name: Save binary archive for few days
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.ASSET_FULL_NAME }}.tar.gz
           path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
@@ -167,7 +167,7 @@ jobs:
     name: Build aarch64-unknown-linux-musl
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: ./.github/actions/artifact-name
         with: 
           suffix: aarch64-unknown-linux-musl
@@ -186,7 +186,7 @@ jobs:
           make archive BINARY_FILE=target/aarch64-unknown-linux-musl/release/quickwit \
             BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
       - name: Save binary archive for few days
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.ASSET_FULL_NAME }}.tar.gz
           path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
@@ -211,23 +211,23 @@ jobs:
       - build-aarch64-unknown-linux-musl-package
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Extract version
         uses: ./.github/actions/artifact-name
         with: 
           suffix: ''
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@v2
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v2
       - name: Login to DockerHub
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@v3
+        uses: docker/metadata-action@v4
         with:
           images: quickwit/quickwit
           labels: |
@@ -236,17 +236,17 @@ jobs:
             org.opencontainers.image.vendor=Quickwit, Inc.
             org.opencontainers.image.licenses=AGPL-3.0
       - name: Download linux/amd64 binary package
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: quickwit-${{ env.ASSET_VERSION }}-x86_64-unknown-linux-musl.tar.gz
           path: ./docker
       - name: Download linux/arm64 binary package
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: quickwit-${{ env.ASSET_VERSION }}-aarch64-unknown-linux-musl.tar.gz
           path: ./docker
       - name: Build and push
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v3
         with:
           context: ./docker/
           platforms: linux/amd64,linux/arm64

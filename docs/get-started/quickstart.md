@@ -114,7 +114,7 @@ It should return 10 hits. Now you're ready to serve our search API.
 Quickwit provides a search [REST API](../reference/rest-api.md) that can be started using the `service` subcommand.
 
 ```bash
-./quickwit service run searcher 
+./quickwit run --service searcher
 ```
 
 Check it's working with a simple GET request in the browser or via cURL:

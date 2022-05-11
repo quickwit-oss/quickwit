@@ -258,7 +258,7 @@ impl StableMultitenantWithTimestampMergePolicy {
     /// - has to many `num docs >= self.max_merge_docs * self.max_merge_docs`. A split normally has
     ///   size less than `2 * max_merge_docs`. As `max_merge_docs` can change through time, we must
     ///   protect against too big splits as it will break the building of demux operations, see
-    ///   [`build_first_demux_operation`].
+    ///   [`StableMultitenantWithTimestampMergePolicy`]
     fn is_mature_for_demux(&self, split: &SplitMetadata) -> bool {
         // If demux is disabled or if there is no demux field, split is considered mature.
         if !self.demux_enabled || self.demux_field_name.is_none() {

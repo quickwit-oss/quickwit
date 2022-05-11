@@ -17,11 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::time::Duration;
+
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox, HEARTBEAT};
 use quickwit_config::VoidSourceParams;
 
-use crate::models::IndexerMessage;
+use crate::actors::Indexer;
 use crate::source::{Source, SourceContext, TypedSourceFactory};
 
 pub struct VoidSource;
@@ -30,11 +32,11 @@ pub struct VoidSource;
 impl Source for VoidSource {
     async fn emit_batches(
         &mut self,
-        _: &Mailbox<IndexerMessage>,
+        _: &Mailbox<Indexer>,
         _: &SourceContext,
-    ) -> Result<(), ActorExitStatus> {
+    ) -> Result<Duration, ActorExitStatus> {
         tokio::time::sleep(HEARTBEAT / 2).await;
-        Ok(())
+        Ok(Duration::default())
     }
 
     fn name(&self) -> String {
@@ -55,8 +57,9 @@ impl TypedSourceFactory for VoidSourceFactory {
     type Params = VoidSourceParams;
 
     async fn typed_create_source(
-        _: VoidSourceParams,
-        _: quickwit_metastore::checkpoint::SourceCheckpoint,
+        _source_id: String,
+        _params: VoidSourceParams,
+        _checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
     ) -> anyhow::Result<VoidSource> {
         Ok(VoidSource)
     }
@@ -91,6 +94,7 @@ mod tests {
         let universe = Universe::new();
         let (mailbox, _) = create_test_mailbox();
         let void_source = VoidSourceFactory::typed_create_source(
+            "my-void-source".to_string(),
             VoidSourceParams {},
             SourceCheckpoint::default(),
         )
@@ -99,7 +103,7 @@ mod tests {
             source: Box::new(void_source),
             batch_sink: mailbox,
         };
-        let (_, void_source_handle) = universe.spawn_actor(void_source_actor).spawn_async();
+        let (_, void_source_handle) = universe.spawn_actor(void_source_actor).spawn();
         matches!(void_source_handle.health(), Health::Healthy);
         let (actor_termination, observed_state) = void_source_handle.quit().await;
         assert_eq!(observed_state, json!({}));

@@ -25,15 +25,15 @@ use hyper::header::HeaderValue;
 use hyper::HeaderMap;
 use quickwit_doc_mapper::{SortByField, SortOrder};
 use quickwit_proto::{OutputFormat, SortOrder as ProtoSortOrder};
-use quickwit_search::{SearchResponseRest, SearchService};
+use quickwit_search::{SearchError, SearchResponseRest, SearchService};
 use serde::{de, Deserialize, Deserializer};
 use tracing::info;
 use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
 
-use crate::error::ApiError;
-use crate::format::Format;
+use crate::error::ServiceError;
+use crate::{require, Format};
 
 fn sort_by_field_mini_dsl<'de, D>(deserializer: D) -> Result<Option<SortByField>, D::Error>
 where D: Deserializer<'de> {
@@ -80,15 +80,14 @@ where D: Deserializer<'de> {
 /// the rest API.
 #[derive(Deserialize, Debug, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
-#[serde(rename_all = "camelCase")]
 pub struct SearchRequestQueryString {
     /// Query text. The query language is that of tantivy.
     pub query: String,
     /// The aggregation JSON string.
-    pub aggregations: Option<serde_json::Value>,
+    pub aggs: Option<serde_json::Value>,
     // Fields to search on
     #[serde(default)]
-    #[serde(rename(deserialize = "searchField"))]
+    #[serde(rename(deserialize = "search_field"))]
     #[serde(deserialize_with = "from_simple_list")]
     pub search_fields: Option<Vec<String>>,
     /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
@@ -126,11 +125,11 @@ fn get_proto_search_by(search_request: &SearchRequestQueryString) -> (Option<i32
     }
 }
 
-async fn search_endpoint<TSearchService: SearchService>(
+async fn search_endpoint(
     index_id: String,
     search_request: SearchRequestQueryString,
-    search_service: &TSearchService,
-) -> Result<SearchResponseRest, ApiError> {
+    search_service: &dyn SearchService,
+) -> Result<SearchResponseRest, SearchError> {
     let (sort_order, sort_by_field) = get_proto_search_by(&search_request);
     let search_request = quickwit_proto::SearchRequest {
         index_id,
@@ -141,7 +140,7 @@ async fn search_endpoint<TSearchService: SearchService>(
         max_hits: search_request.max_hits,
         start_offset: search_request.start_offset,
         aggregation_request: search_request
-            .aggregations
+            .aggs
             .map(|agg| serde_json::to_string(&agg).expect("could not serialize serde_json::Value")),
         sort_order,
         sort_by_field,
@@ -153,57 +152,57 @@ async fn search_endpoint<TSearchService: SearchService>(
 
 fn search_get_filter(
 ) -> impl Filter<Extract = (String, SearchRequestQueryString), Error = Rejection> + Clone {
-    warp::path!("api" / "v1" / String / "search")
+    warp::path!(String / "search")
         .and(warp::get())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 
 fn search_post_filter(
 ) -> impl Filter<Extract = (String, SearchRequestQueryString), Error = Rejection> + Clone {
-    warp::path!("api" / "v1" / String / "search")
+    warp::path!(String / "search")
         .and(warp::post())
         .and(warp::body::content_length_limit(1024 * 1024))
         .and(warp::body::json())
 }
 
-async fn search<TSearchService: SearchService>(
+async fn search(
     index_id: String,
     search_request: SearchRequestQueryString,
-    search_service: Arc<TSearchService>,
+    search_service: Arc<dyn SearchService>,
 ) -> Result<impl warp::Reply, Infallible> {
     info!(index_id = %index_id, request =? search_request, "search");
     Ok(search_request
         .format
-        .make_reply(search_endpoint(index_id, search_request, &*search_service).await))
+        .make_rest_reply(search_endpoint(index_id, search_request, &*search_service).await))
 }
 
 /// REST GET search handler.
 ///
 /// Parses the search request from the
-pub fn search_get_handler<TSearchService: SearchService>(
-    search_service: Arc<TSearchService>,
+pub fn search_get_handler(
+    search_service_opt: Option<Arc<dyn SearchService>>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     search_get_filter()
-        .and(warp::any().map(move || search_service.clone()))
+        .and(require(search_service_opt))
         .and_then(search)
 }
 
 /// REST POST search handler.
 ///
 /// Parses the search request from the
-pub fn search_post_handler<TSearchService: SearchService>(
-    search_service: Arc<TSearchService>,
+pub fn search_post_handler(
+    search_service_opt: Option<Arc<dyn SearchService>>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     search_post_filter()
-        .and(warp::any().map(move || search_service.clone()))
+        .and(require(search_service_opt))
         .and_then(search)
 }
 
-pub fn search_stream_handler<TSearchService: SearchService>(
-    search_service: Arc<TSearchService>,
+pub fn search_stream_handler(
+    search_service_opt: Option<Arc<dyn SearchService>>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     search_stream_filter()
-        .and(warp::any().map(move || search_service.clone()))
+        .and(require(search_service_opt))
         .and_then(search_stream)
 }
 
@@ -211,13 +210,12 @@ pub fn search_stream_handler<TSearchService: SearchService>(
 /// the REST API.
 #[derive(Deserialize, Debug, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-#[serde(rename_all = "camelCase")]
 struct SearchStreamRequestQueryString {
     /// Query text. The query language is that of tantivy.
     pub query: String,
     // Fields to search on.
     #[serde(default)]
-    #[serde(rename(deserialize = "searchField"))]
+    #[serde(rename(deserialize = "search_field"))]
     #[serde(deserialize_with = "from_simple_list")]
     pub search_fields: Option<Vec<String>>,
     /// If set, restricts search to documents with a `timestamp >= start_timestamp`.
@@ -234,11 +232,11 @@ struct SearchStreamRequestQueryString {
     pub partition_by_field: Option<String>,
 }
 
-async fn search_stream_endpoint<TSearchService: SearchService>(
+async fn search_stream_endpoint(
     index_id: String,
     search_request: SearchStreamRequestQueryString,
-    search_service: &TSearchService,
-) -> Result<hyper::Body, ApiError> {
+    search_service: &dyn SearchService,
+) -> Result<hyper::Body, SearchError> {
     let request = quickwit_proto::SearchStreamRequest {
         index_id,
         query: search_request.query,
@@ -284,7 +282,7 @@ async fn search_stream_endpoint<TSearchService: SearchService>(
     Ok(body)
 }
 
-fn make_streaming_reply(result: Result<hyper::Body, ApiError>) -> impl Reply {
+fn make_streaming_reply(result: Result<hyper::Body, SearchError>) -> impl Reply {
     let status_code: StatusCode;
     let body = match result {
         Ok(body) => {
@@ -292,17 +290,17 @@ fn make_streaming_reply(result: Result<hyper::Body, ApiError>) -> impl Reply {
             warp::reply::Response::new(body)
         }
         Err(err) => {
-            status_code = err.http_status_code();
+            status_code = err.status_code().to_http_status_code();
             warp::reply::Response::new(hyper::Body::from(err.to_string()))
         }
     };
     reply::with_status(body, status_code)
 }
 
-async fn search_stream<TSearchService: SearchService>(
+async fn search_stream(
     index_id: String,
     request: SearchStreamRequestQueryString,
-    search_service: Arc<TSearchService>,
+    search_service: Arc<dyn SearchService>,
 ) -> Result<impl warp::Reply, Infallible> {
     info!(index_id=%index_id,request=?request, "search_stream");
     let content_type = match request.output_format {
@@ -317,7 +315,7 @@ async fn search_stream<TSearchService: SearchService>(
 
 fn search_stream_filter(
 ) -> impl Filter<Extract = (String, SearchStreamRequestQueryString), Error = Rejection> + Clone {
-    warp::path!("api" / "v1" / String / "search" / "stream")
+    warp::path!(String / "search" / "stream")
         .and(warp::get())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
@@ -344,9 +342,9 @@ mod tests {
         };
         let search_response_json: serde_json::Value = serde_json::to_value(&search_response)?;
         let expected_search_response_json: serde_json::Value = json!({
-            "numHits": 55,
+            "num_hits": 55,
             "hits": [],
-            "elapsedTimeMicros": 0,
+            "elapsed_time_micros": 0,
         });
         assert_json_include!(
             actual: search_response_json,
@@ -360,9 +358,9 @@ mod tests {
         let rest_search_api_filter = search_post_filter();
         let (index, req) = warp::test::request()
             .method("POST")
-            .path("/api/v1/quickwit-demo-index/search?query=*&maxHits=10")
+            .path("/quickwit-demo-index/search?query=*&max_hits=10")
             .json(&true)
-            .body(r#"{"query": "*", "maxHits":10, "aggregations": {"range":[]} }"#)
+            .body(r#"{"query": "*", "max_hits":10, "aggs": {"range":[]} }"#)
             .filter(&rest_search_api_filter)
             .await
             .unwrap();
@@ -376,7 +374,7 @@ mod tests {
                 max_hits: 10,
                 format: Format::default(),
                 sort_by_field: None,
-                aggregations: Some(json!({"range":[]})),
+                aggs: Some(json!({"range":[]})),
                 ..Default::default()
             }
         );
@@ -387,8 +385,8 @@ mod tests {
         let rest_search_api_filter = search_get_filter();
         let (index, req) = warp::test::request()
             .path(
-                "/api/v1/quickwit-demo-index/search?query=*&endTimestamp=1450720000&maxHits=10&\
-                 startOffset=22",
+                "/quickwit-demo-index/search?query=*&end_timestamp=1450720000&max_hits=10&\
+                 start_offset=22",
             )
             .filter(&rest_search_api_filter)
             .await
@@ -415,8 +413,8 @@ mod tests {
         let rest_search_api_filter = search_get_filter();
         let (index, req) = warp::test::request()
             .path(
-                "/api/v1/quickwit-demo-index/search?query=*&endTimestamp=1450720000&\
-                 searchField=title,body",
+                "/quickwit-demo-index/search?query=*&end_timestamp=1450720000&search_field=title,\
+                 body",
             )
             .filter(&rest_search_api_filter)
             .await
@@ -442,7 +440,7 @@ mod tests {
     async fn test_rest_search_api_route_simple_format() {
         let rest_search_api_filter = search_get_filter();
         let (index, req) = warp::test::request()
-            .path("/api/v1/quickwit-demo-index/search?query=*&format=json")
+            .path("/quickwit-demo-index/search?query=*&format=json")
             .filter(&rest_search_api_filter)
             .await
             .unwrap();
@@ -467,7 +465,7 @@ mod tests {
     async fn test_rest_search_api_route_sort_by() {
         let rest_search_api_filter = search_get_filter();
         let (_, req) = warp::test::request()
-            .path("/api/v1/quickwit-demo-index/search?query=*&format=json&sortByField=field")
+            .path("/quickwit-demo-index/search?query=*&format=json&sort_by_field=field")
             .filter(&rest_search_api_filter)
             .await
             .unwrap();
@@ -491,7 +489,7 @@ mod tests {
 
         let rest_search_api_filter = search_get_filter();
         let (_, req) = warp::test::request()
-            .path("/api/v1/quickwit-demo-index/search?query=*&format=json&sortByField=+field")
+            .path("/quickwit-demo-index/search?query=*&format=json&sort_by_field=+field")
             .filter(&rest_search_api_filter)
             .await
             .unwrap();
@@ -515,7 +513,7 @@ mod tests {
 
         let rest_search_api_filter = search_get_filter();
         let (_, req) = warp::test::request()
-            .path("/api/v1/quickwit-demo-index/search?query=*&format=json&sortByField=-field")
+            .path("/quickwit-demo-index/search?query=*&format=json&sort_by_field=-field")
             .filter(&rest_search_api_filter)
             .await
             .unwrap();
@@ -542,15 +540,15 @@ mod tests {
     async fn test_rest_search_api_route_invalid_key() -> anyhow::Result<()> {
         let mock_search_service = MockSearchService::new();
         let rest_search_api_handler =
-            super::search_get_handler(Arc::new(mock_search_service)).recover(recover_fn);
+            super::search_get_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
         let resp = warp::test::request()
-            .path("/api/v1/quickwit-demo-index/search?query=*&endUnixTimestamp=1450720000")
+            .path("/quickwit-demo-index/search?query=*&end_unix_timestamp=1450720000")
             .reply(&rest_search_api_handler)
             .await;
         assert_eq!(resp.status(), 400);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "error": "InvalidArgument: failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `aggregations`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`, `sortByField`."
+            "error": "unknown field `end_unix_timestamp`, expected one of `query`, `aggs`, `search_field`, `start_timestamp`, `end_timestamp`, `max_hits`, `start_offset`, `format`, `sort_by_field`"
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())
@@ -569,17 +567,17 @@ mod tests {
             })
         });
         let rest_search_api_handler =
-            super::search_get_handler(Arc::new(mock_search_service)).recover(recover_fn);
+            super::search_get_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
         let resp = warp::test::request()
-            .path("/api/v1/quickwit-demo-index/search?query=*")
+            .path("/quickwit-demo-index/search?query=*")
             .reply(&rest_search_api_handler)
             .await;
         assert_eq!(resp.status(), 200);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let expected_response_json = serde_json::json!({
-            "numHits": 10,
+            "num_hits": 10,
             "hits": [],
-            "elapsedTimeMicros": 16,
+            "elapsed_time_micros": 16,
         });
         assert_json_include!(actual: resp_json, expected: expected_response_json);
         Ok(())
@@ -597,10 +595,10 @@ mod tests {
             ))
             .returning(|_| Ok(Default::default()));
         let rest_search_api_handler =
-            super::search_get_handler(Arc::new(mock_search_service)).recover(recover_fn);
+            super::search_get_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
         assert_eq!(
             warp::test::request()
-                .path("/api/v1/quickwit-demo-index/search?query=*&startOffset=5&maxHits=30")
+                .path("/quickwit-demo-index/search?query=*&start_offset=5&max_hits=30")
                 .reply(&rest_search_api_handler)
                 .await
                 .status(),
@@ -618,10 +616,10 @@ mod tests {
             })
         });
         let rest_search_api_handler =
-            super::search_get_handler(Arc::new(mock_search_service)).recover(recover_fn);
+            super::search_get_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
         assert_eq!(
             warp::test::request()
-                .path("/api/v1/index-does-not-exist/search?query=myfield:test")
+                .path("/index-does-not-exist/search?query=myfield:test")
                 .reply(&rest_search_api_handler)
                 .await
                 .status(),
@@ -637,10 +635,10 @@ mod tests {
             .expect_root_search()
             .returning(|_| Err(SearchError::InternalError("ty".to_string())));
         let rest_search_api_handler =
-            super::search_get_handler(Arc::new(mock_search_service)).recover(recover_fn);
+            super::search_get_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
         assert_eq!(
             warp::test::request()
-                .path("/api/v1/index-does-not-exist/search?query=myfield:test")
+                .path("/index-does-not-exist/search?query=myfield:test")
                 .reply(&rest_search_api_handler)
                 .await
                 .status(),
@@ -656,10 +654,10 @@ mod tests {
             .expect_root_search()
             .returning(|_| Err(SearchError::InvalidQuery("invalid query".to_string())));
         let rest_search_api_handler =
-            super::search_get_handler(Arc::new(mock_search_service)).recover(recover_fn);
+            super::search_get_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
         assert_eq!(
             warp::test::request()
-                .path("/api/v1/my-index/search?query=myfield:test")
+                .path("/my-index/search?query=myfield:test")
                 .reply(&rest_search_api_handler)
                 .await
                 .status(),
@@ -680,11 +678,9 @@ mod tests {
                 ])))
             });
         let rest_search_stream_api_handler =
-            super::search_stream_handler(Arc::new(mock_search_service)).recover(recover_fn);
+            super::search_stream_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
         let response = warp::test::request()
-            .path(
-                "/api/v1/my-index/search/stream?query=obama&fastField=external_id&outputFormat=csv",
-            )
+            .path("/my-index/search/stream?query=obama&fast_field=external_id&output_format=csv")
             .reply(&rest_search_stream_api_handler)
             .await;
         assert_eq!(response.status(), 200);
@@ -696,9 +692,7 @@ mod tests {
     #[tokio::test]
     async fn test_rest_search_stream_api_csv() {
         let (index, req) = warp::test::request()
-            .path(
-                "/api/v1/my-index/search/stream?query=obama&fastField=external_id&outputFormat=csv",
-            )
+            .path("/my-index/search/stream?query=obama&fast_field=external_id&output_format=csv")
             .filter(&super::search_stream_filter())
             .await
             .unwrap();
@@ -721,8 +715,8 @@ mod tests {
     async fn test_rest_search_stream_api_click_house_row_binary() {
         let (index, req) = warp::test::request()
             .path(
-                "/api/v1/my-index/search/stream?query=obama&fastField=external_id&\
-                 outputFormat=clickHouseRowBinary",
+                "/my-index/search/stream?query=obama&fast_field=external_id&\
+                 output_format=clickHouseRowBinary",
             )
             .filter(&super::search_stream_filter())
             .await
@@ -746,8 +740,8 @@ mod tests {
     async fn test_rest_search_stream_api_error() {
         let rejection = warp::test::request()
             .path(
-                "/api/v1/my-index/search/stream?query=obama&fastField=external_id&\
-                 outputFormat=click_house_row_binary",
+                "/my-index/search/stream?query=obama&fast_field=external_id&\
+                 output_format=click_house_row_binary",
             )
             .filter(&super::search_stream_filter())
             .await
@@ -755,8 +749,7 @@ mod tests {
         let parse_error = rejection.find::<serde_qs::Error>().unwrap();
         assert_eq!(
             parse_error.to_string(),
-            "failed with reason: unknown variant `click_house_row_binary`, expected `csv` or \
-             `clickHouseRowBinary`"
+            "unknown variant `click_house_row_binary`, expected `csv` or `clickHouseRowBinary`"
         );
     }
 
@@ -764,8 +757,7 @@ mod tests {
     async fn test_rest_search_stream_api_error_empty_fastfield() {
         let rejection = warp::test::request()
             .path(
-                "/api/v1/my-index/search/stream?query=obama&fastField=&\
-                 outputFormat=clickHouseRowBinary",
+                "/my-index/search/stream?query=obama&fast_field=&output_format=clickHouseRowBinary",
             )
             .filter(&super::search_stream_filter())
             .await
@@ -773,7 +765,7 @@ mod tests {
         let parse_error = rejection.find::<serde_qs::Error>().unwrap();
         assert_eq!(
             parse_error.to_string(),
-            "failed with reason: Expected a non empty string field."
+            "Expected a non empty string field."
         );
     }
 }

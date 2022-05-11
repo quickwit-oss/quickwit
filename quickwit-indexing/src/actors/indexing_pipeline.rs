@@ -25,8 +25,8 @@ use anyhow::Context;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{
-    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, AsyncActor, Health,
-    KillSwitch, QueueCapacity, Supervisable,
+    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, KillSwitch,
+    QueueCapacity, Supervisable,
 };
 use quickwit_config::{build_doc_mapper, IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
@@ -41,7 +41,7 @@ use crate::actors::{
     GarbageCollector, Indexer, MergeExecutor, MergePlanner, NamedField, Packager, Publisher,
     Uploader,
 };
-use crate::models::{IndexingDirectory, IndexingStatistics};
+use crate::models::{IndexingDirectory, IndexingStatistics, Observe};
 use crate::source::{quickwit_supported_sources, SourceActor};
 use crate::split_store::{IndexingSplitStore, IndexingSplitStoreParams};
 use crate::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
@@ -66,11 +66,14 @@ pub struct IndexingPipelineHandler {
     pub merge_publisher: ActorHandle<Publisher>,
 }
 
+// Messages
+
 #[derive(Debug, Clone, Copy)]
-pub enum IndexingPipelineMessage {
-    Supervise,
-    Observe,
-    Spawn { retry_count: usize },
+pub struct Supervise;
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Spawn {
+    retry_count: usize,
 }
 
 pub struct IndexingPipeline {
@@ -82,9 +85,8 @@ pub struct IndexingPipeline {
     kill_switch: KillSwitch,
 }
 
+#[async_trait]
 impl Actor for IndexingPipeline {
-    type Message = IndexingPipelineMessage;
-
     type ObservableState = IndexingStatistics;
 
     fn observable_state(&self) -> Self::ObservableState {
@@ -98,6 +100,13 @@ impl Actor for IndexingPipeline {
     fn span(&self, _ctx: &ActorContext<Self>) -> Span {
         info_span!("")
     }
+
+    async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+        self.handle(Spawn::default(), ctx).await?;
+        self.handle(Observe, ctx).await?;
+        self.handle(Supervise, ctx).await?;
+        Ok(())
+    }
 }
 
 impl IndexingPipeline {
@@ -109,29 +118,6 @@ impl IndexingPipeline {
             kill_switch: KillSwitch::default(),
             statistics: IndexingStatistics::default(),
         }
-    }
-
-    async fn process_observe(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        if let Some(handlers) = self.handlers.as_ref() {
-            let (indexer_counters, uploader_counters, publisher_counters) = join!(
-                handlers.indexer.observe(),
-                handlers.uploader.observe(),
-                handlers.publisher.observe(),
-            );
-            self.statistics = self
-                .previous_generations_statistics
-                .clone()
-                .add_actor_counters(
-                    &*indexer_counters,
-                    &*uploader_counters,
-                    &*publisher_counters,
-                )
-                .set_generation(self.statistics.generation)
-                .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
-        }
-        ctx.schedule_self_msg(Duration::from_secs(1), IndexingPipelineMessage::Observe)
-            .await;
-        Ok(())
     }
 
     fn supervisables(&self) -> Vec<&dyn Supervisable> {
@@ -240,10 +226,7 @@ impl IndexingPipeline {
             .await?;
 
         let (merge_planner_mailbox, merge_planner_inbox) =
-            create_mailbox::<<MergePlanner as Actor>::Message>(
-                "MergePlanner".to_string(),
-                QueueCapacity::Unbounded,
-            );
+            create_mailbox::<MergePlanner>("MergePlanner".to_string(), QueueCapacity::Unbounded);
 
         // Garbage colletor
         let garbage_collector = GarbageCollector::new(
@@ -254,7 +237,7 @@ impl IndexingPipeline {
         let (garbage_collector_mailbox, garbage_collector_handler) = ctx
             .spawn_actor(garbage_collector)
             .set_kill_switch(self.kill_switch.clone())
-            .spawn_async();
+            .spawn();
 
         // Merge publisher
         let merge_publisher = Publisher::new(
@@ -263,11 +246,12 @@ impl IndexingPipeline {
             self.params.metastore.clone(),
             merge_planner_mailbox.clone(),
             garbage_collector_mailbox.clone(),
+            None,
         );
         let (merge_publisher_mailbox, merge_publisher_handler) = ctx
             .spawn_actor(merge_publisher)
             .set_kill_switch(self.kill_switch.clone())
-            .spawn_async();
+            .spawn();
 
         // Merge uploader
         let merge_uploader = Uploader::new(
@@ -279,7 +263,7 @@ impl IndexingPipeline {
         let (merge_uploader_mailbox, merge_uploader_handler) = ctx
             .spawn_actor(merge_uploader)
             .set_kill_switch(self.kill_switch.clone())
-            .spawn_async();
+            .spawn();
 
         // Merge Packager
         let index_schema = self.params.doc_mapper.schema();
@@ -304,7 +288,7 @@ impl IndexingPipeline {
         let (merge_packager_mailbox, merge_packager_handler) = ctx
             .spawn_actor(merge_packager)
             .set_kill_switch(self.kill_switch.clone())
-            .spawn_sync();
+            .spawn();
 
         let merge_executor = MergeExecutor::new(
             self.params.index_id.clone(),
@@ -317,7 +301,7 @@ impl IndexingPipeline {
         let (merge_executor_mailbox, merge_executor_handler) = ctx
             .spawn_actor(merge_executor)
             .set_kill_switch(self.kill_switch.clone())
-            .spawn_sync();
+            .spawn();
 
         let merge_split_downloader = MergeSplitDownloader {
             scratch_directory: self.params.indexing_directory.scratch_directory.clone(),
@@ -327,7 +311,7 @@ impl IndexingPipeline {
         let (merge_split_downloader_mailbox, merge_split_downloader_handler) = ctx
             .spawn_actor(merge_split_downloader)
             .set_kill_switch(self.kill_switch.clone())
-            .spawn_async();
+            .spawn();
 
         // Merge planner
         let published_split_metadatas = published_splits.into_iter().collect_vec();
@@ -340,7 +324,10 @@ impl IndexingPipeline {
             .spawn_actor(merge_planner)
             .set_kill_switch(self.kill_switch.clone())
             .set_mailboxes(merge_planner_mailbox, merge_planner_inbox)
-            .spawn_sync();
+            .spawn();
+
+        let (source_mailbox, source_inbox) =
+            create_mailbox::<SourceActor>("SourceActor".to_string(), QueueCapacity::Unbounded);
 
         // Publisher
         let publisher = Publisher::new(
@@ -349,11 +336,12 @@ impl IndexingPipeline {
             self.params.metastore.clone(),
             merge_planner_mailbox,
             garbage_collector_mailbox,
+            Some(source_mailbox.clone()),
         );
         let (publisher_mailbox, publisher_handler) = ctx
             .spawn_actor(publisher)
             .set_kill_switch(self.kill_switch.clone())
-            .spawn_async();
+            .spawn();
 
         // Uploader
         let uploader = Uploader::new(
@@ -365,15 +353,14 @@ impl IndexingPipeline {
         let (uploader_mailbox, uploader_handler) = ctx
             .spawn_actor(uploader)
             .set_kill_switch(self.kill_switch.clone())
-            .spawn_async();
+            .spawn();
 
         // Packager
         let packager = Packager::new("Packager", tag_fields, uploader_mailbox);
         let (packager_mailbox, packager_handler) = ctx
             .spawn_actor(packager)
             .set_kill_switch(self.kill_switch.clone())
-            .spawn_sync();
-
+            .spawn();
         // Indexer
         let indexer = Indexer::new(
             self.params.index_id.clone(),
@@ -385,7 +372,7 @@ impl IndexingPipeline {
         let (indexer_mailbox, indexer_handler) = ctx
             .spawn_actor(indexer)
             .set_kill_switch(self.kill_switch.clone())
-            .spawn_sync();
+            .spawn();
 
         // Fetch index_metadata to be sure to have the last updated checkpoint.
         let index_metadata = self
@@ -407,8 +394,9 @@ impl IndexingPipeline {
         };
         let (_source_mailbox, source_handler) = ctx
             .spawn_actor(actor_source)
+            .set_mailboxes(source_mailbox, source_inbox)
             .set_kill_switch(self.kill_switch.clone())
-            .spawn_async();
+            .spawn();
 
         // Increment generation once we are sure there will be no spawning error.
         self.previous_generations_statistics = self.statistics.clone();
@@ -444,55 +432,6 @@ impl IndexingPipeline {
         Duration::from_secs(2u64.pow(max_power) as u64).min(MAX_RETRY_DELAY)
     }
 
-    async fn process_spawn(
-        &mut self,
-        ctx: &ActorContext<Self>,
-        retry_count: usize,
-    ) -> Result<(), ActorExitStatus> {
-        if self.handlers.is_some() {
-            return Ok(());
-        }
-        self.previous_generations_statistics.num_spawn_attempts = 1 + retry_count;
-        if let Err(spawn_error) = self.spawn_pipeline(ctx).await {
-            let retry_delay = Self::wait_duration_before_retry(retry_count);
-            error!(error = ?spawn_error, retry_count = retry_count, retry_delay = ?retry_delay, "Error while spawning indexing pipeline, retrying after some time.");
-            ctx.schedule_self_msg(
-                retry_delay,
-                IndexingPipelineMessage::Spawn {
-                    retry_count: retry_count + 1,
-                },
-            )
-            .await;
-        }
-
-        Ok(())
-    }
-
-    async fn process_supervise(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        if self.handlers.is_some() {
-            match self.healthcheck() {
-                Health::Healthy => {}
-                Health::FailureOrUnhealthy => {
-                    self.terminate().await;
-                    ctx.schedule_self_msg(
-                        quickwit_actors::HEARTBEAT,
-                        IndexingPipelineMessage::Spawn { retry_count: 0 },
-                    )
-                    .await;
-                }
-                Health::Success => {
-                    return Err(ActorExitStatus::Success);
-                }
-            }
-        }
-        ctx.schedule_self_msg(
-            quickwit_actors::HEARTBEAT,
-            IndexingPipelineMessage::Supervise,
-        )
-        .await;
-        Ok(())
-    }
-
     async fn terminate(&mut self) {
         self.kill_switch.kill();
         if let Some(handlers) = self.handlers.take() {
@@ -515,25 +454,86 @@ impl IndexingPipeline {
 }
 
 #[async_trait]
-impl AsyncActor for IndexingPipeline {
-    async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        self.process_spawn(ctx, 0).await?;
-        self.process_observe(ctx).await?;
-        self.process_supervise(ctx).await?;
-        Ok(())
-    }
-
-    async fn process_message(
+impl Handler<Observe> for IndexingPipeline {
+    type Reply = ();
+    async fn handle(
         &mut self,
-        message: Self::Message,
+        _: Observe,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        match message {
-            IndexingPipelineMessage::Observe => self.process_observe(ctx).await?,
-            IndexingPipelineMessage::Supervise => self.process_supervise(ctx).await?,
-            IndexingPipelineMessage::Spawn { retry_count } => {
-                self.process_spawn(ctx, retry_count).await?
+        if let Some(handlers) = self.handlers.as_ref() {
+            let (indexer_counters, uploader_counters, publisher_counters) = join!(
+                handlers.indexer.observe(),
+                handlers.uploader.observe(),
+                handlers.publisher.observe(),
+            );
+            self.statistics = self
+                .previous_generations_statistics
+                .clone()
+                .add_actor_counters(
+                    &*indexer_counters,
+                    &*uploader_counters,
+                    &*publisher_counters,
+                )
+                .set_generation(self.statistics.generation)
+                .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
+        }
+        ctx.schedule_self_msg(Duration::from_secs(1), Observe).await;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<Supervise> for IndexingPipeline {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _: Supervise,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        if self.handlers.is_some() {
+            match self.healthcheck() {
+                Health::Healthy => {}
+                Health::FailureOrUnhealthy => {
+                    self.terminate().await;
+                    ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, Spawn { retry_count: 0 })
+                        .await;
+                }
+                Health::Success => {
+                    return Err(ActorExitStatus::Success);
+                }
             }
+        }
+        ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, Supervise)
+            .await;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<Spawn> for IndexingPipeline {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        spawn: Spawn,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        if self.handlers.is_some() {
+            return Ok(());
+        }
+        self.previous_generations_statistics.num_spawn_attempts = 1 + spawn.retry_count;
+        if let Err(spawn_error) = self.spawn_pipeline(ctx).await {
+            let retry_delay = Self::wait_duration_before_retry(spawn.retry_count);
+            error!(error = ?spawn_error, retry_count = spawn.retry_count, retry_delay = ?retry_delay, "Error while spawning indexing pipeline, retrying after some time.");
+            ctx.schedule_self_msg(
+                retry_delay,
+                Spawn {
+                    retry_count: spawn.retry_count + 1,
+                },
+            )
+            .await;
         }
         Ok(())
     }
@@ -687,7 +687,7 @@ mod tests {
             storage: Arc::new(RamStorage::default()),
         };
         let pipeline = IndexingPipeline::new(indexing_pipeline_params);
-        let (_pipeline_mailbox, pipeline_handler) = universe.spawn_actor(pipeline).spawn_async();
+        let (_pipeline_mailbox, pipeline_handler) = universe.spawn_actor(pipeline).spawn();
         let (pipeline_exit_status, pipeline_statistics) = pipeline_handler.join().await;
         assert_eq!(pipeline_statistics.generation, 1);
         assert_eq!(pipeline_statistics.num_spawn_attempts, 1 + num_fails);
@@ -768,7 +768,7 @@ mod tests {
             storage: Arc::new(RamStorage::default()),
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
-        let (_pipeline_mailbox, pipeline_handler) = universe.spawn_actor(pipeline).spawn_async();
+        let (_pipeline_mailbox, pipeline_handler) = universe.spawn_actor(pipeline).spawn();
         let (pipeline_exit_status, pipeline_statistics) = pipeline_handler.join().await;
         assert!(pipeline_exit_status.is_success());
         assert_eq!(pipeline_statistics.generation, 1);

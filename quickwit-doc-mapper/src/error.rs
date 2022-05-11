@@ -17,9 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use tantivy::schema::DocParsingError as TantivyDocParsingError;
 use thiserror::Error;
-
-// TODO improve me and my error messages :)
 
 /// Failed to parse query.
 #[derive(Error, Debug)]
@@ -29,5 +28,37 @@ pub struct QueryParserError(#[from] anyhow::Error);
 impl From<tantivy::query::QueryParserError> for QueryParserError {
     fn from(tantivy_error: tantivy::query::QueryParserError) -> Self {
         QueryParserError(From::from(tantivy_error))
+    }
+}
+
+/// Error that may happen when parsing
+/// a document from JSON.
+#[derive(Debug, Error, PartialEq)]
+pub enum DocParsingError {
+    /// The provided string is not valid JSON.
+    #[error("The provided string is not a valid JSON object. {0}")]
+    NotJsonObject(String),
+    /// One of the value could not be parsed.
+    #[error("The field '{0}' could not be parsed: {1}")]
+    ValueError(String, String),
+    /// The json-document contains a field that is not declared in the schema.
+    #[error("The document contains a field that is not declared in the schema: {0:?}")]
+    NoSuchFieldInSchema(String),
+    /// The document contains a array of values but a single value is expected.
+    #[error("The document contains an array of values but a single value is expected: {0:?}")]
+    MultiValuesNotSupported(String),
+    /// The document does not contains a field that is required.
+    #[error("The document must contain field {0:?}. As a fast field, it is implicitly required.")]
+    RequiredFastField(String),
+}
+
+impl From<TantivyDocParsingError> for DocParsingError {
+    fn from(value: TantivyDocParsingError) -> Self {
+        match value {
+            TantivyDocParsingError::InvalidJson(text) => DocParsingError::NoSuchFieldInSchema(text),
+            TantivyDocParsingError::ValueError(text, error) => {
+                DocParsingError::ValueError(text, format!("{:?}", error))
+            }
+        }
     }
 }

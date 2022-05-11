@@ -20,10 +20,9 @@
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
 use tantivy::schema::{Field, Schema};
-use tantivy::tokenizer::TokenizerManager;
 use tantivy_query_grammar::{UserInputAst, UserInputLeaf};
 
-use crate::QueryParserError;
+use crate::{QueryParserError, QUICKWIT_TOKENIZER_MANAGER};
 
 /// Build a `Query` with field resolution & forbidding range clauses.
 pub(crate) fn build_query(
@@ -32,7 +31,7 @@ pub(crate) fn build_query(
     default_field_names: &[String],
 ) -> Result<Box<dyn Query>, QueryParserError> {
     let user_input_ast = tantivy_query_grammar::parse_query(&request.query)
-        .map_err(|_| TantivyQueryParserError::SyntaxError)?;
+        .map_err(|_| TantivyQueryParserError::SyntaxError(request.query.to_string()))?;
 
     if has_range_clause(user_input_ast) {
         return Err(anyhow::anyhow!("Range queries are not currently allowed.").into());
@@ -44,7 +43,8 @@ pub(crate) fn build_query(
         resolve_fields(&schema, &request.search_fields)?
     };
 
-    let mut query_parser = QueryParser::new(schema, search_fields, TokenizerManager::default());
+    let mut query_parser =
+        QueryParser::new(schema, search_fields, QUICKWIT_TOKENIZER_MANAGER.clone());
     query_parser.set_conjunction_by_default();
     let query = query_parser.parse_query(&request.query)?;
     Ok(query)
@@ -98,6 +98,7 @@ mod test {
         schema_builder.build()
     }
 
+    #[track_caller]
     fn check_build_query(
         query_str: &str,
         search_fields: Vec<String>,
@@ -152,54 +153,60 @@ mod test {
     }
 
     #[test]
-    fn test_build_query() -> anyhow::Result<()> {
-        // check_build_query(
-        //     "foo:bar",
-        //     vec![],
-        //     TestExpectation::Err("Field does not exists: '\"foo\"'"),
-        // )?;
-
-        // check_build_query(
-        //     "server.type:hpc server.mem:4GB",
-        //     vec![],
-        //     TestExpectation::Err("Field does not exists: '\"server.type\"'"),
-        // )?;
-
+    fn test_build_query() {
+        check_build_query(
+            "foo:bar",
+            vec![],
+            TestExpectation::Err("Field does not exists: 'foo'"),
+        )
+        .unwrap();
+        check_build_query(
+            "server.type:hpc server.mem:4GB",
+            vec![],
+            TestExpectation::Err("Field does not exists: 'server.type'"),
+        )
+        .unwrap();
         check_build_query(
             "title:[a TO b]",
             vec![],
             TestExpectation::Err("Range queries are not currently allowed."),
-        )?;
+        )
+        .unwrap();
         check_build_query(
             "title:{a TO b} desc:foo",
             vec![],
             TestExpectation::Err("Range queries are not currently allowed."),
-        )?;
+        )
+        .unwrap();
         check_build_query(
             "title:>foo",
             vec![],
             TestExpectation::Err("Range queries are not currently allowed."),
-        )?;
+        )
+        .unwrap();
         check_build_query(
             "title:foo desc:bar _source:baz",
             vec![],
             TestExpectation::Ok("TermQuery"),
-        )?;
+        )
+        .unwrap();
         check_build_query(
             "title:foo desc:bar",
             vec!["url".to_string()],
-            TestExpectation::Err("Field does not exists: '\"url\"'"),
-        )?;
+            TestExpectation::Err("Field does not exists: 'url'"),
+        )
+        .unwrap();
         check_build_query(
             "server.name:\".bar:\" server.mem:4GB",
             vec!["server.name".to_string()],
             TestExpectation::Ok("TermQuery"),
-        )?;
+        )
+        .unwrap();
         check_build_query(
             "server.name:\"for.bar:b\" server.mem:4GB",
             vec![],
             TestExpectation::Ok("TermQuery"),
-        )?;
-        Ok(())
+        )
+        .unwrap();
     }
 }

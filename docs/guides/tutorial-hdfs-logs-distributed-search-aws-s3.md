@@ -98,7 +98,7 @@ We can now create the index with the `create` subcommand.
 
 :::note
 
-This step can also be executed on your local machine. The `create` command creates the index locally and then uploads a json file `metastore.json` to your bucket at `s3://path-to-your-bucket/hdfs-logs/metastore.json`. 
+This step can also be executed on your local machine. The `create` command creates the index locally and then uploads a json file `metastore.json` to your bucket at `s3://path-to-your-bucket/hdfs-logs/metastore.json`.
 
 :::
 
@@ -111,7 +111,7 @@ curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.js
 
 :::note
 
-4GB of RAM is enough to index this dataset; an instance like `t4g.medium` with 4GB and 2 vCPU indexed this dataset in 20 minutes.   
+4GB of RAM is enough to index this dataset; an instance like `t4g.medium` with 4GB and 2 vCPU indexed this dataset in 20 minutes.
 
 This step can also be done on your local machine. The `ingest` subcommand generates locally [splits](../design/architecture.md) of 10 million documents and will upload them on your bucket. Concretely, each split is a bundle of index files and metadata files.
 
@@ -131,7 +131,7 @@ Quickwit needs a port `rest_listen_port` for serving the HTTP rest API via TCP a
 
 In AWS, you can create a security group to group these inbound rules. Check out the [network section](configure-aws-env.md) of our AWS setup guide.
 
-To make things easier, let's create a security group that opens the TCP/UDP port range [7200-7300]. Next, create three EC2 instances using the previously created security group. Take note of each instance's public IP address. 
+To make things easier, let's create a security group that opens the TCP/UDP port range [7200-7300]. Next, create three EC2 instances using the previously created security group. Take note of each instance's public IP address.
 
 Now ssh into the first EC2 instance, install Quickwit, and [configure the environment](configure-aws-env.md) to let Quickwit access the index S3 buckets.
 
@@ -140,7 +140,7 @@ curl -L https://install.quickwit.io | sh
 cd quickwit-v*/
 ```
 
-Let's create the node configuration file by first running this snippet. Make sure you fill in the correct values before running in the EC2 terminal session. 
+Let's create the node configuration file by first running this snippet. Make sure you fill in the correct values before running in the EC2 terminal session.
 
 ```bash
 export S3_PATH=s3://{path/to/bucket}/indexes
@@ -159,11 +159,11 @@ default_index_root_uri: ${S3_PATH}
 " > config.yaml
 ```
 
-Now let's launch a searcher node for this instance. 
+Now let's launch a searcher node for this instance.
 
 ```bash
 # Then start the http server search service.
-./quickwit service run searcher --config ./config.yaml
+./quickwit run --service searcher --config ./config.yaml
 ```
 
 You will see in the terminal the confirmation that the instance has created a new cluster. Example of such a log:
@@ -228,28 +228,18 @@ which returns the json
 
 ```json
 {
-  "numHits": 364,
+  "num_hits": 364,
   "hits": [
     {
-      "attributes.class": [
-        "org.apache.hadoop.hdfs.server.datanode.DataNode"
-      ],
-      "body": [
-        "RECEIVED SIGNAL 15: SIGTERM"
-      ],
-      "resource.service": [
-        "datanode/02"
-      ],
-      "severity_text": [
-        "ERROR"
-      ],
-      "timestamp": [
-        1442629246
-      ]
+      "attributes.class": "org.apache.hadoop.hdfs.server.datanode.DataNode",
+      "body": "RECEIVED SIGNAL 15: SIGTERM",
+      "resource": {"service": "datanode/02"},
+      "severity_text": "ERROR",
+      "timestamp": 1442629246
     }
     ...
   ],
-  "numMicrosecs": 505923
+  "elapsed_time_micros": 505923
 }
 ```
 
@@ -275,6 +265,6 @@ Let's do some cleanup by deleting the index:
 
 Also remember to remove the security group to protect your EC2 instances. You can just remove the instances if you don't need them.
 
-Congratz! You finished this tutorial! 
+Congratz! You finished this tutorial!
 
 To continue your Quickwit journey, check out the [search REST API reference](../reference/rest-api.md) or the [query language reference](../reference/query-language.md).

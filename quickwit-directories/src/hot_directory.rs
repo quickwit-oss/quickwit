@@ -506,7 +506,17 @@ pub fn write_hotcache<D: Directory>(
         if let Some(intervals) = per_file_slices.get(&file_path) {
             for byte_range in intervals {
                 let len = byte_range.len();
-                if file_path.to_string_lossy().ends_with("store") || len < 10_000_000 {
+                // We do not want to store slices that are too large in the hotcache,
+                // but on the other hand, the term dictionray index and the docstore
+                // index are required for quickwit to work.
+                //
+                // Warning: we need to work on string here because `Path::ends_with`
+                // has very different semantics.
+                let file_path_str = file_path.to_string_lossy();
+                if file_path_str.ends_with("store")
+                    || file_path_str.ends_with("term")
+                    || len < 10_000_000
+                {
                     let bytes = file_slice.read_bytes_slice(byte_range.clone())?;
                     file_cache_builder.add_bytes(bytes.as_slice(), byte_range.start);
                 }

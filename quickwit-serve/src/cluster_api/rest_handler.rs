@@ -20,19 +20,18 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 
-use quickwit_cluster::service::ClusterService;
+use quickwit_cluster::{ClusterError, ClusterService};
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 
-use crate::error::ApiError;
 use crate::Format;
 
 /// Cluster handler.
-pub fn cluster_handler<TClusterService: ClusterService>(
-    cluster_service: Arc<TClusterService>,
+pub fn cluster_handler(
+    cluster_service: Arc<dyn ClusterService>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     list_members_filter()
-        .and(warp::any().map(move || cluster_service.clone()))
+        .and(warp::path::end().map(move || cluster_service.clone()))
         .and_then(list_members)
 }
 
@@ -40,7 +39,6 @@ pub fn cluster_handler<TClusterService: ClusterService>(
 /// the rest API.
 #[derive(Deserialize, Debug, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-#[serde(rename_all = "camelCase")]
 struct ListMembersRequestQueryString {
     /// The output format requested.
     #[serde(default)]
@@ -54,18 +52,18 @@ fn list_members_filter(
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 
-async fn list_members<TClusterService: ClusterService>(
+async fn list_members(
     request: ListMembersRequestQueryString,
-    cluster_service: Arc<TClusterService>,
+    cluster_service: Arc<dyn ClusterService>,
 ) -> Result<impl warp::Reply, Infallible> {
     Ok(request
         .format
-        .make_reply(list_members_endpoint(&*cluster_service).await))
+        .make_rest_reply(list_members_endpoint(&*cluster_service).await))
 }
 
-async fn list_members_endpoint<TClusterService: ClusterService>(
-    cluster_service: &TClusterService,
-) -> Result<quickwit_proto::ListMembersResponse, ApiError> {
+async fn list_members_endpoint(
+    cluster_service: &dyn ClusterService,
+) -> Result<quickwit_proto::ListMembersResponse, ClusterError> {
     let list_members_req = quickwit_proto::ListMembersRequest {};
     let list_members_resp = cluster_service.list_members(list_members_req).await?;
     Ok(list_members_resp)

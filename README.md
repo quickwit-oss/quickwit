@@ -1,13 +1,25 @@
+[![CI](https://github.com/quickwit-oss/quickwit/actions/workflows/ci.yml/badge.svg)](https://github.com/quickwit-oss/quickwit/actions?query=workflow%3ACI+branch%3Amain)
 [![codecov](https://codecov.io/gh/quickwit-oss/quickwit/branch/main/graph/badge.svg?token=06SRGAV5SS)](https://codecov.io/gh/quickwit-oss/quickwit)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](CODE_OF_CONDUCT.md)
 [![License: AGPL V3](https://img.shields.io/badge/license-AGPL%20V3-blue)](LICENCE.md)
-[![Join the discord chat](https://shields.io/discord/908281611840282624?label=chat%20on%20discord)](https://discord.gg/rpRRTezWhW)
+[![Twitter Follow](https://img.shields.io/twitter/follow/Quickwit_Inc?color=%231DA1F2&logo=Twitter&style=plastic)](https://twitter.com/Quickwit_Inc)
+[![Discord](https://img.shields.io/discord/908281611840282624?logo=Discord&logoColor=%23FFFFFF&style=plastic)](https://discord.gg/rpRRTezWhW)
+![Rust](https://img.shields.io/badge/Rust-black?logo=rust&style=plastic)
 <br/>
+
 <br/>
 <br/>
 <p align="center">
-  <img src="docs/assets/images/logo_horizontal.svg" alt="Quickwit" height="100">
+  <img src="docs/assets/images/logo_horizontal.svg#gh-light-mode-only" alt="Quickwit" height="60">
+  <img src="docs/assets/images/quickwit-dark-theme-logo.png#gh-dark-mode-only" alt="Quickwit" height="60">
 </p>
+
+<h3 align="center">
+Search more with less
+</h3>
+
+<h4 align="center">The new way to manage your logs at any scale
+</h4>
 <h4 align="center">
   <a href="https://quickwit.io/docs/get-started/quickstart">Quickstart</a> |
   <a href="https://quickwit.io/docs/">Docs</a> |
@@ -17,70 +29,133 @@
 </h4>
 <br/>
 
-### Quickwit 0.2 is out! Check out our [blog post](https://quickwit.io/blog/quickwit-0.2/) to discover the new features.
+❗**Disclaimer: you are reading the README of Quickwit 0.3 version that will be shipped by the end of April 2022.**
+
+Quickwit is the next-gen search & analytics engine built for logs. It is a highly reliable & cost-efficient alternative to Elasticsearch.
 
 <br/>
 
-Quickwit is a distributed search engine built from the ground up to offer cost-efficiency and high reliability. By mere mortals for mere mortals, Quickwit's architecture is as simple as possible <sup>[1](#footnote1)</sup>.
+<img src="docs/assets/images/quickwit-ui.png">
 
-Quickwit is written in Rust and built on top of the mighty [tantivy](https://github.com/quickwit-oss/tantivy) library. We designed it to index large datasets.
+<br/>
 
-## Why Quickwit?
+# 💡 Features
 
-Quickwit is born from the idea that today's search engines are hard to manage and uneconomical when dealing with large datasets and a low QPS<sup>[2](#footnote2)</sup> rate. Its benefits are most apparent in a multitenancy or a multi-index setting.
+- Index data persisted on object storage
+- Ingest JSON documents with or without a strict schema
+- Ingest & Aggregation API Elasticsearch compatible
+- Lightweight Embedded UI
+- Runs on a fraction of the resources: written in Rust, powered by the mighty tantivy
+- Works out of the box with sensible defaults
+- Optimized for multi-tenancy. Add and scale tenants with no overhead costs
+- Distributed search
+- Cloud-native: Kubernetes ready
+- Add and remove nodes in seconds
+- Decoupled compute & storage
+- Sleep like a log: all your indexed data is safely stored on object storage (AWS S3...)
+- Ingest your documents with exactly-once semantics
+- Kafka-native ingestion
+- Search stream API that notably unlocks full-text search in ClickHouse
 
-Quickwit allows true decoupled compute and storage.
-We designed it to search straight from object storage like AWS S3 in a stateless manner.
 
-Imagine hosting an arbitrary amount of indices on S3 for $25/TB.month and querying them with the same pool of search servers and with a subsecond latency.
+### 🔮 Upcoming Features
+- Ingest your logs from your object storage
+- Distributed indexing
+- Support for tracing
+- Native support for OpenTelemetry
 
-Not only is Quickwit more cost-efficient, but search clusters are also easier to operate. One can add or remove search instances in seconds. You can also effortlessly index a massive amount of historical data using your favorite batch technology. Last but not least, Multi-tenant search is now cheap and painless.
+# Uses & Limitations
+| :white_check_mark: &nbsp; When to use                                                  	| :x: &nbsp; When not to use                                       	|
+|--------------------------------------------------------------	|--------------------------------------------------------------	|
+| Your documents are immutable: application logs, system logs, access logs, user actions logs, audit trail, etc.                    	| Your documents are mutable.   	|
+| Your data has a time component. Quickwit includes optimizations and design choices specifically related to time. | You need a low-latency search for e-commerce websites.               	|
+| You want a full-text search in a multi-tenant environment.     	| You provide a public-facing search with high QPS.	|
+| You want to index directly from Kafka. | You want to re-score documents at query time.
+| You want to add full-text search to your ClickHouse cluster.
+| You ingest a tremendous amount of logs and don't want to pay huge bills.                                                             	|
+| You ingest a tremendous amount of data and you don't want to waste your precious time babysitting your cluster.
+
+# ⚡  Getting Started
 
 
-- [Get started](https://quickwit.io/docs/get-started/quickstart)
-- [Look at the feature set](https://quickwit.io/docs/introduction#key-features-of-quickwit)
+Let's download and install Quickwit.
+
+```markdown
+curl -L https://install.quickwit.io | sh
+```
+
+You can now move this executable directory wherever sensible for your environment and possibly add it to your `PATH` environment. You can also install it via [other means](https://quickwit.io/docs/get-started/installation).
+
+Take a look at our [Quick Start]([https://quickwit.io/docs/get-started/quickstart) to do amazing things, like [Creating your first index](https://quickwit.io/docs/get-started/quickstart#create-your-first-index) or [Adding some documents](https://quickwit.io/docs/get-started/quickstart#lets-add-some-documents), or take a glance at our full [Installation guide](https://quickwit.io/docs/get-started/installation)!
 
 
-<p align="center">
-  <img src="docs/assets/images/quickstart_terminal_screenshot.png" alt="Quickstart">
+# 📚 Tutorials
+
+- [Search on logs with timestamp pruning](https://quickwit.io/docs/guides/tutorial-hdfs-logs)
+- [Set up a distributed search on AWS S3](https://quickwit.io/docs/guides/tutorial-hdfs-logs-distributed-search-aws-s3)
+- [Add full-text search to a well-known OLAP database, ClickHouse](https://quickwit.io/docs/guides/add-full-text-search-to-your-olap-db)
+
+# 💬 Community
+
+- Chat with us in [Discord][discord]
+- 📝 [Blog Posts](https://quickwit.io/blog)
+- 📺 [Youtube Videos](https://www.youtube.com/channel/UCvZVuRm2FiDq1_ul0mY85wA)
+- Follow us on [Twitter][twitter]
+
+
+# 🙋 FAQ
+###  How is Quickwit different from traditional search engines like Elasticsearch or Solr?
+The core difference and advantage of Quickwit is its architecture that is built from the ground up for cloud and logs. Optimized IO paths make search on object storage sub-second and thanks to the true decoupled compute and storage, search instances are stateless, it is possible to add or remove search nodes within seconds. Last but not least, we implemented a highly-reliable distributed search and exactly-once semantics during indexing so that all engineers can sleep at night.
+
+### How does Quickwit compare to Elastic in terms of cost?
+We estimate that Quickwit can be up to 10x cheaper on average than Elastic. To understand how, check out our [blog post about searching the web on AWS S3](https://quickwit.io/blog/commoncrawl/).
+
+### What license does Quickwit use?
+Quickwit is open-source under the GNU Affero General Public License Version 3 - AGPLv3. Fundamentally, this means that you are free to use Quickwit for your project, as long as you don't modify Quickwit. If you do, you have to make the modifications public.
+We also provide a commercial license for enterprises to provide support and a voice on our roadmap.
+
+### What is Quickwit's business model?
+Our business model relies on our commercial license. There is no plan to become SaaS in the near future.
+
+
+# 🪄 Third-Party Integration
+<p align="left">
+<img align="center" src="docs/assets/images/kafka-logo.png#gh-light-mode-only" alt="quickwit_inc" height="30" width="auto"/>
+<img align="center" src="docs/assets/images/kafka-dark-theme.png#gh-dark-mode-only" alt="quickwit_inc" height="30" width="auto"/> &nbsp;
+<img align="center" src="docs/assets/images/postgresql-logo.png" alt="quickwit_inc" height="30" width="auto"/> &nbsp;&nbsp;
+<img align="center" src="docs/assets/images/aws-logo.png#gh-light-mode-only" alt="quickwit_inc" height="25" width="auto" />
+<img align="center" src="docs/assets/images/aws-dark-theme-logo.png#gh-dark-mode-only" alt="quickwit_inc" height="25" width="auto" /> &nbsp; &nbsp;
+<img align="center" src="docs/assets/images/kinesis-logo.svg" alt="quickwit_inc" height="30" width="auto"/> &nbsp;
+<img align="center" src="docs/assets/images/minio-logo.png" alt="quickwit_inc" height="10" width="auto"/> &nbsp;&nbsp;
+<img align="center" src="docs/assets/images/kubernetes-logo.png" alt="quickwit_inc" height="30" width="auto"/>
+<img align="center" src="docs/assets/images/ceph-logo.png#gh-light-mode-only" height="50" width="auto"/>
+<img align="center" src="docs/assets/images/ceph-dark-mode-logo.png#gh-dark-mode-only" height="50" width="auto"/>
 </p>
 
 
-# Documentation
-- [Introduction](https://quickwit.io/docs/)
+# 🤝 Contribute and spread the word
 
-## Getting started
-- [Quickstart](https://quickwit.io/docs/get-started/quickstart)
-- [Installation](https://quickwit.io/docs/get-started/installation)
+We are always super happy to have contributions: code, documentation, issues, feedback, or even saying hello on discord! Here is how you can get started:
+- Have a look through GitHub issues labeled "Good first issue".
+- Read our [Contributor Covenant Code of Conduct](https://github.com/quickwit-oss/quickwit/blob/0add0562f08e4edd46f5c5537e8ef457d42a508e/CODE_OF_CONDUCT.md)
+- Create a fork of Quickwit and submit your pull request!
 
-## Overview
-- [Features](https://quickwit.io/docs/introduction)
-- [Architecture](https://quickwit.io/docs/design/architecture)
+✨ And to thank you for your contributions, claim your swag by emailing us at hello at quickwit.io.
 
-## Tutorials
-- [Search on logs with timestamp pruning](https://quickwit.io/docs/guides/tutorial-hdfs-logs)
-- [Setup a distributed search on AWS S3](https://quickwit.io/docs/guides/tutorial-hdfs-logs-distributed-search-aws-s3)
-- [Set up your AWS S3 environment](https://quickwit.io/docs/guides/configure-aws-env)
 
-## Administration
-- [Operating in the cloud](https://quickwit.io/docs/administration/cloud-env)
-
-## Reference
+# 🔗 Reference
 - [Quickwit CLI](https://quickwit.io/docs/reference/cli)
 - [Index Config](https://quickwit.io/docs/reference/index-config)
 - [Search API](https://quickwit.io/docs/reference/rest-api)
 - [Query language](https://quickwit.io/docs/reference/query-language)
-- [Telemetry](https://quickwit.io/docs/reference/telemetry)
-
-## Meta
-- [Explore further](https://quickwit.io/docs/meta/explore-further)
-- [Release notes](https://quickwit.io/docs/meta/release-notes)
 - [Code of conduct](CODE_OF_CONDUCT.md)
 - [Contributing](CONTRIBUTING.md)
 
 
 
----
-<a name="footnote1">1.</a>: ... But not one bit simpler.
+[website]: https://quickwit.io/
+[youtube]: https://www.youtube.com/channel/UCvZVuRm2FiDq1_ul0mY85wA
+[twitter]: https://twitter.com/Quickwit_Inc
+[discord]: https://discord.gg/MT27AG5EVE
+[blogs]: https://quickwit.io/blog
 
-<a name="footnote2">2.</a>: QPS stands for Queries per second. It is a standard measure of the amount of search traffic.

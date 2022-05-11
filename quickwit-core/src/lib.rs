@@ -17,27 +17,36 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-#![warn(missing_docs)]
 #![allow(clippy::bool_assert_comparison)]
 
-//! `quickwit-core` provides all the core functions used in quickwit cli:
-//! - `create_index` for creating a new index
-//! - `index_data` for indexing new-line delimited json documents
-//! - `search_index` for searching an index
-//! - `delete_index` for deleting an index
+//! `quickwit-core` provides IndexService that let you manage your indexes:
+//! - `create` for creating a new index;
+//! - `get_index` for getting an index;
+//! - `get_indexes` for getting all indexes registered in the metastore;
+//! - `reset_index` for indexing new-line delimited json documents;
+//! - `delete_index` for deleting an index;
+//! - `garbage_collect_index` for garbage collecting dangling files.
 
 mod index;
 
-pub use index::{create_index, delete_index, garbage_collect_index, reset_index};
+pub use index::{clear_cache_directory, get_cache_directory_path, IndexService, IndexServiceError};
 
 #[cfg(test)]
 mod tests {
     use std::path::Path;
 
+    use quickwit_common::uri::Uri;
+    use quickwit_config::{IndexConfig, IndexingSettings, SearchSettings};
     use quickwit_indexing::{FileEntry, TestSandbox};
+    use quickwit_metastore::quickwit_metastore_uri_resolver;
+    use quickwit_storage::StorageUriResolver;
+
+    use crate::IndexService;
+
+    const METASTORE_URI: &str = "ram://quickwit-test-indexes";
 
     #[tokio::test]
-    async fn test_file_entry_from_split() -> anyhow::Result<()> {
+    async fn test_file_entry_from_split_and_index_delete() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let index_id = "test-index";
         let doc_mapping_yaml = r#"
@@ -70,6 +79,50 @@ mod tests {
                 .await?;
             assert_eq!(split_num_bytes, file_entry.file_size_in_bytes);
         }
+        // Now delete the index.
+        let index_service = IndexService::new(
+            test_sandbox.metastore(),
+            StorageUriResolver::for_test(),
+            Uri::new("file:///quickwit".to_string()),
+        );
+        let deleted_file_entries = index_service.delete_index(index_id, false).await?;
+        assert_eq!(deleted_file_entries.len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_create_index_without_index_uri() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let index_id = "test-index-no-index-uri";
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: title
+                type: text
+        "#;
+        let index_config = IndexConfig {
+            version: 0,
+            index_id: index_id.to_string(),
+            index_uri: None,
+            doc_mapping: serde_yaml::from_str(doc_mapping_yaml)?,
+            indexing_settings: IndexingSettings::default(),
+            search_settings: SearchSettings::default(),
+            sources: Vec::new(),
+        };
+        let metastore = quickwit_metastore_uri_resolver()
+            .resolve(METASTORE_URI)
+            .await?;
+        let storage_resolver = StorageUriResolver::for_test();
+        let index_service = IndexService::new(
+            metastore,
+            storage_resolver,
+            Uri::new("ram://test-storage-indexes".to_string()),
+        );
+        let index_metadata = index_service.create_index(index_config).await?;
+        assert_eq!(index_metadata.index_id, index_id);
+        assert_eq!(
+            index_metadata.index_uri,
+            "ram://test-storage-indexes/test-index-no-index-uri"
+        );
         Ok(())
     }
 }

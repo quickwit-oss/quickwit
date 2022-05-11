@@ -21,12 +21,14 @@ use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
 use futures::future::try_join_all;
+use itertools::Itertools;
 use quickwit_config::build_doc_mapper;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::{
-    FetchDocsRequest, FetchDocsResponse, Hit, LeafSearchRequest, LeafSearchResponse, PartialHit,
+    FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse, PartialHit,
     SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
 };
+use tantivy::aggregation::agg_req::Aggregations;
 use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
@@ -175,6 +177,10 @@ pub async fn root_search(
 
     // Merging is a cpu-bound task.
     // It should be executed by Tokio's blocking threads.
+
+    // Wrap into result for merge_fruits
+    let leaf_search_responses: Vec<tantivy::Result<LeafSearchResponse>> =
+        leaf_search_responses.into_iter().map(Ok).collect_vec();
     let leaf_search_response =
         spawn_blocking(move || merge_collector.merge_fruits(leaf_search_responses))
             .await?
@@ -225,10 +231,14 @@ pub async fn root_search(
     let fetch_docs_resps: Vec<FetchDocsResponse> = try_join_all(fetch_docs_resp_futures).await?;
 
     // Merge the fetched docs.
-    let mut hits: Vec<Hit> = fetch_docs_resps
+    let leaf_hits = fetch_docs_resps
         .into_iter()
-        .flat_map(|response| response.hits)
-        .collect();
+        .flat_map(|response| response.hits.into_iter());
+
+    let mut hits: Vec<quickwit_proto::Hit> = leaf_hits
+        .map(|leaf_hit: quickwit_proto::LeafHit| crate::convert_leaf_hit(leaf_hit, &*doc_mapper))
+        .collect::<crate::Result<_>>()?;
+
     hits.sort_unstable_by_key(|hit| {
         Reverse(
             hit.partial_hit
@@ -240,16 +250,20 @@ pub async fn root_search(
 
     let elapsed = start_instant.elapsed();
 
+    let aggregation = if let Some(intermediate_aggregation_result) =
+        leaf_search_response.intermediate_aggregation_result
+    {
+        let res: IntermediateAggregationResults =
+            serde_json::from_str(&intermediate_aggregation_result)?;
+        let req: Aggregations = serde_json::from_str(search_request.aggregation_request())?;
+        let res: AggregationResults = AggregationResults::from_intermediate_and_req(res, req)?;
+        Some(serde_json::to_string(&res)?)
+    } else {
+        None
+    };
+
     Ok(SearchResponse {
-        aggregation: leaf_search_response
-            .intermediate_aggregation_result
-            .map(|res| {
-                let res: IntermediateAggregationResults = serde_json::from_str(&res)?;
-                let res: AggregationResults = res.into();
-                serde_json::to_string(&res)
-            })
-            .transpose()
-            .map_err(|err| SearchError::InternalError(err.to_string()))?,
+        aggregation,
         num_hits: leaf_search_response.num_hits,
         hits,
         elapsed_time_micros: elapsed.as_micros() as u64,
@@ -343,14 +357,17 @@ mod tests {
 
     fn get_doc_for_fetch_req(
         fetch_docs_req: quickwit_proto::FetchDocsRequest,
-    ) -> Vec<quickwit_proto::Hit> {
+    ) -> Vec<quickwit_proto::LeafHit> {
         fetch_docs_req
             .partial_hits
             .into_iter()
-            .map(|req| quickwit_proto::Hit {
-                json: r#"{"title" : ""#.to_string()
-                    + &req.doc_id.to_string()
-                    + r#"", "body" : "test 1", "url" : "http://127.0.0.1/1"}"#,
+            .map(|req| quickwit_proto::LeafHit {
+                leaf_json: serde_json::to_string_pretty(&serde_json::json!({
+                    "title": [req.doc_id.to_string()],
+                    "body": ["test 1"],
+                    "url": ["http://127.0.0.1/1"]
+                }))
+                .expect("Json serialization should not fail"),
                 partial_hit: Some(req),
             })
             .collect()

@@ -11,7 +11,6 @@ FILTER = {
 	"quickwit-common",
 	"quickwit-indexing",
 	"quickwit-metastore",
-	"quickwit-swim",
 	"quickwit-proto",
 	"quickwit-directories",
 	"quickwit-common",

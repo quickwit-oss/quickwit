@@ -17,57 +17,63 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::BTreeSet;
-use std::ops::{Range, RangeInclusive};
 use std::path::PathBuf;
 
-use anyhow::{bail, Context};
-use chrono::{NaiveDate, NaiveDateTime};
-use clap::{arg, ArgMatches, Command};
+use anyhow::bail;
+use clap::{arg, Arg, ArgMatches, Command};
 use humansize::{file_size_opts, FileSize};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_directories::{
     get_hotcache_from_split, read_split_footer, BundleDirectory, HotDirectory,
 };
+use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Split, SplitState};
 use quickwit_storage::{quickwit_storage_uri_resolver, BundleStorage, Storage};
 use tabled::{Table, Tabled};
+use time::{format_description, Date, OffsetDateTime, PrimitiveDateTime};
 use tracing::debug;
 
 use crate::{load_quickwit_config, make_table};
 
 pub fn build_split_command<'a>() -> Command<'a> {
     Command::new("split")
-        .about("Operations (list, add, delete, describe...) on splits.")
+        .about("Performs operations on splits (list, describe, mark for deletion, extract).")
         .subcommand(
             Command::new("list")
-                .about("List the splits of an index.")
+                .about("Lists the splits of an index.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
-                    arg!(--index <INDEX> "ID of the target index"),
-                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
-                        .env("QW_DATA_DIR")
+                    arg!(--index <INDEX> "Target index ID")
+                        .display_order(1)
+                        .required(true),
+                    arg!(--states <SPLIT_STATES> "Selects the splits whose states are included in this comma-separated list of states. Possible values are `staged`, `published`, and `marked`.")
+                        .display_order(2)
+                        .required(false)
+                        .use_value_delimiter(true),
+                    arg!(--"create-date" <CREATE_DATE> "Selects the splits whose creation dates are before this date.")
+                        .display_order(3)
                         .required(false),
-                    arg!(--tags <TAGS> "Comma-separated list of tags, only splits that contain all of the tags will be returned.")
-                        .multiple_occurrences(true)
-                        .use_value_delimiter(true)
+                    arg!(--"start-date" <START_DATE> "Selects the splits that contain documents after this date (time-series indexes only).")
+                        .display_order(4)
                         .required(false),
-                    arg!(--states <SPLIT_STATES> "Comma-separated list of split states to filter on. Possible values are `staged`, `published`, and `marked`.")
-                        .multiple_occurrences(true)
-                        .use_value_delimiter(true)
+                    arg!(--"end-date" <END_DATE> "Selects the splits that contain documents before this date (time-series indexes only).")
+                        .display_order(5)
                         .required(false),
-                    arg!(--"start-date" <START_TIMESTAMP> "Filters out splits containing documents from this timestamp onwards (time-series indexes only).")
-                        .required(false),
-                    arg!(--"end-date" <END_TIMESTAMP> "Filters out splits containing documents before this timestamp (time-series indexes only).")
-                        .required(false),
+                    arg!(--tags <TAGS> "Selects the splits whose tags are all included in this comma-separated list of tags.")
+                        .display_order(6)
+                        .required(false)
+                        .use_value_delimiter(true),
+                    Arg::new("mark-for-deletion")
+                        .alias("mark")
+                        .display_order(7)
+                        .long("mark-for-deletion")
+                        .help("Marks the selected splits for deletion.")
                 ])
             )
         .subcommand(
             Command::new("extract")
                 .about("Downloads and extracts a split to a directory.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--split <SPLIT> "ID of the target split"),
                     arg!(--"target-dir" <TARGET_DIR> "Directory to extract the split to."),
@@ -78,9 +84,8 @@ pub fn build_split_command<'a>() -> Command<'a> {
             )
         .subcommand(
             Command::new("describe")
-                .about("Displays metadata about the split.")
+                .about("Displays metadata about a split.")
                 .args(&[
-                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--split <SPLIT> "ID of the target split"),
                     arg!(--verbose "Displays additional metadata about the hotcache."),
@@ -89,18 +94,40 @@ pub fn build_split_command<'a>() -> Command<'a> {
                         .required(false),
                 ])
             )
+        .subcommand(
+            Command::new("mark-for-deletion")
+                .about("Marks one or multiple splits of an index for deletion.")
+                .alias("mark")
+                .args(&[
+                    arg!(--index <INDEX_ID> "Target index ID")
+                        .display_order(2)
+                        .required(true),
+                    arg!(--splits <SPLIT_IDS> "Comma-separated list of split IDs")
+                        .display_order(3)
+                        .required(true)
+                        .use_value_delimiter(true),
+                ])
+            )
         .arg_required_else_help(true)
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct ListSplitArgs {
     pub config_uri: Uri,
-    pub data_dir: Option<PathBuf>,
     pub index_id: String,
-    pub states: Vec<SplitState>,
-    pub start_date: Option<i64>,
-    pub end_date: Option<i64>,
-    pub tags: BTreeSet<String>,
+    pub split_states: Option<Vec<SplitState>>,
+    pub create_date: Option<OffsetDateTime>,
+    pub start_date: Option<OffsetDateTime>,
+    pub end_date: Option<OffsetDateTime>,
+    pub tags: Option<TagFilterAst>,
+    pub mark_for_deletion: bool,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct MarkForDeletionArgs {
+    pub config_uri: Uri,
+    pub index_id: String,
+    pub split_ids: Vec<String>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -124,6 +151,7 @@ pub struct ExtractSplitArgs {
 #[derive(Debug, PartialEq)]
 pub enum SplitCliCommand {
     List(ListSplitArgs),
+    MarkForDeletion(MarkForDeletionArgs),
     Describe(DescribeSplitArgs),
     Extract(ExtractSplitArgs),
 }
@@ -134,9 +162,10 @@ impl SplitCliCommand {
             .subcommand()
             .ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
         match subcommand {
-            "list" => Self::parse_list_args(submatches),
             "describe" => Self::parse_describe_args(submatches),
             "extract" => Self::parse_extract_split_args(submatches),
+            "list" => Self::parse_list_args(submatches),
+            "mark-for-deletion" => Self::parse_mark_for_deletion_args(submatches),
             _ => bail!("Subcommand `{}` is not implemented.", subcommand),
         }
     }
@@ -146,60 +175,76 @@ impl SplitCliCommand {
             .value_of("config")
             .map(Uri::try_new)
             .expect("`config` is a required arg.")?;
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         let index_id = matches
             .value_of("index")
             .map(String::from)
             .expect("`index` is a required arg.");
-        let states = matches
+        let split_states = matches
             .values_of("states")
-            .map_or(vec![], |values| {
-                values.into_iter().map(split_state_from_input_str).collect()
-            })
-            .into_iter()
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|err_str| anyhow::anyhow!(err_str))?;
-        let start_date = if let Some(date_str) = matches.value_of("start-date") {
-            let from_date_time = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-                .map(|date| date.and_hms(0, 0, 0))
-                .or_else(|_err| NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S"))
-                .context(format!(
-                    "'start-date' `{}` should be of the format `2020-10-31` or \
-                     `2020-10-31T02:00:00`",
-                    date_str
-                ))?;
-            Some(from_date_time.timestamp())
-        } else {
-            None
-        };
-        let end_date = if let Some(date_str) = matches.value_of("end-date") {
-            let to_date_time = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-                .map(|date| date.and_hms(0, 0, 0))
-                .or_else(|_err| NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S"))
-                .context(format!(
-                    "'end-date' `{}` should be of the format `2020-10-31` or `2020-10-31T02:00:00`",
-                    date_str
-                ))?;
-            Some(to_date_time.timestamp())
-        } else {
-            None
-        };
-        let tags = matches
-            .values_of("tags")
-            .map_or(BTreeSet::default(), |values| {
+            .map(|values| {
                 values
                     .into_iter()
-                    .map(str::to_string)
-                    .collect::<BTreeSet<_>>()
-            });
+                    .map(parse_split_state)
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?;
+        let create_date = matches
+            .value_of("create-date")
+            .map(|arg| parse_date(arg, "create"))
+            .transpose()?;
+        let start_date = matches
+            .value_of("start-date")
+            .map(|arg| parse_date(arg, "start"))
+            .transpose()?;
+        let end_date = matches
+            .value_of("end-date")
+            .map(|arg| parse_date(arg, "end"))
+            .transpose()?;
+        let tags = matches.values_of("tags").map(|values| {
+            TagFilterAst::And(
+                values
+                    .into_iter()
+                    .map(|value| TagFilterAst::Tag {
+                        is_present: true,
+                        tag: value.to_string(),
+                    })
+                    .collect(),
+            )
+        });
+        let mark_for_deletion = matches.is_present("mark-for-deletion");
+
         Ok(Self::List(ListSplitArgs {
+            config_uri,
             index_id,
-            states,
+            split_states,
             start_date,
             end_date,
+            create_date,
             tags,
+            mark_for_deletion,
+        }))
+    }
+
+    fn parse_mark_for_deletion_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let config_uri = matches
+            .value_of("config")
+            .map(Uri::try_new)
+            .expect("`config` is a required arg.")?;
+        let index_id = matches
+            .value_of("index")
+            .map(String::from)
+            .expect("`index` is a required arg.");
+        let split_ids = matches
+            .values_of("splits")
+            .expect("`splits` is a required arg.")
+            .into_iter()
+            .map(String::from)
+            .collect();
+
+        Ok(Self::MarkForDeletion(MarkForDeletionArgs {
             config_uri,
-            data_dir,
+            index_id,
+            split_ids,
         }))
     }
 
@@ -207,11 +252,11 @@ impl SplitCliCommand {
         let index_id = matches
             .value_of("index")
             .map(String::from)
-            .expect("'index-id' is a required arg.");
+            .expect("`index` is a required arg.");
         let split_id = matches
             .value_of("split")
             .map(String::from)
-            .expect("'split-id' is a required arg.");
+            .expect("`split` is a required arg.");
         let config_uri = matches
             .value_of("config")
             .map(Uri::try_new)
@@ -232,11 +277,11 @@ impl SplitCliCommand {
         let index_id = matches
             .value_of("index")
             .map(String::from)
-            .expect("'index-id' is a required arg.");
+            .expect("`index` is a required arg.");
         let split_id = matches
             .value_of("split")
             .map(String::from)
-            .expect("'split-id' is a required arg.");
+            .expect("`split` is a required arg.");
         let config_uri = matches
             .value_of("config")
             .map(Uri::try_new)
@@ -258,6 +303,7 @@ impl SplitCliCommand {
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
             Self::List(args) => list_split_cli(args).await,
+            Self::MarkForDeletion(args) => mark_splits_for_deletion_cli(args).await,
             Self::Describe(args) => describe_split_cli(args).await,
             Self::Extract(args) => extract_split_cli(args).await,
         }
@@ -267,7 +313,7 @@ impl SplitCliCommand {
 async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "list-split");
 
-    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri())
@@ -276,15 +322,47 @@ async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
 
     let filtered_splits = filter_splits(
         splits,
-        args.states,
-        args.start_date,
-        args.end_date,
+        args.split_states,
+        args.start_date.map(OffsetDateTime::unix_timestamp),
+        args.end_date.map(OffsetDateTime::unix_timestamp),
+        args.create_date.map(OffsetDateTime::unix_timestamp),
         args.tags,
-    )?;
-    let filtered_splits_table = make_list_splits_table(filtered_splits);
+    );
+    let table = make_split_table(&filtered_splits);
+    println!("{table}");
 
-    println!("{filtered_splits_table}");
+    if args.mark_for_deletion {
+        let split_ids = filtered_splits
+            .iter()
+            .map(|split| split.split_id())
+            .collect::<Vec<_>>();
+        println!(
+            "The following splits will be marked for deletion: `{}`.",
+            split_ids.join(", ")
+        );
+        metastore
+            .mark_splits_for_deletion(&args.index_id, &split_ids)
+            .await?;
+    }
+    Ok(())
+}
 
+async fn mark_splits_for_deletion_cli(args: MarkForDeletionArgs) -> anyhow::Result<()> {
+    debug!(args = ?args, "mark-splits-for-deletion");
+
+    let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
+    let metastore = metastore_uri_resolver
+        .resolve(&quickwit_config.metastore_uri())
+        .await?;
+    let split_ids: Vec<&str> = args
+        .split_ids
+        .iter()
+        .map(|split_id| split_id.as_ref())
+        .collect();
+    metastore
+        .mark_splits_for_deletion(&args.index_id, &split_ids)
+        .await?;
     Ok(())
 }
 
@@ -349,127 +427,152 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
 
 fn filter_splits(
     splits: Vec<Split>,
-    states: Vec<SplitState>,
-    start_date: Option<i64>,
-    end_date: Option<i64>,
-    tags: BTreeSet<String>,
-) -> anyhow::Result<Vec<Split>> {
-    let time_range_opt = match (start_date, end_date) {
-        (None, None) => None,
-        (None, Some(end_date)) => Some(Range {
-            start: i64::MIN,
-            end: end_date,
-        }),
-        (Some(start_date), None) => Some(Range {
-            start: start_date,
-            end: i64::MAX,
-        }),
-        (Some(start_date), Some(end_date)) => Some(Range {
-            start: start_date,
-            end: end_date,
-        }),
+    split_states_opt: Option<Vec<SplitState>>,
+    create_ts_opt: Option<i64>,
+    start_ts_opt: Option<i64>,
+    end_ts_opt: Option<i64>,
+    tag_filter_ast_opt: Option<TagFilterAst>,
+) -> Vec<Split> {
+    let split_state_filter = |split: &Split| {
+        split_states_opt
+            .as_ref()
+            .map(|split_states| split_states.contains(&split.split_state))
+            .unwrap_or(true)
     };
-    let is_disjoint_time_range = |left: &Range<i64>, right: &RangeInclusive<i64>| {
-        left.end <= *right.start() || *right.end() < left.start
+    let create_ts_filter = |split: &Split| {
+        create_ts_opt
+            .map(|create_ts| create_ts >= split.split_metadata.create_timestamp)
+            .unwrap_or(true)
     };
-
-    let mut filtered_splits = vec![];
-
-    // apply tags & time range filter.
-    for split in splits {
-        let is_any_tag_not_in_split = tags.iter().any(|tag| {
-            let has_many_tags_for_field = tag
-                .split_once(':')
-                .map(|(field_name, _)| {
-                    split
-                        .split_metadata
-                        .tags
-                        .contains(&format!("{}:*", field_name))
-                })
-                .unwrap_or(false);
-            !(split.split_metadata.tags.contains(tag) || has_many_tags_for_field)
-        });
-        if is_any_tag_not_in_split {
-            continue;
-        }
-
-        if let (Some(filter_time_range), Some(split_time_range)) =
-            (&time_range_opt, &split.split_metadata.time_range)
-        {
-            if is_disjoint_time_range(filter_time_range, split_time_range) {
-                continue;
-            }
-        }
-        filtered_splits.push(split);
-    }
-
-    // apply SplitState filter.
-    if !states.is_empty() {
-        filtered_splits = filtered_splits
-            .into_iter()
-            .filter(|split| states.contains(&split.split_state))
-            .collect::<Vec<_>>();
-    }
-
-    Ok(filtered_splits)
+    let start_ts_filter = |split: &Split| {
+        start_ts_opt
+            .and_then(|start_ts| {
+                split
+                    .split_metadata
+                    .time_range
+                    .as_ref()
+                    .map(|time_range| start_ts <= *time_range.end())
+            })
+            .unwrap_or(true)
+    };
+    let end_ts_filter = |split: &Split| {
+        end_ts_opt
+            .and_then(|end_ts| {
+                split
+                    .split_metadata
+                    .time_range
+                    .as_ref()
+                    .map(|time_range| end_ts >= *time_range.start())
+            })
+            .unwrap_or(true)
+    };
+    let tag_filter = |split: &Split| {
+        tag_filter_ast_opt
+            .as_ref()
+            .map(|tag_filter_ast| tag_filter_ast.evaluate(&split.split_metadata.tags))
+            .unwrap_or(true)
+    };
+    splits
+        .into_iter()
+        .filter(split_state_filter)
+        .filter(create_ts_filter)
+        .filter(start_ts_filter)
+        .filter(end_ts_filter)
+        .filter(tag_filter)
+        .collect()
 }
 
-fn make_list_splits_table(splits: Vec<Split>) -> Table {
+fn make_split_table(splits: &[Split]) -> Table {
     let rows = splits
-        .into_iter()
+        .iter()
         .map(|split| {
-            let time_range = if let Some(time_range) = split.split_metadata.time_range {
+            let time_range = if let Some(time_range) = &split.split_metadata.time_range {
                 format!("[{:?}]", time_range)
             } else {
                 "[*]".to_string()
             };
+            let created_at =
+                OffsetDateTime::from_unix_timestamp(split.split_metadata.create_timestamp)
+                    .expect("Failed to create `OffsetDateTime` from split create timestamp.");
+            let updated_at = OffsetDateTime::from_unix_timestamp(split.update_timestamp)
+                .expect("Failed to create `OffsetDateTime` from split update timestamp.");
+
             SplitRow {
-                id: split.split_metadata.split_id,
+                split_id: split.split_metadata.split_id.clone(),
                 num_docs: split.split_metadata.num_docs,
                 size_mega_bytes: split.split_metadata.original_size_in_bytes / 1_000_000,
-                create_at: NaiveDateTime::from_timestamp(split.split_metadata.create_timestamp, 0),
-                updated_at: NaiveDateTime::from_timestamp(split.update_timestamp, 0),
+                created_at,
+                updated_at,
                 time_range,
             }
         })
-        .sorted_by(|left, right| left.id.cmp(&right.id));
-    make_table("Splits", rows)
+        .sorted_by(|left, right| left.created_at.cmp(&right.created_at));
+    make_table("Splits", rows, false)
 }
 
-fn split_state_from_input_str(input: &str) -> anyhow::Result<SplitState> {
-    match input.to_lowercase().as_str() {
-        "staged" => Ok(SplitState::Staged),
-        "published" => Ok(SplitState::Published),
-        "marked" => Ok(SplitState::MarkedForDeletion),
-        _ => bail!(format!(
-            "Unknown split state `{}`. Possible values are `staged`, `published`, and `marked`.",
-            input
-        )),
+fn parse_date(date_arg: &str, option_name: &str) -> anyhow::Result<OffsetDateTime> {
+    let description = format_description::parse("[year]-[month]-[day]")?;
+    if let Ok(date) = Date::parse(date_arg, &description) {
+        return Ok(date.with_hms(0, 0, 0)?.assume_utc());
     }
+
+    for datetime_format in [
+        "[year]-[month]-[day] [hour]:[minute]",
+        "[year]-[month]-[day] [hour]:[minute]:[second]",
+        "[year]-[month]-[day]T[hour]:[minute]",
+        "[year]-[month]-[day]T[hour]:[minute]:[second]",
+    ] {
+        let description = format_description::parse(datetime_format)?;
+        if let Ok(datetime) = PrimitiveDateTime::parse(date_arg, &description) {
+            return Ok(datetime.assume_utc());
+        }
+    }
+    bail!(
+        "Failed to parse --{}-date option parameter `{}`. Supported format is `YYYY-MM-DD[ \
+         HH:DD[:SS]]`.",
+        option_name,
+        date_arg
+    );
+}
+
+fn parse_split_state(split_state_arg: &str) -> anyhow::Result<SplitState> {
+    let split_state = match split_state_arg.to_lowercase().as_ref() {
+        "staged" => SplitState::Staged,
+        "published" => SplitState::Published,
+        "marked" => SplitState::MarkedForDeletion,
+        _ => bail!(format!(
+            "Failed to parse split state `{}`. Possible values are `staged`, `published`, and \
+             `marked`.",
+            split_state_arg
+        )),
+    };
+    Ok(split_state)
 }
 
 #[derive(Tabled)]
 struct SplitRow {
-    #[header("Id")]
-    id: String,
-    #[header("Num Docs")]
+    #[tabled(rename = "ID")]
+    split_id: String,
+    #[tabled(rename = "Num docs")]
     num_docs: usize,
-    #[header("Size (MB)")]
+    #[tabled(rename = "Size (MB)")]
     size_mega_bytes: u64,
-    #[header("Created At")]
-    create_at: NaiveDateTime,
-    #[header("Updated At")]
-    updated_at: NaiveDateTime,
-    #[header("Time Range")]
+    #[tabled(rename = "Created at")]
+    created_at: OffsetDateTime,
+    #[tabled(rename = "Updated at")]
+    updated_at: OffsetDateTime,
+    #[tabled(rename = "Time range")]
     time_range: String,
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+    use std::ops::RangeInclusive;
     use std::path::PathBuf;
 
-    use chrono::NaiveDateTime;
     use quickwit_metastore::SplitMetadata;
+    use time::macros::datetime;
 
     use super::*;
     use crate::cli::{build_cli, CliCommand};
@@ -480,46 +583,84 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "split",
             "list",
+            "--config",
+            "config.yaml",
             "--index",
-            "wikipedia",
+            "hdfs",
             "--states",
-            "published,staged",
+            "staged,published",
+            "--create-date",
+            "2020-12-24",
             "--start-date",
-            "2021-12-03",
+            "2020-12-24",
             "--end-date",
-            "2021-12-05T00:30:25",
+            "2020-12-25T12:42",
             "--tags",
-            "foo:bar,bar:baz",
+            "tenant:a,service:zk",
+            "--mark",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+
+        let expected_split_states = Some(vec![SplitState::Staged, SplitState::Published]);
+        let expected_create_date = Some(datetime!(2020-12-24 00:00 UTC));
+        let expected_start_date = Some(datetime!(2020-12-24 00:00 UTC));
+        let expected_end_date = Some(datetime!(2020-12-25 12:42 UTC));
+        let expected_tags = Some(TagFilterAst::And(vec![
+            TagFilterAst::Tag {
+                is_present: true,
+                tag: "tenant:a".to_string(),
+            },
+            TagFilterAst::Tag {
+                is_present: true,
+                tag: "service:zk".to_string(),
+            },
+        ]));
+        assert!(matches!(
+            command,
+            CliCommand::Split(SplitCliCommand::List(ListSplitArgs {
+                index_id,
+                split_states,
+                create_date,
+                start_date,
+                end_date,
+                tags,
+                mark_for_deletion,
+                ..
+            })) if index_id == "hdfs"
+                   && split_states == expected_split_states
+                   && create_date == expected_create_date
+                   && start_date == expected_start_date
+                   && end_date == expected_end_date
+                   && tags == expected_tags
+                   && mark_for_deletion
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_split_mark_for_deletion_args() -> anyhow::Result<()> {
+        let app = build_cli().no_binary_name(true);
+        let matches = app.try_get_matches_from(vec![
+            "split",
+            "mark",
             "--config",
             "file:///config.yaml",
+            "--index",
+            "wikipedia",
+            "--splits",
+            "split1,split2",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
-            CliCommand::Split(SplitCliCommand::List(ListSplitArgs {
-                index_id, states, start_date, end_date, tags, ..
-            })) if &index_id == "wikipedia"
-            && states == vec![SplitState::Published, SplitState::Staged]
-            && start_date == Some(NaiveDateTime::parse_from_str("2021-12-03T00:00:00", "%Y-%m-%dT%H:%M:%S").unwrap().timestamp())
-            && end_date == Some(NaiveDateTime::parse_from_str("2021-12-05T00:30:25", "%Y-%m-%dT%H:%M:%S").unwrap().timestamp())
-            && tags == BTreeSet::from(["foo:bar".to_string(), "bar:baz".to_string()])
+            CliCommand::Split(SplitCliCommand::MarkForDeletion(MarkForDeletionArgs {
+                config_uri,
+                index_id,
+                split_ids,
+            })) if config_uri == Uri::try_new("file:///config.yaml").unwrap()
+                && index_id == "wikipedia"
+                && split_ids == vec!["split1".to_string(), "split2".to_string()]
         ));
-
-        let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from(vec![
-            "split",
-            "list",
-            "--index",
-            "wikipedia",
-            "--states",
-            "published",
-            "--start-date",
-            "2021-12-03T", // <- expect time
-            "--config",
-            "file:///config.yaml",
-        ])?;
-        assert!(matches!(CliCommand::parse_cli_args(&matches), Err { .. }));
-
         Ok(())
     }
 
@@ -580,16 +721,20 @@ mod tests {
     fn make_split(
         split_id: &str,
         split_state: SplitState,
+        create_timestamp: i64,
         time_range: Option<RangeInclusive<i64>>,
-        tags: Vec<&str>,
+        tags: &[&str],
     ) -> Split {
         Split {
             split_metadata: SplitMetadata {
                 split_id: split_id.to_string(),
                 footer_offsets: 10..30,
                 time_range,
-                tags: tags.into_iter().map(|tag| tag.to_string()).collect(),
-                create_timestamp: 1639997967,
+                tags: tags
+                    .iter()
+                    .map(|tag| tag.to_string())
+                    .collect::<BTreeSet<_>>(),
+                create_timestamp,
                 ..Default::default()
             },
             split_state,
@@ -598,76 +743,139 @@ mod tests {
     }
 
     #[test]
-    fn test_filter_splits() -> anyhow::Result<()> {
+    fn test_filter_splits_by_state() {
         let splits = vec![
-            make_split("one", SplitState::MarkedForDeletion, Some(5..=10), vec![]),
-            make_split(
-                "two",
-                SplitState::Published,
-                None,
-                vec!["tenant:a", "foo:bar"],
-            ),
-            make_split(
-                "three",
-                SplitState::Staged,
-                Some(15..=20),
-                vec!["tenant:a", "foo:*"],
-            ),
-            make_split(
-                "four",
-                SplitState::Published,
-                None,
-                vec!["tenant:b", "foo:bar"],
-            ),
-            make_split("five", SplitState::Staged, Some(8..=12), vec!["tenant:b"]),
+            make_split("one", SplitState::Staged, 0, None, &[]),
+            make_split("two", SplitState::Published, 0, None, &[]),
+            make_split("three", SplitState::MarkedForDeletion, 0, None, &[]),
         ];
-
-        // select by SplitState
-        let filtered_splits = filter_splits(
-            splits.clone(),
-            vec![SplitState::Published, SplitState::MarkedForDeletion],
-            None,
-            None,
-            BTreeSet::default(),
-        )?;
-        assert_eq!(filtered_splits.len(), 3);
         assert_eq!(
-            filtered_splits
-                .iter()
-                .map(|split| split.split_id())
-                .collect::<Vec<_>>(),
-            ["one", "two", "four"]
+            filter_splits(
+                splits,
+                Some(vec![SplitState::Staged, SplitState::Published]),
+                None,
+                None,
+                None,
+                None
+            )
+            .into_iter()
+            .map(|split| split.split_metadata.split_id)
+            .collect::<Vec<_>>(),
+            ["one", "two"]
         );
+    }
 
-        // select by tags
-        let filtered_splits = filter_splits(
-            splits.clone(),
-            vec![],
-            None,
-            None,
-            BTreeSet::from(["tenant:a".to_string(), "foo:bar".to_string()]),
-        )?;
-        assert_eq!(filtered_splits.len(), 2);
+    #[test]
+    fn test_filter_splits_by_creation_ts() {
+        let splits = vec![
+            make_split("one", SplitState::Staged, 0, None, &[]),
+            make_split("two", SplitState::Staged, 5, None, &[]),
+            make_split("three", SplitState::Staged, 10, None, &[]),
+        ];
         assert_eq!(
-            filtered_splits
-                .iter()
-                .map(|split| split.split_id())
+            filter_splits(splits, None, Some(5), None, None, None)
+                .into_iter()
+                .map(|split| split.split_metadata.split_id)
                 .collect::<Vec<_>>(),
-            ["two", "three"]
+            ["one", "two"]
         );
+    }
 
-        // select by time range
-        let filtered_splits =
-            filter_splits(splits, vec![], Some(7), Some(15), BTreeSet::default())?;
-        assert_eq!(filtered_splits.len(), 4);
+    #[test]
+    fn test_filter_splits_by_start_ts() {
+        let splits = vec![
+            make_split("one", SplitState::Staged, 0, Some(0..=5), &[]),
+            make_split("two", SplitState::Staged, 0, Some(0..=10), &[]),
+            make_split("three", SplitState::Staged, 0, Some(5..=15), &[]),
+            make_split("four", SplitState::Staged, 0, Some(10..=20), &[]),
+            make_split("five", SplitState::Staged, 0, Some(15..=20), &[]),
+        ];
         assert_eq!(
-            filtered_splits
-                .iter()
-                .map(|split| split.split_id())
+            filter_splits(splits, None, None, Some(10), None, None)
+                .into_iter()
+                .map(|split| split.split_metadata.split_id)
                 .collect::<Vec<_>>(),
-            ["one", "two", "four", "five"]
+            ["two", "three", "four", "five"]
         );
+    }
 
-        Ok(())
+    #[test]
+    fn test_filter_splits_by_end_ts() {
+        let splits = vec![
+            make_split("one", SplitState::Staged, 0, Some(0..=5), &[]),
+            make_split("two", SplitState::Staged, 0, Some(0..=10), &[]),
+            make_split("three", SplitState::Staged, 0, Some(5..=15), &[]),
+            make_split("four", SplitState::Staged, 0, Some(10..=20), &[]),
+            make_split("five", SplitState::Staged, 0, Some(15..=20), &[]),
+        ];
+        assert_eq!(
+            filter_splits(splits, None, None, None, Some(10), None)
+                .into_iter()
+                .map(|split| split.split_metadata.split_id)
+                .collect::<Vec<_>>(),
+            ["one", "two", "three", "four"]
+        );
+    }
+
+    #[test]
+    fn test_filter_splits_by_tags() {
+        let splits = vec![
+            make_split("one", SplitState::Staged, 0, None, &[]),
+            make_split("two", SplitState::Staged, 0, None, &["tenant:a"]),
+        ];
+        assert_eq!(
+            filter_splits(
+                splits,
+                None,
+                None,
+                None,
+                None,
+                Some(TagFilterAst::Tag {
+                    is_present: true,
+                    tag: "tenant:a".to_string()
+                })
+            )
+            .into_iter()
+            .map(|split| split.split_metadata.split_id)
+            .collect::<Vec<_>>(),
+            ["two"]
+        );
+    }
+
+    #[test]
+    fn test_parse_date() {
+        assert_eq!(
+            parse_date("2020-12-24", "create").unwrap(),
+            datetime!(2020-12-24 00:00 UTC)
+        );
+        assert_eq!(
+            parse_date("2020-12-24 10:20", "create").unwrap(),
+            datetime!(2020-12-24 10:20 UTC)
+        );
+        assert_eq!(
+            parse_date("2020-12-24T10:20", "create").unwrap(),
+            datetime!(2020-12-24 10:20 UTC)
+        );
+        assert_eq!(
+            parse_date("2020-12-24 10:20:30", "create").unwrap(),
+            datetime!(2020-12-24 10:20:30 UTC)
+        );
+        assert_eq!(
+            parse_date("2020-12-24T10:20:30", "create").unwrap(),
+            datetime!(2020-12-24 10:20:30 UTC)
+        );
+    }
+
+    #[test]
+    fn test_parse_split_state() {
+        assert_eq!(parse_split_state("Staged").unwrap(), SplitState::Staged);
+        assert_eq!(
+            parse_split_state("Published").unwrap(),
+            SplitState::Published
+        );
+        assert_eq!(
+            parse_split_state("Marked").unwrap(),
+            SplitState::MarkedForDeletion
+        );
     }
 }

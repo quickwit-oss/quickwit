@@ -19,15 +19,17 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use anyhow::Context;
 use futures::future::try_join_all;
+use futures::Future;
 use itertools::{Either, Itertools};
 use once_cell::sync::OnceCell;
 use quickwit_config::get_searcher_config_instance;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
-use quickwit_doc_mapper::DocMapper;
+use quickwit_doc_mapper::{DocMapper, QUICKWIT_TOKENIZER_MANAGER};
 use quickwit_proto::{
     LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets, SplitSearchError,
 };
@@ -36,12 +38,14 @@ use quickwit_storage::{
 };
 use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
+use tantivy::error::AsyncIoError;
 use tantivy::query::Query;
+use tantivy::schema::{Cardinality, FieldType};
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
 use tracing::*;
 
-use crate::collector::{make_collector_for_split, make_merge_collector, GenericQuickwitCollector};
+use crate::collector::{make_collector_for_split, make_merge_collector};
 use crate::SearchError;
 
 fn global_split_footer_cache() -> &'static MemorySizedCache<String> {
@@ -109,7 +113,8 @@ pub(crate) async fn open_index(
     let directory = StorageDirectory::new(bundle_storage_with_cache);
     let caching_directory = CachingDirectory::new_with_unlimited_capacity(Arc::new(directory));
     let hot_directory = HotDirectory::open(caching_directory, hotcache_bytes.read_bytes()?)?;
-    let index = Index::open(hot_directory)?;
+    let mut index = Index::open(hot_directory)?;
+    index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
     Ok(index)
 }
 
@@ -121,21 +126,84 @@ pub(crate) async fn open_index(
 ///
 /// The downloaded data depends on the query (which term's posting list is required,
 /// are position required too), and the collector.
+///
+/// * `query` - query is used to extract the terms and their fields which will be loaded from the
+/// inverted_index.
+///
+/// * `term_dict_field_names` - A list of fields, where the whole dictionary needs to be loaded.
+/// This is e.g. required for term aggregation, since we don't know in advance which terms are going
+/// to be hit.
 #[instrument(skip(searcher, query, fast_field_names))]
 pub(crate) async fn warmup(
     searcher: &Searcher,
     query: &dyn Query,
     fast_field_names: &HashSet<String>,
+    term_dict_field_names: &HashSet<String>,
 ) -> anyhow::Result<()> {
     let warm_up_terms_future =
         warm_up_terms(searcher, query).instrument(debug_span!("warm_up_terms"));
+    let warm_up_term_dict_future = warm_up_term_dict_fields(searcher, term_dict_field_names)
+        .instrument(debug_span!("warm_up_term_dicts"));
     let warm_up_fastfields_future = warm_up_fastfields(searcher, fast_field_names)
         .instrument(debug_span!("warm_up_fastfields"));
-    let (warm_up_terms_res, warm_up_fastfields_res) =
-        tokio::join!(warm_up_terms_future, warm_up_fastfields_future);
+    let (warm_up_terms_res, warm_up_fastfields_res, warm_up_term_dict_res) = tokio::join!(
+        warm_up_terms_future,
+        warm_up_fastfields_future,
+        warm_up_term_dict_future
+    );
     warm_up_terms_res?;
     warm_up_fastfields_res?;
+    warm_up_term_dict_res?;
     Ok(())
+}
+
+async fn warm_up_term_dict_fields(
+    searcher: &Searcher,
+    term_dict_field_names: &HashSet<String>,
+) -> anyhow::Result<()> {
+    let mut term_dict_fields = Vec::new();
+    for term_dict_field_name in term_dict_field_names.iter() {
+        let term_dict_field = searcher
+            .schema()
+            .get_field(term_dict_field_name)
+            .with_context(|| {
+                format!(
+                    "Couldn't get field named {:?} from schema.",
+                    term_dict_field_name
+                )
+            })?;
+
+        term_dict_fields.push(term_dict_field);
+    }
+
+    let mut warm_up_futures = Vec::new();
+    for field in term_dict_fields {
+        for segment_reader in searcher.segment_readers() {
+            let inverted_index = segment_reader.inverted_index(field)?.clone();
+            warm_up_futures.push(async move {
+                let dict = inverted_index.terms();
+                dict.warm_up_dictionary().await
+            });
+        }
+    }
+    try_join_all(warm_up_futures).await?;
+    Ok(())
+}
+
+// The field cardinality is not the same as the fast field cardinality.
+//
+// E.g. a single valued bytes field has a multivalued fast field cardinality.
+fn get_fastfield_cardinality(field_type: &FieldType) -> Option<Cardinality> {
+    match field_type {
+        FieldType::U64(options) | FieldType::I64(options) | FieldType::F64(options) => {
+            options.get_fastfield_cardinality()
+        }
+        FieldType::Date(options) => options.get_fastfield_cardinality(),
+        FieldType::Facet(_) => Some(Cardinality::MultiValues),
+        FieldType::Bytes(options) if options.is_fast() => Some(Cardinality::MultiValues),
+        FieldType::Str(options) if options.is_fast() => Some(Cardinality::MultiValues),
+        _ => None,
+    }
 }
 
 async fn warm_up_fastfields(
@@ -158,14 +226,42 @@ async fn warm_up_fastfields(
         if !field_entry.is_fast() {
             anyhow::bail!("Field {:?} is not a fast field.", fast_field_name);
         }
-        fast_fields.push(fast_field);
+        let cardinality =
+            get_fastfield_cardinality(field_entry.field_type()).with_context(|| {
+                format!(
+                    "Couldn't get field cardinality {:?} from type {:?}.",
+                    fast_field_name, field_entry
+                )
+            })?;
+
+        fast_fields.push((fast_field, cardinality));
     }
 
-    let mut warm_up_futures = Vec::new();
-    for field in fast_fields {
+    type SendableFuture = dyn Future<Output = Result<OwnedBytes, AsyncIoError>> + Send;
+    let mut warm_up_futures: Vec<Pin<Box<SendableFuture>>> = Vec::new();
+    for (field, cardinality) in fast_fields {
         for segment_reader in searcher.segment_readers() {
-            let fast_field_slice = segment_reader.fast_fields().fast_field_data(field, 0)?;
-            warm_up_futures.push(async move { fast_field_slice.read_bytes_async().await });
+            match cardinality {
+                Cardinality::SingleValue => {
+                    let fast_field_slice =
+                        segment_reader.fast_fields().fast_field_data(field, 0)?;
+                    warm_up_futures.push(Box::pin(async move {
+                        fast_field_slice.read_bytes_async().await
+                    }));
+                }
+                Cardinality::MultiValues => {
+                    let fast_field_slice =
+                        segment_reader.fast_fields().fast_field_data(field, 0)?;
+                    warm_up_futures.push(Box::pin(async move {
+                        fast_field_slice.read_bytes_async().await
+                    }));
+                    let fast_field_slice =
+                        segment_reader.fast_fields().fast_field_data(field, 1)?;
+                    warm_up_futures.push(Box::pin(async move {
+                        fast_field_slice.read_bytes_async().await
+                    }));
+                }
+            }
         }
     }
     try_join_all(warm_up_futures).await?;
@@ -218,7 +314,13 @@ async fn leaf_search_single_split(
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = reader.searcher();
-    warmup(&*searcher, &query, &quickwit_collector.fast_field_names()).await?;
+    warmup(
+        &*searcher,
+        &query,
+        &quickwit_collector.fast_field_names(),
+        &quickwit_collector.term_dict_field_names(),
+    )
+    .await?;
     let leaf_search_response = crate::run_cpu_intensive(move || {
         let span = info_span!( "search", split_id = %split.split_id);
         let _span_guard = span.enter();
@@ -233,8 +335,9 @@ async fn leaf_search_single_split(
 
 /// `leaf` step of search.
 ///
-/// The leaf search collects all kind of information, and returns a set of [PartialHit] candidates.
-/// The root will be in charge to consolidate, identify the actual final top hits to display, and
+/// The leaf search collects all kind of information, and returns a set of
+/// [PartialHit](quickwit_proto::PartialHit) candidates. The root will be in
+/// charge to consolidate, identify the actual final top hits to display, and
 /// fetch the actual documents to convert the partial hits into actual Hits.
 pub async fn leaf_search(
     request: &SearchRequest,
@@ -261,13 +364,17 @@ pub async fn leaf_search(
         .collect();
     let split_search_results = futures::future::join_all(leaf_search_single_split_futures).await;
 
-    let (split_search_responses, errors): (Vec<LeafSearchResponse>, Vec<(String, SearchError)>) =
-        split_search_results
-            .into_iter()
-            .partition_map(|split_search_res| match split_search_res {
-                Ok(split_search_resp) => Either::Left(split_search_resp),
-                Err(err) => Either::Right(err),
-            });
+    // the result wrapping is only for the collector api merge_fruits
+    // (Vec<tantivy::Result<LeafSearchResponse>>)
+    let (split_search_responses, errors): (
+        Vec<tantivy::Result<LeafSearchResponse>>,
+        Vec<(String, SearchError)>,
+    ) = split_search_results
+        .into_iter()
+        .partition_map(|split_search_res| match split_search_res {
+            Ok(split_search_resp) => Either::Left(Ok(split_search_resp)),
+            Err(err) => Either::Right(err),
+        });
 
     // Creates a collector which merges responses into one
     let merge_collector = make_merge_collector(request);

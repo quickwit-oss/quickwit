@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::any::Any;
+use std::convert::Infallible;
 use std::fmt;
 use std::hash::Hash;
 use std::sync::Arc;
@@ -25,7 +26,8 @@ use std::sync::Arc;
 use tokio::sync::oneshot;
 
 use crate::channel_with_priority::{Priority, Receiver, Sender};
-use crate::{QueueCapacity, RecvError, SendError};
+use crate::envelope::{wrap_in_envelope, Envelope};
+use crate::{Actor, AskError, Handler, QueueCapacity, RecvError, SendError};
 
 /// A mailbox is the object that makes it possible to send a message
 /// to an actor.
@@ -35,19 +37,19 @@ use crate::{QueueCapacity, RecvError, SendError};
 /// The actor holds its `Inbox` counterpart.
 ///
 /// The mailbox can accept:
-/// - regular message. Their type depend on the actor and is defined when
-/// implementing the actor trait.  (See [`Actor::Message`](crate::Actor::Message))
+/// - Regular messages wrapped in envelopes. Their type depend on the actor and is defined when
+/// implementing the actor trait. (See [`Envelope`])
 /// - Commands (See [`Command`]). Commands have a higher priority than messages:
 /// whenever a command is available, it is guaranteed to be processed
 /// as soon as possible regardless of the presence of pending regular messages.
 ///
 /// If all mailboxes are dropped, the actor will process all of the pending messages
-/// and gracefully exit with `ActorExitStatus::Success`.
-pub struct Mailbox<Message> {
-    pub(crate) inner: Arc<Inner<Message>>,
+/// and gracefully exit with [`crate::actor::ActorExitStatus::Success`].
+pub struct Mailbox<A: Actor> {
+    pub(crate) inner: Arc<Inner<A>>,
 }
 
-impl<Message> Clone for Mailbox<Message> {
+impl<A: Actor> Clone for Mailbox<A> {
     fn clone(&self) -> Self {
         Mailbox {
             inner: self.inner.clone(),
@@ -55,41 +57,29 @@ impl<Message> Clone for Mailbox<Message> {
     }
 }
 
-impl<Message> Mailbox<Message> {
+impl<A: Actor> Mailbox<A> {
     pub(crate) fn is_last_mailbox(&self) -> bool {
         Arc::strong_count(&self.inner) == 1
     }
+
+    pub fn id(&self) -> &str {
+        &self.inner.instance_id
+    }
 }
 
-pub enum CommandOrMessage<Message> {
-    Message(Message),
+pub(crate) enum CommandOrMessage<A: Actor> {
+    Message(Box<dyn Envelope<A>>),
     Command(Command),
 }
 
-impl<Message> CommandOrMessage<Message> {
-    pub fn message(self) -> Option<Message> {
-        match self {
-            CommandOrMessage::Message(message) => Some(message),
-            CommandOrMessage::Command(_) => None,
-        }
-    }
-
-    pub fn command(self) -> Option<Command> {
-        match self {
-            CommandOrMessage::Message(_) => None,
-            CommandOrMessage::Command(command) => Some(command),
-        }
-    }
-}
-
-impl<Message> From<Command> for CommandOrMessage<Message> {
+impl<A: Actor> From<Command> for CommandOrMessage<A> {
     fn from(cmd: Command) -> Self {
         CommandOrMessage::Command(cmd)
     }
 }
 
-pub(crate) struct Inner<Message> {
-    pub(crate) tx: Sender<CommandOrMessage<Message>>,
+pub(crate) struct Inner<A: Actor> {
+    pub(crate) tx: Sender<CommandOrMessage<A>>,
     instance_id: String,
 }
 
@@ -160,7 +150,7 @@ pub enum Command {
 }
 
 impl fmt::Debug for Command {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Command::Pause => write!(f, "Pause"),
             Command::Resume => write!(f, "Resume"),
@@ -172,130 +162,135 @@ impl fmt::Debug for Command {
     }
 }
 
-impl<Message: fmt::Debug> fmt::Debug for Mailbox<Message> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl<A: Actor> fmt::Debug for Mailbox<A> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Mailbox({})", self.actor_instance_id())
     }
 }
 
-impl<Message> Hash for Mailbox<Message> {
+impl<A: Actor> Hash for Mailbox<A> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.inner.instance_id.hash(state)
     }
 }
 
-impl<Message> PartialEq for Mailbox<Message> {
+impl<A: Actor> PartialEq for Mailbox<A> {
     fn eq(&self, other: &Self) -> bool {
         self.inner.instance_id.eq(&other.inner.instance_id)
     }
 }
 
-impl<Message> Eq for Mailbox<Message> {}
+impl<A: Actor> Eq for Mailbox<A> {}
 
-impl<Message> Mailbox<Message> {
+impl<A: Actor> Mailbox<A> {
     pub fn actor_instance_id(&self) -> &str {
         &self.inner.instance_id
     }
 
     pub(crate) async fn send_with_priority(
         &self,
-        cmd_or_msg: CommandOrMessage<Message>,
+        cmd_or_msg: CommandOrMessage<A>,
         priority: Priority,
     ) -> Result<(), SendError> {
         self.inner.tx.send(cmd_or_msg, priority).await
     }
 
-    pub(crate) fn send_with_priority_blocking(
-        &self,
-        cmd_or_msg: CommandOrMessage<Message>,
-        priority: Priority,
-    ) -> Result<(), SendError> {
-        self.inner.tx.send_blocking(cmd_or_msg, priority)
-    }
-
-    /// SendError is returned if the actor has already exited.
+    /// Sends a message to the actor owning the associated inbox.
     ///
-    /// (See also [Self::send_blocking()])
-    pub(crate) async fn send_message(&self, msg: Message) -> Result<(), SendError> {
-        self.send_with_priority(CommandOrMessage::Message(msg), Priority::Low)
-            .await
+    /// From an actor context, use the `ActorContext::send_message` method instead.
+    ///
+    /// SendError is returned if the actor has already exited.
+    pub async fn send_message<M>(
+        &self,
+        message: M,
+    ) -> Result<oneshot::Receiver<A::Reply>, SendError>
+    where
+        A: Handler<M>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
+        let (envelope, response_rx) = wrap_in_envelope(message);
+        self.send_with_priority(CommandOrMessage::Message(envelope), Priority::Low)
+            .await?;
+        Ok(response_rx)
     }
 
-    /// Send a message to the actor in a blocking fashion.
-    /// When possible, prefer using [Self::send()].
-    pub(crate) fn send_message_blocking(&self, msg: Message) -> Result<(), SendError> {
-        self.send_with_priority_blocking(CommandOrMessage::Message(msg), Priority::Low)
-    }
-
-    pub(crate) async fn send_command(&self, command: Command) -> Result<(), SendError> {
+    pub async fn send_command(&self, command: Command) -> Result<(), SendError> {
         self.send_with_priority(command.into(), Priority::High)
             .await
     }
 
-    pub fn try_send_message(&self, message: Message) -> Result<(), SendError> {
-        self.inner
-            .tx
-            .try_send(CommandOrMessage::Message(message), Priority::Low)
+    /// Similar to `send_message`, except this method
+    /// waits asynchronously for the actor reply.
+    ///
+    /// From an actor context, use the `ActorContext::ask` method instead.
+    pub async fn ask<M, T>(&self, message: M) -> Result<T, AskError<Infallible>>
+    where
+        A: Handler<M, Reply = T>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
+        self.send_message(message)
+            .await
+            .map_err(|_send_error| AskError::MessageNotDelivered)?
+            .await
+            .map_err(|_| AskError::ProcessMessageError)
+    }
+
+    /// Similar to `send_message`, except this method
+    /// waits asynchronously for the actor reply.
+    ///
+    /// From an actor context, use the `ActorContext::ask` method instead.
+    pub async fn ask_for_res<M, T, E: fmt::Debug>(&self, message: M) -> Result<T, AskError<E>>
+    where
+        A: Handler<M, Reply = Result<T, E>>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
+        self.send_message(message)
+            .await
+            .map_err(|_send_error| AskError::MessageNotDelivered)?
+            .await
+            .map_err(|_| AskError::ProcessMessageError)?
+            .map_err(AskError::from)
     }
 }
 
-pub struct Inbox<Message> {
-    rx: Receiver<CommandOrMessage<Message>>,
+pub struct Inbox<A: Actor> {
+    rx: Receiver<CommandOrMessage<A>>,
 }
 
-impl<Message: fmt::Debug> Inbox<Message> {
-    pub(crate) async fn recv_timeout(&mut self) -> Result<CommandOrMessage<Message>, RecvError> {
+impl<A: Actor> Inbox<A> {
+    pub(crate) async fn recv_timeout(&mut self) -> Result<CommandOrMessage<A>, RecvError> {
         self.rx.recv_timeout(crate::message_timeout()).await
     }
 
     pub(crate) async fn recv_timeout_cmd_and_scheduled_msg_only(
         &mut self,
-    ) -> Result<CommandOrMessage<Message>, RecvError> {
+    ) -> Result<CommandOrMessage<A>, RecvError> {
         self.rx
             .recv_high_priority_timeout(crate::message_timeout())
             .await
     }
 
-    pub(crate) fn recv_timeout_blocking(&mut self) -> Result<CommandOrMessage<Message>, RecvError> {
-        self.rx.recv_timeout_blocking(crate::message_timeout())
-    }
-
-    pub(crate) fn recv_timeout_cmd_and_scheduled_msg_only_blocking(
-        &mut self,
-    ) -> Result<CommandOrMessage<Message>, RecvError> {
-        self.rx
-            .recv_high_priority_timeout_blocking(crate::message_timeout())
-    }
-
-    /// Destroys the inbox and returns the list of pending messages.
-    /// Commands are ignored.
+    /// Destroys the inbox and returns the list of pending messages or commands
+    /// in the low priority channel.
     ///
     /// Warning this iterator might never be exhausted if there is a living
     /// mailbox associated to it.
-    pub fn drain_available_message_for_test(&self) -> Vec<Message> {
+    pub fn drain_for_test(&self) -> Vec<Box<dyn Any>> {
         self.rx
             .drain_low_priority()
             .into_iter()
-            .flat_map(|command_or_message| match command_or_message {
-                CommandOrMessage::Message(msg) => Some(msg),
-                CommandOrMessage::Command(_) => None,
+            .map(|command_or_message| match command_or_message {
+                CommandOrMessage::Message(mut msg) => msg.message(),
+                CommandOrMessage::Command(cmd) => Box::new(cmd),
             })
             .collect()
     }
-
-    /// Destroys the inbox and returns the list of pending messages or commands.
-    ///
-    /// Warning this iterator might never be exhausted if there is a living
-    /// mailbox associated to it.
-    pub fn drain_available_message_or_command_for_test(mut self) -> Vec<CommandOrMessage<Message>> {
-        self.rx.drain_all()
-    }
 }
 
-pub fn create_mailbox<M>(
+pub fn create_mailbox<A: Actor>(
     actor_name: String,
     queue_capacity: QueueCapacity,
-) -> (Mailbox<M>, Inbox<M>) {
+) -> (Mailbox<A>, Inbox<A>) {
     let (tx, rx) = crate::channel_with_priority::channel(queue_capacity);
     let mailbox = Mailbox {
         inner: Arc::new(Inner {
@@ -307,6 +302,6 @@ pub fn create_mailbox<M>(
     (mailbox, inbox)
 }
 
-pub fn create_test_mailbox<M>() -> (Mailbox<M>, Inbox<M>) {
+pub fn create_test_mailbox<A: Actor>() -> (Mailbox<A>, Inbox<A>) {
     create_mailbox("test-mailbox".to_string(), QueueCapacity::Unbounded)
 }

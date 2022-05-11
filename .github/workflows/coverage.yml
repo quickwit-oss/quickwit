@@ -13,6 +13,7 @@ on:
 
 env:
   QW_S3_ENDPOINT: "http://localhost:4566" # Services are exposed as localhost because we are not running coverage in a container.
+  CARGO_INCREMENTAL: 0
   AWS_DEFAULT_REGION  : "localhost"
   AWS_ACCESS_KEY_ID   : "placeholder"
   AWS_SECRET_ACCESS_KEY: "placeholder"
@@ -91,9 +92,9 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
-      - uses: actions/cache@v2
+      - uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/git
@@ -103,6 +104,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
             ${{ runner.os }}-cargo-test
+
+      - name: Install awslocal
+        run: pip install awscli-local
+
+      - name: Prepare LocalStack S3
+        run: ./quickwit-cli/tests/prepare_tests.sh
 
       - uses: actions-rs/toolchain@v1
         with:
@@ -114,11 +121,7 @@ jobs:
           curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | \
           tar xzf - -C ~/.cargo/bin
 
-      - name: Install awslocal
-        run: pip install awscli-local
-
-      - name: Prepare LocalStack S3
-        run: ./quickwit-cli/tests/prepare_tests.sh
+      - uses: Swatinem/rust-cache@v1
 
       - name: Generate code coverage
         run: |
@@ -128,7 +131,7 @@ jobs:
           cargo +nightly llvm-cov --no-run --lcov --output-path lcov.info
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v1
+        uses: codecov/codecov-action@v3
         with:
           token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
           files: lcov.info

@@ -22,8 +22,8 @@ use std::collections::BTreeSet;
 use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 use crate::VersionedSplitMetadataDeserializeHelper;
 
@@ -80,12 +80,14 @@ pub struct SplitMetadata {
 
     /// Set of unique tags values of form `{field_name}:{field_value}`.
     /// The set is filled at indexing with values from each field registered
-    /// in the [`DocMapping`] `tag_fields` attribute and only when cardinality
-    /// of a given field is less or equal to [`MAX_VALUES_PER_TAG_FIELD`].
+    /// in the [`DocMapping`](quickwit_config::DocMapping) `tag_fields` attribute and only when
+    /// cardinality of a given field is less or equal to [`MAX_VALUES_PER_TAG_FIELD`].
     /// An additional special tag of the form `{field_name}!` is added to the set
     /// to indicate that this field `field_name` was indeed registered in `tag_fields`.
     /// When cardinality is strictly higher than [`MAX_VALUES_PER_TAG_FIELD`],
     /// no field value is added to the set.
+    ///
+    /// [`MAX_VALUES_PER_TAG_FIELD`]: https://github.com/quickwit-oss/quickwit/blob/main/quickwit-indexing/src/actors/packager.rs#L36
     #[serde(default)]
     pub tags: BTreeSet<String>,
 
@@ -165,6 +167,6 @@ pub fn utc_now_timestamp() -> i64 {
     if cfg!(any(test, feature = "testsuite")) {
         1640577000
     } else {
-        Utc::now().timestamp()
+        OffsetDateTime::now_utc().unix_timestamp()
     }
 }

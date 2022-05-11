@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use itertools::Itertools;
-use quickwit_proto::{FetchDocsResponse, Hit, PartialHit, SplitIdAndFooterOffsets};
+use quickwit_proto::{FetchDocsResponse, PartialHit, SplitIdAndFooterOffsets};
 use quickwit_storage::Storage;
 use tantivy::{IndexReader, ReloadPolicy};
 use tracing::error;
@@ -107,13 +107,14 @@ pub async fn fetch_docs(
     let mut global_doc_addr_to_doc_json =
         fetch_docs_to_map(global_doc_addrs, index_storage, splits).await?;
 
-    let hits: Vec<Hit> = partial_hits
+    let hits: Vec<quickwit_proto::LeafHit> = partial_hits
         .iter()
         .flat_map(|partial_hit| {
             let global_doc_addr = GlobalDocAddress::from_partial_hit(partial_hit);
-            if let Some((_, json)) = global_doc_addr_to_doc_json.remove_entry(&global_doc_addr) {
-                Some(Hit {
-                    json,
+            if let Some((_, leaf_json)) = global_doc_addr_to_doc_json.remove_entry(&global_doc_addr)
+            {
+                Some(quickwit_proto::LeafHit {
+                    leaf_json,
                     partial_hit: Some(partial_hit.clone()),
                 })
             } else {

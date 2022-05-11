@@ -25,38 +25,42 @@
 //! - make these task modular and testable
 //! - detect when some task is stuck and does not progress anymore
 
+use std::fmt;
+
 use tokio::time::Duration;
 mod actor;
 mod actor_handle;
 mod actor_state;
 mod actor_with_state_tx;
-mod async_actor;
 pub(crate) mod channel_with_priority;
+mod envelope;
 mod kill_switch;
 mod mailbox;
 mod observation;
 mod progress;
+mod runner;
 mod scheduler;
 mod spawn_builder;
-mod sync_actor;
+
+mod join_handle;
 #[cfg(test)]
 mod tests;
 mod universe;
 
-pub use actor::{Actor, ActorExitStatus};
+pub use actor::{Actor, ActorExitStatus, Handler};
 pub use actor_handle::{ActorHandle, Health, Supervisable};
-pub use async_actor::AsyncActor;
 pub use kill_switch::KillSwitch;
 pub use observation::{Observation, ObservationType};
 pub use progress::{Progress, ProtectedZoneGuard};
 pub(crate) use scheduler::Scheduler;
-pub use sync_actor::SyncActor;
+use thiserror::Error;
 pub use universe::Universe;
 
 pub use self::actor::ActorContext;
 pub use self::actor_state::ActorState;
 pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError};
-pub use self::mailbox::{create_mailbox, create_test_mailbox, Command, CommandOrMessage, Mailbox};
+pub use self::mailbox::{create_mailbox, create_test_mailbox, Command, Mailbox};
+pub use crate::runner::ActorRunner;
 
 /// Heartbeat used to verify that actors are progressing.
 ///
@@ -67,4 +71,15 @@ pub const HEARTBEAT: Duration = Duration::from_secs(1);
 
 pub fn message_timeout() -> Duration {
     HEARTBEAT.mul_f32(0.2f32)
+}
+
+/// Error that occured while calling `ActorContext::ask(..)` or `Universe::ask`
+#[derive(Error, Debug)]
+pub enum AskError<E: fmt::Debug> {
+    #[error("Message could not be delivered")]
+    MessageNotDelivered,
+    #[error("Error while the message was being processed.")]
+    ProcessMessageError,
+    #[error("The handler returned an error: `{0:?}`.")]
+    ErrorReply(#[from] E),
 }

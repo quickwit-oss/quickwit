@@ -29,6 +29,8 @@ service ClusterService {
   /// Removes itself from the cluster.
   /// Removed node will be isolated from the cluster.
   rpc LeaveCluster(LeaveClusterRequest) returns (LeaveClusterResponse);
+
+  rpc ClusterState(ClusterStateRequest) returns (ClusterStateResponse);
 }
 
 /// The member information.
@@ -42,6 +44,9 @@ message Member {
 
   /// If true, it means self.
   bool is_self = 3;
+
+  /// member reincarnation
+  uint64 generation = 4;
 }
 
 message ListMembersRequest {
@@ -55,4 +60,11 @@ message LeaveClusterRequest {
 }
 
 message LeaveClusterResponse {
+}
+
+message ClusterStateRequest {
+}
+
+message ClusterStateResponse {
+  string state_serialized_json = 1;
 }

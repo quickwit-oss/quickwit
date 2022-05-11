@@ -20,18 +20,19 @@
 use std::convert::TryFrom;
 
 use anyhow::bail;
-use chrono::{FixedOffset, Utc};
-use itertools::{process_results, Itertools};
 use serde::{Deserialize, Serialize};
-use serde_json::{self, Value as JsonValue};
 use tantivy::schema::{
-    BytesOptions, Cardinality, DocParsingError as TantivyDocParser, FieldType, IndexRecordOption,
-    NumericOptions, TextFieldIndexing, TextOptions, Value,
+    Cardinality, IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type,
 };
-use thiserror::Error;
 
 use super::{default_as_true, FieldMappingType};
+use crate::default_doc_mapper::field_mapping_type::QuickwitFieldType;
 use crate::default_doc_mapper::validate_field_mapping_name;
+
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
+pub struct QuickwitObjectOptions {
+    pub field_mappings: Vec<FieldMappingEntry>,
+}
 
 /// A `FieldMappingEntry` defines how a field is indexed, stored,
 /// and mapped from a JSON document to the related index fields.
@@ -47,699 +48,299 @@ pub struct FieldMappingEntry {
     pub mapping_type: FieldMappingType,
 }
 
-impl FieldMappingEntry {
-    /// Creates a new [`FieldMappingEntry`].
-    pub fn new(name: String, mapping_type: FieldMappingType) -> Self {
-        assert!(validate_field_mapping_name(&name).is_ok());
-        FieldMappingEntry { name, mapping_type }
-    }
-
-    /// Creates a new root [`FieldMappingEntry`].
-    pub fn root(mapping_type: FieldMappingType) -> Self {
-        FieldMappingEntry {
-            name: "".to_string(),
-            mapping_type,
-        }
-    }
-
-    /// Returns the field entries that must be added to the schema.
-    // TODO: can be more efficient to pass a collector in argument (a schema builder)
-    // on which we add entry fields.
-    pub fn field_entries(&self) -> Vec<(FieldPath, FieldType)> {
-        let field_path = FieldPath::new(&self.name);
-        match &self.mapping_type {
-            FieldMappingType::Text(options, _) => {
-                vec![(field_path, FieldType::Str(options.clone()))]
-            }
-            FieldMappingType::I64(options, _) => {
-                vec![(field_path, FieldType::I64(options.clone()))]
-            }
-            FieldMappingType::U64(options, _) => {
-                vec![(field_path, FieldType::U64(options.clone()))]
-            }
-            FieldMappingType::F64(options, _) => {
-                vec![(field_path, FieldType::F64(options.clone()))]
-            }
-            FieldMappingType::Date(options, _) => {
-                vec![(field_path, FieldType::Date(options.clone()))]
-            }
-            FieldMappingType::Bytes(options, _) => {
-                vec![(field_path, FieldType::Bytes(options.clone()))]
-            }
-            FieldMappingType::Object(field_mappings) => field_mappings
-                .iter()
-                .flat_map(|entry| entry.field_entries())
-                .map(|(path, entry)| (path.with_parent(&self.name), entry))
-                .collect(),
-        }
-    }
-
-    /// Returns the fields entries that map to fast fields.
-    pub fn fast_field_entries(&self) -> Vec<(FieldPath, FieldType)> {
-        self.field_entries()
-            .into_iter()
-            .filter(|(_, field_type)| match field_type {
-                FieldType::U64(options)
-                | FieldType::I64(options)
-                | FieldType::F64(options)
-                | FieldType::Date(options) => options.is_fast(),
-                FieldType::Bytes(option) => option.is_fast(),
-                _ => false,
-            })
-            .collect_vec()
-    }
-
-    /// Returns the field mappings.
-    pub fn field_mappings(&self) -> Option<Vec<FieldMappingEntry>> {
-        match &self.mapping_type {
-            FieldMappingType::Object(entries) => Some(entries.clone()),
-            _ => None,
-        }
-    }
-
-    /// Returns tantivy field path and associated values to be added in the document.
-    // TODO: can be more efficient to pass a collector in argument (a kind of DocumentWriter)
-    // on which we add field values, thus we directly build the doucment instead of returning
-    // a Vec.
-    pub fn parse(&self, json_value: JsonValue) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
-        match &self.mapping_type {
-            FieldMappingType::Text(options, cardinality) => {
-                self.parse_text(json_value, options, cardinality)
-            }
-            FieldMappingType::I64(options, cardinality) => {
-                self.parse_i64(json_value, options, cardinality)
-            }
-            FieldMappingType::U64(options, cardinality) => {
-                self.parse_u64(json_value, options, cardinality)
-            }
-            FieldMappingType::F64(options, cardinality) => {
-                self.parse_f64(json_value, options, cardinality)
-            }
-            FieldMappingType::Date(options, cardinality) => {
-                self.parse_date(json_value, options, cardinality)
-            }
-            FieldMappingType::Bytes(options, cardinality) => {
-                self.parse_bytes(json_value, options, cardinality)
-            }
-            FieldMappingType::Object(field_mappings) => {
-                self.parse_object(json_value, field_mappings)
-            }
-        }
-    }
-
-    fn parse_text(
-        &self,
-        json_value: JsonValue,
-        options: &TextOptions,
-        cardinality: &Cardinality,
-    ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
-        let parsed_values = match json_value {
-            JsonValue::Array(array) => {
-                if cardinality != &Cardinality::MultiValues {
-                    return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
-                }
-                process_results(
-                    array
-                        .into_iter()
-                        .map(|element| self.parse_text(element, options, cardinality)),
-                    |iter| iter.flatten().collect(),
-                )?
-            }
-            JsonValue::String(value_as_str) => {
-                vec![(FieldPath::new(&self.name), Value::Str(value_as_str))]
-            }
-            JsonValue::Null => {
-                vec![]
-            }
-            _ => {
-                return Err(DocParsingError::ValueError(
-                    self.name.clone(),
-                    format!("Expected JSON string, got '{}'.", json_value),
-                ));
-            }
-        };
-        Ok(parsed_values)
-    }
-
-    fn parse_i64(
-        &self,
-        json_value: JsonValue,
-        options: &NumericOptions,
-        cardinality: &Cardinality,
-    ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
-        let parsed_values = match json_value {
-            JsonValue::Array(array) => {
-                if cardinality != &Cardinality::MultiValues {
-                    return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
-                }
-                process_results(
-                    array
-                        .into_iter()
-                        .map(|element| self.parse_i64(element, options, cardinality)),
-                    |iter| iter.flatten().collect(),
-                )?
-            }
-            JsonValue::Number(value_as_number) => {
-                if let Some(value_as_i64) = value_as_number.as_i64() {
-                    vec![(FieldPath::new(&self.name), Value::I64(value_as_i64))]
-                } else {
-                    return Err(DocParsingError::ValueError(
-                        self.name.clone(),
-                        format!("Expected i64, got '{}'.", value_as_number),
-                    ));
-                }
-            }
-            JsonValue::Null => {
-                vec![]
-            }
-            _ => {
-                return Err(DocParsingError::ValueError(
-                    self.name.clone(),
-                    format!(
-                        "Expected JSON number or array of JSON numbers, got '{}'.",
-                        json_value
-                    ),
-                ))
-            }
-        };
-        Ok(parsed_values)
-    }
-
-    fn parse_u64(
-        &self,
-        json_value: JsonValue,
-        options: &NumericOptions,
-        cardinality: &Cardinality,
-    ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
-        let parsed_values = match json_value {
-            JsonValue::Array(array) => {
-                if cardinality != &Cardinality::MultiValues {
-                    return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
-                }
-                process_results(
-                    array
-                        .into_iter()
-                        .map(|element| self.parse_u64(element, options, cardinality)),
-                    |iter| iter.flatten().collect(),
-                )?
-            }
-            JsonValue::Number(value_as_number) => {
-                if let Some(value_as_u64) = value_as_number.as_u64() {
-                    vec![(FieldPath::new(&self.name), Value::U64(value_as_u64))]
-                } else {
-                    return Err(DocParsingError::ValueError(
-                        self.name.clone(),
-                        format!("Expected u64, got '{}'.", value_as_number),
-                    ));
-                }
-            }
-            JsonValue::Null => {
-                vec![]
-            }
-            _ => {
-                return Err(DocParsingError::ValueError(
-                    self.name.clone(),
-                    format!(
-                        "Expected JSON number or array of JSON numbers, got '{}'.",
-                        json_value
-                    ),
-                ))
-            }
-        };
-        Ok(parsed_values)
-    }
-
-    fn parse_f64(
-        &self,
-        json_value: JsonValue,
-        options: &NumericOptions,
-        cardinality: &Cardinality,
-    ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
-        let parsed_values = match json_value {
-            JsonValue::Array(array) => {
-                if cardinality != &Cardinality::MultiValues {
-                    return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
-                }
-                process_results(
-                    array
-                        .into_iter()
-                        .map(|element| self.parse_f64(element, options, cardinality)),
-                    |iter| iter.flatten().collect(),
-                )?
-            }
-            JsonValue::Number(value_as_number) => {
-                if let Some(value_as_f64) = value_as_number.as_f64() {
-                    vec![(FieldPath::new(&self.name), Value::F64(value_as_f64))]
-                } else {
-                    return Err(DocParsingError::ValueError(
-                        self.name.clone(),
-                        format!(
-                            "Expected f64, got inconvertible JSON number '{}'.",
-                            value_as_number
-                        ),
-                    ));
-                }
-            }
-            JsonValue::Null => {
-                vec![]
-            }
-            _ => {
-                return Err(DocParsingError::ValueError(
-                    self.name.clone(),
-                    format!(
-                        "Expected JSON number or array of JSON numbers, got '{}'.",
-                        json_value
-                    ),
-                ))
-            }
-        };
-        Ok(parsed_values)
-    }
-
-    fn parse_date(
-        &self,
-        json_value: JsonValue,
-        options: &NumericOptions,
-        cardinality: &Cardinality,
-    ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
-        let parsed_values = match json_value {
-            JsonValue::Array(array) => {
-                if cardinality != &Cardinality::MultiValues {
-                    return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
-                }
-                process_results(
-                    array
-                        .into_iter()
-                        .map(|element| self.parse_date(element, options, cardinality)),
-                    |iter| iter.flatten().collect(),
-                )?
-            }
-            JsonValue::String(value_as_str) => {
-                let dt_with_fixed_tz: chrono::DateTime<FixedOffset> =
-                    chrono::DateTime::parse_from_rfc3339(&value_as_str).map_err(|err| {
-                        DocParsingError::ValueError(
-                            self.name.clone(),
-                            format!("Expected RFC 3339 date, got '{}'. {:?}", value_as_str, err),
-                        )
-                    })?;
-                vec![(
-                    FieldPath::new(&self.name),
-                    Value::Date(dt_with_fixed_tz.with_timezone(&Utc)),
-                )]
-            }
-            JsonValue::Null => {
-                vec![]
-            }
-            _ => {
-                return Err(DocParsingError::ValueError(
-                    self.name.clone(),
-                    format!("Expected RFC 3339 date, got '{}'.", json_value),
-                ))
-            }
-        };
-        Ok(parsed_values)
-    }
-
-    fn parse_bytes(
-        &self,
-        json_value: JsonValue,
-        options: &BytesOptions,
-        cardinality: &Cardinality,
-    ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
-        let parsed_values = match json_value {
-            JsonValue::Array(array) => {
-                if cardinality != &Cardinality::MultiValues {
-                    return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
-                }
-                process_results(
-                    array
-                        .into_iter()
-                        .map(|element| self.parse_bytes(element, options, cardinality)),
-                    |iter| iter.flatten().collect(),
-                )?
-            }
-            JsonValue::String(value_as_str) => {
-                let value = base64::decode(&value_as_str)
-                    .map(Value::Bytes)
-                    .map_err(|_| {
-                        DocParsingError::ValueError(
-                            self.name.clone(),
-                            format!("Expected Base64 string, got '{}'.", value_as_str),
-                        )
-                    })?;
-                vec![(FieldPath::new(&self.name), value)]
-            }
-            JsonValue::Null => {
-                vec![]
-            }
-            _ => {
-                return Err(DocParsingError::ValueError(
-                    self.name.clone(),
-                    format!("Expected JSON string for bytes field, got '{}'", json_value),
-                ))
-            }
-        };
-        Ok(parsed_values)
-    }
-
-    fn parse_object<'a>(
-        &'a self,
-        json_value: JsonValue,
-        entries: &'a [FieldMappingEntry],
-    ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
-        let parsed_values = match json_value {
-            JsonValue::Array(_) => {
-                // TODO: we can support it but we need to do some extra validation on
-                // the field mappings as they must be all multivalued.
-                return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
-            }
-            JsonValue::Object(mut object) => process_results(
-                entries
-                    .iter()
-                    .flat_map(|entry| object.remove(&entry.name).map(|child| entry.parse(child))),
-                |iter| {
-                    iter.flatten()
-                        .map(|(path, entry)| (path.with_parent(&self.name), entry))
-                        .collect()
-                },
-            )?,
-            JsonValue::Null => {
-                vec![]
-            }
-            _ => {
-                return Err(DocParsingError::ValueError(
-                    self.name.clone(),
-                    format!("Expected JSON object, got '{}'.", json_value),
-                ))
-            }
-        };
-        Ok(parsed_values)
-    }
-}
-
-/// A field path composed by the list of path components.
-/// Used to build a tantivy valid field name by joining its
-/// components with a special string `__dot__` as currently
-/// tantivy does not support `.`.
-pub struct FieldPath<'a> {
-    components: Vec<&'a str>,
-}
-
-impl<'a> FieldPath<'a> {
-    pub fn new(path: &'a str) -> Self {
-        Self {
-            components: vec![path],
-        }
-    }
-
-    /// Returns the FieldPath with the additionnal parent component.
-    /// This will consume your `FieldPath`.
-    pub fn with_parent(mut self, parent: &'a str) -> Self {
-        if !parent.is_empty() {
-            self.components.insert(0, parent);
-        }
-        self
-    }
-
-    // Returns field name built by joining its components with a `.` separator.
-    pub fn field_name(&self) -> String {
-        // Some components can contains dots.
-        self.components.join(".")
-    }
-}
-
-// Struct used for serialization and deserialization
-// Main advantage: having a flat structure and gain flexibility
-// if we want to add some syntaxic sugar in the mapping.
-// Main drawback: we have a bunch of mixed parameters in it but
-// seems to be reasonable.
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// Struct used for serialization and deserialization
+/// Main advantage: having a flat structure and gain flexibility
+/// if we want to add some syntaxic sugar in the mapping.
+/// Main drawback: we have a bunch of mixed parameters in it but
+/// seems to be reasonable.
+///
+/// We do not rely on enum with inline tagging and flatten because
+/// - serde does not support it in combination with `deny_unknown_field`
+/// - it is clumsy to handle `array<type>` keys.
+#[derive(Clone, Serialize, Deserialize, Debug)]
 struct FieldMappingEntryForSerialization {
     name: String,
     #[serde(rename = "type")]
-    type_with_cardinality: String,
+    type_id: String,
+    #[serde(flatten)]
+    pub field_mapping_json: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct QuickwitNumericOptions {
     #[serde(default = "default_as_true")]
-    stored: bool,
+    pub stored: bool,
+    #[serde(default = "default_as_true")]
+    pub indexed: bool,
     #[serde(default)]
-    fast: bool,
+    pub fast: bool,
+}
+
+impl Default for QuickwitNumericOptions {
+    fn default() -> Self {
+        Self {
+            indexed: true,
+            stored: true,
+            fast: false,
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub enum QuickwitTextTokenizer {
+    #[serde(rename = "raw")]
+    Raw,
+    #[serde(rename = "default")]
+    Default,
+    #[serde(rename = "en_stem")]
+    StemEn,
+}
+
+impl QuickwitTextTokenizer {
+    pub fn get_name(&self) -> &str {
+        match self {
+            QuickwitTextTokenizer::Raw => "raw",
+            QuickwitTextTokenizer::Default => "default",
+            QuickwitTextTokenizer::StemEn => "en_stem",
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct QuickwitTextOptions {
+    #[serde(default = "default_as_true")]
+    pub indexed: bool,
+    #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    indexed: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tokenizer: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    record: Option<IndexRecordOption>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    field_mappings: Vec<FieldMappingEntryForSerialization>,
+    pub tokenizer: Option<QuickwitTextTokenizer>,
+    #[serde(default)]
+    pub record: IndexRecordOption,
+    #[serde(default)]
+    pub fieldnorms: bool,
+    #[serde(default = "default_as_true")]
+    pub stored: bool,
+    #[serde(default)]
+    pub fast: bool,
+}
+
+impl Default for QuickwitTextOptions {
+    fn default() -> Self {
+        Self {
+            indexed: true,
+            tokenizer: None,
+            record: IndexRecordOption::Basic,
+            fieldnorms: false,
+            stored: true,
+            fast: false,
+        }
+    }
+}
+
+impl From<QuickwitTextOptions> for TextOptions {
+    fn from(quickwit_text_options: QuickwitTextOptions) -> Self {
+        let mut text_options = TextOptions::default();
+        if quickwit_text_options.stored {
+            text_options = text_options.set_stored();
+        }
+        if quickwit_text_options.fast {
+            text_options = text_options.set_fast();
+        }
+        if quickwit_text_options.indexed {
+            let mut text_field_indexing = TextFieldIndexing::default();
+            if let Some(tokenizer) = quickwit_text_options.tokenizer {
+                text_field_indexing = text_field_indexing.set_tokenizer(tokenizer.get_name());
+            }
+            text_field_indexing =
+                text_field_indexing.set_index_option(quickwit_text_options.record);
+            text_options = text_options.set_indexing_options(text_field_indexing);
+        }
+        text_options
+    }
+}
+
+fn default_json_tokenizer() -> QuickwitTextTokenizer {
+    QuickwitTextTokenizer::Default
+}
+
+/// Options associated to a json field.
+///
+/// `QuickwitJsonOptions` is also used to configure
+/// the dynamic mapping.
+#[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
+pub struct QuickwitJsonOptions {
+    /// If true, all of the element in the json object will be indexed.
+    #[serde(default = "default_as_true")]
+    pub indexed: bool,
+    /// Sets the tokenize that should be used with the text fields in the
+    /// json object.
+    #[serde(default = "default_json_tokenizer")]
+    pub tokenizer: QuickwitTextTokenizer,
+    /// Sets how much information should be added in the index
+    /// with each token.
+    ///
+    /// Setting `record` is only allowed if indexed == true.
+    #[serde(default)]
+    pub record: IndexRecordOption,
+    /// If true, the field will be stored in the doc store.
+    #[serde(default = "default_as_true")]
+    pub stored: bool,
+}
+
+impl Default for QuickwitJsonOptions {
+    fn default() -> Self {
+        QuickwitJsonOptions {
+            indexed: true,
+            tokenizer: QuickwitTextTokenizer::Raw,
+            record: IndexRecordOption::Basic,
+            stored: true,
+        }
+    }
+}
+
+impl From<QuickwitJsonOptions> for JsonObjectOptions {
+    fn from(quickwit_json_options: QuickwitJsonOptions) -> Self {
+        let mut json_options = JsonObjectOptions::default();
+        if quickwit_json_options.stored {
+            json_options = json_options.set_stored();
+        }
+        if quickwit_json_options.indexed {
+            let mut text_field_indexing = TextFieldIndexing::default();
+            text_field_indexing =
+                text_field_indexing.set_tokenizer(quickwit_json_options.tokenizer.get_name());
+            text_field_indexing =
+                text_field_indexing.set_index_option(quickwit_json_options.record);
+            json_options = json_options.set_indexing_options(text_field_indexing);
+        }
+        json_options
+    }
+}
+
+fn deserialize_mapping_type(
+    quickwit_field_type: QuickwitFieldType,
+    json: serde_json::Value,
+) -> anyhow::Result<FieldMappingType> {
+    let (typ, cardinality) = match quickwit_field_type {
+        QuickwitFieldType::Simple(typ) => (typ, Cardinality::SingleValue),
+        QuickwitFieldType::Array(typ) => (typ, Cardinality::MultiValues),
+        QuickwitFieldType::Object => {
+            let object_options: QuickwitObjectOptions = serde_json::from_value(json)?;
+            if object_options.field_mappings.is_empty() {
+                anyhow::bail!("object type must have at least one field mapping.");
+            }
+            return Ok(FieldMappingType::Object(object_options));
+        }
+    };
+    match typ {
+        Type::Str => {
+            let text_options: QuickwitTextOptions = serde_json::from_value(json)?;
+            #[allow(clippy::collapsible_if)]
+            if !text_options.indexed {
+                if text_options.tokenizer.is_some()
+                    || text_options.record == IndexRecordOption::Basic
+                    || !text_options.fieldnorms
+                {
+                    bail!(
+                        "`record`, `tokenizer`, and `fieldnorms` parameters are allowed only if \
+                         indexed is true."
+                    );
+                }
+            }
+            Ok(FieldMappingType::Text(text_options, cardinality))
+        }
+        Type::U64 => {
+            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
+            Ok(FieldMappingType::U64(numeric_options, cardinality))
+        }
+        Type::I64 => {
+            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
+            Ok(FieldMappingType::I64(numeric_options, cardinality))
+        }
+        Type::F64 => {
+            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
+            Ok(FieldMappingType::F64(numeric_options, cardinality))
+        }
+        Type::Date => {
+            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
+            Ok(FieldMappingType::Date(numeric_options, cardinality))
+        }
+        Type::Facet => unimplemented!("Facet are not supported in quickwit yet."),
+        Type::Bytes => {
+            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
+            if numeric_options.fast && cardinality == Cardinality::MultiValues {
+                bail!("fast field is not allowed for array<bytes>.");
+            }
+            Ok(FieldMappingType::Bytes(numeric_options, cardinality))
+        }
+        Type::Json => {
+            let json_options: QuickwitJsonOptions = serde_json::from_value(json)?;
+            Ok(FieldMappingType::Json(json_options, cardinality))
+        }
+    }
 }
 
 impl TryFrom<FieldMappingEntryForSerialization> for FieldMappingEntry {
-    type Error = anyhow::Error;
+    type Error = String;
 
-    fn try_from(value: FieldMappingEntryForSerialization) -> anyhow::Result<Self> {
-        let field_type = match value.field_type_str() {
-            "text" => value.new_text()?,
-            "i64" => value.new_i64()?,
-            "u64" => value.new_u64()?,
-            "f64" => value.new_f64()?,
-            "date" => value.new_date()?,
-            "bytes" => value.new_bytes()?,
-            "object" => value.new_object()?,
-            type_str => bail!(
-                "Field `{}` has an unknown type: `{}`.",
-                value.name,
-                type_str
-            ),
-        };
-        validate_field_mapping_name(&value.name)?;
-        Ok(FieldMappingEntry::new(value.name, field_type))
+    fn try_from(value: FieldMappingEntryForSerialization) -> Result<Self, String> {
+        validate_field_mapping_name(&value.name).map_err(|err| err.to_string())?;
+        let quickwit_field_type =
+            QuickwitFieldType::parse_type_id(&value.type_id).ok_or_else(|| {
+                format!(
+                    "Field `{}` has an unknown type: `{}`.",
+                    &value.name, &value.type_id
+                )
+            })?;
+        let mapping_type = deserialize_mapping_type(
+            quickwit_field_type,
+            serde_json::Value::Object(value.field_mapping_json),
+        )
+        .map_err(|err| format!("Error while parsing field `{}`: {}", value.name, err))?;
+        Ok(FieldMappingEntry {
+            name: value.name,
+            mapping_type,
+        })
     }
+}
+
+/// Serialize object into a `Map` of json values.
+fn serialize_to_map<S: Serialize>(val: &S) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let json_val = serde_json::to_value(val).ok()?;
+    if let serde_json::Value::Object(map) = json_val {
+        Some(map)
+    } else {
+        None
+    }
+}
+
+fn typed_mapping_to_json_params(
+    field_mapping_type: FieldMappingType,
+) -> serde_json::Map<String, serde_json::Value> {
+    match field_mapping_type {
+        FieldMappingType::Text(text_options, _) => serialize_to_map(&text_options),
+        FieldMappingType::U64(options, _)
+        | FieldMappingType::I64(options, _)
+        | FieldMappingType::Date(options, _)
+        | FieldMappingType::Bytes(options, _)
+        | FieldMappingType::F64(options, _) => serialize_to_map(&options),
+        FieldMappingType::Json(json_options, _) => serialize_to_map(&json_options),
+        FieldMappingType::Object(object_options) => serialize_to_map(&object_options),
+    }
+    .unwrap()
 }
 
 impl From<FieldMappingEntry> for FieldMappingEntryForSerialization {
-    fn from(value: FieldMappingEntry) -> FieldMappingEntryForSerialization {
-        let field_mappings = value
-            .field_mappings()
-            .unwrap_or_default()
-            .into_iter()
-            .map(FieldMappingEntryForSerialization::from)
-            .collect();
-        let type_with_cardinality = value.mapping_type.type_with_cardinality();
-        let mut fast = false;
-        let mut indexed = None;
-        let mut record = None;
-        let mut stored = false;
-        let mut tokenizer: Option<String> = None;
-        match value.mapping_type {
-            FieldMappingType::Text(text_options, _) => {
-                stored = text_options.is_stored();
-                if let Some(indexing_options) = text_options.get_indexing_options() {
-                    tokenizer = Some(indexing_options.tokenizer().to_owned());
-                    record = Some(indexing_options.index_option());
-                } else {
-                    indexed = Some(false);
-                }
-            }
-            FieldMappingType::I64(options, _)
-            | FieldMappingType::U64(options, _)
-            | FieldMappingType::F64(options, _)
-            | FieldMappingType::Date(options, _) => {
-                stored = options.is_stored();
-                indexed = Some(options.is_indexed());
-                fast = options.get_fastfield_cardinality().is_some();
-            }
-            FieldMappingType::Bytes(options, _) => {
-                stored = options.is_stored();
-                indexed = Some(options.is_indexed());
-                fast = options.is_fast();
-            }
-            _ => (),
-        }
-
+    fn from(field_mapping_entry: FieldMappingEntry) -> FieldMappingEntryForSerialization {
+        let type_id = field_mapping_entry
+            .mapping_type
+            .quickwit_field_type()
+            .to_type_id();
+        let field_mapping_json = typed_mapping_to_json_params(field_mapping_entry.mapping_type);
         FieldMappingEntryForSerialization {
-            name: value.name,
-            type_with_cardinality,
-            fast,
-            indexed,
-            record,
-            stored,
-            tokenizer,
-            field_mappings,
-        }
-    }
-}
-
-impl FieldMappingEntryForSerialization {
-    fn is_array(&self) -> bool {
-        self.type_with_cardinality.starts_with("array<")
-            && self.type_with_cardinality.ends_with('>')
-    }
-
-    fn cardinality(&self) -> Cardinality {
-        if self.is_array() {
-            Cardinality::MultiValues
-        } else {
-            Cardinality::SingleValue
-        }
-    }
-
-    fn field_type_str(&self) -> &str {
-        if self.is_array() {
-            &self.type_with_cardinality[6..self.type_with_cardinality.len() - 1]
-        } else {
-            &self.type_with_cardinality
-        }
-    }
-
-    fn new_text(&self) -> anyhow::Result<FieldMappingType> {
-        if self.fast {
-            bail!(
-                "Error when parsing field `{}`: fast=true not yet supported for text field.",
-                self.name
-            )
-        }
-        let mut options = TextOptions::default();
-        if self.indexed.unwrap_or(true) {
-            let mut indexing_options = TextFieldIndexing::default();
-            if let Some(index_option) = self.record {
-                indexing_options = indexing_options.set_index_option(index_option);
-            }
-            if let Some(tokenizer) = &self.tokenizer {
-                indexing_options = indexing_options.set_tokenizer(tokenizer);
-            }
-            options = options.set_indexing_options(indexing_options);
-        } else if self.record.is_some() || self.tokenizer.is_some() {
-            bail!(
-                "Error when parsing `{}`: `record` and `tokenizer` parameters are allowed only if \
-                 indexed is true.",
-                self.name
-            )
-        }
-        if self.stored {
-            options = options.set_stored();
-        }
-        Ok(FieldMappingType::Text(options, self.cardinality()))
-    }
-
-    fn new_i64(&self) -> anyhow::Result<FieldMappingType> {
-        let options = self.int_options()?;
-        Ok(FieldMappingType::I64(options, self.cardinality()))
-    }
-
-    fn new_u64(&self) -> anyhow::Result<FieldMappingType> {
-        let options = self.int_options()?;
-        Ok(FieldMappingType::U64(options, self.cardinality()))
-    }
-
-    fn new_f64(&self) -> anyhow::Result<FieldMappingType> {
-        let options = self.int_options()?;
-        Ok(FieldMappingType::F64(options, self.cardinality()))
-    }
-
-    fn new_date(&self) -> anyhow::Result<FieldMappingType> {
-        let options = self.int_options()?;
-        Ok(FieldMappingType::Date(options, self.cardinality()))
-    }
-
-    fn new_bytes(&self) -> anyhow::Result<FieldMappingType> {
-        self.check_no_text_options()?;
-        let mut options = BytesOptions::default();
-        if self.stored {
-            options = options.set_stored();
-        }
-        if self.indexed.unwrap_or(true) {
-            options = options.set_indexed();
-        }
-        if self.fast {
-            options = options.set_fast();
-        }
-        Ok(FieldMappingType::Bytes(options, self.cardinality()))
-    }
-
-    fn new_object(&self) -> anyhow::Result<FieldMappingType> {
-        if self.record.is_some() || self.tokenizer.is_some() {
-            bail!(
-                "Error when parsing field `{}`: `field_mappings` is the only valid parameter.",
-                self.name
-            )
-        }
-        if self.is_array() {
-            bail!(
-                "Error when parsing field `{}`: array of object is not supported.",
-                self.name
-            )
-        }
-        let field_mappings = self
-            .field_mappings
-            .iter()
-            .map(|entry| FieldMappingEntry::try_from(entry.clone()))
-            .collect::<Result<Vec<_>, _>>()?;
-        if field_mappings.is_empty() {
-            bail!(
-                "Error when parsing field `{}`: object type must have at least one field mapping.",
-                self.name
-            )
-        }
-        Ok(FieldMappingType::Object(field_mappings))
-    }
-
-    fn int_options(&self) -> anyhow::Result<NumericOptions> {
-        self.check_no_text_options()?;
-        let mut options = NumericOptions::default();
-        if self.stored {
-            options = options.set_stored();
-        }
-        // If fast is true, always set cardinality to multivalues to make
-        // simple cardinality changes.
-        if self.fast {
-            options = options.set_fast(self.cardinality());
-        }
-        if self.indexed.unwrap_or(true) {
-            options = options.set_indexed();
-        }
-        Ok(options)
-    }
-
-    fn check_no_text_options(&self) -> anyhow::Result<()> {
-        if self.record.is_some() || self.tokenizer.is_some() {
-            bail!(
-                "Error when parsing `{}`: `record` and `tokenizer` parameters are for text field \
-                 only.",
-                self.name
-            )
-        }
-        Ok(())
-    }
-}
-
-/// Error that may happen when parsing
-/// a document from JSON.
-#[derive(Debug, Error, PartialEq)]
-pub enum DocParsingError {
-    /// The provided string is not valid JSON.
-    #[error("The provided string is not valid JSON")]
-    NotJson(String),
-    /// One of the value could not be parsed.
-    #[error("The field '{0}' could not be parsed: {1}")]
-    ValueError(String, String),
-    /// The json-document contains a field that is not declared in the schema.
-    #[error("The document contains a field that is not declared in the schema: {0:?}")]
-    NoSuchFieldInSchema(String),
-    /// The document contains a array of values but a single value is expected.
-    #[error("The document contains an array of values but a single value is expected: {0:?}")]
-    MultiValuesNotSupported(String),
-    /// The document does not contains a field that is required.
-    #[error("The document must contain field {0:?}. As a fast field, it is implicitly required.")]
-    RequiredFastField(String),
-}
-
-impl From<TantivyDocParser> for DocParsingError {
-    fn from(value: TantivyDocParser) -> Self {
-        match value {
-            TantivyDocParser::InvalidJson(text) => DocParsingError::NoSuchFieldInSchema(text),
-            TantivyDocParser::ValueError(text, error) => {
-                DocParsingError::ValueError(text, format!("{:?}", error))
-            }
+            name: field_mapping_entry.name,
+            type_id,
+            field_mapping_json,
         }
     }
 }
@@ -747,14 +348,15 @@ impl From<TantivyDocParser> for DocParsingError {
 #[cfg(test)]
 mod tests {
     use anyhow::bail;
-    use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
     use matches::matches;
     use serde_json::json;
-    use tantivy::schema::{Cardinality, Value};
+    use tantivy::schema::{Cardinality, IndexRecordOption};
 
     use super::FieldMappingEntry;
+    use crate::default_doc_mapper::field_mapping_entry::{
+        QuickwitJsonOptions, QuickwitTextTokenizer,
+    };
     use crate::default_doc_mapper::FieldMappingType;
-    use crate::DocParsingError;
 
     const TEXT_MAPPING_ENTRY_VALUE: &str = r#"
         {
@@ -762,7 +364,17 @@ mod tests {
             "type": "text",
             "stored": true,
             "record": "basic",
-            "tokenizer": "english"
+            "tokenizer": "en_stem"
+        }
+    "#;
+
+    const TEXT_MAPPING_ENTRY_VALUE_INVALID_TOKENIZER: &str = r#"
+        {
+            "name": "my_field_name",
+            "type": "text",
+            "stored": true,
+            "record": "basic",
+            "tokenizer": "notexist"
         }
     "#;
 
@@ -780,16 +392,29 @@ mod tests {
     "#;
 
     #[test]
+    fn test_deserialize_invalid_text_mapping_entry() -> anyhow::Result<()> {
+        let mapping_entry =
+            serde_json::from_str::<FieldMappingEntry>(TEXT_MAPPING_ENTRY_VALUE_INVALID_TOKENIZER);
+        assert!(mapping_entry.is_err());
+        assert_eq!(
+            mapping_entry.unwrap_err().to_string(),
+            "Error while parsing field `my_field_name`: unknown variant `notexist`, expected one \
+             of `raw`, `default`, `en_stem`"
+                .to_string()
+        );
+        Ok(())
+    }
+
+    #[test]
     fn test_deserialize_text_mapping_entry() -> anyhow::Result<()> {
         let mapping_entry = serde_json::from_str::<FieldMappingEntry>(TEXT_MAPPING_ENTRY_VALUE)?;
         assert_eq!(mapping_entry.name, "my_field_name");
         match mapping_entry.mapping_type {
             FieldMappingType::Text(options, _) => {
-                assert_eq!(options.is_stored(), true);
-                let indexing_options = options
-                    .get_indexing_options()
-                    .expect("should have indexing option");
-                assert_eq!(indexing_options.tokenizer(), "english");
+                assert_eq!(options.stored, true);
+                assert_eq!(options.indexed, true);
+                assert_eq!(options.tokenizer.unwrap().get_name(), "en_stem");
+                assert_eq!(options.record, IndexRecordOption::Basic);
             }
             _ => panic!("wrong property type"),
         }
@@ -797,7 +422,33 @@ mod tests {
     }
 
     #[test]
-    fn test_error_on_text_with_invalid_options() -> anyhow::Result<()> {
+    fn test_deserialize_valid_fieldnorms() -> anyhow::Result<()> {
+        let result = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+        {
+            "name": "my_field_name",
+            "type": "text",
+            "stored": true,
+            "indexed": true,
+            "fieldnorms": true,
+            "record": "basic",
+            "tokenizer": "en_stem"
+        }"#,
+        );
+        match result.unwrap().mapping_type {
+            FieldMappingType::Text(options, _) => {
+                assert_eq!(options.stored, true);
+                assert_eq!(options.indexed, true);
+                assert_eq!(options.fieldnorms, true);
+            }
+            _ => panic!("wrong property type"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_error_on_text_with_invalid_options() {
         let result = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
@@ -813,10 +464,9 @@ mod tests {
         let error = result.unwrap_err();
         assert_eq!(
             error.to_string(),
-            "Error when parsing `my_field_name`: `record` and `tokenizer` parameters are allowed \
-             only if indexed is true."
+            "Error while parsing field `my_field_name`: `record`, `tokenizer`, and `fieldnorms` \
+             parameters are allowed only if indexed is true."
         );
-        Ok(())
     }
 
     #[test]
@@ -839,16 +489,16 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_object_mapping_entry() -> anyhow::Result<()> {
-        let mapping_entry = serde_json::from_str::<FieldMappingEntry>(OBJECT_MAPPING_ENTRY_VALUE)?;
+    fn test_deserialize_object_mapping_entry() {
+        let mapping_entry =
+            serde_json::from_str::<FieldMappingEntry>(OBJECT_MAPPING_ENTRY_VALUE).unwrap();
         assert_eq!(mapping_entry.name, "my_field_name");
         match mapping_entry.mapping_type {
-            FieldMappingType::Object(field_mappings) => {
-                assert_eq!(field_mappings.len(), 1);
+            FieldMappingType::Object(options) => {
+                assert_eq!(options.field_mappings.len(), 1);
             }
             _ => panic!("wrong property type"),
         }
-        Ok(())
     }
 
     #[test]
@@ -866,13 +516,13 @@ mod tests {
         let error = result.unwrap_err();
         assert_eq!(
             error.to_string(),
-            "Error when parsing field `my_field_name`: object type must have at least one field \
+            "Error while parsing field `my_field_name`: object type must have at least one field \
              mapping."
         );
     }
 
     #[test]
-    fn test_deserialize_field_with_unknown_type() {
+    fn test_deserialize_mapping_with_unknown_type() {
         let result = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
@@ -890,7 +540,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_i64_field_with_invalid_name() {
+    fn test_deserialize_i64_mapping_with_invalid_name() {
         assert!(serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
@@ -905,7 +555,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_i64_field_with_text_options() {
+    fn test_deserialize_i64_parsing_error_with_text_options() {
         let result = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
@@ -915,17 +565,16 @@ mod tests {
             }
             "#,
         );
-        assert!(result.is_err());
         let error = result.unwrap_err();
         assert_eq!(
             error.to_string(),
-            "Error when parsing `my_field_name`: `record` and `tokenizer` parameters are for text \
-             field only."
+            "Error while parsing field `my_field_name`: unknown field `tokenizer`, expected one \
+             of `stored`, `indexed`, `fast`"
         );
     }
 
     #[test]
-    fn test_deserialize_multivalued_i64_field() -> anyhow::Result<()> {
+    fn test_deserialize_i64_mapping_multivalued() -> anyhow::Result<()> {
         let result = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
@@ -937,9 +586,9 @@ mod tests {
 
         match result.mapping_type {
             FieldMappingType::I64(options, cardinality) => {
-                assert_eq!(options.is_indexed(), true); // default
-                assert_eq!(options.is_fast(), false); // default
-                assert_eq!(options.is_stored(), true); // default
+                assert_eq!(options.indexed, true); // default
+                assert_eq!(options.fast, false); // default
+                assert_eq!(options.stored, true); // default
                 assert_eq!(cardinality, Cardinality::MultiValues);
             }
             _ => bail!("Wrong type"),
@@ -949,7 +598,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_singlevalued_i64_field() -> anyhow::Result<()> {
+    fn test_deserialize_i64_mappping_singlevalued() -> anyhow::Result<()> {
         let result = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
@@ -961,9 +610,9 @@ mod tests {
 
         match result.mapping_type {
             FieldMappingType::I64(options, cardinality) => {
-                assert_eq!(options.is_indexed(), true); // default
-                assert_eq!(options.is_fast(), false); // default
-                assert_eq!(options.is_stored(), true); // default
+                assert_eq!(options.indexed, true); // default
+                assert_eq!(options.fast, false); // default
+                assert_eq!(options.stored, true); // default
                 assert_eq!(cardinality, Cardinality::SingleValue);
             }
             _ => bail!("Wrong type"),
@@ -973,7 +622,7 @@ mod tests {
     }
 
     #[test]
-    fn test_serialize_i64_field() -> anyhow::Result<()> {
+    fn test_serialize_i64_mapping() -> anyhow::Result<()> {
         let entry = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
@@ -982,85 +631,22 @@ mod tests {
             }
             "#,
         )?;
-        let entry_str = serde_json::to_string(&entry)?;
+        let entry_str = serde_json::to_value(&entry)?;
         assert_eq!(
             entry_str,
-            "{\"name\":\"my_field_name\",\"type\":\"i64\",\"stored\":true,\"fast\":false,\"\
-             indexed\":true}"
+            serde_json::json!({
+                "name": "my_field_name",
+                "type": "i64",
+                "stored": true,
+                "fast": false,
+                "indexed": true
+            })
         );
         Ok(())
     }
 
     #[test]
-    fn test_parse_i64() -> anyhow::Result<()> {
-        let entry = serde_json::from_str::<FieldMappingEntry>(
-            r#"
-            {
-                "name": "my_field_name",
-                "type": "i64"
-            }
-            "#,
-        )?;
-
-        // Successful parsing
-        let parsed_value = entry.parse(json!(10))?;
-        assert_eq!(parsed_value.len(), 1);
-        assert_eq!(parsed_value[0].0.field_name(), "my_field_name".to_owned());
-        assert_eq!(parsed_value[0].1, Value::I64(10));
-
-        let parsed_value = entry.parse(json!(null));
-        assert!(parsed_value.unwrap().is_empty());
-
-        // Failed parsing
-        let parsed_error = entry.parse(json!(1.2));
-        assert!(matches!(
-            parsed_error,
-            Err(DocParsingError::ValueError(_, _))
-        ));
-        let parsed_error = entry.parse(json!([1, 2]));
-        assert!(matches!(
-            parsed_error,
-            Err(DocParsingError::MultiValuesNotSupported(_))
-        ));
-        let parsed_error = entry.parse(json!(9223372036854775808_u64));
-        assert!(matches!(
-            parsed_error,
-            Err(DocParsingError::ValueError(_, _))
-        ));
-        let parsed_error = entry.parse(json!("12"));
-        assert!(matches!(
-            parsed_error,
-            Err(DocParsingError::ValueError(_, _))
-        ));
-        let parsed_error = entry.parse(json!("{}"));
-        assert!(matches!(
-            parsed_error,
-            Err(DocParsingError::ValueError(_, _))
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_mutivalued_i64() -> anyhow::Result<()> {
-        let entry = serde_json::from_str::<FieldMappingEntry>(
-            r#"
-            {
-                "name": "my_field_name",
-                "type": "array<i64>"
-            }
-            "#,
-        )?;
-
-        // Successful parsing
-        let parsed_value = entry.parse(json!([10, 20]))?;
-        assert_eq!(parsed_value.len(), 2);
-        assert_eq!(parsed_value[0].1, Value::I64(10));
-        assert_eq!(parsed_value[1].1, Value::I64(20));
-        Ok(())
-    }
-
-    #[test]
-    fn test_deserialize_u64_field_with_wrong_options() {
+    fn test_deserialize_u64_mapping_with_wrong_options() {
         assert_eq!(
             serde_json::from_str::<FieldMappingEntry>(
                 r#"
@@ -1072,13 +658,13 @@ mod tests {
             )
             .unwrap_err()
             .to_string(),
-            "Error when parsing `my_field_name`: `record` and `tokenizer` parameters are for text \
-             field only."
+            "Error while parsing field `my_field_name`: unknown field `tokenizer`, expected one \
+             of `stored`, `indexed`, `fast`"
         );
     }
 
     #[test]
-    fn test_deserialize_multivalued_u64_field() -> anyhow::Result<()> {
+    fn test_deserialize_u64_u64_mapping_multivalued() {
         let result = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
@@ -1086,23 +672,21 @@ mod tests {
                 "type": "array<u64>"
             }
             "#,
-        )?;
+        )
+        .unwrap();
 
-        match result.mapping_type {
-            FieldMappingType::U64(options, cardinality) => {
-                assert_eq!(options.is_indexed(), true); // default
-                assert_eq!(options.is_fast(), false); // default
-                assert_eq!(options.is_stored(), true); // default
-                assert_eq!(cardinality, Cardinality::MultiValues);
-            }
-            _ => bail!("Wrong type"),
+        if let FieldMappingType::U64(options, cardinality) = result.mapping_type {
+            assert_eq!(options.indexed, true); // default
+            assert_eq!(options.fast, false); // default
+            assert_eq!(options.stored, true); // default
+            assert_eq!(cardinality, Cardinality::MultiValues);
+        } else {
+            panic!("Wrong type");
         }
-
-        Ok(())
     }
 
     #[test]
-    fn test_deserialize_singlevalued_u64_field() -> anyhow::Result<()> {
+    fn test_deserialize_u64_mapping_singlevalued() {
         let result = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
@@ -1110,23 +694,20 @@ mod tests {
                 "type": "u64"
             }
             "#,
-        )?;
-
-        match result.mapping_type {
-            FieldMappingType::U64(options, cardinality) => {
-                assert_eq!(options.is_indexed(), true); // default
-                assert_eq!(options.is_fast(), false); // default
-                assert_eq!(options.is_stored(), true); // default
-                assert_eq!(cardinality, Cardinality::SingleValue);
-            }
-            _ => bail!("Wrong type"),
+        )
+        .unwrap();
+        if let FieldMappingType::U64(options, cardinality) = result.mapping_type {
+            assert_eq!(options.indexed, true); // default
+            assert_eq!(options.fast, false); // default
+            assert_eq!(options.stored, true); // default
+            assert_eq!(cardinality, Cardinality::SingleValue);
+        } else {
+            panic!("Wrong type");
         }
-
-        Ok(())
     }
 
     #[test]
-    fn test_serialize_u64_field() -> anyhow::Result<()> {
+    fn test_serialize_u64_mapping() {
         let entry = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
@@ -1134,86 +715,23 @@ mod tests {
                 "type": "u64"
             }
             "#,
-        )?;
-        let entry_str = serde_json::to_string(&entry)?;
+        )
+        .unwrap();
+        let entry_str = serde_json::to_value(&entry).unwrap();
         assert_eq!(
             entry_str,
-            "{\"name\":\"my_field_name\",\"type\":\"u64\",\"stored\":true,\"fast\":false,\"\
-             indexed\":true}"
+            serde_json::json!({
+                "name": "my_field_name",
+                "type":"u64",
+                "stored": true,
+                "fast": false,
+                "indexed": true
+            })
         );
-        Ok(())
     }
 
     #[test]
-    fn test_parse_u64() -> anyhow::Result<()> {
-        let entry = serde_json::from_str::<FieldMappingEntry>(
-            r#"
-            {
-                "name": "my_field_name",
-                "type": "u64"
-            }
-            "#,
-        )?;
-
-        // Successful parsing
-        let parsed_value = entry.parse(json!(10))?;
-        assert_eq!(parsed_value.len(), 1);
-        assert_eq!(parsed_value[0].0.field_name(), "my_field_name".to_owned());
-        assert_eq!(parsed_value[0].1, Value::U64(10));
-
-        let parsed_value = entry.parse(json!(null));
-        assert!(parsed_value.unwrap().is_empty());
-
-        // Failed parsing
-        let parsed_error = entry.parse(json!(1.2));
-        assert!(matches!(
-            parsed_error,
-            Err(DocParsingError::ValueError(_, _))
-        ));
-        let parsed_error = entry.parse(json!(-3));
-        assert!(matches!(
-            parsed_error,
-            Err(DocParsingError::ValueError(_, _))
-        ));
-        let parsed_error = entry.parse(json!([1, 2]));
-        assert!(matches!(
-            parsed_error,
-            Err(DocParsingError::MultiValuesNotSupported(_))
-        ));
-        let parsed_error = entry.parse(json!("12"));
-        assert!(matches!(
-            parsed_error,
-            Err(DocParsingError::ValueError(_, _))
-        ));
-        let parsed_error = entry.parse(json!("{}"));
-        assert!(matches!(
-            parsed_error,
-            Err(DocParsingError::ValueError(_, _))
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_mutivalued_u64() -> anyhow::Result<()> {
-        let entry = serde_json::from_str::<FieldMappingEntry>(
-            r#"
-            {
-                "name": "my_field_name",
-                "type": "array<u64>"
-            }
-            "#,
-        )?;
-
-        // Successful parsing
-        let parsed_value = entry.parse(json!([10, 20]))?;
-        assert_eq!(parsed_value.len(), 2);
-        assert_eq!(parsed_value[0].1, Value::U64(10));
-        assert_eq!(parsed_value[1].1, Value::U64(20));
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_f64() -> anyhow::Result<()> {
+    fn test_parse_f64_mapping() {
         let entry = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
@@ -1221,54 +739,23 @@ mod tests {
                 "type": "f64"
             }
             "#,
-        )?;
-
-        // Successful parsing
-        let parsed_value = entry.parse(json!(10.2))?;
-        assert_eq!(parsed_value[0].0.field_name(), "my_field_name");
-        assert_eq!(parsed_value[0].1, Value::F64(10.2));
-
-        let parsed_value = entry.parse(json!(10))?;
-        assert_eq!(parsed_value[0].1, Value::F64(10.0));
-
-        let parsed_value = entry.parse(json!(null));
-        assert!(parsed_value.unwrap().is_empty());
-
-        // Failed parsing
-        let parsed_error = entry.parse(json!("123"));
-        assert!(matches!(
-            parsed_error,
-            Err(DocParsingError::ValueError(_, _))
-        ));
-        let parsed_error = entry.parse(json!([1, 2]));
-        assert!(matches!(
-            parsed_error,
-            Err(DocParsingError::MultiValuesNotSupported(_))
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_mutivalued_f64() -> anyhow::Result<()> {
-        let entry = serde_json::from_str::<FieldMappingEntry>(
-            r#"
-            {
+        )
+        .unwrap();
+        let entry_deserser = serde_json::to_value(&entry).unwrap();
+        assert_eq!(
+            entry_deserser,
+            json!({
                 "name": "my_field_name",
-                "type": "array<f64>"
-            }
-            "#,
-        )?;
-
-        // Successful parsing
-        let parsed_value = entry.parse(json!([10, 20.5]))?;
-        assert_eq!(parsed_value.len(), 2);
-        assert_eq!(parsed_value[0].1, Value::F64(10.0));
-        assert_eq!(parsed_value[1].1, Value::F64(20.5));
-        Ok(())
+                "type":"f64",
+                "stored": true,
+                "fast": false,
+                "indexed": true
+            })
+        );
     }
 
     #[test]
-    fn test_parse_text() -> anyhow::Result<()> {
+    fn test_parse_text_mapping() {
         let entry = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
@@ -1276,32 +763,25 @@ mod tests {
                 "type": "text"
             }
             "#,
-        )?;
-
-        // Successful parsing
-        let parsed_value = entry.parse(json!("bacon and eggs"))?;
-        assert_eq!(parsed_value[0].0.field_name(), "my_field_name");
-        assert_eq!(parsed_value[0].1, Value::Str("bacon and eggs".to_owned()));
-
-        let parsed_value = entry.parse(json!(null));
-        assert!(parsed_value.unwrap().is_empty());
-
-        // Failed parsing
-        let parsed_error = entry.parse(json!(123));
-        assert!(matches!(
-            parsed_error,
-            Err(DocParsingError::ValueError(_, _))
-        ));
-        let parsed_error = entry.parse(json!(["1"]));
-        assert!(matches!(
-            parsed_error,
-            Err(DocParsingError::MultiValuesNotSupported(_))
-        ));
-        Ok(())
+        )
+        .unwrap();
+        let entry_deserser = serde_json::to_value(&entry).unwrap();
+        assert_eq!(
+            entry_deserser,
+            json!({
+                "name": "my_field_name",
+                "type": "text",
+                "fast": false,
+                "stored": true,
+                "indexed": true,
+                "fieldnorms": false,
+                "record": "basic",
+            })
+        );
     }
 
     #[test]
-    fn test_parse_mutivalued_text() -> anyhow::Result<()> {
+    fn test_parse_text_mapping_multivalued() {
         let entry = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
@@ -1309,18 +789,25 @@ mod tests {
                 "type": "array<text>"
             }
             "#,
-        )?;
-
-        // Successful parsing
-        let parsed_value = entry.parse(json!(["one", "two"]))?;
-        assert_eq!(parsed_value.len(), 2);
-        assert_eq!(parsed_value[0].1, Value::Str("one".to_owned()));
-        assert_eq!(parsed_value[1].1, Value::Str("two".to_owned()));
-        Ok(())
+        )
+        .unwrap();
+        let entry_deserser = serde_json::to_value(&entry).unwrap();
+        assert_eq!(
+            entry_deserser,
+            json!({
+                "name": "my_field_name",
+                "type": "array<text>",
+                "stored": true,
+                "indexed": true,
+                "fieldnorms": false,
+                "fast": false,
+                "record": "basic",
+            })
+        );
     }
 
     #[test]
-    fn test_parse_date() -> anyhow::Result<()> {
+    fn test_parse_date_mapping() {
         let entry = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
@@ -1328,37 +815,23 @@ mod tests {
                 "type": "date"
             }
             "#,
-        )?;
-
-        // Successful parsing
-        let parsed_value = entry.parse(json!("2021-12-19T16:39:57-01:00"))?;
-        let datetime = NaiveDateTime::new(
-            NaiveDate::from_ymd(2021, 12, 19),
-            NaiveTime::from_hms(17, 39, 57),
+        )
+        .unwrap();
+        let entry_deserser = serde_json::to_value(&entry).unwrap();
+        assert_eq!(
+            entry_deserser,
+            json!({
+                "name": "my_field_name",
+                "type": "date",
+                "stored": true,
+                "indexed": true,
+                "fast": false,
+            })
         );
-        let datetime_utc = Utc.from_utc_datetime(&datetime);
-        assert_eq!(parsed_value.len(), 1);
-        assert_eq!(parsed_value[0].1, Value::Date(datetime_utc));
-
-        let parsed_value = entry.parse(json!(null));
-        assert!(parsed_value.unwrap().is_empty());
-
-        // Failed parsing
-        let parsed_error = entry.parse(json!(123));
-        assert!(matches!(
-            parsed_error,
-            Err(DocParsingError::ValueError(_, _))
-        ));
-        let parsed_error = entry.parse(json!(["2021-12-19T16:39:57-08:00"]));
-        assert!(matches!(
-            parsed_error,
-            Err(DocParsingError::MultiValuesNotSupported(_))
-        ));
-        Ok(())
     }
 
     #[test]
-    fn test_parse_mutivalued_date() -> anyhow::Result<()> {
+    fn test_parse_date_arr_mapping() {
         let entry = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
@@ -1366,19 +839,23 @@ mod tests {
                 "type": "array<date>"
             }
             "#,
-        )?;
-
-        // Successful parsing
-        let parsed_value = entry.parse(json!([
-            "2021-12-19T16:39:57-01:00",
-            "2021-12-20T16:39:57-01:00"
-        ]))?;
-        assert_eq!(parsed_value.len(), 2);
-        Ok(())
+        )
+        .unwrap();
+        let entry_deserser = serde_json::to_value(&entry).unwrap();
+        assert_eq!(
+            entry_deserser,
+            json!({
+                "name": "my_field_name",
+                "type": "array<date>",
+                "stored": true,
+                "indexed": true,
+                "fast": false,
+            })
+        );
     }
 
     #[test]
-    fn test_parse_bytes() -> anyhow::Result<()> {
+    fn test_parse_bytes_mapping() {
         let entry = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
@@ -1386,35 +863,23 @@ mod tests {
                 "type": "bytes"
             }
             "#,
-        )?;
-
-        // Successful parsing
-        let parsed_value = entry.parse(json!("dGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHN0cmluZw=="))?;
-        assert_eq!(parsed_value.len(), 1);
+        )
+        .unwrap();
+        let entry_deserser = serde_json::to_value(&entry).unwrap();
         assert_eq!(
-            parsed_value[0].1,
-            Value::Bytes("this is a base64 encoded string".as_bytes().to_vec())
+            entry_deserser,
+            json!({
+                "name": "my_field_name",
+                "type": "bytes",
+                "stored": true,
+                "indexed": true,
+                "fast": false,
+            })
         );
-
-        let parsed_value = entry.parse(json!(null));
-        assert!(parsed_value.unwrap().is_empty());
-
-        // Failed parsing
-        let parsed_error = entry.parse(json!("not base64 encoded string"));
-        assert!(matches!(
-            parsed_error,
-            Err(DocParsingError::ValueError(_, _))
-        ));
-        let parsed_error = entry.parse(json!(["dGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHN0cmluZw=="]));
-        assert!(matches!(
-            parsed_error,
-            Err(DocParsingError::MultiValuesNotSupported(_))
-        ));
-        Ok(())
     }
 
     #[test]
-    fn test_parse_mutivalued_bytes() -> anyhow::Result<()> {
+    fn test_parse_bytes_mapping_arr() {
         let entry = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
@@ -1422,14 +887,95 @@ mod tests {
                 "type": "array<bytes>"
             }
             "#,
-        )?;
+        )
+        .unwrap();
+        let entry_deserser = serde_json::to_value(&entry).unwrap();
+        assert_eq!(
+            entry_deserser,
+            json!({
+                "name": "my_field_name",
+                "type": "array<bytes>",
+                "stored": true,
+                "indexed": true,
+                "fast": false,
+            })
+        );
+    }
 
-        // Successful parsing
-        let parsed_value = entry.parse(json!([
-            "dGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHN0cmluZw==",
-            "dGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHN0cmluZw=="
-        ]))?;
-        assert_eq!(parsed_value.len(), 2);
-        Ok(())
+    #[test]
+    fn test_parse_bytes_mapping_arr_and_fast_forbidden() {
+        let err = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "array<bytes>",
+                "fast": true
+            }
+            "#,
+        )
+        .err()
+        .unwrap();
+        assert_eq!(
+            err.to_string(),
+            "Error while parsing field `my_field_name`: fast field is not allowed for \
+             array<bytes>.",
+        );
+    }
+
+    #[test]
+    fn test_parse_json_mapping_singlevalue() {
+        let field_mapping_entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "type": "json",
+                "name": "my_json_field",
+                "stored": true
+            }
+            "#,
+        )
+        .unwrap();
+        let expected_json_options = QuickwitJsonOptions {
+            indexed: true,
+            tokenizer: QuickwitTextTokenizer::Default,
+            record: IndexRecordOption::Basic,
+            stored: true,
+        };
+        assert_eq!(&field_mapping_entry.name, "my_json_field");
+        assert!(
+            matches!(field_mapping_entry.mapping_type, FieldMappingType::Json(json_config,
+            Cardinality::SingleValue) if json_config == expected_json_options)
+        );
+    }
+
+    #[test]
+    fn test_quickwit_json_options_default_tokenizer_is_raw() {
+        let quickwit_json_options = QuickwitJsonOptions::default();
+        assert_eq!(quickwit_json_options.tokenizer, QuickwitTextTokenizer::Raw);
+    }
+
+    #[test]
+    fn test_parse_json_mapping_multivalued() {
+        let field_mapping_entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "type": "array<json>",
+                "name": "my_json_field_multi",
+                "tokenizer": "raw",
+                "stored": false
+            }
+            "#,
+        )
+        .unwrap();
+        let expected_json_options = QuickwitJsonOptions {
+            indexed: true,
+            tokenizer: QuickwitTextTokenizer::Raw,
+            record: IndexRecordOption::Basic,
+            stored: false,
+        };
+        assert_eq!(&field_mapping_entry.name, "my_json_field_multi");
+        assert!(
+            matches!(field_mapping_entry.mapping_type, FieldMappingType::Json(json_config,
+    Cardinality::MultiValues) if json_config == expected_json_options)
+        );
     }
 }

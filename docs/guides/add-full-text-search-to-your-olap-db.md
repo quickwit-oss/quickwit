@@ -4,7 +4,7 @@ sidebar_position: 2
 ---
 
 
-This guide will help you add full-text search to a well-known OLAP database, Clickhouse, using the Quickwit search streaming feature. Indeed Quickwit exposes a REST endpoint that streams ids or whatever attributes matching a search query **extremely fast** (up to 50 million in 1 second), and Clickhouse can easily use them with joins queries. 
+This guide will help you add full-text search to a well-known OLAP database, Clickhouse, using the Quickwit search streaming feature. Indeed Quickwit exposes a REST endpoint that streams ids or whatever attributes matching a search query **extremely fast** (up to 50 million in 1 second), and Clickhouse can easily use them with joins queries.
 
 We will take the [Github archive dataset](https://www.gharchive.org/), which gathers more than 3 billion Github events: `WatchEvent`, `PullRequestEvent`, `IssuesEvent`... You can dive into this [great analysis](https://ghe.clickhouse.tech/) made by Clickhouse to have a good understanding of the dataset. We also took strong inspiration from this work, and we are very grateful to them for sharing this.
 
@@ -48,7 +48,10 @@ We don't need to index all fields described above as Quickwit. The `title` and `
 ```yaml title="gh-archive-index-config.yaml"
 version: 0
 index_id: gh-archive
-index_uri: INDEX_URI
+# By default, the index will be stored in your data directory,
+# but you can store it on s3 or on a custom path as follows:
+# index_uri: s3://my-bucket/gh-archive
+# index_uri: file://my-big-ssd-harddrive/
 doc_mapping:
   field_mappings:
     - name: id
@@ -70,7 +73,6 @@ doc_mapping:
       record: position
 search_settings:
   default_search_fields: [title, body]
-}
 ```
 
 ```bash
@@ -97,7 +99,7 @@ You can check it's working by using the `search` command and looking for `tantiv
 ## Start a searcher
 
 ```bash
-./quickwit service run searcher
+./quickwit run --service searcher
 ```
 
 This command will start an HTTP server with a [REST API](../reference/rest-api.md). We are now
@@ -163,10 +165,10 @@ gunzip -c gh-archive-2021-12.json.gz | clickhouse-client -d gh-archive --query="
 Let's check it's working:
 ```SQL
 # Top repositories by stars
-SELECT repo_name, count() AS stars 
-FROM github_events 
-WHERE event_type = 'WatchEvent' 
-GROUP BY repo_name 
+SELECT repo_name, count() AS stars
+FROM github_events
+WHERE event_type = 'WatchEvent'
+GROUP BY repo_name
 ORDER BY stars DESC LIMIT 5
 
 ┌─repo_name────────────┬─stars─┐
@@ -181,7 +183,7 @@ ORDER BY stars DESC LIMIT 5
 ### Use Quickwit search inside Clickhouse
 
 Clickhouse has an exciting feature called [URL Table Engine](https://clickhouse.com/docs/en/engines/table-engines/special/url/) that queries data from a remote HTTP/HTTPS server.
-This is precisely what we need: by creating a table pointing to Quickwit search stream endpoint, we will fetch ids that match a query from Clickhouse. 
+This is precisely what we need: by creating a table pointing to Quickwit search stream endpoint, we will fetch ids that match a query from Clickhouse.
 
 ```SQL
 SELECT count(*) FROM url('http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=log4j+OR+log4shell&fastField=id&outputFormat=clickHouseRowBinary', RowBinary, 'id UInt64')

@@ -22,11 +22,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, AsyncActor};
+use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_metastore::Metastore;
 use tracing::info;
 
-use crate::run_garbage_collect;
+use crate::garbage_collection::run_garbage_collect;
 use crate::split_store::IndexingSplitStore;
 
 const RUN_INTERVAL: Duration = Duration::from_secs(60); // 1 minutes
@@ -52,6 +52,9 @@ pub struct GarbageCollectorCounters {
     pub num_deleted_bytes: usize,
 }
 
+#[derive(Debug)]
+struct Loop;
+
 /// An actor for collecting garbage periodically from an index.
 pub struct GarbageCollector {
     index_id: String,
@@ -75,8 +78,8 @@ impl GarbageCollector {
     }
 }
 
+#[async_trait]
 impl Actor for GarbageCollector {
-    type Message = ();
     type ObservableState = GarbageCollectorCounters;
 
     fn observable_state(&self) -> Self::ObservableState {
@@ -86,20 +89,22 @@ impl Actor for GarbageCollector {
     fn name(&self) -> String {
         "GarbageCollector".to_string()
     }
-}
 
-#[async_trait]
-impl AsyncActor for GarbageCollector {
     async fn initialize(
         &mut self,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
-        self.process_message((), ctx).await
+        self.handle(Loop, ctx).await
     }
+}
 
-    async fn process_message(
+#[async_trait]
+impl Handler<Loop> for GarbageCollector {
+    type Reply = ();
+
+    async fn handle(
         &mut self,
-        _: (),
+        _: Loop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         info!("garbage-collect-operation");
@@ -130,7 +135,7 @@ impl AsyncActor for GarbageCollector {
                 .sum::<usize>();
         }
 
-        ctx.schedule_self_msg(RUN_INTERVAL, ()).await;
+        ctx.schedule_self_msg(RUN_INTERVAL, Loop).await;
         Ok(())
     }
 }
@@ -212,7 +217,7 @@ mod tests {
             IndexingSplitStore::create_with_no_local_store(Arc::new(mock_storage)),
             Arc::new(mock_metastore),
         );
-        let (_maibox, handler) = universe.spawn_actor(garbage_collect_actor).spawn_async();
+        let (_maibox, handler) = universe.spawn_actor(garbage_collect_actor).spawn();
 
         let state_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(state_after_initialization.num_passes, 1);
@@ -268,7 +273,7 @@ mod tests {
             IndexingSplitStore::create_with_no_local_store(Arc::new(mock_storage)),
             Arc::new(mock_metastore),
         );
-        let (_maibox, handler) = universe.spawn_actor(garbage_collect_actor).spawn_async();
+        let (_maibox, handler) = universe.spawn_actor(garbage_collect_actor).spawn();
 
         let state_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(state_after_initialization.num_passes, 1);

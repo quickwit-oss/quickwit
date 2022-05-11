@@ -30,6 +30,8 @@ use predicates::prelude::*;
 use quickwit_cli::index::{create_index_cli, search_index, CreateIndexArgs, SearchIndexArgs};
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
+use quickwit_core::get_cache_directory_path;
+use quickwit_indexing::source::INGEST_SOURCE_ID;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore};
 use serde_json::{json, Number, Value};
 use serial_test::serial;
@@ -50,13 +52,14 @@ fn create_logs_index(test_env: &TestEnv) {
     .success();
 }
 
-fn ingest_docs(input_path: &Path, test_env: &TestEnv) {
+fn ingest_docs_with_options(input_path: &Path, test_env: &TestEnv, options: &str) {
     make_command(
         format!(
-            "index ingest --index {} --input-path {} --config {}",
+            "index ingest --index {} --input-path {} --config {} {}",
             test_env.index_id,
             input_path.display(),
             test_env.resource_files["config"].display(),
+            options
         )
         .as_str(),
     )
@@ -67,6 +70,10 @@ fn ingest_docs(input_path: &Path, test_env: &TestEnv) {
     .stdout(predicate::str::contains(
         "Now, you can query the index with",
     ));
+}
+
+fn ingest_docs(input_path: &Path, test_env: &TestEnv) {
+    ingest_docs_with_options(input_path, test_env, "");
 }
 
 #[test]
@@ -85,6 +92,7 @@ async fn test_cmd_create() -> Result<()> {
     create_logs_index(&test_env);
     let index_metadata = test_env
         .metastore()
+        .await?
         .index_metadata(&test_env.index_id)
         .await
         .unwrap();
@@ -105,6 +113,7 @@ async fn test_cmd_create() -> Result<()> {
     .success();
     let index_metadata = test_env
         .metastore()
+        .await?
         .index_metadata(&test_env.index_id)
         .await
         .unwrap();
@@ -186,11 +195,32 @@ fn test_cmd_ingest_on_non_existing_file() -> Result<()> {
 }
 
 #[test]
+fn test_cmd_ingest_keep_cache() -> Result<()> {
+    let index_id = append_random_suffix("test-index-keep-cache");
+    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    create_logs_index(&test_env);
+
+    ingest_docs_with_options(
+        test_env.resource_files["logs"].as_path(),
+        &test_env,
+        "--keep-cache",
+    );
+
+    // Ensure cache directory is not empty.
+    let cache_directory_path = get_cache_directory_path(
+        &test_env.data_dir_path,
+        &test_env.index_id,
+        INGEST_SOURCE_ID,
+    );
+    assert!(cache_directory_path.read_dir()?.next().is_some());
+    Ok(())
+}
+
+#[test]
 fn test_cmd_ingest_simple() -> Result<()> {
     let index_id = append_random_suffix("test-index-simple");
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
     create_logs_index(&test_env);
-
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
     // Using piped input
@@ -209,7 +239,15 @@ fn test_cmd_ingest_simple() -> Result<()> {
     .stdout(predicate::str::contains("Indexed"))
     .stdout(predicate::str::contains("documents in"))
     .stdout(predicate::str::contains("Now, you can query the index"));
-    println!("piped input");
+
+    // Ensure cache directory is empty.
+    let cache_directory_path = get_cache_directory_path(
+        &test_env.data_dir_path,
+        &test_env.index_id,
+        INGEST_SOURCE_ID,
+    );
+    assert!(cache_directory_path.read_dir()?.next().is_none());
+
     Ok(())
 }
 
@@ -322,7 +360,7 @@ fn test_cmd_search() -> Result<()> {
     .stdout(predicate::function(|output: &[u8]| {
         println!("{}", from_utf8(output).unwrap());
         let result: Value = serde_json::from_slice(output).unwrap();
-        result["numHits"] == Value::Number(Number::from(2i64))
+        result["num_hits"] == Value::Number(Number::from(2i64))
     }));
 
     // search with tag pruning
@@ -340,7 +378,7 @@ fn test_cmd_search() -> Result<()> {
     .success()
     .stdout(predicate::function(|output: &[u8]| {
         let result: Value = serde_json::from_slice(output).unwrap();
-        result["numHits"] == Value::Number(Number::from(1i64))
+        result["num_hits"] == Value::Number(Number::from(1i64))
     }));
 
     // search with tag pruning
@@ -358,7 +396,7 @@ fn test_cmd_search() -> Result<()> {
     .success()
     .stdout(predicate::function(|output: &[u8]| {
         let result: Value = serde_json::from_slice(output).unwrap();
-        result["numHits"] == Value::Number(Number::from(0i64))
+        result["num_hits"] == Value::Number(Number::from(0i64))
     }));
 
     Ok(())
@@ -437,6 +475,7 @@ async fn test_cmd_delete() -> Result<()> {
     .success();
     assert!(test_env
         .metastore()
+        .await?
         .index_metadata(&test_env.index_id)
         .await
         .is_err(),);
@@ -558,7 +597,7 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
     create_logs_index(&test_env);
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
-    let metastore = test_env.metastore();
+    let metastore = test_env.metastore().await?;
     let splits = metastore.list_all_splits(&test_env.index_id).await?;
     assert_eq!(splits.len(), 1);
     make_command(
@@ -737,7 +776,7 @@ async fn test_all_local_index() -> Result<()> {
     // serve & api-search
     let mut server_process = spawn_command(
         format!(
-            "service run searcher --config {}",
+            "run --service searcher --config {}",
             test_env.resource_files["config"].display(),
         )
         .as_str(),
@@ -755,10 +794,10 @@ async fn test_all_local_index() -> Result<()> {
 
     let result: Value =
         serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
-    assert_eq!(result["numHits"], Value::Number(Number::from(2i64)));
+    assert_eq!(result["num_hits"], Value::Number(Number::from(2i64)));
 
     let search_stream_response = reqwest::get(format!(
-        "http://127.0.0.1:{}/api/v1/{}/search/stream?query=level:info&outputFormat=csv&fastField=ts",
+        "http://127.0.0.1:{}/api/v1/{}/search/stream?query=level:info&output_format=csv&fast_field=ts",
         test_env.rest_listen_port,
         test_env.index_id
     ))
@@ -808,6 +847,7 @@ async fn test_cmd_all_with_s3_localstack_cli() -> Result<()> {
 
     test_env
         .metastore()
+        .await?
         .index_metadata(&test_env.index_id)
         .await
         .unwrap();
@@ -827,14 +867,14 @@ async fn test_cmd_all_with_s3_localstack_cli() -> Result<()> {
     .success()
     .stdout(predicate::function(|output: &[u8]| {
         let result: Value = serde_json::from_slice(output).unwrap();
-        result["numHits"] == Value::Number(Number::from(2i64))
+        result["num_hits"] == Value::Number(Number::from(2i64))
     }));
 
     // serve & api-search
     // TODO: ditto.
     let mut server_process = spawn_command(
         format!(
-            "service run searcher --config {}",
+            "run --service searcher --config {}",
             test_env.resource_files["config"].display(),
         )
         .as_str(),
@@ -851,7 +891,7 @@ async fn test_cmd_all_with_s3_localstack_cli() -> Result<()> {
     .await?;
     let result: Value =
         serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
-    assert_eq!(result["numHits"], Value::Number(Number::from(2i64)));
+    assert_eq!(result["num_hits"], Value::Number(Number::from(2i64)));
 
     server_process.kill().unwrap();
 
@@ -893,6 +933,7 @@ async fn test_cmd_all_with_s3_localstack_internal_api() -> Result<()> {
     create_index_cli(args).await?;
     let index_metadata = test_env
         .metastore()
+        .await?
         .index_metadata(&test_env.index_id)
         .await;
     assert_eq!(index_metadata.is_ok(), true);
@@ -911,14 +952,14 @@ async fn test_cmd_all_with_s3_localstack_internal_api() -> Result<()> {
     .success()
     .stdout(predicate::function(|output: &[u8]| {
         let result: Value = serde_json::from_slice(output).unwrap();
-        result["numHits"] == Value::Number(Number::from(2i64))
+        result["num_hits"] == Value::Number(Number::from(2i64))
     }));
 
     // serve & api-search
     // TODO: ditto.
     let mut server_process = spawn_command(
         format!(
-            "service run searcher --config {}",
+            "run --service searcher --config {}",
             test_env.resource_files["config"].display(),
         )
         .as_str(),
@@ -935,7 +976,7 @@ async fn test_cmd_all_with_s3_localstack_internal_api() -> Result<()> {
     .await?;
     let result: Value =
         serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
-    assert_eq!(result["numHits"], Value::Number(Number::from(2i64)));
+    assert_eq!(result["num_hits"], Value::Number(Number::from(2i64)));
 
     server_process.kill().unwrap();
 

@@ -29,7 +29,7 @@ use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
 use regex::Regex;
-use tabled::{Alignment, Header, Modify, Row, Style, Table, Tabled};
+use tabled::{Alignment, Header, Modify, Rotate, Rows, Style, Table, Tabled};
 use tracing::info;
 
 pub mod cli;
@@ -83,7 +83,7 @@ async fn load_quickwit_config(
 /// Optionaly, it takes a `SourceConfig` that will be checked instead
 /// of the index's sources.
 pub async fn run_index_checklist(
-    metastore_uri: &str,
+    metastore_uri: &Uri,
     index_id: &str,
     source_to_check: Option<&SourceConfig>,
 ) -> anyhow::Result<()> {
@@ -110,10 +110,25 @@ pub async fn run_index_checklist(
             ));
         }
     }
-
     run_checklist(checks);
-
     Ok(())
+}
+
+/// Constructs a table for display.
+pub fn make_table<T: Tabled>(
+    header: &str,
+    rows: impl IntoIterator<Item = T>,
+    rotate: bool,
+) -> Table {
+    let mut table = Table::new(rows)
+        .with(Modify::new(Rows::new(1..)).with(Alignment::left()))
+        .with(Style::ascii());
+    if rotate {
+        table = table.with(Rotate::Left)
+    }
+    table
+        .with(Header(header))
+        .with(Modify::new(Rows::single(0)).with(Alignment::center()))
 }
 
 #[cfg(test)]
@@ -142,12 +157,4 @@ mod tests {
         assert!(parse_duration_with_unit("1h30").is_err());
         Ok(())
     }
-}
-
-/// Construct a table for display.
-pub fn make_table<T: Tabled>(header: &str, rows: impl IntoIterator<Item = T>) -> Table {
-    Table::new(rows)
-        .with(Header(header))
-        .with(Modify::new(Row(2..)).with(Alignment::left()))
-        .with(Style::PSQL)
 }

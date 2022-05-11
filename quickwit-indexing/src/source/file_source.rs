@@ -17,8 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::io;
 use std::io::SeekFrom;
+use std::time::Duration;
+use std::{fmt, io};
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -30,11 +31,12 @@ use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncSeekExt, BufReader};
 use tracing::info;
 
-use crate::models::{IndexerMessage, RawDocBatch};
+use crate::actors::Indexer;
+use crate::models::RawDocBatch;
 use crate::source::{Source, SourceContext, TypedSourceFactory};
 
 /// Cut a new batch as soon as we have read BATCH_NUM_BYTES_THRESHOLD.
-const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
+pub(crate) const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
 
 #[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FileSourceCounters {
@@ -44,18 +46,25 @@ pub struct FileSourceCounters {
 }
 
 pub struct FileSource {
+    source_id: String,
     params: FileSourceParams,
     counters: FileSourceCounters,
     reader: BufReader<Box<dyn AsyncRead + Send + Sync + Unpin>>,
+}
+
+impl fmt::Debug for FileSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "FileSource {{ source_id: {} }}", self.source_id)
+    }
 }
 
 #[async_trait]
 impl Source for FileSource {
     async fn emit_batches(
         &mut self,
-        batch_sink: &Mailbox<IndexerMessage>,
+        batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
-    ) -> Result<(), ActorExitStatus> {
+    ) -> Result<Duration, ActorExitStatus> {
         // We collect batches of documents before sending them to the indexer.
         let limit_num_bytes = self.counters.previous_offset + BATCH_NUM_BYTES_THRESHOLD;
         let mut reached_eof = false;
@@ -96,18 +105,18 @@ impl Source for FileSource {
                 checkpoint_delta,
             };
             self.counters.previous_offset = self.counters.current_offset;
-            ctx.send_message(batch_sink, raw_doc_batch.into()).await?;
+            ctx.send_message(batch_sink, raw_doc_batch).await?;
         }
         if reached_eof {
             info!("EOF");
             ctx.send_exit_with_success(batch_sink).await?;
             return Err(ActorExitStatus::Success);
         }
-        Ok(())
+        Ok(Duration::default())
     }
 
     fn name(&self) -> String {
-        "FileSource".to_string()
+        format!("FileSource{{source_id={}}}", self.source_id)
     }
 
     fn observable_state(&self) -> serde_json::Value {
@@ -124,6 +133,7 @@ impl TypedSourceFactory for FileSourceFactory {
 
     // TODO handle checkpoint for files.
     async fn typed_create_source(
+        source_id: String,
         params: FileSourceParams,
         checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
     ) -> anyhow::Result<FileSource> {
@@ -146,6 +156,7 @@ impl TypedSourceFactory for FileSourceFactory {
                 Box::new(tokio::io::stdin())
             };
         let file_source = FileSource {
+            source_id,
             counters: FileSourceCounters {
                 previous_offset: offset,
                 current_offset: offset,
@@ -162,7 +173,7 @@ impl TypedSourceFactory for FileSourceFactory {
 mod tests {
     use std::io::Write;
 
-    use quickwit_actors::{create_test_mailbox, Command, CommandOrMessage, Universe};
+    use quickwit_actors::{create_test_mailbox, Command, Universe};
     use quickwit_metastore::checkpoint::SourceCheckpoint;
 
     use super::*;
@@ -174,14 +185,18 @@ mod tests {
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
         let params = FileSourceParams::file("data/test_corpus.json");
-        let file_source =
-            FileSourceFactory::typed_create_source(params, SourceCheckpoint::default()).await?;
+        let file_source = FileSourceFactory::typed_create_source(
+            "my-file-source".to_string(),
+            params,
+            SourceCheckpoint::default(),
+        )
+        .await?;
         let file_source_actor = SourceActor {
             source: Box::new(file_source),
             batch_sink: mailbox,
         };
         let (_file_source_mailbox, file_source_handle) =
-            universe.spawn_actor(file_source_actor).spawn_async();
+            universe.spawn_actor(file_source_actor).spawn();
         let (actor_termination, counters) = file_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(
@@ -189,15 +204,15 @@ mod tests {
             serde_json::json!({
                 "previous_offset": 70u64,
                 "current_offset": 70u64,
-                "num_lines_processed": 4
+                "num_lines_processed": 4u32
             })
         );
-        let batch = inbox.drain_available_message_or_command_for_test();
-        assert!(matches!(
-            batch[1],
-            CommandOrMessage::Command(Command::ExitWithSuccess)
-        ));
+        let batch = inbox.drain_for_test();
         assert_eq!(batch.len(), 2);
+        assert!(matches!(
+            batch[1].downcast_ref::<Command>().unwrap(),
+            Command::ExitWithSuccess
+        ));
         Ok(())
     }
 
@@ -221,14 +236,18 @@ mod tests {
             .unwrap()
             .to_string_lossy()
             .to_string();
-        let source =
-            FileSourceFactory::typed_create_source(params, SourceCheckpoint::default()).await?;
+        let source = FileSourceFactory::typed_create_source(
+            "my-file-source".to_string(),
+            params,
+            SourceCheckpoint::default(),
+        )
+        .await?;
         let file_source_actor = SourceActor {
             source: Box::new(source),
             batch_sink: mailbox,
         };
         let (_file_source_mailbox, file_source_handle) =
-            universe.spawn_actor(file_source_actor).spawn_async();
+            universe.spawn_actor(file_source_actor).spawn();
         let (actor_termination, counters) = file_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(
@@ -236,17 +255,14 @@ mod tests {
             serde_json::json!({
                 "previous_offset": 700_000u64,
                 "current_offset": 700_000u64,
-                "num_lines_processed": 20_000
+                "num_lines_processed": 20_000u64
             })
         );
-        let indexer_msgs = inbox.drain_available_message_or_command_for_test();
+        let indexer_msgs = inbox.drain_for_test();
         assert_eq!(indexer_msgs.len(), 3);
-        let mut msgs_it = indexer_msgs.into_iter();
-        let msg1 = msgs_it.next().unwrap();
-        let msg2 = msgs_it.next().unwrap();
-        let msg3 = msgs_it.next().unwrap();
-        let batch1 = extract_batch_from_indexer_message(msg1.message().unwrap()).unwrap();
-        let batch2 = extract_batch_from_indexer_message(msg2.message().unwrap()).unwrap();
+        let batch1 = indexer_msgs[0].downcast_ref::<RawDocBatch>().unwrap();
+        let batch2 = indexer_msgs[1].downcast_ref::<RawDocBatch>().unwrap();
+        let command = indexer_msgs[2].downcast_ref::<Command>().unwrap();
         assert_eq!(
             format!("{:?}", &batch1.checkpoint_delta),
             format!(
@@ -262,10 +278,7 @@ mod tests {
             &extract_position_delta(&batch2.checkpoint_delta).unwrap(),
             "00000000000000500010..00000000000000700000"
         );
-        assert!(matches!(
-            &msg3,
-            &CommandOrMessage::Command(Command::ExitWithSuccess)
-        ));
+        assert!(matches!(command, &Command::ExitWithSuccess));
         Ok(())
     }
 
@@ -274,14 +287,6 @@ mod tests {
         let (_left, right) =
             &checkpoint_delta_str[..checkpoint_delta_str.len() - 2].rsplit_once('(')?;
         Some(right.to_string())
-    }
-
-    fn extract_batch_from_indexer_message(indexer_msg: IndexerMessage) -> Option<RawDocBatch> {
-        if let IndexerMessage::Batch(batch) = indexer_msg {
-            Some(batch)
-        } else {
-            None
-        }
     }
 
     #[tokio::test]
@@ -305,13 +310,18 @@ mod tests {
             Position::from(4u64),
         );
         checkpoint.try_apply_delta(checkpoint_delta)?;
-        let source = FileSourceFactory::typed_create_source(params, checkpoint).await?;
+        let source = FileSourceFactory::typed_create_source(
+            "my-file-source".to_string(),
+            params,
+            checkpoint,
+        )
+        .await?;
         let file_source_actor = SourceActor {
             source: Box::new(source),
             batch_sink: mailbox,
         };
         let (_file_source_mailbox, file_source_handle) =
-            universe.spawn_actor(file_source_actor).spawn_async();
+            universe.spawn_actor(file_source_actor).spawn();
         let (actor_termination, counters) = file_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(
@@ -319,13 +329,12 @@ mod tests {
             serde_json::json!({
                 "previous_offset": 290u64,
                 "current_offset": 290u64,
-                "num_lines_processed": 98
+                "num_lines_processed": 98u64
             })
         );
-        let indexer_msgs = inbox.drain_available_message_for_test();
-        assert!(
-            matches!(&indexer_msgs[0], IndexerMessage::Batch(raw_batch) if raw_batch.docs[0].starts_with("2\n"))
-        );
+        let indexer_msgs = inbox.drain_for_test();
+        let received_batch = indexer_msgs[0].downcast_ref::<RawDocBatch>().unwrap();
+        assert!(received_batch.docs[0].starts_with("2\n"));
         Ok(())
     }
 }

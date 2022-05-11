@@ -20,6 +20,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use quickwit_actors::{Mailbox, Universe};
 use quickwit_config::{
     build_doc_mapper, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
 };
@@ -29,8 +30,8 @@ use quickwit_metastore::{
 };
 use quickwit_storage::{Storage, StorageUriResolver};
 
-use crate::actors::{IndexingServer, IndexingServerClient};
-use crate::models::IndexingStatistics;
+use crate::actors::IndexingService;
+use crate::models::{DetachPipeline, IndexingStatistics, SpawnPipeline};
 
 /// Creates a Test environment.
 ///
@@ -38,8 +39,9 @@ use crate::models::IndexingStatistics;
 /// The test index content is entirely in RAM and isolated,
 /// but the construction of the index involves temporary file directory.
 pub struct TestSandbox {
+    _universe: Universe,
     index_id: String,
-    client: IndexingServerClient,
+    indexing_server_mailbox: Mailbox<IndexingService>,
     doc_mapper: Arc<dyn DocMapper>,
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
@@ -82,15 +84,20 @@ impl TestSandbox {
         metastore.create_index(index_meta.clone()).await?;
         let storage_resolver = StorageUriResolver::for_test();
         let storage = storage_resolver.resolve(&index_uri)?;
-        let client = IndexingServer::spawn(
+        let indexing_server = IndexingService::new(
             temp_dir.path().to_path_buf(),
             indexer_config,
             metastore.clone(),
             storage_resolver.clone(),
+            None,
         );
+        let universe = Universe::new();
+        let (indexing_server_mailbox, _indexing_server_handle) =
+            universe.spawn_actor(indexing_server).spawn();
         Ok(TestSandbox {
+            _universe: universe,
             index_id: index_id.to_string(),
-            client,
+            indexing_server_mailbox,
             doc_mapper,
             metastore,
             storage_resolver,
@@ -123,10 +130,16 @@ impl TestSandbox {
             }),
         };
         let pipeline_id = self
-            .client
-            .spawn_pipeline(self.index_id.clone(), source)
+            .indexing_server_mailbox
+            .ask_for_res(SpawnPipeline {
+                index_id: self.index_id.clone(),
+                source,
+            })
             .await?;
-        let pipeline_handle = self.client.detach_pipeline(&pipeline_id).await?;
+        let pipeline_handle = self
+            .indexing_server_mailbox
+            .ask_for_res(DetachPipeline { pipeline_id })
+            .await?;
         let (_pipeline_exit_status, pipeline_statistics) = pipeline_handle.join().await;
         Ok(pipeline_statistics)
     }

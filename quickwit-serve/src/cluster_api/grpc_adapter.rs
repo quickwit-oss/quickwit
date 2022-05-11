@@ -20,14 +20,16 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use quickwit_cluster::service::{ClusterService, ClusterServiceImpl};
+use quickwit_cluster::ClusterService;
 use quickwit_proto::{cluster_service_server as grpc, tonic};
+
+use crate::error::convert_to_grpc_result;
 
 #[derive(Clone)]
 pub struct GrpcClusterAdapter(Arc<dyn ClusterService>);
 
-impl From<Arc<ClusterServiceImpl>> for GrpcClusterAdapter {
-    fn from(cluster_service_arc: Arc<ClusterServiceImpl>) -> Self {
+impl From<Arc<dyn ClusterService>> for GrpcClusterAdapter {
+    fn from(cluster_service_arc: Arc<dyn ClusterService>) -> Self {
         GrpcClusterAdapter(cluster_service_arc)
     }
 }
@@ -39,12 +41,8 @@ impl grpc::ClusterService for GrpcClusterAdapter {
         request: tonic::Request<quickwit_proto::ListMembersRequest>,
     ) -> Result<tonic::Response<quickwit_proto::ListMembersResponse>, tonic::Status> {
         let list_members_req = request.into_inner();
-        let list_members_resp = self
-            .0
-            .list_members(list_members_req)
-            .await
-            .map_err(Into::<tonic::Status>::into)?;
-        Ok(tonic::Response::new(list_members_resp))
+        let list_members_res = self.0.list_members(list_members_req).await;
+        convert_to_grpc_result(list_members_res)
     }
 
     async fn leave_cluster(
@@ -52,11 +50,16 @@ impl grpc::ClusterService for GrpcClusterAdapter {
         request: tonic::Request<quickwit_proto::LeaveClusterRequest>,
     ) -> Result<tonic::Response<quickwit_proto::LeaveClusterResponse>, tonic::Status> {
         let leave_cluster_req = request.into_inner();
-        let leave_cluster_resp = self
-            .0
-            .leave_cluster(leave_cluster_req)
-            .await
-            .map_err(Into::<tonic::Status>::into)?;
-        Ok(tonic::Response::new(leave_cluster_resp))
+        let leave_cluster_resp = self.0.leave_cluster(leave_cluster_req).await;
+        convert_to_grpc_result(leave_cluster_resp)
+    }
+
+    async fn cluster_state(
+        &self,
+        request: tonic::Request<quickwit_proto::ClusterStateRequest>,
+    ) -> Result<tonic::Response<quickwit_proto::ClusterStateResponse>, tonic::Status> {
+        let cluster_state_req = request.into_inner();
+        let cluster_state_resp = self.0.cluster_state(cluster_state_req).await;
+        convert_to_grpc_result(cluster_state_resp)
     }
 }

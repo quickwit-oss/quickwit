@@ -1,0 +1,4 @@
+source_id: hdfs-logs-kinesis-source
+source_type: kinesis
+params:
+  stream_name: emr-cluster-logs

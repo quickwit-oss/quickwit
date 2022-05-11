@@ -17,12 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use quickwit_proto::{
-    tonic, LeaveClusterRequest, LeaveClusterResponse, ListMembersRequest, ListMembersResponse,
-    Member as PMember,
+    ClusterStateRequest, ClusterStateResponse, LeaveClusterRequest, LeaveClusterResponse,
+    ListMembersRequest, ListMembersResponse, Member as PMember,
 };
 
 use crate::cluster::{Cluster, Member};
@@ -32,9 +30,10 @@ use crate::error::ClusterError;
 impl From<Member> for PMember {
     fn from(member: Member) -> Self {
         PMember {
-            id: member.node_id.to_string(),
-            listen_address: member.listen_addr.to_string(),
+            id: member.internal_id(),
+            listen_address: member.gossip_public_address.to_string(),
             is_self: member.is_self,
+            generation: member.generation,
         }
     }
 }
@@ -49,34 +48,20 @@ pub trait ClusterService: 'static + Send + Sync {
         &self,
         request: LeaveClusterRequest,
     ) -> Result<LeaveClusterResponse, ClusterError>;
+    async fn cluster_state(
+        &self,
+        request: ClusterStateRequest,
+    ) -> Result<ClusterStateResponse, ClusterError>;
 }
 
-/// Cluster service implementation.
-/// This is a service to check the status of the cluster and to operate the cluster.
-pub struct ClusterServiceImpl {
-    cluster: Arc<Cluster>,
-}
-
-impl ClusterServiceImpl {
-    /// Create a cluster service given a cluster.
-    pub fn new(cluster: Arc<Cluster>) -> Self {
-        ClusterServiceImpl { cluster }
-    }
-}
-
-#[tonic::async_trait]
-impl ClusterService for ClusterServiceImpl {
+#[async_trait]
+impl ClusterService for Cluster {
     /// This is the API to get the list of cluster members.
     async fn list_members(
         &self,
         _request: ListMembersRequest,
     ) -> Result<ListMembersResponse, ClusterError> {
-        let members = self
-            .cluster
-            .members()
-            .into_iter()
-            .map(PMember::from)
-            .collect();
+        let members = self.members().into_iter().map(PMember::from).collect();
         Ok(ListMembersResponse { members })
     }
 
@@ -85,8 +70,24 @@ impl ClusterService for ClusterServiceImpl {
         &self,
         _request: LeaveClusterRequest,
     ) -> Result<LeaveClusterResponse, ClusterError> {
-        self.cluster.leave().await;
+        self.leave().await;
         Ok(LeaveClusterResponse {})
+    }
+
+    /// This is the API to get the cluster state.
+    async fn cluster_state(
+        &self,
+        _request: ClusterStateRequest,
+    ) -> Result<ClusterStateResponse, ClusterError> {
+        let cluster_state = self.state().await;
+        let state_serialized_json = serde_json::to_string(&cluster_state).map_err(|err| {
+            ClusterError::ClusterStateError {
+                message: err.to_string(),
+            }
+        })?;
+        Ok(ClusterStateResponse {
+            state_serialized_json,
+        })
     }
 }
 
@@ -106,8 +107,9 @@ mod tests {
         let is_self = true;
 
         let member = Member {
-            node_id: host_id.clone(),
-            listen_addr,
+            node_unique_id: host_id.clone(),
+            gossip_public_address: listen_addr,
+            generation: 1,
             is_self,
         };
         println!("member={:?}", member);
@@ -116,8 +118,9 @@ mod tests {
         println!("proto_member={:?}", proto_member);
 
         let expected = PMember {
-            id: host_id,
+            id: format!("{}/{}", host_id, 1),
             listen_address: listen_addr.to_string(),
+            generation: 1,
             is_self,
         };
         println!("expected={:?}", expected);

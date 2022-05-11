@@ -94,7 +94,6 @@ async fn main() -> anyhow::Result<()> {
     let app = build_cli()
         .version(version_text.as_str())
         .about(about_text.as_str());
-
     let matches = app.get_matches();
 
     let command = match CliCommand::parse_cli_args(&matches) {
@@ -223,6 +222,7 @@ mod tests {
                     input_path_opt: None,
                     overwrite: false,
                     data_dir: None,
+                    clear_cache: true,
                 })) if &index_id == "wikipedia"
                        && config_uri == Uri::try_new("file:///config.yaml").unwrap()
         ));
@@ -235,6 +235,7 @@ mod tests {
             "wikipedia",
             "--config",
             "/config.yaml",
+            "--keep-cache",
             "--overwrite",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
@@ -247,6 +248,7 @@ mod tests {
                     input_path_opt: None,
                     overwrite: true,
                     data_dir: None,
+                    clear_cache: false
                 })) if &index_id == "wikipedia"
                         && config_uri == Uri::try_new("file:///config.yaml").unwrap()
         ));
