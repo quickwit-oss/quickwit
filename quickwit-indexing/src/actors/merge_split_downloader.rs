@@ -85,17 +85,6 @@ impl Handler<MergeOperation> for MergeSplitDownloader {
         merge_operation: MergeOperation,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
-        self.process_merge_operation(merge_operation, ctx).await?;
-        Ok(())
-    }
-}
-
-impl MergeSplitDownloader {
-    async fn process_merge_operation(
-        &self,
-        merge_operation: MergeOperation,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), quickwit_actors::ActorExitStatus> {
         let merge_scratch_directory = self
             .scratch_directory
             .named_temp_child("merge-")
@@ -120,7 +109,9 @@ impl MergeSplitDownloader {
         ctx.send_message(&self.merge_executor_mailbox, msg).await?;
         Ok(())
     }
+}
 
+impl MergeSplitDownloader {
     async fn download_splits(
         &self,
         splits: &[SplitMetadata],
@@ -139,7 +130,10 @@ impl MergeSplitDownloader {
                 .storage
                 .fetch_split(split.split_id(), download_directory)
                 .await
-                .map_err(|error| anyhow::anyhow!(error))?;
+                .map_err(|error| {
+                    let split_id = split.split_id();
+                    anyhow::anyhow!(error).context(format!("Failed to download split `{split_id}`"))
+                })?;
             tantivy_dirs.push(tantivy_dir);
         }
         Ok(tantivy_dirs)
