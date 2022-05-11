@@ -98,7 +98,7 @@ pub enum QuickwitTextTokenizer {
 }
 
 impl QuickwitTextTokenizer {
-    fn get_name(&self) -> &str {
+    pub fn get_name(&self) -> &str {
         match self {
             QuickwitTextTokenizer::Raw => "raw",
             QuickwitTextTokenizer::Default => "default",
@@ -161,7 +161,7 @@ impl From<QuickwitTextOptions> for TextOptions {
 }
 
 fn default_json_tokenizer() -> QuickwitTextTokenizer {
-    QuickwitTextTokenizer::Raw
+    QuickwitTextTokenizer::Default
 }
 
 /// Options associated to a json field.
@@ -959,7 +959,7 @@ mod tests {
         .unwrap();
         let expected_json_options = QuickwitJsonOptions {
             indexed: true,
-            tokenizer: QuickwitTextTokenizer::Raw,
+            tokenizer: QuickwitTextTokenizer::Default,
             record: IndexRecordOption::Basic,
             stored: true,
         };
@@ -983,6 +983,7 @@ mod tests {
             {
                 "type": "array<json>",
                 "name": "my_json_field_multi",
+                "tokenizer": "raw",
                 "stored": false
             }
             "#,

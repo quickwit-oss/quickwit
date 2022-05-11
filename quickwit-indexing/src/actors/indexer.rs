@@ -27,7 +27,7 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, Mailbox, QueueCapacity, SendError,
 };
 use quickwit_config::IndexingSettings;
-use quickwit_doc_mapper::{DocMapper, DocParsingError, SortBy};
+use quickwit_doc_mapper::{DocMapper, DocParsingError, SortBy, QUICKWIT_TOKENIZER_MANAGER};
 use tantivy::schema::{Field, Value};
 use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
 use tracing::{info, warn};
@@ -105,7 +105,10 @@ impl IndexerState {
             sort_by_field: self.sort_by_field_opt.clone(),
             ..Default::default()
         };
-        let index_builder = IndexBuilder::new().settings(index_settings).schema(schema);
+        let index_builder = IndexBuilder::new()
+            .settings(index_settings)
+            .schema(schema)
+            .tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
         let indexed_split = IndexedSplit::new_in_dir(
             self.index_id.clone(),
             self.indexing_directory.scratch_directory.clone(),

@@ -366,6 +366,7 @@ mod tests {
     use std::time::Instant;
 
     use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
+    use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
     use quickwit_metastore::checkpoint::CheckpointDelta;
     use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};
     use tantivy::{doc, Index};
@@ -387,7 +388,8 @@ mod tests {
         let tag_f64 =
             schema_builder.add_f64_field("tag_f64", NumericOptions::default().set_indexed());
         let schema = schema_builder.build();
-        let index = Index::create_in_dir(split_scratch_directory.path(), schema)?;
+        let mut index = Index::create_in_dir(split_scratch_directory.path(), schema)?;
+        index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
         let mut index_writer = index.writer_with_num_threads(1, 10_000_000)?;
         let mut timerange_opt: Option<RangeInclusive<i64>> = None;
         let mut num_docs = 0;

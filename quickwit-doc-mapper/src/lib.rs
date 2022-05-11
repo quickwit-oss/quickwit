@@ -29,6 +29,7 @@ mod doc_mapper;
 mod error;
 mod query_builder;
 mod sort_by;
+mod tokenizers;
 
 /// Pruning tags manipulation.
 pub mod tag_pruning;
@@ -40,6 +41,7 @@ pub use default_doc_mapper::{
 pub use doc_mapper::DocMapper;
 pub use error::{DocParsingError, QueryParserError};
 pub use sort_by::{SortBy, SortByField, SortOrder};
+pub use tokenizers::QUICKWIT_TOKENIZER_MANAGER;
 
 /// Field name reserved for storing the source document.
 pub const SOURCE_FIELD_NAME: &str = "_source";
