@@ -25,7 +25,7 @@ quickwit-config = { version = "0.2.1", path = "../quickwit-config" }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["full"] }
 rand = "0.8"
-tantivy = { git = "https://github.com/quickwit-oss/tantivy", rev = "7f45a6a", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy", rev = "cbd06ab1", default-features = false, features = [
     "mmap",
     "lz4-compression",
     "quickwit",
