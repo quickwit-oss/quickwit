@@ -36,10 +36,9 @@ mod ui_handler;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use anyhow::bail;
 use format::Format;
 use quickwit_actors::{Mailbox, Universe};
-use quickwit_cluster::ClusterService;
+use quickwit_cluster::{ClusterService, QuickwitService};
 use quickwit_config::QuickwitConfig;
 use quickwit_core::IndexService;
 use quickwit_indexing::actors::IndexingService;
@@ -70,25 +69,6 @@ fn require<T: Clone + Send>(
     })
 }
 
-#[derive(Debug, PartialEq, Eq, Copy, Hash, Clone)]
-pub enum QuickwitService {
-    Indexer,
-    Searcher,
-}
-
-impl TryFrom<&str> for QuickwitService {
-    type Error = anyhow::Error;
-
-    fn try_from(service_str: &str) -> Result<Self, Self::Error> {
-        match service_str {
-            "indexer" => Ok(QuickwitService::Indexer),
-            "searcher" => Ok(QuickwitService::Searcher),
-            _ => {
-                bail!("Service `{service_str}` unknown");
-            }
-        }
-    }
-}
 struct QuickwitServices {
     pub cluster_service: Arc<dyn ClusterService>,
     pub search_service: Option<Arc<dyn SearchService>>,
@@ -106,7 +86,7 @@ pub async fn serve_quickwit(
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
 
-    let cluster_service = quickwit_cluster::start_cluster_service(config).await?;
+    let cluster_service = quickwit_cluster::start_cluster_service(config, services).await?;
 
     let universe = Universe::new();
 

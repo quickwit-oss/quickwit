@@ -37,6 +37,7 @@ quickwit-serve = { version = "0.2.1", path = "../quickwit-serve" }
 quickwit-telemetry = { version = "0.2.1", path = "../quickwit-telemetry" }
 quickwit-pushapi = {version="0.2.1", path = "../quickwit-pushapi" }
 quickwit-proto = { version = "0.2.1", path = "../quickwit-proto" }
+quickwit-cluster = { version = "0.2.1", path = "../quickwit-cluster" }
 tabled = "0.6"
 tracing = "0.1.29"
 tracing-subscriber = {version="0.3", features=["time", "std", "env-filter"]}
