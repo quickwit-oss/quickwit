@@ -206,7 +206,7 @@ fast: true
 | ------------- | ------------- | ------------- |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
-| `fast`     | Whether value is stored in a fast field | `false` |
+| `fast`     | Whether value is stored in a fast field. Only on 1:1 cardinality, not supported on `array<bytes>` fields | `false` |
 
 ### Composite types
 
