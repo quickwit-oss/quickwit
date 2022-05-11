@@ -26,7 +26,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
-use ec2_instance_metadata::{InstanceMetadata, InstanceMetadataClient};
+use ec2_instance_metadata::InstanceMetadataClient;
 use futures::{stream, StreamExt};
 use once_cell::sync::OnceCell;
 use quickwit_common::{chunk_range, into_u64_range};
@@ -41,7 +41,7 @@ use rusoto_s3::{
 };
 use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 use super::error::RusotoErrorWrapper;
 use crate::object_storage::MultiPartPolicy;
@@ -53,6 +53,28 @@ const CREDENTIAL_TIMEOUT: u64 = 5;
 
 /// An timeout for idle sockets being kept-alive.
 const POOL_IDLE_TIMEOUT: u64 = 10;
+
+/// Default region to use, if none has been configured.
+const QUICKWIT_DEFAULT_REGION: Region = Region::UsEast1;
+
+#[instrument]
+fn sniff_s3_region() -> anyhow::Result<Region> {
+    // If an environment variable is attempting to set the region, but is
+    // erroneous, we stop here and return an error.
+    //
+    // If no env variable attempts to set the region, we attempt to sniff the
+    // region from AWS API.
+    if let Some(region) = region_from_env_variable()? {
+        info!(region=?region, from="env-variable", "set-aws-region");
+        return Ok(region);
+    }
+    if let Some(region) = region_from_ec2_instance()? {
+        info!(region=?region, from="ec2-instance-metadata-api", "set-aws-region");
+        return Ok(region);
+    }
+    info!(region=?QUICKWIT_DEFAULT_REGION, from="default", "set-aws-region");
+    Ok(QUICKWIT_DEFAULT_REGION)
+}
 
 /// Returns the region to use for the S3 object storage.
 ///
@@ -66,20 +88,10 @@ const POOL_IDLE_TIMEOUT: u64 = 10;
 /// impact the start of quickwit in a context where S3 is not used.
 ///
 /// This function caches its results.
-fn sniff_s3_region() -> anyhow::Result<Region> {
+fn sniff_s3_region_and_cache() -> anyhow::Result<Region> {
     static CACHED_S3_DEFAULT_REGION: OnceCell<Region> = OnceCell::new();
     CACHED_S3_DEFAULT_REGION
-        .get_or_try_init(|| {
-            // If an environment variable is attempting to set the region, but is
-            // erroneous, we stop here and return an error.
-            //
-            // If no env variable attempts to set the region, we attempt to sniff the
-            // region from AWS API.
-            if let Some(region) = region_from_env_variable()? {
-                return Ok(region);
-            }
-            region_from_ec2_instance()
-        })
+        .get_or_try_init(sniff_s3_region)
         .map(|region| region.clone())
 }
 
@@ -116,6 +128,7 @@ fn s3_region_env_var() -> Option<String> {
     None
 }
 
+#[instrument]
 fn region_from_env_variable() -> anyhow::Result<Option<Region>> {
     if let Some(region_str) = s3_region_env_var() {
         match region_from_str(&region_str) {
@@ -133,14 +146,27 @@ fn region_from_env_variable() -> anyhow::Result<Option<Region>> {
 // Sniffes the EC2 region from the EC2 instance API.
 //
 // https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html
-fn region_from_ec2_instance() -> anyhow::Result<Region> {
+#[instrument]
+fn region_from_ec2_instance() -> anyhow::Result<Option<Region>> {
     let instance_metadata_client: InstanceMetadataClient =
         ec2_instance_metadata::InstanceMetadataClient::new();
-    let instance_metadata: InstanceMetadata = instance_metadata_client
-        .get()
-        .context("Failed to get AWS instance metadata API.")?;
-    Region::from_str(instance_metadata.region)
-        .context("Failed to parse region fetched from AWS instance metadata API")
+    match instance_metadata_client.get() {
+        Ok(instance_metadata) => {
+            let region = Region::from_str(instance_metadata.region)
+                .context("Failed to parse region fetched from AWS instance metadata API")?;
+            Ok(Some(region))
+        }
+        Err(ec2_instance_metadata::Error::NotFound(_)) => {
+            debug!(
+                "Failed to sniff AWS region from the AWS instance metadata. API is not available."
+            );
+            Ok(None)
+        }
+        Err(err) => {
+            warn!(err=?err, "Failed to sniff AWS region from the AWS instance metadata");
+            anyhow::bail!(err)
+        }
+    }
 }
 
 /// S3 Compatible object storage implementation.
@@ -193,7 +219,8 @@ impl S3CompatibleObjectStorage {
 
     /// Creates an object storage given a region and an uri.
     pub fn from_uri(uri: &str) -> crate::StorageResult<S3CompatibleObjectStorage> {
-        let region = sniff_s3_region().map_err(|err| StorageErrorKind::Service.with_error(err))?;
+        let region =
+            sniff_s3_region_and_cache().map_err(|err| StorageErrorKind::Service.with_error(err))?;
         Self::from_uri_and_region(region, uri)
     }
 
