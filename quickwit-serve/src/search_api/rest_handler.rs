@@ -716,7 +716,7 @@ mod tests {
         let (index, req) = warp::test::request()
             .path(
                 "/my-index/search/stream?query=obama&fast_field=external_id&\
-                 output_format=clickHouseRowBinary",
+                 output_format=click_house_row_binary",
             )
             .filter(&super::search_stream_filter())
             .await
@@ -741,7 +741,7 @@ mod tests {
         let rejection = warp::test::request()
             .path(
                 "/my-index/search/stream?query=obama&fast_field=external_id&\
-                 output_format=click_house_row_binary",
+                 output_format=ClickHouseRowBinary",
             )
             .filter(&super::search_stream_filter())
             .await
@@ -749,7 +749,7 @@ mod tests {
         let parse_error = rejection.find::<serde_qs::Error>().unwrap();
         assert_eq!(
             parse_error.to_string(),
-            "unknown variant `click_house_row_binary`, expected `csv` or `clickHouseRowBinary`"
+            "unknown variant `ClickHouseRowBinary`, expected `csv` or `click_house_row_binary`"
         );
     }
 
@@ -757,7 +757,7 @@ mod tests {
     async fn test_rest_search_stream_api_error_empty_fastfield() {
         let rejection = warp::test::request()
             .path(
-                "/my-index/search/stream?query=obama&fast_field=&output_format=clickHouseRowBinary",
+                "/my-index/search/stream?query=obama&fast_field=&output_format=click_house_row_binary",
             )
             .filter(&super::search_stream_filter())
             .await
