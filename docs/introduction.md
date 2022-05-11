@@ -23,7 +23,7 @@ Quickwit is designed to search straight from object storage allowing true decoup
 - **Fault-tolerant architecture that won't lose data:** Quickwit achieves **exactly-once** processing for indexing and safely stores your data on highly reliable object storage services such as Amazon S3.
 - **Cloud-native, easy to operate:** Thanks to true decoupled compute and storage, search instances are stateless, add or remove search nodes within seconds.
 - **Sub-second full-text search on cloud / distributed storage:** Quickwit Search re-designed indexing and index data structure to open it in less than 60ms on Amazon S3**.**
-- **Time-based sharding:** Quickwit shards data by time when enabled. And you can use a second dimension to shard data thanks to our [tags feature](./design/querying.md). Time-based queries only access splits (a data piece of the index) that match the time range of the query which leads to significant performance improvements.
+- **Time-based sharding:** Quickwit shards data by time when enabled. And you can use a second dimension to shard data thanks to our [tags feature](./concepts/querying.md). Time-based queries only access splits (a data piece of the index) that match the time range of the query which leads to significant performance improvements.
 - **Painless multi-tenant search:** Create indexes for each tenant without hurting query performance. Or group tenants into one index and use tagging to prune irrelevant splits for your tenant query to improve significantly performance.
 
 # When to use Quickwit
@@ -45,8 +45,8 @@ Use cases where you would likely *not* want to use Quickwit include:
 # Learn more
 
 - [Quickstart](./get-started/quickstart.md)
-- [Architecture](./design/architecture.md)
-- [0.2 Release](https://quickwit.io/blog/quickwit-0.2)
+- [Concepts](./concepts/architecture.md)
+- [Last release blog post](https://quickwit.io/blog/quickwit-0.2)
 
 
 ---

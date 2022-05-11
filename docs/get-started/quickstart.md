@@ -34,7 +34,7 @@ docker run quickwit/quickwit --version
 
 ## Create your first index
 
-Before adding documents to Quickwit, you need to create an index configured with a JSON `config file`. This config file notably lets you define how to map your input documents to your index fields and whether these fields should be stored and indexed. See the [index config documentation](../reference/index-config.md).
+Before adding documents to Quickwit, you need to create an index configured with a JSON `config file`. This config file notably lets you define how to map your input documents to your index fields and whether these fields should be stored and indexed. See the [index config documentation](../configuration/index-config.md).
 
 Let's create an index configured to receive Wikipedia articles.
 
@@ -43,7 +43,7 @@ Let's create an index configured to receive Wikipedia articles.
 curl -o wikipedia_index_config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/wikipedia/index-config.yaml
 ```
 
-The index config defines three text fields: `title`, `body` and `url`. It also sets two default search fields `body` and `title`. These fields will be used for search if you do not target a specific field in your query. Please note that by default, text fields are [indexed and tokenized](../reference/index-config.md).
+The index config defines three text fields: `title`, `body` and `url`. It also sets two default search fields `body` and `title`. These fields will be used for search if you do not target a specific field in your query. Please note that by default, text fields are [indexed and tokenized](../configuration/index-config.md).
 
 And here is the complete config:
 
@@ -83,13 +83,13 @@ Now we can create the index with the command:
 ./quickwit index create --index-config ./wikipedia_index_config.yaml
 ```
 
-Check that a directory `./qwdata/wikipedia` has been created, Quickwit will write index files here and a `quickwit.json` which contains the [index metadata](../design/architecture.md#index).
+Check that a directory `./qwdata/wikipedia` has been created, Quickwit will write index files here and a `quickwit.json` which contains the [index metadata](../concepts/architecture.md#index).
 You're now ready to fill the index.
 
 
 ## Let's add some documents
 
-Quickwit can index data from many [sources](../reference/source-config.md). We will use a new line delimited json [ndjson](http://ndjson.org/) datasets as our data source.
+Quickwit can index data from many [sources](../configuration/source-config.md). We will use a new line delimited json [ndjson](http://ndjson.org/) datasets as our data source.
 Let's download [a bunch of wikipedia articles (10 000)](https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json) in [ndjson](http://ndjson.org/) format and index it.
 
 ```bash

@@ -1,6 +1,6 @@
 ---
 title: Storage URI
-position: 6
+sidebar_position: 5
 ---
 
 In Quickwit, Storage URIs refer to different kinds of storage.

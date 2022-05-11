@@ -1,6 +1,6 @@
 ---
-title: Aggregation
-sidebar_position: 11
+title: Aggregations API
+sidebar_position: 2
 ---
 
 An aggregation summarizes your data as statistics on buckets or metrics.
@@ -27,7 +27,7 @@ record: basic
 fast: true
 ```
 
-See the [index config](./index-config.md) for more details and examples.
+See the [index configuration](../configuration/index-config.md) page for more details and examples.
 
 #### Format
 
@@ -86,10 +86,10 @@ Response
     }
 }
 ```
+
 #### Limitations
 
 Currently aggregations work only on single value fast fields of type u64, f64, i64 and on string fields.
-
 
 
 ### Supported Aggregations
@@ -111,7 +111,7 @@ In addition to the buckets themselves, the bucket aggregations also compute and 
 Bucket aggregations, as opposed to metric aggregations, can hold sub-aggregations. 
 These sub-aggregations will be aggregated for the buckets created by their “parent” bucket aggregation. 
 There are different bucket aggregators, each with a different “bucketing” strategy. 
-Some define a single bucket, some define fixed number of multiple buckets, and others dynamically create the buckets during the aggregation process.
+Some define a single bucket, some define a fixed number of multiple buckets, and others dynamically create the buckets during the aggregation process.
 
 Example request, histogram with stats in each bucket:
 ```json skip

@@ -1,6 +1,6 @@
 ---
 title: Index configuration
-position: 4
+sidebar_position: 2
 ---
 
 This page describes how to configure an index.
@@ -94,7 +94,7 @@ The doc mapping defines how a document and the fields it contains are stored and
 | `tag_fields` | Collection of fields already defined in `field_mappings` whose values will be stored in a dedicated `tags` (1) | [] |
 | `store_source` | Whether or not the original JSON document is stored or not in the index.   | false |
 
-(1) [Learn more on the tags usage](../design/querying.md).
+(1) [Learn more on the tags usage](../concepts/querying.md).
 
 ### Field types
 
@@ -387,7 +387,7 @@ This section describes indexing settings for a given index.
 | `resources.num_threads`      | Number of threads per source.   | 1 |
 | `resources.heap_size`      | Indexer heap size per source per index.   | 2_000_000_000 |
 
-(1) [Learn more on time sharding](./../design/architecture.md)
+(1) [Learn more on time sharding](./../concepts/architecture.md)
 
 
 ### Indexer memory usage

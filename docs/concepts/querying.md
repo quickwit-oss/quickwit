@@ -27,7 +27,7 @@ The following query parameters are available to apply timestamped pruning to you
 
 ### Tag pruning
 
-Quickwit also provides pruning on a second dimension called `tags`. By [setting a field as tagged](../reference/index-config.md) Quickwit will generate split metadata at indexing in order to filter splits that match requested tags at query time. Note that this metadata is only generated when the cardinality of the field is less than 1 000.  
+Quickwit also provides pruning on a second dimension called `tags`. By [setting a field as tagged](../configuration/index-config.md) Quickwit will generate split metadata at indexing in order to filter splits that match requested tags at query time. Note that this metadata is only generated when the cardinality of the field is less than 1 000.  
 
 Tag pruning is notably useful on multi-tenant datasets. 
 

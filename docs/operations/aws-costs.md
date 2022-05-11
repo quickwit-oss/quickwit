@@ -1,5 +1,5 @@
 ---
-title: Cloud operation costs
+title: AWS Cost Optimization
 sidebar_position: 1
 ---
 

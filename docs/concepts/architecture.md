@@ -50,7 +50,7 @@ A document is a collection of fields. Fields can be stored in different data str
 - a columnar storage called `fast field`. It is the equivalent of doc values in [Lucene](https://lucene.apache.org/). Fast fields are required to compute aggregates over the documents matching a query. They can also allow some advanced types of filtering.
 - a row-storage called the doc store. It makes it possible to get the content of the matching documents.
 
-You can configure your index to control how to map your JSON object to a Quickwit document and, for each field, define whether it should be stored, indexed, or be a fast field. [Learn how to configure your index](../reference/index-config.md)
+You can configure your index to control how to map your JSON object to a Quickwit document and, for each field, define whether it should be stored, indexed, or be a fast field. [Learn how to configure your index](../configuration/index-config.md)
 
 ### Splits
 
