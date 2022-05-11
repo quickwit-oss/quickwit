@@ -22,7 +22,13 @@ Quickwit gathers index metadata into a metastore to make them available across t
 
 In a clustered deployment, the metastore is typically a traditional RDBMS like PostgreSQL which we only support today. In a single-server deployment, it’s also possible to rely on a local file or on Amazon S3.
 
-### Distributed message queues
+### Source
+
+Quickwit supports multiple sources to ingest data from.
+A source can be a simple file or a complex system like a message queue.
+Additionally the indexing service will provide a zero-configuration push API.
+
+A file is ideal for a one-time ingestion like an initial load, a message queue is ideal to continuously feed data into the system. 
 
 Quickwit indexers connect directly to external message queues like Kafka and guarantee the exactly-once semantics. If you need support for other distributed queues, please vote for yours [here](https://github.com/quickwit-oss/quickwit/issues/1000).
 
