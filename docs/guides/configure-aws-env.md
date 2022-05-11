@@ -27,7 +27,7 @@ In order of prority, it will attempt to read it from:
 
 ## Network
 Cluster membership and search workload distribution need UDP and TCP communication between instances. You need to authorize UDP and TCP on relevant ports between them to make it work.
-[More details](../reference/ports.md).
+[More details](../configuration/ports-config.md).
 
 
 ## Common errors

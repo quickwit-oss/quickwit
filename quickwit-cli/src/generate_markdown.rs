@@ -127,7 +127,7 @@ fn markdown_for_subcommand(
                 "".to_string()
             };
             println!(
-                "`--{}` {}{}<br>",
+                "`--{}` {}{} \\", // Insert line break after option
                 arg.get_id(),
                 arg.get_help().unwrap_or_default(),
                 default

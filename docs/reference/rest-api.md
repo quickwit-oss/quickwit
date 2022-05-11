@@ -1,6 +1,6 @@
 ---
-title: Search REST API
-position: 9
+title: REST API
+sidebar_position: 1
 ---
 
 ## API version

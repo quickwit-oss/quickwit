@@ -22,7 +22,7 @@ Example of a log entry:
 
 :::caution
 
-Before using Quickwit with an object storage, check out our [advice](../administration/cloud-env.md) for deploying on AWS S3 to avoid some bad surprises at the end of the month.
+Before using Quickwit with an object storage, check out our [advice](../operations/aws-costs.md) for deploying on AWS S3 to avoid some bad surprises at the end of the month.
 
 :::
 
@@ -44,7 +44,7 @@ curl -o hdfs_logs_index_config.yaml https://raw.githubusercontent.com/quickwit-o
 ```
 
 The index config defines five fields: `timestamp`, `tenant_id`, `severity_text`, `body`, and one object field
-for the nested values `resource.service` . It also sets the `default_search_fields`, the `tag_fields`, and the `timestamp_field`. The `timestamp_field` and `tag_fields` are used by Quickwit for [splits pruning](../design/architecture.md) at query time to boost search speed. Check out the [index config docs](../reference/index-config.md) for more details.
+for the nested values `resource.service` . It also sets the `default_search_fields`, the `tag_fields`, and the `timestamp_field`. The `timestamp_field` and `tag_fields` are used by Quickwit for [splits pruning](../concepts/architecture.md) at query time to boost search speed. Check out the [index config docs](../configuration/index-config.md) for more details.
 
 ```yaml title="hdfs_logs_index_config.yaml"
 version: 0
@@ -113,7 +113,7 @@ curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.js
 
 4GB of RAM is enough to index this dataset; an instance like `t4g.medium` with 4GB and 2 vCPU indexed this dataset in 20 minutes.
 
-This step can also be done on your local machine. The `ingest` subcommand generates locally [splits](../design/architecture.md) of 10 million documents and will upload them on your bucket. Concretely, each split is a bundle of index files and metadata files.
+This step can also be done on your local machine. The `ingest` subcommand generates locally [splits](../concepts/architecture.md) of 10 million documents and will upload them on your bucket. Concretely, each split is a bundle of index files and metadata files.
 
 :::
 
@@ -245,7 +245,7 @@ which returns the json
 
 You can see that this query has only 364 hits and that the server responds in 0.5 seconds.
 
-The index config shows that we can use the timestamp field parameters `startTimestamp` and `endTimestamp` and benefit from time pruning. Behind the scenes, Quickwit will only query [splits](../design/architecture.md) that have logs in this time range. This can have a significant impact on speed.
+The index config shows that we can use the timestamp field parameters `startTimestamp` and `endTimestamp` and benefit from time pruning. Behind the scenes, Quickwit will only query [splits](../concepts/architecture.md) that have logs in this time range. This can have a significant impact on speed.
 
 
 ```bash

@@ -42,7 +42,7 @@ curl -o hdfs_logs_index_config.yaml https://raw.githubusercontent.com/quickwit-o
 ```
 
 The index config defines five fields: `timestamp`, `tenant_id`, `severity_text`, `body`, and one object field
-for the nested values `resource.service` . It also sets the `default_search_fields`, the `tag_fields`, and the `timestamp_field`.The `timestamp_field` and `tag_fields` are used by Quickwit for [splits pruning](../design/architecture.md) at query time to boost search speed. Check out the [index config docs](../reference/index-config.md) for more details.
+for the nested values `resource.service` . It also sets the `default_search_fields`, the `tag_fields`, and the `timestamp_field`.The `timestamp_field` and `tag_fields` are used by Quickwit for [splits pruning](../concepts/architecture.md) at query time to boost search speed. Check out the [index config docs](../configuration/index-config.md) for more details.
 
 ```yaml title="hdfs_logs_index_config.yaml"
 version: 0
@@ -114,7 +114,7 @@ You can check it's working by using `search` subcommand and look for `ERROR` in 
 
 :::note
 
-The `ingest` subcommand generates [splits](../design/architecture.md) of 5 millions documents. Each split is a small piece of index represented by a file in which index files and metadata files are saved.
+The `ingest` subcommand generates [splits](../concepts/architecture.md) of 5 millions documents. Each split is a small piece of index represented by a file in which index files and metadata files are saved.
 
 :::
 
@@ -153,7 +153,7 @@ which returns the json
 }
 ```
 
-The index config shows that we can use the timestamp field parameters `startTimestamp` and `endTimestamp` and benefit from time pruning. Behind the scenes, Quickwit will only query [splits](../design/architecture.md) that have logs in this time range.
+The index config shows that we can use the timestamp field parameters `startTimestamp` and `endTimestamp` and benefit from time pruning. Behind the scenes, Quickwit will only query [splits](../concepts/architecture.md) that have logs in this time range.
 
 Let's use these parameters with the following query:
 
