@@ -1,4 +1,16 @@
+# This configuration makes it possible to use mold
+# as the linker for rustc.
+#
+# I recommended it for development as it really improves performance. 
+# 
+# To enable
+# - install clang
+# - install mold https://github.com/rui314/mold into /usr/local/bin/mold
+# - add a symbolic link from .cargo -> .cargo-dev 
+# via `ln -s .cargo-dev .cargo`.
+#
+# If there is an issue, reverting is as simple as deleting .cargo.
+
 [target.x86_64-unknown-linux-gnu]
-rustflags = [
-    "-C", "link-arg=-fuse-ld=lld",
-]
+linker = "/usr/bin/clang"
+rustflags = ["-C", "link-arg=-fuse-ld=/usr/local/bin/mold"]
