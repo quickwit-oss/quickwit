@@ -208,6 +208,18 @@ async fn async_actor_loop<A: Actor>(
         error!(error=?finalize_error, "Finalizing failed, set exit status to panicked.");
         exit_status = ActorExitStatus::Panicked;
     }
+    match &exit_status {
+        ActorExitStatus::Success
+        | ActorExitStatus::Quit
+        | ActorExitStatus::DownstreamClosed
+        | ActorExitStatus::Killed => {}
+        ActorExitStatus::Failure(err) => {
+            error!(cause=?err, exit_status=?exit_status, "actor-failure");
+        }
+        ActorExitStatus::Panicked => {
+            error!(exit_status=?exit_status, "actor-failure");
+        }
+    }
     info!(actor_id = %ctx.actor_instance_id(), exit_status = %exit_status, "actor-exit");
     ctx.exit(&exit_status);
     exit_status
