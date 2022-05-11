@@ -26,6 +26,7 @@ In a clustered deployment, the metastore is typically a traditional RDBMS like P
 
 Quickwit supports multiple sources to ingest data from.
 A source can be a simple file or a complex system like a message queue.
+Additionally the indexing service will provide a zero-configuration push API.
 
 A file is ideal for a one-time ingestion like an initial load, a message queue is ideal to continuously feed data into the system. 
 
