@@ -11,3 +11,5 @@ RUN echo "Upgrading CMake" && \
 ENV CC=musl-gcc \
     CFLAGS=-I/usr/local/musl/include \
     LIB_LDFLAGS=-L/usr/lib/x86_64-linux-gnu
+
+RUN sudo chown -R rust:rust /opt/rust/

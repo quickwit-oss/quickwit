@@ -4,7 +4,8 @@ COPY libpq.sh /
 RUN bash /libpq.sh aarch64-linux-gnu
 
 RUN apt-get update -y && \
-    apt-get install -y libpq-dev && \
+    apt-get install -y libpq-dev libclang-3.9-dev clang-3.9 \
+    gcc-aarch64-linux-gnu g++-aarch64-linux-gnu g++-4.9-multilib && \
     rm -rf /var/lib/apt/lists/*
 
 ENV LIBZ_SYS_STATIC=1 \
