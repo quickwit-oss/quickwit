@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -24,6 +25,7 @@ use std::time::Duration;
 
 use chitchat::server::ChitchatServer;
 use chitchat::{FailureDetectorConfig, NodeId, SerializableClusterState};
+use itertools::Itertools;
 use quickwit_common::net::get_socket_addr;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -34,8 +36,10 @@ use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use crate::error::ClusterResult;
+use crate::QuickwitService;
 
 const GRPC_ADDRESS_KEY: &str = "grpc_address";
+const AVAILABLE_SERVICES_KEY: &str = "available_services";
 
 /// A member information.
 #[derive(Clone, Debug, PartialEq)]
@@ -95,13 +99,13 @@ impl From<Member> for NodeId {
     }
 }
 
-/// This is an implementation of a cluster using the SWIM protocol.
+/// This is an implementation of a cluster using Chitchat.
 pub struct Cluster {
     pub node_id: String,
     /// A socket address that represents itself.
     pub listen_addr: SocketAddr,
 
-    /// The actual cluster that implement the SWIM protocol.
+    /// The actual cluster that implements Chitchat.
     chitchat_server: ChitchatServer,
 
     /// A receiver(channel) for exchanging members in a cluster.
@@ -120,6 +124,7 @@ impl Cluster {
     /// will be started at the same time.
     pub fn new(
         me: Member,
+        services: &HashSet<QuickwitService>,
         listen_addr: SocketAddr,
         cluster_id: String,
         grpc_addr: SocketAddr,
@@ -132,7 +137,13 @@ impl Cluster {
             seed_nodes,
             listen_addr.to_string(),
             cluster_id,
-            vec![(GRPC_ADDRESS_KEY, grpc_addr)],
+            vec![
+                (GRPC_ADDRESS_KEY, grpc_addr.to_string()),
+                (
+                    AVAILABLE_SERVICES_KEY,
+                    services.iter().map(|service| service.as_str()).join(","),
+                ),
+            ],
             failure_detector_config,
         );
         let chitchat = chitchat_server.chitchat();
@@ -193,18 +204,34 @@ impl Cluster {
         self.members.borrow().clone()
     }
 
-    /// Return the grpc addresses corresponding to the list of members.
-    pub async fn members_grpc_addresses(
+    /// Returns the gRPC addresses of the members providing the specified service.
+    pub async fn members_grpc_addresses_for_service(
         &self,
-        members: &[Member],
+        service: QuickwitService,
     ) -> anyhow::Result<Vec<SocketAddr>> {
         let chitchat = self.chitchat_server.chitchat();
         let chitchat_guard = chitchat.lock().await;
         let mut grpc_addresses = vec![];
-        for member in members {
+        for member in self.members() {
             let node_state = chitchat_guard
                 .node_state(&NodeId::from(member.clone()))
                 .unwrap();
+
+            let available_services_val_opt = node_state.get(AVAILABLE_SERVICES_KEY);
+            if available_services_val_opt.is_none() {
+                error!(
+                    "Could not find `{}` key on node `{}` state.",
+                    AVAILABLE_SERVICES_KEY,
+                    member.internal_id()
+                );
+                continue;
+            }
+
+            let available_services =
+                parse_available_services_val(available_services_val_opt.unwrap(), &member);
+            if !available_services.contains(&service) {
+                continue;
+            }
 
             let grpc_address = node_state
                 .get(GRPC_ADDRESS_KEY)
@@ -283,6 +310,25 @@ impl Cluster {
     }
 }
 
+fn parse_available_services_val(
+    available_services_val: &str,
+    member: &Member,
+) -> Vec<QuickwitService> {
+    let mut available_services = vec![];
+    let available_services_str = available_services_val.split(',');
+    for service_str in available_services_str {
+        match QuickwitService::try_from(service_str) {
+            Ok(service) => available_services.push(service),
+            Err(_) => error!(
+                "Unknown service found `{}` on node `{}` state.",
+                service_str,
+                member.internal_id()
+            ),
+        }
+    }
+    available_services
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ClusterState {
     state: SerializableClusterState,
@@ -299,6 +345,7 @@ pub fn create_cluster_for_test_with_id(
     peer_uuid: String,
     cluster_id: String,
     seeds: &[String],
+    services: &HashSet<QuickwitService>,
 ) -> anyhow::Result<Cluster> {
     let listen_addr = SocketAddr::new(
         IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
@@ -307,6 +354,7 @@ pub fn create_cluster_for_test_with_id(
     let failure_detector_config = create_failure_detector_config_for_test();
     let cluster = Cluster::new(
         Member::new(peer_uuid, 1, listen_addr),
+        services,
         listen_addr,
         cluster_id,
         grpc_addr_from_listen_addr_for_test(listen_addr),
@@ -326,9 +374,14 @@ fn create_failure_detector_config_for_test() -> FailureDetectorConfig {
 }
 
 /// Creates a local cluster listening on a random port.
-pub fn create_cluster_for_test(seeds: &[String]) -> anyhow::Result<Cluster> {
+pub fn create_cluster_for_test(seeds: &[String], services: &[&str]) -> anyhow::Result<Cluster> {
     let peer_uuid = Uuid::new_v4().to_string();
-    let cluster = create_cluster_for_test_with_id(peer_uuid, "test-cluster".to_string(), seeds)?;
+    let services = services
+        .iter()
+        .map(|service_str| QuickwitService::try_from(*service_str))
+        .collect::<Result<HashSet<_>, _>>()?;
+    let cluster =
+        create_cluster_for_test_with_id(peer_uuid, "test-cluster".to_string(), seeds, &services)?;
     Ok(cluster)
 }
 
@@ -344,7 +397,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cluster_single_node() -> anyhow::Result<()> {
-        let cluster = create_cluster_for_test(&[])?;
+        let cluster = create_cluster_for_test(&[], &[])?;
 
         let members: Vec<SocketAddr> = cluster
             .members()
@@ -359,12 +412,75 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_cluster_available_searcher() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let cluster1 = create_cluster_for_test(&[], &["searcher"])?;
+        let node_1 = cluster1.listen_addr.to_string();
+        let cluster2 = create_cluster_for_test(&[node_1.clone()], &["searcher"])?;
+        let cluster3 = create_cluster_for_test(&[node_1], &["indexer"])?;
+
+        let mut expected_searchers = vec![
+            grpc_addr_from_listen_addr_for_test(cluster1.listen_addr),
+            grpc_addr_from_listen_addr_for_test(cluster2.listen_addr),
+        ];
+        expected_searchers.sort();
+
+        let wait_secs = Duration::from_secs(30);
+        for cluster in [&cluster1, &cluster2, &cluster3] {
+            cluster
+                .wait_for_members(|members| members.len() == 3, wait_secs)
+                .await
+                .unwrap();
+        }
+
+        let mut searchers = cluster1
+            .members_grpc_addresses_for_service(QuickwitService::Searcher)
+            .await?;
+        searchers.sort();
+        assert_eq!(searchers, expected_searchers);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_cluster_available_indexer() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let cluster1 = create_cluster_for_test(&[], &["searcher", "indexer"])?;
+        let node_1 = cluster1.listen_addr.to_string();
+        let cluster2 = create_cluster_for_test(&[node_1.clone()], &["indexer"])?;
+        let cluster3 = create_cluster_for_test(&[node_1], &["indexer", "searcher"])?;
+
+        let mut expected_indexers = vec![
+            grpc_addr_from_listen_addr_for_test(cluster1.listen_addr),
+            grpc_addr_from_listen_addr_for_test(cluster2.listen_addr),
+            grpc_addr_from_listen_addr_for_test(cluster3.listen_addr),
+        ];
+        expected_indexers.sort();
+
+        let wait_secs = Duration::from_secs(30);
+
+        for cluster in [&cluster1, &cluster2, &cluster3] {
+            cluster
+                .wait_for_members(|members| members.len() == 3, wait_secs)
+                .await
+                .unwrap();
+        }
+
+        let mut indexers = cluster1
+            .members_grpc_addresses_for_service(QuickwitService::Indexer)
+            .await?;
+        indexers.sort();
+        assert_eq!(indexers, expected_indexers);
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_cluster_multiple_nodes() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let cluster1 = create_cluster_for_test(&[])?;
+        let cluster1 = create_cluster_for_test(&[], &[])?;
         let node_1 = cluster1.listen_addr.to_string();
-        let cluster2 = create_cluster_for_test(&[node_1.clone()])?;
-        let cluster3 = create_cluster_for_test(&[node_1])?;
+        let cluster2 = create_cluster_for_test(&[node_1.clone()], &[])?;
+        let cluster3 = create_cluster_for_test(&[node_1], &[])?;
 
         let wait_secs = Duration::from_secs(30);
 
@@ -406,12 +522,17 @@ mod tests {
     async fn test_cluster_id_isolation() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
 
-        let cluster1a =
-            create_cluster_for_test_with_id("node_1a".to_string(), "cluster1".to_string(), &[])?;
+        let cluster1a = create_cluster_for_test_with_id(
+            "node_1a".to_string(),
+            "cluster1".to_string(),
+            &[],
+            &HashSet::default(),
+        )?;
         let cluster2a = create_cluster_for_test_with_id(
             "node_2a".to_string(),
             "cluster2".to_string(),
             &[cluster1a.listen_addr.to_string()],
+            &HashSet::default(),
         )?;
 
         let cluster1b = create_cluster_for_test_with_id(
@@ -421,6 +542,7 @@ mod tests {
                 cluster1a.listen_addr.to_string(),
                 cluster2a.listen_addr.to_string(),
             ],
+            &HashSet::default(),
         )?;
         let cluster2b = create_cluster_for_test_with_id(
             "node_2b".to_string(),
@@ -429,6 +551,7 @@ mod tests {
                 cluster1a.listen_addr.to_string(),
                 cluster2a.listen_addr.to_string(),
             ],
+            &HashSet::default(),
         )?;
 
         let wait_secs = Duration::from_secs(30);
@@ -467,13 +590,18 @@ mod tests {
     async fn test_cluster_rejoin_with_different_id_issue_1018() -> anyhow::Result<()> {
         let cluster_id = "unified-cluster";
         quickwit_common::setup_logging_for_tests();
-        let cluster1 =
-            create_cluster_for_test_with_id("node1".to_string(), cluster_id.to_string(), &[])?;
+        let cluster1 = create_cluster_for_test_with_id(
+            "node1".to_string(),
+            cluster_id.to_string(),
+            &[],
+            &HashSet::default(),
+        )?;
         let node_1 = cluster1.listen_addr.to_string();
         let cluster2 = create_cluster_for_test_with_id(
             "node2".to_string(),
             cluster_id.to_string(),
             &[node_1.clone()],
+            &HashSet::default(),
         )?;
 
         let wait_secs = Duration::from_secs(30);
@@ -509,6 +637,7 @@ mod tests {
         );
         let cluster2 = Cluster::new(
             Member::new("newid".to_string(), 1, cluster2_listen_addr),
+            &HashSet::default(),
             cluster2_listen_addr,
             cluster_id.to_string(),
             grpc_addr,
@@ -539,19 +668,25 @@ mod tests {
     async fn test_cluster_rejoin_with_different_id_3_nodes_issue_1018() -> anyhow::Result<()> {
         let cluster_id = "three-nodes-cluster";
         quickwit_common::setup_logging_for_tests();
-        let cluster1 =
-            create_cluster_for_test_with_id("node1".to_string(), cluster_id.to_string(), &[])?;
+        let cluster1 = create_cluster_for_test_with_id(
+            "node1".to_string(),
+            cluster_id.to_string(),
+            &[],
+            &HashSet::default(),
+        )?;
         let node_1 = cluster1.listen_addr.to_string();
         let cluster2 = create_cluster_for_test_with_id(
             "node2".to_string(),
             cluster_id.to_string(),
             &[node_1.clone()],
+            &HashSet::default(),
         )?;
         let node_2 = cluster2.listen_addr.to_string();
         let cluster3 = create_cluster_for_test_with_id(
             "node3".to_string(),
             cluster_id.to_string(),
             &[node_2],
+            &HashSet::default(),
         )?;
 
         let wait_secs = Duration::from_secs(30);
@@ -593,6 +728,7 @@ mod tests {
         );
         let cluster2 = Cluster::new(
             Member::new("newid".to_string(), 1, cluster2_listen_addr),
+            &HashSet::default(),
             cluster2_listen_addr,
             cluster_id.to_string(),
             grpc_addr,
@@ -603,6 +739,7 @@ mod tests {
 
         let cluster3 = Cluster::new(
             Member::new("newid2".to_string(), 1, cluster3_listen_addr),
+            &HashSet::default(),
             cluster3_listen_addr,
             cluster_id.to_string(),
             grpc_addr,

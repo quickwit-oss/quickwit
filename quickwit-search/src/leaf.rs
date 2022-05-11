@@ -29,7 +29,7 @@ use itertools::{Either, Itertools};
 use once_cell::sync::OnceCell;
 use quickwit_config::get_searcher_config_instance;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
-use quickwit_doc_mapper::DocMapper;
+use quickwit_doc_mapper::{DocMapper, QUICKWIT_TOKENIZER_MANAGER};
 use quickwit_proto::{
     LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets, SplitSearchError,
 };
@@ -113,7 +113,8 @@ pub(crate) async fn open_index(
     let directory = StorageDirectory::new(bundle_storage_with_cache);
     let caching_directory = CachingDirectory::new_with_unlimited_capacity(Arc::new(directory));
     let hot_directory = HotDirectory::open(caching_directory, hotcache_bytes.read_bytes()?)?;
-    let index = Index::open(hot_directory)?;
+    let mut index = Index::open(hot_directory)?;
+    index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
     Ok(index)
 }
 

@@ -972,7 +972,7 @@ checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 [[package]]
 name = "fastfield_codecs"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=ed26552#ed26552296e4e380c7a286bfe52d994f8211d04e"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=cbd06ab1#cbd06ab1899c56260568ca914b58767f984cf486"
 dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
@@ -2160,7 +2160,7 @@ dependencies = [
 [[package]]
 name = "ownedbytes"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=ed26552#ed26552296e4e380c7a286bfe52d994f8211d04e"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=cbd06ab1#cbd06ab1899c56260568ca914b58767f984cf486"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -2606,6 +2606,7 @@ dependencies = [
  "opentelemetry-jaeger",
  "predicates",
  "quickwit-actors",
+ "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
  "quickwit-core",
@@ -3949,7 +3950,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.17.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=ed26552#ed26552296e4e380c7a286bfe52d994f8211d04e"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=cbd06ab1#cbd06ab1899c56260568ca914b58767f984cf486"
 dependencies = [
  "async-trait",
  "base64",
@@ -4000,12 +4001,12 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.1.1"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=ed26552#ed26552296e4e380c7a286bfe52d994f8211d04e"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=cbd06ab1#cbd06ab1899c56260568ca914b58767f984cf486"
 
 [[package]]
 name = "tantivy-common"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=ed26552#ed26552296e4e380c7a286bfe52d994f8211d04e"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=cbd06ab1#cbd06ab1899c56260568ca914b58767f984cf486"
 dependencies = [
  "byteorder",
  "ownedbytes",
@@ -4025,7 +4026,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.15.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=ed26552#ed26552296e4e380c7a286bfe52d994f8211d04e"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=cbd06ab1#cbd06ab1899c56260568ca914b58767f984cf486"
 dependencies = [
  "combine",
  "once_cell",

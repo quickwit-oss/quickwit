@@ -98,7 +98,7 @@ pub enum QuickwitTextTokenizer {
 }
 
 impl QuickwitTextTokenizer {
-    fn get_name(&self) -> &str {
+    pub fn get_name(&self) -> &str {
         match self {
             QuickwitTextTokenizer::Raw => "raw",
             QuickwitTextTokenizer::Default => "default",
@@ -161,7 +161,7 @@ impl From<QuickwitTextOptions> for TextOptions {
 }
 
 fn default_json_tokenizer() -> QuickwitTextTokenizer {
-    QuickwitTextTokenizer::Raw
+    QuickwitTextTokenizer::Default
 }
 
 /// Options associated to a json field.
@@ -169,6 +169,7 @@ fn default_json_tokenizer() -> QuickwitTextTokenizer {
 /// `QuickwitJsonOptions` is also used to configure
 /// the dynamic mapping.
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct QuickwitJsonOptions {
     /// If true, all of the element in the json object will be indexed.
     #[serde(default = "default_as_true")]
@@ -378,6 +379,14 @@ mod tests {
         }
     "#;
 
+    const JSON_MAPPING_ENTRY_UNKNOWN_FIELD: &str = r#"
+        {
+            "name": "my_field_name",
+            "type": "json",
+            "blub": true
+        }
+    "#;
+
     const OBJECT_MAPPING_ENTRY_VALUE: &str = r#"
         {
             "name": "my_field_name",
@@ -400,6 +409,20 @@ mod tests {
             mapping_entry.unwrap_err().to_string(),
             "Error while parsing field `my_field_name`: unknown variant `notexist`, expected one \
              of `raw`, `default`, `en_stem`"
+                .to_string()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_deserialize_invalid_json_mapping_entry() -> anyhow::Result<()> {
+        let mapping_entry =
+            serde_json::from_str::<FieldMappingEntry>(JSON_MAPPING_ENTRY_UNKNOWN_FIELD);
+        assert!(mapping_entry.is_err());
+        assert_eq!(
+            mapping_entry.unwrap_err().to_string(),
+            "Error while parsing field `my_field_name`: unknown field `blub`, expected one of \
+             `indexed`, `tokenizer`, `record`, `stored`"
                 .to_string()
         );
         Ok(())
@@ -936,7 +959,7 @@ mod tests {
         .unwrap();
         let expected_json_options = QuickwitJsonOptions {
             indexed: true,
-            tokenizer: QuickwitTextTokenizer::Raw,
+            tokenizer: QuickwitTextTokenizer::Default,
             record: IndexRecordOption::Basic,
             stored: true,
         };
@@ -960,6 +983,7 @@ mod tests {
             {
                 "type": "array<json>",
                 "name": "my_json_field_multi",
+                "tokenizer": "raw",
                 "stored": false
             }
             "#,

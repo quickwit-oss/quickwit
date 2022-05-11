@@ -20,10 +20,9 @@
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
 use tantivy::schema::{Field, Schema};
-use tantivy::tokenizer::TokenizerManager;
 use tantivy_query_grammar::{UserInputAst, UserInputLeaf};
 
-use crate::QueryParserError;
+use crate::{QueryParserError, QUICKWIT_TOKENIZER_MANAGER};
 
 /// Build a `Query` with field resolution & forbidding range clauses.
 pub(crate) fn build_query(
@@ -44,7 +43,8 @@ pub(crate) fn build_query(
         resolve_fields(&schema, &request.search_fields)?
     };
 
-    let mut query_parser = QueryParser::new(schema, search_fields, TokenizerManager::default());
+    let mut query_parser =
+        QueryParser::new(schema, search_fields, QUICKWIT_TOKENIZER_MANAGER.clone());
     query_parser.set_conjunction_by_default();
     let query = query_parser.parse_query(&request.query)?;
     Ok(query)

@@ -209,7 +209,7 @@ fast: true
 | ------------- | ------------- | ------------- |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
-| `fast`     | Whether value is stored in a fast field | `false` |
+| `fast`     | Whether value is stored in a fast field. Only on 1:1 cardinality, not supported on `array<bytes>` fields | `false` |
 
 #### `json` type
 
@@ -360,6 +360,10 @@ In plain language:
 - it needs to have at least one character.
 - it should only contain latin letter `[a-zA-Z]` digits `[0-9]` or (`.`, `-`, `_`).
 - the first character needs to be a letter.
+
+:::caution
+For field names containing the `.` character, you will need to escape it when referencing them. Otherwise the `.` character will be interpreted as a JSON object property access. Because of this, it is recommended to avoid using field names containing the `.` character.
+:::
 
 ### Behavior with fields not defined in the config
 

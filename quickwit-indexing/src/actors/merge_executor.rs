@@ -31,6 +31,7 @@ use quickwit_actors::{
 };
 use quickwit_common::split_file;
 use quickwit_directories::{BundleDirectory, UnionDirectory};
+use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
 use quickwit_metastore::checkpoint::CheckpointDelta;
 use quickwit_metastore::SplitMetadata;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
@@ -171,7 +172,7 @@ fn open_split_directories(
     for tantivy_dir in tantivy_dirs {
         directories.push(tantivy_dir.clone());
 
-        let index_meta = Index::open(tantivy_dir.clone())?.load_metas()?;
+        let index_meta = open_index(tantivy_dir.clone())?.load_metas()?;
         index_metas.push(index_meta);
     }
     let union_index_meta = combine_index_meta(index_metas)?;
@@ -242,7 +243,7 @@ fn merge_split_directories(
     ];
     directory_stack.extend(split_directories.into_iter());
     let union_directory = UnionDirectory::union_of(directory_stack);
-    let union_index = Index::open(union_directory)?;
+    let union_index = open_index(union_directory)?;
     ctx.record_progress();
     let _protect_guard = ctx.protect_zone();
     merge_all_segments(&union_index)?;
@@ -315,7 +316,7 @@ impl MergeExecutor {
         let docs_size_in_bytes = sum_doc_sizes_in_bytes(&splits);
         let num_docs = sum_num_docs(&splits);
 
-        let merged_index = Index::open(controlled_directory.clone())?;
+        let merged_index = open_index(controlled_directory.clone())?;
         ctx.record_progress();
         let index_writer = merged_index.writer_with_num_threads(1, 3_000_000)?;
         ctx.record_progress();
@@ -501,6 +502,12 @@ impl MergeExecutor {
     }
 }
 
+fn open_index<T: Into<Box<dyn Directory>>>(directory: T) -> tantivy::Result<Index> {
+    let mut index = Index::open(directory)?;
+    index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
+    Ok(index)
+}
+
 // Open indexes and return metas & segments for each split.
 // Note: only the first segment of each split is taken.
 pub fn load_metas_and_segments(
@@ -514,7 +521,7 @@ pub fn load_metas_and_segments(
         let split_filename = split_file(split_id);
         let split_fileslice = mmap_directory.open_read(Path::new(&split_filename))?;
         let split_directory = BundleDirectory::open_split(split_fileslice)?;
-        let index = Index::open(split_directory)?;
+        let index = open_index(split_directory)?;
         index_metas.push(index.load_metas()?);
         let searchable_segments = index.searchable_segments()?;
         assert_eq!(
