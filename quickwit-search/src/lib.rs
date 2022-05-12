@@ -273,7 +273,7 @@ mod tests {
     use assert_json_diff::assert_json_include;
     use quickwit_doc_mapper::DefaultDocMapper;
     use quickwit_indexing::TestSandbox;
-    use quickwit_proto::LeafHit;
+    use quickwit_proto::{LeafHit, SortOrder};
     use serde_json::json;
 
     use super::*;
@@ -491,6 +491,69 @@ mod tests {
         assert_eq!(single_node_response.num_hits, 0);
         assert_eq!(single_node_response.hits.len(), 0);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_single_node_sorting_with_query() -> anyhow::Result<()> {
+        let index_id = "single-node-sorting";
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: description
+                type: text
+              - name: ts
+                type: i64
+                fast: true
+              - name: temperature
+                type: i64
+                fast: true
+        "#;
+        let indexing_settings_json = r#"{
+            "timestamp_field": "ts",
+            "sort_field": "ts",
+            "sort_order": "desc"
+        }"#;
+        let test_sandbox = TestSandbox::create(
+            index_id,
+            doc_mapping_yaml,
+            indexing_settings_json,
+            &["description"],
+        )
+        .await?;
+
+        let mut docs = vec![];
+        for i in 0..30 {
+            let description = format!("city info-{}", i + 1);
+            docs.push(json!({"description": description, "ts": i+1, "temperature": i+32}));
+        }
+        test_sandbox.add_documents(docs).await?;
+
+        let search_request = SearchRequest {
+            index_id: index_id.to_string(),
+            query: "city".to_string(),
+            search_fields: vec![],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 15,
+            start_offset: 0,
+            sort_by_field: Some("temperature".to_string()),
+            sort_order: Some(SortOrder::Desc as i32),
+            ..Default::default()
+        };
+        let single_node_response = single_node_search(
+            &search_request,
+            &*test_sandbox.metastore(),
+            test_sandbox.storage_uri_resolver(),
+        )
+        .await?;
+        assert_eq!(single_node_response.num_hits, 30);
+        assert_eq!(single_node_response.hits.len(), 15);
+        assert!(single_node_response.hits.windows(2).all(|hits| hits[0]
+            .partial_hit
+            .as_ref()
+            .unwrap()
+            .sorting_field_value
+            >= hits[1].partial_hit.as_ref().unwrap().sorting_field_value));
         Ok(())
     }
 
