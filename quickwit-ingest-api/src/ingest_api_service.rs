@@ -22,22 +22,22 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, QueueCapacity};
-use quickwit_proto::push_api::{
+use quickwit_proto::ingest_api::{
     CreateQueueIfNonExistentRequest, CreateQueueRequest, DropQueueRequest, FetchRequest,
     FetchResponse, IngestRequest, IngestResponse, QueueExistsRequest, SuggestTruncateRequest,
     TailRequest,
 };
 
-use crate::{iter_doc_payloads, Position, PushApiError, Queues};
+use crate::{iter_doc_payloads, IngestApiError, Position, Queues};
 
-pub struct PushApiService {
+pub struct IngestApiService {
     queues: Queues,
 }
 
-impl PushApiService {
+impl IngestApiService {
     pub fn with_queue_path(queue_path: &Path) -> crate::Result<Self> {
         let queues = Queues::open(queue_path)?;
-        Ok(PushApiService { queues })
+        Ok(IngestApiService { queues })
     }
 
     async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse> {
@@ -51,7 +51,7 @@ impl PushApiService {
             .find(|index_id| !self.queues.queue_exists(index_id));
 
         if let Some(index_id) = first_non_existing_queue_opt {
-            return Err(PushApiError::IndexDoesNotExist { index_id });
+            return Err(IngestApiError::IndexDoesNotExist { index_id });
         }
 
         let mut num_docs = 0usize;
@@ -86,7 +86,7 @@ impl PushApiService {
 }
 
 #[async_trait]
-impl Actor for PushApiService {
+impl Actor for IngestApiService {
     type ObservableState = ();
 
     fn observable_state(&self) -> Self::ObservableState {}
@@ -102,7 +102,7 @@ impl Actor for PushApiService {
 }
 
 #[async_trait]
-impl Handler<QueueExistsRequest> for PushApiService {
+impl Handler<QueueExistsRequest> for IngestApiService {
     type Reply = crate::Result<bool>;
     async fn handle(
         &mut self,
@@ -114,7 +114,7 @@ impl Handler<QueueExistsRequest> for PushApiService {
 }
 
 #[async_trait]
-impl Handler<CreateQueueRequest> for PushApiService {
+impl Handler<CreateQueueRequest> for IngestApiService {
     type Reply = crate::Result<()>;
     async fn handle(
         &mut self,
@@ -126,7 +126,7 @@ impl Handler<CreateQueueRequest> for PushApiService {
 }
 
 #[async_trait]
-impl Handler<CreateQueueIfNonExistentRequest> for PushApiService {
+impl Handler<CreateQueueIfNonExistentRequest> for IngestApiService {
     type Reply = crate::Result<()>;
     async fn handle(
         &mut self,
@@ -141,7 +141,7 @@ impl Handler<CreateQueueIfNonExistentRequest> for PushApiService {
 }
 
 #[async_trait]
-impl Handler<DropQueueRequest> for PushApiService {
+impl Handler<DropQueueRequest> for IngestApiService {
     type Reply = crate::Result<()>;
     async fn handle(
         &mut self,
@@ -153,7 +153,7 @@ impl Handler<DropQueueRequest> for PushApiService {
 }
 
 #[async_trait]
-impl Handler<IngestRequest> for PushApiService {
+impl Handler<IngestRequest> for IngestApiService {
     type Reply = crate::Result<IngestResponse>;
     async fn handle(
         &mut self,
@@ -165,7 +165,7 @@ impl Handler<IngestRequest> for PushApiService {
 }
 
 #[async_trait]
-impl Handler<FetchRequest> for PushApiService {
+impl Handler<FetchRequest> for IngestApiService {
     type Reply = crate::Result<FetchResponse>;
     async fn handle(
         &mut self,
@@ -177,7 +177,7 @@ impl Handler<FetchRequest> for PushApiService {
 }
 
 #[async_trait]
-impl Handler<TailRequest> for PushApiService {
+impl Handler<TailRequest> for IngestApiService {
     type Reply = crate::Result<FetchResponse>;
     async fn handle(
         &mut self,
@@ -189,7 +189,7 @@ impl Handler<TailRequest> for PushApiService {
 }
 
 #[async_trait]
-impl Handler<SuggestTruncateRequest> for PushApiService {
+impl Handler<SuggestTruncateRequest> for IngestApiService {
     type Reply = crate::Result<()>;
     async fn handle(
         &mut self,

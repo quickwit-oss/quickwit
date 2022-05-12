@@ -22,48 +22,48 @@ use serde::Serialize;
 use thiserror::Error;
 
 #[derive(Error, Debug, Serialize)]
-pub enum PushApiError {
+pub enum IngestApiError {
     #[error("Rocks DB Error: {msg}.")]
     Corruption { msg: String },
     #[error("Index `{index_id}` does not exist.")]
     IndexDoesNotExist { index_id: String },
     #[error("Index `{index_id}` already exists.")]
     IndexAlreadyExists { index_id: String },
-    #[error("PushAPI service is down")]
-    PushAPIServiceDown,
+    #[error("Ingest API service is down")]
+    IngestAPIServiceDown,
 }
 
 #[derive(Error, Debug)]
 #[error("Key should contain 16 bytes. It contained {0} bytes.")]
 pub struct CorruptedKey(pub usize);
 
-impl From<rocksdb::Error> for PushApiError {
+impl From<rocksdb::Error> for IngestApiError {
     fn from(err: rocksdb::Error) -> Self {
-        PushApiError::Corruption {
+        IngestApiError::Corruption {
             msg: format!("RocksDB error: {err:?}"),
         }
     }
 }
 
-impl From<CorruptedKey> for PushApiError {
+impl From<CorruptedKey> for IngestApiError {
     fn from(err: CorruptedKey) -> Self {
-        PushApiError::Corruption {
+        IngestApiError::Corruption {
             msg: format!("CorruptedKey: {err:?}"),
         }
     }
 }
 
-impl From<PushApiError> for tonic::Status {
-    fn from(error: PushApiError) -> tonic::Status {
+impl From<IngestApiError> for tonic::Status {
+    fn from(error: IngestApiError) -> tonic::Status {
         let code = match &error {
-            PushApiError::Corruption { .. } => tonic::Code::Internal,
-            PushApiError::IndexDoesNotExist { .. } => tonic::Code::NotFound,
-            PushApiError::IndexAlreadyExists { .. } => tonic::Code::AlreadyExists,
-            PushApiError::PushAPIServiceDown => tonic::Code::Internal,
+            IngestApiError::Corruption { .. } => tonic::Code::Internal,
+            IngestApiError::IndexDoesNotExist { .. } => tonic::Code::NotFound,
+            IngestApiError::IndexAlreadyExists { .. } => tonic::Code::AlreadyExists,
+            IngestApiError::IngestAPIServiceDown => tonic::Code::Internal,
         };
         let message = error.to_string();
         tonic::Status::new(code, message)
     }
 }
 
-pub type Result<T> = std::result::Result<T, PushApiError>;
+pub type Result<T> = std::result::Result<T, IngestApiError>;

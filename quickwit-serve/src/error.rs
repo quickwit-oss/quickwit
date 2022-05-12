@@ -24,8 +24,8 @@ use quickwit_actors::AskError;
 use quickwit_cluster::ClusterError;
 use quickwit_core::IndexServiceError;
 use quickwit_indexing::IndexingServiceError;
+use quickwit_ingest_api::IngestApiError;
 use quickwit_proto::tonic;
-use quickwit_pushapi::PushApiError;
 use quickwit_search::SearchError;
 use warp::http;
 
@@ -95,13 +95,13 @@ impl ServiceError for IndexingServiceError {
     }
 }
 
-impl ServiceError for PushApiError {
+impl ServiceError for IngestApiError {
     fn status_code(&self) -> ServiceErrorCode {
         match self {
-            PushApiError::Corruption { .. } => ServiceErrorCode::Internal,
-            PushApiError::IndexDoesNotExist { .. } => ServiceErrorCode::NotFound,
-            PushApiError::IndexAlreadyExists { .. } => ServiceErrorCode::BadRequest,
-            PushApiError::PushAPIServiceDown => ServiceErrorCode::Internal,
+            IngestApiError::Corruption { .. } => ServiceErrorCode::Internal,
+            IngestApiError::IndexDoesNotExist { .. } => ServiceErrorCode::NotFound,
+            IngestApiError::IndexAlreadyExists { .. } => ServiceErrorCode::BadRequest,
+            IngestApiError::IngestAPIServiceDown => ServiceErrorCode::Internal,
         }
     }
 }

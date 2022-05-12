@@ -17,9 +17,9 @@ reqwest = { version = "0.11", default-features=false, features = ["json", "rustl
 # It is actually not used directly the goal is to fix the version
 # used by reqwest. 0.8.30 has an unclear license.
 encoding_rs = "=0.8.29"
-tokio = {version = "1", features = ["full"]}
-serde = {version="1", features = ["derive"]}
-uuid = { version= "1.0", features = ["v4", "serde"]}
+tokio = {version = "1", features = ["full"] }
+serde = {version = "1", features = ["derive"] }
+uuid = { version= "1.0", features = ["v4", "serde"] }
 tracing = "0.1.29"
 async-trait = "0.1"
 hostname = "0.3"

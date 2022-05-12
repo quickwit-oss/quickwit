@@ -19,26 +19,26 @@
 
 use async_trait::async_trait;
 use quickwit_actors::Mailbox;
-use quickwit_proto::push_api::{
-    push_api_service_server as grpc, FetchRequest, FetchResponse, IngestRequest, IngestResponse,
+use quickwit_ingest_api::IngestApiService;
+use quickwit_proto::ingest_api::{
+    ingest_api_service_server as grpc, FetchRequest, FetchResponse, IngestRequest, IngestResponse,
     TailRequest,
 };
 use quickwit_proto::tonic;
-use quickwit_pushapi::PushApiService;
 
 use crate::error::convert_to_grpc_result;
 
 #[derive(Clone)]
-pub struct GrpcPushApiAdapter(Mailbox<PushApiService>);
+pub struct GrpcIngestApiAdapter(Mailbox<IngestApiService>);
 
-impl From<Mailbox<PushApiService>> for GrpcPushApiAdapter {
-    fn from(push_api_service: Mailbox<PushApiService>) -> Self {
-        GrpcPushApiAdapter(push_api_service)
+impl From<Mailbox<IngestApiService>> for GrpcIngestApiAdapter {
+    fn from(ingest_api_service: Mailbox<IngestApiService>) -> Self {
+        GrpcIngestApiAdapter(ingest_api_service)
     }
 }
 
 #[async_trait]
-impl grpc::PushApiService for GrpcPushApiAdapter {
+impl grpc::IngestApiService for GrpcIngestApiAdapter {
     async fn ingest(
         &self,
         request: tonic::Request<IngestRequest>,

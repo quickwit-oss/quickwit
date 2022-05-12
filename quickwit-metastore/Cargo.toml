@@ -26,7 +26,7 @@ regex = "1"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 thiserror = "1.0"
-tokio = { version = "1.18", features = ["full"]}
+tokio = { version = "1.18", features = ["full"] }
 tracing = "0.1.29"
 
 quickwit-common = { version = "0.2.1", path = "../quickwit-common" }
@@ -45,8 +45,8 @@ optional = true
 [dev-dependencies]
 dotenv = "0.15"
 mockall = "0.11"
-quickwit-storage = { version = "0.2.1", path = "../quickwit-storage", features=["testsuite"]}
-quickwit-doc-mapper = { version = "0.2.1", path = "../quickwit-doc-mapper", features=["testsuite"] }
+quickwit-storage = { version = "0.2.1", path = "../quickwit-storage", features = ["testsuite"] }
+quickwit-doc-mapper = { version = "0.2.1", path = "../quickwit-doc-mapper", features = ["testsuite"] }
 tempfile = '3'
 futures = '0.3'
 rand = "0.8"

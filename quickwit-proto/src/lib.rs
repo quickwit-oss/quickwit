@@ -19,10 +19,10 @@
 
 mod cluster;
 mod quickwit;
-mod quickwit_push_api;
+mod quickwit_ingest_api;
 
-pub mod push_api {
-    pub use crate::quickwit_push_api::*;
+pub mod ingest_api {
+    pub use crate::quickwit_ingest_api::*;
 }
 
 #[macro_use]

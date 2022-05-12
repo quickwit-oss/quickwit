@@ -26,14 +26,14 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::payload::TelemetryPayload;
 
-/// Telemetry push API URL
-const DEFAULT_TELEMETRY_PUSH_API_URL: &str = "https://telemetry.quickwit.io/";
+/// Telemetry ingest API URL
+const DEFAULT_TELEMETRY_INGEST_API_URL: &str = "https://telemetry.quickwit.io/";
 
-fn telemetry_push_api_url() -> String {
-    if let Some(push_api_url) = std::env::var_os("TELEMETRY_PUSH_API") {
-        push_api_url.to_string_lossy().to_string()
+fn telemetry_ingest_api_url() -> String {
+    if let Some(ingest_api_url) = std::env::var_os("TELEMETRY_INGEST_API") {
+        ingest_api_url.to_string_lossy().to_string()
     } else {
-        DEFAULT_TELEMETRY_PUSH_API_URL.to_string()
+        DEFAULT_TELEMETRY_INGEST_API_URL.to_string()
     }
 }
 
@@ -55,7 +55,7 @@ impl HttpClient {
             .ok()?;
         Some(HttpClient {
             client,
-            endpoint: telemetry_push_api_url(),
+            endpoint: telemetry_ingest_api_url(),
         })
     }
 

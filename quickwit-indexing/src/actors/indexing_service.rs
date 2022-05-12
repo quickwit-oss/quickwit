@@ -27,11 +27,11 @@ use quickwit_actors::{
     Supervisable,
 };
 use quickwit_config::{
-    IndexerConfig, PushApiSourceParams, SourceConfig, SourceParams, VecSourceParams,
+    IndexerConfig, IngestApiSourceParams, SourceConfig, SourceParams, VecSourceParams,
 };
+use quickwit_ingest_api::IngestApiService;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
-use quickwit_proto::push_api::CreateQueueIfNonExistentRequest;
-use quickwit_pushapi::PushApiService;
+use quickwit_proto::ingest_api::CreateQueueIfNonExistentRequest;
 use quickwit_storage::{StorageResolverError, StorageUriResolver};
 use serde::Serialize;
 use thiserror::Error;
@@ -45,8 +45,8 @@ use crate::{IndexingPipeline, IndexingPipelineParams, IndexingStatistics};
 
 pub const INDEXING: &str = "indexing";
 
-/// Reserved source id used for the Push API.
-const PUSH_API_SOURCE_ID: &str = ".push-api";
+/// Reserved source ID used for the ingest API.
+const INGEST_API_SOURCE_ID: &str = ".ingest-api";
 
 #[derive(Error, Debug)]
 pub enum IndexingServiceError {
@@ -77,7 +77,7 @@ pub struct IndexingService {
     storage_resolver: StorageUriResolver,
     pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     state: IndexingServiceState,
-    push_api_service: Option<Mailbox<PushApiService>>,
+    ingest_api_service: Option<Mailbox<IngestApiService>>,
 }
 
 impl IndexingService {
@@ -91,7 +91,7 @@ impl IndexingService {
         indexer_config: IndexerConfig,
         metastore: Arc<dyn Metastore>,
         storage_resolver: StorageUriResolver,
-        push_api_service: Option<Mailbox<PushApiService>>,
+        ingest_api_service: Option<Mailbox<IngestApiService>>,
     ) -> IndexingService {
         Self {
             indexing_dir_path: data_dir_path.join(INDEXING),
@@ -102,7 +102,7 @@ impl IndexingService {
             storage_resolver,
             pipeline_handles: Default::default(),
             state: Default::default(),
-            push_api_service,
+            ingest_api_service,
         }
     }
 
@@ -177,22 +177,22 @@ impl IndexingService {
             pipeline_ids.push(pipeline_id);
         }
 
-        // Spawn push-api pipeline for this index if needed.
-        if let Some(push_api_service) = &self.push_api_service {
+        // Spawn ingest API pipeline for this index if needed.
+        if let Some(ingest_api_service) = &self.ingest_api_service {
             // Ensure the queue exist.
             let create_queue_req = CreateQueueIfNonExistentRequest {
                 queue_id: index_id.clone(),
             };
-            push_api_service
+            ingest_api_service
                 .ask_for_res(create_queue_req)
                 .await
                 .map_err(|err| IndexingServiceError::InvalidParams(err.into()))?;
 
-            let source_id = PUSH_API_SOURCE_ID.to_string();
-            let push_api_pipeline_id = self
-                .spawn_push_api_pipeline(index_id, source_id, index_metadata, ctx)
+            let source_id = INGEST_API_SOURCE_ID.to_string();
+            let ingest_api_pipeline_id = self
+                .spawn_ingest_api_pipeline(index_id, source_id, index_metadata, ctx)
                 .await?;
-            pipeline_ids.push(push_api_pipeline_id);
+            pipeline_ids.push(ingest_api_pipeline_id);
         }
         Ok(pipeline_ids)
     }
@@ -230,34 +230,34 @@ impl IndexingService {
         Ok(())
     }
 
-    async fn spawn_push_api_pipeline(
+    async fn spawn_ingest_api_pipeline(
         &mut self,
         index_id: String,
         source_id: String,
         index_metadata: IndexMetadata,
         ctx: &ActorContext<Self>,
     ) -> Result<IndexingPipelineId, IndexingServiceError> {
-        let push_api_pipeline_id = IndexingPipelineId {
+        let ingest_api_pipeline_id = IndexingPipelineId {
             index_id: index_id.clone(),
             source_id: source_id.clone(),
         };
-        let push_api_source = SourceConfig {
+        let ingest_api_source = SourceConfig {
             source_id,
-            source_params: SourceParams::PushApi(PushApiSourceParams {
+            source_params: SourceParams::IngestApi(IngestApiSourceParams {
                 index_id,
                 batch_num_bytes_threshold: None,
             }),
         };
 
         self.spawn_pipeline_inner(
-            push_api_pipeline_id.clone(),
+            ingest_api_pipeline_id.clone(),
             index_metadata.clone(),
-            push_api_source,
+            ingest_api_source,
             ctx,
         )
         .await?;
 
-        Ok(push_api_pipeline_id)
+        Ok(ingest_api_pipeline_id)
     }
 
     async fn spawn_merge_pipeline(

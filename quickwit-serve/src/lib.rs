@@ -29,7 +29,7 @@ mod cluster_api;
 mod health_check_api;
 mod index_api;
 mod indexing_api;
-mod push_api;
+mod ingest_api;
 mod search_api;
 mod ui_handler;
 
@@ -43,8 +43,8 @@ use quickwit_config::QuickwitConfig;
 use quickwit_core::IndexService;
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexer_service;
+use quickwit_ingest_api::{init_ingest_api, IngestApiService};
 use quickwit_metastore::quickwit_metastore_uri_resolver;
-use quickwit_pushapi::{init_push_api, PushApiService};
 use quickwit_search::{start_searcher_service, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use warp::{Filter, Rejection};
@@ -73,7 +73,7 @@ struct QuickwitServices {
     pub cluster_service: Arc<dyn ClusterService>,
     pub search_service: Option<Arc<dyn SearchService>>,
     pub indexer_service: Option<Mailbox<IndexingService>>,
-    pub push_api_service: Option<Mailbox<PushApiService>>,
+    pub ingest_api_service: Option<Mailbox<IngestApiService>>,
     pub index_service: Arc<IndexService>,
 }
 
@@ -90,13 +90,14 @@ pub async fn serve_quickwit(
 
     let universe = Universe::new();
 
-    let push_api_service: Option<Mailbox<PushApiService>> =
-        if services.contains(&QuickwitService::Indexer) {
-            let push_api_service = init_push_api(&universe, &config.data_dir_path.join("queues"))?;
-            Some(push_api_service)
-        } else {
-            None
-        };
+    let ingest_api_service: Option<Mailbox<IngestApiService>> = if services
+        .contains(&QuickwitService::Indexer)
+    {
+        let ingest_api_service = init_ingest_api(&universe, &config.data_dir_path.join("queues"))?;
+        Some(ingest_api_service)
+    } else {
+        None
+    };
 
     let indexer_service: Option<Mailbox<IndexingService>> =
         if services.contains(&QuickwitService::Indexer) {
@@ -105,7 +106,7 @@ pub async fn serve_quickwit(
                 config,
                 metastore.clone(),
                 storage_resolver.clone(),
-                push_api_service.clone(),
+                ingest_api_service.clone(),
             )
             .await?;
             Some(indexer_service)
@@ -135,7 +136,7 @@ pub async fn serve_quickwit(
     ));
 
     let quickwit_services = QuickwitServices {
-        push_api_service,
+        ingest_api_service,
         cluster_service,
         search_service,
         indexer_service,

@@ -7,7 +7,7 @@ This project hosts the REST, the gRPC API associated with quickwit and the react
 The API is split into:
 - the search API: the normal and the stream search api;
 - the index management API: create, delete, list indexes and list splits of an index;
-- the push API;
+- the ingest API;
 - the cluster API: expose information about the cluster, its members etc;
 - the health check API: the health check of the current node. This API is rest only at the moment.
 
