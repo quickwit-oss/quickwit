@@ -22,8 +22,8 @@ use std::convert::Infallible;
 
 use bytes::Bytes;
 use quickwit_actors::Mailbox;
-use quickwit_proto::push_api::{DocBatch, IngestRequest, TailRequest};
-use quickwit_pushapi::{add_doc, PushApiService};
+use quickwit_ingest_api::{add_doc, IngestApiService};
+use quickwit_proto::ingest_api::{DocBatch, IngestRequest, TailRequest};
 use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
@@ -39,10 +39,10 @@ struct InvalidUtf8;
 impl warp::reject::Reject for InvalidUtf8 {}
 
 #[derive(Debug, Error)]
-#[error("The PushAPI is not available.")]
-struct PushApiServiceUnavailable;
+#[error("The ingest API is not available.")]
+struct IngestApiServiceUnavailable;
 
-impl warp::reject::Reject for PushApiServiceUnavailable {}
+impl warp::reject::Reject for IngestApiServiceUnavailable {}
 
 #[derive(Debug, Error)]
 pub enum BulkApiError {
@@ -79,10 +79,10 @@ struct BulkActionMeta {
 }
 
 pub fn ingest_handler(
-    push_api_mailbox_opt: Option<Mailbox<PushApiService>>,
+    ingest_api_mailbox_opt: Option<Mailbox<IngestApiService>>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     ingest_filter()
-        .and(require(push_api_mailbox_opt))
+        .and(require(ingest_api_mailbox_opt))
         .and_then(ingest)
 }
 
@@ -111,7 +111,7 @@ fn lines(body: &str) -> impl Iterator<Item = &str> {
 async fn ingest(
     index_id: String,
     payload: String,
-    push_api_mailbox: Mailbox<PushApiService>,
+    ingest_api_mailbox: Mailbox<IngestApiService>,
 ) -> Result<impl warp::Reply, Infallible> {
     let mut doc_batch = DocBatch {
         index_id,
@@ -123,7 +123,7 @@ async fn ingest(
     let ingest_req = IngestRequest {
         doc_batches: vec![doc_batch],
     };
-    let ingest_resp = push_api_mailbox
+    let ingest_resp = ingest_api_mailbox
         .ask_for_res(ingest_req)
         .await
         .map_err(FormatError::wrap);
@@ -131,10 +131,10 @@ async fn ingest(
 }
 
 pub fn tail_handler(
-    push_api_mailbox_opt: Option<Mailbox<PushApiService>>,
+    ingest_api_mailbox_opt: Option<Mailbox<IngestApiService>>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     tail_filter()
-        .and(require(push_api_mailbox_opt))
+        .and(require(ingest_api_mailbox_opt))
         .and_then(tail_endpoint)
 }
 
@@ -144,9 +144,9 @@ fn tail_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone 
 
 async fn tail_endpoint(
     index_id: String,
-    push_api_service: Mailbox<PushApiService>,
+    ingest_api_service: Mailbox<IngestApiService>,
 ) -> Result<impl warp::Reply, Infallible> {
-    let tail_res = push_api_service
+    let tail_res = ingest_api_service
         .ask_for_res(TailRequest { index_id })
         .await
         .map_err(FormatError::wrap);
@@ -166,10 +166,10 @@ fn bulk_filter() -> impl Filter<Extract = (String, String), Error = Rejection> +
 }
 
 pub fn bulk_handler(
-    push_api_mailbox_opt: Option<Mailbox<PushApiService>>,
+    ingest_api_mailbox_opt: Option<Mailbox<IngestApiService>>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     bulk_filter()
-        .and(require(push_api_mailbox_opt))
+        .and(require(ingest_api_mailbox_opt))
         .and_then(ingest)
 }
 
@@ -186,16 +186,16 @@ fn elastic_bulk_filter() -> impl Filter<Extract = (String,), Error = Rejection> 
 }
 
 pub fn elastic_bulk_handler(
-    push_api_mailbox_opt: Option<Mailbox<PushApiService>>,
+    ingest_api_mailbox_opt: Option<Mailbox<IngestApiService>>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     elastic_bulk_filter()
-        .and(require(push_api_mailbox_opt))
+        .and(require(ingest_api_mailbox_opt))
         .and_then(elastic_ingest)
 }
 
 async fn elastic_ingest(
     payload: String,
-    push_api_mailbox: Mailbox<PushApiService>,
+    ingest_api_mailbox: Mailbox<IngestApiService>,
 ) -> Result<impl warp::Reply, Rejection> {
     let mut batches = HashMap::new();
     let mut payload_lines = lines(&payload);
@@ -225,7 +225,7 @@ async fn elastic_ingest(
     let ingest_req = IngestRequest {
         doc_batches: batches.into_iter().map(|(_, batch)| batch).collect(),
     };
-    let ingest_resp = push_api_mailbox
+    let ingest_resp = ingest_api_mailbox
         .ask_for_res(ingest_req)
         .await
         .map_err(FormatError::wrap);
@@ -252,5 +252,5 @@ mod tests {
         assert!(serde_json::from_str::<BulkAction>(json_str).is_err());
     }
 
-    // TODO: find a way to refactor/mock PushApiService for testing the endpoint.
+    // TODO: find a way to refactor/mock IngestApiService for testing the endpoint.
 }

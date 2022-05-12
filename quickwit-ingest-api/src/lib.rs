@@ -18,50 +18,50 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod errors;
+mod ingest_api_service;
 mod position;
-mod push_api_service;
 mod queue;
 
 use std::path::Path;
 
 use anyhow::Context;
-pub use errors::PushApiError;
+pub use errors::IngestApiError;
 use errors::Result;
+pub use ingest_api_service::IngestApiService;
 use once_cell::sync::OnceCell;
 pub use position::Position;
-pub use push_api_service::PushApiService;
 pub use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
-use quickwit_proto::push_api::DocBatch;
+use quickwit_proto::ingest_api::DocBatch;
 use tracing::info;
 
-pub static PUSH_API_SERVICE_INSTANCE: OnceCell<Mailbox<PushApiService>> = OnceCell::new();
+pub static INGEST_API_SERVICE_INSTANCE: OnceCell<Mailbox<IngestApiService>> = OnceCell::new();
 
-/// Initializes the PushApiService single instance.
-pub fn init_push_api(
+/// Initializes the [`IngestApiService`] singleton.
+pub fn init_ingest_api(
     universe: &Universe,
     queue_path: &Path,
-) -> anyhow::Result<Mailbox<PushApiService>> {
-    let push_api_service = PUSH_API_SERVICE_INSTANCE
-        .get_or_try_init(|| spawn_push_api_actor(universe, queue_path))
-        .context("Failed to initialize the PushApi")?;
-    Ok(push_api_service.clone())
+) -> anyhow::Result<Mailbox<IngestApiService>> {
+    let ingest_api_service = INGEST_API_SERVICE_INSTANCE
+        .get_or_try_init(|| spawn_ingest_api_actor(universe, queue_path))
+        .context("Failed to initialize the ingest API service.")?;
+    Ok(ingest_api_service.clone())
 }
 
-/// Gets the instance of the single PushApiService via a copy of it's Mailbox.
-pub fn get_push_api_service() -> Option<Mailbox<PushApiService>> {
-    PUSH_API_SERVICE_INSTANCE.get().cloned()
+/// Gets the instance of the single IngestApiService via a copy of it's Mailbox.
+pub fn get_ingest_api_service() -> Option<Mailbox<IngestApiService>> {
+    INGEST_API_SERVICE_INSTANCE.get().cloned()
 }
 
-/// Creates a push api service actor.
-pub fn spawn_push_api_actor(
+/// Creates a ingest API service actor.
+pub fn spawn_ingest_api_actor(
     universe: &Universe,
     queue_path: &Path,
-) -> anyhow::Result<Mailbox<PushApiService>> {
-    info!(queue_path=?queue_path, "Spawning push api actor");
-    let push_api_actor = PushApiService::with_queue_path(queue_path)?;
-    let (push_api_mailbox, _push_api_handle) = universe.spawn_actor(push_api_actor).spawn();
-    Ok(push_api_mailbox)
+) -> anyhow::Result<Mailbox<IngestApiService>> {
+    info!(queue_path=?queue_path, "Spawning ingest API actor");
+    let ingest_api_actor = IngestApiService::with_queue_path(queue_path)?;
+    let (ingest_api_mailbox, _ingest_api_handle) = universe.spawn_actor(ingest_api_actor).spawn();
+    Ok(ingest_api_mailbox)
 }
 
 /// Adds a document raw bytes to a [`DocBatch`]

@@ -133,7 +133,7 @@ impl Default for Events {
 
 impl Events {
     /// Wait for events to be available (if there are pending events, then do not wait)
-    /// and then send them to the PushAPI server.
+    /// and then send them to the ingest API server.
     async fn drain_events(&self) -> EventsState {
         self.items_available_rx.write().await.recv().await;
         self.state.write().await.drain_events()
@@ -171,7 +171,7 @@ impl Inner {
     }
 
     /// Wait for events to be available (if there are pending events, then do not wait)
-    /// and then send them to the PushAPI server.
+    /// and then send them to the ingest API server.
     ///
     /// If the requests fails, it fails silently.
     async fn send_pending_events(&self) {

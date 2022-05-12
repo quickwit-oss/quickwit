@@ -22,10 +22,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
-use quickwit_config::PushApiSourceParams;
+use quickwit_config::IngestApiSourceParams;
+use quickwit_ingest_api::{get_ingest_api_service, iter_doc_payloads, IngestApiService};
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
-use quickwit_proto::push_api::{FetchRequest, FetchResponse, SuggestTruncateRequest};
-use quickwit_pushapi::{get_push_api_service, iter_doc_payloads, PushApiService};
+use quickwit_proto::ingest_api::{FetchRequest, FetchResponse, SuggestTruncateRequest};
 use serde::Serialize;
 
 use super::file_source::BATCH_NUM_BYTES_THRESHOLD;
@@ -36,33 +36,33 @@ use crate::models::RawDocBatch;
 /// Wait time for SourceActor before pooling for new documents.
 /// TODO: Think of better way, maybe increment this (i.e wait longer) as time
 /// goes on without receiving docs.
-const PUSH_API_POLLING_COOL_DOWN: Duration = Duration::from_secs(1);
+const INGEST_API_POLLING_COOL_DOWN: Duration = Duration::from_secs(1);
 
 #[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct PushApiSourceCounters {
+pub struct IngestApiSourceCounters {
     pub previous_offset: u64,
     pub current_offset: u64,
     pub num_docs_processed: u64,
 }
 
-pub struct PushApiSource {
+pub struct IngestApiSource {
     source_id: String,
-    params: PushApiSourceParams,
-    push_api_mailbox: Mailbox<PushApiService>,
-    counters: PushApiSourceCounters,
+    params: IngestApiSourceParams,
+    ingest_api_mailbox: Mailbox<IngestApiService>,
+    counters: IngestApiSourceCounters,
 }
 
-impl fmt::Debug for PushApiSource {
+impl fmt::Debug for IngestApiSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "PushApiSource {{ source_id: {} }}", self.source_id)
+        write!(f, "IngestApiSource {{ source_id: {} }}", self.source_id)
     }
 }
 
-impl PushApiSource {
+impl IngestApiSource {
     pub async fn make(
         source_id: String,
-        params: PushApiSourceParams,
-        push_api_mailbox: Mailbox<PushApiService>,
+        params: IngestApiSourceParams,
+        ingest_api_mailbox: Mailbox<IngestApiService>,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
         let partition_id = PartitionId::from(params.index_id.clone());
@@ -74,17 +74,17 @@ impl PushApiSource {
             0
         };
 
-        let push_api_source = PushApiSource {
+        let ingest_api_source = IngestApiSource {
             source_id,
             params,
-            push_api_mailbox,
-            counters: PushApiSourceCounters {
+            ingest_api_mailbox,
+            counters: IngestApiSourceCounters {
                 previous_offset: offset,
                 current_offset: offset,
                 num_docs_processed: 0,
             },
         };
-        Ok(push_api_source)
+        Ok(ingest_api_source)
     }
 
     fn update_counters(&mut self, current_offset: u64, num_docs: u64) {
@@ -95,7 +95,7 @@ impl PushApiSource {
 }
 
 #[async_trait]
-impl Source for PushApiSource {
+impl Source for IngestApiSource {
     async fn emit_batches(
         &mut self,
         batch_sink: &Mailbox<Indexer>,
@@ -119,7 +119,7 @@ impl Source for PushApiSource {
             first_position: first_position_opt,
             doc_batch: doc_batch_opt,
         } = self
-            .push_api_mailbox
+            .ingest_api_mailbox
             .ask_for_res(fetch_req)
             .await
             .map_err(anyhow::Error::from)?;
@@ -131,7 +131,7 @@ impl Source for PushApiSource {
         let (first_position, doc_batch) = if let Some(first_position) = first_position_opt {
             (first_position, doc_batch_opt.unwrap())
         } else {
-            return Ok(PUSH_API_POLLING_COOL_DOWN);
+            return Ok(INGEST_API_POLLING_COOL_DOWN);
         };
 
         let docs = iter_doc_payloads(&doc_batch)
@@ -171,7 +171,7 @@ impl Source for PushApiSource {
                 index_id: self.params.index_id.clone(),
                 up_to_position_included,
             };
-            self.push_api_mailbox
+            self.ingest_api_mailbox
                 .ask_for_res(suggest_truncate_req)
                 .await
                 .map_err(anyhow::Error::from)?;
@@ -180,7 +180,7 @@ impl Source for PushApiSource {
     }
 
     fn name(&self) -> String {
-        "PushApiSource".to_string()
+        "IngestApiSource".to_string()
     }
 
     fn observable_state(&self) -> serde_json::Value {
@@ -188,25 +188,25 @@ impl Source for PushApiSource {
     }
 }
 
-pub struct PushApiSourceFactory;
+pub struct IngestApiSourceFactory;
 
 #[async_trait]
-impl TypedSourceFactory for PushApiSourceFactory {
-    type Source = PushApiSource;
-    type Params = PushApiSourceParams;
+impl TypedSourceFactory for IngestApiSourceFactory {
+    type Source = IngestApiSource;
+    type Params = IngestApiSourceParams;
 
     async fn typed_create_source(
         source_id: String,
-        params: PushApiSourceParams,
+        params: IngestApiSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
-        let push_api_mailbox = get_push_api_service().ok_or_else(|| {
+        let ingest_api_mailbox = get_ingest_api_service().ok_or_else(|| {
             anyhow::anyhow!(
-                "Could not get the `PushApiSource {{ source_id: {} }}` instance.",
+                "Could not get the `IngestApiSource {{ source_id: {} }}` instance.",
                 source_id
             )
         })?;
-        PushApiSource::make(source_id, params, push_api_mailbox, checkpoint).await
+        IngestApiSource::make(source_id, params, ingest_api_mailbox, checkpoint).await
     }
 }
 
@@ -215,9 +215,9 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_ingest_api::{add_doc, spawn_ingest_api_actor, Queues};
     use quickwit_metastore::checkpoint::SourceCheckpoint;
-    use quickwit_proto::push_api::{DocBatch, IngestRequest};
-    use quickwit_pushapi::{add_doc, spawn_push_api_actor, Queues};
+    use quickwit_proto::ingest_api::{DocBatch, IngestRequest};
 
     use super::*;
     use crate::source::SourceActor;
@@ -240,7 +240,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_pushapi_source() -> anyhow::Result<()> {
+    async fn test_ingest_api_source() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let index_id = "my-index".to_string();
@@ -251,36 +251,36 @@ mod tests {
         queues.create_queue(&index_id)?;
         drop(queues);
 
-        let push_api_mailbox = spawn_push_api_actor(&universe, queue_path.path())?;
+        let ingest_api_mailbox = spawn_ingest_api_actor(&universe, queue_path.path())?;
 
         let ingest_req = make_ingest_request(index_id.clone(), 2, 1000);
 
-        push_api_mailbox
+        ingest_api_mailbox
             .ask_for_res(ingest_req)
             .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
 
         let (mailbox, inbox) = create_test_mailbox();
-        let params = PushApiSourceParams {
+        let params = IngestApiSourceParams {
             index_id,
             batch_num_bytes_threshold: Some(4 * 500),
         };
-        let push_api_source = PushApiSource::make(
+        let ingest_api_source = IngestApiSource::make(
             "my-source".to_string(),
             params,
-            push_api_mailbox,
+            ingest_api_mailbox,
             SourceCheckpoint::default(),
         )
         .await?;
-        let push_api_source_actor = SourceActor {
-            source: Box::new(push_api_source),
+        let ingest_api_source_actor = SourceActor {
+            source: Box::new(ingest_api_source),
             batch_sink: mailbox,
         };
-        let (_push_api_source_mailbox, push_api_source_handle) =
-            universe.spawn_actor(push_api_source_actor).spawn();
+        let (_ingest_api_source_mailbox, ingest_api_source_handle) =
+            universe.spawn_actor(ingest_api_source_actor).spawn();
 
         tokio::time::sleep(Duration::from_secs(1)).await;
-        let counters = push_api_source_handle
+        let counters = ingest_api_source_handle
             .process_pending_and_observe()
             .await
             .state;
@@ -300,7 +300,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_push_api_source_resume_from_checkpoint() -> anyhow::Result<()> {
+    async fn test_ingest_api_source_resume_from_checkpoint() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let index_id = "my-index".to_string();
@@ -311,16 +311,16 @@ mod tests {
         queues.create_queue(&index_id)?;
         drop(queues);
 
-        let push_api_mailbox = spawn_push_api_actor(&universe, queue_path.path())?;
+        let ingest_api_mailbox = spawn_ingest_api_actor(&universe, queue_path.path())?;
 
         let ingest_req = make_ingest_request(index_id.clone(), 4, 1000);
-        push_api_mailbox
+        ingest_api_mailbox
             .ask_for_res(ingest_req)
             .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
 
         let (mailbox, inbox) = create_test_mailbox();
-        let params = PushApiSourceParams {
+        let params = IngestApiSourceParams {
             index_id,
             batch_num_bytes_threshold: None,
         };
@@ -333,22 +333,22 @@ mod tests {
         );
         checkpoint.try_apply_delta(checkpoint_delta)?;
 
-        let push_api_source = PushApiSource::make(
+        let ingest_api_source = IngestApiSource::make(
             "my-source".to_string(),
             params,
-            push_api_mailbox,
+            ingest_api_mailbox,
             checkpoint,
         )
         .await?;
-        let push_api_source_actor = SourceActor {
-            source: Box::new(push_api_source),
+        let ingest_api_source_actor = SourceActor {
+            source: Box::new(ingest_api_source),
             batch_sink: mailbox,
         };
-        let (_push_api_source_mailbox, push_api_source_handle) =
-            universe.spawn_actor(push_api_source_actor).spawn();
+        let (_ingest_api_source_mailbox, ingest_api_source_handle) =
+            universe.spawn_actor(ingest_api_source_actor).spawn();
 
         tokio::time::sleep(Duration::from_secs(1)).await;
-        let counters = push_api_source_handle
+        let counters = ingest_api_source_handle
             .process_pending_and_observe()
             .await
             .state;

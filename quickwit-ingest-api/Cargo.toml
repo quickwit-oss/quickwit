@@ -1,16 +1,16 @@
 [package]
-name = "quickwit-pushapi"
+name = "quickwit-ingest-api"
 version = "0.2.1"
 edition = "2021"
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
 
 [dependencies]
-tokio = {version="1", features=["full"]}
+tokio = {version = "1", features = ["full"] }
 async-trait = "0.1"
 quickwit-actors = {path="../quickwit-actors", version ="0.2.1"}
 quickwit-metastore = {path="../quickwit-metastore", version ="0.2.1"}
 quickwit-proto = {path="../quickwit-proto", version ="0.2.1"}
-rocksdb = {version="0.18", features=[], default-features= false}
+rocksdb = {version = "0.18", features = [], default-features= false}
 anyhow = "1"
 thiserror = "1"
 tracing = "0.1"
