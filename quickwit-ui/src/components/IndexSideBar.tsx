@@ -22,6 +22,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import styled from '@emotion/styled';
 import { FieldMapping, getAllFields, IndexMetadata } from '../utils/models';
 import { ChevronRight, KeyboardArrowDown } from '@mui/icons-material';
+import Tooltip from '@mui/material/Tooltip';
 import { Client } from '../services/client';
 
 const IndexBarWrapper = styled('div')({
@@ -159,7 +160,9 @@ export function IndexSideBar(props: IndexMetadataProps) {
               }
               sx={{paddingLeft: '10px'}}
             >
-              <Chip label={fieldTypeLabel(field)} size="small" sx={{marginRight: '10px', borderRadius: '3px', fontSize: '0.6rem'}}/>
+              <Tooltip title={field.type} arrow placement="left">
+                <Chip label={fieldTypeLabel(field)} size="small" sx={{marginRight: '10px', borderRadius: '3px', fontSize: '0.6rem'}}/>
+              </Tooltip>
               <ListItemText primary={ field.name }/>
             </ListItem>
           })}

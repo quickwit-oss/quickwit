@@ -21,7 +21,7 @@ import { KeyboardArrowDown } from "@mui/icons-material";
 import ChevronRight from "@mui/icons-material/ChevronRight";
 import { IconButton, styled, TableCell, TableRow } from "@mui/material";
 import React, { useState } from "react";
-import { DocMapping, Entry, flattenEntries, RawDoc } from "../../utils/models";
+import { DocMapping, Entry, RawDoc } from "../../utils/models";
 import { QUICKWIT_INTERMEDIATE_GREY } from "../../utils/theme";
 import { JsonEditor } from "../JsonEditor";
 
@@ -49,10 +49,12 @@ margin-inline-end: 5px;
 `;
 
 function EntryFormatter(entry: Entry) {
+  // Some field can contains objects, stringify them to render them otherwise React will crash.
+  const value = typeof entry.value === 'object' ? JSON.stringify(entry.value) : entry.value;
   return (
     <>
       <EntryName>{entry.key}:</EntryName>
-      <EntryValue>{entry.value}</EntryValue>
+      <EntryValue>{value}</EntryValue>
     </>
   )
 }
@@ -70,7 +72,11 @@ const BreakWordBox = styled('dl')({
 
 export function Row(props: RowProps) {
   const [open, setOpen] = useState(false);
-  const flatten_entries = flattenEntries(props.doc_mapping, props.row);
+  const entries: Entry[] = [];
+  for (const [key, value] of Object.entries(props.row)) {
+    entries.push({key: key, value: value});
+  }
+  console.log('entreies', entries);
   return (
     <>
       <TableRow>
@@ -85,7 +91,7 @@ export function Row(props: RowProps) {
         </TableCell>
         <TableCell>
           {!open && <BreakWordBox sx={{ maxHeight: '100px' }}>
-              { flatten_entries.map((entry) => <React.Fragment key={entry.key}>{EntryFormatter(entry)}</React.Fragment>) }
+              { entries.map((entry) => <React.Fragment key={entry.key}>{EntryFormatter(entry)}</React.Fragment>) }
             </BreakWordBox>
           }
           {open && 
