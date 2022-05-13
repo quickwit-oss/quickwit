@@ -20,11 +20,11 @@
 
 syntax = "proto3";
 
-// We remap this to quickwit_proto::push_api;
+// We remap this to quickwit_proto::ingest_api;
 
-package quickwit_push_api;
+package quickwit_ingest_api;
 
-service PushAPIService {
+service IngestAPIService {
   /// Ingests document in a given queue.
   ///
   /// Upon any kind of error, the client should
@@ -62,7 +62,7 @@ message CreateQueueRequest {
     string queue_id = 1;
 }
 
-message CreateQueueIfNonExistentRequest {
+message CreateQueueIfNotExistsRequest {
     string queue_id = 1;
 }
 

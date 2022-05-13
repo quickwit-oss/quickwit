@@ -29,7 +29,7 @@ use crate::format::FormatError;
 use crate::health_check_api::liveness_check_handler;
 use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
-use crate::push_api::{bulk_handler, elastic_bulk_handler, ingest_handler, tail_handler};
+use crate::ingest_api::{bulk_handler, elastic_bulk_handler, ingest_handler, tail_handler};
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
 use crate::ui_handler::ui_handler;
 use crate::{Format, QuickwitServices};
@@ -58,11 +58,11 @@ pub(crate) async fn start_rest_server(
         .or(search_stream_handler(
             quickwit_services.search_service.clone(),
         ))
-        .or(ingest_handler(quickwit_services.push_api_service.clone()))
-        .or(tail_handler(quickwit_services.push_api_service.clone()))
-        .or(bulk_handler(quickwit_services.push_api_service.clone()))
+        .or(ingest_handler(quickwit_services.ingest_api_service.clone()))
+        .or(tail_handler(quickwit_services.ingest_api_service.clone()))
+        .or(bulk_handler(quickwit_services.ingest_api_service.clone()))
         .or(elastic_bulk_handler(
-            quickwit_services.push_api_service.clone(),
+            quickwit_services.ingest_api_service.clone(),
         ))
         .or(index_management_handlers(
             quickwit_services.index_service.clone(),
@@ -98,7 +98,7 @@ pub async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
             code: ServiceErrorCode::BadRequest,
             error: error.to_string(),
         }))
-    } else if let Some(error) = rejection.find::<crate::push_api::BulkApiError>() {
+    } else if let Some(error) = rejection.find::<crate::ingest_api::BulkApiError>() {
         Ok(Format::PrettyJson.make_reply_for_err(FormatError {
             code: ServiceErrorCode::BadRequest,
             error: error.to_string(),

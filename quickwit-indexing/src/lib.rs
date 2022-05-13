@@ -21,8 +21,8 @@ use std::sync::Arc;
 
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_config::QuickwitConfig;
+use quickwit_ingest_api::IngestApiService;
 use quickwit_metastore::Metastore;
-use quickwit_pushapi::PushApiService;
 use quickwit_storage::StorageUriResolver;
 use tracing::info;
 
@@ -60,7 +60,7 @@ pub async fn start_indexer_service(
     config: &QuickwitConfig,
     metastore: Arc<dyn Metastore>,
     storage_uri_resolver: StorageUriResolver,
-    push_api_service: Option<Mailbox<PushApiService>>,
+    ingest_api_service: Option<Mailbox<IngestApiService>>,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
     info!("start-indexer-service");
     let index_metadatas = metastore.list_indexes_metadatas().await?;
@@ -69,7 +69,7 @@ pub async fn start_indexer_service(
         config.indexer_config.clone(),
         metastore,
         storage_uri_resolver,
-        push_api_service,
+        ingest_api_service,
     );
     let (indexer_service_mailbox, _) = universe.spawn_actor(indexing_server).spawn();
     for index_metadata in index_metadatas {

@@ -37,11 +37,10 @@ use crate::SearchService;
 struct MetadataMap<'a>(&'a mut tonic::metadata::MetadataMap);
 
 impl<'a> Injector for MetadataMap<'a> {
-    /// Sets a key and value in the MetadataMap.  Does nothing if the key or value are not valid
-    /// inputs
+    /// Sets a key-value pair in the [`MetadataMap`]. No-op if the key or value is invalid.
     fn set(&mut self, key: &str, value: String) {
         if let Ok(metadata_key) = tonic::metadata::MetadataKey::from_bytes(key.as_bytes()) {
-            if let Ok(metadata_value) = tonic::metadata::MetadataValue::from_str(&value) {
+            if let Ok(metadata_value) = tonic::metadata::MetadataValue::try_from(&value) {
                 self.0.insert(metadata_key, metadata_value);
             }
         }

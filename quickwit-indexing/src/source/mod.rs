@@ -58,11 +58,11 @@
 //! - the kafka source: the partition id is a kafka topic partition id, and the position is a kafka
 //!   offset.
 mod file_source;
+mod ingest_api_source;
 #[cfg(feature = "kafka")]
 mod kafka_source;
 #[cfg(feature = "kinesis")]
 mod kinesis;
-mod push_api_source;
 mod source_factory;
 mod vec_source;
 mod void_source;
@@ -87,9 +87,9 @@ pub use vec_source::{VecSource, VecSourceFactory};
 pub use void_source::{VoidSource, VoidSourceFactory};
 
 use crate::actors::Indexer;
-use crate::source::push_api_source::PushApiSourceFactory;
+use crate::source::ingest_api_source::IngestApiSourceFactory;
 
-/// Reserved source id used for the CLI ingest command.
+/// Reserved source ID used for the CLI ingest command.
 pub const INGEST_SOURCE_ID: &str = ".cli-ingest-source";
 
 pub type SourceContext = ActorContext<SourceActor>;
@@ -141,8 +141,8 @@ pub trait Source: Send + Sync + 'static {
     /// This makes it possible for the implementation of a source to
     /// release some resources associated to the data that was just published.
     ///
-    /// This method is for instance useful for the push api, as it is possible
-    /// to delete all message anterior to the checkpoint in the push api queue.
+    /// This method is for instance useful for the ingest API, as it is possible
+    /// to delete all message anterior to the checkpoint in the ingest API queue.
     ///
     /// It is perfectly fine for implementation to ignore this function.
     /// For instance, message queue like kafka are meant to be shared by different
@@ -243,7 +243,7 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source("kinesis", KinesisSourceFactory);
         source_factory.add_source("vec", VecSourceFactory);
         source_factory.add_source("void", VoidSourceFactory);
-        source_factory.add_source("pushapi", PushApiSourceFactory);
+        source_factory.add_source("ingest-api", IngestApiSourceFactory);
         source_factory
     })
 }

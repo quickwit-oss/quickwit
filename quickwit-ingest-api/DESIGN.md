@@ -1,10 +1,10 @@
-# Quickwit PushAPI Design
+# Quickwit Ingest API Design
 
-Quickwit PushAPI is in charge of receiving documents pushed to the PushAPI,
+Quickwit ingest API is in charge of receiving documents pushed to the ingest API,
 durably store them on disk to allow for a crash recovery,
 and act as source, for an indexing pipeline.
 
-> :information: For the moment, neither Quickwit's indexing nor its PushAPI is distributed. This will change soon.
+> :information: For the moment, neither Quickwit's indexing nor its ingest API is distributed. This will change soon.
 
 One of the key constraint for Quickwit's API is to behave properly even
 when hosting thousands of indices.
@@ -25,7 +25,7 @@ While feasible this seemed like a lot of waste.
 # RocksDB for the win
 
 Rather than reinventing the wheel, we rely on RocksDB, as it behaves similarly to the system
-describes above.
+described above.
 
 Each queue is modelized as a column family. All column family share the same WAL, but have
 separate SSTable files and Mem-table.

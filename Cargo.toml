@@ -2,21 +2,21 @@
 resolver = "2"
 members = [
   "quickwit-actors",
-  "quickwit-common",
   "quickwit-cli",
   "quickwit-cluster",
+  "quickwit-common",
   "quickwit-config",
   "quickwit-core",
-  "quickwit-doc-mapper",
   "quickwit-directories",
+  "quickwit-doc-mapper",
+  "quickwit-indexing",
+  "quickwit-ingest-api",
   "quickwit-metastore",
   "quickwit-proto",
-  "quickwit-pushapi",
   "quickwit-search",
   "quickwit-serve",
   "quickwit-storage",
   "quickwit-telemetry",
-  "quickwit-indexing",
 ]
 
 [profile.dev]

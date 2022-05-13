@@ -15,7 +15,7 @@ pub struct CreateQueueRequest {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CreateQueueIfNonExistentRequest {
+pub struct CreateQueueIfNotExistsRequest {
     #[prost(string, tag="1")]
     pub queue_id: ::prost::alloc::string::String,
 }
@@ -101,14 +101,14 @@ pub struct TailRequest {
     pub index_id: ::prost::alloc::string::String,
 }
 /// Generated client implementations.
-pub mod push_api_service_client {
+pub mod ingest_api_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
     #[derive(Debug, Clone)]
-    pub struct PushApiServiceClient<T> {
+    pub struct IngestApiServiceClient<T> {
         inner: tonic::client::Grpc<T>,
     }
-    impl PushApiServiceClient<tonic::transport::Channel> {
+    impl IngestApiServiceClient<tonic::transport::Channel> {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
@@ -119,11 +119,11 @@ pub mod push_api_service_client {
             Ok(Self::new(conn))
         }
     }
-    impl<T> PushApiServiceClient<T>
+    impl<T> IngestApiServiceClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
         T::Error: Into<StdError>,
-        T::ResponseBody: Default + Body<Data = Bytes> + Send + 'static,
+        T::ResponseBody: Body<Data = Bytes> + Send + 'static,
         <T::ResponseBody as Body>::Error: Into<StdError> + Send,
     {
         pub fn new(inner: T) -> Self {
@@ -133,9 +133,10 @@ pub mod push_api_service_client {
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
-        ) -> PushApiServiceClient<InterceptedService<T, F>>
+        ) -> IngestApiServiceClient<InterceptedService<T, F>>
         where
             F: tonic::service::Interceptor,
+            T::ResponseBody: Default,
             T: tonic::codegen::Service<
                 http::Request<tonic::body::BoxBody>,
                 Response = http::Response<
@@ -146,7 +147,7 @@ pub mod push_api_service_client {
                 http::Request<tonic::body::BoxBody>,
             >>::Error: Into<StdError> + Send + Sync,
         {
-            PushApiServiceClient::new(InterceptedService::new(inner, interceptor))
+            IngestApiServiceClient::new(InterceptedService::new(inner, interceptor))
         }
         /// Compress requests with `gzip`.
         ///
@@ -185,7 +186,7 @@ pub mod push_api_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit_push_api.PushAPIService/Ingest",
+                "/quickwit_ingest_api.IngestAPIService/Ingest",
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
@@ -214,7 +215,7 @@ pub mod push_api_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit_push_api.PushAPIService/Fetch",
+                "/quickwit_ingest_api.IngestAPIService/Fetch",
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
@@ -238,19 +239,19 @@ pub mod push_api_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit_push_api.PushAPIService/Tail",
+                "/quickwit_ingest_api.IngestAPIService/Tail",
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
     }
 }
 /// Generated server implementations.
-pub mod push_api_service_server {
+pub mod ingest_api_service_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    ///Generated trait containing gRPC methods that should be implemented for use with PushApiServiceServer.
+    ///Generated trait containing gRPC methods that should be implemented for use with IngestApiServiceServer.
     #[async_trait]
-    pub trait PushApiService: Send + Sync + 'static {
+    pub trait IngestApiService: Send + Sync + 'static {
         //// Ingests document in a given queue.
         ////
         //// Upon any kind of error, the client should
@@ -287,13 +288,13 @@ pub mod push_api_service_server {
         ) -> Result<tonic::Response<super::FetchResponse>, tonic::Status>;
     }
     #[derive(Debug)]
-    pub struct PushApiServiceServer<T: PushApiService> {
+    pub struct IngestApiServiceServer<T: IngestApiService> {
         inner: _Inner<T>,
         accept_compression_encodings: (),
         send_compression_encodings: (),
     }
     struct _Inner<T>(Arc<T>);
-    impl<T: PushApiService> PushApiServiceServer<T> {
+    impl<T: IngestApiService> IngestApiServiceServer<T> {
         pub fn new(inner: T) -> Self {
             Self::from_arc(Arc::new(inner))
         }
@@ -315,9 +316,9 @@ pub mod push_api_service_server {
             InterceptedService::new(Self::new(inner), interceptor)
         }
     }
-    impl<T, B> tonic::codegen::Service<http::Request<B>> for PushApiServiceServer<T>
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for IngestApiServiceServer<T>
     where
-        T: PushApiService,
+        T: IngestApiService,
         B: Body + Send + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
@@ -333,11 +334,11 @@ pub mod push_api_service_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
-                "/quickwit_push_api.PushAPIService/Ingest" => {
+                "/quickwit_ingest_api.IngestAPIService/Ingest" => {
                     #[allow(non_camel_case_types)]
-                    struct IngestSvc<T: PushApiService>(pub Arc<T>);
+                    struct IngestSvc<T: IngestApiService>(pub Arc<T>);
                     impl<
-                        T: PushApiService,
+                        T: IngestApiService,
                     > tonic::server::UnaryService<super::IngestRequest>
                     for IngestSvc<T> {
                         type Response = super::IngestResponse;
@@ -371,11 +372,11 @@ pub mod push_api_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit_push_api.PushAPIService/Fetch" => {
+                "/quickwit_ingest_api.IngestAPIService/Fetch" => {
                     #[allow(non_camel_case_types)]
-                    struct FetchSvc<T: PushApiService>(pub Arc<T>);
+                    struct FetchSvc<T: IngestApiService>(pub Arc<T>);
                     impl<
-                        T: PushApiService,
+                        T: IngestApiService,
                     > tonic::server::UnaryService<super::FetchRequest> for FetchSvc<T> {
                         type Response = super::FetchResponse;
                         type Future = BoxFuture<
@@ -408,11 +409,11 @@ pub mod push_api_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit_push_api.PushAPIService/Tail" => {
+                "/quickwit_ingest_api.IngestAPIService/Tail" => {
                     #[allow(non_camel_case_types)]
-                    struct TailSvc<T: PushApiService>(pub Arc<T>);
+                    struct TailSvc<T: IngestApiService>(pub Arc<T>);
                     impl<
-                        T: PushApiService,
+                        T: IngestApiService,
                     > tonic::server::UnaryService<super::TailRequest> for TailSvc<T> {
                         type Response = super::FetchResponse;
                         type Future = BoxFuture<
@@ -460,7 +461,7 @@ pub mod push_api_service_server {
             }
         }
     }
-    impl<T: PushApiService> Clone for PushApiServiceServer<T> {
+    impl<T: IngestApiService> Clone for IngestApiServiceServer<T> {
         fn clone(&self) -> Self {
             let inner = self.inner.clone();
             Self {
@@ -470,7 +471,7 @@ pub mod push_api_service_server {
             }
         }
     }
-    impl<T: PushApiService> Clone for _Inner<T> {
+    impl<T: IngestApiService> Clone for _Inner<T> {
         fn clone(&self) -> Self {
             Self(self.0.clone())
         }
@@ -480,7 +481,8 @@ pub mod push_api_service_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: PushApiService> tonic::transport::NamedService for PushApiServiceServer<T> {
-        const NAME: &'static str = "quickwit_push_api.PushAPIService";
+    impl<T: IngestApiService> tonic::transport::NamedService
+    for IngestApiServiceServer<T> {
+        const NAME: &'static str = "quickwit_ingest_api.IngestAPIService";
     }
 }

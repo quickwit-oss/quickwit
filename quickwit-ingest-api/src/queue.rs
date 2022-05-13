@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use quickwit_proto::push_api::{DocBatch, FetchResponse};
+use quickwit_proto::ingest_api::{DocBatch, FetchResponse};
 use rocksdb::{Direction, IteratorMode, WriteBatch, WriteOptions, DB};
 use tracing::warn;
 
@@ -50,7 +50,7 @@ fn default_rocks_db_write_options() -> rocksdb::WriteOptions {
 fn next_position(db: &DB, queue_id: &str) -> crate::Result<Option<Position>> {
     let cf = db
         .cf_handle(queue_id)
-        .ok_or_else(|| crate::PushApiError::Corruption {
+        .ok_or_else(|| crate::IngestApiError::Corruption {
             msg: format!("RocksDB error: Missing column `{queue_id}`"),
         })?;
     // That's iterating backward
@@ -89,7 +89,7 @@ impl Queues {
 
     pub fn create_queue(&mut self, queue_id: &str) -> crate::Result<()> {
         if self.queue_exists(queue_id) {
-            return Err(crate::PushApiError::IndexAlreadyExists {
+            return Err(crate::IngestApiError::IndexAlreadyExists {
                 index_id: queue_id.to_string(),
             });
         }
@@ -126,7 +126,7 @@ impl Queues {
         let cf_ref = self.db.cf_handle(queue_id).unwrap(); // FIXME
                                                            // We want to keep the last record.
         let last_position_opt = *self.last_position_per_queue.get(queue_id).ok_or_else(|| {
-            crate::PushApiError::IndexDoesNotExist {
+            crate::IngestApiError::IndexDoesNotExist {
                 index_id: queue_id.to_string(),
             }
         })?;
@@ -165,7 +165,7 @@ impl Queues {
         queue_id: &str,
         records_it: impl Iterator<Item = &'a [u8]>,
     ) -> crate::Result<()> {
-        let column_does_not_exist = || crate::PushApiError::IndexDoesNotExist {
+        let column_does_not_exist = || crate::IngestApiError::IndexDoesNotExist {
             index_id: queue_id.to_string(),
         };
         let last_position_opt = self
@@ -204,13 +204,12 @@ impl Queues {
         queue_id: &str,
         start_after: Option<Position>,
         num_bytes_limit: Option<usize>,
-    ) -> crate::Result<quickwit_proto::push_api::FetchResponse> {
-        let cf =
-            self.db
-                .cf_handle(queue_id)
-                .ok_or_else(|| crate::PushApiError::IndexDoesNotExist {
-                    index_id: queue_id.to_string(),
-                })?;
+    ) -> crate::Result<quickwit_proto::ingest_api::FetchResponse> {
+        let cf = self.db.cf_handle(queue_id).ok_or_else(|| {
+            crate::IngestApiError::IndexDoesNotExist {
+                index_id: queue_id.to_string(),
+            }
+        })?;
 
         let start_position = start_after
             .map(|position| position.inc())
@@ -240,13 +239,12 @@ impl Queues {
     }
 
     // Streams messages from the start of the Stream.
-    pub fn tail(&self, queue_id: &str) -> crate::Result<quickwit_proto::push_api::FetchResponse> {
-        let cf =
-            self.db
-                .cf_handle(queue_id)
-                .ok_or_else(|| crate::PushApiError::IndexDoesNotExist {
-                    index_id: queue_id.to_string(),
-                })?;
+    pub fn tail(&self, queue_id: &str) -> crate::Result<quickwit_proto::ingest_api::FetchResponse> {
+        let cf = self.db.cf_handle(queue_id).ok_or_else(|| {
+            crate::IngestApiError::IndexDoesNotExist {
+                index_id: queue_id.to_string(),
+            }
+        })?;
         let full_it = self.db.full_iterator_cf(&cf, IteratorMode::End);
         let mut doc_batch = DocBatch::default();
         let mut num_bytes = 0;
@@ -273,7 +271,7 @@ mod tests {
     use std::ops::{Deref, DerefMut};
 
     use super::Queues;
-    use crate::errors::PushApiError;
+    use crate::errors::IngestApiError;
     use crate::iter_doc_payloads;
     use crate::queue::Position;
 
@@ -344,7 +342,10 @@ mod tests {
         let mut queues = QueuesForTest::default();
         queues.create_queue(TEST_QUEUE_ID).unwrap();
         let queue_err = queues.create_queue(TEST_QUEUE_ID).err().unwrap();
-        assert!(matches!(queue_err, PushApiError::IndexAlreadyExists { .. }));
+        assert!(matches!(
+            queue_err,
+            IngestApiError::IndexAlreadyExists { .. }
+        ));
     }
 
     #[test]
