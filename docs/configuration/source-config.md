@@ -1,9 +1,9 @@
 ---
 title: Source configuration
-position: 5
+sidebar_position: 4
 ---
 
-Quickwit can insert data into an index from one or multiple sources. When creating an index, sources are declared in the [index config](index-config.md). Additional sources can be added later using the [CLI command](cli.md#source) `quickwit source add`.
+Quickwit can insert data into an index from one or multiple sources. When creating an index, sources are declared in the [index config](index-config.md). Additional sources can be added later using the [CLI command](../reference/cli.md#source) `quickwit source add`.
 
 A source is declared using an object called source config. A source config uniquely identifies and defines a source. It consists of three parameters:
 
@@ -33,7 +33,7 @@ A file source reads data from a local file. The file must consist of JSON object
 | --- | --- | --- |
 | filepath | Path to a local file consisting of JSON objects separated by a newline. |  |
 
-*Declaring a file source in an [index config](index-config.md) (YAML)*
+*Declaring a file source in an [index config](../configuration/index-config.md) (YAML)*
 
 ```yaml
 # Version of the index config file format
@@ -50,13 +50,13 @@ sources:
 # ...
 ```
 
-*Adding a file source to an index with the [CLI](cli.md#source)*
+*Adding a file source to an index with the [CLI](../reference/cli.md#source)*
 
 ```bash
 quickwit source add --index my-index-id --source my-source-id --type file --params '{"filepath": "path/to/file.json"}'
 ```
 
-Finally, note that the [CLI command](cli.md#index) `quickwit index ingest` allows ingesting data directly from a file or the standard input without creating a source beforehand.
+Finally, note that the [CLI command](../reference/cli.md#index) `quickwit index ingest` allows ingesting data directly from a file or the standard input without creating a source beforehand.
 
 ## Kafka source
 
@@ -95,7 +95,7 @@ sources:
 # ...
 ```
 
-*Adding a Kafka source to an index with the [CLI](cli.md#source)*
+*Adding a Kafka source to an index with the [CLI](../reference/cli.md#source)*
 
 ```bash
 cat << EOF > my-kafka-source.json
@@ -111,7 +111,7 @@ quickwit source add --index my-index-id --source my-source-id --type kafka --par
 ```
 
 ## Deleting a source from an index
-A source can be removed from an index using the [CLI command](cli.md) `quickwit source delete`: 
+A source can be removed from an index using the [CLI command](../reference/cli.md) `quickwit source delete`: 
 
 ```bash
 quickwit source delete --index my-index-id --source my-source-id

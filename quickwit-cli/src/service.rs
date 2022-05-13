@@ -23,8 +23,9 @@ use std::path::PathBuf;
 
 use clap::{arg, ArgMatches, Command};
 use itertools::Itertools;
+use quickwit_cluster::QuickwitService;
 use quickwit_common::uri::Uri;
-use quickwit_serve::{serve_quickwit, QuickwitService};
+use quickwit_serve::serve_quickwit;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::debug;
 

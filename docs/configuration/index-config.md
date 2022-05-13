@@ -1,6 +1,6 @@
 ---
 title: Index configuration
-position: 4
+sidebar_position: 2
 ---
 
 This page describes how to configure an index.
@@ -94,7 +94,7 @@ The doc mapping defines how a document and the fields it contains are stored and
 | `tag_fields` | Collection of fields already defined in `field_mappings` whose values will be stored in a dedicated `tags` (1) | [] |
 | `store_source` | Whether or not the original JSON document is stored or not in the index.   | false |
 
-(1) [Learn more on the tags usage](../design/querying.md).
+(1) [Learn more on the tags usage](../concepts/querying.md).
 
 ### Field types
 
@@ -209,7 +209,7 @@ fast: true
 | ------------- | ------------- | ------------- |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
-| `fast`     | Whether value is stored in a fast field | `false` |
+| `fast`     | Whether value is stored in a fast field. Only on 1:1 cardinality, not supported on `array<bytes>` fields | `false` |
 
 #### `json` type
 
@@ -361,6 +361,10 @@ In plain language:
 - it should only contain latin letter `[a-zA-Z]` digits `[0-9]` or (`.`, `-`, `_`).
 - the first character needs to be a letter.
 
+:::caution
+For field names containing the `.` character, you will need to escape it when referencing them. Otherwise the `.` character will be interpreted as a JSON object property access. Because of this, it is recommended to avoid using field names containing the `.` character.
+:::
+
 ### Behavior with fields not defined in the config
 
 Fields in your JSON document that are not defined in the `index config` will be ignored.
@@ -383,7 +387,7 @@ This section describes indexing settings for a given index.
 | `resources.num_threads`      | Number of threads per source.   | 1 |
 | `resources.heap_size`      | Indexer heap size per source per index.   | 2_000_000_000 |
 
-(1) [Learn more on time sharding](./../design/architecture.md)
+(1) [Learn more on time sharding](./../concepts/architecture.md)
 
 
 ### Indexer memory usage

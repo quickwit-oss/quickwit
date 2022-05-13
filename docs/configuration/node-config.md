@@ -1,6 +1,6 @@
 ---
-title: Quickwit configuration
-position: 2
+title: Node configuration
+sidebar_position: 1
 ---
 
 This page documents the Quickwit configuration properties. It is divided into three parts:
@@ -28,7 +28,7 @@ A commented example is accessible here: [quickwit.yaml](https://github.com/quick
 
 ## Indexer configuration
 
-This section contains the configuration options for an indexer. The split store is documented in the  [indexing document](../design/indexing.md#split-store).
+This section contains the configuration options for an indexer. The split store is documented in the  [indexing document](../concepts/indexing.md#split-store).
 
 | Property | Description | Default value |
 | --- | --- | --- |

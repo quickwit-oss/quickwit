@@ -26,7 +26,7 @@ use quickwit_actors::{Actor, ActorContext, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::Metastore;
 use tokio::sync::oneshot::Receiver;
-use tracing::{error, info};
+use tracing::info;
 
 use crate::actors::uploader::MAX_CONCURRENT_SPLIT_UPLOAD;
 use crate::actors::{GarbageCollector, MergePlanner};
@@ -203,13 +203,15 @@ impl Handler<Receiver<PublisherMessage>> for Publisher {
                 info!(new_split=new_split.split_id(), tts=%split_date_of_birth.elapsed().as_secs_f32(), checkpoint_delta=?checkpoint_delta, "publish-new-splits");
                 let checkpoint: SourceCheckpoint = checkpoint_delta.get_source_checkpoint();
                 if let Some(source_mailbox) = self.source_mailbox_opt.as_ref() {
-                    if ctx
+                    // We voluntarily do not log anything here.
+                    //
+                    // Not being to send the truncation message is a common event and should not be
+                    // considered an error. For instance, if the source is a
+                    // FileSource, it will terminate upon EOF and drop its
+                    // mailbox.
+                    let _ = ctx
                         .send_message(source_mailbox, SuggestTruncate(checkpoint))
-                        .await
-                        .is_err()
-                    {
-                        error!("fail-send-suggest-truncate");
-                    }
+                        .await;
                 }
             }
             PublishOperation::ReplaceSplits {

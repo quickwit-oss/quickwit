@@ -28,6 +28,7 @@ use tantivy::schema::{Cardinality, Field, FieldType, Schema, STORED};
 use tantivy::Document;
 use tracing::info;
 
+use super::field_mapping_entry::QuickwitTextTokenizer;
 use super::DefaultDocMapperBuilder;
 use crate::default_doc_mapper::mapping_tree::{build_mapping_tree, MappingNode, MappingTree};
 pub use crate::default_doc_mapper::QuickwitJsonOptions;
@@ -130,9 +131,6 @@ impl DefaultDocMapper {
     }
 }
 
-/// Name of the raw tokenizer.
-const RAW_TOKENIZER_NAME: &str = "raw";
-
 fn validate_tag_fields(tag_fields: &[String], schema: &Schema) -> anyhow::Result<()> {
     for tag_field in tag_fields {
         let field = schema
@@ -145,7 +143,7 @@ fn validate_tag_fields(tag_fields: &[String], schema: &Schema) -> anyhow::Result
                     .get_indexing_options()
                     .map(|text_options| text_options.tokenizer());
 
-                if tokenizer_opt != Some(RAW_TOKENIZER_NAME) {
+                if tokenizer_opt != Some(QuickwitTextTokenizer::Raw.get_name()) {
                     bail!(
                         "Tags collection is only allowed on text fields with the `raw` tokenizer."
                     );

@@ -25,7 +25,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 
 use http::Uri;
-use quickwit_cluster::Cluster;
+use quickwit_cluster::{Cluster, QuickwitService};
 use quickwit_proto::tonic;
 use tokio_stream::StreamExt;
 use tonic::transport::Endpoint;
@@ -163,7 +163,9 @@ impl SearchClientPool {
     /// will be started at the same time.
     pub async fn create_and_keep_updated(cluster: Arc<Cluster>) -> anyhow::Result<Self> {
         let search_client_pool = SearchClientPool::default();
-        let members_grpc_addresses = cluster.members_grpc_addresses(&cluster.members()).await?;
+        let members_grpc_addresses = cluster
+            .members_grpc_addresses_for_service(QuickwitService::Searcher)
+            .await?;
         search_client_pool
             .update_members(&members_grpc_addresses)
             .await;
@@ -174,8 +176,10 @@ impl SearchClientPool {
 
         // Start to monitor the cluster members.
         tokio::spawn(async move {
-            while let Some(members) = members_watch_channel.next().await {
-                let members_grpc_addresses = cluster.members_grpc_addresses(&members).await?;
+            while (members_watch_channel.next().await).is_some() {
+                let members_grpc_addresses = cluster
+                    .members_grpc_addresses_for_service(QuickwitService::Searcher)
+                    .await?;
                 search_clients_pool_clone
                     .update_members(&members_grpc_addresses)
                     .await;
@@ -323,7 +327,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_client_pool_single_node() -> anyhow::Result<()> {
-        let cluster = Arc::new(create_cluster_for_test(&[])?);
+        let cluster = Arc::new(create_cluster_for_test(&[], &["searcher"])?);
         let client_pool = SearchClientPool::create_and_keep_updated(cluster.clone()).await?;
         let clients = client_pool.clients();
         let addrs: Vec<SocketAddr> = clients.into_keys().collect();
@@ -334,9 +338,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_client_pool_multiple_nodes() -> anyhow::Result<()> {
-        let cluster1 = Arc::new(create_cluster_for_test(&[])?);
+        let cluster1 = Arc::new(create_cluster_for_test(&[], &["searcher"])?);
         let node_1 = cluster1.listen_addr.to_string();
-        let cluster2 = Arc::new(create_cluster_for_test(&[node_1])?);
+        let cluster2 = Arc::new(create_cluster_for_test(&[node_1], &["searcher"])?);
 
         cluster1
             .wait_for_members(|members| members.len() == 2, Duration::from_secs(5))
@@ -357,7 +361,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_client_pool_single_node_assign_jobs() -> anyhow::Result<()> {
-        let cluster = Arc::new(create_cluster_for_test(&[])?);
+        let cluster = Arc::new(create_cluster_for_test(&[], &["searcher"])?);
         let client_pool = SearchClientPool::create_and_keep_updated(cluster.clone()).await?;
         let jobs = vec![
             SearchJob::for_test("split1", 1),

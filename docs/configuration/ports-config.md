@@ -1,6 +1,6 @@
 ---
-title: Quickwit's hosts and ports
-position: 8
+title: Ports configuration
+sidebar_position: 5
 ---
 
 When starting a quickwit search server, one important parameter that can be configured is
@@ -29,7 +29,4 @@ The following addresses are valid peer seed addresses:
 | IPv6         | 2001:0db8:85a3:0000:0000:8a2e:0370:7334  | [2001:0db8:85a3:0000:0000:8a2e:0370:7334:7180]:7280 |
 | hostname     | node3        | node3:7180                |
 
-If no port is specified in a peer node address, a Quickwit node will assume the peer is using the same
-port as itself.
-
-
+If no port is specified in a peer node address, a Quickwit node will assume the peer is using the same port as itself.

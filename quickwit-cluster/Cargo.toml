@@ -24,7 +24,7 @@ tracing = "0.1.29"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 quickwit-proto = { version = "0.2.1", path = "../quickwit-proto"}
 chitchat = "0.2"
+itertools = '0.10'
 
 [dev-dependencies]
-itertools = '0.10'
 tempfile = "3"

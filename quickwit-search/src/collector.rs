@@ -411,12 +411,18 @@ fn top_k_partial_hits(mut partial_hits: Vec<PartialHit>, num_hits: usize) -> Vec
 }
 
 /// Extracts all fast field names.
-fn extract_fast_field_names(doc_mapper: &dyn DocMapper) -> HashSet<String> {
+fn extract_fast_field_names(
+    doc_mapper: &dyn DocMapper,
+    search_request: &SearchRequest,
+) -> HashSet<String> {
     let mut fast_fields = HashSet::new();
     if let Some(timestamp_field) = doc_mapper.timestamp_field_name() {
         fast_fields.insert(timestamp_field);
     }
     if let SortBy::FastField { field_name, .. } = doc_mapper.sort_by() {
+        fast_fields.insert(field_name);
+    }
+    if let SortBy::FastField { field_name, .. } = SortBy::from(search_request) {
         fast_fields.insert(field_name);
     }
     fast_fields
@@ -434,7 +440,7 @@ pub fn make_collector_for_split(
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
         sort_by: search_request.into(),
-        fast_field_names: extract_fast_field_names(doc_mapper),
+        fast_field_names: extract_fast_field_names(doc_mapper, search_request),
         timestamp_field_opt: doc_mapper.timestamp_field(split_schema),
         start_timestamp_opt: search_request.start_timestamp,
         end_timestamp_opt: search_request.end_timestamp,

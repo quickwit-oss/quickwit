@@ -1,6 +1,6 @@
 ---
 title: Query language
-position: 7
+sidebar_position: 3
 ---
 
 Quickwit uses a query mini-language which is used by providing a `query` parameter to the search endpoints.
