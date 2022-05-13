@@ -143,7 +143,7 @@ impl MappingLeaf {
         &self,
         json_val: serde_json::Value,
         document: &mut Document,
-        path: &mut Vec<String>,
+        path: &mut [String],
     ) -> Result<(), DocParsingError> {
         if json_val.is_null() {
             // We just ignore `null`.
