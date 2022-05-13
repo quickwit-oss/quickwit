@@ -62,7 +62,7 @@ message CreateQueueRequest {
     string queue_id = 1;
 }
 
-message CreateQueueIfNonExistentRequest {
+message CreateQueueIfNotExistsRequest {
     string queue_id = 1;
 }
 

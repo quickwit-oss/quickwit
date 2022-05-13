@@ -23,7 +23,7 @@ use std::path::Path;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, QueueCapacity};
 use quickwit_proto::ingest_api::{
-    CreateQueueIfNonExistentRequest, CreateQueueRequest, DropQueueRequest, FetchRequest,
+    CreateQueueIfNotExistsRequest, CreateQueueRequest, DropQueueRequest, FetchRequest,
     FetchResponse, IngestRequest, IngestResponse, QueueExistsRequest, SuggestTruncateRequest,
     TailRequest,
 };
@@ -126,11 +126,11 @@ impl Handler<CreateQueueRequest> for IngestApiService {
 }
 
 #[async_trait]
-impl Handler<CreateQueueIfNonExistentRequest> for IngestApiService {
+impl Handler<CreateQueueIfNotExistsRequest> for IngestApiService {
     type Reply = crate::Result<()>;
     async fn handle(
         &mut self,
-        create_queue_inf_req: CreateQueueIfNonExistentRequest,
+        create_queue_inf_req: CreateQueueIfNotExistsRequest,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         if self.queues.queue_exists(&create_queue_inf_req.queue_id) {

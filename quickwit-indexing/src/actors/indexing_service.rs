@@ -31,7 +31,7 @@ use quickwit_config::{
 };
 use quickwit_ingest_api::IngestApiService;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
-use quickwit_proto::ingest_api::CreateQueueIfNonExistentRequest;
+use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
 use quickwit_storage::{StorageResolverError, StorageUriResolver};
 use serde::Serialize;
 use thiserror::Error;
@@ -180,7 +180,7 @@ impl IndexingService {
         // Spawn ingest API pipeline for this index if needed.
         if let Some(ingest_api_service) = &self.ingest_api_service {
             // Ensure the queue exist.
-            let create_queue_req = CreateQueueIfNonExistentRequest {
+            let create_queue_req = CreateQueueIfNotExistsRequest {
                 queue_id: index_id.clone(),
             };
             ingest_api_service
