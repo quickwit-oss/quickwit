@@ -44,7 +44,7 @@ struct IngestApiServiceUnavailable;
 
 impl warp::reject::Reject for IngestApiServiceUnavailable {}
 
-const CONTENT_LENGTH_LIMIT: u64 = 20_000_000; // 20M
+const CONTENT_LENGTH_LIMIT: u64 = 10_000_000; // 10M
 
 #[derive(Debug, Error)]
 pub enum BulkApiError {
