@@ -44,6 +44,8 @@ struct IngestApiServiceUnavailable;
 
 impl warp::reject::Reject for IngestApiServiceUnavailable {}
 
+const CONTENT_LENGTH_LIMIT: u64 = 10_000_000; // 10M
+
 #[derive(Debug, Error)]
 pub enum BulkApiError {
     #[error("Could not parse action `{0}`.")]
@@ -89,6 +91,7 @@ pub fn ingest_handler(
 fn ingest_filter() -> impl Filter<Extract = (String, String), Error = Rejection> + Clone {
     warp::path!(String / "ingest")
         .and(warp::post())
+        .and(warp::body::content_length_limit(CONTENT_LENGTH_LIMIT))
         .and(warp::body::bytes().and_then(|body: Bytes| async move {
             if let Ok(body_str) = std::str::from_utf8(&*body) {
                 Ok(body_str.to_string())
@@ -156,6 +159,7 @@ async fn tail_endpoint(
 fn bulk_filter() -> impl Filter<Extract = (String, String), Error = Rejection> + Clone {
     warp::path!(String / "bulk")
         .and(warp::post())
+        .and(warp::body::content_length_limit(CONTENT_LENGTH_LIMIT))
         .and(warp::body::bytes().and_then(|body: Bytes| async move {
             if let Ok(body_str) = std::str::from_utf8(&*body) {
                 Ok(body_str.to_string())
@@ -176,6 +180,7 @@ pub fn bulk_handler(
 fn elastic_bulk_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {
     warp::path!("_bulk")
         .and(warp::post())
+        .and(warp::body::content_length_limit(CONTENT_LENGTH_LIMIT))
         .and(warp::body::bytes().and_then(|body: Bytes| async move {
             if let Ok(body_str) = std::str::from_utf8(&*body) {
                 Ok(body_str.to_string())
