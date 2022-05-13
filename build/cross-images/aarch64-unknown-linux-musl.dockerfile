@@ -27,7 +27,7 @@ RUN echo "Building OpenSSL" && \
 
 RUN echo "Building zlib" && \
     cd /tmp && \
-    curl -fLO "https://zlib.net/fossils/zlib-$ZLIB_VERSION.tar.gz" && \
+    curl -fLO "http://zlib.net/zlib-$ZLIB_VERSION.tar.gz" && \
     tar xzf "zlib-$ZLIB_VERSION.tar.gz" && cd "zlib-$ZLIB_VERSION" && \
     AR=aarch64-linux-musl-ar CC=aarch64-linux-musl-gcc ./configure --static --prefix=/usr/local/aarch64-linux-musl && \
     make && make install && \
