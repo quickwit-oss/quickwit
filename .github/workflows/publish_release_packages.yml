@@ -89,42 +89,42 @@ jobs:
           overwrite: true
           tag_name: ${{ env.ASSET_VERSION }}
 
-  build-x86_64-unknown-linux-musl-package:
-    name: Build x86_64-unknown-linux-musl
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/artifact-name
-        with: 
-          suffix: x86_64-unknown-linux-musl
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: x86_64-unknown-linux-musl
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          use-cross: true
-          command: build
-          args: --release --features release-feature-set --target x86_64-unknown-linux-musl
-      - name: Bundle archive
-        run: |
-          make archive BINARY_FILE=target/x86_64-unknown-linux-musl/release/quickwit \
-            BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
-      - name: Save binary archive for few days
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.ASSET_FULL_NAME }}.tar.gz
-          path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
-          retention-days: 3
-      - name: Upload archive
-        uses: quickwit-inc/upload-to-github-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          file: ${{ env.ASSET_FULL_NAME }}.tar.gz
-          overwrite: true
-          tag_name: ${{ env.ASSET_VERSION }}
+  # build-x86_64-unknown-linux-musl-package:
+  #   name: Build x86_64-unknown-linux-musl
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #     - uses: ./.github/actions/artifact-name
+  #       with: 
+  #         suffix: x86_64-unknown-linux-musl
+  #     - uses: actions-rs/toolchain@v1
+  #       with:
+  #         toolchain: stable
+  #         target: x86_64-unknown-linux-musl
+  #         override: true
+  #     - uses: actions-rs/cargo@v1
+  #       with:
+  #         use-cross: true
+  #         command: build
+  #         args: --release --features release-feature-set --target x86_64-unknown-linux-musl
+  #     - name: Bundle archive
+  #       run: |
+  #         make archive BINARY_FILE=target/x86_64-unknown-linux-musl/release/quickwit \
+  #           BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
+  #     - name: Save binary archive for few days
+  #       uses: actions/upload-artifact@v3
+  #       with:
+  #         name: ${{ env.ASSET_FULL_NAME }}.tar.gz
+  #         path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
+  #         retention-days: 3
+  #     - name: Upload archive
+  #       uses: quickwit-inc/upload-to-github-release@v1
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #       with:
+  #         file: ${{ env.ASSET_FULL_NAME }}.tar.gz
+  #         overwrite: true
+  #         tag_name: ${{ env.ASSET_VERSION }}
 
   build-aarch64-unknown-linux-gnu-package:
     name: Build aarch64-unknown-linux-gnu
@@ -163,42 +163,42 @@ jobs:
           overwrite: true
           tag_name: ${{ env.ASSET_VERSION }}
 
-  build-aarch64-unknown-linux-musl-package: 
-    name: Build aarch64-unknown-linux-musl
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/artifact-name
-        with: 
-          suffix: aarch64-unknown-linux-musl
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: aarch64-unknown-linux-musl
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          use-cross: true
-          command: build
-          args: --release --features release-feature-set --target aarch64-unknown-linux-musl
-      - name: Bundle archive
-        run: |
-          make archive BINARY_FILE=target/aarch64-unknown-linux-musl/release/quickwit \
-            BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
-      - name: Save binary archive for few days
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.ASSET_FULL_NAME }}.tar.gz
-          path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
-          retention-days: 3
-      - name: Upload archive
-        uses: quickwit-inc/upload-to-github-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          file: ${{ env.ASSET_FULL_NAME }}.tar.gz
-          overwrite: true
-          tag_name: ${{ env.ASSET_VERSION }}
+  # build-aarch64-unknown-linux-musl-package: 
+  #   name: Build aarch64-unknown-linux-musl
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #     - uses: ./.github/actions/artifact-name
+  #       with: 
+  #         suffix: aarch64-unknown-linux-musl
+  #     - uses: actions-rs/toolchain@v1
+  #       with:
+  #         toolchain: stable
+  #         target: aarch64-unknown-linux-musl
+  #         override: true
+  #     - uses: actions-rs/cargo@v1
+  #       with:
+  #         use-cross: true
+  #         command: build
+  #         args: --release --features release-feature-set --target aarch64-unknown-linux-musl
+  #     - name: Bundle archive
+  #       run: |
+  #         make archive BINARY_FILE=target/aarch64-unknown-linux-musl/release/quickwit \
+  #           BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
+  #     - name: Save binary archive for few days
+  #       uses: actions/upload-artifact@v3
+  #       with:
+  #         name: ${{ env.ASSET_FULL_NAME }}.tar.gz
+  #         path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
+  #         retention-days: 3
+  #     - name: Upload archive
+  #       uses: quickwit-inc/upload-to-github-release@v1
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #       with:
+  #         file: ${{ env.ASSET_FULL_NAME }}.tar.gz
+  #         overwrite: true
+  #         tag_name: ${{ env.ASSET_VERSION }}
 
   build-and-push-docker-image:
     name: Build & push docker images
