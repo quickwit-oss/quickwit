@@ -15,7 +15,7 @@ pub struct CreateQueueRequest {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CreateQueueIfNonExistentRequest {
+pub struct CreateQueueIfNotExistsRequest {
     #[prost(string, tag="1")]
     pub queue_id: ::prost::alloc::string::String,
 }
