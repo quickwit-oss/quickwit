@@ -60,7 +60,7 @@ Search for documents matching a query in the given index `<index id>`.
 
 #### Response
 
-The response for the is a JSON object, and the content type is `application/json; charset=UTF-8.`
+The response is a JSON object, and the content type is `application/json; charset=UTF-8.`
 
 | Field                   | Description                    | Type       |
 | --------------------    | ------------------------------ | :--------: |
@@ -114,3 +114,52 @@ The formatting is based on the specified output format.
 
 On error, an "X-Stream-Error" header will be sent via the trailers channel with information about the error, and the stream will be closed via [`sender.abort()`](https://docs.rs/hyper/0.14.16/hyper/body/struct.Sender.html#method.abort).
 Depending on the client, the trailer header with error details may not be shown. The error will also be logged in quickwit ("Error when streaming search results").
+
+
+### Ingest data in an index
+
+```
+POST api/v1/<index id>/ingest -d \
+'{"url":"https://en.wikipedia.org/wiki?id=1","title":"foo","body":"foo"}
+{"url":"https://en.wikipedia.org/wiki?id=2","title":"bar","body":"bar"}
+{"url":"https://en.wikipedia.org/wiki?id=3","title":"baz","body":"baz"}'
+```
+
+Ingest a batch of documents to make them searchable in a given `<index id>`. Currently, NDJSON is the only accepted payload format. 
+
+#### Path variable
+
+| Variable      | Description   |
+| ------------- | ------------- |
+| **index id**  | The index id  |
+
+#### Response
+
+The response is a JSON object, and the content type is `application/json; charset=UTF-8.`
+
+| Field                   | Description                        | Type       |
+| --------------------    | ---------------------------------- | :--------: |
+| **num_ingested_docs**   | Total number of documents ingested | `number`   |
+
+
+### Ingest data with elastic compatible API
+
+```
+POST api/v1/_bulk -d \
+'{ "create" : { "_index" : "wikipedia", "_id" : "1" } }
+{"url":"https://en.wikipedia.org/wiki?id=1","title":"foo","body":"foo"}
+{ "create" : { "_index" : "wikipedia", "_id" : "2" } }
+{"url":"https://en.wikipedia.org/wiki?id=2","title":"bar","body":"bar"}
+{ "create" : { "_index" : "wikipedia", "_id" : "3" } }
+{"url":"https://en.wikipedia.org/wiki?id=3","title":"baz","body":"baz"}'
+```
+
+Ingest a batch of documents to make them searchable using the [Elastic Search](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html) bulk API. This endpoint provides compatibility with tools or systems that already send data to Elastic Search for indexing. Currently, only the `create` action of the elastic bulk API is supported, all other actions such as `delete` or `update` are ignored.
+
+#### Response
+
+The response is a JSON object, and the content type is `application/json; charset=UTF-8.`
+
+| Field                   | Description                        | Type       |
+| --------------------    | ---------------------------------- | :--------: |
+| **num_ingested_docs**   | Total number of documents ingested | `number`   |
