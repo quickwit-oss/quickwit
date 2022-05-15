@@ -20,11 +20,12 @@
 // TODO: Remove when `KinesisSource` is fully implemented.
 #![allow(dead_code)]
 
-use super::retry::RetryRequest;
 use rusoto_kinesis::{
     GetRecordsInput, GetRecordsOutput, GetShardIteratorInput, Kinesis, KinesisClient,
     ListShardsInput, Shard,
 };
+
+use super::retry::RetryRequest;
 
 /// Gets records from a Kinesis data stream's shard.
 /// <https://docs.aws.amazon.com/kinesis/latest/APIReference/API_GetRecords.html>
