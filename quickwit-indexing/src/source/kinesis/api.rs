@@ -20,6 +20,7 @@
 // TODO: Remove when `KinesisSource` is fully implemented.
 #![allow(dead_code)]
 
+use super::retry::RetryRequest;
 use rusoto_kinesis::{
     GetRecordsInput, GetRecordsOutput, GetShardIteratorInput, Kinesis, KinesisClient,
     ListShardsInput, Shard,
@@ -38,7 +39,15 @@ pub(crate) async fn get_records(
     // TODO: Implement retry.
     // TODO: Return an error other than `anyhow::Error` so that expired shard iterators can be
     // handled properly.
-    let response = kinesis_client.get_records(request).await?;
+    let response = RetryRequest::new(|| async {
+        kinesis_client
+            .get_records(request.clone())
+            .await
+            .map_err(anyhow::Error::from)
+    })
+    .execute()
+    .await?;
+
     Ok(response)
 }
 
@@ -69,7 +78,15 @@ pub(crate) async fn get_shard_iterator(
         ..Default::default()
     };
     // TODO: Implement retry.
-    let response = kinesis_client.get_shard_iterator(request).await?;
+    let response = RetryRequest::new(|| async {
+        kinesis_client
+            .get_shard_iterator(request.clone())
+            .await
+            .map_err(anyhow::Error::from)
+    })
+    .execute()
+    .await?;
+
     Ok(response.shard_iterator)
 }
 
@@ -98,7 +115,14 @@ pub(crate) async fn list_shards(
             ..Default::default()
         };
         // TODO: Implement retry.
-        let response = kinesis_client.list_shards(request).await?;
+        let response = RetryRequest::new(|| async {
+            kinesis_client
+                .list_shards(request.clone())
+                .await
+                .map_err(anyhow::Error::from)
+        })
+        .execute()
+        .await?;
 
         if let Some(shrds) = response.shards {
             shards.extend_from_slice(&shrds);

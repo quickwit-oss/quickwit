@@ -19,5 +19,6 @@
 
 mod api;
 mod helpers;
+mod retry;
 pub mod kinesis_source;
 mod shard_consumer;
