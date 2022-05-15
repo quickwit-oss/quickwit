@@ -22,7 +22,7 @@ import { useCallback } from "react";
 import { EDITOR_THEME } from "../utils/theme";
 
 export function JsonEditor({content, resizeOnMount}: {content: unknown, resizeOnMount: boolean}) {
-  // setting editor height based on lines height and count to stretch and fit its content
+  // Setting editor height based on lines height and count to stretch and fit its content.
   const onMount = useCallback((editor) => {
     if (!resizeOnMount) {
       return;
@@ -33,12 +33,15 @@ export function JsonEditor({content, resizeOnMount}: {content: unknown, resizeOn
       return;
     }
 
-    // Magic number computed by hand to resize the editor to fit the content up to 800px.
-    // In theory, we should be able to use https://github.com/microsoft/monaco-editor/issues/794#issuecomment-688959283
-    // but sometimes we end up with a height > 7000px... and I don't know why.
-    const height = Math.min(800, 18.81 * editor.getModel()?.getLineCount());
-    editorElement.style.height = `${height}px`;
-    editor.layout();
+    // Weirdly enough, we have to wait a few ms to get the right height
+    // from `editor.getContentHeight()`. If not, we sometimes end up with
+    // a height > 7000px... and I don't know why.
+    setTimeout(() => {
+      const height = Math.min(800, editor.getContentHeight());
+      editorElement.style.height = `${height}px`;
+      editor.layout();
+    }, 10);
+    
   }, [resizeOnMount]);
 
   function beforeMount(monaco: any) {
@@ -55,6 +58,7 @@ export function JsonEditor({content, resizeOnMount}: {content: unknown, resizeOn
         readOnly: true,
         fontFamily: 'monospace',
         overviewRulerBorder: false,
+        overviewRulerLanes: 0,
         minimap: {
           enabled: false,
         },
@@ -67,7 +71,7 @@ export function JsonEditor({content, resizeOnMount}: {content: unknown, resizeOn
         scrollBeyondLastLine: false,
         automaticLayout: true,
         wordWrap: 'on',
-        wrappingIndent: 'indent',
+        wrappingIndent: 'advanced',
       }}
       theme='quickwit-light'
     />
