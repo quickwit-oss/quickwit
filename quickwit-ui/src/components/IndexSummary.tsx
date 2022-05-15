@@ -50,13 +50,13 @@ export function IndexSummary({index}: {index: Index}) {
         <Row>
           <RowKey>Created at:</RowKey>
           <div>
-            { dayjs.unix(index.metadata.create_timestamp).format("YYYY/MM/DD HH:MM") }
+            { dayjs.unix(index.metadata.create_timestamp).utc().format("YYYY/MM/DD HH:MM") }
           </div>
         </Row>
         <Row>
           <RowKey>Updated at:</RowKey>
           <div>
-            { dayjs.unix(index.metadata.update_timestamp).format("YYYY/MM/DD HH:MM") }
+            { dayjs.unix(index.metadata.update_timestamp).utc().format("YYYY/MM/DD HH:MM") }
           </div>
         </Row>
         <Row>

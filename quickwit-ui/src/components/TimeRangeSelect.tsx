@@ -32,13 +32,15 @@ import {
 import { AccessTime, ChevronRight, DateRange } from "@mui/icons-material";
 import { default as dayjs } from 'dayjs';
 import relativeTime from "dayjs/plugin/relativeTime"
+import utc from "dayjs/plugin/utc"
 import { DateTimePicker } from "@mui/lab";
-import { guessTimeUnit, TimeUnit } from "../utils/models";
+import { getDateTimeFormat, guessTimeUnit, TimeUnit } from "../utils/models";
 import { SearchComponentProps } from "../utils/SearchComponentProps";
 import DateAdapter from '@mui/lab/AdapterDayjs';
 import LocalizationProvider from '@mui/lab/LocalizationProvider';
 
-dayjs.extend(relativeTime)
+dayjs.extend(relativeTime);
+dayjs.extend(utc);
 
 const TIME_RANGE_CHOICES = [
   ["Last 15 min", 15 * 60],
@@ -54,13 +56,6 @@ interface TimeRangeSelectState {
   anchor: HTMLElement | null;
   customDatesPanelOpen: boolean;
   width: number;
-}
-
-function getDateTimeFormat(timeUnit: TimeUnit): string {
-  if (timeUnit === TimeUnit.SECOND) {
-    return "YYYY/MM/DD HH:mm:ss";
-  }
-  return "YYYY/MM/DD HH:mm:ss:SSS";
 }
 
 function convertFromMilliSecond(value: number | null, targetTimeUnit: TimeUnit): number | null {
@@ -290,13 +285,13 @@ function DateTimeRangeLabel(props: DateTimeRangeLabelProps): JSX.Element {
   function Label() {
     if (startTimestamp !== null && endTimestamp !== null) {
       return <>
-        {dayjs(startTimestamp).format(dateTimeFormat)} -{" "}
-        {dayjs(endTimestamp).format(dateTimeFormat)}
+        {dayjs(startTimestamp).utc().format(dateTimeFormat)} -{" "}
+        {dayjs(endTimestamp).utc().format(dateTimeFormat)}
       </>
     } else if (startTimestamp !== null && endTimestamp === null) {
-      return <>Since {dayjs(startTimestamp).fromNow(true)}</>
+      return <>Since {dayjs.unix(startTimestamp).fromNow(true)}</>
     } else if (startTimestamp == null && endTimestamp != null) {
-      return <>Before {dayjs(endTimestamp).format(dateTimeFormat)}</>
+      return <>Before {dayjs.unix(endTimestamp).format(dateTimeFormat)}</>
     }
     return <>No date range</>
   }

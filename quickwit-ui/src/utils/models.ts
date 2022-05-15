@@ -58,7 +58,18 @@ function getFlattenFields(field_mappings: FieldMapping[]): FlattenField[] {
   return fields;
 }
 
+export function getDateTimeFormat(timeUnit: TimeUnit) {
+  switch (timeUnit) {
+    case TimeUnit.SECOND:
+      return "YYYY/MM/DD HH:mm:ss";
+    default:
+      return "YYYY/MM/DD HH:mm:ss";
+  }
+}
+
+// Guess time unit of the timestamp field from index splits.
 export function guessTimeUnit(index: Index): TimeUnit {
+  // If we don't have any info, return the default unit.
   if (index.splits.length === 0 || index.metadata.indexing_settings.timestamp_field === null) {
     return TimeUnit.MILLI_SECOND;
   }

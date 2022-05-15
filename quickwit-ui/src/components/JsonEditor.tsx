@@ -33,11 +33,10 @@ export function JsonEditor({content, resizeOnMount}: {content: unknown, resizeOn
       return;
     }
 
-    // TODO: use enum for the lineHeight option index.
-    const lineHeight = editor.getOption(58);
-    const lineCount = editor.getModel()?.getLineCount() || 1;
-    const height = editor.getTopForLineNumber(lineCount + 1) + 2 * lineHeight;
-
+    // Magic number computed by hand to resize the editor to fit the content up to 800px.
+    // In theory, we should be able to use https://github.com/microsoft/monaco-editor/issues/794#issuecomment-688959283
+    // but sometimes we end up with a height > 7000px... and I don't know why.
+    const height = Math.min(800, 18.81 * editor.getModel()?.getLineCount());
     editorElement.style.height = `${height}px`;
     editor.layout();
   }, [resizeOnMount]);
