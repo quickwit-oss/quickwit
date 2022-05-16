@@ -20,6 +20,4 @@
 mod grpc_adapter;
 mod rest_handler;
 
-pub use rest_handler::{
-    bulk_handler, elastic_bulk_handler, ingest_handler, tail_handler, BulkApiError,
-};
+pub use rest_handler::{elastic_bulk_handler, ingest_handler, tail_handler, BulkApiError};
