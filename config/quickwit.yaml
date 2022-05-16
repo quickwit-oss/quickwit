@@ -15,8 +15,8 @@ version: 0
 #
 #node_id: node-1
 #
-# Default REST server host is `127.0.0.1` 
-# and default HTTP port is 7280. 
+# Default REST server host is `127.0.0.1`
+# and default HTTP port is 7280.
 #
 #listen_address: 127.0.0.1
 #rest_listen_port: 7280
@@ -29,12 +29,18 @@ version: 0
 #
 #data_dir: /path/to/data
 #
-# Metastore URI. Default to `data_dir/indexes` which is a file backed metastore
-# and mostly convenient for testing. A cluster would require a metastore backed by S3 or
-# postgreqsl.
+# Metastore URI. Defaults to `data_dir/indexes#polling_interval=30s`
+# which is a file backed metastore and mostly convenient for testing. A cluster would
+# require a metastore backed by S3 or postgreqsl.
 #
-#metastore_uri: s3://your-bucket/indexes
-#metastore_uri: postgres://username:password@host:port/db
+# metastore_uri: s3://your-bucket/indexes
+# metastore_uri: postgres://username:password@host:port/db
+#
+# When using a file-backed metastore, the state of the metastore will be cached forever.
+# If you are indexing and searching from different processes, it is possible to periodically
+# refresh the state of the metastore on the searcher using a `polling_interval` hashtag.
+#
+# metastore_uri: s3://your-bucket/indexes#polling_interval=30s
 #
 # Default index root URI which define the location where index data (splits) is stored
 # following the scheme `{default_index_root_uri}/{index-id}`. Default to `data_dir/indexes`.
@@ -51,7 +57,7 @@ version: 0
 #
 # -------------------------------- Searcher settings --------------------------------
 #
-# 
+#
 #
 #searcher:
 #  fast_field_cache_capacity: 10G

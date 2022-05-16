@@ -42,6 +42,7 @@ use crate::source_config::SourceConfig;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DocMapping {
+    #[serde(default)]
     pub field_mappings: Vec<FieldMappingEntry>,
     #[serde(default)]
     pub tag_fields: BTreeSet<String>,
@@ -596,12 +597,25 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "URI is empty.")]
     fn test_config_validates_uris() {
         let config_yaml = r#"
             version: 0
             index_id: hdfs-logs
             index_uri: ''
+            doc_mapping: {}
         "#;
-        serde_yaml::from_str::<IndexConfig>(config_yaml).unwrap_err();
+        serde_yaml::from_str::<IndexConfig>(config_yaml).unwrap();
+    }
+
+    #[test]
+    fn test_minimal_index_config() {
+        let config_yaml = r#"
+            version: 0
+            index_id: hdfs-logs
+            doc_mapping: {}
+        "#;
+        let minimal_config = serde_yaml::from_str::<IndexConfig>(config_yaml).unwrap();
+        assert_eq!(minimal_config.doc_mapping.mode, ModeType::Lenient);
     }
 }
