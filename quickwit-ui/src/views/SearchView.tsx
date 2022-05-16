@@ -41,6 +41,7 @@ function SearchView() {
   const [searchRequest, setSearchRequest] = useState<SearchRequest>(hasSearchParams(location.search) ? parseSearchUrl(location.search) : EMPTY_SEARCH_REQUEST);
   const updateLastSearchRequest = useLocalStorage().updateLastSearchRequest;
   const quickwitClient = useMemo(() => new Client(), []);
+
   const runSearch = (updatedSearchRequest: SearchRequest) => {
     console.log('Run search...', updatedSearchRequest);
     if (updatedSearchRequest !== null) {
@@ -91,6 +92,13 @@ function SearchView() {
       setIndex(fetchedIndex);
     });
   }, [searchRequest, quickwitClient, index]);
+
+  useEffect(() => {
+    if (searchRequest.indexId === null || searchRequest.indexId === undefined || searchRequest.indexId === '') {
+      return;
+    }
+    runSearch(searchRequest);
+  }, []); // <-- empty array means 'run once'
 
   return (
       <ViewUnderAppBarBox sx={{ flexDirection: 'row'}}>
