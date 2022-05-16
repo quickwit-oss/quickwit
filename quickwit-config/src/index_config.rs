@@ -597,14 +597,15 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "URI is empty.")]
     fn test_config_validates_uris() {
         let config_yaml = r#"
             version: 0
             index_id: hdfs-logs
-            index_uri: '',
+            index_uri: ''
             doc_mapping: {}
         "#;
-        serde_yaml::from_str::<IndexConfig>(config_yaml).unwrap_err();
+        serde_yaml::from_str::<IndexConfig>(config_yaml).unwrap();
     }
 
     #[test]

@@ -193,7 +193,7 @@ impl Default for QuickwitJsonOptions {
     fn default() -> Self {
         QuickwitJsonOptions {
             indexed: true,
-            tokenizer: QuickwitTextTokenizer::Raw,
+            tokenizer: default_json_tokenizer(),
             record: IndexRecordOption::Basic,
             stored: true,
         }
@@ -971,9 +971,18 @@ mod tests {
     }
 
     #[test]
-    fn test_quickwit_json_options_default_tokenizer_is_raw() {
+    fn test_quickwit_json_options_default_tokenizer_is_default() {
         let quickwit_json_options = QuickwitJsonOptions::default();
-        assert_eq!(quickwit_json_options.tokenizer, QuickwitTextTokenizer::Raw);
+        assert_eq!(
+            quickwit_json_options.tokenizer,
+            QuickwitTextTokenizer::Default
+        );
+    }
+
+    #[test]
+    fn test_quickwit_json_options_default_consistent_with_default() {
+        let quickwit_json_options: QuickwitJsonOptions = serde_json::from_str("{}").unwrap();
+        assert_eq!(quickwit_json_options, QuickwitJsonOptions::default());
     }
 
     #[test]
