@@ -62,7 +62,7 @@ curl -o otel-logs.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/m
 # Create quickwit datadir.
 mkdir -p qwdata
 # Create index.
-docker run -v $(pwd)/qwdata:/quickwit/qwdata -v $(pwd)/otel-logs.yaml:/quickwit/index-config.yaml index create --index-config /quickwit/index-config.yaml
+docker run -v $(pwd)/qwdata:/quickwit/qwdata -v $(pwd)/otel-logs.yaml:/quickwit/index-config.yaml quickwit/quickwit index create --index-config /quickwit/index-config.yaml
 ```
 
 Then we start Quickwit server that will be ready so receive logs on `/api/v1/otel-logs/ingest` endpoint:
