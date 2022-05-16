@@ -196,10 +196,10 @@ The `bytes` type accepts a binary value as a `Base64` encoded string.
 Example of a mapping for a bytes field:
 
 ```yaml
-name: binary,
-type: bytes,
-stored: true,
-indexed: true,
+name: binary
+type: bytes
+stored: true
+indexed: true
 fast: true
 ```
 
@@ -213,19 +213,19 @@ fast: true
 
 #### `json` type
 
-The `json` type accepts a json object.
+The `json` type accepts a JSON object.
 
-Example of a mapping for a json field:
+Example of a mapping for a JSON field:
 
 ```yaml
-name: parameters,
-type: json,
-stored: true,
-indexed: true,
+name: parameters
+type: json
+stored: true
+indexed: true
 tokenizer: "default"
 ```
 
-**Parameters for json field**
+**Parameters for JSON field**
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
@@ -257,7 +257,7 @@ Assuming `attributes` as been defined as a field mapping as follows:
 
 `attributes.color:red` is then a valid query.
 
-If in addition attributes is set as a default search field, then `color:red` is a valid query.
+If, in addition, `attributes` is set as a default search field, then `color:red` is a valid query.
 
 ### Composite types
 
@@ -278,14 +278,15 @@ field_mappings:
   - name: service
     type: text
 ```
+
 ### Mode
 
-The `mode` describes how quickwit should behaves when it receives a field that is not defined in the field mapping.
+The `mode` describes how Quickwit should behave when it receives a field that is not defined in the field mapping.
 
-Quickwit offers you three different modes
-- `lenient`: unmapped fields are simply dismissed by quickwit.
+Quickwit offers you three different modes:
+- `lenient`: unmapped fields are dismissed by Quickwit.
 - `strict`: if a document contains a field that is not mapped, quickwit will dismiss it, and count it as an error.
-- `dynamic`: unmapped fields are gathered by quickwit and handled as defined in the  `dynamic_mapping` parameter.
+- `dynamic`: unmapped fields are gathered by Quickwit and handled as defined in the `dynamic_mapping` parameter.
 
 `dynamic_mapping` offers the same configuration options as when configuring a `json` field. It defaults to:
 
@@ -298,9 +299,9 @@ Quickwit offers you three different modes
 
 The `dynamic` mode makes it possible to operate Quickwit in a schemaless manner, or with a partial schema.
 
-If the `dynamic_mapping` has been set as indexed (this is this default),
+If the `dynamic_mapping` has been set as indexed (this is the default),
 fields that were mapped thanks to the dynamic mode can be searched, by
-target the path required to reach them from the root of the json object.
+targeting the path required to reach them from the root of the json object.
 
 For instance, in a entirely schemaless settings, a minimal index configuration could be:
 
@@ -316,7 +317,7 @@ We could then index a complex document like the following:
 
 ```json
 {
-  "endpoint": "/admine",
+  "endpoint": "/admin",
   "query_params": {
     "ctk": "e42bb897d",
     "page": "eeb"
@@ -332,7 +333,7 @@ We could then index a complex document like the following:
 The following queries are then valid, and match the document above.
 
 ```bash
-// Fields can be searched simply
+// Fields can be searched simply.
 endpoint:/admine
 
 // Nested object can be queried by specifying a `.` separated
@@ -345,11 +346,6 @@ src.port:53
 // and of course we can combine them with boolean operators.
 src.port:53 AND query_params.ctk:e42bb897d
 ```
-
-
-
-
-
 
 ### Field name validation rules
 
