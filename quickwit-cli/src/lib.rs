@@ -29,7 +29,8 @@ use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
 use regex::Regex;
-use tabled::{Alignment, Header, Modify, Rotate, Rows, Style, Table, Tabled};
+use tabled::object::Rows;
+use tabled::{Alignment, Header, Modify, Rotate, Style, Table, Tabled};
 use tracing::info;
 
 pub mod cli;
