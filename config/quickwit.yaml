@@ -29,16 +29,16 @@ version: 0
 #
 #data_dir: /path/to/data
 #
-# Metastore URI. Default to `data_dir/indexes#polling_interval=30s`
+# Metastore URI. Defaults to `data_dir/indexes#polling_interval=30s`
 # which is a file backed metastore and mostly convenient for testing. A cluster would
 # require a metastore backed by S3 or postgreqsl.
 #
 # metastore_uri: s3://your-bucket/indexes
 # metastore_uri: postgres://username:password@host:port/db
 #
-# When using a file backed metastore, the state of the metastore will be cached forever
-# default. If you are indexing and search on different process, it is possible to periodically
-# refresh the state of the metastore on the searcher using a `polling_interval` hash tag.
+# When using a file-backed metastore, the state of the metastore will be cached forever.
+# If you are indexing and searching from different processes, it is possible to periodically
+# refresh the state of the metastore on the searcher using a `polling_interval` hashtag.
 #
 # metastore_uri: s3://your-bucket/indexes#polling_interval=30s
 #
