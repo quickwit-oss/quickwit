@@ -10,8 +10,8 @@
 <br/>
 <br/>
 <p align="center">
-  <img src="docs/assets/images/logo_horizontal.svg#gh-light-mode-only" alt="Quickwit" height="60">
-  <img src="docs/assets/images/quickwit-dark-theme-logo.png#gh-dark-mode-only" alt="Quickwit" height="60">
+  <img src="docs/assets/images/logo_horizontal.svg#gh-light-mode-only" alt="Quickwit Log Management & Analytics" height="60">
+  <img src="docs/assets/images/quickwit-dark-theme-logo.png#gh-dark-mode-only" alt="Quickwit Log Management & Analytics" height="60">
 </p>
 
 <h3 align="center">
@@ -29,9 +29,9 @@ Search more with less
 </h4>
 <br/>
 
-❗**Disclaimer: you are reading the README of Quickwit 0.3 version that will be shipped by the end of April 2022.**
+❗**Disclaimer: you are reading the README of Quickwit 0.3 version that will be shipped this month.**
 
-Quickwit is the next-gen search & analytics engine built for logs. It is a highly reliable & cost-efficient alternative to Elasticsearch.
+Quickwit is the next-gen search & analytics engine built for log management. It is a highly reliable & cost-efficient alternative to Elasticsearch.
 
 <br/>
 
@@ -64,10 +64,10 @@ Quickwit is the next-gen search & analytics engine built for logs. It is a highl
 - Support for tracing
 - Native support for OpenTelemetry
 
-# Uses & Limitations
+# 🔎 Uses & Limitations
 | :white_check_mark: &nbsp; When to use                                                  	| :x: &nbsp; When not to use                                       	|
 |--------------------------------------------------------------	|--------------------------------------------------------------	|
-| Your documents are immutable: application logs, system logs, access logs, user actions logs, audit trail, etc.                    	| Your documents are mutable.   	|
+| Your documents are immutable: application logs, system logs, access logs, user actions logs, audit trail  (logs), etc.                    	| Your documents are mutable.   	|
 | Your data has a time component. Quickwit includes optimizations and design choices specifically related to time. | You need a low-latency search for e-commerce websites.               	|
 | You want a full-text search in a multi-tenant environment.     	| You provide a public-facing search with high QPS.	|
 | You want to index directly from Kafka. | You want to re-score documents at query time.
@@ -105,37 +105,37 @@ Take a look at our [Quick Start]([https://quickwit.io/docs/get-started/quickstar
 
 # 🙋 FAQ
 ###  How is Quickwit different from traditional search engines like Elasticsearch or Solr?
-The core difference and advantage of Quickwit is its architecture that is built from the ground up for cloud and logs. Optimized IO paths make search on object storage sub-second and thanks to the true decoupled compute and storage, search instances are stateless, it is possible to add or remove search nodes within seconds. Last but not least, we implemented a highly-reliable distributed search and exactly-once semantics during indexing so that all engineers can sleep at night.
+- The core difference and advantage of Quickwit is its architecture that is built from the ground up for cloud and log management. Optimized IO paths make search on object storage sub-second and thanks to the true decoupled compute and storage, search instances are stateless, it is possible to add or remove search nodes within seconds. Last but not least, we implemented a highly-reliable distributed search and exactly-once semantics during indexing so that all engineers can sleep at night. All this slashes costs for log management.
 
 ### How does Quickwit compare to Elastic in terms of cost?
-We estimate that Quickwit can be up to 10x cheaper on average than Elastic. To understand how, check out our [blog post about searching the web on AWS S3](https://quickwit.io/blog/commoncrawl/).
+- We estimate that Quickwit can be up to 10x cheaper on average than Elastic. To understand how, check out our [blog post about searching the web on AWS S3](https://quickwit.io/blog/commoncrawl/).
 
 ### What license does Quickwit use?
-Quickwit is open-source under the GNU Affero General Public License Version 3 - AGPLv3. Fundamentally, this means that you are free to use Quickwit for your project, as long as you don't modify Quickwit. If you do, you have to make the modifications public.
+- Quickwit is open-source under the GNU Affero General Public License Version 3 - AGPLv3. Fundamentally, this means that you are free to use Quickwit for your project, as long as you don't modify Quickwit. If you do, you have to make the modifications public.
 We also provide a commercial license for enterprises to provide support and a voice on our roadmap.
 
 ### What is Quickwit's business model?
-Our business model relies on our commercial license. There is no plan to become SaaS in the near future.
+- Our business model relies on our commercial license. There is no plan to become SaaS in the near future.
 
 
 # 🪄 Third-Party Integration
 <p align="left">
-<img align="center" src="docs/assets/images/kafka-logo.png#gh-light-mode-only" alt="quickwit_inc" height="30" width="auto"/>
-<img align="center" src="docs/assets/images/kafka-dark-theme.png#gh-dark-mode-only" alt="quickwit_inc" height="30" width="auto"/> &nbsp;
-<img align="center" src="docs/assets/images/postgresql-logo.png" alt="quickwit_inc" height="30" width="auto"/> &nbsp;&nbsp;
-<img align="center" src="docs/assets/images/aws-logo.png#gh-light-mode-only" alt="quickwit_inc" height="25" width="auto" />
-<img align="center" src="docs/assets/images/aws-dark-theme-logo.png#gh-dark-mode-only" alt="quickwit_inc" height="25" width="auto" /> &nbsp; &nbsp;
-<img align="center" src="docs/assets/images/kinesis-logo.svg" alt="quickwit_inc" height="30" width="auto"/> &nbsp;
-<img align="center" src="docs/assets/images/minio-logo.png" alt="quickwit_inc" height="10" width="auto"/> &nbsp;&nbsp;
-<img align="center" src="docs/assets/images/kubernetes-logo.png" alt="quickwit_inc" height="30" width="auto"/>
-<img align="center" src="docs/assets/images/ceph-logo.png#gh-light-mode-only" height="50" width="auto"/>
-<img align="center" src="docs/assets/images/ceph-dark-mode-logo.png#gh-dark-mode-only" height="50" width="auto"/>
+<img align="center" src="docs/assets/images/kafka-logo.png#gh-light-mode-only" alt="Ingest Logs with Kafka" height="30" width="auto"/>
+<img align="center" src="docs/assets/images/kafka-dark-theme.png#gh-dark-mode-only" alt="Ingest Logs with Kafka" height="30" width="auto"/> &nbsp;
+<img align="center" src="docs/assets/images/postgresql-logo.png" alt="Metastore Backed by Postgresql" height="30" width="auto"/> &nbsp;&nbsp;
+<img align="center" src="docs/assets/images/aws-logo.png#gh-light-mode-only" alt="Store logs on AWS S3" height="25" width="auto" />
+<img align="center" src="docs/assets/images/aws-dark-theme-logo.png#gh-dark-mode-only" alt="Store logs on AWS S3" height="25" width="auto" /> &nbsp; &nbsp;
+<img align="center" src="docs/assets/images/kinesis-logo.svg" alt="Ingest logs from Amazon Kinesis" height="30" width="auto"/> &nbsp;
+<img align="center" src="docs/assets/images/minio-logo.png" alt="Integrate with Minio" height="10" width="auto"/> &nbsp;&nbsp;
+<img align="center" src="docs/assets/images/kubernetes-logo.png" alt="Collect Logs on Kubernetes cluster" height="30" width="auto"/>
+<img align="center" src="docs/assets/images/ceph-logo.png#gh-light-mode-only" alt="Integration with Ceph" height="50" width="auto"/>
+<img align="center" src="docs/assets/images/ceph-dark-mode-logo.png#gh-dark-mode-only" alt="Integration with Ceph" height="50" width="auto"/>
 </p>
 
 
 # 🤝 Contribute and spread the word
 
-We are always super happy to have contributions: code, documentation, issues, feedback, or even saying hello on discord! Here is how you can get started:
+We are always super happy to have contributions: code, documentation, issues, feedback, or even saying hello on discord! Here is how you can help us build the future of log management: 
 - Have a look through GitHub issues labeled "Good first issue".
 - Read our [Contributor Covenant Code of Conduct](https://github.com/quickwit-oss/quickwit/blob/0add0562f08e4edd46f5c5537e8ef457d42a508e/CODE_OF_CONDUCT.md)
 - Create a fork of Quickwit and submit your pull request!
