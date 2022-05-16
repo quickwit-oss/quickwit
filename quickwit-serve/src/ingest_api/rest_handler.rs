@@ -156,27 +156,6 @@ async fn tail_endpoint(
     Ok(Format::PrettyJson.make_rest_reply(tail_res))
 }
 
-fn bulk_filter() -> impl Filter<Extract = (String, String), Error = Rejection> + Clone {
-    warp::path!(String / "bulk")
-        .and(warp::post())
-        .and(warp::body::content_length_limit(CONTENT_LENGTH_LIMIT))
-        .and(warp::body::bytes().and_then(|body: Bytes| async move {
-            if let Ok(body_str) = std::str::from_utf8(&*body) {
-                Ok(body_str.to_string())
-            } else {
-                Err(reject::custom(InvalidUtf8))
-            }
-        }))
-}
-
-pub fn bulk_handler(
-    ingest_api_mailbox_opt: Option<Mailbox<IngestApiService>>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
-    bulk_filter()
-        .and(require(ingest_api_mailbox_opt))
-        .and_then(ingest)
-}
-
 fn elastic_bulk_filter() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {
     warp::path!("_bulk")
         .and(warp::post())

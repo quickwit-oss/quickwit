@@ -76,16 +76,16 @@ pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 use crate::thread_pool::run_cpu_intensive;
 
 /// GlobalDocAddress serves as a hit address.
-#[derive(Clone, Copy, Eq, Debug, PartialEq, Hash, Ord, PartialOrd)]
-pub(crate) struct GlobalDocAddress<'a> {
-    pub split: &'a str,
+#[derive(Clone, Eq, Debug, PartialEq, Hash, Ord, PartialOrd)]
+pub(crate) struct GlobalDocAddress {
+    pub split: String,
     pub doc_addr: DocAddress,
 }
 
-impl<'a> GlobalDocAddress<'a> {
-    fn from_partial_hit(partial_hit: &'a PartialHit) -> Self {
+impl GlobalDocAddress {
+    fn from_partial_hit(partial_hit: &PartialHit) -> Self {
         Self {
-            split: &partial_hit.split_id,
+            split: partial_hit.split_id.to_string(),
             doc_addr: DocAddress {
                 segment_ord: partial_hit.segment_ord,
                 doc_id: partial_hit.doc_id,
