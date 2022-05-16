@@ -136,7 +136,8 @@ mod tests {
 
     #[test]
     fn test_deserialize_minimal_doc_mapper() -> anyhow::Result<()> {
-        let deserialized_default_doc_mapper = serde_json::from_str::<Box<dyn DocMapper>>(r#"{"type": "default"}"#)?;
+        let deserialized_default_doc_mapper =
+            serde_json::from_str::<Box<dyn DocMapper>>(r#"{"type": "default"}"#)?;
         let expected_default_doc_mapper = DefaultDocMapperBuilder::default().try_build()?;
         assert_eq!(
             format!("{:?}", deserialized_default_doc_mapper),
@@ -147,10 +148,14 @@ mod tests {
 
     #[test]
     fn test_deserialize_doc_mapper_default_dynamic_tokenizer() {
-        let expected_default_doc_mapper = DefaultDocMapperBuilder::default().try_build().unwrap();
-        let tantivy_schema = expected_default_doc_mapper.schema();
+        let doc_mapper =
+            serde_json::from_str::<Box<dyn DocMapper>>(r#"{"type": "default", "mode": "dynamic"}"#)
+                .unwrap();
+        let tantivy_schema = doc_mapper.schema();
         let dynamic_field = tantivy_schema.get_field(DYNAMIC_FIELD_NAME).unwrap();
-        if let FieldType::JsonObject(json_options) = tantivy_schema.get_field_entry(dynamic_field).field_type() {
+        if let FieldType::JsonObject(json_options) =
+            tantivy_schema.get_field_entry(dynamic_field).field_type()
+        {
             let text_opt = json_options.get_text_indexing_options().unwrap();
             assert_eq!(text_opt.tokenizer(), "default");
         } else {
