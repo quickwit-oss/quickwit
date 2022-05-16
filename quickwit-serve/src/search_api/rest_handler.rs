@@ -757,7 +757,8 @@ mod tests {
     async fn test_rest_search_stream_api_error_empty_fastfield() {
         let rejection = warp::test::request()
             .path(
-                "/my-index/search/stream?query=obama&fast_field=&output_format=click_house_row_binary",
+                "/my-index/search/stream?query=obama&fast_field=&\
+                 output_format=click_house_row_binary",
             )
             .filter(&super::search_stream_filter())
             .await
