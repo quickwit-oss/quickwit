@@ -63,7 +63,7 @@ export function getDateTimeFormat(timeUnit: TimeUnit) {
     case TimeUnit.SECOND:
       return "YYYY/MM/DD HH:mm:ss";
     default:
-      return "YYYY/MM/DD HH:mm:ss";
+      return "YYYY/MM/DD HH:mm:ss.SSS";
   }
 }
 
@@ -80,7 +80,7 @@ export function guessTimeUnit(index: Index): TimeUnit {
   }
   const range_start_values = index.splits.map(split => split.time_range === null ? 0 : split.time_range.start);
   const time_range_start_max = Math.max(...range_start_values);
-  // We expect a split time range to be between year between 1971 and 2070. 
+  // We expect a split time range to be between year between 1971 and 2070.
   const seconds_in_one_hundred_years = 3600 * 24 * 365 * 100;
   if (time_range_start_max < seconds_in_one_hundred_years) {
     return TimeUnit.SECOND
@@ -89,7 +89,8 @@ export function guessTimeUnit(index: Index): TimeUnit {
     return TimeUnit.MILLI_SECOND
   }
   if (time_range_start_max < seconds_in_one_hundred_years * 1000 * 1000) {
-    return TimeUnit.MICRO_SECOND
+    console.error('Quickwit UI does not support currently timestamp in MICRO_SECOND or NANO_SECOND.')
+    throw new Error('Quickwit UI does not support currently timestamp in MICRO_SECOND or NANO_SECOND.');
   }
   console.warn('Cannot guess correctly time unit, value `time_range_start_max` is too high, set to micro seconds', time_range_start_max);
   return TimeUnit.MICRO_SECOND

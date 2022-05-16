@@ -74,9 +74,10 @@ function DateTimeFormatter(row: RawDoc, timestampField: string | null, timeUnit:
   if (typeof value !== 'number') {
     return <></>
   }
+  const datetime = timeUnit === TimeUnit.MILLI_SECOND ? dayjs(value) : dayjs.unix(value);
   return <TableCell sx={{verticalAlign: 'top', padding: '4px'}}>
         <Box sx={{ maxHeight: '115px', width: '90px', display: 'inline-block' }}>
-          {dayjs.unix(value).utc().format(getDateTimeFormat(timeUnit))}
+          {datetime.utc().format(getDateTimeFormat(timeUnit))}
         </Box>
       </TableCell>
 }
