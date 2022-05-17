@@ -105,17 +105,17 @@ Take a look at our [Quick Start]([https://quickwit.io/docs/get-started/quickstar
 
 # 🙋 FAQ
 ###  How is Quickwit different from traditional search engines like Elasticsearch or Solr?
-- The core difference and advantage of Quickwit is its architecture that is built from the ground up for cloud and log management. Optimized IO paths make search on object storage sub-second and thanks to the true decoupled compute and storage, search instances are stateless, it is possible to add or remove search nodes within seconds. Last but not least, we implemented a highly-reliable distributed search and exactly-once semantics during indexing so that all engineers can sleep at night. All this slashes costs for log management.
+The core difference and advantage of Quickwit is its architecture that is built from the ground up for cloud and log management. Optimized IO paths make search on object storage sub-second and thanks to the true decoupled compute and storage, search instances are stateless, it is possible to add or remove search nodes within seconds. Last but not least, we implemented a highly-reliable distributed search and exactly-once semantics during indexing so that all engineers can sleep at night. All this slashes costs for log management.
 
 ### How does Quickwit compare to Elastic in terms of cost?
-- We estimate that Quickwit can be up to 10x cheaper on average than Elastic. To understand how, check out our [blog post about searching the web on AWS S3](https://quickwit.io/blog/commoncrawl/).
+We estimate that Quickwit can be up to 10x cheaper on average than Elastic. To understand how, check out our [blog post about searching the web on AWS S3](https://quickwit.io/blog/commoncrawl/).
 
 ### What license does Quickwit use?
-- Quickwit is open-source under the GNU Affero General Public License Version 3 - AGPLv3. Fundamentally, this means that you are free to use Quickwit for your project, as long as you don't modify Quickwit. If you do, you have to make the modifications public.
+Quickwit is open-source under the GNU Affero General Public License Version 3 - AGPLv3. Fundamentally, this means that you are free to use Quickwit for your project, as long as you don't modify Quickwit. If you do, you have to make the modifications public.
 We also provide a commercial license for enterprises to provide support and a voice on our roadmap.
 
 ### What is Quickwit's business model?
-- Our business model relies on our commercial license. There is no plan to become SaaS in the near future.
+Our business model relies on our commercial license. There is no plan to become SaaS in the near future.
 
 
 # 🪄 Third-Party Integration
