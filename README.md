@@ -125,7 +125,7 @@ Our business model relies on our commercial license. There is no plan to become 
 <img align="center" src="docs/assets/images/postgresql-logo.png" alt="Metastore Backed by Postgresql" height="30" width="auto"/> &nbsp;&nbsp;
 <img align="center" src="docs/assets/images/aws-logo.png#gh-light-mode-only" alt="Store logs on AWS S3" height="25" width="auto" />
 <img align="center" src="docs/assets/images/aws-dark-theme-logo.png#gh-dark-mode-only" alt="Store logs on AWS S3" height="25" width="auto" /> &nbsp; &nbsp;
-<img align="center" src="docs/assets/images/kinesis-logo.svg" alt="Ingest logs from Amazon Kinesis" height="30" width="auto"/> &nbsp;
+<img align="center" src="docs/assets/images/kinesis-logo.svg" alt="Ingest logs with Amazon Kinesis" height="30" width="auto"/> &nbsp;
 <img align="center" src="docs/assets/images/minio-logo.png" alt="Integrate with Minio" height="10" width="auto"/> &nbsp;&nbsp;
 <img align="center" src="docs/assets/images/kubernetes-logo.png" alt="Collect Logs on Kubernetes cluster" height="30" width="auto"/>
 <img align="center" src="docs/assets/images/ceph-logo.png#gh-light-mode-only" alt="Integration with Ceph" height="50" width="auto"/>
