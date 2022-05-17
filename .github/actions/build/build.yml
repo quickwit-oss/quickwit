@@ -1,0 +1,32 @@
+name: 'Build'
+description: 'Build'
+inputs:
+  target:
+    description: 'Target'
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v3
+    - run: echo "ASSET_VERSION=nightly-test" >> $GITHUB_ENV
+    - run: echo "ASSET_FULL_NAME=quickwit-nightly-test-${{ inputs.target }}" >> $GITHUB_ENV
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: ${{ inputs.target }}
+        override: true
+    - uses: actions-rs/cargo@v1
+      with:
+        use-cross: true
+        command: build
+        args: --release --features release-feature-vendored-set --target ${{ inputs.target }}
+    - name: Bundle archive
+      run: |
+        make archive BINARY_FILE=target/${{ inputs.target }}/release/quickwit \
+          BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }} 
+    - name: Save binary archive for few days
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ env.ASSET_FULL_NAME }}.tar.gz
+        path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
+        retention-days: 3
