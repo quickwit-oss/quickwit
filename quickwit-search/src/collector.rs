@@ -434,8 +434,13 @@ pub fn make_collector_for_split(
     doc_mapper: &dyn DocMapper,
     search_request: &SearchRequest,
     split_schema: &Schema,
-) -> QuickwitCollector {
-    QuickwitCollector {
+) -> crate::Result<QuickwitCollector> {
+    let aggregation = if let Some(agg) = search_request.aggregation_request.as_ref() {
+        Some(serde_json::from_str(agg)?)
+    } else {
+        None
+    };
+    Ok(QuickwitCollector {
         split_id,
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
@@ -444,19 +449,22 @@ pub fn make_collector_for_split(
         timestamp_field_opt: doc_mapper.timestamp_field(split_schema),
         start_timestamp_opt: search_request.start_timestamp,
         end_timestamp_opt: search_request.end_timestamp,
-        aggregation: search_request
-            .aggregation_request
-            .as_ref()
-            .map(|el| serde_json::from_str(el).unwrap()),
-    }
+        aggregation,
+    })
 }
 
 /// Builds a QuickwitCollector that's only useful for merging fruits.
 ///
 /// This collector only needs `start_offset` & `max_hit` so the other attributes
 /// can be set to default.
-pub fn make_merge_collector(search_request: &SearchRequest) -> QuickwitCollector {
-    QuickwitCollector {
+pub fn make_merge_collector(search_request: &SearchRequest) -> crate::Result<QuickwitCollector> {
+    let aggregation = if let Some(agg) = search_request.aggregation_request.as_ref() {
+        Some(serde_json::from_str(agg)?)
+    } else {
+        None
+    };
+
+    Ok(QuickwitCollector {
         split_id: String::default(),
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
@@ -465,11 +473,8 @@ pub fn make_merge_collector(search_request: &SearchRequest) -> QuickwitCollector
         timestamp_field_opt: None,
         start_timestamp_opt: search_request.start_timestamp,
         end_timestamp_opt: search_request.end_timestamp,
-        aggregation: search_request
-            .aggregation_request
-            .as_ref()
-            .map(|el| serde_json::from_str(el).unwrap()),
-    }
+        aggregation,
+    })
 }
 
 #[cfg(test)]
