@@ -46,6 +46,8 @@ pub enum IndexServiceError {
     MetastoreError(#[from] MetastoreError),
     #[error("Split deletion error `{0}`.")]
     SplitDeletionError(#[from] SplitDeletionError),
+    #[error("Invalid index config: {0}.")]
+    InvalidIndexConfig(String),
 }
 
 /// Index service responsible for creating, updating and deleting indexes.
@@ -91,6 +93,9 @@ impl IndexService {
         &self,
         index_config: IndexConfig,
     ) -> Result<IndexMetadata, IndexServiceError> {
+        index_config
+            .validate()
+            .map_err(|error| IndexServiceError::InvalidIndexConfig(error.to_string()))?;
         let index_id = index_config.index_id.clone();
         let index_uri = if let Some(index_uri) = &index_config.index_uri {
             index_uri.clone()

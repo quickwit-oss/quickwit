@@ -98,7 +98,8 @@ export class Client {
 
   private buildSearchUrl(request: SearchRequest): URL {
     const url: URL = new URL(`${request.indexId}/search`, this.apiRoot());
-    url.searchParams.append("query", request.query || "*");
+    // TODO: the trim should be done in the backend.
+    url.searchParams.append("query", request.query.trim() || "*");
     url.searchParams.append("max_hits", "20");
     if (request.startTimestamp) {
       url.searchParams.append(

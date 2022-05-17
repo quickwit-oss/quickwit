@@ -122,6 +122,7 @@ impl ServiceError for IndexServiceError {
             Self::StorageError(_) => ServiceErrorCode::Internal,
             Self::MetastoreError(_) => ServiceErrorCode::Internal,
             Self::SplitDeletionError(_) => ServiceErrorCode::Internal,
+            Self::InvalidIndexConfig(_) => ServiceErrorCode::BadRequest,
         }
     }
 }

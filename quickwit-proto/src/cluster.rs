@@ -1,6 +1,5 @@
 //// The member information.
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Member {
     //// Member ID.　A string of the UUID.
@@ -18,34 +17,28 @@ pub struct Member {
     pub generation: u64,
 }
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListMembersRequest {
 }
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListMembersResponse {
     #[prost(message, repeated, tag="1")]
     pub members: ::prost::alloc::vec::Vec<Member>,
 }
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeaveClusterRequest {
 }
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeaveClusterResponse {
 }
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClusterStateRequest {
 }
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClusterStateResponse {
     #[prost(string, tag="1")]

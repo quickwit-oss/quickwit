@@ -32,6 +32,8 @@ use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use tracing::{info, warn};
 
+use crate::validate_identifier;
+
 pub const DEFAULT_QW_CONFIG_PATH: &str = "./config/quickwit.yaml";
 
 const DEFAULT_DATA_DIR_PATH: &str = "./qwdata";
@@ -252,6 +254,9 @@ impl QuickwitConfig {
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
+        validate_identifier("Cluster ID", &self.cluster_id)?;
+        validate_identifier("Node ID", &self.node_id)?;
+
         if self.cluster_id == DEFAULT_CLUSTER_ID {
             warn!(
                 cluster_id = DEFAULT_CLUSTER_ID,
