@@ -1,8 +1,8 @@
 ---
-name: Request New Content
-about: Ask for a new piece of content to be created by the Quickwit team
-title: "[Request New Content]"
-labels: community_content
+name: Request New Tutorial
+about: Ask for a new tutorial to be created by the Quickwit team
+title: "[Request New Tutorial]"
+labels: tutorial
 assignees: ''
 
 ---
@@ -10,7 +10,7 @@ assignees: ''
 **My Request**
 <!--
 👋 Hello!
-Please let us know what kind of content would you like to see. 
+Please let us know what kind of content would you like to us to add. 
 Include as many details as possible to your request.
 Feel free to add external links for our reference.
 Let us know if you would like to help so we do it together!
