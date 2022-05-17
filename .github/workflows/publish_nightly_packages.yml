@@ -17,6 +17,7 @@ jobs:
       - uses: ./.github/actions/build
         with:
           target: ${{ matrix.target }}
+          version: nightly
 
   # build-x86_64-unknown-linux-musl-package:
   #   name: Build x86_64-unknown-linux-musl
