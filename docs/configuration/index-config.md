@@ -68,12 +68,12 @@ sources:
 ## Index uri
 
 The index-uri defines where the index files (also called splits) should be stored.
-This parameter expects a [storage uri](storage-uri).
+This parameter expects a [storage uri](../reference/storage-uri).
 
 
 The `index-uri` parameter is optional.
 By default, the `index-uri` will be computed by concatenating the `index-id` with the
-`default_index_root_uri` defined in the [Quickwit's config](quickwit-config).
+`default_index_root_uri` defined in the [Quickwit's config](node-config).
 
 
 :::caution
