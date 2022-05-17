@@ -1,0 +1,36 @@
+#
+# Index config file for receiving logs in OpenTelemetry format.
+# Link: https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md
+#
+
+version: 0
+
+index_id: otel-logs
+
+doc_mapping:
+  field_mappings:
+    - name: timestamp
+      type: i64
+      fast: true
+    - name: name
+      type: text
+      tokenizer: default
+    - name: severity
+      type: text
+      tokenizer: raw
+      fast: true
+    - name: body
+      type: text
+      tokenizer: default
+      record: position
+    - name: attributes
+      type: json
+    - name: resource
+      type: json
+
+indexing_settings:
+  timestamp_field: timestamp
+
+search_settings:
+  default_search_fields: [severity, body]
+
