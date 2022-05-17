@@ -17,6 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use anyhow::bail;
+use once_cell::sync::OnceCell;
+use regex::Regex;
+
 mod config;
 mod index_config;
 mod source_config;
@@ -32,4 +36,42 @@ pub use index_config::{
 pub use source_config::{
     FileSourceParams, IngestApiSourceParams, KafkaSourceParams, KinesisSourceParams,
     RegionOrEndpoint, SourceConfig, SourceParams, VecSourceParams, VoidSourceParams,
+    CLI_INGEST_SOURCE_ID,
 };
+
+fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
+    static IDENTIFIER_REGEX: OnceCell<Regex> = OnceCell::new();
+
+    if IDENTIFIER_REGEX
+        .get_or_init(|| Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9-_]{2,254}$").expect("Failed to compile regular expression. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
+        .is_match(value)
+    {
+        return Ok(());
+    }
+    bail!("{} `{}` is invalid.", label, value);
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::validate_identifier;
+
+    #[test]
+    fn test_validate_identifier() {
+        validate_identifier("Cluster ID", "").unwrap_err();
+        validate_identifier("Cluster ID", "-").unwrap_err();
+        validate_identifier("Cluster ID", "_").unwrap_err();
+        validate_identifier("Cluster ID", "f").unwrap_err();
+        validate_identifier("Cluster ID", "fo").unwrap_err();
+        validate_identifier("Cluster ID", "_fo").unwrap_err();
+        validate_identifier("Cluster ID", "_foo").unwrap_err();
+        validate_identifier("Cluster ID", "foo").unwrap();
+        validate_identifier("Cluster ID", "f-_").unwrap();
+
+        assert_eq!(
+            validate_identifier("Cluster ID", "foo!")
+                .unwrap_err()
+                .to_string(),
+            "Cluster ID `foo!` is invalid."
+        );
+    }
+}

@@ -31,14 +31,15 @@ use itertools::Itertools;
 use quickwit_actors::{ActorHandle, ObservationType, Universe};
 use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
-use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig, SourceParams};
+use quickwit_config::{
+    IndexConfig, IndexerConfig, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
+};
 use quickwit_core::{clear_cache_directory, IndexService};
 use quickwit_doc_mapper::tag_pruning::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
 use quickwit_indexing::models::{
     DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
 };
-use quickwit_indexing::source::INGEST_SOURCE_ID;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
@@ -805,7 +806,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         SourceParams::stdin()
     };
     let source = SourceConfig {
-        source_id: INGEST_SOURCE_ID.to_string(),
+        source_id: CLI_INGEST_SOURCE_ID.to_string(),
         source_params,
     };
     run_index_checklist(&config.metastore_uri(), &args.index_id, Some(&source)).await?;
@@ -870,7 +871,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         clear_cache_directory(
             &config.data_dir_path,
             args.index_id.clone(),
-            INGEST_SOURCE_ID.to_string(),
+            CLI_INGEST_SOURCE_ID.to_string(),
         )
         .await?;
     }
