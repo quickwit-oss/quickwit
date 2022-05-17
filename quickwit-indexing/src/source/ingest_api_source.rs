@@ -300,6 +300,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_ingest_api_source_without_existing_queue() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
+        let index_id = "my-index".to_string();
+        let queue_path = tempfile::tempdir()?;
+        let ingest_api_mailbox = spawn_ingest_api_actor(&universe, queue_path.path())?;
+
+        let ingest_req = make_ingest_request(index_id.clone(), 2, 1000);
+        assert!(ingest_api_mailbox.ask_for_res(ingest_req).await.is_err());
+
+        let (mailbox, _inbox) = create_test_mailbox();
+        let params = IngestApiSourceParams {
+            index_id,
+            batch_num_bytes_threshold: Some(4 * 500),
+        };
+        let ingest_api_source = IngestApiSource::make(
+            "my-source".to_string(),
+            params,
+            ingest_api_mailbox,
+            SourceCheckpoint::default(),
+        )
+        .await?;
+        let ingest_api_source_actor = SourceActor {
+            source: Box::new(ingest_api_source),
+            batch_sink: mailbox,
+        };
+        let (_ingest_api_source_mailbox, ingest_api_source_handle) =
+            universe.spawn_actor(ingest_api_source_actor).spawn();
+        let (exit_status, _state) = ingest_api_source_handle.join().await;
+        assert!(matches!(exit_status, ActorExitStatus::Failure(_)));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_ingest_api_source_resume_from_checkpoint() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
