@@ -37,11 +37,11 @@ pub use self::storage::Storage;
 mod bundle_storage;
 mod error;
 mod local_file_storage;
-mod object_storage;
+pub mod object_storage;
 mod payload;
 mod prefix_storage;
 mod ram_storage;
-mod retry;
+pub mod retry;
 mod split;
 mod storage_resolver;
 
