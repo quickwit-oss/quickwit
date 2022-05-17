@@ -29,7 +29,7 @@ Search more with less
 </h4>
 <br/>
 
-❗**Disclaimer: you are reading the README of Quickwit 0.3 version that will be shipped this month.**
+❗**Disclaimer: you are reading the README of Quickwit 0.3 version that will be shipped in May 2022.**
 
 Quickwit is the next-gen search & analytics engine built for log management. It is a highly reliable & cost-efficient alternative to Elasticsearch.
 
