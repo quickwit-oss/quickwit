@@ -43,31 +43,6 @@ export type Entry = {
   value: any;
 }
 
-function getValueFromPath(path: string[], raw_doc: RawDoc): any {
-  let value = raw_doc;
-  for (const key of path) {
-    if (key in value) {
-      value = value[key];
-    } else {
-      return null;
-    }
-  }
-  return value;
-}
-
-export function flattenEntries(doc_mapping: DocMapping, raw_doc: RawDoc): Entry[] {
-  const flatten_fields = getFlattenFields(doc_mapping.field_mappings);
-  const records = [];
-
-  for (const flatten_field of flatten_fields) {
-    const value = getValueFromPath(flatten_field.path, raw_doc);
-    if (value !== null) {
-      records.push({key: flatten_field.name, value: value});
-    }
-  }
-  return records;
-}
-
 function getFlattenFields(field_mappings: FieldMapping[]): FlattenField[] {
   const fields: FlattenField[] = [];
   for (const field_mapping of field_mappings) {
@@ -83,7 +58,18 @@ function getFlattenFields(field_mappings: FieldMapping[]): FlattenField[] {
   return fields;
 }
 
+export function getDateTimeFormat(timeUnit: TimeUnit) {
+  switch (timeUnit) {
+    case TimeUnit.SECOND:
+      return "YYYY/MM/DD HH:mm:ss";
+    default:
+      return "YYYY/MM/DD HH:mm:ss.SSS";
+  }
+}
+
+// Guess time unit of the timestamp field from index splits.
 export function guessTimeUnit(index: Index): TimeUnit {
+  // If we don't have any info, return the default unit.
   if (index.splits.length === 0 || index.metadata.indexing_settings.timestamp_field === null) {
     return TimeUnit.MILLI_SECOND;
   }
@@ -94,7 +80,7 @@ export function guessTimeUnit(index: Index): TimeUnit {
   }
   const range_start_values = index.splits.map(split => split.time_range === null ? 0 : split.time_range.start);
   const time_range_start_max = Math.max(...range_start_values);
-  // We expect a split time range to be between year between 1971 and 2070. 
+  // We expect a split time range to be between year between 1971 and 2070.
   const seconds_in_one_hundred_years = 3600 * 24 * 365 * 100;
   if (time_range_start_max < seconds_in_one_hundred_years) {
     return TimeUnit.SECOND
@@ -103,7 +89,8 @@ export function guessTimeUnit(index: Index): TimeUnit {
     return TimeUnit.MILLI_SECOND
   }
   if (time_range_start_max < seconds_in_one_hundred_years * 1000 * 1000) {
-    return TimeUnit.MICRO_SECOND
+    console.error('Quickwit UI does not support currently timestamp in MICRO_SECOND or NANO_SECOND.')
+    throw new Error('Quickwit UI does not support currently timestamp in MICRO_SECOND or NANO_SECOND.');
   }
   console.warn('Cannot guess correctly time unit, value `time_range_start_max` is too high, set to micro seconds', time_range_start_max);
   return TimeUnit.MICRO_SECOND
@@ -117,6 +104,7 @@ export type DocMapping = {
   field_mappings: FieldMapping[];
   tag_fields: string[];
   store: boolean;
+  dynamic_mapping: boolean;
 }
 
 export type SearchRequest = {
@@ -177,7 +165,8 @@ export const EMPTY_INDEX_METADATA: IndexMetadata = {
   doc_mapping: {
     store: false,
     field_mappings: [],
-    tag_fields: []
+    tag_fields: [],
+    dynamic_mapping: false,
   }
 };
 
