@@ -388,10 +388,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 [[package]]
 name = "chitchat"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41474c726dd5fe2e90b4653fb0fb932b5469986e7f8da76a304df6ea7f9e1a9c"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bytes",
  "rand",
  "serde",
