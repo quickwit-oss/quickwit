@@ -318,44 +318,51 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use chitchat::transport::{ChannelTransport, Transport};
     use itertools::Itertools;
-    use quickwit_cluster::{create_cluster_for_test, grpc_addr_from_listen_addr_for_test};
+    use quickwit_cluster::{create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster};
 
     use super::create_search_service_client;
     use crate::root::SearchJob;
     use crate::SearchClientPool;
 
+    async fn create_cluster_simple_for_test(
+        transport: &dyn Transport,
+    ) -> anyhow::Result<Arc<Cluster>> {
+        let cluster = create_cluster_for_test(Vec::new(), &["searcher"], transport).await?;
+        Ok(Arc::new(cluster))
+    }
+
     #[tokio::test]
     async fn test_search_client_pool_single_node() -> anyhow::Result<()> {
-        let cluster = create_cluster_for_test(Vec::new(), &["searcher"]).await?;
-        let cluster_arc = Arc::new(cluster);
-        let client_pool = SearchClientPool::create_and_keep_updated(cluster_arc.clone()).await?;
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_simple_for_test(&transport).await?;
+        let client_pool = SearchClientPool::create_and_keep_updated(cluster.clone()).await?;
         let clients = client_pool.clients();
         let addrs: Vec<SocketAddr> = clients.into_keys().collect();
-        let expected_addrs = vec![grpc_addr_from_listen_addr_for_test(cluster_arc.listen_addr)];
+        let expected_addrs = vec![grpc_addr_from_listen_addr_for_test(cluster.listen_addr)];
         assert_eq!(addrs, expected_addrs);
         Ok(())
     }
 
     #[tokio::test]
     async fn test_search_client_pool_multiple_nodes() -> anyhow::Result<()> {
-        let cluster1 = create_cluster_for_test(vec![], &["searcher"]).await?;
-        let cluster1_arc= Arc::new(cluster1);
-        let node_1 = cluster1_arc.listen_addr.to_string();
-        let cluster2 = create_cluster_for_test(vec![node_1], &["searcher"]).await?;
-        let cluster2_arc = Arc::new(cluster2);
+        let transport = ChannelTransport::default();
+        let cluster1 = create_cluster_simple_for_test(&transport).await?;
+        let node_1 = cluster1.listen_addr.to_string();
+        let cluster2 = create_cluster_for_test(vec![node_1], &["searcher"], &transport).await?;
 
-        cluster1_arc
+        cluster1
             .wait_for_members(|members| members.len() == 2, Duration::from_secs(5))
             .await?;
 
-        let client_pool = SearchClientPool::create_and_keep_updated(cluster1_arc.clone()).await?;
+        let client_pool = SearchClientPool::create_and_keep_updated(cluster1.clone()).await?;
         let clients = client_pool.clients();
 
         let addrs: Vec<SocketAddr> = clients.into_keys().sorted().collect();
         let mut expected_addrs = vec![
-            grpc_addr_from_listen_addr_for_test(cluster1_arc.listen_addr),
-            grpc_addr_from_listen_addr_for_test(cluster2_arc.listen_addr),
+            grpc_addr_from_listen_addr_for_test(cluster1.listen_addr),
+            grpc_addr_from_listen_addr_for_test(cluster2.listen_addr),
         ];
         expected_addrs.sort();
         assert_eq!(addrs, expected_addrs);
@@ -364,9 +371,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_client_pool_single_node_assign_jobs() -> anyhow::Result<()> {
-        let cluster = create_cluster_for_test(vec![], &["searcher"]).await?;
-        let cluster_arc = Arc::new(cluster);
-        let client_pool = SearchClientPool::create_and_keep_updated(cluster_arc.clone()).await?;
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_simple_for_test(&transport).await?;
+        let client_pool = SearchClientPool::create_and_keep_updated(cluster.clone()).await?;
         let jobs = vec![
             SearchJob::for_test("split1", 1),
             SearchJob::for_test("split2", 2),
@@ -376,7 +383,7 @@ mod tests {
 
         let assigned_jobs = client_pool.assign_jobs(jobs, &HashSet::default())?;
         let expected_assigned_jobs = vec![(
-            create_search_service_client(grpc_addr_from_listen_addr_for_test(cluster_arc.listen_addr))
+            create_search_service_client(grpc_addr_from_listen_addr_for_test(cluster.listen_addr))
                 .await?,
             vec![
                 SearchJob::for_test("split4", 4),
