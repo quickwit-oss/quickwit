@@ -67,6 +67,7 @@ impl ServiceError for SearchError {
             SearchError::InternalError(_) => ServiceErrorCode::Internal,
             SearchError::StorageResolverError(_) => ServiceErrorCode::BadRequest,
             SearchError::InvalidQuery(_) => ServiceErrorCode::BadRequest,
+            SearchError::InvalidAggregationRequest(_) => ServiceErrorCode::BadRequest,
         }
     }
 }
