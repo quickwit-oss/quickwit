@@ -84,11 +84,11 @@ Today, only the s3 storage is available when running several searcher nodes.
 
 ## Doc mapping
 
-The doc mapping defines how a document and the fields it contains are stored and indexed for a given index. A document is a collection of named fields, each having its own data type (text, binary, date, i64, u64, f64).
+The doc mapping defines how a document and the fields it contains are stored and indexed for a given index. A document is a collection of named fields, each having its own data type (text, binary, i64, u64, f64).
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `field_mappings` | Collection of field mapping, each having its own data type (text, binary, date, i64, u64, f64).   | [] |
+| `field_mappings` | Collection of field mapping, each having its own data type (text, binary, i64, u64, f64).   | [] |
 | `mode`        | Defines how quickwit should handle document fields that are not present in the `field_mappings`. In particular, the "dynamic" mode makes it possible to use quickwit in a schemaless manner. (See [mode](#mode)) | `lenient`
 | `dynamic_mapping` | This parameter is only allowed when `mode` is set to `dynamic`. It then defines whether dynamically mapped fields should be indexed, stored, etc.  | (See [mode](#mode))
 | `tag_fields` | Collection of fields already defined in `field_mappings` whose values will be stored in a dedicated `tags` (1) | [] |
@@ -99,7 +99,7 @@ The doc mapping defines how a document and the fields it contains are stored and
 ### Field types
 
 Each field has a type that indicates the kind of data it contains, such as integer on 64 bits or text.
-Quickwit supports the following raw types `text`, `i64`, `u64`, `f64`, `date`, and `bytes`, and also supports composite types such as array and object. Behind the scenes, Quickwit is using tantivy field types, don't hesitate to look at [tantivy documentation](https://github.com/tantivy-search/tantivy) if you want to go into the details.
+Quickwit supports the following raw types `text`, `i64`, `u64`, `f64`, and `bytes`, and also supports composite types such as array and object. Behind the scenes, Quickwit is using tantivy field types, don't hesitate to look at [tantivy documentation](https://github.com/tantivy-search/tantivy) if you want to go into the details.
 
 ### Raw types
 
@@ -161,28 +161,6 @@ fast: true
 ```
 
 **Parameters for i64, u64 and f64 field**
-
-| Variable      | Description   | Default value |
-| ------------- | ------------- | ------------- |
-| `stored`    | Whether value is stored in the document store | `true` |
-| `indexed`   | Whether value is indexed | `true` |
-| `fast`      | Whether value is stored in a fast field | `false` |
-
-#### `date` type
-
-The `date` type accepts one strict format `RFC 3339`.
-
-Example of a mapping for a date field:
-
-```yaml
-name: timestamp
-type: date
-stored: true
-indexed: true
-fast: true
-```
-
-**Parameters for date field**
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |

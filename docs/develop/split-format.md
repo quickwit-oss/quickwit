@@ -1,6 +1,6 @@
 # Split format
 
-Quickwit's index are divided into small independant immutable piece of index called split.
+Quickwit's index are divided into small independent immutable piece of index called split.
 
 For convenience, a split consists in a single file, with the extension `.split`.
 
