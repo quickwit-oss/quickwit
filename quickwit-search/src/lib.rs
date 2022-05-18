@@ -21,6 +21,7 @@
 #![warn(missing_docs)]
 #![allow(clippy::bool_assert_comparison)]
 
+mod assignment;
 mod client;
 mod cluster_client;
 mod collector;
