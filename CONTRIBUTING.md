@@ -30,11 +30,16 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 3. Install awslocal https://github.com/localstack/awscli-local
 4. Start the external services with `make docker-compose-up`
 5. Run `QW_S3_ENDPOINT=http://localhost:4566 cargo test --all-features`
-6. Run UI tests `cd quickwit-ui && yarn test`
+6. Run UI tests `yarn --cwd quickwit-ui install` and `yarn --cwd quickwit-ui test`
+
+## Start the UI
+1. Start a server `cargo r run`
+2. `yarn --cwd quickwit-ui install` and `yarn --cwd quickwit-ui start`
+3. Open your browser at `http://localhost:3000/ui`
 
 ## Running UI e2e tests
 1. Ensure to run a searcher `cargo r run --service searcher --config config/quickwit.yaml`
-2. Run `cd quickwit-ui && yarn e2e-test`
+2. Run `yarn --cwd quickwit-ui e2e-test`
 
 ## Running services such as Amazon Kinesis or S3, Kafka, or PostgreSQL locally.
 1. Ensure Docker and Docker Compose are correctly installed on your machine (see above)
