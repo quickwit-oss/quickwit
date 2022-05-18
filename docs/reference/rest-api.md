@@ -127,6 +127,10 @@ POST api/v1/<index id>/ingest -d \
 
 Ingest a batch of documents to make them searchable in a given `<index id>`. Currently, NDJSON is the only accepted payload format. 
 
+:::info
+The payload size is limited to 10MB as this endpoint is intended to receive documents in batch.
+:::
+
 #### Path variable
 
 | Variable      | Description   |
@@ -155,6 +159,10 @@ POST api/v1/_bulk -d \
 ```
 
 Ingest a batch of documents to make them searchable using the [Elastic Search](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html) bulk API. This endpoint provides compatibility with tools or systems that already send data to Elastic Search for indexing. Currently, only the `create` action of the elastic bulk API is supported, all other actions such as `delete` or `update` are ignored.
+
+:::info
+The payload size is limited to 10MB as this endpoint is intended to receive documents in batch.
+:::
 
 #### Response
 
