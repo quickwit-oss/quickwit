@@ -10,7 +10,7 @@ type ContextProps = {
 
 const defaultValues = {
   lastSearchRequest: EMPTY_SEARCH_REQUEST,
-  updateLastSearchRequest: (_: SearchRequest) => undefined,
+  updateLastSearchRequest: () => undefined,
 }
 
 function parseSearchRequest(value: string | null): SearchRequest {
@@ -30,7 +30,6 @@ export const LocalStorageProvider = ({
   useEffect(() => {
     if (localStorage.getItem('lastSearchRequest') !== null) {
       const lastSearchRequest = parseSearchRequest(localStorage.getItem('lastSearchRequest'));
-      console.log('load storage', lastSearchRequest);
       setLastSearchRequest(lastSearchRequest);
     }
   }, []);

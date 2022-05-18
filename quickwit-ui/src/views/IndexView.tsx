@@ -119,7 +119,7 @@ function IndexView() {
     <ViewUnderAppBarBox>
       <FullBoxContainer>
         <QBreadcrumbs aria-label="breadcrumb">
-          <Link underline="hover" color="inherit" href="/indexes">
+          <Link underline="hover" color="inherit" href="../indexes">
             <Typography color="text.primary">Indexes</Typography>
           </Link>
           <Typography color="text.primary">{indexId}</Typography>
