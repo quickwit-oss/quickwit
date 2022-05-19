@@ -1,7 +1,7 @@
 # ============================ Quickwit Configuration ==============================
 #
 # Website: https://quickwit.io
-# Docs: https://quickwit.io/docs/
+# Docs: https://quickwit.io/docs/configuration/node-config
 #
 # Configure AWS credentials: https://quickwit.io/docs/guides/configure-aws-env
 #
@@ -15,15 +15,26 @@ version: 0
 #
 #node_id: node-1
 #
-# Default REST server host is `127.0.0.1`
-# and default HTTP port is 7280.
+# Quickwit opens three sockets.
+# - for its HTTP server, hosting the UI and the REST API (TCP)
+# - for its gRPC service (TCP)
+# - for its Gossip cluster membership service (UDP)
+#
+# All three services are bound to the same host and different port.
+
+# Default server host is `127.0.0.1` and default HTTP port is 7280.
 #
 #listen_address: 127.0.0.1
 #rest_listen_port: 7280
-#peer_seeds:
-#  - quickwit-searcher-0.local
-#  - quickwit-searcher-1.local
 #
+# By default, peer_seeds is empty.
+# In order to connect to a cluster, one needs to specify a list of
+# seeds to connect to. If no port is specified, Quickwit will assume
+# the seeds are using the same port as the current node gossip port.
+#
+#peer_seeds:
+#  - quickwit-searcher-0.local:10000
+#  - quickwit-searcher-1.local:10000
 #
 # Path to directory where data is persisted. Default to `./qwdata`.
 #

@@ -25,6 +25,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use anyhow::bail;
+use chitchat::transport::UdpTransport;
 use chitchat::FailureDetectorConfig;
 use quickwit_config::QuickwitConfig;
 
@@ -86,15 +87,17 @@ pub async fn start_cluster_service(
         quickwit_config.gossip_public_addr()?,
     );
 
-    let cluster = Arc::new(Cluster::new(
+    let cluster = Cluster::join(
         member,
         services,
         quickwit_config.gossip_socket_addr()?,
         quickwit_config.cluster_id.clone(),
         quickwit_config.grpc_socket_addr()?,
-        &seed_nodes,
+        seed_nodes,
         FailureDetectorConfig::default(),
-    )?);
+        &UdpTransport,
+    )
+    .await?;
 
-    Ok(cluster)
+    Ok(Arc::new(cluster))
 }
