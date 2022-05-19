@@ -36,6 +36,8 @@ pub enum SearchError {
     InternalError(String),
     #[error("Storage not found: `{0}`)")]
     StorageResolverError(#[from] StorageResolverError),
+    #[error("Invalid aggregation request: {0}")]
+    InvalidAggregationRequest(String),
     #[error("Invalid query: {0}")]
     InvalidQuery(String),
 }

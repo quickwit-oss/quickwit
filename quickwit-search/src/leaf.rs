@@ -306,7 +306,7 @@ async fn leaf_search_single_split(
         doc_mapper.as_ref(),
         search_request,
         &split_schema,
-    );
+    )?;
     let query = doc_mapper.query(split_schema, search_request)?;
     let reader = index
         .reader_builder()
@@ -377,7 +377,7 @@ pub async fn leaf_search(
         });
 
     // Creates a collector which merges responses into one
-    let merge_collector = make_merge_collector(request);
+    let merge_collector = make_merge_collector(request)?;
 
     // Merging is a cpu-bound task.
     // It should be executed by Tokio's blocking threads.

@@ -134,6 +134,11 @@ pub async fn root_search(
         SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
     })?;
 
+    if let Some(agg) = search_request.aggregation_request.as_ref() {
+        let _agg: Aggregations = serde_json::from_str(agg)
+            .map_err(|err| SearchError::InvalidAggregationRequest(err.to_string()))?;
+    };
+
     // try to build query against current schema
     let _query = doc_mapper.query(doc_mapper.schema(), search_request)?;
 
@@ -173,7 +178,7 @@ pub async fn root_search(
     .await?;
 
     // Creates a collector which merges responses into one
-    let merge_collector = make_merge_collector(search_request);
+    let merge_collector = make_merge_collector(search_request)?;
 
     // Merging is a cpu-bound task.
     // It should be executed by Tokio's blocking threads.
@@ -1170,6 +1175,66 @@ mod tests {
         .await
         .is_err());
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_root_search_invalid_aggregation() -> anyhow::Result<()> {
+        let agg_req = r#"
+ {
+   "expensive_colors": {
+     "termss": {
+       "field": "color",
+       "order": {
+            "price_stats.max": "desc"
+       }
+     },
+     "aggs": {
+       "price_stats" : {
+          "stats": {
+              "field": "price"
+          }
+       }
+     }
+   }
+ }"#;
+
+        let search_request = quickwit_proto::SearchRequest {
+            index_id: "test-idx".to_string(),
+            query: "test".to_string(),
+            search_fields: vec!["body".to_string()],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 10,
+            start_offset: 0,
+            aggregation_request: Some(agg_req.to_string()),
+            ..Default::default()
+        };
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
+            });
+        metastore.expect_list_splits().returning(
+            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+                Ok(vec![mock_split("split1")])
+            },
+        );
+        let client_pool =
+            SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
+        let cluster_client = ClusterClient::new(client_pool.clone());
+        let search_response =
+            root_search(&search_request, &metastore, &cluster_client, &client_pool).await;
+        assert!(search_response.is_err());
+        assert_eq!(
+            search_response.unwrap_err().to_string(),
+            "Invalid aggregation request: data did not match any variant of untagged enum \
+             Aggregation at line 18 column 2",
+        );
         Ok(())
     }
 }
