@@ -347,10 +347,10 @@ impl QuickwitConfig {
 
     #[doc(hidden)]
     pub fn for_test() -> anyhow::Result<Self> {
-        use quickwit_common::net::find_available_port;
+        use quickwit_common::net::find_available_tcp_port;
 
         let indexer_config = Self {
-            rest_listen_port: find_available_port()?,
+            rest_listen_port: find_available_tcp_port()?,
             ..Default::default()
         };
         Ok(indexer_config)

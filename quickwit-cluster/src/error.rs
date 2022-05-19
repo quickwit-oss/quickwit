@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::net::SocketAddr;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -31,12 +33,15 @@ pub enum ClusterError {
     },
 
     /// Port binding error.
-    #[error("Failed to bind to UDP port `{port}` for the gossip membership protocol: `{message}`")]
+    #[error(
+        "Failed to bind to UDP socket addr `{listen_addr}` for the gossip membership protocol: \
+         `{cause}`"
+    )]
     UDPPortBindingError {
         /// Port number.
-        port: u16,
+        listen_addr: SocketAddr,
         /// Underlying error message.
-        message: String,
+        cause: String,
     },
 
     /// Read host ID error.
