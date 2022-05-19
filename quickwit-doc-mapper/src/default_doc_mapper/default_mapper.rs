@@ -33,7 +33,7 @@ use super::DefaultDocMapperBuilder;
 use crate::default_doc_mapper::mapping_tree::{build_mapping_tree, MappingNode, MappingTree};
 pub use crate::default_doc_mapper::QuickwitJsonOptions;
 use crate::query_builder::build_query;
-use crate::sort_by::{SortBy, SortOrder};
+use crate::sort_by::{validate_sort_by_field_name, SortBy, SortOrder};
 use crate::{
     DocMapper, DocParsingError, ModeType, QueryParserError, DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
 };
@@ -219,19 +219,9 @@ fn resolve_sort_field(
     schema: &Schema,
 ) -> anyhow::Result<SortBy> {
     if let Some(sort_by_config) = sort_by_config_opt {
-        let sort_by_field = schema
-            .get_field(&sort_by_config.field_name)
-            .with_context(|| format!("Unknown sort by field: `{}`", sort_by_config.field_name))?;
-
-        let sort_by_field_entry = schema.get_field_entry(sort_by_field);
-        if !sort_by_field_entry.is_fast() {
-            bail!(
-                "Sort by field must be a fast field, please add the fast property to your field \
-                 `{}`.",
-                sort_by_config.field_name
-            )
-        }
-        return Ok(sort_by_config.into());
+        validate_sort_by_field_name(&sort_by_config.field_name, schema)?;
+        let sort_by: SortBy = sort_by_config.into();
+        return Ok(sort_by);
     }
     Ok(SortBy::DocId)
 }
@@ -929,7 +919,7 @@ mod tests {
             "field_mappings": [
                 {
                     "name": "timestamp",
-                    "type": "text"
+                    "type": "i64"
                 }
             ]
         }"#;
@@ -937,6 +927,30 @@ mod tests {
         let expected_msg = "Sort by field must be a fast field, please add the fast property to \
                             your field `timestamp`."
             .to_string();
+        assert_eq!(builder.try_build().unwrap_err().to_string(), expected_msg);
+        Ok(())
+    }
+
+    #[test]
+    fn test_fail_to_build_doc_mapper_with_text_sort_by_field() -> anyhow::Result<()> {
+        let doc_mapper = r#"{
+            "default_search_fields": [],
+            "sort_by": {
+                "field_name": "title",
+                "order": "asc"
+            },
+            "tag_fields": [],
+            "field_mappings": [
+                {
+                    "name": "title",
+                    "type": "text",
+                    "fast": true
+                }
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
+        let expected_msg =
+            "Sort by field on type text is currently not supported `title`.".to_string();
         assert_eq!(builder.try_build().unwrap_err().to_string(), expected_msg);
         Ok(())
     }

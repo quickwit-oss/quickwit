@@ -308,6 +308,58 @@ async fn test_single_node_sorting_with_query() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn test_single_node_invalid_sorting_with_query() -> anyhow::Result<()> {
+    let index_id = "single-node-invalid-sorting";
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: description
+                type: text
+                fast: true
+              - name: temperature
+                type: i64
+        "#;
+    let indexing_settings_json = r#"{
+        }"#;
+    let test_sandbox = TestSandbox::create(
+        index_id,
+        doc_mapping_yaml,
+        indexing_settings_json,
+        &["description"],
+    )
+    .await?;
+
+    let mut docs = vec![];
+    for i in 0..30 {
+        let description = format!("city info-{}", i + 1);
+        docs.push(json!({"description": description, "ts": i+1, "temperature": i+32}));
+    }
+    test_sandbox.add_documents(docs).await?;
+
+    let search_request = SearchRequest {
+        index_id: index_id.to_string(),
+        query: "city".to_string(),
+        search_fields: vec![],
+        start_timestamp: None,
+        end_timestamp: None,
+        max_hits: 15,
+        start_offset: 0,
+        sort_by_field: Some("description".to_string()),
+        sort_order: Some(SortOrder::Desc as i32),
+        ..Default::default()
+    };
+    let single_node_response = single_node_search(
+        &search_request,
+        &*test_sandbox.metastore(),
+        test_sandbox.storage_uri_resolver(),
+    )
+    .await?;
+    assert_eq!(single_node_response.errors.len(), 1);
+    assert!(single_node_response.errors[0]
+        .contains("Sort by field on type text is currently not supported"));
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
     let doc_mapping_yaml = r#"
             tag_fields:
