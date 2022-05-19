@@ -87,11 +87,10 @@ impl TryFrom<NodeId> for Member {
             )
         })?;
 
-        let gossip_public_address: SocketAddr = node_id.gossip_public_address;
         Ok(Self {
             node_unique_id: node_unique_id_str.to_string(),
             generation: generation_str.parse()?,
-            gossip_public_address,
+            gossip_public_address: node_id.gossip_public_address,
             is_self: false,
         })
     }
