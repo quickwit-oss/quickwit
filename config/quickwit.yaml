@@ -1,7 +1,7 @@
 # ============================ Quickwit Configuration ==============================
 #
 # Website: https://quickwit.io
-# Docs: https://quickwit.io/docs/reference/quickwit-config
+# Docs: https://quickwit.io/docs/configuration/node-config
 #
 # Configure AWS credentials: https://quickwit.io/docs/guides/configure-aws-env
 #
@@ -29,8 +29,8 @@ version: 0
 #
 # By default, peer_seeds is empty.
 # In order to connect to a cluster, one needs to specify a list of
-# seed to connect to. If no port is specified, Quickwit will assume
-# the seeds are using as the current node gossip port.
+# seeds to connect to. If no port is specified, Quickwit will assume
+# the seeds are using the same port as the current node gossip port.
 #
 #peer_seeds:
 #  - quickwit-searcher-0.local:10000
