@@ -35,6 +35,7 @@ use tokio::time;
 use tracing::{info, warn};
 
 use super::api::list_shards;
+use super::retry::RetryPolicyParams;
 use super::shard_consumer::{ShardConsumer, ShardConsumerHandle, ShardConsumerMessage};
 use crate::models::RawDocBatch;
 use crate::source::{Indexer, Source, SourceContext, TypedSourceFactory};
@@ -93,6 +94,7 @@ pub struct KinesisSource {
     shard_consumers_rx: mpsc::Receiver<ShardConsumerMessage>,
     state: KinesisSourceState,
     shutdown_at_stream_eof: bool,
+    retry_policy: RetryPolicyParams,
 }
 
 impl fmt::Debug for KinesisSource {
@@ -118,6 +120,7 @@ impl KinesisSource {
         let kinesis_client = KinesisClient::new(region);
         let (shard_consumers_tx, shard_consumers_rx) = mpsc::channel(1_000);
         let state = KinesisSourceState::default();
+        let retry_policy = RetryPolicyParams::default();
         Ok(KinesisSource {
             source_id,
             stream_name,
@@ -127,6 +130,7 @@ impl KinesisSource {
             shard_consumers_rx,
             state,
             shutdown_at_stream_eof,
+            retry_policy,
         })
     }
 
@@ -167,7 +171,7 @@ impl KinesisSource {
 #[async_trait]
 impl Source for KinesisSource {
     async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        let shards = list_shards(&self.kinesis_client, &self.stream_name, None).await?;
+        let shards = list_shards(&self.kinesis_client, &self.stream_name, None, &self.retry_policy).await?;
         for shard in shards {
             self.spawn_shard_consumer(ctx, shard.shard_id);
         }

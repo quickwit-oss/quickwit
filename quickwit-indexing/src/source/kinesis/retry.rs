@@ -17,94 +17,74 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use core::future::Future;
-use std::time::Duration;
+use std::{fmt::Display, time::Duration};
 
+use futures::Future;
+use quickwit_storage::retry::IsRetryable;
 use rand::Rng;
 use tracing::{debug, warn};
 
 const MAX_RETRY_ATTEMPTS: usize = 3;
-const BASE_DELAY: Duration = Duration::from_millis(250);
-const MAX_DELAY: Duration = Duration::from_millis(20_000);
+const BASE_DELAY: Duration = Duration::from_millis(if cfg!(test) { 1 } else { 250 });
+const MAX_DELAY: Duration = Duration::from_millis(if cfg!(test) { 1 } else { 20_000 });
 
-pub struct RetryRequest<F, Fut, U>
-where
-    F: Fn() -> Fut,
-    Fut: Future<Output = anyhow::Result<U>>,
-{
-    request: F,
-    max_attempts: Option<usize>,
-    base_delay: Option<Duration>,
-    max_delay: Option<Duration>,
+pub struct RetryPolicyParams {
+    base_delay: Duration,
+    max_delay: Duration,
+    max_attempts: usize,
 }
 
-impl<F, Fut, U> RetryRequest<F, Fut, U>
-where
-    F: Fn() -> Fut,
-    Fut: Future<Output = anyhow::Result<U>>,
-{
-    pub fn new(request: F) -> Self {
-        RetryRequest {
-            request,
-            max_attempts: None,
-            base_delay: None,
-            max_delay: None,
+impl Default for RetryPolicyParams {
+    fn default() -> Self {
+        Self {
+            base_delay: BASE_DELAY,
+            max_delay: MAX_DELAY,
+            max_attempts: MAX_RETRY_ATTEMPTS,
         }
     }
+}
 
-    /// Set the retry request's max attempts.
-    pub fn max_attempts(&mut self, max_attempts: usize) {
-        self.max_attempts = Some(max_attempts);
-    }
+pub async fn retry<F, U, E, Fut>(f: F, policy: &RetryPolicyParams) -> Result<U, E>
+where
+    F: Fn() -> Fut,
+    Fut: Future<Output = Result<U, E>>,
+    E: IsRetryable + Display + 'static,
+{
+    let mut attempt_count = 0;
 
-    /// Set the retry request's base delay.
-    pub fn base_delay(&mut self, base_delay: Duration) {
-        self.base_delay = Some(base_delay);
-    }
+    loop {
+        let response = f().await;
 
-    /// Set the retry request's max delay.
-    pub fn max_delay(&mut self, max_delay: Duration) {
-        self.max_delay = Some(max_delay);
-    }
+        attempt_count += 1;
 
-    pub async fn execute(&self) -> anyhow::Result<U> {
-        let max_attempts = self.max_attempts.unwrap_or(MAX_RETRY_ATTEMPTS);
-        let base_delay = self.base_delay.unwrap_or(BASE_DELAY);
-        let max_delay = self.max_delay.unwrap_or(MAX_DELAY);
-
-        let mut attempt_count = 0;
-
-        loop {
-            let response = (self.request)().await;
-
-            attempt_count += 1;
-
-            match response {
-                Ok(response) => {
-                    return Ok(response);
+        match response {
+            Ok(response) => {
+                return Ok(response);
+            }
+            Err(error) => {
+                if !error.is_retryable() {
+                    return Err(error);
                 }
-                Err(error) => {
-                    if attempt_count >= max_attempts {
-                        warn!(
-                            attempt_count = %attempt_count,
-                            "Request failed"
-                        );
-                        return Err(error);
-                    }
-
-                    let ceiling_ms = (base_delay.as_millis() as u64
-                        * 2u64.pow(attempt_count as u32))
-                    .min(max_delay.as_millis() as u64);
-                    let delay_ms = rand::thread_rng().gen_range(0..ceiling_ms);
-                    debug!(
+                if attempt_count >= policy.max_attempts {
+                    warn!(
                         attempt_count = %attempt_count,
-                        delay_ms = %delay_ms,
-                        error = %error,
-                        "Request failed, retrying"
+                        "Request failed"
                     );
-
-                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                    return Err(error);
                 }
+
+                let ceiling_ms = (policy.base_delay.as_millis() as u64
+                    * 2u64.pow(attempt_count as u32))
+                .min(policy.max_delay.as_millis() as u64);
+                let delay_ms = rand::thread_rng().gen_range(0..ceiling_ms);
+                debug!(
+                    attempt_count = %attempt_count,
+                    delay_ms = %delay_ms,
+                    error = %error,
+                    "Request failed, retrying"
+                );
+
+                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
             }
         }
     }

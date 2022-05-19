@@ -32,6 +32,8 @@ use tokio::sync::mpsc;
 use crate::source::kinesis::api::{get_records, get_shard_iterator};
 use crate::source::SourceContext;
 
+use super::retry::RetryPolicyParams;
+
 #[derive(Debug)]
 pub(super) enum ShardConsumerMessage {
     /// The shard was the subject of a merge or a split and points to one (merge) or two (split)
@@ -75,6 +77,7 @@ pub(super) struct ShardConsumer {
     state: ShardConsumerState,
     kinesis_client: KinesisClient,
     sink: mpsc::Sender<ShardConsumerMessage>,
+    retry_policy: RetryPolicyParams,
 }
 
 impl fmt::Debug for ShardConsumer {
@@ -104,6 +107,7 @@ impl ShardConsumer {
             shutdown_at_shard_eof,
             kinesis_client,
             sink,
+            retry_policy: RetryPolicyParams::default(),
         }
     }
 
@@ -151,6 +155,7 @@ impl Actor for ShardConsumer {
             &self.stream_name,
             &self.shard_id,
             self.from_sequence_number_exclusive.clone(),
+            &self.retry_policy,
         )
         .await?;
         ctx.send_self_message(Loop).await?;
@@ -179,7 +184,7 @@ impl Handler<Loop> for ShardConsumer {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         if let Some(shard_iterator) = self.state.next_shard_iterator.take() {
-            let response = get_records(&self.kinesis_client, shard_iterator).await?;
+            let response = get_records(&self.kinesis_client, shard_iterator, &self.retry_policy).await?;
             self.state.lag_millis = response.millis_behind_latest.clone();
             self.state.next_shard_iterator = response.next_shard_iterator;
 
