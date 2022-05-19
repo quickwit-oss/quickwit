@@ -19,6 +19,7 @@
 
 use std::net::SocketAddr;
 
+use quickwit_cluster::QuickwitService;
 use quickwit_proto::cluster_service_server::ClusterServiceServer;
 use quickwit_proto::search_service_server::SearchServiceServer;
 use quickwit_proto::tonic;
@@ -41,7 +42,12 @@ pub(crate) async fn start_grpc_server(
     let grpc_cluster_service = GrpcClusterAdapter::from(quickwit_services.cluster_service.clone());
     let mut server_router = server.add_service(ClusterServiceServer::new(grpc_cluster_service));
 
-    if let Some(search_service) = quickwit_services.search_service.clone() {
+    // We only mount the gRPC service if the searcher is enabled on this node.
+    if quickwit_services
+        .services
+        .contains(&QuickwitService::Searcher)
+    {
+        let search_service = quickwit_services.search_service.clone();
         let grpc_search_service = GrpcSearchAdapter::from(search_service);
         server_router = server_router.add_service(SearchServiceServer::new(grpc_search_service));
     }

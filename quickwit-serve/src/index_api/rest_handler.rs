@@ -26,6 +26,7 @@ use tracing::info;
 use warp::{Filter, Rejection};
 
 use crate::format::Format;
+use crate::with_arg;
 
 pub fn index_management_handlers(
     index_service: Arc<IndexService>,
@@ -44,7 +45,7 @@ fn get_index_metadata_handler(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     warp::path!("indexes" / String)
         .and(warp::get())
-        .and(warp::any().map(move || index_service.clone()))
+        .and(with_arg(index_service))
         .and_then(get_index_metadata)
 }
 
