@@ -42,7 +42,7 @@ pub(crate) async fn start_grpc_server(
     let grpc_cluster_service = GrpcClusterAdapter::from(quickwit_services.cluster_service.clone());
     let mut server_router = server.add_service(ClusterServiceServer::new(grpc_cluster_service));
 
-    // We only mount the gRPC servcice if the searcher is enabled on this node.
+    // We only mount the gRPC service if the searcher is enabled on this node.
     if quickwit_services
         .services
         .contains(&QuickwitService::Searcher)
