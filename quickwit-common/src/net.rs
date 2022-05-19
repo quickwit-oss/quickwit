@@ -17,11 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, ToSocketAddrs};
+use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
 
-/// Finds a random available port.
-pub fn find_available_port() -> anyhow::Result<u16> {
-    let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
+/// Finds a random available TCP port.
+pub fn find_available_tcp_port() -> anyhow::Result<u16> {
+    let socket: SocketAddr = ([127, 0, 0, 1], 0u16).into();
     let listener = TcpListener::bind(socket)?;
     let port = listener.local_addr()?.port();
     Ok(port)

@@ -27,9 +27,7 @@ use tantivy::schema::{
     BytesOptions, Cardinality, Field, JsonObjectOptions, NumericOptions, SchemaBuilder,
     TextOptions, Value,
 };
-use tantivy::time::format_description::well_known::Rfc3339;
-use tantivy::time::OffsetDateTime;
-use tantivy::{DateTime, Document};
+use tantivy::Document;
 
 use crate::default_doc_mapper::field_mapping_entry::{
     QuickwitNumericOptions, QuickwitObjectOptions, QuickwitTextOptions,
@@ -53,7 +51,6 @@ pub enum LeafType {
     I64(QuickwitNumericOptions),
     U64(QuickwitNumericOptions),
     F64(QuickwitNumericOptions),
-    Date(QuickwitNumericOptions),
     Bytes(QuickwitNumericOptions),
     Json(QuickwitJsonOptions),
 }
@@ -63,7 +60,6 @@ impl LeafType {
         match self {
             LeafType::Text(_) => JsonType::String,
             LeafType::I64(_) | LeafType::U64(_) | LeafType::F64(_) => JsonType::Number,
-            LeafType::Date(_) => JsonType::String,
             LeafType::Bytes(_) => JsonType::String,
             LeafType::Json(_) => JsonType::Object,
         }
@@ -72,11 +68,9 @@ impl LeafType {
     pub fn is_fast_field(&self) -> bool {
         match self {
             LeafType::Text(_opt) => false, // TODO fixme once we have text fast field
-            LeafType::I64(opt)
-            | LeafType::U64(opt)
-            | LeafType::F64(opt)
-            | LeafType::Date(opt)
-            | LeafType::Bytes(opt) => opt.fast,
+            LeafType::I64(opt) | LeafType::U64(opt) | LeafType::F64(opt) | LeafType::Bytes(opt) => {
+                opt.fast
+            }
             LeafType::Json(_) => false,
         }
     }
@@ -93,22 +87,6 @@ impl LeafType {
             LeafType::I64(_) => i64::from_json(json_val),
             LeafType::U64(_) => u64::from_json(json_val),
             LeafType::F64(_) => f64::from_json(json_val),
-            LeafType::Date(_) => {
-                let date_rfc3339_str = if let JsonValue::String(text) = json_val {
-                    text
-                } else {
-                    return Err(format!(
-                        "Expected rfc3339 datetime string, got '{}'.",
-                        json_val
-                    ));
-                };
-                let offset_date_time =
-                    OffsetDateTime::parse(&date_rfc3339_str, &Rfc3339).map_err(|_err| {
-                        format!("Expected RFC 3339 date, got '{}'.", date_rfc3339_str)
-                    })?;
-                let date_time_utc = DateTime::from_utc(offset_date_time);
-                Ok(Value::Date(date_time_utc))
-            }
             LeafType::Bytes(_) => {
                 let base64_str = if let JsonValue::String(base64_str) = json_val {
                     base64_str
@@ -405,7 +383,6 @@ impl From<MappingLeaf> for FieldMappingType {
             LeafType::I64(opt) => FieldMappingType::I64(opt, leaf.cardinality),
             LeafType::U64(opt) => FieldMappingType::U64(opt, leaf.cardinality),
             LeafType::F64(opt) => FieldMappingType::F64(opt, leaf.cardinality),
-            LeafType::Date(opt) => FieldMappingType::Date(opt, leaf.cardinality),
             LeafType::Bytes(opt) => FieldMappingType::Bytes(opt, leaf.cardinality),
             LeafType::Json(opt) => FieldMappingType::Json(opt, leaf.cardinality),
         }
@@ -592,16 +569,6 @@ fn build_mapping_from_field_type<'a>(
             };
             Ok(MappingTree::Leaf(mapping_leaf))
         }
-        FieldMappingType::Date(options, cardinality) => {
-            let numeric_options = get_numeric_options(options, *cardinality);
-            let field = schema_builder.add_date_field(&field_name, numeric_options);
-            let mapping_leaf = MappingLeaf {
-                field,
-                typ: LeafType::Date(options.clone()),
-                cardinality: *cardinality,
-            };
-            Ok(MappingTree::Leaf(mapping_leaf))
-        }
         FieldMappingType::Bytes(options, cardinality) => {
             let bytes_options = get_bytes_options(options);
             let field = schema_builder.add_bytes_field(&field_name, bytes_options);
@@ -636,8 +603,7 @@ fn build_mapping_from_field_type<'a>(
 mod tests {
     use serde_json::json;
     use tantivy::schema::{Cardinality, Field, Value};
-    use tantivy::time::{Date, Month, PrimitiveDateTime, Time};
-    use tantivy::{DateTime, Document};
+    use tantivy::Document;
 
     use super::{LeafType, MappingLeaf};
     use crate::default_doc_mapper::field_mapping_entry::{
@@ -873,34 +839,6 @@ mod tests {
         let typ = LeafType::Text(QuickwitTextOptions::default());
         let err = typ.value_from_json(json!(2u64)).err().unwrap();
         assert_eq!(err, "Expected JSON string, got '2'.");
-    }
-
-    #[test]
-    fn test_parse_date() {
-        let typ = LeafType::Date(QuickwitNumericOptions::default());
-        let value = typ
-            .value_from_json(json!("2021-12-19T16:39:57-01:00"))
-            .unwrap();
-        let datetime = PrimitiveDateTime::new(
-            Date::from_calendar_date(2021, Month::December, 19).unwrap(),
-            Time::from_hms(17, 39, 57).unwrap(),
-        );
-        let datetime_utc = DateTime::from_primitive(datetime);
-        assert_eq!(value, Value::Date(datetime_utc));
-    }
-
-    #[test]
-    fn test_parse_date_number_should_error() {
-        let typ = LeafType::Date(QuickwitNumericOptions::default());
-        let err = typ.value_from_json(json!(123)).err().unwrap();
-        assert_eq!(err, "Expected rfc3339 datetime string, got '123'.");
-    }
-
-    #[test]
-    fn test_parse_date_array_should_error() {
-        let typ = LeafType::Date(QuickwitNumericOptions::default());
-        let err = typ.value_from_json(json!([123, 23])).err().unwrap();
-        assert_eq!(err, "Expected rfc3339 datetime string, got '[123,23]'.");
     }
 
     #[test]

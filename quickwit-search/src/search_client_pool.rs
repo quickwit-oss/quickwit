@@ -323,16 +323,25 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use chitchat::transport::{ChannelTransport, Transport};
     use itertools::Itertools;
-    use quickwit_cluster::{create_cluster_for_test, grpc_addr_from_listen_addr_for_test};
+    use quickwit_cluster::{create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster};
 
     use super::create_search_service_client;
     use crate::root::SearchJob;
     use crate::SearchClientPool;
 
+    async fn create_cluster_simple_for_test(
+        transport: &dyn Transport,
+    ) -> anyhow::Result<Arc<Cluster>> {
+        let cluster = create_cluster_for_test(Vec::new(), &["searcher"], transport).await?;
+        Ok(Arc::new(cluster))
+    }
+
     #[tokio::test]
     async fn test_search_client_pool_single_node() -> anyhow::Result<()> {
-        let cluster = Arc::new(create_cluster_for_test(&[], &["searcher"])?);
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_simple_for_test(&transport).await?;
         let client_pool = SearchClientPool::create_and_keep_updated(cluster.clone()).await?;
         let clients = client_pool.clients();
         let addrs: Vec<SocketAddr> = clients.into_keys().collect();
@@ -343,9 +352,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_client_pool_multiple_nodes() -> anyhow::Result<()> {
-        let cluster1 = Arc::new(create_cluster_for_test(&[], &["searcher"])?);
+        let transport = ChannelTransport::default();
+        let cluster1 = create_cluster_simple_for_test(&transport).await?;
         let node_1 = cluster1.listen_addr.to_string();
-        let cluster2 = Arc::new(create_cluster_for_test(&[node_1], &["searcher"])?);
+        let cluster2 = create_cluster_for_test(vec![node_1], &["searcher"], &transport).await?;
 
         cluster1
             .wait_for_members(|members| members.len() == 2, Duration::from_secs(5))
@@ -366,7 +376,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_client_pool_single_node_assign_jobs() -> anyhow::Result<()> {
-        let cluster = Arc::new(create_cluster_for_test(&[], &["searcher"])?);
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_simple_for_test(&transport).await?;
         let client_pool = SearchClientPool::create_and_keep_updated(cluster.clone()).await?;
         let jobs = vec![
             SearchJob::for_test("split1", 1),

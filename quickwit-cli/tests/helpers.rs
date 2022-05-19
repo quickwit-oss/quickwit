@@ -26,7 +26,7 @@ use std::{fs, io};
 use assert_cmd::cargo::cargo_bin;
 use assert_cmd::Command;
 use predicates::str;
-use quickwit_common::net::find_available_port;
+use quickwit_common::net::find_available_tcp_port;
 use quickwit_common::uri::Uri;
 use quickwit_metastore::{FileBackedMetastore, MetastoreResult};
 use quickwit_storage::{LocalFileStorage, S3CompatibleObjectStorage, Storage};
@@ -195,7 +195,7 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
             .replace("index_uri: #index_uri\n", ""),
     )?;
     let quickwit_config_path = resources_dir_path.join("config.yaml");
-    let rest_listen_port = find_available_port()?;
+    let rest_listen_port = find_available_tcp_port()?;
     fs::write(
         &quickwit_config_path,
         // A poor's man templating engine reloaded...
