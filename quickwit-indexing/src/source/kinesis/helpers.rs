@@ -34,6 +34,7 @@ pub(crate) mod tests {
     use crate::source::kinesis::api::tests::{
         create_stream, delete_stream, wait_for_stream_status,
     };
+    use crate::source::kinesis::retry::RetryPolicyParams;
 
     pub static DEFAULT_RETRY_PARAMS: Lazy<RetryParams> = Lazy::new(RetryParams::default);
 

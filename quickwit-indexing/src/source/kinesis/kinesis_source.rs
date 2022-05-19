@@ -36,6 +36,7 @@ use tokio::time;
 use tracing::{info, warn};
 
 use super::api::list_shards;
+use super::retry::RetryPolicyParams;
 use super::shard_consumer::{ShardConsumer, ShardConsumerHandle, ShardConsumerMessage};
 use crate::models::RawDocBatch;
 use crate::source::{Indexer, Source, SourceContext, TypedSourceFactory};
