@@ -76,7 +76,7 @@ impl IndexMetadata {
                 },
                 {
                     "name": "response_date",
-                    "type": "date",
+                    "type": "i64",
                     "fast": true
                 },
                 {
