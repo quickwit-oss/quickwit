@@ -24,6 +24,7 @@ use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 
+use anyhow::bail;
 use http::Uri;
 use quickwit_cluster::{Cluster, QuickwitService};
 use quickwit_proto::tonic;
@@ -247,6 +248,10 @@ impl SearchClientPool {
                 });
                 socket_to_client.insert(grpc_addr, client);
             }
+        }
+
+        if nodes.is_empty() {
+            bail!("No search node available.");
         }
 
         // Sort job

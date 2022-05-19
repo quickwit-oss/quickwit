@@ -34,6 +34,7 @@ mod search_api;
 mod ui_handler;
 
 use std::collections::HashSet;
+use std::convert::Infallible;
 use std::sync::Arc;
 
 use format::Format;
@@ -69,12 +70,20 @@ fn require<T: Clone + Send>(
     })
 }
 
+fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infallible> + Clone {
+    warp::any().map(move || arg.clone())
+}
+
 struct QuickwitServices {
     pub cluster_service: Arc<dyn ClusterService>,
-    pub search_service: Option<Arc<dyn SearchService>>,
+    /// We do have a search service even on nodes that are not running `search`.
+    /// It is only used to serve the rest API calls and will only execute
+    /// the root requests.
+    pub search_service: Arc<dyn SearchService>,
     pub indexer_service: Option<Mailbox<IndexingService>>,
     pub ingest_api_service: Option<Mailbox<IngestApiService>>,
     pub index_service: Arc<IndexService>,
+    pub services: HashSet<QuickwitService>,
 }
 
 pub async fn serve_quickwit(
@@ -114,19 +123,13 @@ pub async fn serve_quickwit(
             None
         };
 
-    let search_service: Option<Arc<dyn SearchService>> =
-        if services.contains(&QuickwitService::Searcher) {
-            let search_service = start_searcher_service(
-                config,
-                metastore.clone(),
-                storage_resolver.clone(),
-                cluster_service.clone(),
-            )
-            .await?;
-            Some(search_service)
-        } else {
-            None
-        };
+    let search_service: Arc<dyn SearchService> = start_searcher_service(
+        config,
+        metastore.clone(),
+        storage_resolver.clone(),
+        cluster_service.clone(),
+    )
+    .await?;
 
     // Always instanciate index management service.
     let index_service = Arc::new(IndexService::new(
@@ -141,6 +144,7 @@ pub async fn serve_quickwit(
         search_service,
         indexer_service,
         index_service,
+        services: services.clone(),
     };
 
     let rest_addr = config.rest_socket_addr()?;
