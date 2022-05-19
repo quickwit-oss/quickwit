@@ -32,7 +32,7 @@ export function QueryEditorActionBar(props: SearchComponentProps) {
           startIcon={<PlayArrowIcon />}
           disableElevation
           sx={{ flexGrow: 1}}
-          disabled={props.queryRunning || props.searchRequest.indexId === null}>
+          disabled={props.queryRunning || props.index === null}>
           Run
         </Button>
       </Box>
