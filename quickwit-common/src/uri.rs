@@ -28,6 +28,9 @@ use serde::{Serialize, Serializer};
 /// Default file protocol `file://`
 pub const FILE_PROTOCOL: &str = "file";
 
+/// S3 protocol `s3://`
+pub const S3_PROTOCOL: &str = "s3";
+
 const POSTGRES_PROTOCOL: &str = "postgres";
 
 const POSTGRESQL_PROTOCOL: &str = "postgresql";
