@@ -22,4 +22,3 @@ mod helpers;
 pub mod kinesis_source;
 mod retry;
 mod shard_consumer;
-mod retry;
