@@ -44,7 +44,7 @@ use crate::{
     SearchServiceClient,
 };
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub(crate) struct SearchJob {
     cost: u32,
     offsets: SplitIdAndFooterOffsets,
@@ -88,6 +88,7 @@ impl Job for SearchJob {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct FetchDocsJob {
     offsets: SplitIdAndFooterOffsets,
     pub partial_hits: Vec<PartialHit>,

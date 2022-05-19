@@ -2907,6 +2907,7 @@ dependencies = [
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-storage",
+ "rand",
  "rayon",
  "serde",
  "serde_json",

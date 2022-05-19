@@ -58,7 +58,7 @@ async fn create_search_service_client(
 ///
 /// The `split_id` is used to define an affinity between a leaf nodes and a job.
 /// The `cost` is used to spread the work evenly amongst nodes.
-pub trait Job {
+pub trait Job: Clone {
     /// SplitId of the split that is targetted.
     fn split_id(&self) -> &str;
     /// Estimation of the load associated with running a given job.
