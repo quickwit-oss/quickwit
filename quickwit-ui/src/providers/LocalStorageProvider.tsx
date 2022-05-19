@@ -10,7 +10,7 @@ type ContextProps = {
 
 const defaultValues = {
   lastSearchRequest: EMPTY_SEARCH_REQUEST,
-  updateLastSearchRequest: (_: SearchRequest) => undefined,
+  updateLastSearchRequest: () => undefined,
 }
 
 function parseSearchRequest(value: string | null): SearchRequest {

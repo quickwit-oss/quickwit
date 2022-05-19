@@ -39,13 +39,12 @@ pub(crate) fn sort_by_rendez_vous_hash<T: Hash>(nodes: &mut [T], split_id: &str)
 
 #[cfg(test)]
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::net::SocketAddr;
 
     use super::*;
 
     fn test_socket_addr(last_byte: u8) -> SocketAddr {
-        let ip_addr = Ipv4Addr::new(127, 0, 0, last_byte);
-        SocketAddr::new(IpAddr::V4(ip_addr), 10000)
+        ([127, 0, 0, last_byte], 10_000u16).into()
     }
 
     #[test]

@@ -41,6 +41,7 @@ export function QueryEditor(props: SearchComponentProps) {
   const searchRequestRef = useRef(props.searchRequest);
   const defaultValue = props.searchRequest.query === null ? `// Select an index and type your query. Example: field_name:"phrase query"` : props.searchRequest.query;
   
+  /* eslint-disable  @typescript-eslint/no-explicit-any */
   function handleEditorDidMount(editor: any, monaco: any) {
     editorRef.current = editor; 
     editor.addAction({
