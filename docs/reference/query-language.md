@@ -29,12 +29,10 @@ Quickwit supports `AND`, `+`, `OR`, `NOT` and `-` as Boolean operators (case sen
 
 ### Grouping boolean operators
 
-Quickwit supports parenthesis to group multiple clauses with or without specifying a field:
+Quickwit supports parenthesis to group multiple clauses:
 
 ```
-title:(obama OR president)
-
-(obama OR president)
+(color:red OR color:green) AND size:large
 ```
 
 ### Escaping Special Characters
