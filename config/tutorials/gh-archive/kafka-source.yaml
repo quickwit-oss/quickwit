@@ -1,0 +1,6 @@
+source_id: kafka-source
+source_type: kafka
+params:
+  topic: gh-archive
+  client_params:
+    bootstrap.servers: localhost:9092
