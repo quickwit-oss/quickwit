@@ -19,9 +19,10 @@
 
 use std::net::SocketAddr;
 
+use hyper::http;
 use quickwit_common::metrics;
 use tracing::{error, info};
-use warp::{Filter, Rejection, Reply};
+use warp::{redirect, Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
 use crate::error::ServiceErrorCode;
@@ -66,8 +67,11 @@ pub(crate) async fn start_rest_server(
         .or(index_management_handlers(
             quickwit_services.index_service.clone(),
         ));
-    let rest_routes = api_v1_root_url
-        .and(api_v1_routes)
+    let api_v1_root_route = api_v1_root_url.and(api_v1_routes);
+    let redirect_root_to_ui_route =
+        warp::path::end().map(|| redirect(http::Uri::from_static("/ui/search")));
+    let rest_routes = api_v1_root_route
+        .or(redirect_root_to_ui_route)
         .or(ui_handler())
         .or(liveness_check_handler())
         .or(metrics_service)
