@@ -573,16 +573,16 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     let total_bytes = splits_bytes.iter().sum::<usize>();
 
     println!();
-    println!("1. General infos");
+    println!("1. General information");
     println!("===============================================================================");
     println!(
         "{:<35} {}",
-        "Index id:".color(GREEN_COLOR),
+        "Index ID:".color(GREEN_COLOR),
         index_metadata.index_id
     );
     println!(
         "{:<35} {}",
-        "Index uri:".color(GREEN_COLOR),
+        "Index URI:".color(GREEN_COLOR),
         index_metadata.index_uri
     );
     println!(
@@ -631,7 +631,7 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     }
 
     println!();
-    println!("2. Statistics on splits");
+    println!("2. Split statistics");
     println!("===============================================================================");
     println!("Document count stats:");
     print_descriptive_stats(&splits_num_docs);
