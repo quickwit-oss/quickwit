@@ -6,35 +6,18 @@ on:
     - cron: "0 5 * * *"
 
 jobs:
-  # Not including native package as Mac-OS build takes ci time.
-
-  build-x86_64-unknown-linux-gnu-package:
-    name: Build x86_64-unknown-linux-gnu
+  build:
+    strategy:
+      matrix:
+        target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
+    name: Build ${{ matrix.target }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - run: echo "ASSET_VERSION=nightly" >> $GITHUB_ENV
-      - run: echo "ASSET_FULL_NAME=quickwit-nightly-x86_64-unknown-linux-gnu" >> $GITHUB_ENV
-      - uses: actions-rs/toolchain@v1
+      - uses: ./.github/actions/build
         with:
-          toolchain: stable
-          target: x86_64-unknown-linux-gnu
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          use-cross: true
-          command: build
-          args: --release --features release-feature-vendored-set --target x86_64-unknown-linux-gnu
-      - name: Bundle archive
-        run: |
-          make archive BINARY_FILE=target/x86_64-unknown-linux-gnu/release/quickwit \
-            BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }} 
-      - name: Save binary archive for few days
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.ASSET_FULL_NAME }}.tar.gz
-          path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
-          retention-days: 3
+          target: ${{ matrix.target }}
+          version: nightly
 
   # build-x86_64-unknown-linux-musl-package:
   #   name: Build x86_64-unknown-linux-musl
@@ -63,34 +46,6 @@ jobs:
   #         name: ${{ env.ASSET_FULL_NAME }}.tar.gz
   #         path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
   #         retention-days: 3
-
-  build-aarch64-unknown-linux-gnu-package:
-    name: Build aarch64-unknown-linux-gnu
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - run: echo "ASSET_VERSION=nightly" >> $GITHUB_ENV
-      - run: echo "ASSET_FULL_NAME=quickwit-nightly-aarch64-unknown-linux-gnu" >> $GITHUB_ENV
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: aarch64-unknown-linux-gnu
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          use-cross: true
-          command: build
-          args: --release --features release-feature-vendored-set --target aarch64-unknown-linux-gnu
-      - name: Bundle archive
-        run: |
-          make archive BINARY_FILE=target/aarch64-unknown-linux-gnu/release/quickwit \
-            BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
-      - name: Save binary archive for few days
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.ASSET_FULL_NAME }}.tar.gz
-          path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
-          retention-days: 3
 
   # build-aarch64-unknown-linux-musl-package: 
   #   name: Build aarch64-unknown-linux-musl
@@ -124,10 +79,7 @@ jobs:
   #   name: Build & push docker images
   #   runs-on: ubuntu-latest
   #   needs:
-  #     - build-x86_64-unknown-linux-gnu-package
-  #     - build-x86_64-unknown-linux-musl-package
-  #     - build-aarch64-unknown-linux-gnu-package
-  #     - build-aarch64-unknown-linux-musl-package
+  #     - build
   #   steps:
   #     - name: Check out the repo
   #       uses: actions/checkout@v3
