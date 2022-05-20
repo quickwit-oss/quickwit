@@ -4,13 +4,19 @@ slug: /
 sidebar_position: 1
 ---
 
-Quickwit is a distributed search engine designed from the ground up to offer cost-efficiency and high reliability on large data sets.
+Quickwit is an open-source, cloud-native, distributed search engine for log management and analytics. Written in Rust and designed from the ground up to offer cost-efficiency and high scalability on large datasets, Quickwit is a modern and reliable alternative to Elasticsearch.
+
+<CallToAction
+heading='Get started with Quickwit'
+description='Get up and running in minutes and start harnessing the power of Quickwit today!'
+buttonText='GET STARTED'
+to='/docs/get-started/quickstart'>
+</CallToAction>
 
 Quickwit is particularly well-suited for dealing with large, immutable datasets and relatively low average QPS<sup>[1](#footnote1)</sup>. Its benefits are most apparent in multi-tenancy or multi-index settings.
 
 Common use cases for Quickwit include:
-
-- Searching through logs, from small amounts of data to terabytes.
+- Searching and analyzing logs, from small amounts of data to terabytes.
 - Adding full-text search capabilities to [OLAP databases such as ClickHouse](/tutorials/add-full-text-search-to-your-olap-db).
 - Searching through backups sitting on your cloud storage by adding Quickwit index files on your same storage.
 
@@ -40,13 +46,13 @@ Quickwit should be a good match if your use case has some of the following chara
 Use cases where you would likely *not* want to use Quickwit include:
 
 - You need a low-latency search for e-commerce websites.
-- Your data are mutable.
+- Your data is mutable.
 
 # Learn more
 
 - [Quickstart](./get-started/quickstart.md)
 - [Concepts](./concepts/architecture.md)
-- [Last release blog post](https://quickwit.io/blog/quickwit-0.2)
+- [Last release blog post](https://quickwit.io/blog/quickwit-0.3)
 
 
 ---
