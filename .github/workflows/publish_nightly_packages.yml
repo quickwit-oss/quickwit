@@ -122,3 +122,13 @@ jobs:
   #         push: true
   #         labels: ${{ steps.meta.outputs.labels }}
   #         tags: quickwit/quickwit-nightly:latest, quickwit/quickwit-nightly:${{ env.NIGHTLY_DATE }}
+
+  build-and-push-docker-image:
+    name: Build & push docker images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v3
+      - uses: ./.github/actions/build-docker
+        with:
+          version: nightly
