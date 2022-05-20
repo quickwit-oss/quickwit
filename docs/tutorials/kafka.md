@@ -35,6 +35,7 @@ doc_mapping:
       tokenizer: raw
     - name: type
       type: text
+      fast: true
       tokenizer: raw
     - name: public
       type: u64
@@ -138,23 +139,27 @@ You can run this command (in another shell) to inspect the properties of the ind
 ./quickwit index describe --index gh-archive
 ```
 
-Once the first split is published, you can start running search queries. For instance:
+Once the first split is published, you can start running search queries. For instance, we can find all the events for the Kubernetes [repository](https://github.com/kubernetes/kubernetes):
 
 ```bash
-# Have you been active on GitHub that day? Try your own username!
-GITHUB_USERNAME=guilload
-curl -POST "http://localhost:7280/api/v1/gh-archive/search?query=actor.login:$GITHUB_USERNAME"
+curl 'http://localhost:7280/api/v1/gh-archive/search?query=org.login:kubernetes%20AND%20repo.name:kubernetes'
 ```
 
-<!-- ```bash
-GITHUB_USERNAME=guilload
-curl -XPOST "http://localhost:7280/api/v1/gh-archive/search" -d '
-{
-  "query": actor.login:guilload
-  "aggs": {
+We can also group these events by type and count them:
 
-  } 
+```
+curl -XPOST -H 'Content-Type: application/json' 'http://localhost:7280/api/v1/gh-archive/search' -d '
+{
+  "query":"org.login:kubernetes AND repo.name:kubernetes",
+  "max_hits":0,
+  "aggs":{
+    "count_by_event_type":{
+      "terms":{
+        "field":"type"
+      }
+    }
+  }
 }'
-``` -->
+```
 
 This concludes the tutorial. If you have any questions regarding Quickwit or encounter any issues, don't hesitate to ask a [question](https://github.com/quickwit-oss/quickwit/discussions) or open an [issue](https://github.com/quickwit-oss/quickwit/issues) on [GitHub](https://github.com/quickwit-oss/quickwit) or contact us directly on [Discord](https://discord.com/invite/MT27AG5EVE).
