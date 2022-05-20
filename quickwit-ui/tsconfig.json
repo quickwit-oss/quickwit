@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "target": "es5",
+    "target": "ESNext",
     "lib": [
       "dom",
       "dom.iterable",
@@ -25,6 +25,8 @@
     "jsx": "react-jsx",
   },
   "include": [
-    "src", "typings"
-, "tests", "tests/integration/index.test.ts"  ]
+    "src", "typings",
+    "tests",
+    "tests/integration/index.test.ts"
+  ]
 }

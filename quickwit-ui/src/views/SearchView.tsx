@@ -100,7 +100,8 @@ function SearchView() {
   }, []); // <-- empty array means 'run once'
 
   const searchParams = toUrlSearchRequestParams(searchRequest);
-  // `toUrlSearchRequestParams` is used for the UI urls and we need to remove the `indexId` request parameter.
+  // `toUrlSearchRequestParams` is used for the UI urls. We need to remove the `indexId` request parameter to generate
+  // the correct API url, this is the only difference.
   searchParams.delete('index_id');
   return (
       <ViewUnderAppBarBox sx={{ flexDirection: 'row'}}>
