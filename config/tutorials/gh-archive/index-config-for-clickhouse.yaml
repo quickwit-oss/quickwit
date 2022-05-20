@@ -1,0 +1,33 @@
+#
+# Index config file for gh-archive dataset.
+#
+version: 0
+
+index_id: gh-archive
+
+doc_mapping:
+  store_source: false
+  field_mappings:
+    - name: id
+      type: u64
+      fast: true
+    - name: created_at
+      type: i64
+      fast: true
+    - name: event_type
+      type: text
+      tokenizer: raw
+    - name: title
+      type: text
+      tokenizer: default
+      record: position
+    - name: body
+      type: text
+      tokenizer: default
+      record: position
+
+indexing_settings:
+  timestamp_field: created_at
+
+search_settings:
+  default_search_fields: [title, body]
