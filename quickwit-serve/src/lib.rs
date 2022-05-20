@@ -40,12 +40,13 @@ use std::sync::Arc;
 use format::Format;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::{ClusterService, QuickwitService};
+use quickwit_common::uri::{Uri, FILE_PROTOCOL, S3_PROTOCOL};
 use quickwit_config::QuickwitConfig;
 use quickwit_core::IndexService;
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexer_service;
 use quickwit_ingest_api::{init_ingest_api, IngestApiService};
-use quickwit_metastore::quickwit_metastore_uri_resolver;
+use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore};
 use quickwit_search::{start_searcher_service, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use warp::{Filter, Rejection};
@@ -93,6 +94,7 @@ pub async fn serve_quickwit(
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri())
         .await?;
+    check_is_configured_for_cluster(config, metastore.clone()).await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
 
     let cluster_service = quickwit_cluster::start_cluster_service(config, services).await?;
@@ -158,6 +160,36 @@ pub async fn serve_quickwit(
     Ok(())
 }
 
+/// Checks if the conditions required to smoothly run a Quickwit cluster are met.
+/// Currently we don't allow cluster feature upon using:
+/// - A FileBacked metastore
+/// - A FileStorage
+async fn check_is_configured_for_cluster(
+    config: &QuickwitConfig,
+    metastore: Arc<dyn Metastore>,
+) -> anyhow::Result<()> {
+    if config.peer_seeds.is_empty() {
+        return Ok(());
+    }
+
+    let metastore_uri = Uri::try_new(&metastore.uri())?;
+    if metastore_uri.protocol() == FILE_PROTOCOL || metastore_uri.protocol() == S3_PROTOCOL {
+        anyhow::bail!(
+            "Cluster feature cannot be used in conjunction with a file backed metastore."
+        );
+    }
+
+    for index_metadata in metastore.list_indexes_metadatas().await? {
+        let index_uri = Uri::try_new(&index_metadata.index_uri)?;
+        if index_uri.protocol() == FILE_PROTOCOL {
+            anyhow::bail!(
+                "Quickwit cluster feature cannot be used in conjunction with a file storage."
+            );
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::SocketAddr;
@@ -165,6 +197,7 @@ mod tests {
     use std::sync::Arc;
 
     use futures::TryStreamExt;
+    use quickwit_config::QuickwitConfig;
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::search_service_server::SearchServiceServer;
@@ -173,9 +206,11 @@ mod tests {
         root_search_stream, ClusterClient, MockSearchService, SearchClientPool, SearchError,
         SearchService,
     };
+    use rand::seq::SliceRandom;
     use tokio_stream::wrappers::UnboundedReceiverStream;
     use tonic::transport::Server;
 
+    use crate::check_is_configured_for_cluster;
     use crate::search_api::GrpcSearchAdapter;
 
     async fn start_test_server(
@@ -262,5 +297,85 @@ mod tests {
             "Internal error: `Internal error: `Error again on `split2``.`."
         );
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_check_is_configured_for_cluster_on_single_node() {
+        let mut mock_metastore = MockMetastore::new();
+        mock_metastore
+            .expect_uri()
+            .returning(|| "file:///path/to/metastore".to_string());
+        let metastore = Arc::new(mock_metastore);
+
+        let config = QuickwitConfig::default();
+        assert!(matches!(
+            check_is_configured_for_cluster(&config, metastore.clone()).await,
+            Ok(())
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_check_is_configured_for_cluster_on_file_backed_metastore() {
+        let mut mock_metastore = MockMetastore::new();
+        mock_metastore.expect_uri().returning(|| {
+            let uris = vec!["file:///path/to/metastore", "s3:///path/to/metastore"];
+            uris.choose(&mut rand::thread_rng()).unwrap().to_string()
+        });
+        let metastore = Arc::new(mock_metastore);
+
+        let mut config = QuickwitConfig::default();
+        config.peer_seeds = vec!["127.0.0.1:1234".to_string()];
+        assert!(matches!(
+            check_is_configured_for_cluster(&config, metastore).await,
+            Err(..)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_check_is_configured_for_cluster_on_file_storage() {
+        let mut mock_metastore = MockMetastore::new();
+        mock_metastore
+            .expect_uri()
+            .returning(|| "postgres:///host/to/metastore".to_string());
+        mock_metastore
+            .expect_list_indexes_metadatas()
+            .returning(|| {
+                Ok(vec![IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                )])
+            });
+        let metastore = Arc::new(mock_metastore);
+
+        let mut config = QuickwitConfig::default();
+        config.peer_seeds = vec!["127.0.0.1:1234".to_string()];
+        assert!(matches!(
+            check_is_configured_for_cluster(&config, metastore).await,
+            Err(..)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_check_is_configured_for_cluster_on_object_storage() {
+        let mut mock_metastore = MockMetastore::new();
+        mock_metastore
+            .expect_uri()
+            .returning(|| "postgres:///host/to/metastore".to_string());
+        mock_metastore
+            .expect_list_indexes_metadatas()
+            .returning(|| {
+                Ok(vec![IndexMetadata::for_test(
+                    "test-idx",
+                    "s3:///path/to/index/test-idx",
+                )])
+            });
+        let metastore = Arc::new(mock_metastore);
+
+        let mut config = QuickwitConfig::default();
+        config.peer_seeds = vec!["127.0.0.1:1234".to_string()];
+        assert!(matches!(
+            check_is_configured_for_cluster(&config, metastore).await,
+            Ok(())
+        ));
     }
 }
