@@ -12,6 +12,7 @@ doc_mapping:
       tokenizer: raw
     - name: type
       type: text
+      fast: true
       tokenizer: raw
     - name: public
       type: u64
