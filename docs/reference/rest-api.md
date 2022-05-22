@@ -146,7 +146,7 @@ The response is a JSON object, and the content type is `application/json; charse
 | **num_ingested_docs**   | Total number of documents ingested | `number`   |
 
 
-### Ingest data with elastic compatible API
+### Ingest data with Elasticsearch compatible API
 
 ```
 POST api/v1/_bulk -d \
