@@ -19,6 +19,17 @@ jobs:
           target: ${{ matrix.target }}
           version: nightly
 
+  build-and-push-docker-image:
+    name: Build & push docker images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v3
+      - name: Build and push nightly docker image
+        uses: ./.github/actions/build-docker
+        with:
+          version: nightly
+          
   # build-x86_64-unknown-linux-musl-package:
   #   name: Build x86_64-unknown-linux-musl
   #   runs-on: ubuntu-latest
@@ -122,13 +133,3 @@ jobs:
   #         push: true
   #         labels: ${{ steps.meta.outputs.labels }}
   #         tags: quickwit/quickwit-nightly:latest, quickwit/quickwit-nightly:${{ env.NIGHTLY_DATE }}
-
-  build-and-push-docker-image:
-    name: Build & push docker images
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out the repo
-        uses: actions/checkout@v3
-      - uses: ./.github/actions/build-docker
-        with:
-          version: nightly

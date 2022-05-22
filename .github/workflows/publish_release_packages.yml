@@ -260,6 +260,5 @@ jobs:
     steps:
       - name: Check out the repo
         uses: actions/checkout@v3
-      - uses: ./.github/actions/build-docker
-        with:
-          version: nightly
+      - name: Build and push main docker image
+        uses: ./.github/actions/build-docker

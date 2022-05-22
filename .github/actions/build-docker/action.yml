@@ -7,7 +7,13 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - run: echo "IMAGE_ID=quickwit/quickwit-${{ inputs.version }}" >> $GITHUB_ENV
+    - name: Image name when version is not empty
+      if: "${{ inputs.version != '' }}"
+      run: echo "IMAGE_ID=quickwit/quickwit-${{ inputs.version }}" >> $GITHUB_ENV
+      shell: bash
+    - name: Image name when version is empty
+      if: "${{ inputs.version == '' }}"
+      run: echo "IMAGE_ID=quickwit/quickwit" >> $GITHUB_ENV
       shell: bash
     - run: echo "IMAGE_DATE=$(date '+%Y-%m-%d')" >> $GITHUB_ENV
       shell: bash
