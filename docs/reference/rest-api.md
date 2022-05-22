@@ -32,10 +32,10 @@ Failed requests return a 4xx HTTP status code. The response body of failed reque
 ### Search in an index
 
 ```
-GET api/v1/indexes/<index id>/search?query=searchterm
+GET api/v1/<index id>/search?query=searchterm
 ```
 
-Search for documents matching a query in the given index `<index id>`.
+Search for documents matching a query in the given index `<index id>`. This endpoint is available as long as you have at least one node running a searcher service in the cluster.
 
 #### Path variable
 
@@ -72,12 +72,13 @@ The response is a JSON object, and the content type is `application/json; charse
 ### Search stream in an index
 
 ```
-GET api/v1/indexes/<index id>/search/stream?query=searchterm
+GET api/v1/<index id>/search/stream?query=searchterm
 ```
 
 Streams field values from ALL documents matching a search query in the given index `<index id>`, in a specified output format among the following:
  -  [CSV](https://datatracker.ietf.org/doc/html/rfc4180)
  -  [ClickHouse RowBinary](https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary)
+ This endpoint is available as long as you have at least one node running a searcher service in the cluster.
 
 :::note
 
@@ -125,7 +126,7 @@ POST api/v1/<index id>/ingest -d \
 {"url":"https://en.wikipedia.org/wiki?id=3","title":"baz","body":"baz"}'
 ```
 
-Ingest a batch of documents to make them searchable in a given `<index id>`. Currently, NDJSON is the only accepted payload format. 
+Ingest a batch of documents to make them searchable in a given `<index id>`. Currently, NDJSON is the only accepted payload format.This endpoint is only available on a node that is running an indexer service. 
 
 :::info
 The payload size is limited to 10MB as this endpoint is intended to receive documents in batch.
@@ -158,7 +159,8 @@ POST api/v1/_bulk -d \
 {"url":"https://en.wikipedia.org/wiki?id=3","title":"baz","body":"baz"}'
 ```
 
-Ingest a batch of documents to make them searchable using the [Elasticsearch](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html) bulk API. This endpoint provides compatibility with tools or systems that already send data to Elasticsearch for indexing. Currently, only the `create` action of the bulk API is supported, all other actions such as `delete` or `update` are ignored.
+Ingest a batch of documents to make them searchable using the [Elasticsearch](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html) bulk API. This endpoint provides compatibility with tools or systems that already send data to Elasticsearch for indexing. Currently, only the `create` action of the bulk API is supported, all other actions such as `delete` or `update` are ignored. This endpoint is only available on a node that is running an indexer service.
+
 
 :::info
 The payload size is limited to 10MB as this endpoint is intended to receive documents in batch.
