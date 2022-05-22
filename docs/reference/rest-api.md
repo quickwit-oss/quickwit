@@ -158,7 +158,7 @@ POST api/v1/_bulk -d \
 {"url":"https://en.wikipedia.org/wiki?id=3","title":"baz","body":"baz"}'
 ```
 
-Ingest a batch of documents to make them searchable using the [Elastic Search](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html) bulk API. This endpoint provides compatibility with tools or systems that already send data to Elastic Search for indexing. Currently, only the `create` action of the elastic bulk API is supported, all other actions such as `delete` or `update` are ignored.
+Ingest a batch of documents to make them searchable using the [Elasticsearch](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html) bulk API. This endpoint provides compatibility with tools or systems that already send data to Elasticsearch for indexing. Currently, only the `create` action of the bulk API is supported, all other actions such as `delete` or `update` are ignored.
 
 :::info
 The payload size is limited to 10MB as this endpoint is intended to receive documents in batch.
