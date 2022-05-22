@@ -21,8 +21,10 @@ import { Box, Button } from "@mui/material";
 import { TimeRangeSelect } from './TimeRangeSelect';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { SearchComponentProps } from "../utils/SearchComponentProps";
+import { guessTimeUnit, TimeUnit } from "../utils/models";
 
 export function QueryEditorActionBar(props: SearchComponentProps) {
+  const shouldDisplayTimeRangeSelect = props.index !== null && ![TimeUnit.UNKNOWN, TimeUnit.UNSUPPORTED].includes(guessTimeUnit(props.index));
   return (
     <Box sx={{ display: 'flex'}}>
       <Box sx={{ flexGrow: 1 }}>
@@ -36,7 +38,7 @@ export function QueryEditorActionBar(props: SearchComponentProps) {
           Run
         </Button>
       </Box>
-      { props.index?.metadata.indexing_settings.timestamp_field && <TimeRangeSelect 
+      { shouldDisplayTimeRangeSelect && <TimeRangeSelect 
         { ...props } /> 
       }
     </Box>
