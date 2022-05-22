@@ -111,7 +111,7 @@ mod tests {
     use quickwit_proto::SearchRequest;
     use tantivy::schema::{Cardinality, FieldType};
 
-    use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
+    use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions, QuickwitTextOptions};
     use crate::{DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, DYNAMIC_FIELD_NAME};
 
     const JSON_DEFAULT_DOC_MAPPER: &str = r#"
@@ -211,6 +211,42 @@ mod tests {
         assert_eq!(
             format!("{:?}", query),
             r#"TermQuery(Term(type=Json, field=0, path=toto.titi, vtype=Str, "hello"))"#
+        );
+    }
+
+    #[test]
+    fn test_doc_mapper_query_with_invalid_sort_field() {
+        let mut doc_mapper_builder = DefaultDocMapperBuilder::default();
+        let text_opt = QuickwitTextOptions {
+            fast: true,
+            ..Default::default()
+        };
+
+        doc_mapper_builder.field_mappings.push(FieldMappingEntry {
+            name: "text_field".to_string(),
+            mapping_type: FieldMappingType::Text(text_opt, Cardinality::SingleValue),
+        });
+        doc_mapper_builder
+            .default_search_fields
+            .push("text_field".to_string());
+        let doc_mapper = doc_mapper_builder.try_build().unwrap();
+        let schema = doc_mapper.schema();
+        let search_request = SearchRequest {
+            index_id: "quickwit-index".to_string(),
+            query: "text_field:hello".to_string(),
+            search_fields: vec![],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 10,
+            start_offset: 0,
+            sort_order: None,
+            sort_by_field: Some("text_field".to_string()),
+            aggregation_request: None,
+        };
+        let query = doc_mapper.query(schema, &search_request).unwrap_err();
+        assert_eq!(
+            format!("{:?}", query),
+            "QueryParserError(Sort by field on type text is currently not supported `text_field`.)"
         );
     }
 

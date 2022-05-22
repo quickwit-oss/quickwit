@@ -22,6 +22,7 @@ use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserE
 use tantivy::schema::{Field, Schema};
 use tantivy_query_grammar::{UserInputAst, UserInputLeaf};
 
+use crate::sort_by::validate_sort_by_field_name;
 use crate::{QueryParserError, QUICKWIT_TOKENIZER_MANAGER};
 
 /// Build a `Query` with field resolution & forbidding range clauses.
@@ -32,6 +33,10 @@ pub(crate) fn build_query(
 ) -> Result<Box<dyn Query>, QueryParserError> {
     let user_input_ast = tantivy_query_grammar::parse_query(&request.query)
         .map_err(|_| TantivyQueryParserError::SyntaxError(request.query.to_string()))?;
+
+    if let Some(sort_by_field) = request.sort_by_field.as_ref() {
+        validate_sort_by_field_name(sort_by_field, &schema)?;
+    }
 
     if has_range_clause(user_input_ast) {
         return Err(anyhow::anyhow!("Range queries are not currently allowed.").into());

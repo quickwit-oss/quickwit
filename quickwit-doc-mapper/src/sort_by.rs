@@ -17,8 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use anyhow::{bail, Context};
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
+use tantivy::schema::{FieldType, Schema};
 use tantivy::Order as TantivyOrder;
 
 // TODO: Move to `quickwit-config` when `quickwit-config` no longer depends on
@@ -88,6 +90,28 @@ pub enum SortBy {
         /// Order to sort by. A usual top-k search implies a descending order.
         order: SortOrder,
     },
+}
+
+pub(crate) fn validate_sort_by_field_name(field_name: &str, schema: &Schema) -> anyhow::Result<()> {
+    let sort_by_field = schema
+        .get_field(field_name)
+        .with_context(|| format!("Unknown sort by field: `{}`", field_name))?;
+    let sort_by_field_entry = schema.get_field_entry(sort_by_field);
+
+    if matches!(sort_by_field_entry.field_type(), FieldType::Str(_)) {
+        bail!(
+            "Sort by field on type text is currently not supported `{}`.",
+            field_name
+        )
+    }
+    if !sort_by_field_entry.is_fast() {
+        bail!(
+            "Sort by field must be a fast field, please add the fast property to your field `{}`.",
+            field_name
+        )
+    }
+
+    Ok(())
 }
 
 impl Default for SortBy {
