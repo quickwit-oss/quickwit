@@ -121,7 +121,7 @@ jq -c '.created_at = (.created_at | fromdate) | .public = if .public then 1 else
 bin/kafka-console-producer.sh --topic gh-archive --bootstrap-server localhost:9092
 ```
 
-## Launch indexing and search
+## Launch indexing and search services
 
 Finally, execute this command to start Quickwit in server mode.
 
@@ -160,6 +160,21 @@ curl -XPOST -H 'Content-Type: application/json' 'http://localhost:7280/api/v1/gh
     }
   }
 }'
+```
+
+## Tear down resources (optional)
+
+Let's delete the files and resources created for the purpose of this tutorial.
+
+```bash
+# Delete Kafka tpic.
+bin/kafka-topics.sh --delete --topic gh-archive --bootstrap-server localhost:9092
+
+# Delete index.
+./quickwit index delete --index gh-archive
+
+# Delete source config.
+rm kinesis-source.yaml
 ```
 
 This concludes the tutorial. If you have any questions regarding Quickwit or encounter any issues, don't hesitate to ask a [question](https://github.com/quickwit-oss/quickwit/discussions) or open an [issue](https://github.com/quickwit-oss/quickwit/issues) on [GitHub](https://github.com/quickwit-oss/quickwit) or contact us directly on [Discord](https://discord.com/invite/MT27AG5EVE).
