@@ -74,14 +74,13 @@ The Kafka source consumes a `topic` using the client library [librdkafka](https:
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| topic | Name of the topic to consume. |  |
+| topic | Name of the topic to consume. | required |
 | client_log_level | librdkafka client log level. Possible values are: debug, info, warn, error. | info |
 | client_params | librdkafka client configuration parameters. |  |
 
 Note that the Kafka source manages commit offsets manually thanks to Quickwit’s index checkpoint mechanism and always disables auto-commit.
 
 *Declaring a Kafka source in an [index config](index-config.md) (YAML)*
-
 
 ```yaml
 # Version of the index config file format
@@ -112,6 +111,59 @@ params:
   client_params:
     bootstrap.servers: localhost:9092
     security.protocol: SSL
+EOF
+quickwit source create --index my-index --source-config source-config.yaml
+```
+
+## Kinesis source
+
+A Kinesis source reads data from an [Amazon Kinesis](https://aws.amazon.com/kinesis/) stream. Each message in the stream must hold a JSON object.
+
+### Kinesis source parameters
+
+The Kinesis source consumes a stream identified by a `stream_name` and a `region`.
+
+| Property | Description | Default value |
+| --- | --- | --- |
+| stream_name | Name of the stream to consume. | required |
+| region | The AWS region of the stream. Mutually exclusive with `endpoint`. | us-east-1 |
+| endpoint | Custom endpoint for use with AWS-compatible Kinesis service. Mutually exclusive with `region`. | optional |
+
+If no region is specified, Quickwit will attempt to find one in multiple other locations and with the following order of precedence:
+
+1. Environment variables (`AWS_REGION` then `AWS_DEFAULT_REGION`)
+
+2. Config file, typically located at `~/.aws/config` or otherwise specified by the `AWS_CONFIG_FILE` environment variable if set and not empty.
+
+3. Amazon EC2 instance metadata service determining the region of the currently running Amazon EC2 instance.
+
+4. Default value: `us-east-1`
+
+*Declaring a Kinesis source in an [index config](index-config.md) (YAML)*
+
+```yaml
+# Version of the index config file format
+version: 0
+
+# Sources
+sources:
+  - source_id: my-kinesis-source
+    source_type: kinesis
+    params:
+      stream_name: my-stream
+
+# The rest of your index config here
+# ...
+```
+
+*Adding a Kinesis source to an index with the [CLI](../reference/cli.md#source)*
+
+```bash
+cat << EOF > source-config.yaml
+source_id: my-kinesis-source
+source_type: kinesis
+params:
+  stream_name: my-stream
 EOF
 quickwit source create --index my-index --source-config source-config.yaml
 ```
