@@ -17,13 +17,6 @@ runs:
       shell: bash
     - run: echo "IMAGE_DATE=$(date '+%Y-%m-%d')" >> $GITHUB_ENV
       shell: bash
-    - uses: actions/setup-node@v3
-      with:
-        node-version: 16
-        cache: 'yarn'
-        cache-dependency-path: quickwit-ui/yarn.lock
-    - run: make build-ui
-      shell: bash
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v2
     - name: Set up Docker Buildx
