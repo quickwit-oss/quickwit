@@ -27,7 +27,7 @@ use warp::{Filter, Rejection};
 
 /// Regular expression to identify which path should serve an asset file.
 /// If not matched, the server serves the `index.html` file.
-const PATH_PATTERN: &str = r#"(^static|\.(png|json|txt|ico)$)"#;
+const PATH_PATTERN: &str = r#"(^static|\.(png|json|txt|ico|js|map)$)"#;
 
 #[derive(RustEmbed)]
 #[folder = "../quickwit-ui/build/"]

@@ -20,8 +20,10 @@
 import styled from "@emotion/styled";
 import { Paper } from "@mui/material";
 import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc"
 import NumberFormat from "react-number-format";
 import { Index } from "../utils/models";
+dayjs.extend(utc);
 
 const ItemContainer = styled.div`
 padding: 10px;

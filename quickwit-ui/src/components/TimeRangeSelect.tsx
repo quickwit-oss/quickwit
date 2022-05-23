@@ -62,28 +62,26 @@ function convertFromMilliSecond(value: number | null, targetTimeUnit: TimeUnit):
   if (value === null) {
     return null;
   } 
-  if (targetTimeUnit === TimeUnit.MICRO_SECOND) {
-    return value * 1e3;
-  } else if (targetTimeUnit === TimeUnit.MILLI_SECOND) {
+  if (targetTimeUnit === TimeUnit.MILLI_SECOND) {
     return value;
   } else if (targetTimeUnit === TimeUnit.SECOND) {
     return Math.round(value / 1000);
   }
-  return null;
+  // `TimeRangeSelect` should not be displayed with a unknown/unsupported TimeUnit.
+  throw new Error(`Cannot convertFromMilliSecond with a time unit ${targetTimeUnit}.`);
 }
 
 function convertToMilliSecond(value: number | null, valueTimeUnit: TimeUnit): number | null {
   if (value === null) {
     return null;
   } 
-  if (valueTimeUnit === TimeUnit.MICRO_SECOND) {
-    return Math.round(value / 1e3);
-  } else if (valueTimeUnit === TimeUnit.MILLI_SECOND) {
+  if (valueTimeUnit === TimeUnit.MILLI_SECOND) {
     return value;
   } else if (valueTimeUnit === TimeUnit.SECOND) {
     return value * 1e3;
   }
-  return null
+  // `TimeRangeSelect` should not be displayed with a unknown/unsupported TimeUnit.
+  throw new Error(`Cannot convertToMilliSecond with a time unit ${valueTimeUnit}.`);
 }
 
 export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {

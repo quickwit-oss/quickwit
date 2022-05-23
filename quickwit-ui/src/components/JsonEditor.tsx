@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import Editor from "@monaco-editor/react";
+import MonacoEditor from 'react-monaco-editor';
 import { useCallback } from "react";
 import { EDITOR_THEME } from "../utils/theme";
 
@@ -50,11 +50,11 @@ export function JsonEditor({content, resizeOnMount}: {content: unknown, resizeOn
   }
 
   return (
-    <Editor
+    <MonacoEditor
       language='json'
       value={JSON.stringify(content, null, 2)}
-      beforeMount={beforeMount}
-      onMount={onMount}
+      editorWillMount={beforeMount}
+      editorDidMount={onMount}
       options={{
         readOnly: true,
         fontFamily: 'monospace',
@@ -72,7 +72,7 @@ export function JsonEditor({content, resizeOnMount}: {content: unknown, resizeOn
         scrollBeyondLastLine: false,
         automaticLayout: true,
         wordWrap: 'on',
-        wrappingIndent: 'advanced',
+        wrappingIndent: 'deepIndent',
       }}
       theme='quickwit-light'
     />
