@@ -12,7 +12,7 @@ documentation = "https://quickwit.io/docs/"
 
 [dependencies]
 
-once_cell = "1.11.0"
+once_cell = "1.12.0"
 reqwest = { version = "0.11", default-features=false, features = ["json", "rustls-tls"] }
 # It is actually not used directly the goal is to fix the version
 # used by reqwest. 0.8.30 has an unclear license.
