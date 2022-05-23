@@ -116,3 +116,11 @@ message SuggestTruncateRequest {
 message TailRequest {
     string index_id = 1;
 }
+
+
+message ListQueuesRequest {   
+}
+
+message ListQueuesResponse {
+    repeated string queues = 1;
+}

@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use quickwit_proto::ingest_api::{DocBatch, FetchResponse};
+use quickwit_proto::ingest_api::{DocBatch, FetchResponse, ListQueuesResponse};
 use rocksdb::{Direction, IteratorMode, WriteBatch, WriteOptions, DB};
 use tracing::warn;
 
@@ -204,7 +204,7 @@ impl Queues {
         queue_id: &str,
         start_after: Option<Position>,
         num_bytes_limit: Option<usize>,
-    ) -> crate::Result<quickwit_proto::ingest_api::FetchResponse> {
+    ) -> crate::Result<FetchResponse> {
         let cf = self.db.cf_handle(queue_id).ok_or_else(|| {
             crate::IngestApiError::IndexDoesNotExist {
                 index_id: queue_id.to_string(),
@@ -239,7 +239,7 @@ impl Queues {
     }
 
     // Streams messages from the start of the Stream.
-    pub fn tail(&self, queue_id: &str) -> crate::Result<quickwit_proto::ingest_api::FetchResponse> {
+    pub fn tail(&self, queue_id: &str) -> crate::Result<FetchResponse> {
         let cf = self.db.cf_handle(queue_id).ok_or_else(|| {
             crate::IngestApiError::IndexDoesNotExist {
                 index_id: queue_id.to_string(),
@@ -262,6 +262,12 @@ impl Queues {
         Ok(FetchResponse {
             first_position: first_key_opt,
             doc_batch: Some(doc_batch),
+        })
+    }
+
+    pub fn list_queues(&self) -> crate::Result<ListQueuesResponse> {
+        Ok(ListQueuesResponse {
+            queues: self.last_position_per_queue.keys().cloned().collect(),
         })
     }
 }
