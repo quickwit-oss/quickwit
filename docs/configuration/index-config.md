@@ -312,7 +312,7 @@ The following queries are then valid, and match the document above.
 
 ```bash
 // Fields can be searched simply.
-endpoint:/admine
+endpoint:/admin
 
 // Nested object can be queried by specifying a `.` separated
 // path from the root of the json object to the given field.
