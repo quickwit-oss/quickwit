@@ -32,10 +32,10 @@ Failed requests return a 4xx HTTP status code. The response body of failed reque
 ### Search in an index
 
 ```
-GET api/v1/indexes/<index id>/search?query=searchterm
+GET api/v1/<index id>/search?query=searchterm
 ```
 
-Search for documents matching a query in the given index `<index id>`.
+Search for documents matching a query in the given index `<index id>`. This endpoint is available as long as you have at least one node running a searcher service in the cluster.
 
 #### Path variable
 
@@ -60,7 +60,7 @@ Search for documents matching a query in the given index `<index id>`.
 
 #### Response
 
-The response for the is a JSON object, and the content type is `application/json; charset=UTF-8.`
+The response is a JSON object, and the content type is `application/json; charset=UTF-8.`
 
 | Field                   | Description                    | Type       |
 | --------------------    | ------------------------------ | :--------: |
@@ -72,12 +72,13 @@ The response for the is a JSON object, and the content type is `application/json
 ### Search stream in an index
 
 ```
-GET api/v1/indexes/<index id>/search/stream?query=searchterm
+GET api/v1/<index id>/search/stream?query=searchterm
 ```
 
 Streams field values from ALL documents matching a search query in the given index `<index id>`, in a specified output format among the following:
  -  [CSV](https://datatracker.ietf.org/doc/html/rfc4180)
  -  [ClickHouse RowBinary](https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary)
+ This endpoint is available as long as you have at least one node running a searcher service in the cluster.
 
 :::note
 
@@ -114,3 +115,61 @@ The formatting is based on the specified output format.
 
 On error, an "X-Stream-Error" header will be sent via the trailers channel with information about the error, and the stream will be closed via [`sender.abort()`](https://docs.rs/hyper/0.14.16/hyper/body/struct.Sender.html#method.abort).
 Depending on the client, the trailer header with error details may not be shown. The error will also be logged in quickwit ("Error when streaming search results").
+
+
+### Ingest data in an index
+
+```
+POST api/v1/<index id>/ingest -d \
+'{"url":"https://en.wikipedia.org/wiki?id=1","title":"foo","body":"foo"}
+{"url":"https://en.wikipedia.org/wiki?id=2","title":"bar","body":"bar"}
+{"url":"https://en.wikipedia.org/wiki?id=3","title":"baz","body":"baz"}'
+```
+
+Ingest a batch of documents to make them searchable in a given `<index id>`. Currently, NDJSON is the only accepted payload format.This endpoint is only available on a node that is running an indexer service. 
+
+:::info
+The payload size is limited to 10MB as this endpoint is intended to receive documents in batch.
+:::
+
+#### Path variable
+
+| Variable      | Description   |
+| ------------- | ------------- |
+| **index id**  | The index id  |
+
+#### Response
+
+The response is a JSON object, and the content type is `application/json; charset=UTF-8.`
+
+| Field                   | Description                        | Type       |
+| --------------------    | ---------------------------------- | :--------: |
+| **num_ingested_docs**   | Total number of documents ingested | `number`   |
+
+
+### Ingest data with Elasticsearch compatible API
+
+```
+POST api/v1/_bulk -d \
+'{ "create" : { "_index" : "wikipedia", "_id" : "1" } }
+{"url":"https://en.wikipedia.org/wiki?id=1","title":"foo","body":"foo"}
+{ "create" : { "_index" : "wikipedia", "_id" : "2" } }
+{"url":"https://en.wikipedia.org/wiki?id=2","title":"bar","body":"bar"}
+{ "create" : { "_index" : "wikipedia", "_id" : "3" } }
+{"url":"https://en.wikipedia.org/wiki?id=3","title":"baz","body":"baz"}'
+```
+
+Ingest a batch of documents to make them searchable using the [Elasticsearch](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html) bulk API. This endpoint provides compatibility with tools or systems that already send data to Elasticsearch for indexing. Currently, only the `create` action of the bulk API is supported, all other actions such as `delete` or `update` are ignored. This endpoint is only available on a node that is running an indexer service.
+
+
+:::info
+The payload size is limited to 10MB as this endpoint is intended to receive documents in batch.
+:::
+
+#### Response
+
+The response is a JSON object, and the content type is `application/json; charset=UTF-8.`
+
+| Field                   | Description                        | Type       |
+| --------------------    | ---------------------------------- | :--------: |
+| **num_ingested_docs**   | Total number of documents ingested | `number`   |
