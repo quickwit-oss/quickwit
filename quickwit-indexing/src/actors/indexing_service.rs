@@ -293,23 +293,6 @@ impl IndexingService {
         let index_metadata = self.metastore.index_metadata(index_id).await?;
         Ok(index_metadata)
     }
-
-    async fn shutdown_pipeline(
-        &mut self,
-        index_id: String,
-        source_id: String,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<(), IndexingServiceError> {
-        let pipeline_id = IndexingPipelineId {
-            index_id,
-            source_id,
-        };
-        let pipeline_handle_opt = self.pipeline_handles.remove(&pipeline_id);
-        if let Some(pipeline_handle) = pipeline_handle_opt {
-            pipeline_handle.quit().await;
-        }
-        Ok(())
-    }
 }
 
 #[async_trait]
@@ -452,11 +435,17 @@ impl Handler<ShutdownPipeline> for IndexingService {
     async fn handle(
         &mut self,
         message: ShutdownPipeline,
-        ctx: &ActorContext<Self>,
+        _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self
-            .shutdown_pipeline(message.index_id, message.source_id, ctx)
-            .await)
+        let pipeline_id = IndexingPipelineId {
+            index_id: message.index_id,
+            source_id: message.source_id,
+        };
+        let pipeline_handle_opt = self.pipeline_handles.remove(&pipeline_id);
+        if let Some(pipeline_handle) = pipeline_handle_opt {
+            pipeline_handle.quit().await;
+        }
+        Ok(Ok(()))
     }
 }
 

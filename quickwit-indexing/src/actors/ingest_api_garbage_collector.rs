@@ -26,13 +26,17 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_ingest_api::IngestApiService;
 use quickwit_metastore::Metastore;
 use quickwit_proto::ingest_api::{DropQueueRequest, ListQueuesRequest};
-use tracing::info;
+use tracing::{error, info};
 
 use super::IndexingService;
 use crate::actors::indexing_service::INGEST_API_SOURCE_ID;
 use crate::models::ShutdownPipeline;
 
-const RUN_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
+const RUN_INTERVAL: Duration = if cfg!(test) {
+    Duration::from_secs(60) // 1min
+} else {
+    Duration::from_secs(60 * 60) // 1h
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct IngestApiGarbageCollectorCounters {
@@ -67,23 +71,21 @@ impl IngestApiGarbageCollector {
         }
     }
 
-    async fn delete_queue(&self, queue_id: &str) -> Result<(), ActorExitStatus> {
+    async fn delete_queue(&self, queue_id: &str) -> anyhow::Result<()> {
         // shutdown the pipeline if any
         self.indexing_service
             .ask_for_res(ShutdownPipeline {
                 index_id: queue_id.to_string(),
                 source_id: INGEST_API_SOURCE_ID.to_string(),
             })
-            .await
-            .map_err(|error| anyhow::anyhow!(error))?;
+            .await?;
 
         // delete the queue
         self.ingest_api_service
             .ask_for_res(DropQueueRequest {
                 queue_id: queue_id.to_string(),
             })
-            .await
-            .map_err(|error| anyhow::anyhow!(error))?;
+            .await?;
 
         Ok(())
     }
@@ -117,7 +119,7 @@ impl Handler<Loop> for IngestApiGarbageCollector {
         info!("ingest-api-garbage-collect-operation");
         self.counters.num_passes += 1;
 
-        let queues: HashSet<_> = self
+        let queues: HashSet<String> = self
             .ingest_api_service
             .ask_for_res(ListQueuesRequest {})
             .await
@@ -126,7 +128,7 @@ impl Handler<Loop> for IngestApiGarbageCollector {
             .into_iter()
             .collect();
 
-        let indexes: HashSet<_> = self
+        let indexes: HashSet<String> = self
             .metastore
             .list_indexes_metadatas()
             .await
@@ -136,11 +138,98 @@ impl Handler<Loop> for IngestApiGarbageCollector {
             .collect();
 
         for queue_id in queues.difference(&indexes) {
-            self.delete_queue(queue_id).await?;
-            self.counters.num_deleted_queues += 1;
+            if let Err(delete_queue_error) = self.delete_queue(queue_id).await {
+                error!(error=?delete_queue_error, queue_id=?queue_id, "Failed to delete queue.");
+            } else {
+                self.counters.num_deleted_queues += 1;
+            }
         }
 
         ctx.schedule_self_msg(RUN_INTERVAL, Loop).await;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use quickwit_actors::Universe;
+    use quickwit_config::IndexerConfig;
+    use quickwit_ingest_api::spawn_ingest_api_actor;
+    use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
+    use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
+    use quickwit_storage::StorageUriResolver;
+
+    use super::*;
+    const METASTORE_URI: &str = "ram:///qwdata/indexes";
+
+    #[tokio::test]
+    async fn test_ingest_api_garbage_collector() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
+        let index_id = "my-index".to_string();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        // Setup metastore
+        let index_uri = format!("{}/{}", METASTORE_URI, index_id);
+        let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
+        let metastore = quickwit_metastore_uri_resolver()
+            .resolve(METASTORE_URI)
+            .await
+            .unwrap();
+        metastore.create_index(index_metadata).await.unwrap();
+
+        // Setup ingest api objects
+        let ingest_api_mailbox =
+            spawn_ingest_api_actor(&universe, temp_dir.path().join("queues").as_path())?;
+        let create_queue_req = CreateQueueIfNotExistsRequest {
+            queue_id: index_id.clone(),
+        };
+        ingest_api_mailbox
+            .ask_for_res(create_queue_req)
+            .await
+            .map_err(|error| anyhow::anyhow!(error))?;
+
+        // Setup `IndexingService`
+        let data_dir_path = temp_dir.path().to_path_buf();
+        let indexer_config = IndexerConfig::for_test().unwrap();
+        let storage_resolver = StorageUriResolver::for_test();
+        let indexing_server = IndexingService::new(
+            data_dir_path,
+            indexer_config,
+            metastore.clone(),
+            storage_resolver.clone(),
+            Some(ingest_api_mailbox.clone()),
+        );
+        let (indexing_server_mailbox, _indexing_server_handle) =
+            universe.spawn_actor(indexing_server).spawn();
+
+        let ingest_api_garbage_collector = IngestApiGarbageCollector::new(
+            metastore.clone(),
+            ingest_api_mailbox,
+            indexing_server_mailbox,
+        );
+        let (_maibox, handler) = universe.spawn_actor(ingest_api_garbage_collector).spawn();
+
+        let state_after_initialization = handler.process_pending_and_observe().await.state;
+        assert_eq!(state_after_initialization.num_passes, 1);
+        assert_eq!(state_after_initialization.num_deleted_queues, 0);
+
+        // 30 seconds later
+        universe.simulate_time_shift(Duration::from_secs(30)).await;
+        let state_after_initialization = handler.process_pending_and_observe().await.state;
+        assert_eq!(state_after_initialization.num_passes, 1);
+        assert_eq!(state_after_initialization.num_deleted_queues, 0);
+
+        metastore.delete_index(&index_id).await.unwrap();
+
+        // 1m later
+        universe.simulate_time_shift(RUN_INTERVAL).await;
+        let state_after_initialization = handler.process_pending_and_observe().await.state;
+        assert_eq!(state_after_initialization.num_passes, 2);
+        assert_eq!(state_after_initialization.num_deleted_queues, 1);
+
         Ok(())
     }
 }

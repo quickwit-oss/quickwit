@@ -30,7 +30,7 @@ use quickwit_actors::{
 };
 use quickwit_config::{build_doc_mapper, IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::{IndexMetadata, Metastore, SplitState};
+use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError, SplitState};
 use quickwit_storage::Storage;
 use tokio::join;
 use tracing::{debug, error, info, info_span, instrument, Span};
@@ -525,6 +525,12 @@ impl Handler<Spawn> for IndexingPipeline {
         }
         self.previous_generations_statistics.num_spawn_attempts = 1 + spawn.retry_count;
         if let Err(spawn_error) = self.spawn_pipeline(ctx).await {
+            if let Some(MetastoreError::IndexDoesNotExist { .. }) =
+                spawn_error.downcast_ref::<MetastoreError>()
+            {
+                info!(error = ?spawn_error, "Could not spawn pipeline, index might have been deleted.");
+                return Err(ActorExitStatus::Success);
+            }
             let retry_delay = Self::wait_duration_before_retry(spawn.retry_count);
             error!(error = ?spawn_error, retry_count = spawn.retry_count, retry_delay = ?retry_delay, "Error while spawning indexing pipeline, retrying after some time.");
             ctx.schedule_self_msg(
