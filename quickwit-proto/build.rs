@@ -26,10 +26,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // prost_config.type_attribute("LeafSearchResponse", "#[derive(Default)]");
     prost_config.protoc_arg("--experimental_allow_proto3_optional");
     tonic_build::configure()
-        .type_attribute(
-            ".",
-            "#[derive(Serialize, Deserialize)]\n#[serde(rename_all = \"camelCase\")]",
-        )
+        .type_attribute(".", "#[derive(Serialize, Deserialize)]")
+        .type_attribute("OutputFormat", "#[serde(rename_all = \"snake_case\")]")
         .out_dir("src/")
         .compile_with_config(
             prost_config,

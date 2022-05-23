@@ -67,6 +67,7 @@ impl ServiceError for SearchError {
             SearchError::InternalError(_) => ServiceErrorCode::Internal,
             SearchError::StorageResolverError(_) => ServiceErrorCode::BadRequest,
             SearchError::InvalidQuery(_) => ServiceErrorCode::BadRequest,
+            SearchError::InvalidAggregationRequest(_) => ServiceErrorCode::BadRequest,
         }
     }
 }
@@ -122,6 +123,7 @@ impl ServiceError for IndexServiceError {
             Self::StorageError(_) => ServiceErrorCode::Internal,
             Self::MetastoreError(_) => ServiceErrorCode::Internal,
             Self::SplitDeletionError(_) => ServiceErrorCode::Internal,
+            Self::InvalidIndexConfig(_) => ServiceErrorCode::BadRequest,
         }
     }
 }

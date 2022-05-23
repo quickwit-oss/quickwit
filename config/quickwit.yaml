@@ -1,62 +1,75 @@
-# ============================ Quickwit Configuration ==============================
+# ============================ Node Configuration ==============================
 #
 # Website: https://quickwit.io
-# Docs: https://quickwit.io/docs/
+# Docs: https://quickwit.io/docs/configuration/node-config
 #
 # Configure AWS credentials: https://quickwit.io/docs/guides/configure-aws-env
 #
 # -------------------------------- General settings --------------------------------
 #
-# Config file version.
+# Config file format version.
 #
 version: 0
 #
-# Node ID must be unique in your cluster. If not set, a random ID is given at each boot.
+# Node ID. Must be unique within a cluster. If not set, a random node ID is generated on each startup.
 #
-#node_id: node-1
+# node_id: node-1
 #
-# Default REST server host is `127.0.0.1` 
-# and default HTTP port is 7280. 
+# Quickwit opens three sockets.
+# - for its HTTP server, hosting the UI and the REST API (TCP)
+# - for its gRPC service (TCP)
+# - for its Gossip cluster membership service (UDP)
 #
-#listen_address: 127.0.0.1
-#rest_listen_port: 7280
-#peer_seeds:
-#  - quickwit-searcher-0.local
-#  - quickwit-searcher-1.local
+# All three services are bound to the same host and different port.
 #
+# Default HTTP server host is `127.0.0.1` and default HTTP port is 7280.
 #
-# Path to directory where data is persisted. Default to `./qwdata`.
+# listen_address: 127.0.0.1
+# rest_listen_port: 7280
 #
-#data_dir: /path/to/data
+# In order to connect to a cluster, one needs to specify a list of
+# seeds to connect to. If no port is specified, Quickwit will assume
+# the seeds are using the same port as the current node gossip port.
+# By default, the peer seed list is empty.
 #
-# Metastore URI. Default to `data_dir/indexes` which is a file backed metastore
-# and mostly convenient for testing. A cluster would require a metastore backed by S3 or
-# postgreqsl.
+# peer_seeds:
+#   - quickwit-searcher-0.local:10000
+#   - quickwit-searcher-1.local:10000
 #
-#metastore_uri: s3://your-bucket/indexes
-#metastore_uri: postgres://username:password@host:port/db
+# Path to directory where temporary data (caches, intermediate indexing data structures)
+# is stored. Defaults to `./qwdata`.
 #
-# Default index root URI which define the location where index data (splits) is stored
-# following the scheme `{default_index_root_uri}/{index-id}`. Default to `data_dir/indexes`.
+# data_dir: /path/to/data/dir
 #
-#default_index_root_uri: s3://your-bucket/indexes
+# Metastore URI. Defaults to `data_dir/indexes#polling_interval=30s`,
+# which is a file-backed metastore and mostly convenient for testing. A cluster would
+# require a metastore backed by Amzon S3 or PostgreSQL.
 #
+# metastore_uri: s3://your-bucket/indexes
+# metastore_uri: postgres://username:password@host:port/db
+#
+# When using a file-backed metastore, the state of the metastore will be cached forever.
+# If you are indexing and searching from different processes, it is possible to periodically
+# refresh the state of the metastore on the searcher using the `polling_interval` hashtag.
+#
+# metastore_uri: s3://your-bucket/indexes#polling_interval=30s
+#
+# Default index root URI, which defines where index data (splits) is stored,
+# following the scheme `{default_index_root_uri}/{index-id}`. Defaults to `{data_dir}/indexes`.
+#
+# default_index_root_uri: s3://your-bucket/indexes
 #
 #
 # -------------------------------- Indexer settings --------------------------------
 #
-#indexer:
-#  split_store_max_num_bytes: 200G
-#  split_store_max_num_splits: 10000
+# indexer:
+#   split_store_max_num_bytes: 200G
+#   split_store_max_num_splits: 10000
+#
 #
 # -------------------------------- Searcher settings --------------------------------
 #
-# 
-#
-#searcher:
-#  fast_field_cache_capacity: 10G
-#  split_footer_cache_capacity: 1G
-#  max_num_concurrent_split_streams: 100
-#
-
-
+# searcher:
+#   fast_field_cache_capacity: 10G
+#   split_footer_cache_capacity: 1G
+#   max_num_concurrent_split_streams: 100

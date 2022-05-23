@@ -11,7 +11,7 @@ Aggregations can provide answer to questions like:
 - How many errors with status code 500 do we have per day?
 - What is the average listing price of cars grouped by color?
 
-There are two categories: [Metrics](#metric) and [Buckets](#bucket-aggregations).
+There are two categories: [Metrics](#metric-aggregations) and [Buckets](#bucket-aggregations).
 
 #### Prerequisite
 
@@ -421,7 +421,7 @@ Order by sub_aggregation
 
 
 
-## Metric
+## Metric Aggregations
 
 The aggregations in this family compute metrics based on values extracted from the documents that are being aggregated.
 Values are extracted from the fast field of the document. Some aggregations output a single numeric metric (e.g. Average)

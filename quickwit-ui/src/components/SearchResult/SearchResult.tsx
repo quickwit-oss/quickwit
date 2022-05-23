@@ -70,7 +70,7 @@ export default function SearchResult(props: SearchResultProps) {
           <HitCount searchResponse={props.searchResponse} />
         </Box>
         <Box sx={{ pt: 2, flexGrow: 1, flexBasis: '0%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          <ResultTable searchResponse={props.searchResponse} indexMetadata={props.index.metadata}/>
+          <ResultTable searchResponse={props.searchResponse} index={props.index} />
         </Box>
       </Box>
     </Box>

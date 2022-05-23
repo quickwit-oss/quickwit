@@ -33,7 +33,7 @@ use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
 
 use crate::error::ServiceError;
-use crate::{require, Format};
+use crate::{with_arg, Format};
 
 fn sort_by_field_mini_dsl<'de, D>(deserializer: D) -> Result<Option<SortByField>, D::Error>
 where D: Deserializer<'de> {
@@ -180,10 +180,10 @@ async fn search(
 ///
 /// Parses the search request from the
 pub fn search_get_handler(
-    search_service_opt: Option<Arc<dyn SearchService>>,
+    search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     search_get_filter()
-        .and(require(search_service_opt))
+        .and(with_arg(search_service))
         .and_then(search)
 }
 
@@ -191,18 +191,18 @@ pub fn search_get_handler(
 ///
 /// Parses the search request from the
 pub fn search_post_handler(
-    search_service_opt: Option<Arc<dyn SearchService>>,
+    search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     search_post_filter()
-        .and(require(search_service_opt))
+        .and(with_arg(search_service))
         .and_then(search)
 }
 
 pub fn search_stream_handler(
-    search_service_opt: Option<Arc<dyn SearchService>>,
+    search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     search_stream_filter()
-        .and(require(search_service_opt))
+        .and(with_arg(search_service))
         .and_then(search_stream)
 }
 
@@ -540,7 +540,7 @@ mod tests {
     async fn test_rest_search_api_route_invalid_key() -> anyhow::Result<()> {
         let mock_search_service = MockSearchService::new();
         let rest_search_api_handler =
-            super::search_get_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
+            super::search_get_handler(Arc::new(mock_search_service)).recover(recover_fn);
         let resp = warp::test::request()
             .path("/quickwit-demo-index/search?query=*&end_unix_timestamp=1450720000")
             .reply(&rest_search_api_handler)
@@ -567,7 +567,7 @@ mod tests {
             })
         });
         let rest_search_api_handler =
-            super::search_get_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
+            super::search_get_handler(Arc::new(mock_search_service)).recover(recover_fn);
         let resp = warp::test::request()
             .path("/quickwit-demo-index/search?query=*")
             .reply(&rest_search_api_handler)
@@ -595,7 +595,7 @@ mod tests {
             ))
             .returning(|_| Ok(Default::default()));
         let rest_search_api_handler =
-            super::search_get_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
+            super::search_get_handler(Arc::new(mock_search_service)).recover(recover_fn);
         assert_eq!(
             warp::test::request()
                 .path("/quickwit-demo-index/search?query=*&start_offset=5&max_hits=30")
@@ -616,7 +616,7 @@ mod tests {
             })
         });
         let rest_search_api_handler =
-            super::search_get_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
+            super::search_get_handler(Arc::new(mock_search_service)).recover(recover_fn);
         assert_eq!(
             warp::test::request()
                 .path("/index-does-not-exist/search?query=myfield:test")
@@ -635,7 +635,7 @@ mod tests {
             .expect_root_search()
             .returning(|_| Err(SearchError::InternalError("ty".to_string())));
         let rest_search_api_handler =
-            super::search_get_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
+            super::search_get_handler(Arc::new(mock_search_service)).recover(recover_fn);
         assert_eq!(
             warp::test::request()
                 .path("/index-does-not-exist/search?query=myfield:test")
@@ -654,7 +654,7 @@ mod tests {
             .expect_root_search()
             .returning(|_| Err(SearchError::InvalidQuery("invalid query".to_string())));
         let rest_search_api_handler =
-            super::search_get_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
+            super::search_get_handler(Arc::new(mock_search_service)).recover(recover_fn);
         assert_eq!(
             warp::test::request()
                 .path("/my-index/search?query=myfield:test")
@@ -678,7 +678,7 @@ mod tests {
                 ])))
             });
         let rest_search_stream_api_handler =
-            super::search_stream_handler(Some(Arc::new(mock_search_service))).recover(recover_fn);
+            super::search_stream_handler(Arc::new(mock_search_service)).recover(recover_fn);
         let response = warp::test::request()
             .path("/my-index/search/stream?query=obama&fast_field=external_id&output_format=csv")
             .reply(&rest_search_stream_api_handler)
@@ -716,7 +716,7 @@ mod tests {
         let (index, req) = warp::test::request()
             .path(
                 "/my-index/search/stream?query=obama&fast_field=external_id&\
-                 output_format=clickHouseRowBinary",
+                 output_format=click_house_row_binary",
             )
             .filter(&super::search_stream_filter())
             .await
@@ -741,7 +741,7 @@ mod tests {
         let rejection = warp::test::request()
             .path(
                 "/my-index/search/stream?query=obama&fast_field=external_id&\
-                 output_format=click_house_row_binary",
+                 output_format=ClickHouseRowBinary",
             )
             .filter(&super::search_stream_filter())
             .await
@@ -749,7 +749,7 @@ mod tests {
         let parse_error = rejection.find::<serde_qs::Error>().unwrap();
         assert_eq!(
             parse_error.to_string(),
-            "unknown variant `click_house_row_binary`, expected `csv` or `clickHouseRowBinary`"
+            "unknown variant `ClickHouseRowBinary`, expected `csv` or `click_house_row_binary`"
         );
     }
 
@@ -757,7 +757,8 @@ mod tests {
     async fn test_rest_search_stream_api_error_empty_fastfield() {
         let rejection = warp::test::request()
             .path(
-                "/my-index/search/stream?query=obama&fast_field=&output_format=clickHouseRowBinary",
+                "/my-index/search/stream?query=obama&fast_field=&\
+                 output_format=click_house_row_binary",
             )
             .filter(&super::search_stream_filter())
             .await

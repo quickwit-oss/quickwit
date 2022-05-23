@@ -78,4 +78,5 @@ build-docs:
 
 .PHONY: build-ui
 build-ui:
-	yarn --cwd quickwit-ui build
+	@yarn --cwd quickwit-ui install
+	@yarn --cwd quickwit-ui build

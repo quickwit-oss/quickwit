@@ -32,6 +32,8 @@ use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use tracing::{info, warn};
 
+use crate::validate_identifier;
+
 pub const DEFAULT_QW_CONFIG_PATH: &str = "./config/quickwit.yaml";
 
 const DEFAULT_DATA_DIR_PATH: &str = "./qwdata";
@@ -42,15 +44,21 @@ fn default_data_dir_path() -> PathBuf {
     PathBuf::from(DEFAULT_DATA_DIR_PATH)
 }
 
-// Paradoxically the default metastore and the index root uri are the same.
-// Indeed, this is a convenient setting for testing with a file backed metastore
-// and indexes splits stored locally too.
+// Surprisingly, the default metastore and the index root uri are the same (if you exclude the
+// polling_interval parameter). Indeed, this is a convenient setting for testing with a file backed
+// metastore and indexes splits stored locally too.
 // For a given index `index-id`, it means that we have the metastore file
 // in  `./qwdata/indexes/{index-id}/metastore.json` and splits in
 // dir `./qwdata/indexes/{index-id}/splits`.
-fn default_metastore_and_index_root_uri(data_dir_path: &Path) -> Uri {
-    Uri::try_new(&data_dir_path.join("indexes").to_string_lossy())
+fn default_metastore_uri(data_dir_path: &Path) -> Uri {
+    Uri::try_new(&data_dir_path.join("indexes#polling_interval=30s").to_string_lossy())
         .expect("Failed to create default metastore URI. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
+}
+
+// See comment above.
+fn default_index_root_uri(data_dir_path: &Path) -> Uri {
+    Uri::try_new(&data_dir_path.join("indexes").to_string_lossy())
+        .expect("Failed to create default index_root URI. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
 }
 
 fn default_cluster_id() -> String {
@@ -246,6 +254,9 @@ impl QuickwitConfig {
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
+        validate_identifier("Cluster ID", &self.cluster_id)?;
+        validate_identifier("Node ID", &self.node_id)?;
+
         if self.cluster_id == DEFAULT_CLUSTER_ID {
             warn!(
                 cluster_id = DEFAULT_CLUSTER_ID,
@@ -336,10 +347,10 @@ impl QuickwitConfig {
 
     #[doc(hidden)]
     pub fn for_test() -> anyhow::Result<Self> {
-        use quickwit_common::net::find_available_port;
+        use quickwit_common::net::find_available_tcp_port;
 
         let indexer_config = Self {
-            rest_listen_port: find_available_port()?,
+            rest_listen_port: find_available_tcp_port()?,
             ..Default::default()
         };
         Ok(indexer_config)
@@ -351,14 +362,14 @@ impl QuickwitConfig {
         self.metastore_uri
             .as_ref()
             .cloned()
-            .unwrap_or_else(|| default_metastore_and_index_root_uri(&self.data_dir_path))
+            .unwrap_or_else(|| default_metastore_uri(&self.data_dir_path))
     }
 
     pub fn default_index_root_uri(&self) -> Uri {
         self.default_index_root_uri
             .as_ref()
             .cloned()
-            .unwrap_or_else(|| default_metastore_and_index_root_uri(&self.data_dir_path))
+            .unwrap_or_else(|| default_index_root_uri(&self.data_dir_path))
     }
 }
 
@@ -500,62 +511,54 @@ mod tests {
     }
 
     #[test]
-    fn test_config_default_values() {
-        {
-            let config_yaml = r#"
+    fn test_quickwit_config_default_values_minimal() {
+        let minimal_config_yaml = "version: 0";
+        let config = serde_yaml::from_str::<QuickwitConfig>(minimal_config_yaml).unwrap();
+        assert_eq!(config.version, 0);
+        assert!(config.node_id.starts_with("node-"));
+        assert_eq!(
+            config.metastore_uri(),
+            format!(
+                "file://{}/qwdata/indexes#polling_interval=30s",
+                env::current_dir().unwrap().display()
+            )
+        );
+        assert_eq!(config.data_dir_path.to_string_lossy(), "./qwdata");
+    }
+
+    #[test]
+    fn test_quickwwit_config_default_values_storage() {
+        let config_yaml = r#"
             version: 0
             node_id: 1
             metastore_uri: postgres://username:password@host:port/db
         "#;
-            let config = serde_yaml::from_str::<QuickwitConfig>(config_yaml).unwrap();
-            assert_eq!(config.version, 0);
-            assert_eq!(config.cluster_id, DEFAULT_CLUSTER_ID);
-            assert_eq!(config.node_id, "1");
-            assert_eq!(
-                config.metastore_uri(),
-                "postgres://username:password@host:port/db"
-            );
-            assert!(config.storage_config.is_none());
-        }
-        {
-            let config_yaml = r#"
+        let config = serde_yaml::from_str::<QuickwitConfig>(config_yaml).unwrap();
+        assert_eq!(config.version, 0);
+        assert_eq!(config.cluster_id, DEFAULT_CLUSTER_ID);
+        assert_eq!(config.node_id, "1");
+        assert_eq!(
+            config.metastore_uri(),
+            "postgres://username:password@host:port/db"
+        );
+        assert!(config.storage_config.is_none());
+    }
+
+    #[test]
+    fn test_quickwit_config_config_default_values_default_indexer_searcher_config() {
+        let config_yaml = r#"
             version: 0
             metastore_uri: postgres://username:password@host:port/db
             data_dir: /opt/quickwit/data
         "#;
-            let config = serde_yaml::from_str::<QuickwitConfig>(config_yaml).unwrap();
-            assert_eq!(config.version, 0);
-            assert_eq!(
-                config.metastore_uri(),
-                "postgres://username:password@host:port/db"
-            );
-            assert_eq!(
-                config.indexer_config,
-                IndexerConfig {
-                    ..Default::default()
-                }
-            );
-            assert_eq!(
-                config.searcher_config,
-                SearcherConfig {
-                    ..Default::default()
-                }
-            );
-        }
-        {
-            let minimal_config_yaml = "version: 0";
-            let config = serde_yaml::from_str::<QuickwitConfig>(minimal_config_yaml).unwrap();
-            assert_eq!(config.version, 0);
-            assert!(config.node_id.starts_with("node-"));
-            assert_eq!(
-                config.metastore_uri(),
-                format!(
-                    "file://{}/qwdata/indexes",
-                    env::current_dir().unwrap().display()
-                )
-            );
-            assert_eq!(config.data_dir_path.to_string_lossy(), "./qwdata");
-        }
+        let config = serde_yaml::from_str::<QuickwitConfig>(config_yaml).unwrap();
+        assert_eq!(config.version, 0);
+        assert_eq!(
+            config.metastore_uri(),
+            "postgres://username:password@host:port/db"
+        );
+        assert_eq!(config.indexer_config, IndexerConfig::default());
+        assert_eq!(config.searcher_config, SearcherConfig::default());
     }
 
     #[tokio::test]

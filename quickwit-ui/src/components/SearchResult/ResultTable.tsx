@@ -18,9 +18,8 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import { Table, TableBody, TableContainer, Box, styled } from "@mui/material";
-import { IndexMetadata, SearchResponse } from "../../utils/models";
+import { guessTimeUnit, Index, SearchResponse } from "../../utils/models";
 import { Row } from "./Row";
-
 
 const TableBox = styled(Box)`
 display: flex;
@@ -30,18 +29,20 @@ flex: 1 1 100%;
 height: 100%;
 `
 
-export function ResultTable({searchResponse, indexMetadata}: {searchResponse: SearchResponse, indexMetadata: IndexMetadata}) {
+export function ResultTable({searchResponse, index}: {searchResponse: SearchResponse, index: Index}) {
+  const timeUnit = guessTimeUnit(index);
   return (
     <TableBox>
       <TableContainer>
         <Table size="small" >
           <TableBody>
-            { searchResponse.hits.map((hit, index) =>
+            { searchResponse.hits.map((hit, idx) =>
                 <Row
-                  key={index}
+                  key={idx}
                   row={hit}
-                  timestampField={indexMetadata.indexing_settings.timestamp_field}
-                  doc_mapping={indexMetadata.doc_mapping}
+                  timestampField={index.metadata.indexing_settings.timestamp_field}
+                  docMapping={index.metadata.doc_mapping}
+                  timeUnit={timeUnit}
                 />
             )}
           </TableBody>

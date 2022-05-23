@@ -18,7 +18,8 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import { useEffect, useRef, useState } from 'react';
-import Editor, { useMonaco } from "@monaco-editor/react";
+import MonacoEditor from 'react-monaco-editor';
+import * as monacoEditor from 'monaco-editor/esm/vs/editor/editor.api';
 import { LANGUAGE_CONFIG, LanguageFeatures, createIndexCompletionProvider } from './config';
 import { SearchComponentProps } from '../../utils/SearchComponentProps';
 import { EDITOR_THEME } from '../../utils/theme';
@@ -34,15 +35,15 @@ function getLanguageId(indexId: string | null): string {
 }
 
 export function QueryEditor(props: SearchComponentProps) {
-  const monaco = useMonaco();
-  const editorRef = useRef(null);
+  const monacoRef = useRef<null | typeof monacoEditor>(null);
   const [languageId, setLanguageId] = useState<string>('');
   const runSearchRef = useRef(props.runSearch);
   const searchRequestRef = useRef(props.searchRequest);
   const defaultValue = props.searchRequest.query === null ? `// Select an index and type your query. Example: field_name:"phrase query"` : props.searchRequest.query;
   
+  /* eslint-disable  @typescript-eslint/no-explicit-any */
   function handleEditorDidMount(editor: any, monaco: any) {
-    editorRef.current = editor; 
+    monacoRef.current = monaco; 
     editor.addAction({
       id: 'SEARCH',
       label: "Run search",
@@ -58,7 +59,8 @@ export function QueryEditor(props: SearchComponentProps) {
 
   useEffect(() => {
     const updatedLanguageId = getLanguageId(props.searchRequest.indexId);
-    if (monaco && updatedLanguageId !== '' && props.index !== null) {
+    if (monacoRef.current !== null && updatedLanguageId !== '' && props.index !== null) {
+      const monaco = monacoRef.current;
       if (!monaco.languages.getLanguages().some(({ id }: {id :string }) => id === languageId)) {
         console.log('register language', updatedLanguageId);
         monaco.languages.register({'id': updatedLanguageId});
@@ -73,13 +75,13 @@ export function QueryEditor(props: SearchComponentProps) {
       }
       setLanguageId(updatedLanguageId);
     }
-  }, [monaco, props.searchRequest, props.index]);
+  }, [monacoRef, props.searchRequest, props.index]);
 
   useEffect(() => {
-    if (monaco) {
+    if (monacoRef.current !== null) {
       runSearchRef.current = props.runSearch;
     }
-  }, [monaco, props.runSearch]);
+  }, [monacoRef, props.runSearch]);
 
   function handleEditorChange(value: any) {
     const updatedSearchRequest = Object.assign({}, props.searchRequest, {query: value});
@@ -93,9 +95,9 @@ export function QueryEditor(props: SearchComponentProps) {
 
   return (
     <Box sx={{ height: '100px', py: 1}} >
-      <Editor
-        beforeMount={handleEditorWillMount}
-        onMount={handleEditorDidMount}
+      <MonacoEditor
+        editorWillMount={handleEditorWillMount}
+        editorDidMount={handleEditorDidMount}
         onChange={handleEditorChange}
         language={languageId}
         value={defaultValue}

@@ -41,6 +41,7 @@ function SearchView() {
   const [searchRequest, setSearchRequest] = useState<SearchRequest>(hasSearchParams(location.search) ? parseSearchUrl(location.search) : EMPTY_SEARCH_REQUEST);
   const updateLastSearchRequest = useLocalStorage().updateLastSearchRequest;
   const quickwitClient = useMemo(() => new Client(), []);
+
   const runSearch = (updatedSearchRequest: SearchRequest) => {
     console.log('Run search...', updatedSearchRequest);
     if (updatedSearchRequest !== null) {
@@ -55,7 +56,6 @@ function SearchView() {
       setQueryRunning(false);
     }, (error) => {
       setQueryRunning(false);
-      console.log(error);
       setSearchError(error);
       console.error('Error when running search request', error);
     });
@@ -92,6 +92,17 @@ function SearchView() {
     });
   }, [searchRequest, quickwitClient, index]);
 
+  useEffect(() => {
+    if (searchRequest.indexId === null || searchRequest.indexId === undefined || searchRequest.indexId === '') {
+      return;
+    }
+    runSearch(searchRequest);
+  }, []); // <-- empty array means 'run once'
+
+  const searchParams = toUrlSearchRequestParams(searchRequest);
+  // `toUrlSearchRequestParams` is used for the UI urls. We need to remove the `indexId` request parameter to generate
+  // the correct API url, this is the only difference.
+  searchParams.delete('index_id');
   return (
       <ViewUnderAppBarBox sx={{ flexDirection: 'row'}}>
         <IndexSideBar indexMetadata={index === null ? null : index.metadata} onIndexMetadataUpdate={onIndexMetadataUpdate}/>
@@ -115,7 +126,7 @@ function SearchView() {
               searchResponse={searchResponse}
               index={index} />
           </FullBoxContainer>
-          { index !== null && ApiUrlFooter(`api/v1/indexes/${index?.metadata.index_id}/search?${toUrlSearchRequestParams(searchRequest).toString()}`) }
+          { index !== null && ApiUrlFooter(`api/v1/${index?.metadata.index_id}/search?${searchParams.toString()}`) }
         </FullBoxContainer>
       </ViewUnderAppBarBox>
   );

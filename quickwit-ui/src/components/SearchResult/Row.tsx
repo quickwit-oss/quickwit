@@ -19,16 +19,23 @@
 
 import { KeyboardArrowDown } from "@mui/icons-material";
 import ChevronRight from "@mui/icons-material/ChevronRight";
-import { IconButton, styled, TableCell, TableRow } from "@mui/material";
+import { Box, IconButton, styled, TableCell, TableRow } from "@mui/material";
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime"
+import utc from "dayjs/plugin/utc"
 import React, { useState } from "react";
-import { DocMapping, Entry, flattenEntries, RawDoc } from "../../utils/models";
+import { DocMapping, Entry, getDateTimeFormat, RawDoc, TimeUnit } from "../../utils/models";
 import { QUICKWIT_INTERMEDIATE_GREY } from "../../utils/theme";
 import { JsonEditor } from "../JsonEditor";
 
+dayjs.extend(relativeTime);
+dayjs.extend(utc);
+
 interface RowProps {
   timestampField: null | string;
+  timeUnit: TimeUnit;
   row: RawDoc;
-  doc_mapping: DocMapping;
+  docMapping: DocMapping;
 }
 
 const EntryName = styled('dt')`
@@ -49,12 +56,30 @@ margin-inline-end: 5px;
 `;
 
 function EntryFormatter(entry: Entry) {
+  // Some field can contains objects, stringify them to render them otherwise React will crash.
+  const value = typeof entry.value === 'object' ? JSON.stringify(entry.value) : entry.value;
   return (
     <>
       <EntryName>{entry.key}:</EntryName>
-      <EntryValue>{entry.value}</EntryValue>
+      <EntryValue>{value}</EntryValue>
     </>
   )
+}
+
+function DateTimeFormatter(row: RawDoc, timestampField: string | null, timeUnit: TimeUnit) {
+  if (timestampField == null) {
+    return <></>
+  }
+  const value = row[timestampField];
+  if (typeof value !== 'number') {
+    return <></>
+  }
+  const datetime = timeUnit === TimeUnit.MILLI_SECOND ? dayjs(value) : dayjs.unix(value);
+  return <TableCell sx={{verticalAlign: 'top', padding: '4px'}}>
+        <Box sx={{ maxHeight: '115px', width: '90px', display: 'inline-block' }}>
+          {datetime.utc().format(getDateTimeFormat(timeUnit))}
+        </Box>
+      </TableCell>
 }
 
 const BreakWordBox = styled('dl')({
@@ -70,11 +95,14 @@ const BreakWordBox = styled('dl')({
 
 export function Row(props: RowProps) {
   const [open, setOpen] = useState(false);
-  const flatten_entries = flattenEntries(props.doc_mapping, props.row);
+  const entries: Entry[] = [];
+  for (const [key, value] of Object.entries(props.row)) {
+    entries.push({key: key, value: value});
+  }
   return (
     <>
       <TableRow>
-        <TableCell sx={{ px: 0, py: 0, verticalAlign: 'top' }}>
+        <TableCell sx={{ px: 0, py: 0, verticalAlign: 'top', padding: '0  px'}}>
           <IconButton
             aria-label="expand row"
             size="small"
@@ -83,13 +111,14 @@ export function Row(props: RowProps) {
             {open ? <KeyboardArrowDown /> : <ChevronRight />}
           </IconButton>
         </TableCell>
-        <TableCell>
+        {DateTimeFormatter(props.row, props.timestampField, props.timeUnit)}
+        <TableCell sx={{padding: '4px'}}>
           {!open && <BreakWordBox sx={{ maxHeight: '100px' }}>
-              { flatten_entries.map((entry) => <React.Fragment key={entry.key}>{EntryFormatter(entry)}</React.Fragment>) }
+              { entries.map((entry) => <React.Fragment key={entry.key}>{EntryFormatter(entry)}</React.Fragment>) }
             </BreakWordBox>
           }
           {open && 
-              <JsonEditor content={props.row} resizeOnMount={true} />
+            <JsonEditor content={props.row} resizeOnMount={true} />
           }
         </TableCell>
       </TableRow>

@@ -1,7 +1,6 @@
 // -- Search -------------------
 
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchRequest {
     /// Index ID
@@ -39,7 +38,6 @@ pub struct SearchRequest {
     pub aggregation_request: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchResponse {
     /// Number of hits matching the query.
@@ -60,7 +58,6 @@ pub struct SearchResponse {
     pub aggregation: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SplitSearchError {
     /// The searcherror that occured formatted as string.
@@ -74,7 +71,6 @@ pub struct SplitSearchError {
     pub retryable_error: bool,
 }
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchRequest {
     /// Search request. This is a perfect copy of the original search request,
@@ -94,7 +90,6 @@ pub struct LeafSearchRequest {
     pub index_uri: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SplitIdAndFooterOffsets {
     /// Index split id to apply the query on.
@@ -122,7 +117,6 @@ pub struct SplitIdAndFooterOffsets {
 ////
 //// See  `quickwit_search::convert_leaf_hit`
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafHit {
     /// The actual content of the hit/
@@ -133,7 +127,6 @@ pub struct LeafHit {
     pub partial_hit: ::core::option::Option<PartialHit>,
 }
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Hit {
     /// The actual content of the hit/
@@ -148,7 +141,6 @@ pub struct Hit {
 /// go and fetch the actual document data, by performing a `get_doc(...)`
 /// request.
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PartialHit {
     /// Sorting field value. (e.g. timestamp)
@@ -174,7 +166,6 @@ pub struct PartialHit {
     pub doc_id: u32,
 }
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchResponse {
     /// Total number of documents matched by the query.
@@ -195,7 +186,6 @@ pub struct LeafSearchResponse {
     pub intermediate_aggregation_result: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchDocsRequest {
     /// Request fetching the content of a given list of partial_hits.
@@ -215,7 +205,6 @@ pub struct FetchDocsRequest {
     pub index_uri: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchDocsResponse {
     /// List of complete hits.
@@ -223,7 +212,6 @@ pub struct FetchDocsResponse {
     pub hits: ::prost::alloc::vec::Vec<LeafHit>,
 }
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchStreamRequest {
     /// Index ID
@@ -251,7 +239,6 @@ pub struct SearchStreamRequest {
     pub partition_by_field: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchStreamRequest {
     /// Stream request. This is a perfect copy of the original stream request,
@@ -271,7 +258,6 @@ pub struct LeafSearchStreamRequest {
     pub index_uri: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchStreamResponse {
     /// Row of data serialized in bytes.
@@ -282,7 +268,6 @@ pub struct LeafSearchStreamResponse {
     pub split_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum SortOrder {
@@ -296,7 +281,7 @@ pub enum SortOrder {
 // -- Stream -------------------
 
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum OutputFormat {

@@ -387,11 +387,12 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "chitchat"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41474c726dd5fe2e90b4653fb0fb932b5469986e7f8da76a304df6ea7f9e1a9c"
+checksum = "4d0246dc851629cdb02cd36924285daea20e25a07db811f5c89a1af0aabbbbf1"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bytes",
  "rand",
  "serde",
@@ -2000,9 +2001,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.10.0"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87f3e037eac156d1775da914196f0f37741a274155e34a0b7e427c35d2a2ecb9"
+checksum = "7b10983b38c53aebdf33f542c6275b0f58a238129d00c4ae0e6fb59738d783ca"
 
 [[package]]
 name = "oneshot"
@@ -2159,9 +2160,9 @@ dependencies = [
 
 [[package]]
 name = "papergrid"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63709d10e2c2ec58f7bd91d8258d27ce80de090064b0ddf3a4bf38b907b61b8a"
+checksum = "608b6444acf7f5ea39e8bd06dd6037e34a4b5ddfb29ae840edad49ea798e9e79"
 dependencies = [
  "unicode-width",
 ]
@@ -2681,6 +2682,7 @@ dependencies = [
  "once_cell",
  "quickwit-common",
  "quickwit-doc-mapper",
+ "regex",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -2887,6 +2889,7 @@ dependencies = [
  "async-trait",
  "base64",
  "bytes",
+ "chitchat",
  "futures",
  "http",
  "hyper",
@@ -2949,6 +2952,7 @@ dependencies = [
  "quickwit-search",
  "quickwit-storage",
  "quickwit-telemetry",
+ "rand",
  "regex",
  "rust-embed",
  "serde",
@@ -3920,9 +3924,9 @@ checksum = "20518fe4a4c9acf048008599e464deb21beeae3d3578418951a189c235a7a9a8"
 
 [[package]]
 name = "tabled"
-version = "0.6.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d15827061abcf689257b1841c8e2732b1dfcc3ef825b24ce6c606e1e9e1a7bde"
+checksum = "2407502760ccfd538f2fb1f843dd87b6daf1a17848d57bc5a25617e408ef4c7a"
 dependencies = [
  "papergrid",
  "tabled_derive",

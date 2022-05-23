@@ -35,8 +35,6 @@ pub enum FieldMappingType {
     U64(QuickwitNumericOptions, Cardinality),
     /// 64-bit float mapping type configuration.
     F64(QuickwitNumericOptions, Cardinality),
-    /// RFC 3339 date mapping type configuration.
-    Date(QuickwitNumericOptions, Cardinality),
     /// Bytes mapping type configuration.
     Bytes(QuickwitNumericOptions, Cardinality),
     Json(QuickwitJsonOptions, Cardinality),
@@ -51,7 +49,6 @@ impl FieldMappingType {
             FieldMappingType::I64(_, cardinality) => (Type::I64, *cardinality),
             FieldMappingType::U64(_, cardinality) => (Type::U64, *cardinality),
             FieldMappingType::F64(_, cardinality) => (Type::F64, *cardinality),
-            FieldMappingType::Date(_, cardinality) => (Type::Date, *cardinality),
             FieldMappingType::Bytes(_, cardinality) => (Type::Bytes, *cardinality),
             FieldMappingType::Json(_, cardinality) => (Type::Json, *cardinality),
             FieldMappingType::Object(_) => {

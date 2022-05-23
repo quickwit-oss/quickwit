@@ -89,9 +89,6 @@ pub use void_source::{VoidSource, VoidSourceFactory};
 use crate::actors::Indexer;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
 
-/// Reserved source ID used for the CLI ingest command.
-pub const INGEST_SOURCE_ID: &str = ".cli-ingest-source";
-
 pub type SourceContext = ActorContext<SourceActor>;
 
 /// A Source is a trait that is mounted in a light wrapping Actor called `SourceActor`.

@@ -30,8 +30,8 @@ use predicates::prelude::*;
 use quickwit_cli::index::{create_index_cli, search_index, CreateIndexArgs, SearchIndexArgs};
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
+use quickwit_config::CLI_INGEST_SOURCE_ID;
 use quickwit_core::get_cache_directory_path;
-use quickwit_indexing::source::INGEST_SOURCE_ID;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore};
 use serde_json::{json, Number, Value};
 use serial_test::serial;
@@ -210,7 +210,7 @@ fn test_cmd_ingest_keep_cache() -> Result<()> {
     let cache_directory_path = get_cache_directory_path(
         &test_env.data_dir_path,
         &test_env.index_id,
-        INGEST_SOURCE_ID,
+        CLI_INGEST_SOURCE_ID,
     );
     assert!(cache_directory_path.read_dir()?.next().is_some());
     Ok(())
@@ -244,7 +244,7 @@ fn test_cmd_ingest_simple() -> Result<()> {
     let cache_directory_path = get_cache_directory_path(
         &test_env.data_dir_path,
         &test_env.index_id,
-        INGEST_SOURCE_ID,
+        CLI_INGEST_SOURCE_ID,
     );
     assert!(cache_directory_path.read_dir()?.next().is_none());
 

@@ -31,7 +31,7 @@ use futures::{stream, StreamExt};
 use once_cell::sync::OnceCell;
 use quickwit_common::{chunk_range, into_u64_range};
 use regex::Regex;
-use rusoto_core::credential::{AutoRefreshingProvider, ChainProvider};
+use rusoto_core::credential::{AutoRefreshingProvider, ChainProvider, ProfileProvider};
 use rusoto_core::{ByteStream, HttpClient, HttpConfig, Region, RusotoError};
 use rusoto_s3::{
     AbortMultipartUploadRequest, CompleteMultipartUploadRequest, CompletedMultipartUpload,
@@ -59,17 +59,20 @@ const QUICKWIT_DEFAULT_REGION: Region = Region::UsEast1;
 
 #[instrument]
 fn sniff_s3_region() -> anyhow::Result<Region> {
-    // If an environment variable is attempting to set the region, but is
-    // erroneous, we stop here and return an error.
-    //
-    // If no env variable attempts to set the region, we attempt to sniff the
-    // region from AWS API.
+    // Attempt to read region from environment variable and return an error if malformed.
     if let Some(region) = region_from_env_variable()? {
         info!(region=?region, from="env-variable", "set-aws-region");
         return Ok(region);
     }
+    // Attempt to read region from config file and return an error if malformed.
+    if let Some(region) = region_from_config_file()? {
+        info!(region=?region, from="config-file", "set-aws-region");
+        return Ok(region);
+    }
+    // Attempt to read region from EC2 instance metadata service and return an error if service
+    // unavailable or region malformed.
     if let Some(region) = region_from_ec2_instance()? {
-        info!(region=?region, from="ec2-instance-metadata-api", "set-aws-region");
+        info!(region=?region, from="ec2-instance-metadata-service", "set-aws-region");
         return Ok(region);
     }
     info!(region=?QUICKWIT_DEFAULT_REGION, from="default", "set-aws-region");
@@ -115,7 +118,7 @@ fn region_from_str(region_str: &str) -> anyhow::Result<Region> {
 }
 
 fn s3_region_env_var() -> Option<String> {
-    for env_var_key in ["QW_S3_ENDPOINT", "AWS_DEFAULT_REGION", "AWS_REGION"] {
+    for env_var_key in ["QW_S3_ENDPOINT", "AWS_REGION", "AWS_DEFAULT_REGION"] {
         if let Ok(env_var) = std::env::var(env_var_key) {
             info!(
                 env_var_key = env_var_key,
@@ -143,7 +146,16 @@ fn region_from_env_variable() -> anyhow::Result<Option<Region>> {
     }
 }
 
-// Sniffes the EC2 region from the EC2 instance API.
+#[instrument]
+fn region_from_config_file() -> anyhow::Result<Option<Region>> {
+    ProfileProvider::region()
+        .context("Failed to parse AWS config file.")?
+        .map(|region| Region::from_str(&region))
+        .transpose()
+        .context("Failed to parse region from config file.")
+}
+
+// Sniffes the region from the EC2 instance metadata service.
 //
 // https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html
 #[instrument]
@@ -153,17 +165,18 @@ fn region_from_ec2_instance() -> anyhow::Result<Option<Region>> {
     match instance_metadata_client.get() {
         Ok(instance_metadata) => {
             let region = Region::from_str(instance_metadata.region)
-                .context("Failed to parse region fetched from AWS instance metadata API")?;
+                .context("Failed to parse region fetched from instance metadata service.")?;
             Ok(Some(region))
         }
         Err(ec2_instance_metadata::Error::NotFound(_)) => {
             debug!(
-                "Failed to sniff AWS region from the AWS instance metadata. API is not available."
+                "Failed to sniff region from AWS instance metadata service. Service is not \
+                 available."
             );
             Ok(None)
         }
         Err(err) => {
-            warn!(err=?err, "Failed to sniff AWS region from the AWS instance metadata");
+            warn!(err=?err, "Failed to sniff region from the AWS instance metadata service.");
             anyhow::bail!(err)
         }
     }
@@ -197,7 +210,7 @@ fn create_s3_client(region: Region) -> anyhow::Result<S3Client> {
     // It seems like the setting below solved it.
     http_config.pool_idle_timeout(std::time::Duration::from_secs(POOL_IDLE_TIMEOUT));
     let http_client = HttpClient::new_with_config(http_config)
-        .with_context(|| "failed to create request dispatcher")?;
+        .with_context(|| "Failed to create request dispatcher.")?;
     Ok(S3Client::new_with(
         http_client,
         credentials_provider,

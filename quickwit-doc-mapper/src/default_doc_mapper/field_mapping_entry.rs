@@ -193,7 +193,7 @@ impl Default for QuickwitJsonOptions {
     fn default() -> Self {
         QuickwitJsonOptions {
             indexed: true,
-            tokenizer: QuickwitTextTokenizer::Raw,
+            tokenizer: default_json_tokenizer(),
             record: IndexRecordOption::Basic,
             stored: true,
         }
@@ -262,10 +262,7 @@ fn deserialize_mapping_type(
             let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
             Ok(FieldMappingType::F64(numeric_options, cardinality))
         }
-        Type::Date => {
-            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
-            Ok(FieldMappingType::Date(numeric_options, cardinality))
-        }
+        Type::Date => unimplemented!("Date are not supported in quickwit yet."),
         Type::Facet => unimplemented!("Facet are not supported in quickwit yet."),
         Type::Bytes => {
             let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
@@ -322,7 +319,6 @@ fn typed_mapping_to_json_params(
         FieldMappingType::Text(text_options, _) => serialize_to_map(&text_options),
         FieldMappingType::U64(options, _)
         | FieldMappingType::I64(options, _)
-        | FieldMappingType::Date(options, _)
         | FieldMappingType::Bytes(options, _)
         | FieldMappingType::F64(options, _) => serialize_to_map(&options),
         FieldMappingType::Json(json_options, _) => serialize_to_map(&json_options),
@@ -835,7 +831,7 @@ mod tests {
             r#"
             {
                 "name": "my_field_name",
-                "type": "date"
+                "type": "i64"
             }
             "#,
         )
@@ -845,7 +841,7 @@ mod tests {
             entry_deserser,
             json!({
                 "name": "my_field_name",
-                "type": "date",
+                "type": "i64",
                 "stored": true,
                 "indexed": true,
                 "fast": false,
@@ -859,7 +855,7 @@ mod tests {
             r#"
             {
                 "name": "my_field_name",
-                "type": "array<date>"
+                "type": "array<i64>"
             }
             "#,
         )
@@ -869,7 +865,7 @@ mod tests {
             entry_deserser,
             json!({
                 "name": "my_field_name",
-                "type": "array<date>",
+                "type": "array<i64>",
                 "stored": true,
                 "indexed": true,
                 "fast": false,
@@ -971,9 +967,18 @@ mod tests {
     }
 
     #[test]
-    fn test_quickwit_json_options_default_tokenizer_is_raw() {
+    fn test_quickwit_json_options_default_tokenizer_is_default() {
         let quickwit_json_options = QuickwitJsonOptions::default();
-        assert_eq!(quickwit_json_options.tokenizer, QuickwitTextTokenizer::Raw);
+        assert_eq!(
+            quickwit_json_options.tokenizer,
+            QuickwitTextTokenizer::Default
+        );
+    }
+
+    #[test]
+    fn test_quickwit_json_options_default_consistent_with_default() {
+        let quickwit_json_options: QuickwitJsonOptions = serde_json::from_str("{}").unwrap();
+        assert_eq!(quickwit_json_options, QuickwitJsonOptions::default());
     }
 
     #[test]

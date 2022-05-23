@@ -20,8 +20,10 @@
 import styled from "@emotion/styled";
 import { Paper } from "@mui/material";
 import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc"
 import NumberFormat from "react-number-format";
 import { Index } from "../utils/models";
+dayjs.extend(utc);
 
 const ItemContainer = styled.div`
 padding: 10px;
@@ -50,13 +52,13 @@ export function IndexSummary({index}: {index: Index}) {
         <Row>
           <RowKey>Created at:</RowKey>
           <div>
-            { dayjs.unix(index.metadata.create_timestamp).format("YYYY/MM/DD HH:MM") }
+            { dayjs.unix(index.metadata.create_timestamp).utc().format("YYYY/MM/DD HH:MM") }
           </div>
         </Row>
         <Row>
           <RowKey>Updated at:</RowKey>
           <div>
-            { dayjs.unix(index.metadata.update_timestamp).format("YYYY/MM/DD HH:MM") }
+            { dayjs.unix(index.metadata.update_timestamp).utc().format("YYYY/MM/DD HH:MM") }
           </div>
         </Row>
         <Row>

@@ -33,6 +33,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::deser_valid_uri;
 use crate::source_config::SourceConfig;
+use crate::validate_identifier;
 
 // Note(fmassot): `DocMapping` is a struct only used for
 // serialization/deserialization of `DocMapper` parameters.
@@ -42,6 +43,7 @@ use crate::source_config::SourceConfig;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DocMapping {
+    #[serde(default)]
     pub field_mappings: Vec<FieldMappingEntry>,
     #[serde(default)]
     pub tag_fields: BTreeSet<String>,
@@ -277,15 +279,15 @@ impl IndexConfig {
             .collect()
     }
 
-    fn validate(&self) -> anyhow::Result<()> {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        validate_identifier("Index ID", &self.index_id)?;
+
         if self.sources.len() > self.sources().len() {
             bail!("Index config contains duplicate sources.")
         }
-
         for source in self.sources.iter() {
             source.validate()?;
         }
-
         // Validation is made by building the doc mapper.
         // Note: this needs a deep refactoring to separate the doc mapping configuration,
         // and doc mapper implementations.
@@ -294,7 +296,6 @@ impl IndexConfig {
             &self.search_settings,
             &self.indexing_settings,
         )?;
-
         if self.indexing_settings.merge_policy.max_merge_factor
             < self.indexing_settings.merge_policy.merge_factor
         {
@@ -303,7 +304,6 @@ impl IndexConfig {
                  `merge_factor`."
             )
         }
-
         Ok(())
     }
 }
@@ -596,12 +596,25 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "URI is empty.")]
     fn test_config_validates_uris() {
         let config_yaml = r#"
             version: 0
             index_id: hdfs-logs
             index_uri: ''
+            doc_mapping: {}
         "#;
-        serde_yaml::from_str::<IndexConfig>(config_yaml).unwrap_err();
+        serde_yaml::from_str::<IndexConfig>(config_yaml).unwrap();
+    }
+
+    #[test]
+    fn test_minimal_index_config() {
+        let config_yaml = r#"
+            version: 0
+            index_id: hdfs-logs
+            doc_mapping: {}
+        "#;
+        let minimal_config = serde_yaml::from_str::<IndexConfig>(config_yaml).unwrap();
+        assert_eq!(minimal_config.doc_mapping.mode, ModeType::Lenient);
     }
 }

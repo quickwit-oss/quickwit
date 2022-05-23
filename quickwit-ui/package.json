@@ -4,11 +4,10 @@
   "license": "AGPL-3.0",
   "private": true,
   "proxy": "http://127.0.0.1:7280",
-  "homepage": "/ui",
+  "homepage": "/ui/",
   "dependencies": {
     "@emotion/react": "^11.8.2",
     "@emotion/styled": "^11.8.1",
-    "@monaco-editor/react": "^4.4.2",
     "@mui/icons-material": "^5.6.2",
     "@mui/lab": "^5.0.0-alpha.78",
     "@mui/material": "^5.6.2",
@@ -21,11 +20,15 @@
     "@types/react-dom": "^17.0.9",
     "@typescript-eslint/eslint-plugin": "^5.17.0",
     "@typescript-eslint/parser": "^5.17.0",
-    "dayjs": "^1.10.7",
+    "dayjs": "^1.11.2",
     "eslint": "^8.12.0",
+    "monaco-editor": "^0.33.0",
+    "monaco-editor-webpack-plugin": "^7.0.1",
     "prettier": "2.6.2",
     "react": "^17.0.2",
+    "react-app-rewired": "^2.2.1",
     "react-dom": "^17.0.2",
+    "react-monaco-editor": "^0.48.0",
     "react-number-format": "^4.9.3",
     "react-router-dom": "6",
     "react-scripts": "~5.0.1",
@@ -39,11 +42,11 @@
     "@types/react-dom": "17.0.9"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
+    "start": "react-app-rewired start",
+    "build": "react-app-rewired build",
+    "test": "react-app-rewired test",
+    "eject": "react-app-rewired eject",
     "postbuild": "cp .gitignore_for_build_directory build/.gitignore",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject",
     "lint": "eslint . --ext .ts",
     "e2e-test": "cypress run"
   },
@@ -69,5 +72,10 @@
     "cypress": "8.5",
     "jest": "^27.5.1",
     "ts-jest": "^27.1.4"
+  },
+  "jest": {
+    "moduleNameMapper": {
+      "monaco-editor": "<rootDir>/monacoMock.js"
+    }
   }
 }
