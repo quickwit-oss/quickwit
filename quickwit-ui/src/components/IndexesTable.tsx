@@ -18,9 +18,12 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import { Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from "@mui/material";
-import dayjs from "dayjs";
+import dayjs from 'dayjs';
+import utc from "dayjs/plugin/utc"
 import { IndexMetadata } from "../utils/models";
 import { useNavigate } from "react-router-dom";
+dayjs.extend(utc);
+
 
 const IndexesTable = ({ indexesMetadata }: Readonly<{indexesMetadata: IndexMetadata[]}>) => {
   const navigate = useNavigate();

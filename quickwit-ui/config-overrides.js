@@ -17,19 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-describe('Home navigation', () => {
-  it('Should display sidebar links', () => {
-    cy.visit('http://127.0.0.1:7280/ui');
-    cy.get('a')
-        .should('be.visible')
-        .should('contain.text', 'Query editor')
-        .should('contain.text', 'Indexes')
-        .should('contain.text', 'Cluster');
-  });
-  it('Should navigate to cluster members', () => {
-    cy.visit('http://127.0.0.1:7280/ui');
-    cy.get('a').contains('Cluster').click();
-    cy.get('p').should('contain.text', 'Cluster members');
-    cy.get('span').should('contain.text', 'listen_address');
-  });
-})
+const MonacoWebpackPlugin = require('monaco-editor-webpack-plugin');
+
+module.exports = function override(config, env) {
+  config.plugins.push(new MonacoWebpackPlugin({
+    languages: ['json']
+  }));
+  return config;
+}
+
