@@ -5,19 +5,19 @@ sidebar_position: 4
 
 # Strict schema or schemaless?
 
-Quickwit let's you place the cursor on how strict you would like your schema to be. In other words, it is possible to operate Quickwit with a very strict mapping, in an entirely schemaless manner, and anywhere in between.  Let's see how this works!
+Quickwit lets you place the cursor on how strict you would like your schema to be. In other words, it is possible to operate Quickwit with a very strict mapping, in an entirely schemaless manner, and anywhere in between. Let's see how this works!
 
 ## A strict mapping
 
 That's the most straightforward approach.
 As a user, you need to precisely define the list of fields to be ingested by Quickwit.
 
-For instance, a reasonable mapping for an application log could be
+For instance, a reasonable mapping for an application log could be:
 
 ```yaml
 version: 0
 
-index_id: "my_app"
+index_id: my_app
 
 doc_mapping:
   mode: strict # <--- The mode attribute
@@ -50,7 +50,7 @@ that are not defined in the mapping will be entirely discarded.
 
 `mode` can take another value: `dynamic`.
 When set to dynamic, all extra fields will actually be mapped using a catch-all configuration.
-By default, this catch-all configuration index and store all of these fields, but this can be configured by settings the [`dynamic_mapping` attribute](../configuration/index-config#mode).
+By default, this catch-all configuration indexes and stores all of these fields, but this can be configured by settings the [`dynamic_mapping` attribute](../configuration/index-config#mode).
 A minimalist, yet perfectly valid and useful index configuration is then:
 
 ```yaml
@@ -60,12 +60,12 @@ doc_mapping:
   mode: dynamic
 ```
 
-With this configuration, it is possible to ingest any JSON object and search for them.
+This configuration makes it possible to ingest any JSON object and search them.
 
-But dynamic mode can also be used in conjunction with field mappings.
+However, the dynamic mode can also be used in conjunction with field mappings.
 This combination is especially powerful for event logs which cannot be mapped to a single schema.
 
-For instance, let's consider the following user event log.
+For instance, let's consider the following user event log:
 
 ```json
 {
