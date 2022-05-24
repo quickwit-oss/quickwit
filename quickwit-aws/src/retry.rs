@@ -175,19 +175,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_retries_up_at_most_attempts_times() {
-        let retry_sequence: Vec<_> = (0..3)
+        let retry_sequence: Vec<_> = (0..30)
             .map(|retry_id| Err(Retry::Retryable(retry_id)))
             .chain(Some(Ok(())))
             .collect();
         assert_eq!(
             simulate_retries(retry_sequence).await,
-            Err(Retry::Retryable(2))
+            Err(Retry::Retryable(29))
         );
     }
 
     #[tokio::test]
     async fn test_retry_retries_up_to_max_attempts_times() {
-        let retry_sequence: Vec<_> = (0..2)
+        let retry_sequence: Vec<_> = (0..29)
             .map(|retry_id| Err(Retry::Retryable(retry_id)))
             .chain(Some(Ok(())))
             .collect();
