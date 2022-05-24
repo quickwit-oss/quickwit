@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-pub mod error;
+mod error;
 
 mod s3_compatible_storage;
 pub use self::s3_compatible_storage::S3CompatibleObjectStorage;

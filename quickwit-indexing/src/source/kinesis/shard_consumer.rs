@@ -156,7 +156,6 @@ impl Actor for ShardConsumer {
             &self.stream_name,
             &self.shard_id,
             self.from_sequence_number_exclusive.clone(),
-            &self.retry_params,
         )
         .await?;
         ctx.send_self_message(Loop).await?;

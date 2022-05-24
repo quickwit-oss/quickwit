@@ -34,6 +34,7 @@ pub(crate) async fn get_records(
     retry_params: &RetryParams,
     shard_iterator: String,
     retry_params: &RetryParams,
+    shard_iterator: String,
 ) -> anyhow::Result<GetRecordsOutput> {
     let request = GetRecordsInput {
         shard_iterator,
@@ -65,7 +66,6 @@ pub(crate) async fn get_shard_iterator(
     stream_name: &str,
     shard_id: &str,
     from_sequence_number_exclusive: Option<String>,
-    retry_params: &RetryParams,
 ) -> anyhow::Result<Option<String>> {
     let shard_iterator_type = if from_sequence_number_exclusive.is_some() {
         "AFTER_SEQUENCE_NUMBER"
@@ -98,7 +98,6 @@ pub(crate) async fn list_shards(
     retry_params: &RetryParams,
     stream_name: &str,
     limit_per_request: Option<usize>,
-    retry_params: &RetryParams,
 ) -> anyhow::Result<Vec<Shard>> {
     let mut shards = Vec::new();
     let mut next_token = None;
@@ -437,7 +436,6 @@ mod kinesis_localstack_tests {
                 &stream_name,
                 &shard_id,
                 starting_sequence_number,
-                &DEFAULT_RETRY_PARAMS,
             )
             .await?;
             assert!(shard_iterator.is_some());
