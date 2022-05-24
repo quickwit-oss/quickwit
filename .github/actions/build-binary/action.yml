@@ -5,7 +5,10 @@ inputs:
     description: 'Target'
     required: true
   version:
-    description: 'Version'
+    description: 'Binary version'
+    required: true
+  token:
+    description: 'Github access token'
     required: true
 runs:
   using: "composite"
@@ -40,3 +43,12 @@ runs:
         name: ${{ env.ASSET_FULL_NAME }}.tar.gz
         path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
         retention-days: 3
+    - name: Upload archive
+      if: "${{ inputs.version != 'nightly' }}"
+      uses: quickwit-inc/upload-to-github-release@v1
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+      with:
+        file: ${{ env.ASSET_FULL_NAME }}.tar.gz
+        overwrite: true
+        tag_name: ${{ inputs.version }}
