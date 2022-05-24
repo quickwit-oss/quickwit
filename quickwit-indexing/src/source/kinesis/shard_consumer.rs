@@ -33,8 +33,6 @@ use tokio::sync::mpsc;
 use crate::source::kinesis::api::{get_records, get_shard_iterator};
 use crate::source::SourceContext;
 
-use super::retry::RetryPolicyParams;
-
 #[derive(Debug)]
 pub(super) enum ShardConsumerMessage {
     /// The shard was the subject of a merge or a split and points to one (merge) or two (split)
@@ -158,7 +156,7 @@ impl Actor for ShardConsumer {
             &self.stream_name,
             &self.shard_id,
             self.from_sequence_number_exclusive.clone(),
-            &self.retry_policy,
+            &self.retry_params,
         )
         .await?;
         ctx.send_self_message(Loop).await?;

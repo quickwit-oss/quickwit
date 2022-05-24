@@ -27,15 +27,13 @@ use rusoto_kinesis::{
     ListShardsInput, Shard,
 };
 
-use super::retry::{retry, RetryPolicyParams};
-
 /// Gets records from a Kinesis data stream's shard.
 /// <https://docs.aws.amazon.com/kinesis/latest/APIReference/API_GetRecords.html>
 pub(crate) async fn get_records(
     kinesis_client: &KinesisClient,
     retry_params: &RetryParams,
     shard_iterator: String,
-    retry_policy: &RetryPolicyParams,
+    retry_params: &RetryParams,
 ) -> anyhow::Result<GetRecordsOutput> {
     let request = GetRecordsInput {
         shard_iterator,
@@ -67,7 +65,7 @@ pub(crate) async fn get_shard_iterator(
     stream_name: &str,
     shard_id: &str,
     from_sequence_number_exclusive: Option<String>,
-    retry_policy: &RetryPolicyParams,
+    retry_params: &RetryParams,
 ) -> anyhow::Result<Option<String>> {
     let shard_iterator_type = if from_sequence_number_exclusive.is_some() {
         "AFTER_SEQUENCE_NUMBER"
@@ -100,7 +98,7 @@ pub(crate) async fn list_shards(
     retry_params: &RetryParams,
     stream_name: &str,
     limit_per_request: Option<usize>,
-    retry_policy: &RetryPolicyParams,
+    retry_params: &RetryParams,
 ) -> anyhow::Result<Vec<Shard>> {
     let mut shards = Vec::new();
     let mut next_token = None;
@@ -146,8 +144,6 @@ pub(crate) mod tests {
         CreateStreamInput, DeleteStreamInput, DescribeStreamInput, ListStreamsInput,
         MergeShardsInput, SplitShardInput, StreamDescription,
     };
-
-    use crate::source::kinesis::helpers::tests::DEFAULT_RETRY_POLICY;
 
     use super::*;
     use crate::source::kinesis::helpers::tests::DEFAULT_RETRY_PARAMS;
@@ -441,7 +437,7 @@ mod kinesis_localstack_tests {
                 &stream_name,
                 &shard_id,
                 starting_sequence_number,
-                &DEFAULT_RETRY_POLICY,
+                &DEFAULT_RETRY_PARAMS,
             )
             .await?;
             assert!(shard_iterator.is_some());
