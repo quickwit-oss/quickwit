@@ -109,6 +109,22 @@ impl From<FetchDocsJob> for SplitIdAndFooterOffsets {
     }
 }
 
+fn validate_request(search_request: &SearchRequest) -> crate::Result<()> {
+    if let Some(agg) = search_request.aggregation_request.as_ref() {
+        let _agg: Aggregations = serde_json::from_str(agg)
+            .map_err(|err| SearchError::InvalidAggregationRequest(err.to_string()))?;
+    };
+
+    if search_request.start_offset > 10_000 {
+        return Err(SearchError::InvalidArgument(format!(
+            "max value for start_offset is 10_000, but got {}",
+            search_request.start_offset
+        )));
+    }
+
+    Ok(())
+}
+
 /// Performs a distributed search.
 /// 1. Sends leaf request over gRPC to multiple leaf nodes.
 /// 2. Merges the search results.
@@ -134,10 +150,7 @@ pub async fn root_search(
         SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
     })?;
 
-    if let Some(agg) = search_request.aggregation_request.as_ref() {
-        let _agg: Aggregations = serde_json::from_str(agg)
-            .map_err(|err| SearchError::InvalidAggregationRequest(err.to_string()))?;
-    };
+    validate_request(search_request)?;
 
     // try to build query against current schema
     let _query = doc_mapper.query(doc_mapper.schema(), search_request)?;
