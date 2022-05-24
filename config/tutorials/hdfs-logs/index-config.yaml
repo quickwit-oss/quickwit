@@ -27,7 +27,6 @@ doc_mapping:
           type: text
           tokenizer: raw
   tag_fields: [tenant_id]
-  store_source: true
 
 indexing_settings:
   timestamp_field: timestamp
