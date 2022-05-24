@@ -42,14 +42,11 @@ runs:
           maintainer=Quickwit, Inc. <hello@quickwit.io>
           org.opencontainers.image.vendor=Quickwit, Inc.
           org.opencontainers.image.licenses=AGPL-3.0
-    - name: push
-      run: echo "push to ${{ env.IMAGE_ID }}"
-      shell: bash
-    # - name: Build and push
-    #   uses: docker/build-push-action@v3
-    #   with:
-    #     context: ./
-    #     platforms: linux/amd64
-    #     push: true
-    #     labels: ${{ steps.meta.outputs.labels }}
-    #     tags: ${{ env.IMAGE_ID }}:latest, ${{ env.IMAGE_ID }}:${{ env.IMAGE_DATE }}
+    - name: Build and push
+      uses: docker/build-push-action@v3
+      with:
+        context: ./
+        platforms: linux/amd64
+        push: true
+        labels: ${{ steps.meta.outputs.labels }}
+        tags: ${{ env.IMAGE_ID }}:latest, ${{ env.IMAGE_ID }}:${{ env.IMAGE_DATE }}
