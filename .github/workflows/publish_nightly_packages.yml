@@ -6,7 +6,7 @@ on:
     - cron: "0 5 * * *"
 
 jobs:
-  build:
+  build-binaries:
     strategy:
       matrix:
         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
@@ -14,10 +14,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: ./.github/actions/build
+      - uses: ./.github/actions/build-binary
         with:
           target: ${{ matrix.target }}
           version: nightly
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   build-and-push-docker-image:
     name: Build & push docker images

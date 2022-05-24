@@ -1,10 +1,11 @@
 inputs:
-  suffix: 
-    description: 'asset name suffix'
+  target:
+    description: 'Asset target'
+    required: true
 runs:
   using: "composite"
   steps:
     - run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
       shell: bash
-    - run: echo "ASSET_FULL_NAME=quickwit-${{ env.ASSET_VERSION }}-${{ inputs.suffix }}" >> $GITHUB_ENV
+    - run: echo "ASSET_FULL_NAME=quickwit-${{ env.ASSET_VERSION }}-${{ inputs.target }}" >> $GITHUB_ENV
       shell: bash
