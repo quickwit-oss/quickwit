@@ -25,8 +25,8 @@ use std::time::Duration;
 
 use chitchat::transport::Transport;
 use chitchat::{
-    spawn_chitchat, ChitchatConfig, ChitchatHandle, FailureDetectorConfig, NodeId,
-    SerializableClusterState,
+    spawn_chitchat, ChitchatConfig, ChitchatHandle, ClusterStateSnapshot, FailureDetectorConfig,
+    NodeId,
 };
 use itertools::Itertools;
 use quickwit_common::net::get_socket_addr;
@@ -144,7 +144,6 @@ impl Cluster {
             gossip_interval: GOSSIP_INTERVAL,
             listen_addr,
             seed_nodes,
-            mtu: 1_500,
             failure_detector_config,
         };
         let chitchat_handle = spawn_chitchat(
@@ -285,11 +284,11 @@ impl Cluster {
         let chitchat = self.chitchat_handle.chitchat();
         let chitchat_guard = chitchat.lock().await;
 
-        let cluster_state = chitchat_guard.cluster_state();
+        let state = chitchat_guard.state_snapshot();
         let live_nodes = chitchat_guard.live_nodes().cloned().collect::<Vec<_>>();
         let dead_nodes = chitchat_guard.dead_nodes().cloned().collect::<Vec<_>>();
         ClusterState {
-            state: SerializableClusterState::from(cluster_state),
+            state,
             live_nodes,
             dead_nodes,
         }
@@ -348,7 +347,7 @@ fn parse_available_services_val(
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ClusterState {
-    state: SerializableClusterState,
+    state: ClusterStateSnapshot,
     live_nodes: Vec<NodeId>,
     dead_nodes: Vec<NodeId>,
 }
