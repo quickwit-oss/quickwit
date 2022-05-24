@@ -19,83 +19,60 @@
 
 use tokio::sync::oneshot;
 
-pub struct JoinHandle {
-    inner: Inner,
+use crate::ActorExitStatus;
+
+pub enum JoinHandle {
+    ThreadJoinHandle(oneshot::Receiver<ActorExitStatus>),
+    TokioTaskJoinHandle(tokio::task::JoinHandle<ActorExitStatus>),
 }
 
 impl JoinHandle {
-    pub fn create_for_thread() -> (JoinHandle, oneshot::Sender<JoinOutcome>) {
+    pub fn create_for_thread() -> (JoinHandle, oneshot::Sender<ActorExitStatus>) {
         let (tx, rx) = oneshot::channel();
-        let join_handle = JoinHandle {
-            inner: Inner::ThreadJoinHandle(rx),
-        };
+        let join_handle = JoinHandle::ThreadJoinHandle(rx);
         (join_handle, tx)
     }
 
-    pub fn create_for_task(join_handle: tokio::task::JoinHandle<()>) -> JoinHandle {
-        JoinHandle {
-            inner: Inner::TokioTaskJoinHandle(join_handle),
-        }
+    pub fn create_for_task(join_handle: tokio::task::JoinHandle<ActorExitStatus>) -> JoinHandle {
+        JoinHandle::TokioTaskJoinHandle(join_handle)
     }
 
-    pub async fn join(&mut self) -> JoinOutcome {
-        let inner = std::mem::replace(&mut self.inner, Inner::Done(JoinOutcome::Ok));
-        let outcome = match inner {
-            Inner::ThreadJoinHandle(rx) => rx.await.unwrap_or(JoinOutcome::Panic),
-            Inner::TokioTaskJoinHandle(join_handle) => match join_handle.await {
-                Ok(()) => JoinOutcome::Ok,
+    pub async fn join(self) -> ActorExitStatus {
+        match self {
+            Self::ThreadJoinHandle(rx) => rx.await.unwrap_or(ActorExitStatus::Panicked),
+            Self::TokioTaskJoinHandle(join_handle) => match join_handle.await {
+                Ok(exit_status) => exit_status,
                 Err(join_err) => {
                     if join_err.is_panic() {
-                        JoinOutcome::Panic
+                        ActorExitStatus::Panicked
                     } else {
-                        JoinOutcome::Error
+                        ActorExitStatus::Killed
                     }
                 }
             },
-            Inner::Done(outcome) => outcome,
-        };
-        self.inner = Inner::Done(outcome);
-        outcome
+        }
     }
-}
-
-enum Inner {
-    ThreadJoinHandle(oneshot::Receiver<JoinOutcome>),
-    TokioTaskJoinHandle(tokio::task::JoinHandle<()>),
-    Done(JoinOutcome),
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum JoinOutcome {
-    Ok,
-    Error,
-    Panic,
 }
 
 #[cfg(test)]
 mod tests {
     use super::JoinHandle;
-    use crate::join_handle::JoinOutcome;
+    use crate::ActorExitStatus;
 
     #[tokio::test]
     async fn test_join_handle_ok() {
-        let (mut join_handle, tx) = JoinHandle::create_for_thread();
-        tx.send(JoinOutcome::Ok).unwrap();
-        assert_eq!(join_handle.join().await, JoinOutcome::Ok);
-        assert_eq!(join_handle.join().await, JoinOutcome::Ok);
-    }
-
-    #[tokio::test]
-    async fn test_join_handle_err() {
-        let (mut join_handle, tx) = JoinHandle::create_for_thread();
-        tx.send(JoinOutcome::Error).unwrap();
-        assert_eq!(join_handle.join().await, JoinOutcome::Error);
+        let (join_handle, tx) = JoinHandle::create_for_thread();
+        tx.send(ActorExitStatus::Success).unwrap();
+        assert!(matches!(join_handle.join().await, ActorExitStatus::Success));
     }
 
     #[tokio::test]
     async fn test_join_handle_panic() {
-        let (mut join_handle, tx) = JoinHandle::create_for_thread();
+        let (join_handle, tx) = JoinHandle::create_for_thread();
         std::mem::drop(tx);
-        assert_eq!(join_handle.join().await, JoinOutcome::Panic);
+        assert!(matches!(
+            join_handle.join().await,
+            ActorExitStatus::Panicked
+        ));
     }
 }
