@@ -43,7 +43,7 @@ fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
     static IDENTIFIER_REGEX: OnceCell<Regex> = OnceCell::new();
 
     if IDENTIFIER_REGEX
-        .get_or_init(|| Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9-_]{2,254}$").expect("Failed to compile regular expression. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
+        .get_or_init(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9-_]{2,254}$").expect("Failed to compile regular expression. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
         .is_match(value)
     {
         return Ok(());

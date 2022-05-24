@@ -253,3 +253,15 @@ jobs:
   #         push: true
   #         labels: ${{ steps.meta.outputs.labels }}
   #         tags: quickwit/quickwit:latest, quickwit/quickwit:${{ env.ASSET_VERSION }}
+
+  build-and-push-docker-image:
+    name: Build & push docker images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v3
+      - name: Build and push main docker image
+        uses: ./.github/actions/build-docker
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          token: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}

@@ -19,6 +19,19 @@ jobs:
           target: ${{ matrix.target }}
           version: nightly
 
+  build-and-push-docker-image:
+    name: Build & push docker images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v3
+      - name: Build and push nightly docker image
+        uses: ./.github/actions/build-docker
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          token: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
+          version: nightly
+          
   # build-x86_64-unknown-linux-musl-package:
   #   name: Build x86_64-unknown-linux-musl
   #   runs-on: ubuntu-latest
