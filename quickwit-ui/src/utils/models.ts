@@ -21,7 +21,8 @@
 export type RawDoc = Record<string, any>
 
 export enum TimeUnit {
-  MICRO_SECOND,
+  UNKNOWN,
+  UNSUPPORTED,
   MILLI_SECOND,
   SECOND,
 }
@@ -69,13 +70,16 @@ export function getDateTimeFormat(timeUnit: TimeUnit) {
 
 // Guess time unit of the timestamp field from index splits.
 export function guessTimeUnit(index: Index): TimeUnit {
-  // If we don't have any info, return the default unit.
-  if (index.splits.length === 0 || index.metadata.indexing_settings.timestamp_field === null) {
-    return TimeUnit.MILLI_SECOND;
+  // If we have no split or , we cannot guess the time unit.
+  if (index.metadata.indexing_settings.timestamp_field === null) {
+    return TimeUnit.UNKNOWN;
   }
-  // Not possible in theory as guessTimeUnit function is 
-  // called only on index with a timestamp field.
-  if (index.splits.length === 0 || index.splits[0] === undefined || index.splits[0].time_range === null) {
+  if (index.splits.length === 0) {
+    console.warn(`Index ${index.metadata.index_id} has no split, TimeUnit of timestamp_field set to UNKNOWN.`);
+    return TimeUnit.UNKNOWN;
+  }
+  if (index.splits[0]?.time_range === null) {
+    console.warn(`Index ${index.metadata.index_id} has a split with an undefined time_range, TimeUnit of timestamp_field set to UNKNOWN.`);
     return TimeUnit.MILLI_SECOND;
   }
   const range_start_values = index.splits.map(split => split.time_range === null ? 0 : split.time_range.start);
@@ -90,10 +94,10 @@ export function guessTimeUnit(index: Index): TimeUnit {
   }
   if (time_range_start_max < seconds_in_one_hundred_years * 1000 * 1000) {
     console.error('Quickwit UI does not support currently timestamp in MICRO_SECOND or NANO_SECOND.')
-    throw new Error('Quickwit UI does not support currently timestamp in MICRO_SECOND or NANO_SECOND.');
+    return TimeUnit.UNSUPPORTED
   }
   console.warn('Cannot guess correctly time unit, value `time_range_start_max` is too high, set to micro seconds', time_range_start_max);
-  return TimeUnit.MICRO_SECOND
+  return TimeUnit.UNSUPPORTED
 }
 
 export function getAllFields(doc_mapping: DocMapping) {

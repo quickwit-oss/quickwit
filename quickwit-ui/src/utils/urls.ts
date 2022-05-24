@@ -37,7 +37,7 @@ export function parseSearchUrl(historySearch: string): SearchRequest {
 
 export function toUrlSearchRequestParams(request: SearchRequest): URLSearchParams {
   const params = new URLSearchParams();
-  params.append("query", request.query);
+  params.append("query", request.query || '*');
   // We have to set the index ID in url params as it's not present in the UI path params.
   // This enables the react app to be able to get index ID from url params 
   // if the user enter directly the UI url.

@@ -33,9 +33,9 @@ opacity: 0.7;
 `
 
 export default function ApiUrlFooter(url: string) {
-  // TODO: use the right host with a DEV env.
   const urlMaxLength = 80;
-  const completeUrl = window.location.origin + '/' + url;
+  const origin = process.env.NODE_ENV === 'development' ? 'http://localhost:7280' : window.location.origin;
+  const completeUrl = `${origin}/${url}`;
   const isTooLong = completeUrl.length > urlMaxLength;
   return <Footer>
     <Typography sx={{ padding: '4px 5px', fontSize: '0.95em'}}>

@@ -387,9 +387,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "chitchat"
-version = "0.3.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d0246dc851629cdb02cd36924285daea20e25a07db811f5c89a1af0aabbbbf1"
+checksum = "63e16bc6492a6744d6e322e22562c3ab89404ba326aedb65a570799d2e042687"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2001,9 +2001,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.11.0"
+version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b10983b38c53aebdf33f542c6275b0f58a238129d00c4ae0e6fb59738d783ca"
+checksum = "7709cef83f0c1f58f666e746a08b21e0085f7440fa6a29cc194d68aac97a4225"
 
 [[package]]
 name = "oneshot"
@@ -2929,7 +2929,6 @@ dependencies = [
  "assert-json-diff",
  "async-trait",
  "bytes",
- "chitchat",
  "futures",
  "futures-util",
  "hyper",

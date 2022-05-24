@@ -1,0 +1,42 @@
+name: 'Build Quickwit binary'
+description: 'Build react app and and rust with cargo cross.'
+inputs:
+  target:
+    description: 'Target'
+    required: true
+  version:
+    description: 'Version'
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - run: echo "ASSET_FULL_NAME=quickwit-${{ inputs.version }}-${{ inputs.target }}" >> $GITHUB_ENV
+      shell: bash
+    - uses: actions/setup-node@v3
+      with:
+        node-version: 16
+        cache: 'yarn'
+        cache-dependency-path: quickwit-ui/yarn.lock
+    - run: make build-ui
+      shell: bash
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: ${{ inputs.target }}
+        override: true
+    - uses: actions-rs/cargo@v1
+      with:
+        use-cross: true
+        command: build
+        args: --release --features release-feature-vendored-set --target ${{ inputs.target }}
+    - name: Bundle archive
+      run: |
+        make archive BINARY_FILE=target/${{ inputs.target }}/release/quickwit \
+          BINARY_VERSION=${{ inputs.version }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
+      shell: bash
+    - name: Save binary archive for few days
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ env.ASSET_FULL_NAME }}.tar.gz
+        path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
+        retention-days: 3

@@ -9,6 +9,9 @@ LABEL maintainer="Quickwit, Inc. <hello@quickwit.io>"
 LABEL org.opencontainers.image.vendor="Quickwit, Inc."
 LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
+RUN echo "Add nodejs ppa" \
+    && curl -s https://deb.nodesource.com/setup_16.x | bash
+
 RUN apt-get -y update \
     && apt-get -y install ca-certificates \
                           clang \
@@ -17,6 +20,7 @@ RUN apt-get -y update \
                           libpq5  \
                           libssl-dev \
                           llvm \
+                          nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Required by tonic
@@ -25,6 +29,10 @@ RUN rustup component add rustfmt
 COPY . /quickwit
 
 WORKDIR /quickwit
+
+RUN echo "Building quickwit ui" \
+    && npm install --global yarn \
+    && make build-ui
 
 RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CARGO_PROFILE'" \
     && cargo build \
@@ -37,7 +45,7 @@ RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CAR
 # Change the default configuration file in order to make the rest,
 # grpc servers and gossip accessible from outside of docker.
 COPY ./config/quickwit.yaml ./config/quickwit.yaml
-RUN sed -i 's/#listen_address: 127.0.0.1/listen_address: 0.0.0.0/g' ./config/quickwit.yaml
+RUN sed -i 's/#[ ]*listen_address: 127.0.0.1/listen_address: 0.0.0.0/g' ./config/quickwit.yaml
 
 FROM debian:bullseye-slim AS quickwit
 
