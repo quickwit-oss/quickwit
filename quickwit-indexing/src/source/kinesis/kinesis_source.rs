@@ -154,7 +154,7 @@ impl KinesisSource {
             self.shutdown_at_stream_eof,
             self.kinesis_client.clone(),
             self.shard_consumers_tx.clone(),
-            self.retry_params,
+            self.retry_params.clone(),
         );
         let _shard_consumer_handle = shard_consumer.spawn(ctx);
         let shard_consumer_state = ShardConsumerState {

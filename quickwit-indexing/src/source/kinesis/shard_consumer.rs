@@ -269,7 +269,7 @@ mod tests {
             true,
             kinesis_client.clone(),
             sink_tx,
-            *DEFAULT_RETRY_PARAMS,
+            DEFAULT_RETRY_PARAMS.clone(),
         );
         let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn();
         let (exit_status, exit_state) = handle.join().await;
@@ -315,7 +315,7 @@ mod tests {
             true,
             kinesis_client.clone(),
             sink_tx,
-            *DEFAULT_RETRY_PARAMS,
+            DEFAULT_RETRY_PARAMS.clone(),
         );
         let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn();
         let (exit_status, exit_state) = handle.join().await;
@@ -373,7 +373,7 @@ mod tests {
             true,
             kinesis_client.clone(),
             sink_tx,
-            *DEFAULT_RETRY_PARAMS,
+            DEFAULT_RETRY_PARAMS.clone(),
         );
         let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn();
         let (exit_status, exit_state) = handle.join().await;
@@ -427,7 +427,7 @@ mod tests {
                 false,
                 kinesis_client.clone(),
                 sink_tx.clone(),
-                *DEFAULT_RETRY_PARAMS,
+                DEFAULT_RETRY_PARAMS.clone(),
             );
             let (_mailbox, handle) = universe.spawn_actor(shard_consumer_0).spawn();
             let (exit_status, _exit_state) = handle.join().await;
@@ -453,7 +453,7 @@ mod tests {
                 false,
                 kinesis_client.clone(),
                 sink_tx,
-                *DEFAULT_RETRY_PARAMS,
+                DEFAULT_RETRY_PARAMS.clone(),
             );
             let (_mailbox, handle) = universe.spawn_actor(shard_consumer_1).spawn();
             let (exit_status, _exit_state) = handle.join().await;
@@ -489,7 +489,7 @@ mod tests {
             false,
             kinesis_client.clone(),
             sink_tx,
-            *DEFAULT_RETRY_PARAMS,
+            DEFAULT_RETRY_PARAMS.clone(),
         );
         let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn();
         let (exit_status, _exit_state) = handle.join().await;

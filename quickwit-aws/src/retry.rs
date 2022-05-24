@@ -71,7 +71,7 @@ impl<E> IsRetryable for Retry<E> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct RetryParams {
     pub base_delay: Duration,
     pub max_delay: Duration,
