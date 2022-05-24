@@ -154,6 +154,7 @@ impl KinesisSource {
             self.shutdown_at_stream_eof,
             self.kinesis_client.clone(),
             self.shard_consumers_tx.clone(),
+            self.retry_params,
         );
         let _shard_consumer_handle = shard_consumer.spawn(ctx);
         let shard_consumer_state = ShardConsumerState {
@@ -173,9 +174,9 @@ impl Source for KinesisSource {
     async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
         let shards = list_shards(
             &self.kinesis_client,
+            &self.retry_params,
             &self.stream_name,
             None,
-            &self.retry_params,
         )
         .await?;
         for shard in shards {

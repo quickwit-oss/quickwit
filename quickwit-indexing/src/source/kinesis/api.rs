@@ -31,8 +31,8 @@ use rusoto_kinesis::{
 /// <https://docs.aws.amazon.com/kinesis/latest/APIReference/API_GetRecords.html>
 pub(crate) async fn get_records(
     kinesis_client: &KinesisClient,
-    shard_iterator: String,
     retry_params: &RetryParams,
+    shard_iterator: String,
 ) -> anyhow::Result<GetRecordsOutput> {
     let request = GetRecordsInput {
         shard_iterator,
@@ -60,10 +60,10 @@ pub(crate) async fn get_records(
 /// (oldest) record in the shard.
 pub(crate) async fn get_shard_iterator(
     kinesis_client: &KinesisClient,
+    retry_params: &RetryParams,
     stream_name: &str,
     shard_id: &str,
     from_sequence_number_exclusive: Option<String>,
-    retry_params: &RetryParams,
 ) -> anyhow::Result<Option<String>> {
     let shard_iterator_type = if from_sequence_number_exclusive.is_some() {
         "AFTER_SEQUENCE_NUMBER"
@@ -93,9 +93,9 @@ pub(crate) async fn get_shard_iterator(
 /// <https://docs.aws.amazon.com/kinesis/latest/APIReference/API_ListShards.html>
 pub(crate) async fn list_shards(
     kinesis_client: &KinesisClient,
+    retry_params: &RetryParams,
     stream_name: &str,
     limit_per_request: Option<usize>,
-    retry_params: &RetryParams,
 ) -> anyhow::Result<Vec<Shard>> {
     let mut shards = Vec::new();
     let mut next_token = None;
@@ -371,17 +371,17 @@ mod kinesis_localstack_tests {
         let shard_id = make_shard_id(0);
         let shard_iterator = get_shard_iterator(
             &kinesis_client,
+            &DEFAULT_RETRY_PARAMS,
             &stream_name,
             &shard_id,
             None,
-            &DEFAULT_RETRY_PARAMS,
         )
         .await?;
 
         let get_records_output = get_records(
             &kinesis_client,
-            shard_iterator.unwrap(),
             &DEFAULT_RETRY_PARAMS,
+            shard_iterator.unwrap(),
         )
         .await?;
         assert_eq!(get_records_output.records.len(), 2);
@@ -410,18 +410,18 @@ mod kinesis_localstack_tests {
         {
             let shard_iterator = get_shard_iterator(
                 &kinesis_client,
+                &DEFAULT_RETRY_PARAMS,
                 &stream_name,
                 &shard_id,
                 None,
-                &DEFAULT_RETRY_PARAMS,
             )
             .await?;
             assert!(shard_iterator.is_some());
 
             let get_records_output = get_records(
                 &kinesis_client,
-                shard_iterator.unwrap(),
                 &DEFAULT_RETRY_PARAMS,
+                shard_iterator.unwrap(),
             )
             .await?;
             assert_eq!(get_records_output.records.len(), 1);
@@ -430,18 +430,18 @@ mod kinesis_localstack_tests {
             let starting_sequence_number = sequence_numbers.get(&0).unwrap().first().cloned();
             let shard_iterator = get_shard_iterator(
                 &kinesis_client,
+                &DEFAULT_RETRY_PARAMS,
                 &stream_name,
                 &shard_id,
                 starting_sequence_number,
-                &DEFAULT_RETRY_PARAMS,
             )
             .await?;
             assert!(shard_iterator.is_some());
 
             let get_records_output = get_records(
                 &kinesis_client,
-                shard_iterator.unwrap(),
                 &DEFAULT_RETRY_PARAMS,
+                shard_iterator.unwrap(),
             )
             .await?;
             assert_eq!(get_records_output.records.len(), 0)
@@ -455,9 +455,9 @@ mod kinesis_localstack_tests {
         let (kinesis_client, stream_name) = setup("test-list-shards", 2).await?;
         let shards = list_shards(
             &kinesis_client,
+            &DEFAULT_RETRY_PARAMS,
             &stream_name,
             Some(1),
-            &DEFAULT_RETRY_PARAMS,
         )
         .await?;
         assert_eq!(shards.len(), 2);

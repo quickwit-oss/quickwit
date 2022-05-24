@@ -223,12 +223,16 @@ impl S3CompatibleObjectStorage {
     /// Creates an object storage given a region and a bucket name.
     pub fn new(region: Region, bucket: &str) -> anyhow::Result<S3CompatibleObjectStorage> {
         let s3_client = create_s3_client(region)?;
+        let retry_params = RetryParams {
+            max_attempts: 3,
+            ..Default::default()
+        };
         Ok(S3CompatibleObjectStorage {
             s3_client,
             bucket: bucket.to_string(),
             prefix: PathBuf::new(),
             multipart_policy: MultiPartPolicy::default(),
-            retry_params: RetryParams::default(),
+            retry_params,
         })
     }
 
@@ -262,7 +266,10 @@ impl S3CompatibleObjectStorage {
             bucket: self.bucket,
             prefix: prefix.to_path_buf(),
             multipart_policy: self.multipart_policy,
-            retry_params: RetryParams::default(),
+            retry_params: RetryParams{
+                max_attempts: 3,
+                ..Default::default()
+            },
         }
     }
 

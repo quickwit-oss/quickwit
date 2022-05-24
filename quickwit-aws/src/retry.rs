@@ -24,9 +24,9 @@ use futures::Future;
 use rand::Rng;
 use tracing::{debug, warn};
 
-const MAX_RETRY_ATTEMPTS: usize = 3;
-const BASE_DELAY: Duration = Duration::from_millis(if cfg!(test) { 1 } else { 250 });
-const MAX_DELAY: Duration = Duration::from_millis(if cfg!(test) { 1 } else { 20_000 });
+const DEFAULT_MAX_RETRY_ATTEMPTS: usize = 30;
+const DEFAULT_BASE_DELAY: Duration = Duration::from_millis(if cfg!(test) { 1 } else { 250 });
+const DEFAULT_MAX_DELAY: Duration = Duration::from_millis(if cfg!(test) { 1 } else { 20_000 });
 
 pub trait IsRetryable {
     fn is_retryable(&self) -> bool {
@@ -71,23 +71,26 @@ impl<E> IsRetryable for Retry<E> {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct RetryParams {
-    base_delay: Duration,
-    max_delay: Duration,
-    max_attempts: usize,
+    pub base_delay: Duration,
+    pub max_delay: Duration,
+    pub max_attempts: usize,
 }
 
 impl Default for RetryParams {
     fn default() -> Self {
         Self {
-            base_delay: BASE_DELAY,
-            max_delay: MAX_DELAY,
-            max_attempts: MAX_RETRY_ATTEMPTS,
+            base_delay: DEFAULT_BASE_DELAY,
+            max_delay: DEFAULT_MAX_DELAY,
+            max_attempts: DEFAULT_MAX_RETRY_ATTEMPTS,
         }
     }
 }
 
-pub async fn retry<F, U, E, Fut>(policy: &RetryParams, f: F) -> Result<U, E>
+/// Retry with exponential backoff and full jitter. Implementation and default values originate from
+/// the Java SDK. See also: <https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/>.
+pub async fn retry<F, U, E, Fut>(retry_params: &RetryParams, f: F) -> Result<U, E>
 where
     F: Fn() -> Fut,
     Fut: Future<Output = Result<U, E>>,
@@ -108,7 +111,7 @@ where
                 if !error.is_retryable() {
                     return Err(error);
                 }
-                if attempt_count >= policy.max_attempts {
+                if attempt_count >= retry_params.max_attempts {
                     warn!(
                         attempt_count = %attempt_count,
                         "Request failed"
@@ -116,9 +119,9 @@ where
                     return Err(error);
                 }
 
-                let ceiling_ms = (policy.base_delay.as_millis() as u64
+                let ceiling_ms = (retry_params.base_delay.as_millis() as u64
                     * 2u64.pow(attempt_count as u32))
-                .min(policy.max_delay.as_millis() as u64);
+                .min(retry_params.max_delay.as_millis() as u64);
                 let delay_ms = rand::thread_rng().gen_range(0..ceiling_ms);
                 debug!(
                     attempt_count = %attempt_count,
@@ -130,5 +133,64 @@ where
                 tokio::time::sleep(Duration::from_millis(delay_ms)).await;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::RwLock;
+
+    use futures::future::ready;
+
+    use super::{retry, Retry, RetryParams};
+
+    async fn simulate_retries<T>(values: Vec<Result<T, Retry<usize>>>) -> Result<T, Retry<usize>> {
+        let values_it = RwLock::new(values.into_iter());
+        retry(&RetryParams::default(), || {
+            ready(values_it.write().unwrap().next().unwrap())
+        })
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_retry_accepts_ok() {
+        assert_eq!(simulate_retries(vec![Ok(())]).await, Ok(()));
+    }
+
+    #[tokio::test]
+    async fn test_retry_does_retry() {
+        assert_eq!(
+            simulate_retries(vec![Err(Retry::Retryable(1)), Ok(())]).await,
+            Ok(())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_retry_stops_retrying_on_non_retryable_error() {
+        assert_eq!(
+            simulate_retries(vec![Err(Retry::NotRetryable(1)), Ok(())]).await,
+            Err(Retry::NotRetryable(1))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_retry_retries_up_at_most_attempts_times() {
+        let retry_sequence: Vec<_> = (0..3)
+            .map(|retry_id| Err(Retry::Retryable(retry_id)))
+            .chain(Some(Ok(())))
+            .collect();
+        assert_eq!(
+            simulate_retries(retry_sequence).await,
+            Err(Retry::Retryable(2))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_retry_retries_up_to_max_attempts_times() {
+        let retry_sequence: Vec<_> = (0..2)
+            .map(|retry_id| Err(Retry::Retryable(retry_id)))
+            .chain(Some(Ok(())))
+            .collect();
+        assert_eq!(simulate_retries(retry_sequence).await, Ok(()));
     }
 }

@@ -35,7 +35,7 @@ pub(crate) mod tests {
         create_stream, delete_stream, wait_for_stream_status,
     };
 
-    pub static DEFAULT_RETRY_PARAMS: Lazy<RetryParams> = Lazy::new(|| RetryParams::default());
+    pub static DEFAULT_RETRY_PARAMS: Lazy<RetryParams> = Lazy::new(RetryParams::default);
 
     pub fn get_localstack_client() -> KinesisClient {
         KinesisClient::new(Region::Custom {
@@ -64,7 +64,7 @@ pub(crate) mod tests {
         I: IntoIterator<Item = (usize, &'static str)>,
     {
         let shard_hash_keys: HashMap<usize, String> =
-            list_shards(kinesis_client, &stream_name, None, &DEFAULT_RETRY_PARAMS)
+            list_shards(kinesis_client, &DEFAULT_RETRY_PARAMS, &stream_name, None)
                 .await?
                 .into_iter()
                 .flat_map(|shard| {
