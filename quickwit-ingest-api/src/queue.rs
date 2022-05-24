@@ -28,6 +28,8 @@ use crate::{add_doc, Position};
 
 const FETCH_PAYLOAD_LIMIT: usize = 2_000_000; // 2MB
 
+const ROCKSDB_DEFAULT_CF: &str = "default";
+
 pub struct Queues {
     db: DB,
     last_position_per_queue: HashMap<String, Option<Position>>,
@@ -267,7 +269,12 @@ impl Queues {
 
     pub fn list_queues(&self) -> crate::Result<ListQueuesResponse> {
         Ok(ListQueuesResponse {
-            queues: self.last_position_per_queue.keys().cloned().collect(),
+            queues: self
+                .last_position_per_queue
+                .keys()
+                .filter(|queue_id| *queue_id != ROCKSDB_DEFAULT_CF)
+                .cloned()
+                .collect(),
         })
     }
 }

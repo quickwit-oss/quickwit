@@ -96,6 +96,11 @@ pub async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
             code: ServiceErrorCode::BadRequest,
             error: error.to_string(),
         }))
+    } else if let Some(error) = rejection.find::<warp::reject::PayloadTooLarge>() {
+        Ok(Format::PrettyJson.make_reply_for_err(FormatError {
+            code: ServiceErrorCode::BadRequest,
+            error: error.to_string(),
+        }))
     } else if let Some(error) = rejection.find::<serde_qs::Error>() {
         Ok(Format::PrettyJson.make_reply_for_err(FormatError {
             code: ServiceErrorCode::BadRequest,
