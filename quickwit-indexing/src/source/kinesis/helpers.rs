@@ -24,6 +24,7 @@ pub(crate) mod tests {
 
     use anyhow::bail;
     use once_cell::sync::Lazy;
+    use quickwit_aws::retry::RetryParams;
     use quickwit_common::rand::append_random_suffix;
     use rusoto_core::Region;
     use rusoto_kinesis::{Kinesis, KinesisClient, PutRecordsInput, PutRecordsRequestEntry};
@@ -33,11 +34,8 @@ pub(crate) mod tests {
     use crate::source::kinesis::api::tests::{
         create_stream, delete_stream, wait_for_stream_status,
     };
-    use crate::source::kinesis::retry::RetryPolicyParams;
 
-    pub static DEFAULT_RETRY_POLICY: Lazy<RetryPolicyParams> = Lazy::new(|| {
-        RetryPolicyParams::default()
-    });
+    pub static DEFAULT_RETRY_PARAMS: Lazy<RetryParams> = Lazy::new(|| RetryParams::default());
 
     pub fn get_localstack_client() -> KinesisClient {
         KinesisClient::new(Region::Custom {
@@ -66,7 +64,7 @@ pub(crate) mod tests {
         I: IntoIterator<Item = (usize, &'static str)>,
     {
         let shard_hash_keys: HashMap<usize, String> =
-            list_shards(kinesis_client, &stream_name, None, &DEFAULT_RETRY_POLICY)
+            list_shards(kinesis_client, &stream_name, None, &DEFAULT_RETRY_PARAMS)
                 .await?
                 .into_iter()
                 .flat_map(|shard| {

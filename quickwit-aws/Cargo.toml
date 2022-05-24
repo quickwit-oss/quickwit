@@ -1,0 +1,22 @@
+[package]
+name = "quickwit-aws"
+version = "0.2.1"
+authors = ['Quickwit, Inc. <hello@quickwit.io>']
+edition = "2021"
+license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
+description = "Util crate of quickwit"
+repository = "https://github.com/quickwit-oss/quickwit"
+homepage = "https://quickwit.io/"
+documentation = "https://quickwit.io/docs/"
+
+
+[dependencies]
+futures = "0.3"
+rand = "0.8"
+tracing = "0.1"
+tokio = "1.18"
+
+[dependencies.rusoto_core]
+version = '0.47'
+default-features = false
+features = ['rustls']
