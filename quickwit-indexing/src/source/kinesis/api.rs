@@ -33,8 +33,6 @@ pub(crate) async fn get_records(
     kinesis_client: &KinesisClient,
     retry_params: &RetryParams,
     shard_iterator: String,
-    retry_params: &RetryParams,
-    shard_iterator: String,
 ) -> anyhow::Result<GetRecordsOutput> {
     let request = GetRecordsInput {
         shard_iterator,
