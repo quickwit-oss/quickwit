@@ -266,7 +266,7 @@ impl S3CompatibleObjectStorage {
             bucket: self.bucket,
             prefix: prefix.to_path_buf(),
             multipart_policy: self.multipart_policy,
-            retry_params: RetryParams{
+            retry_params: RetryParams {
                 max_attempts: 3,
                 ..Default::default()
             },
