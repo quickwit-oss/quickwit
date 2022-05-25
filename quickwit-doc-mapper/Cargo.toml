@@ -19,7 +19,7 @@ regex = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tantivy = { version = "0.18.0", default-features=false, features = ["mmap", "lz4-compression", "quickwit"] }
-tantivy-query-grammar = { version = "0.18.0" }
+tantivy-query-grammar = "0.18.0"
 thiserror = "1.0"
 tracing = "0.1.29"
 typetag = "0.1"
