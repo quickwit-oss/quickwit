@@ -97,7 +97,7 @@ docker run -v $(pwd)/qwdata:/quickwit/qwdata -v $(pwd)/wikipedia-index-config.ya
 
 </Tabs>
 
-Check that a directory `./qwdata/wikipedia` has been created, Quickwit will write index files here and a `quickwit.json` which contains the [index metadata](../concepts/architecture.md#index).
+Check that a directory `./qwdata/indexes/wikipedia` has been created, Quickwit will write index files here and a `quickwit.json` which contains the [index metadata](../concepts/architecture.md#index).
 You're now ready to fill the index.
 
 
