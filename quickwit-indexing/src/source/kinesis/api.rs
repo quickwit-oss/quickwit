@@ -20,6 +20,8 @@
 // TODO: Remove when `KinesisSource` is fully implemented.
 #![allow(dead_code)]
 
+use quickwit_aws::error::RusotoErrorWrapper;
+use quickwit_aws::retry::{retry, RetryParams};
 use rusoto_kinesis::{
     GetRecordsInput, GetRecordsOutput, GetShardIteratorInput, Kinesis, KinesisClient,
     ListShardsInput, Shard,
@@ -29,16 +31,23 @@ use rusoto_kinesis::{
 /// <https://docs.aws.amazon.com/kinesis/latest/APIReference/API_GetRecords.html>
 pub(crate) async fn get_records(
     kinesis_client: &KinesisClient,
+    retry_params: &RetryParams,
     shard_iterator: String,
 ) -> anyhow::Result<GetRecordsOutput> {
     let request = GetRecordsInput {
         shard_iterator,
         limit: None,
     };
-    // TODO: Implement retry.
     // TODO: Return an error other than `anyhow::Error` so that expired shard iterators can be
     // handled properly.
-    let response = kinesis_client.get_records(request).await?;
+    let response = retry(retry_params, || async {
+        kinesis_client
+            .get_records(request.clone())
+            .await
+            .map_err(RusotoErrorWrapper::from)
+    })
+    .await?;
+
     Ok(response)
 }
 
@@ -51,6 +60,7 @@ pub(crate) async fn get_records(
 /// (oldest) record in the shard.
 pub(crate) async fn get_shard_iterator(
     kinesis_client: &KinesisClient,
+    retry_params: &RetryParams,
     stream_name: &str,
     shard_id: &str,
     from_sequence_number_exclusive: Option<String>,
@@ -68,8 +78,13 @@ pub(crate) async fn get_shard_iterator(
         starting_sequence_number: from_sequence_number_exclusive,
         ..Default::default()
     };
-    // TODO: Implement retry.
-    let response = kinesis_client.get_shard_iterator(request).await?;
+    let response = retry(retry_params, || async {
+        kinesis_client
+            .get_shard_iterator(request.clone())
+            .await
+            .map_err(RusotoErrorWrapper::from)
+    })
+    .await?;
     Ok(response.shard_iterator)
 }
 
@@ -78,6 +93,7 @@ pub(crate) async fn get_shard_iterator(
 /// <https://docs.aws.amazon.com/kinesis/latest/APIReference/API_ListShards.html>
 pub(crate) async fn list_shards(
     kinesis_client: &KinesisClient,
+    retry_params: &RetryParams,
     stream_name: &str,
     limit_per_request: Option<usize>,
 ) -> anyhow::Result<Vec<Shard>> {
@@ -97,8 +113,13 @@ pub(crate) async fn list_shards(
             max_results: limit_per_request.map(|limit| limit as i64).clone(),
             ..Default::default()
         };
-        // TODO: Implement retry.
-        let response = kinesis_client.list_shards(request).await?;
+        let response = retry(retry_params, || async {
+            kinesis_client
+                .list_shards(request.clone())
+                .await
+                .map_err(RusotoErrorWrapper::from)
+        })
+        .await?;
 
         if let Some(shrds) = response.shards {
             shards.extend_from_slice(&shrds);
@@ -122,6 +143,7 @@ pub(crate) mod tests {
     };
 
     use super::*;
+    use crate::source::kinesis::helpers::tests::DEFAULT_RETRY_PARAMS;
 
     /// Creates a Kinesis data stream.
     /// https://docs.aws.amazon.com/kinesis/latest/APIReference/API_CreateStream.html
@@ -134,11 +156,14 @@ pub(crate) mod tests {
             stream_name: stream_name.to_string(),
             shard_count: num_shards as i64,
         };
-        // TODO: Implement retry.
-        kinesis_client
-            .create_stream(request)
-            .await
-            .with_context(|| format!("Failed to create Kinesis data stream `{}`.", stream_name))?;
+        retry(&DEFAULT_RETRY_PARAMS, || async {
+            kinesis_client
+                .create_stream(request.clone())
+                .await
+                .map_err(RusotoErrorWrapper::from)
+        })
+        .await
+        .with_context(|| format!("Failed to create Kinesis data stream `{}`.", stream_name))?;
         Ok(())
     }
 
@@ -152,11 +177,14 @@ pub(crate) mod tests {
             stream_name: stream_name.to_string(),
             ..Default::default()
         };
-        // TODO: Implement retry.
-        kinesis_client
-            .delete_stream(request)
-            .await
-            .with_context(|| format!("Failed to delete Kinesis data stream `{}`.", stream_name))?;
+        retry(&DEFAULT_RETRY_PARAMS, || async {
+            kinesis_client
+                .delete_stream(request.clone())
+                .await
+                .map_err(RusotoErrorWrapper::from)
+        })
+        .await
+        .with_context(|| format!("Failed to delete Kinesis data stream `{}`.", stream_name))?;
         Ok(())
     }
 
@@ -170,8 +198,13 @@ pub(crate) mod tests {
             stream_name: stream_name.to_string(),
             ..Default::default()
         };
-        // TODO: Implement retry.
-        let response = kinesis_client.describe_stream(request).await?;
+        let response = retry(&DEFAULT_RETRY_PARAMS, || async {
+            kinesis_client
+                .describe_stream(request.clone())
+                .await
+                .map_err(RusotoErrorWrapper::from)
+        })
+        .await?;
         Ok(response.stream_description)
     }
     /// Lists the Kinesis data streams.
@@ -189,8 +222,13 @@ pub(crate) mod tests {
                 exclusive_start_stream_name,
                 limit: limit_per_request.map(|limit| limit as i64).clone(),
             };
-            // TODO: Implement retry.
-            let response = kinesis_client.list_streams(request).await?;
+            let response = retry(&DEFAULT_RETRY_PARAMS, || async {
+                kinesis_client
+                    .list_streams(request.clone())
+                    .await
+                    .map_err(RusotoErrorWrapper::from)
+            })
+            .await?;
             exclusive_start_stream_name = response.stream_names.last().cloned();
             has_more_streams = response.has_more_streams;
             stream_names.extend(response.stream_names);
@@ -212,8 +250,13 @@ pub(crate) mod tests {
             shard_to_merge: shard_id.to_string(),
             adjacent_shard_to_merge: adjacent_shard_id.to_string(),
         };
-        // TODO: Implement retry.
-        kinesis_client.merge_shards(request).await?;
+        retry(&DEFAULT_RETRY_PARAMS, || async {
+            kinesis_client
+                .merge_shards(request.clone())
+                .await
+                .map_err(RusotoErrorWrapper::from)
+        })
+        .await?;
         Ok(())
     }
 
@@ -231,8 +274,13 @@ pub(crate) mod tests {
             shard_to_split: shard_id.to_string(),
             new_starting_hash_key: starting_hash_key.to_string(),
         };
-        // TODO: Implement retry.
-        kinesis_client.split_shard(request).await?;
+        retry(&DEFAULT_RETRY_PARAMS, || async {
+            kinesis_client
+                .split_shard(request.clone())
+                .await
+                .map_err(RusotoErrorWrapper::from)
+        })
+        .await?;
         Ok(())
     }
 
@@ -278,7 +326,7 @@ mod kinesis_localstack_tests {
     };
     use crate::source::kinesis::helpers::tests::{
         get_localstack_client, make_shard_id, put_records_into_shards, setup, teardown,
-        wait_for_active_stream,
+        wait_for_active_stream, DEFAULT_RETRY_PARAMS,
     };
 
     #[tokio::test]
@@ -321,10 +369,21 @@ mod kinesis_localstack_tests {
         )
         .await?;
         let shard_id = make_shard_id(0);
-        let shard_iterator =
-            get_shard_iterator(&kinesis_client, &stream_name, &shard_id, None).await?;
+        let shard_iterator = get_shard_iterator(
+            &kinesis_client,
+            &DEFAULT_RETRY_PARAMS,
+            &stream_name,
+            &shard_id,
+            None,
+        )
+        .await?;
 
-        let get_records_output = get_records(&kinesis_client, shard_iterator.unwrap()).await?;
+        let get_records_output = get_records(
+            &kinesis_client,
+            &DEFAULT_RETRY_PARAMS,
+            shard_iterator.unwrap(),
+        )
+        .await?;
         assert_eq!(get_records_output.records.len(), 2);
         assert_eq!(
             std::str::from_utf8(&get_records_output.records[0].data)?,
@@ -349,17 +408,29 @@ mod kinesis_localstack_tests {
         .await?;
         let shard_id = make_shard_id(0);
         {
-            let shard_iterator =
-                get_shard_iterator(&kinesis_client, &stream_name, &shard_id, None).await?;
+            let shard_iterator = get_shard_iterator(
+                &kinesis_client,
+                &DEFAULT_RETRY_PARAMS,
+                &stream_name,
+                &shard_id,
+                None,
+            )
+            .await?;
             assert!(shard_iterator.is_some());
 
-            let get_records_output = get_records(&kinesis_client, shard_iterator.unwrap()).await?;
+            let get_records_output = get_records(
+                &kinesis_client,
+                &DEFAULT_RETRY_PARAMS,
+                shard_iterator.unwrap(),
+            )
+            .await?;
             assert_eq!(get_records_output.records.len(), 1);
         }
         {
             let starting_sequence_number = sequence_numbers.get(&0).unwrap().first().cloned();
             let shard_iterator = get_shard_iterator(
                 &kinesis_client,
+                &DEFAULT_RETRY_PARAMS,
                 &stream_name,
                 &shard_id,
                 starting_sequence_number,
@@ -367,7 +438,12 @@ mod kinesis_localstack_tests {
             .await?;
             assert!(shard_iterator.is_some());
 
-            let get_records_output = get_records(&kinesis_client, shard_iterator.unwrap()).await?;
+            let get_records_output = get_records(
+                &kinesis_client,
+                &DEFAULT_RETRY_PARAMS,
+                shard_iterator.unwrap(),
+            )
+            .await?;
             assert_eq!(get_records_output.records.len(), 0)
         }
         teardown(&kinesis_client, &stream_name).await;
@@ -377,7 +453,13 @@ mod kinesis_localstack_tests {
     #[tokio::test]
     async fn test_list_shards() -> anyhow::Result<()> {
         let (kinesis_client, stream_name) = setup("test-list-shards", 2).await?;
-        let shards = list_shards(&kinesis_client, &stream_name, Some(1)).await?;
+        let shards = list_shards(
+            &kinesis_client,
+            &DEFAULT_RETRY_PARAMS,
+            &stream_name,
+            Some(1),
+        )
+        .await?;
         assert_eq!(shards.len(), 2);
         assert_eq!(shards[0].shard_id, make_shard_id(0));
         assert_eq!(shards[1].shard_id, make_shard_id(1));
