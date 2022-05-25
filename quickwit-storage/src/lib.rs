@@ -41,7 +41,6 @@ mod object_storage;
 mod payload;
 mod prefix_storage;
 mod ram_storage;
-mod retry;
 mod split;
 mod storage_resolver;
 
