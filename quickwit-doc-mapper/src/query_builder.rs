@@ -20,10 +20,10 @@
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
 use tantivy::schema::{Field, Schema};
-use tantivy_query_grammar::{UserInputAst, UserInputLeaf};
+use tantivy_query_grammar::{UserInputAst, UserInputLeaf, UserInputLiteral};
 
 use crate::sort_by::validate_sort_by_field_name;
-use crate::{QueryParserError, QUICKWIT_TOKENIZER_MANAGER};
+use crate::{QueryParserError, DYNAMIC_FIELD_NAME, QUICKWIT_TOKENIZER_MANAGER};
 
 /// Build a `Query` with field resolution & forbidding range clauses.
 pub(crate) fn build_query(
@@ -38,8 +38,17 @@ pub(crate) fn build_query(
         validate_sort_by_field_name(sort_by_field, &schema)?;
     }
 
-    if has_range_clause(user_input_ast) {
+    if has_range_clause(&user_input_ast) {
         return Err(anyhow::anyhow!("Range queries are not currently allowed.").into());
+    }
+
+    if !has_search_field(&user_input_ast)
+        && request.search_fields.is_empty()
+        && (default_field_names.is_empty() || default_field_names == [DYNAMIC_FIELD_NAME])
+    {
+        return Err(
+            anyhow::anyhow!("No default field declared and no field specified in query.").into(),
+        );
     }
 
     let search_fields = if request.search_fields.is_empty() {
@@ -55,7 +64,7 @@ pub(crate) fn build_query(
     Ok(query)
 }
 
-fn has_range_clause(user_input_ast: UserInputAst) -> bool {
+fn has_range_clause(user_input_ast: &UserInputAst) -> bool {
     match user_input_ast {
         UserInputAst::Clause(sub_queries) => {
             for (_, sub_ast) in sub_queries {
@@ -65,8 +74,27 @@ fn has_range_clause(user_input_ast: UserInputAst) -> bool {
             }
             false
         }
-        UserInputAst::Boost(ast, _) => has_range_clause(*ast),
-        UserInputAst::Leaf(leaf) => matches!(*leaf, UserInputLeaf::Range { .. }),
+        UserInputAst::Boost(ast, _) => has_range_clause(ast),
+        UserInputAst::Leaf(leaf) => matches!(**leaf, UserInputLeaf::Range { .. }),
+    }
+}
+
+fn has_search_field(user_input_ast: &UserInputAst) -> bool {
+    match user_input_ast {
+        UserInputAst::Clause(sub_queries) => {
+            for (_, sub_ast) in sub_queries {
+                if has_search_field(sub_ast) {
+                    return true;
+                }
+            }
+            false
+        }
+        UserInputAst::Boost(ast, _) => has_search_field(ast),
+        UserInputAst::Leaf(leaf) => match &**leaf {
+            UserInputLeaf::Literal(UserInputLiteral { field_name, .. }) => field_name.is_some(),
+            UserInputLeaf::Range { field, .. } => field.is_some(),
+            _ => true,
+        },
     }
 }
 
@@ -87,6 +115,7 @@ mod test {
     use tantivy::schema::{Schema, TEXT};
 
     use super::build_query;
+    use crate::{DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME};
 
     enum TestExpectation {
         Err(&'static str),
@@ -99,7 +128,8 @@ mod test {
         schema_builder.add_text_field("desc", TEXT);
         schema_builder.add_text_field("server.name", TEXT);
         schema_builder.add_text_field("server.mem", TEXT);
-        schema_builder.add_text_field("_source", TEXT);
+        schema_builder.add_text_field(SOURCE_FIELD_NAME, TEXT);
+        schema_builder.add_json_field(DYNAMIC_FIELD_NAME, TEXT);
         schema_builder.build()
     }
 
@@ -107,6 +137,7 @@ mod test {
     fn check_build_query(
         query_str: &str,
         search_fields: Vec<String>,
+        default_search_fields: Option<Vec<String>>,
         expected: TestExpectation,
     ) -> anyhow::Result<()> {
         let request = SearchRequest {
@@ -122,7 +153,8 @@ mod test {
             sort_by_field: None,
         };
 
-        let default_field_names = vec!["title".to_string(), "desc".to_string()];
+        let default_field_names =
+            default_search_fields.unwrap_or_else(|| vec!["title".to_string(), "desc".to_string()]);
 
         let query_result = build_query(make_schema(), &request, &default_field_names);
         match expected {
@@ -162,55 +194,78 @@ mod test {
         check_build_query(
             "foo:bar",
             vec![],
+            None,
             TestExpectation::Err("Field does not exists: 'foo'"),
         )
         .unwrap();
         check_build_query(
             "server.type:hpc server.mem:4GB",
             vec![],
+            None,
             TestExpectation::Err("Field does not exists: 'server.type'"),
         )
         .unwrap();
         check_build_query(
             "title:[a TO b]",
             vec![],
+            None,
             TestExpectation::Err("Range queries are not currently allowed."),
         )
         .unwrap();
         check_build_query(
             "title:{a TO b} desc:foo",
             vec![],
+            None,
             TestExpectation::Err("Range queries are not currently allowed."),
         )
         .unwrap();
         check_build_query(
             "title:>foo",
             vec![],
+            None,
             TestExpectation::Err("Range queries are not currently allowed."),
         )
         .unwrap();
         check_build_query(
             "title:foo desc:bar _source:baz",
             vec![],
+            None,
             TestExpectation::Ok("TermQuery"),
         )
         .unwrap();
         check_build_query(
             "title:foo desc:bar",
             vec!["url".to_string()],
+            None,
             TestExpectation::Err("Field does not exists: 'url'"),
         )
         .unwrap();
         check_build_query(
             "server.name:\".bar:\" server.mem:4GB",
             vec!["server.name".to_string()],
+            None,
             TestExpectation::Ok("TermQuery"),
         )
         .unwrap();
         check_build_query(
             "server.name:\"for.bar:b\" server.mem:4GB",
             vec![],
+            None,
             TestExpectation::Ok("TermQuery"),
+        )
+        .unwrap();
+        check_build_query(
+            "foo",
+            vec![],
+            Some(vec![]),
+            TestExpectation::Err("No default field declared and no field specified in query."),
+        )
+        .unwrap();
+        check_build_query(
+            "bar",
+            vec![],
+            Some(vec![DYNAMIC_FIELD_NAME.to_string()]),
+            TestExpectation::Err("No default field declared and no field specified in query."),
         )
         .unwrap();
     }
