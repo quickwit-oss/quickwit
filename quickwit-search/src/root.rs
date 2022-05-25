@@ -1250,4 +1250,43 @@ mod tests {
         );
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_root_search_invalid_start_offset() -> anyhow::Result<()> {
+        let search_request = quickwit_proto::SearchRequest {
+            index_id: "test-idx".to_string(),
+            query: "test".to_string(),
+            search_fields: vec!["body".to_string()],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 10,
+            start_offset: 20_000,
+            ..Default::default()
+        };
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
+            });
+        metastore.expect_list_splits().returning(
+            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+                Ok(vec![mock_split("split1")])
+            },
+        );
+        let client_pool =
+            SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
+        let cluster_client = ClusterClient::new(client_pool.clone());
+        let search_response =
+            root_search(&search_request, &metastore, &cluster_client, &client_pool).await;
+        assert!(search_response.is_err());
+        assert_eq!(
+            search_response.unwrap_err().to_string(),
+            "Invalid argument: max value for start_offset is 10_000, but got 20000",
+        );
+        Ok(())
+    }
 }
