@@ -20,7 +20,6 @@
 use std::any::Any;
 use std::borrow::Borrow;
 use std::fmt;
-use std::sync::Arc;
 
 use tokio::sync::{oneshot, watch};
 use tokio::time::timeout;
@@ -28,7 +27,7 @@ use tracing::error;
 
 use crate::actor_state::ActorState;
 use crate::channel_with_priority::Priority;
-use crate::join_handle::{JoinHandle, JoinOutcome};
+use crate::join_handle::JoinHandle;
 use crate::mailbox::Command;
 use crate::observation::ObservationType;
 use crate::{Actor, ActorContext, ActorExitStatus, Mailbox, Observation};
@@ -38,7 +37,6 @@ pub struct ActorHandle<A: Actor> {
     actor_context: ActorContext<A>,
     last_state: watch::Receiver<A::ObservableState>,
     join_handle: JoinHandle,
-    pub actor_exit_status: watch::Receiver<Option<ActorExitStatus>>,
 }
 
 /// Describes the health of a given actor.
@@ -53,7 +51,7 @@ pub enum Health {
 }
 
 impl<A: Actor> fmt::Debug for ActorHandle<A> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("ActorHandle")
             .field("name", &self.actor_context.actor_instance_id())
@@ -73,18 +71,11 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
 
     fn health(&self) -> Health {
         let actor_state = self.state();
-        if actor_state == ActorState::Exit {
-            let actor_exit_status = self
-                .actor_exit_status
-                .borrow()
-                .clone()
-                .unwrap_or(ActorExitStatus::Panicked);
-            if actor_exit_status.is_success() {
-                Health::Success
-            } else {
-                error!(actor=self.name(), exit_status=?actor_exit_status, "actor-exit-without-success");
-                Health::FailureOrUnhealthy
-            }
+        if actor_state == ActorState::Success {
+            Health::Success
+        } else if actor_state == ActorState::Failure {
+            error!(actor = self.name(), "actor-exit-without-success");
+            Health::FailureOrUnhealthy
         } else if self
             .actor_context
             .progress()
@@ -103,13 +94,11 @@ impl<A: Actor> ActorHandle<A> {
         last_state: watch::Receiver<A::ObservableState>,
         join_handle: JoinHandle,
         actor_context: ActorContext<A>,
-        actor_exit_status: watch::Receiver<Option<ActorExitStatus>>,
     ) -> Self {
         ActorHandle {
             actor_context,
             last_state,
             join_handle,
-            actor_exit_status,
         }
     }
 
@@ -128,7 +117,7 @@ impl<A: Actor> ActorHandle<A> {
     /// This method timeout if reaching the end of the message takes more than an HEARTBEAT.
     pub async fn process_pending_and_observe(&self) -> Observation<A::ObservableState> {
         let (tx, rx) = oneshot::channel();
-        if self.actor_context.state() != ActorState::Exit
+        if !self.actor_context.state().is_exit()
             && self
                 .actor_context
                 .mailbox()
@@ -198,22 +187,8 @@ impl<A: Actor> ActorHandle<A> {
     }
 
     /// Waits until the actor exits by itself. This is the equivalent of `Thread::join`.
-    pub async fn join(mut self) -> (ActorExitStatus, A::ObservableState) {
-        let exit_status = match self.join_handle.join().await {
-            JoinOutcome::Ok => self
-                .actor_exit_status
-                .borrow()
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(|| {
-                    ActorExitStatus::Failure(Arc::new(anyhow::anyhow!(
-                        "Could not find exit status"
-                    )))
-                }),
-            JoinOutcome::Error => ActorExitStatus::Killed,
-            JoinOutcome::Panic => ActorExitStatus::Panicked,
-        };
-        // TODO fixme
+    pub async fn join(self) -> (ActorExitStatus, A::ObservableState) {
+        let exit_status = self.join_handle.join().await;
         let observation = self.last_state.borrow().clone();
         (exit_status, observation)
     }
@@ -224,7 +199,7 @@ impl<A: Actor> ActorHandle<A> {
     /// after the current active message and the current command queue have been processed.
     pub async fn observe(&self) -> Observation<A::ObservableState> {
         let (tx, rx) = oneshot::channel();
-        if self.actor_context.state() == ActorState::Exit {
+        if self.actor_context.state().is_exit() {
             let state = self.last_observation().borrow().clone();
             return Observation {
                 obs_type: ObservationType::PostMortem,
@@ -270,7 +245,7 @@ impl<A: Actor> ActorHandle<A> {
             }
             Err(_) => {
                 let state = self.last_observation();
-                let obs_type = if self.actor_context.state() == ActorState::Exit {
+                let obs_type = if self.actor_context.state().is_exit() {
                     ObservationType::PostMortem
                 } else {
                     ObservationType::Timeout

@@ -28,8 +28,10 @@ pub enum ActorState {
     Idle = 1,
     /// Pause means that the actor processes no message but can process commands.
     Paused = 2,
-    /// Exit means that the actor exited and cannot return to any other states.
-    Exit = 3,
+    /// Success means that the actor exited and cannot return to any other states.
+    Success = 3,
+    /// Failure means that the actor exited with a failure or panicked.
+    Failure = 4,
 }
 
 impl From<u32> for ActorState {
@@ -38,7 +40,8 @@ impl From<u32> for ActorState {
             0 => ActorState::Processing,
             1 => ActorState::Idle,
             2 => ActorState::Paused,
-            3 => ActorState::Exit,
+            3 => ActorState::Success,
+            4 => ActorState::Failure,
             _ => {
                 panic!(
                     "Found forbidden u32 value for ActorState `{}`. This should never happen.",
@@ -58,6 +61,13 @@ impl From<ActorState> for AtomicState {
 impl ActorState {
     pub fn is_running(&self) -> bool {
         *self == ActorState::Idle || *self == ActorState::Processing
+    }
+
+    pub fn is_exit(&self) -> bool {
+        match self {
+            ActorState::Processing | ActorState::Idle | ActorState::Paused => false,
+            ActorState::Success | ActorState::Failure => true,
+        }
     }
 }
 
@@ -108,8 +118,13 @@ impl AtomicState {
         );
     }
 
-    pub fn exit(&self) {
-        self.0.store(ActorState::Exit as u32, Ordering::Release);
+    pub(crate) fn exit(&self, success: bool) {
+        let new_state = if success {
+            ActorState::Success
+        } else {
+            ActorState::Failure
+        };
+        self.0.fetch_max(new_state as u32, Ordering::Release);
     }
 
     pub fn get_state(&self) -> ActorState {
@@ -126,7 +141,8 @@ mod tests {
         Idle,
         Pause,
         Resume,
-        Quit,
+        ExitSuccess,
+        ExitFailure,
     }
 
     impl Operation {
@@ -142,11 +158,13 @@ mod tests {
                     state.pause();
                 }
                 Operation::Resume => state.resume(),
-                Operation::Quit => state.exit(),
+                Operation::ExitSuccess => state.exit(true),
+                Operation::ExitFailure => state.exit(false),
             }
         }
     }
 
+    #[track_caller]
     fn test_transition(from_state: ActorState, op: Operation, expected_state: ActorState) {
         let state = AtomicState::from(from_state);
         op.apply(&state);
@@ -164,20 +182,51 @@ mod tests {
             Operation::Resume,
             ActorState::Processing,
         );
-        test_transition(ActorState::Processing, Operation::Quit, ActorState::Exit);
-
+        test_transition(
+            ActorState::Processing,
+            Operation::ExitSuccess,
+            ActorState::Success,
+        );
         test_transition(ActorState::Paused, Operation::Pause, ActorState::Paused);
         test_transition(
             ActorState::Paused,
             Operation::Resume,
             ActorState::Processing,
         );
-        test_transition(ActorState::Paused, Operation::Quit, ActorState::Exit);
+        test_transition(
+            ActorState::Paused,
+            Operation::ExitSuccess,
+            ActorState::Success,
+        );
+        test_transition(
+            ActorState::Success,
+            Operation::ExitFailure,
+            ActorState::Failure,
+        );
 
-        test_transition(ActorState::Exit, Operation::Process, ActorState::Exit);
-        test_transition(ActorState::Exit, Operation::Idle, ActorState::Exit);
-        test_transition(ActorState::Exit, Operation::Pause, ActorState::Exit);
-        test_transition(ActorState::Exit, Operation::Resume, ActorState::Exit);
-        test_transition(ActorState::Exit, Operation::Quit, ActorState::Exit);
+        test_transition(ActorState::Success, Operation::Process, ActorState::Success);
+        test_transition(ActorState::Success, Operation::Idle, ActorState::Success);
+        test_transition(ActorState::Success, Operation::Pause, ActorState::Success);
+        test_transition(ActorState::Success, Operation::Resume, ActorState::Success);
+        test_transition(
+            ActorState::Success,
+            Operation::ExitSuccess,
+            ActorState::Success,
+        );
+
+        test_transition(ActorState::Failure, Operation::Process, ActorState::Failure);
+        test_transition(ActorState::Failure, Operation::Idle, ActorState::Failure);
+        test_transition(ActorState::Failure, Operation::Pause, ActorState::Failure);
+        test_transition(ActorState::Failure, Operation::Resume, ActorState::Failure);
+        test_transition(
+            ActorState::Failure,
+            Operation::ExitSuccess,
+            ActorState::Failure,
+        );
+        test_transition(
+            ActorState::Failure,
+            Operation::ExitFailure,
+            ActorState::Failure,
+        );
     }
 }
