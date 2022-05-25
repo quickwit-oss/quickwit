@@ -106,6 +106,7 @@ impl Queues {
     pub fn drop_queue(&mut self, queue_id: &str) -> crate::Result<()> {
         let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
         self.db.drop_cf(&real_queue_id)?;
+        self.last_position_per_queue.remove(&real_queue_id);
         Ok(())
     }
 
@@ -383,6 +384,12 @@ mod tests {
         }
         assert_eq!(
             HashSet::<String>::from_iter(queue_ids),
+            HashSet::from_iter(queues.list_queues().unwrap().queues)
+        );
+
+        queues.drop_queue("foo").unwrap();
+        assert_eq!(
+            HashSet::<String>::from_iter(vec!["bar".to_string(), "baz".to_string()]),
             HashSet::from_iter(queues.list_queues().unwrap().queues)
         );
     }
