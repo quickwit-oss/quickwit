@@ -38,6 +38,8 @@ pub enum SearchError {
     StorageResolverError(#[from] StorageResolverError),
     #[error("Invalid aggregation request: {0}")]
     InvalidAggregationRequest(String),
+    #[error("Invalid argument: {0}")]
+    InvalidArgument(String),
     #[error("Invalid query: {0}")]
     InvalidQuery(String),
 }
