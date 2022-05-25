@@ -119,23 +119,31 @@ impl Handler<Loop> for IngestApiGarbageCollector {
         info!("ingest-api-garbage-collect-operation");
         self.counters.num_passes += 1;
 
-        let queues: HashSet<String> = self
+        let list_queues_result = self
             .ingest_api_service
             .ask_for_res(ListQueuesRequest {})
-            .await
-            .map_err(|error| anyhow::anyhow!(error))?
-            .queues
-            .into_iter()
-            .collect();
+            .await;
+        let queues: HashSet<String> = match list_queues_result {
+            Ok(list_queues_resp) => list_queues_resp.queues.into_iter().collect(),
+            Err(error) => {
+                error!(error=?error, "Failed to list queues.");
+                ctx.schedule_self_msg(RUN_INTERVAL, Loop).await;
+                return Ok(());
+            }
+        };
 
-        let indexes: HashSet<String> = self
-            .metastore
-            .list_indexes_metadatas()
-            .await
-            .map_err(|error| anyhow::anyhow!(error))?
-            .into_iter()
-            .map(|index_metadata| index_metadata.index_id)
-            .collect();
+        let list_indexes_result = self.metastore.list_indexes_metadatas().await;
+        let indexes: HashSet<String> = match list_indexes_result {
+            Ok(list_indexes_resp) => list_indexes_resp
+                .into_iter()
+                .map(|index_metadata| index_metadata.index_id)
+                .collect(),
+            Err(error) => {
+                error!(error=?error, "Failed to list indexes.");
+                ctx.schedule_self_msg(RUN_INTERVAL, Loop).await;
+                return Ok(());
+            }
+        };
 
         for queue_id in queues.difference(&indexes) {
             if let Err(delete_queue_error) = self.delete_queue(queue_id).await {
