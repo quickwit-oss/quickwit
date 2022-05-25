@@ -25,6 +25,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox};
+use quickwit_aws::retry::RetryParams;
 use rusoto_kinesis::{KinesisClient, Record};
 use serde_json::json;
 use tokio::sync::mpsc;
@@ -75,6 +76,7 @@ pub(super) struct ShardConsumer {
     state: ShardConsumerState,
     kinesis_client: KinesisClient,
     sink: mpsc::Sender<ShardConsumerMessage>,
+    retry_params: RetryParams,
 }
 
 impl fmt::Debug for ShardConsumer {
@@ -95,6 +97,7 @@ impl ShardConsumer {
         shutdown_at_shard_eof: bool,
         kinesis_client: KinesisClient,
         sink: mpsc::Sender<ShardConsumerMessage>,
+        retry_params: RetryParams,
     ) -> Self {
         Self {
             stream_name,
@@ -104,6 +107,7 @@ impl ShardConsumer {
             shutdown_at_shard_eof,
             kinesis_client,
             sink,
+            retry_params,
         }
     }
 
@@ -148,6 +152,7 @@ impl Actor for ShardConsumer {
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         self.state.next_shard_iterator = get_shard_iterator(
             &self.kinesis_client,
+            &self.retry_params,
             &self.stream_name,
             &self.shard_id,
             self.from_sequence_number_exclusive.clone(),
@@ -179,7 +184,8 @@ impl Handler<Loop> for ShardConsumer {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         if let Some(shard_iterator) = self.state.next_shard_iterator.take() {
-            let response = get_records(&self.kinesis_client, shard_iterator).await?;
+            let response =
+                get_records(&self.kinesis_client, &self.retry_params, shard_iterator).await?;
             self.state.lag_millis = response.millis_behind_latest.clone();
             self.state.next_shard_iterator = response.next_shard_iterator;
 
@@ -237,7 +243,7 @@ mod tests {
     use super::*;
     use crate::source::kinesis::api::tests::{merge_shards, split_shard};
     use crate::source::kinesis::helpers::tests::{
-        make_shard_id, put_records_into_shards, setup, teardown,
+        make_shard_id, put_records_into_shards, setup, teardown, DEFAULT_RETRY_PARAMS,
     };
 
     async fn drain_messages(
@@ -263,6 +269,7 @@ mod tests {
             true,
             kinesis_client.clone(),
             sink_tx,
+            DEFAULT_RETRY_PARAMS.clone(),
         );
         let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn();
         let (exit_status, exit_state) = handle.join().await;
@@ -308,6 +315,7 @@ mod tests {
             true,
             kinesis_client.clone(),
             sink_tx,
+            DEFAULT_RETRY_PARAMS.clone(),
         );
         let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn();
         let (exit_status, exit_state) = handle.join().await;
@@ -365,6 +373,7 @@ mod tests {
             true,
             kinesis_client.clone(),
             sink_tx,
+            DEFAULT_RETRY_PARAMS.clone(),
         );
         let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn();
         let (exit_status, exit_state) = handle.join().await;
@@ -418,6 +427,7 @@ mod tests {
                 false,
                 kinesis_client.clone(),
                 sink_tx.clone(),
+                DEFAULT_RETRY_PARAMS.clone(),
             );
             let (_mailbox, handle) = universe.spawn_actor(shard_consumer_0).spawn();
             let (exit_status, _exit_state) = handle.join().await;
@@ -443,6 +453,7 @@ mod tests {
                 false,
                 kinesis_client.clone(),
                 sink_tx,
+                DEFAULT_RETRY_PARAMS.clone(),
             );
             let (_mailbox, handle) = universe.spawn_actor(shard_consumer_1).spawn();
             let (exit_status, _exit_state) = handle.join().await;
@@ -478,6 +489,7 @@ mod tests {
             false,
             kinesis_client.clone(),
             sink_tx,
+            DEFAULT_RETRY_PARAMS.clone(),
         );
         let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn();
         let (exit_status, _exit_state) = handle.join().await;
