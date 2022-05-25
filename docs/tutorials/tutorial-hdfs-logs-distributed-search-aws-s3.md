@@ -103,7 +103,7 @@ This step can also be executed on your local machine. The `create` command creat
 :::
 
 ## Index logs
-The dataset is a compressed [ndjson file](https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz). Instead of downloading and indexing the data in separate steps, we will use pipes to send a decompressed stream to Quickwit directly.
+The dataset is a compressed [NDJSON file](https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz). Instead of downloading and indexing the data in separate steps, we will use pipes to send a decompressed stream to Quickwit directly.
 
 ```bash
 curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz | gunzip | ./quickwit index ingest --index hdfs-logs --config ./config.yaml
@@ -228,28 +228,30 @@ which returns the json
 
 ```json
 {
-  "num_hits": 364,
+  "num_hits": 10000,
   "hits": [
     {
-      "attributes.class": "org.apache.hadoop.hdfs.server.datanode.DataNode",
-      "body": "RECEIVED SIGNAL 15: SIGTERM",
-      "resource": {"service": "datanode/02"},
-      "severity_text": "ERROR",
-      "timestamp": 1442629246
+      "body": "Receiving BP-108841162-10.10.34.11-1440074360971:blk_1073836032_95208 src: /10.10.34.20:60300 dest: /10.10.34.13:50010",
+      "resource": {
+        "service": "datanode/03"
+      },
+      "severity_text": "INFO",
+      "tenant_id": 58,
+      "timestamp": 1440670490
     }
     ...
   ],
-  "elapsed_time_micros": 505923
+  "elapsed_time_micros": 2502
 }
 ```
 
-You can see that this query has only 364 hits and that the server responds in 0.5 seconds.
+You can see that this query has 10 000 hits and that the server responds in 2.5 milliseconds.
 
-The index config shows that we can use the timestamp field parameters `startTimestamp` and `endTimestamp` and benefit from time pruning. Behind the scenes, Quickwit will only query [splits](../concepts/architecture.md) that have logs in this time range. This can have a significant impact on speed.
+The index config shows that we can use the timestamp field parameters `start_timestamp` and `end_timestamp` and benefit from time pruning. Behind the scenes, Quickwit will only query [splits](../concepts/architecture.md) that have logs in this time range. This can have a significant impact on speed.
 
 
 ```bash
-curl -v 'http://your-load-balancer/api/v1/hdfs_logs/search?query=severity_text:ERROR&startTimestamp=1442834249&endTimestamp=1442900000'
+curl -v 'http://your-load-balancer/api/v1/hdfs_logs/search?query=severity_text:ERROR&start_timestamp=1442834249&end_timestamp=1442900000'
 ```
 
 Returns 6 hits in 0.36 seconds.

@@ -69,7 +69,6 @@ doc_mapping:
           type: text
           tokenizer: raw # Text field referenced as tag must have the `raw` tokenier.
   tag_fields: [tenant_id]
-  store_source: false
 
 indexing_settings:
   timestamp_field: timestamp
@@ -80,14 +79,6 @@ search_settings:
 
 Now let's create the index with the `create` subcommand (assuming you are inside quickwit install directory):
 
-Let's make use of the default configuration file provided in quickwit installation throughout this guide by setting the `QW_CONFIG` environment variable.
-
-```bash
-# Quickwit commands need a config file.
-# Setting it as an environment variable helps avoid repeating it as a flag.
-export QW_CONFIG=./config/quickwit.yaml
-```
-
 ```bash
 ./quickwit index create --index-config hdfs_logs_index_config.yaml
 ```
@@ -95,21 +86,21 @@ export QW_CONFIG=./config/quickwit.yaml
 You're now ready to fill the index.
 
 ## Index logs
-The dataset is a compressed [ndjson file](https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz). Instead of downloading it and then indexing the data, we will use pipes to directly send a decompressed stream to Quickwit.
+The dataset is a compressed [NDJSON file](https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz). Instead of downloading it and then indexing the data, we will use pipes to directly send a decompressed stream to Quickwit.
 This can take up to 10 min on a modern machine, the perfect time for a coffee break.
 
 ```bash
 curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz | gunzip | ./quickwit index ingest --index hdfs-logs
 ```
 
-If you are in a hurry, use the sample dataset that contains 10 000 documents:
+If you are in a hurry, use the sample dataset that contains 10 000 documents, we will use this dataset for the example queries:
 ```bash
 curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10000.json | ./quickwit index ingest --index hdfs-logs
 ```
 
-You can check it's working by using `search` subcommand and look for `ERROR` in `serverity_text` field:
+You can check it's working by using `search` subcommand and look for `INFO` in `serverity_text` field:
 ```bash
-./quickwit index search --index hdfs-logs  --query "severity_text:ERROR"
+./quickwit index search --index hdfs-logs  --query "severity_text:INFO"
 ```
 
 :::note
@@ -121,7 +112,7 @@ The `ingest` subcommand generates [splits](../concepts/architecture.md) of 5 mil
 
 ## Start your server
 
-The command `service run searcher` starts an http server which provides a [REST API](../reference/rest-api.md).
+The command `run --service searcher` starts an http server which provides a [REST API](../reference/rest-api.md).
 
 
 ```bash
@@ -131,83 +122,38 @@ The command `service run searcher` starts an http server which provides a [REST 
 Let's execute the same query on field `severity_text` but with `cURL`:
 
 ```bash
-curl "http://127.0.0.1:7280/api/v1/hdfs-logs/search?query=severity_text:ERROR"
+curl "http://127.0.0.1:7280/api/v1/hdfs-logs/search?query=severity_text:INFO"
 ```
 
 which returns the json
 
 ```json
 {
-  "num_hits": 364,
+  "num_hits": 10000,
   "hits": [
     {
-      "attributes.class": "org.apache.hadoop.hdfs.server.datanode.DataNode",
-      "body": "RECEIVED SIGNAL 15: SIGTERM",
-      "resource": { "service": "datanode/02" },
-      "severity_text": "ERROR",
-      "timestamp": 1442629246
+      "body": "Receiving BP-108841162-10.10.34.11-1440074360971:blk_1073836032_95208 src: /10.10.34.20:60300 dest: /10.10.34.13:50010",
+      "resource": {
+        "service": "datanode/03"
+      },
+      "severity_text": "INFO",
+      "tenant_id": 58,
+      "timestamp": 1440670490
     }
     ...
   ],
-  "elapsed_time_micros": 505923
+  "elapsed_time_micros": 2490
 }
 ```
 
-The index config shows that we can use the timestamp field parameters `startTimestamp` and `endTimestamp` and benefit from time pruning. Behind the scenes, Quickwit will only query [splits](../concepts/architecture.md) that have logs in this time range.
+The index config shows that we can use the timestamp field parameters `start_timestamp` and `end_timestamp` and benefit from time pruning. Behind the scenes, Quickwit will only query [splits](../concepts/architecture.md) that have logs in this time range.
 
 Let's use these parameters with the following query:
 
 ```bash
-curl -v 'http://127.0.0.1:7280/api/v1/hdfs-logs/search?query=severity_text:ERROR&startTimestamp=1442834249&endTimestamp=1442900000'
+curl 'http://127.0.0.1:7280/api/v1/hdfs-logs/search?query=severity_text:INFO&start_timestamp=1440670490&end_timestamp=1450670490'
 ```
 
-It should return 6 hits faster as Quickwit will query fewer splits.
-
-## Distributed search
-
-Now that we have indexed our dataset and can do a local search, let's show how easy it is to start a distributed search cluster with Quickwit. We will be launching a three-node cluster.
-First, let's download the Searcher's configuration files:
-
-```bash
-for i in {1..3}; do
-curl -o searcher-$i.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/hdfs-logs/searcher-$i.yaml
-done
-```
-
-Once the configuration files are downloaded, start a searcher node for each of the respective configuration files in a different terminal window.
-
-```bash
-# run this in the first terminal window.
-./quickwit run --service searcher --config ./searcher-1.yaml
-```
-
-```bash
-# run this in the second terminal window.
-./quickwit run --service searcher --config ./searcher-2.yaml
-```
-
-```bash
-# run this in the third terminal window.
-./quickwit run --service searcher --config ./searcher-3.yaml
-```
-
-You will see in your terminal the confirmation that the instance has created or joined a cluster. Example of such a log:
-
-```
-INFO quickwit_cluster::cluster: Create new cluster. node_id="searcher-1" listen_addr=127.0.0.1:7280
-```
-
-:::note
-
-Quickwit will use the configured `rest_listen_port` for serving the HTTP rest API via TCP as well as maintaining the cluster formation via UDP. Also, it will `{rest_listen_port} + 1` for gRPC communication between instances.
-
-:::
-
-Let's execute a simple query that returns only `ERROR` entries on field `severity_text` on one of our searcher node:
-
-```bash
-curl 'http://127.0.0.1:7280/api/v1/hdfs-logs/search?query=severity_text:ERROR'
-```
 
 ## Clean
 

@@ -45,7 +45,7 @@ RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CAR
 # Change the default configuration file in order to make the rest,
 # grpc servers and gossip accessible from outside of docker.
 COPY ./config/quickwit.yaml ./config/quickwit.yaml
-RUN sed -i 's/#listen_address: 127.0.0.1/listen_address: 0.0.0.0/g' ./config/quickwit.yaml
+RUN sed -i 's/#[ ]*listen_address: 127.0.0.1/listen_address: 0.0.0.0/g' ./config/quickwit.yaml
 
 FROM debian:bullseye-slim AS quickwit
 

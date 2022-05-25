@@ -73,7 +73,7 @@ Execute these Bash commands to download the index config and create the `gh-arch
 wget -O gh-archive.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/gh-archive/index-config.yaml
 
 # Create index.
-./quickwit index create --index-confg gh-archive.yaml
+./quickwit index create --index-config gh-archive.yaml
 ```
 
 ## Create Kafka source
@@ -127,10 +127,10 @@ Finally, execute this command to start Quickwit in server mode.
 
 ```bash
 # Launch Quickwit services.
-./quickwit services run
+./quickwit run
 ```
 
-Under the hood, this command spawns an indexer and a searcher. On startup, the indexer will connect to the Kafka topic specified by the source and start streaming and indexing events from the partitions composing the topic. With the default commit timeout value (see [indexing settings](../configuration/index-config.md#indexing-settings)), the indexer should publish the first split after approximately 30 seconds.
+Under the hood, this command spawns an indexer and a searcher. On startup, the indexer will connect to the Kafka topic specified by the source and start streaming and indexing events from the partitions composing the topic. With the default commit timeout value (see [indexing settings](../configuration/index-config.md#indexing-settings)), the indexer should publish the first split after approximately 60 seconds.
 
 You can run this command (in another shell) to inspect the properties of the index and check the current number of published splits:
 
