@@ -160,7 +160,10 @@ POST api/v1/_bulk -d \
 ```
 
 Ingest a batch of documents to make them searchable using the [Elasticsearch](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html) bulk API. This endpoint provides compatibility with tools or systems that already send data to Elasticsearch for indexing. Currently, only the `create` action of the bulk API is supported, all other actions such as `delete` or `update` are ignored. 
-We also don't support the Elasticsearch `create` action semantics as of now, `create` only means the documents are safely stored regardless of `_id ` and will be indexed. This endpoint is only available on a node that is running an indexer service.
+:::caution
+In Elasticsearch, the `create` action has a specific behavior when the ingest documents contain an identifier (the `_id` field). It only inserts such a document if it was not inserted before. This is extremely handy to achieve At-Most-Once indexing.
+Quickwit does not have any notion of document id and does not support this feature. 
+:::
 
 
 :::info
