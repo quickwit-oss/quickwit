@@ -25,7 +25,7 @@ use tracing::{debug, error, info, Instrument};
 
 use crate::actor::process_command;
 use crate::actor_with_state_tx::ActorWithStateTx;
-use crate::join_handle::{JoinHandle, JoinOutcome};
+use crate::join_handle::JoinHandle;
 use crate::mailbox::{CommandOrMessage, Inbox};
 use crate::{Actor, ActorContext, ActorExitStatus, ActorHandle, RecvError};
 
@@ -62,20 +62,16 @@ impl ActorRunner {
         let (state_tx, state_rx) = watch::channel(actor.observable_state());
         let ctx_clone = ctx.clone();
         let span = actor.span(&ctx_clone);
-        let (exit_status_tx, exit_status_rx) = watch::channel(None);
         let actor_instance_id = ctx.actor_instance_id().to_string();
-        let loop_async_actor_future = async move {
-            let exit_status = async_actor_loop(actor, inbox, ctx, state_tx).await;
-            let _ = exit_status_tx.send(Some(exit_status));
-        }
-        .instrument(span);
+        let loop_async_actor_future =
+            async move { async_actor_loop(actor, inbox, ctx, state_tx).await }.instrument(span);
         let join_handle = self.spawn_named_task(loop_async_actor_future, &actor_instance_id);
-        ActorHandle::new(state_rx, join_handle, ctx_clone, exit_status_rx)
+        ActorHandle::new(state_rx, join_handle, ctx_clone)
     }
 
     fn spawn_named_task(
         &self,
-        task: impl Future<Output = ()> + Send + 'static,
+        task: impl Future<Output = ActorExitStatus> + Send + 'static,
         name: &str,
     ) -> JoinHandle {
         match *self {
@@ -86,7 +82,7 @@ impl ActorRunner {
 }
 
 fn dedicated_runtime_spawn_named(
-    task: impl Future<Output = ()> + Send + 'static,
+    task: impl Future<Output = ActorExitStatus> + Send + 'static,
     name: &str,
 ) -> JoinHandle {
     let (join_handle, sender) = JoinHandle::create_for_thread();
@@ -97,8 +93,8 @@ fn dedicated_runtime_spawn_named(
                 .enable_all()
                 .build()
                 .unwrap();
-            rt.block_on(task);
-            let _ = sender.send(JoinOutcome::Ok);
+            let exit_status = rt.block_on(task);
+            let _ = sender.send(exit_status);
         })
         .unwrap();
     join_handle
@@ -106,7 +102,7 @@ fn dedicated_runtime_spawn_named(
 
 #[allow(unused_variables)]
 fn tokio_task_runtime_spawn_named(
-    task: impl Future<Output = ()> + Send + 'static,
+    task: impl Future<Output = ActorExitStatus> + Send + 'static,
     name: &str,
 ) -> JoinHandle {
     let tokio_task_join_handle = {
@@ -126,7 +122,7 @@ async fn process_msg<A: Actor>(
     actor: &mut A,
     msg_id: u64,
     inbox: &mut Inbox<A>,
-    ctx: &mut ActorContext<A>,
+    ctx: &ActorContext<A>,
     state_tx: &watch::Sender<A::ObservableState>,
 ) -> Option<ActorExitStatus> {
     if ctx.kill_switch().is_dead() {
@@ -172,7 +168,7 @@ async fn process_msg<A: Actor>(
 async fn async_actor_loop<A: Actor>(
     actor: A,
     mut inbox: Inbox<A>,
-    mut ctx: ActorContext<A>,
+    ctx: ActorContext<A>,
     state_tx: watch::Sender<A::ObservableState>,
 ) -> ActorExitStatus {
     // We rely on this object internally to fetch a post-mortem state,
@@ -192,7 +188,7 @@ async fn async_actor_loop<A: Actor>(
             &mut actor_with_state_tx.actor,
             msg_id,
             &mut inbox,
-            &mut ctx,
+            &ctx,
             &actor_with_state_tx.state_tx,
         )
         .await;
