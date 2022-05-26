@@ -118,7 +118,7 @@ This step can also be done on your local machine. The `ingest` subcommand genera
 :::
 
 
-You can check it's working by using `search` subcommand and look for `ERROR` in `serverity_text` field:
+You can check it's working by using `search` subcommand and look for `ERROR` in `severity_text` field:
 ```bash
 ./quickwit index search --index hdfs-logs --config ./config.yaml --query "severity_text:ERROR"
 ```
