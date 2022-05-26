@@ -42,7 +42,7 @@ pub(crate) fn build_query(
         return Err(anyhow::anyhow!("Range queries are not currently allowed.").into());
     }
 
-    if !has_search_field(&user_input_ast)
+    if needs_default_search_field(&user_input_ast)
         && request.search_fields.is_empty()
         && (default_field_names.is_empty() || default_field_names == [DYNAMIC_FIELD_NAME])
     {
@@ -79,21 +79,23 @@ fn has_range_clause(user_input_ast: &UserInputAst) -> bool {
     }
 }
 
-fn has_search_field(user_input_ast: &UserInputAst) -> bool {
+/// Tells if the query has a Term or Range node which does not
+/// specify a search field.
+fn needs_default_search_field(user_input_ast: &UserInputAst) -> bool {
     match user_input_ast {
         UserInputAst::Clause(sub_queries) => {
             for (_, sub_ast) in sub_queries {
-                if has_search_field(sub_ast) {
+                if needs_default_search_field(sub_ast) {
                     return true;
                 }
             }
             false
         }
-        UserInputAst::Boost(ast, _) => has_search_field(ast),
+        UserInputAst::Boost(ast, _) => needs_default_search_field(ast),
         UserInputAst::Leaf(leaf) => match &**leaf {
-            UserInputLeaf::Literal(UserInputLiteral { field_name, .. }) => field_name.is_some(),
-            UserInputLeaf::Range { field, .. } => field.is_some(),
-            _ => true,
+            UserInputLeaf::Literal(UserInputLiteral { field_name, .. }) => field_name.is_none(),
+            UserInputLeaf::Range { field, .. } => field.is_none(),
+            _ => false,
         },
     }
 }
@@ -263,6 +265,13 @@ mod test {
         .unwrap();
         check_build_query(
             "bar",
+            vec![],
+            Some(vec![DYNAMIC_FIELD_NAME.to_string()]),
+            TestExpectation::Err("No default field declared and no field specified in query."),
+        )
+        .unwrap();
+        check_build_query(
+            "title:hello AND (Jane OR desc:world)",
             vec![],
             Some(vec![DYNAMIC_FIELD_NAME.to_string()]),
             TestExpectation::Err("No default field declared and no field specified in query."),
