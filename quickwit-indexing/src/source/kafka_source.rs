@@ -299,7 +299,7 @@ fn previous_position_for_offset(offset: i64) -> Position {
     }
 }
 
-/// Checks if connecting with the given parameters works.
+/// Checks whether we can establish a connection to the Kafka broker.
 pub(super) async fn check_connectivity(params: KafkaSourceParams) -> anyhow::Result<()> {
     let source_id = "quickwit-connectivity-check";
     let consumer = create_consumer(source_id, params.client_log_level, params.client_params)?;
