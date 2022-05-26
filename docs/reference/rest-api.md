@@ -117,7 +117,7 @@ On error, an "X-Stream-Error" header will be sent via the trailers channel with 
 Depending on the client, the trailer header with error details may not be shown. The error will also be logged in quickwit ("Error when streaming search results").
 
 
-### Ingest data in an index
+### Ingest data into an index
 
 ```
 POST api/v1/<index id>/ingest -d \
@@ -144,7 +144,7 @@ The response is a JSON object, and the content type is `application/json; charse
 
 | Field                   | Description                        | Type       |
 | --------------------    | ---------------------------------- | :--------: |
-| **num_ingested_docs**   | Total number of documents ingested | `number`   |
+| **num_docs_for_processing**   | Total number of documents ingested for processing. The documents may not have been processed. The API will not return indexing errors, check the server logs for errors. | `number`   |
 
 
 ### Ingest data with Elasticsearch compatible API
@@ -161,6 +161,8 @@ POST api/v1/_bulk -d \
 
 Ingest a batch of documents to make them searchable using the [Elasticsearch](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html) bulk API. This endpoint provides compatibility with tools or systems that already send data to Elasticsearch for indexing. Currently, only the `create` action of the bulk API is supported, all other actions such as `delete` or `update` are ignored. 
 :::caution
+The quickwit API will not report errors, you need to check the server logs.
+
 In Elasticsearch, the `create` action has a specific behavior when the ingest documents contain an identifier (the `_id` field). It only inserts such a document if it was not inserted before. This is extremely handy to achieve At-Most-Once indexing.
 Quickwit does not have any notion of document id and does not support this feature. 
 :::
@@ -176,4 +178,4 @@ The response is a JSON object, and the content type is `application/json; charse
 
 | Field                   | Description                        | Type       |
 | --------------------    | ---------------------------------- | :--------: |
-| **num_ingested_docs**   | Total number of documents ingested | `number`   |
+| **num_docs_for_processing**   | Total number of documents ingested for processing. The documents may not have been processed. The API will not return indexing errors, check the server logs for errors. | `number`   |

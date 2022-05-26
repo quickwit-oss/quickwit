@@ -63,7 +63,7 @@ impl IngestApiService {
             num_docs += doc_batch.doc_lens.len();
         }
         Ok(IngestResponse {
-            num_ingested_docs: num_docs as u64,
+            num_docs_for_processing: num_docs as u64,
         })
     }
 
