@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::deser_valid_uri;
 use crate::source_config::SourceConfig;
-use crate::validate_identifier;
+use crate::{is_false, validate_identifier};
 
 // Note(fmassot): `DocMapping` is a struct only used for
 // serialization/deserialization of `DocMapper` parameters.
@@ -123,10 +123,6 @@ impl Default for MergePolicy {
             max_merge_factor: Self::default_max_merge_factor(),
         }
     }
-}
-
-fn is_false(val: &bool) -> bool {
-    !*val
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
