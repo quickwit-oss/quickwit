@@ -225,8 +225,8 @@ impl Handler<Loop> for ShardConsumer {
                 self.send_message(ctx, message).await?;
                 return Err(ActorExitStatus::Success);
             };
-            // The `GetRecords` API has a limit of 5 transactions per second. 1s / 5 + ε = 205ms.
-            let interval = Duration::from_millis(205);
+            // The `GetRecords` API has a limit of 5 transactions per second. 1s / 5 + ε = 210ms.
+            let interval = Duration::from_millis(210);
             ctx.schedule_self_msg(interval, Loop).await;
             return Ok(());
         }
