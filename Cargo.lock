@@ -2659,7 +2659,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
- "uuid 1.0.0",
+ "uuid 1.1.0",
 ]
 
 [[package]]
@@ -2731,7 +2731,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util 0.7.1",
  "tracing",
- "uuid 1.0.0",
+ "uuid 1.1.0",
 ]
 
 [[package]]
@@ -2753,7 +2753,7 @@ dependencies = [
  "time 0.3.9",
  "tokio",
  "tracing",
- "uuid 1.0.0",
+ "uuid 1.1.0",
 ]
 
 [[package]]
@@ -3024,7 +3024,7 @@ dependencies = [
  "tokio",
  "tracing",
  "username",
- "uuid 1.0.0",
+ "uuid 1.1.0",
 ]
 
 [[package]]
@@ -4002,7 +4002,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "time 0.3.9",
- "uuid 1.0.0",
+ "uuid 1.1.0",
  "winapi 0.3.9",
 ]
 
@@ -4742,9 +4742,9 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cfcd319456c4d6ea10087ed423473267e1a071f3bc0aa89f80d60997843c6f0"
+checksum = "93bbc61e655a4833cf400d0d15bf3649313422fa7572886ad6dab16d79886365"
 dependencies = [
  "getrandom",
  "serde",
