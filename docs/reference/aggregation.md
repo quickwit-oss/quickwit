@@ -183,7 +183,7 @@ The interval to chunk your data range. Each bucket spans a value range of [0..in
 
 ###### **offset**
 
-Intervals implicitely defines an absolute grid of buckets `[interval * k, interval * (k + 1))`.
+Intervals implicitly defines an absolute grid of buckets `[interval * k, interval * (k + 1))`.
 Offset makes it possible to shift this grid into `[offset + interval * k, offset + interval (k + 1))`. Offset has to be in the range [0, interval).
 
 As an example, if there are two documents with value 8 and 12 and interval 10.0, they would fall into the buckets with the key 0 and 10. With offset 5 and interval 10, they would both fall into the bucket with they key 5 and the range [5..15)
@@ -262,7 +262,7 @@ Cannot be set in conjunction with `min_doc_count` > 0, since the empty buckets f
 ### Range
 
 Provide user-defined buckets to aggregate on. Two special buckets will automatically be created to cover the whole range of values.
-The provided buckets have to be continous. During the aggregation, the values extracted from the fast_field field will be checked against each bucket range.
+The provided buckets have to be continuous. During the aggregation, the values extracted from the fast_field field will be checked against each bucket range.
 Note that this aggregation includes the from value and excludes the to value for each range.
 
 ```json skip
@@ -377,7 +377,7 @@ _Expensive_ : When set to 0, this will return all terms in the field.
 ###### **order**
 
 Set the order. String is here a target, which is either “_count”, “_key”, or the name of a metric sub_aggregation.
-Single value metrics like average can be adressed by its name. Multi value metrics like stats are required to adress their field by name e.g. “stats.avg”.
+Single value metrics like average can be addressed by its name. Multi value metrics like stats are required to address their field by name e.g. “stats.avg”.
 
 
 Order alphabetically

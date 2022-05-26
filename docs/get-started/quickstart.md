@@ -23,7 +23,7 @@ cd ./quickwit-v*/
 ./quickwit --version
 ```
 
-You can now move this executable directory wherever sensible for your environment and possibly add it to your `PATH` environement.
+You can now move this executable directory wherever sensible for your environment and possibly add it to your `PATH` environment.
 
 ## Use Quickwit's docker image
 
@@ -187,7 +187,7 @@ Check it's working by browsing the [UI at http://localhost:7280](http://localhos
 curl "http://127.0.0.1:7280/api/v1/wikipedia/search?query=barack+AND+obama"
 ```
 
-You can also specify the search field with `body:barack AND obbama`:
+You can also specify the search field with `body:barack AND obama`:
 ```bash
 curl "http://127.0.0.1:7280/api/v1/wikipedia/search?query=body:barack+AND+obama"
 ```
