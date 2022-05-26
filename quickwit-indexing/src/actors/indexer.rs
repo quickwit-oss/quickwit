@@ -403,6 +403,12 @@ impl Indexer {
         } else {
             return Ok(());
         };
+
+        // Avoid sending empty split.
+        if indexed_split.num_docs == 0 {
+            return Ok(());
+        }
+
         info!(commit_trigger=?commit_trigger, split=?indexed_split.split_id, num_docs=self.counters.num_docs_in_split, "send-to-packager");
         ctx.send_message(
             &self.packager_mailbox,
