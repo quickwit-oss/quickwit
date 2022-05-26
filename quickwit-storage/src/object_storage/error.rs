@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_aws::error::RusotoErrorWrapper;
+use quickwit_aws::retry::Retryable;
 use rusoto_core::RusotoError;
 use rusoto_s3::{
     AbortMultipartUploadError, CompleteMultipartUploadError, CreateMultipartUploadError,
@@ -27,7 +28,7 @@ use rusoto_s3::{
 use crate::{StorageError, StorageErrorKind};
 
 impl<T> From<RusotoErrorWrapper<T>> for StorageError
-where T: Send + Sync + std::error::Error + 'static + ToStorageErrorKind
+where T: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retryable
 {
     fn from(err: RusotoErrorWrapper<T>) -> StorageError {
         let error_kind = match &err.0 {
