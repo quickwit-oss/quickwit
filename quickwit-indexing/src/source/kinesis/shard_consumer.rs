@@ -17,9 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-// TODO: Remove when `KinesisSource` is fully implemented.
-#![allow(dead_code)]
-
 use std::fmt;
 use std::time::Duration;
 
@@ -112,12 +109,10 @@ impl ShardConsumer {
     }
 
     pub fn spawn(self, ctx: &SourceContext) -> ShardConsumerHandle {
-        let shard_id = self.shard_id.clone();
-        let (mailbox, actor_handle) = ctx.spawn_actor(self).spawn();
+        let (_mailbox, _actor_handle) = ctx.spawn_actor(self).spawn();
         ShardConsumerHandle {
-            shard_id,
-            mailbox,
-            actor_handle,
+            _mailbox,
+            _actor_handle,
         }
     }
 
@@ -133,9 +128,8 @@ impl ShardConsumer {
 }
 
 pub(super) struct ShardConsumerHandle {
-    shard_id: String,
-    mailbox: Mailbox<ShardConsumer>,
-    actor_handle: ActorHandle<ShardConsumer>,
+    _mailbox: Mailbox<ShardConsumer>,
+    _actor_handle: ActorHandle<ShardConsumer>,
 }
 
 #[derive(Debug)]
