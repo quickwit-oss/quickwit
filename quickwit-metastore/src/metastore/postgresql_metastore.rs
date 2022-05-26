@@ -774,6 +774,21 @@ impl Metastore for PostgresqlMetastore {
         Ok(())
     }
 
+    async fn apply_checkpoint(
+        &self,
+        index_id: &str,
+        source_id: &str,
+        checkpoint_delta: CheckpointDelta,
+    ) -> MetastoreResult<()> {
+        let conn = self.get_conn()?;
+        conn.transaction::<_, MetastoreError, _>(|| {
+            // Update the index checkpoint.
+            self.apply_checkpoint_delta(&conn, index_id, source_id, checkpoint_delta)?;
+            Ok(())
+        })?;
+        Ok(())
+    }
+
     fn uri(&self) -> String {
         self.uri.clone()
     }

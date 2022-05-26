@@ -446,6 +446,19 @@ impl Metastore for FileBackedMetastore {
             .await
     }
 
+    async fn apply_checkpoint(
+        &self,
+        index_id: &str,
+        source_id: &str,
+        checkpoint_delta: CheckpointDelta,
+    ) -> MetastoreResult<()> {
+        self.mutate(index_id, |index| {
+            index.apply_checkpoint(source_id, checkpoint_delta)?;
+            Ok(true)
+        })
+        .await
+    }
+
     /// -------------------------------------------------------------------------------
     /// Read-only accessors
 

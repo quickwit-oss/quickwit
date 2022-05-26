@@ -185,4 +185,12 @@ pub trait Metastore: Send + Sync + 'static {
 
     /// Returns the metastore uri.
     fn uri(&self) -> String;
+
+    /// Saves an indexing source checkpoint.
+    async fn apply_checkpoint(
+        &self,
+        index_id: &str,
+        source_id: &str,
+        checkpoint_delta: CheckpointDelta,
+    ) -> MetastoreResult<()>;
 }

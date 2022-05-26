@@ -365,6 +365,8 @@ impl IndexingPipeline {
         let indexer = Indexer::new(
             self.params.index_id.clone(),
             self.params.doc_mapper.clone(),
+            self.params.source.source_id.clone(),
+            self.params.metastore.clone(),
             self.params.indexing_directory.clone(),
             self.params.indexing_settings.clone(),
             packager_mailbox,

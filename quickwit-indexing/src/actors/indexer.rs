@@ -24,10 +24,11 @@ use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, Mailbox, QueueCapacity, SendError,
+    Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, Mailbox, QueueCapacity,
 };
 use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::{DocMapper, DocParsingError, SortBy, QUICKWIT_TOKENIZER_MANAGER};
+use quickwit_metastore::Metastore;
 use tantivy::schema::{Field, Value};
 use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
 use tracing::{info, warn};
@@ -238,6 +239,8 @@ pub struct Indexer {
     indexer_state: IndexerState,
     packager_mailbox: Mailbox<Packager>,
     current_split_opt: Option<IndexedSplit>,
+    source_id: String,
+    metastore: Arc<dyn Metastore>,
     counters: IndexerCounters,
 }
 
@@ -329,6 +332,8 @@ impl Indexer {
     pub fn new(
         index_id: String,
         doc_mapper: Arc<dyn DocMapper>,
+        source_id: String,
+        metastore: Arc<dyn Metastore>,
         indexing_directory: IndexingDirectory,
         indexing_settings: IndexingSettings,
         packager_mailbox: Mailbox<Packager>,
@@ -353,6 +358,8 @@ impl Indexer {
             },
             packager_mailbox,
             current_split_opt: None,
+            source_id,
+            metastore,
             counters: IndexerCounters::default(),
         }
     }
@@ -397,7 +404,7 @@ impl Indexer {
         &mut self,
         commit_trigger: CommitTrigger,
         ctx: &ActorContext<Self>,
-    ) -> Result<(), SendError> {
+    ) -> anyhow::Result<()> {
         let indexed_split = if let Some(indexed_split) = self.current_split_opt.take() {
             indexed_split
         } else {
@@ -406,6 +413,14 @@ impl Indexer {
 
         // Avoid sending empty split.
         if indexed_split.num_docs == 0 {
+            self.metastore
+                .apply_checkpoint(
+                    &indexed_split.index_id,
+                    &self.source_id,
+                    indexed_split.checkpoint_delta,
+                )
+                .await
+                .context("Failed to apply checkpoint.")?;
             return Ok(());
         }
 
@@ -431,6 +446,7 @@ mod tests {
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_doc_mapper::SortOrder;
     use quickwit_metastore::checkpoint::CheckpointDelta;
+    use quickwit_metastore::MockMetastore;
 
     use super::*;
     use crate::actors::indexer::{record_timestamp, IndexerCounters};
@@ -458,9 +474,16 @@ mod tests {
         indexing_settings.sort_order = Some(SortOrder::Desc);
         indexing_settings.timestamp_field = Some("timestamp".to_string());
         let (mailbox, inbox) = create_test_mailbox();
+        let mut metastore = MockMetastore::default();
+        metastore
+            .expect_apply_checkpoint()
+            .returning(move |_, _, _| Ok(()));
+
         let indexer = Indexer::new(
             "test-index".to_string(),
             doc_mapper,
+            "source-id".to_string(),
+            Arc::new(metastore),
             indexing_directory,
             indexing_settings,
             mailbox,
@@ -530,9 +553,16 @@ mod tests {
         let indexing_directory = IndexingDirectory::for_test().await?;
         let indexing_settings = IndexingSettings::for_test();
         let (mailbox, inbox) = create_test_mailbox();
+        let mut metastore = MockMetastore::default();
+        metastore
+            .expect_apply_checkpoint()
+            .returning(move |_, _, _| Ok(()));
+
         let indexer = Indexer::new(
             "test-index".to_string(),
             doc_mapper,
+            "source-id".to_string(),
+            Arc::new(metastore),
             indexing_directory,
             indexing_settings,
             mailbox,
@@ -588,9 +618,15 @@ mod tests {
         let indexing_directory = IndexingDirectory::for_test().await?;
         let indexing_settings = IndexingSettings::for_test();
         let (mailbox, inbox) = create_test_mailbox();
+        let mut metastore = MockMetastore::default();
+        metastore
+            .expect_apply_checkpoint()
+            .returning(move |_, _, _| Ok(()));
         let indexer = Indexer::new(
             "test-index".to_string(),
             doc_mapper,
+            "source-id".to_string(),
+            Arc::new(metastore),
             indexing_directory,
             indexing_settings,
             mailbox,
