@@ -75,6 +75,9 @@ pub struct QuickwitNumericOptions {
     pub indexed: bool,
     #[serde(default)]
     pub fast: bool,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 impl Default for QuickwitNumericOptions {
@@ -83,6 +86,7 @@ impl Default for QuickwitNumericOptions {
             indexed: true,
             stored: true,
             fast: false,
+            description: None,
         }
     }
 }
@@ -123,6 +127,9 @@ pub struct QuickwitTextOptions {
     pub stored: bool,
     #[serde(default)]
     pub fast: bool,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 impl Default for QuickwitTextOptions {
@@ -134,6 +141,7 @@ impl Default for QuickwitTextOptions {
             fieldnorms: false,
             stored: true,
             fast: false,
+            description: None,
         }
     }
 }
@@ -187,6 +195,10 @@ pub struct QuickwitJsonOptions {
     /// If true, the field will be stored in the doc store.
     #[serde(default = "default_as_true")]
     pub stored: bool,
+    /// Optional description of JSON object.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 impl Default for QuickwitJsonOptions {
@@ -196,6 +208,7 @@ impl Default for QuickwitJsonOptions {
             tokenizer: default_json_tokenizer(),
             record: IndexRecordOption::Basic,
             stored: true,
+            description: None,
         }
     }
 }
@@ -418,7 +431,7 @@ mod tests {
         assert_eq!(
             mapping_entry.unwrap_err().to_string(),
             "Error while parsing field `my_field_name`: unknown field `blub`, expected one of \
-             `indexed`, `tokenizer`, `record`, `stored`"
+             `indexed`, `tokenizer`, `record`, `stored`, `description`"
                 .to_string()
         );
         Ok(())
@@ -588,7 +601,7 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "Error while parsing field `my_field_name`: unknown field `tokenizer`, expected one \
-             of `stored`, `indexed`, `fast`"
+             of `stored`, `indexed`, `fast`, `description`"
         );
     }
 
@@ -678,7 +691,7 @@ mod tests {
             .unwrap_err()
             .to_string(),
             "Error while parsing field `my_field_name`: unknown field `tokenizer`, expected one \
-             of `stored`, `indexed`, `fast`"
+             of `stored`, `indexed`, `fast`, `description`"
         );
     }
 
@@ -958,6 +971,7 @@ mod tests {
             tokenizer: QuickwitTextTokenizer::Default,
             record: IndexRecordOption::Basic,
             stored: true,
+            description: None,
         };
         assert_eq!(&field_mapping_entry.name, "my_json_field");
         assert!(
@@ -999,11 +1013,92 @@ mod tests {
             tokenizer: QuickwitTextTokenizer::Raw,
             record: IndexRecordOption::Basic,
             stored: false,
+            description: None,
         };
         assert_eq!(&field_mapping_entry.name, "my_json_field_multi");
         assert!(
             matches!(field_mapping_entry.mapping_type, FieldMappingType::Json(json_config,
     Cardinality::MultiValues) if json_config == expected_json_options)
+        );
+    }
+
+    #[test]
+    fn test_serialize_i64_with_description_field() {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "i64",
+                "description": "If you see this description, your test is failed"
+            }"#,
+        )
+        .unwrap();
+
+        let entry_str = serde_json::to_value(&entry).unwrap();
+        assert_eq!(
+            entry_str,
+            serde_json::json!({
+                "name": "my_field_name",
+                "type": "i64",
+                "stored": true,
+                "fast": false,
+                "indexed": true,
+                "description": "If you see this description, your test is failed"
+            })
+        );
+    }
+
+    #[test]
+    fn test_serialize_text_with_description_field() {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "text",
+                "description": "If you see this description, your test is failed"
+            }"#,
+        )
+        .unwrap();
+
+        let entry_str = serde_json::to_value(&entry).unwrap();
+        assert_eq!(
+            entry_str,
+            serde_json::json!({
+                "name": "my_field_name",
+                "type": "text",
+                "fast": false,
+                "stored": true,
+                "indexed": true,
+                "fieldnorms": false,
+                "record": "basic",
+                "description": "If you see this description, your test is failed"
+            })
+        );
+    }
+    #[test]
+    fn test_serialize_json_with_description_field() {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "json",
+                "description": "If you see this description, your test is failed"
+            }"#,
+        )
+        .unwrap();
+
+        let entry_str = serde_json::to_value(&entry).unwrap();
+        assert_eq!(
+            entry_str,
+            serde_json::json!({
+                "name": "my_field_name",
+                "type": "json",
+                "tokenizer": "default",
+                "record": "basic",
+                "stored": true,
+                "indexed": true,
+                "description": "If you see this description, your test is failed"
+            })
         );
     }
 }
