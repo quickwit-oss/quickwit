@@ -32,7 +32,7 @@ pub struct IngestRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestResponse {
     #[prost(uint64, tag="1")]
-    pub num_ingested_docs: u64,
+    pub num_docs_for_processing: u64,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]

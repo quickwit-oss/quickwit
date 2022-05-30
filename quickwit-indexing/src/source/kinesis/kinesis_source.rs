@@ -25,6 +25,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_aws::retry::RetryParams;
 use quickwit_config::{KinesisSourceParams, RegionOrEndpoint};
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use rusoto_core::Region;
@@ -87,6 +88,8 @@ pub struct KinesisSource {
     // Initialization checkpoint.
     checkpoint: SourceCheckpoint,
     kinesis_client: KinesisClient,
+    // Retry parameters (max attempts, max delay, ...).
+    retry_params: RetryParams,
     // Sender for the communication channel between the source and the shard consumers.
     shard_consumers_tx: mpsc::Sender<ShardConsumerMessage>,
     // Receiver for the communication channel between the source and the shard consumers.
@@ -118,6 +121,7 @@ impl KinesisSource {
         let kinesis_client = KinesisClient::new(region);
         let (shard_consumers_tx, shard_consumers_rx) = mpsc::channel(1_000);
         let state = KinesisSourceState::default();
+        let retry_params = RetryParams::default();
         Ok(KinesisSource {
             source_id,
             stream_name,
@@ -127,6 +131,7 @@ impl KinesisSource {
             shard_consumers_rx,
             state,
             shutdown_at_stream_eof,
+            retry_params,
         })
     }
 
@@ -150,6 +155,7 @@ impl KinesisSource {
             self.shutdown_at_stream_eof,
             self.kinesis_client.clone(),
             self.shard_consumers_tx.clone(),
+            self.retry_params.clone(),
         );
         let _shard_consumer_handle = shard_consumer.spawn(ctx);
         let shard_consumer_state = ShardConsumerState {
@@ -167,7 +173,13 @@ impl KinesisSource {
 #[async_trait]
 impl Source for KinesisSource {
     async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        let shards = list_shards(&self.kinesis_client, &self.stream_name, None).await?;
+        let shards = list_shards(
+            &self.kinesis_client,
+            &self.retry_params,
+            &self.stream_name,
+            None,
+        )
+        .await?;
         for shard in shards {
             self.spawn_shard_consumer(ctx, shard.shard_id);
         }
@@ -188,7 +200,7 @@ impl Source for KinesisSource {
         let mut docs = Vec::new();
         let mut checkpoint_delta = CheckpointDelta::default();
 
-        let deadline = time::sleep(quickwit_actors::HEARTBEAT);
+        let deadline = time::sleep(quickwit_actors::HEARTBEAT / 2);
         tokio::pin!(deadline);
 
         loop {
@@ -323,7 +335,7 @@ impl Source for KinesisSource {
     }
 }
 
-fn get_region(region_or_endpoint: Option<RegionOrEndpoint>) -> anyhow::Result<Region> {
+pub(super) fn get_region(region_or_endpoint: Option<RegionOrEndpoint>) -> anyhow::Result<Region> {
     match region_or_endpoint {
         Some(RegionOrEndpoint::Endpoint(endpoint)) => Ok(Region::Custom {
             name: "Custom".to_string(),

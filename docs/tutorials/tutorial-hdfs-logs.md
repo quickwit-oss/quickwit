@@ -57,7 +57,7 @@ doc_mapping:
       fast: true
     - name: severity_text
       type: text
-      tokenizer: raw # No tokeninization.
+      tokenizer: raw # No tokenization.
     - name: body
       type: text
       tokenizer: default
@@ -67,7 +67,7 @@ doc_mapping:
       field_mappings:
         - name: service
           type: text
-          tokenizer: raw # Text field referenced as tag must have the `raw` tokenier.
+          tokenizer: raw # Text field referenced as tag must have the `raw` tokenizer.
   tag_fields: [tenant_id]
 
 indexing_settings:
@@ -87,7 +87,7 @@ You're now ready to fill the index.
 
 ## Index logs
 The dataset is a compressed [NDJSON file](https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz). Instead of downloading it and then indexing the data, we will use pipes to directly send a decompressed stream to Quickwit.
-This can take up to 10 min on a modern machine, the perfect time for a coffee break.
+This can take up to 10 mins on a modern machine, the perfect time for a coffee break.
 
 ```bash
 curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz | gunzip | ./quickwit index ingest --index hdfs-logs
@@ -98,14 +98,14 @@ If you are in a hurry, use the sample dataset that contains 10 000 documents, we
 curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10000.json | ./quickwit index ingest --index hdfs-logs
 ```
 
-You can check it's working by using `search` subcommand and look for `INFO` in `serverity_text` field:
+You can check it's working by using `search` subcommand and look for `INFO` in `severity_text` field:
 ```bash
 ./quickwit index search --index hdfs-logs  --query "severity_text:INFO"
 ```
 
 :::note
 
-The `ingest` subcommand generates [splits](../concepts/architecture.md) of 5 millions documents. Each split is a small piece of index represented by a file in which index files and metadata files are saved.
+The `ingest` subcommand generates [splits](../concepts/architecture.md) of 5 million documents. Each split is a small piece of index represented by a file in which index files and metadata files are saved.
 
 :::
 

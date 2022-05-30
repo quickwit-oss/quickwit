@@ -29,6 +29,8 @@ use async_trait::async_trait;
 use ec2_instance_metadata::InstanceMetadataClient;
 use futures::{stream, StreamExt};
 use once_cell::sync::OnceCell;
+use quickwit_aws::error::RusotoErrorWrapper;
+use quickwit_aws::retry::{retry, Retry, RetryParams, Retryable};
 use quickwit_common::{chunk_range, into_u64_range};
 use regex::Regex;
 use rusoto_core::credential::{AutoRefreshingProvider, ChainProvider, ProfileProvider};
@@ -43,9 +45,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tracing::{debug, error, info, instrument, warn};
 
-use super::error::RusotoErrorWrapper;
 use crate::object_storage::MultiPartPolicy;
-use crate::retry::{retry, IsRetryable, Retry};
 use crate::{OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResult};
 
 /// A credential timeout.
@@ -188,6 +188,7 @@ pub struct S3CompatibleObjectStorage {
     bucket: String,
     prefix: PathBuf,
     multipart_policy: MultiPartPolicy,
+    retry_params: RetryParams,
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
@@ -222,11 +223,16 @@ impl S3CompatibleObjectStorage {
     /// Creates an object storage given a region and a bucket name.
     pub fn new(region: Region, bucket: &str) -> anyhow::Result<S3CompatibleObjectStorage> {
         let s3_client = create_s3_client(region)?;
+        let retry_params = RetryParams {
+            max_attempts: 3,
+            ..Default::default()
+        };
         Ok(S3CompatibleObjectStorage {
             s3_client,
             bucket: bucket.to_string(),
             prefix: PathBuf::new(),
             multipart_policy: MultiPartPolicy::default(),
+            retry_params,
         })
     }
 
@@ -260,6 +266,10 @@ impl S3CompatibleObjectStorage {
             bucket: self.bucket,
             prefix: prefix.to_path_buf(),
             multipart_policy: self.multipart_policy,
+            retry_params: RetryParams {
+                max_attempts: 3,
+                ..Default::default()
+            },
         }
     }
 
@@ -355,7 +365,10 @@ impl S3CompatibleObjectStorage {
         payload: Box<dyn crate::PutPayload>,
         len: u64,
     ) -> StorageResult<()> {
-        retry(|| self.put_single_part_single_try(key, payload.clone(), len)).await?;
+        retry(&self.retry_params, || {
+            self.put_single_part_single_try(key, payload.clone(), len)
+        })
+        .await?;
         Ok(())
     }
 
@@ -368,7 +381,7 @@ impl S3CompatibleObjectStorage {
             key: key.to_string(),
             ..Default::default()
         };
-        let upload_id = retry(|| async {
+        let upload_id = retry(&self.retry_params, || async {
             self.s3_client
                 .create_multipart_upload(create_upload_req.clone())
                 .await
@@ -423,7 +436,7 @@ impl S3CompatibleObjectStorage {
             .range_byte_stream(part.range.clone())
             .await
             .map_err(StorageError::from)
-            .map_err(Retry::NotRetryable)?;
+            .map_err(Retry::Permanent)?;
         let md5 = base64::encode(part.md5.0);
         let upload_part_req = UploadPartRequest {
             bucket: self.bucket.clone(),
@@ -442,9 +455,9 @@ impl S3CompatibleObjectStorage {
             .map_err(RusotoErrorWrapper::from)
             .map_err(|rusoto_err| {
                 if rusoto_err.is_retryable() {
-                    Retry::Retryable(StorageError::from(rusoto_err))
+                    Retry::Transient(StorageError::from(rusoto_err))
                 } else {
-                    Retry::NotRetryable(StorageError::from(rusoto_err))
+                    Retry::Permanent(StorageError::from(rusoto_err))
                 }
             })?;
         Ok(CompletedPart {
@@ -472,7 +485,7 @@ impl S3CompatibleObjectStorage {
             stream::iter(parts.into_iter().map(|part| {
                 let payload = payload.clone();
                 let upload_id = upload_id.clone();
-                retry(move || {
+                retry(&self.retry_params, move || {
                     self.upload_part(upload_id.clone(), key, part.clone(), payload.clone())
                 })
             }))
@@ -518,7 +531,7 @@ impl S3CompatibleObjectStorage {
             upload_id: upload_id.to_string(),
             ..Default::default()
         };
-        retry(|| async {
+        retry(&self.retry_params, || async {
             self.s3_client
                 .complete_multipart_upload(complete_upload_req.clone())
                 .await
@@ -535,7 +548,7 @@ impl S3CompatibleObjectStorage {
             upload_id: upload_id.to_string(),
             ..Default::default()
         };
-        retry(|| async {
+        retry(&self.retry_params, || async {
             self.s3_client
                 .abort_multipart_upload(abort_upload_req.clone())
                 .await
@@ -567,7 +580,7 @@ impl S3CompatibleObjectStorage {
     ) -> StorageResult<Vec<u8>> {
         let cap = range_opt.as_ref().map(Range::len).unwrap_or(0);
         let get_object_req = self.create_get_object_request(path, range_opt);
-        let get_object_output = retry(|| async {
+        let get_object_output = retry(&self.retry_params, || async {
             self.s3_client
                 .get_object(get_object_req.clone())
                 .await
@@ -625,7 +638,7 @@ impl Storage for S3CompatibleObjectStorage {
     // TODO implement multipart
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
         let get_object_req = self.create_get_object_request(path, None);
-        let get_object_output = retry(|| async {
+        let get_object_output = retry(&self.retry_params, || async {
             self.s3_client
                 .get_object(get_object_req.clone())
                 .await
@@ -649,7 +662,7 @@ impl Storage for S3CompatibleObjectStorage {
             key,
             ..Default::default()
         };
-        retry(|| async {
+        retry(&self.retry_params, || async {
             self.s3_client
                 .delete_object(delete_object_req.clone())
                 .await
@@ -686,7 +699,7 @@ impl Storage for S3CompatibleObjectStorage {
             key,
             ..Default::default()
         };
-        let head_object_output_res = retry(|| async {
+        let head_object_output_res = retry(&self.retry_params, || async {
             self.s3_client
                 .head_object(head_object_req.clone())
                 .await

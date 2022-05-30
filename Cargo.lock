@@ -972,8 +972,9 @@ checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 
 [[package]]
 name = "fastfield_codecs"
-version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=cbd06ab1#cbd06ab1899c56260568ca914b58767f984cf486"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8dff2ee906bb242438742b5ecac909c0719cbd9db546f6c3d9ac86bd93f5b07e"
 dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
@@ -2152,8 +2153,9 @@ dependencies = [
 
 [[package]]
 name = "ownedbytes"
-version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=cbd06ab1#cbd06ab1899c56260568ca914b58767f984cf486"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2981bd7cfb2a70e6c50083c60561275a269fc7458f151c53b126ec1b15cc040"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -2578,6 +2580,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-aws"
+version = "0.2.1"
+dependencies = [
+ "futures",
+ "rand",
+ "rusoto_core",
+ "rusoto_kinesis",
+ "rusoto_s3",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "quickwit-cli"
 version = "0.2.1"
 dependencies = [
@@ -2648,7 +2663,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
- "uuid 1.0.0",
+ "uuid 1.1.0",
 ]
 
 [[package]]
@@ -2720,7 +2735,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util 0.7.1",
  "tracing",
- "uuid 1.0.0",
+ "uuid 1.1.0",
 ]
 
 [[package]]
@@ -2742,7 +2757,7 @@ dependencies = [
  "time 0.3.9",
  "tokio",
  "tracing",
- "uuid 1.0.0",
+ "uuid 1.1.0",
 ]
 
 [[package]]
@@ -2789,6 +2804,7 @@ dependencies = [
  "openssl",
  "proptest",
  "quickwit-actors",
+ "quickwit-aws",
  "quickwit-common",
  "quickwit-config",
  "quickwit-directories",
@@ -2980,6 +2996,7 @@ dependencies = [
  "md5",
  "mockall",
  "once_cell",
+ "quickwit-aws",
  "quickwit-common",
  "quickwit-config",
  "rand",
@@ -3011,7 +3028,7 @@ dependencies = [
  "tokio",
  "tracing",
  "username",
- "uuid 1.0.0",
+ "uuid 1.1.0",
 ]
 
 [[package]]
@@ -3944,8 +3961,9 @@ dependencies = [
 
 [[package]]
 name = "tantivy"
-version = "0.17.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=cbd06ab1#cbd06ab1899c56260568ca914b58767f984cf486"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08d3da9d47a874779d5a97c5f01c2d0a85fc96e38ed6d51ad21a3cf6d6eb8c47"
 dependencies = [
  "async-trait",
  "base64",
@@ -3953,7 +3971,7 @@ dependencies = [
  "byteorder",
  "census",
  "crc32fast",
- "crossbeam",
+ "crossbeam-channel",
  "downcast-rs",
  "fail",
  "fastdivide",
@@ -3989,19 +4007,21 @@ dependencies = [
  "tempfile",
  "thiserror",
  "time 0.3.9",
- "uuid 1.0.0",
+ "uuid 1.1.0",
  "winapi 0.3.9",
 ]
 
 [[package]]
 name = "tantivy-bitpacker"
-version = "0.1.1"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=cbd06ab1#cbd06ab1899c56260568ca914b58767f984cf486"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90f95c862d26a32e1fdb161ab139c5a3bba221f5fac512af40034e13e25f3131"
 
 [[package]]
 name = "tantivy-common"
-version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=cbd06ab1#cbd06ab1899c56260568ca914b58767f984cf486"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dec19155b3ed963ae1653bc4995ab8175281f68400c39081205ae25b53fd9750"
 dependencies = [
  "byteorder",
  "ownedbytes",
@@ -4020,8 +4040,9 @@ dependencies = [
 
 [[package]]
 name = "tantivy-query-grammar"
-version = "0.15.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=cbd06ab1#cbd06ab1899c56260568ca914b58767f984cf486"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d6bbdce99f2b8dcbe24ee25acffb36a2b45b31344531374df1008f6a64bb583"
 dependencies = [
  "combine",
  "once_cell",
@@ -4729,9 +4750,9 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cfcd319456c4d6ea10087ed423473267e1a071f3bc0aa89f80d60997843c6f0"
+checksum = "93bbc61e655a4833cf400d0d15bf3649313422fa7572886ad6dab16d79886365"
 dependencies = [
  "getrandom",
  "serde",

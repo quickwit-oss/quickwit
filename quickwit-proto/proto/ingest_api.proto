@@ -75,7 +75,7 @@ message IngestRequest {
 }
 
 message IngestResponse {
-    uint64 num_ingested_docs = 1;
+    uint64 num_docs_for_processing = 1;
 }
 
 message FetchRequest {

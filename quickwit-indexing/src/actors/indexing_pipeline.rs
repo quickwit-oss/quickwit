@@ -365,6 +365,8 @@ impl IndexingPipeline {
         let indexer = Indexer::new(
             self.params.index_id.clone(),
             self.params.doc_mapper.clone(),
+            self.params.source.source_id.clone(),
+            self.params.metastore.clone(),
             self.params.indexing_directory.clone(),
             self.params.indexing_settings.clone(),
             packager_mailbox,
@@ -671,7 +673,7 @@ mod tests {
                         && source_id == "test-source"
                         && splits.len() == 1
                         && format!("{:?}", checkpoint_delta)
-                            .ends_with(":(00000000000000000000..00000000000000000070])")
+                            .ends_with(":(00000000000000000000..00000000000000001030])")
                 },
             )
             .times(1)
@@ -752,7 +754,7 @@ mod tests {
                         && source_id == "test-source"
                         && splits.len() == 1
                         && format!("{:?}", checkpoint_delta)
-                            .ends_with(":(00000000000000000000..00000000000000000070])")
+                            .ends_with(":(00000000000000000000..00000000000000001030])")
                 },
             )
             .times(1)
