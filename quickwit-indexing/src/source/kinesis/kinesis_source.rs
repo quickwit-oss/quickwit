@@ -88,13 +88,14 @@ pub struct KinesisSource {
     // Initialization checkpoint.
     checkpoint: SourceCheckpoint,
     kinesis_client: KinesisClient,
+    // Retry parameters (max attempts, max delay, ...).
+    retry_params: RetryParams,
     // Sender for the communication channel between the source and the shard consumers.
     shard_consumers_tx: mpsc::Sender<ShardConsumerMessage>,
     // Receiver for the communication channel between the source and the shard consumers.
     shard_consumers_rx: mpsc::Receiver<ShardConsumerMessage>,
     state: KinesisSourceState,
     shutdown_at_stream_eof: bool,
-    retry_params: RetryParams,
 }
 
 impl fmt::Debug for KinesisSource {
@@ -199,7 +200,7 @@ impl Source for KinesisSource {
         let mut docs = Vec::new();
         let mut checkpoint_delta = CheckpointDelta::default();
 
-        let deadline = time::sleep(quickwit_actors::HEARTBEAT);
+        let deadline = time::sleep(quickwit_actors::HEARTBEAT / 2);
         tokio::pin!(deadline);
 
         loop {
@@ -334,7 +335,7 @@ impl Source for KinesisSource {
     }
 }
 
-fn get_region(region_or_endpoint: Option<RegionOrEndpoint>) -> anyhow::Result<Region> {
+pub(super) fn get_region(region_or_endpoint: Option<RegionOrEndpoint>) -> anyhow::Result<Region> {
     match region_or_endpoint {
         Some(RegionOrEndpoint::Endpoint(endpoint)) => Ok(Region::Custom {
             name: "Custom".to_string(),

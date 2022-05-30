@@ -39,6 +39,10 @@ pub use source_config::{
     CLI_INGEST_SOURCE_ID,
 };
 
+fn is_false(val: &bool) -> bool {
+    !*val
+}
+
 fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
     static IDENTIFIER_REGEX: OnceCell<Regex> = OnceCell::new();
 
