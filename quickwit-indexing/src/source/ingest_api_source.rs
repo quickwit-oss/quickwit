@@ -40,7 +40,13 @@ const INGEST_API_POLLING_COOL_DOWN: Duration = Duration::from_secs(1);
 
 #[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct IngestApiSourceCounters {
+    /// Maintains the value of where we stopped in queue from
+    /// a previous call on `emit_batch` and allows
+    /// setting the lower-bound of the checkpoint delta.
+    /// It has the same value as `current_offset` at the end of emit_batch.
     pub previous_offset: Option<u64>,
+    /// Maintains the value of where we are in queue and allows
+    /// setting the upper-bound of the checkpoint delta.
     pub current_offset: Option<u64>,
     pub num_docs_processed: u64,
 }
