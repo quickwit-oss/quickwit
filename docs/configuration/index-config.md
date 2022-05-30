@@ -115,6 +115,7 @@ name: body
 type: text
 tokenizer: default
 record: position
+description: Body of the document
 ```
 
 **Parameters for text field**
@@ -125,6 +126,7 @@ record: position
 | `tokenizer` | Name of the `Tokenizer`, choices between `raw`, `default` and `en_stem` | `default` |
 | `record`    | Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
 | `fast`     | Whether value is stored in a fast field. The fast field will contain the term ids. The effective cardinality depends on the tokenizer. When creating fast fields on text fields it is recommended to use the "raw" tokenizer, since it will store the original text unchanged. The "default" tokenizer will store the terms as lower case and this will be reflected in the dictionary ([see tokenizers](#description-of-available-tokenizers)). | `false` |
+| `description` | Optional description for the field. | `None` |
 
 #### **Description of available tokenizers**
 
@@ -158,6 +160,7 @@ type: i64
 stored: true
 indexed: true
 fast: true
+descripton: UNIX timestamp of the document creation date
 ```
 
 **Parameters for i64, u64 and f64 field**
@@ -167,6 +170,7 @@ fast: true
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
 | `fast`      | Whether value is stored in a fast field | `false` |
+| `description` | Optional description for the field. | `None` |
 
 #### `bytes` type
 The `bytes` type accepts a binary value as a `Base64` encoded string.
@@ -188,6 +192,7 @@ fast: true
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
 | `fast`     | Whether value is stored in a fast field. Only on 1:1 cardinality, not supported on `array<bytes>` fields | `false` |
+| `description` | Optional description for the field. | `None` |
 
 #### `json` type
 
@@ -211,6 +216,7 @@ tokenizer: "default"
 | `indexed`   | Whether value is indexed | `true` |
 | `tokenizer` | **Only affects strings in the json object**. Name of the `Tokenizer`, choices between `raw`, `default` and `en_stem` | `default` |
 | `record`    | **Only affects strings in the json object**. Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
+| `description` | Optional description for the field. | `None` |
 
 Note that the `tokenizer` and the `record` have the same definition and the same effect as for the text field.
 
