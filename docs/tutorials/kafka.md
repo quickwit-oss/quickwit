@@ -174,7 +174,7 @@ bin/kafka-topics.sh --delete --topic gh-archive --bootstrap-server localhost:909
 ./quickwit index delete --index gh-archive
 
 # Delete source config.
-rm kinesis-source.yaml
+rm kafka-source.yaml
 ```
 
 This concludes the tutorial. If you have any questions regarding Quickwit or encounter any issues, don't hesitate to ask a [question](https://github.com/quickwit-oss/quickwit/discussions) or open an [issue](https://github.com/quickwit-oss/quickwit/issues) on [GitHub](https://github.com/quickwit-oss/quickwit) or contact us directly on [Discord](https://discord.com/invite/MT27AG5EVE).
