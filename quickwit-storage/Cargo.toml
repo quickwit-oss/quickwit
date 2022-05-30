@@ -1,6 +1,6 @@
 [package]
 name = 'quickwit-storage'
-version = "0.2.1"
+version = "0.3.0"
 authors = ['Quickwit, Inc. <hello@quickwit.io>']
 edition = '2021'
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
@@ -10,9 +10,9 @@ homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
-quickwit-common = { version = "0.2.1", path = "../quickwit-common" }
-quickwit-config = { version = "0.2.1", path = "../quickwit-config" }
-quickwit-aws = {version = "0.2.1", path = "../quickwit-aws"}
+quickwit-common = { version = "0.3.0", path = "../quickwit-common" }
+quickwit-config = { version = "0.3.0", path = "../quickwit-config" }
+quickwit-aws = {version = "0.3.0", path = "../quickwit-aws"}
 async-trait = '0.1'
 md5 = '0.7'
 anyhow = '1'
