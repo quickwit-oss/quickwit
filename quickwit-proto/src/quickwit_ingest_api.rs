@@ -89,6 +89,16 @@ pub struct TailRequest {
     #[prost(string, tag="1")]
     pub index_id: ::prost::alloc::string::String,
 }
+#[derive(Serialize, Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListQueuesRequest {
+}
+#[derive(Serialize, Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListQueuesResponse {
+    #[prost(string, repeated, tag="1")]
+    pub queues: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
 /// Generated client implementations.
 pub mod ingest_api_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]

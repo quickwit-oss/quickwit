@@ -14,5 +14,10 @@ documentation = "https://quickwit.io/docs/"
 futures = "0.3"
 rand = "0.8"
 rusoto_core = {version = "0.47", default-features = false, features = ["rustls"]}
+rusoto_kinesis = { version = "0.47", default-features = false, features = ["rustls"], optional = true }
+rusoto_s3 = { version = "0.47", default-features = false, features = ["rustls"] }
 tokio = "1.18"
 tracing = "0.1"
+
+[features]
+kinesis = ["rusoto_kinesis"]

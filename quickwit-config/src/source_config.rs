@@ -57,7 +57,7 @@ impl SourceConfig {
                 uri,
                 extension
             ),
-            None => bail!(
+            None => bail!(>>>>>>> main
                 "Failed to read source config file `{}`: file extension is missing. Supported \
                  file formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or \
                  .yml).",
@@ -229,6 +229,7 @@ pub struct KinesisSourceParams {
     pub stream_name: String,
     #[serde(flatten)]
     pub region_or_endpoint: Option<RegionOrEndpoint>,
+    #[doc(hidden)]
     #[serde(skip_serializing_if = "is_false")]
     pub shutdown_at_stream_eof: bool,
 }

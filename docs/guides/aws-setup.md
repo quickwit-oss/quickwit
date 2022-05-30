@@ -20,7 +20,7 @@ When starting a node, Quickwit attempts to find AWS credentials using the creden
 
 4. Instance profile credentials, used on Amazon EC2 instances, and delivered through the Amazon EC2 metadata service.
 
-If all these possibilites are exhausted, an error is returned.
+If all these possibilities are exhausted, an error is returned.
 
 
 ## AWS Region

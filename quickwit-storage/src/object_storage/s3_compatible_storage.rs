@@ -30,7 +30,7 @@ use ec2_instance_metadata::InstanceMetadataClient;
 use futures::{stream, StreamExt};
 use once_cell::sync::OnceCell;
 use quickwit_aws::error::RusotoErrorWrapper;
-use quickwit_aws::retry::{retry, IsRetryable, Retry, RetryParams};
+use quickwit_aws::retry::{retry, Retry, RetryParams, Retryable};
 use quickwit_common::{chunk_range, into_u64_range};
 use regex::Regex;
 use rusoto_core::credential::{AutoRefreshingProvider, ChainProvider, ProfileProvider};
@@ -436,7 +436,7 @@ impl S3CompatibleObjectStorage {
             .range_byte_stream(part.range.clone())
             .await
             .map_err(StorageError::from)
-            .map_err(Retry::NotRetryable)?;
+            .map_err(Retry::Permanent)?;
         let md5 = base64::encode(part.md5.0);
         let upload_part_req = UploadPartRequest {
             bucket: self.bucket.clone(),
@@ -455,9 +455,9 @@ impl S3CompatibleObjectStorage {
             .map_err(RusotoErrorWrapper::from)
             .map_err(|rusoto_err| {
                 if rusoto_err.is_retryable() {
-                    Retry::Retryable(StorageError::from(rusoto_err))
+                    Retry::Transient(StorageError::from(rusoto_err))
                 } else {
-                    Retry::NotRetryable(StorageError::from(rusoto_err))
+                    Retry::Permanent(StorageError::from(rusoto_err))
                 }
             })?;
         Ok(CompletedPart {

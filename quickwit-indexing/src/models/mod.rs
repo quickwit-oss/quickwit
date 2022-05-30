@@ -31,8 +31,8 @@ mod scratch_directory;
 pub use indexed_split::{IndexedSplit, IndexedSplitBatch};
 pub use indexing_directory::{IndexingDirectory, CACHE};
 pub use indexing_service_message::{
-    DetachPipeline, IndexingPipelineId, ObservePipeline, SpawnMergePipeline, SpawnPipeline,
-    SpawnPipelinesForIndex,
+    DetachPipeline, IndexingPipelineId, ObservePipeline, ShutdownPipeline, SpawnMergePipeline,
+    SpawnPipeline, SpawnPipelinesForIndex,
 };
 pub use indexing_statistics::IndexingStatistics;
 pub use merge_planner_message::NewSplits;

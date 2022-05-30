@@ -97,7 +97,7 @@ params:
 Run these commands to download the source config file and create the source.
 
 ```bash
-# Download Kafka soure config.
+# Download Kafka source config.
 wget https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/gh-archive/kafka-source.yaml
 
 # Create source.

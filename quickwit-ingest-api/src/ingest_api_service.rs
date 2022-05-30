@@ -24,8 +24,8 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, QueueCapacity};
 use quickwit_proto::ingest_api::{
     CreateQueueIfNotExistsRequest, CreateQueueRequest, DropQueueRequest, FetchRequest,
-    FetchResponse, IngestRequest, IngestResponse, QueueExistsRequest, SuggestTruncateRequest,
-    TailRequest,
+    FetchResponse, IngestRequest, IngestResponse, ListQueuesRequest, ListQueuesResponse,
+    QueueExistsRequest, SuggestTruncateRequest, TailRequest,
 };
 
 use crate::{iter_doc_payloads, IngestApiError, Position, Queues};
@@ -197,5 +197,17 @@ impl Handler<SuggestTruncateRequest> for IngestApiService {
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self.suggest_truncate(request))
+    }
+}
+
+#[async_trait]
+impl Handler<ListQueuesRequest> for IngestApiService {
+    type Reply = crate::Result<ListQueuesResponse>;
+    async fn handle(
+        &mut self,
+        _list_queue_req: ListQueuesRequest,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.queues.list_queues())
     }
 }
