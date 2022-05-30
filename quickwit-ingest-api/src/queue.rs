@@ -280,13 +280,8 @@ impl Queues {
             queues: self
                 .last_position_per_queue
                 .keys()
-                .filter(|real_queue_id| real_queue_id.starts_with(QUICKWIT_CF_PREFIX))
-                .map(|real_queue_id| {
-                    real_queue_id
-                        .strip_prefix(QUICKWIT_CF_PREFIX)
-                        .unwrap()
-                        .to_string()
-                })
+                .filter_map(|real_queue_id| real_queue_id.strip_prefix(QUICKWIT_CF_PREFIX))
+                .map(ToString::to_string)
                 .collect(),
         })
     }
