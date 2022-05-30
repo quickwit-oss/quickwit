@@ -73,6 +73,7 @@ impl fmt::Debug for IndexedSplit {
             .debug_struct("IndexedSplit")
             .field("id", &self.split_id)
             .field("dir", &self.split_scratch_directory.path())
+            .field("num_docs", &self.num_docs)
             .finish()
     }
 }
