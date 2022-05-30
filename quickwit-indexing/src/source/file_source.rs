@@ -202,8 +202,8 @@ mod tests {
         assert_eq!(
             counters,
             serde_json::json!({
-                "previous_offset": 70u64,
-                "current_offset": 70u64,
+                "previous_offset": 1030u64,
+                "current_offset": 1030u64,
                 "num_lines_processed": 4u32
             })
         );

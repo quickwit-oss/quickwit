@@ -596,6 +596,10 @@ impl Metastore for PostgresqlMetastore {
             // Update the index checkpoint.
             self.apply_checkpoint_delta(&conn, index_id, source_id, checkpoint_delta)?;
 
+            if split_ids.is_empty() {
+                return Ok(());
+            }
+
             let published_split_ids =
                 self.mark_splits_as_published_helper(&conn, index_id, split_ids)?;
 

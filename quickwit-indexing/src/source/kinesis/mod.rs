@@ -21,3 +21,37 @@ mod api;
 mod helpers;
 pub mod kinesis_source;
 mod shard_consumer;
+
+use quickwit_aws::retry::RetryParams;
+use quickwit_config::KinesisSourceParams;
+use rusoto_kinesis::KinesisClient;
+
+use crate::source::kinesis::api::{get_records, get_shard_iterator, list_shards};
+use crate::source::kinesis::kinesis_source::get_region;
+
+/// Checks whether we can establish a connection to the Kinesis service and read some records.
+pub(super) async fn check_connectivity(params: KinesisSourceParams) -> anyhow::Result<()> {
+    let region = get_region(params.region_or_endpoint)?;
+    let kinesis_client = KinesisClient::new(region);
+    let retry_params = RetryParams {
+        max_attempts: 3,
+        ..Default::default()
+    };
+    let shards = list_shards(&kinesis_client, &retry_params, &params.stream_name, Some(1)).await?;
+
+    if let Some(shard) = shards.get(0) {
+        let shard_iterator_opt = get_shard_iterator(
+            &kinesis_client,
+            &retry_params,
+            &params.stream_name,
+            &shard.shard_id,
+            None,
+        )
+        .await?;
+
+        if let Some(shard_iterator) = shard_iterator_opt {
+            get_records(&kinesis_client, &retry_params, shard_iterator).await?;
+        }
+    }
+    Ok(())
+}

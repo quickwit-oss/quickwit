@@ -25,7 +25,7 @@ use quickwit_common::uri::{Extension, Uri};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::validate_identifier;
+use crate::{is_false, validate_identifier};
 
 /// Reserved source ID for the `quickwit index ingest` CLI command.
 pub const CLI_INGEST_SOURCE_ID: &str = ".cli-ingest-source";
@@ -227,7 +227,10 @@ pub enum RegionOrEndpoint {
 #[serde(try_from = "KinesisSourceParamsInner")]
 pub struct KinesisSourceParams {
     pub stream_name: String,
+    #[serde(flatten)]
     pub region_or_endpoint: Option<RegionOrEndpoint>,
+    #[doc(hidden)]
+    #[serde(skip_serializing_if = "is_false")]
     pub shutdown_at_stream_eof: bool,
 }
 
@@ -356,6 +359,51 @@ mod tests {
 
     #[test]
     fn test_kinesis_source_params_serialization() {
+        {
+            let params = KinesisSourceParams {
+                stream_name: "my-stream".to_string(),
+                region_or_endpoint: None,
+                shutdown_at_stream_eof: false,
+            };
+            let params_yaml = serde_yaml::to_string(&params).unwrap();
+
+            assert_eq!(
+                serde_yaml::from_str::<KinesisSourceParams>(&params_yaml).unwrap(),
+                params,
+            )
+        }
+        {
+            let params = KinesisSourceParams {
+                stream_name: "my-stream".to_string(),
+                region_or_endpoint: Some(RegionOrEndpoint::Region("us-west-1".to_string())),
+                shutdown_at_stream_eof: false,
+            };
+            let params_yaml = serde_yaml::to_string(&params).unwrap();
+
+            assert_eq!(
+                serde_yaml::from_str::<KinesisSourceParams>(&params_yaml).unwrap(),
+                params,
+            )
+        }
+        {
+            let params = KinesisSourceParams {
+                stream_name: "my-stream".to_string(),
+                region_or_endpoint: Some(RegionOrEndpoint::Endpoint(
+                    "https://localhost:4566".to_string(),
+                )),
+                shutdown_at_stream_eof: false,
+            };
+            let params_yaml = serde_yaml::to_string(&params).unwrap();
+
+            assert_eq!(
+                serde_yaml::from_str::<KinesisSourceParams>(&params_yaml).unwrap(),
+                params,
+            )
+        }
+    }
+
+    #[test]
+    fn test_kinesis_source_params_deserialization() {
         {
             {
                 let yaml = r#"

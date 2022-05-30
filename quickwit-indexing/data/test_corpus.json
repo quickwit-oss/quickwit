@@ -1,4 +1,4 @@
-{"body": "hello"}
-{"body": "happy"}
-{"body": "tax"}
-{"body": "payer"}
+{"timestamp":1375457457,"body":"hello","response_date":141436123,"response_time":141436123,"response_payload":"data","owner":"","properties":{},"children":[],"attributes":{"tags":[12,34],"server":"foo","server.status":["down","up"],"server.payload":"data"}}
+{"timestamp":1375457457,"body":"happy","response_date":141436123,"response_time":141436123,"response_payload":"data","owner":"","properties":{},"children":{},"attributes":{"tags":[12,34],"server":"foo","server.status":["down","up"],"server.payload":"data"}}
+{"timestamp":1375457457,"body":"tax","response_date":141436123,"response_time":141436123,"response_payload":"data","owner":"","properties":{},"children":{},"attributes":{"tags":[12,34],"server":"foo","server.status":["down","up"],"server.payload":"data"}}
+{"timestamp":1375457457,"body":"payer","response_date":141436123,"response_time":141436123,"response_payload":"data","owner":"","properties":{},"children":[],"attributes":{"tags":[12,34],"server":"foo","server.status":["down","up"],"server.payload":"data"}}

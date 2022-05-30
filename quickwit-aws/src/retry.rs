@@ -28,7 +28,7 @@ const DEFAULT_MAX_RETRY_ATTEMPTS: usize = 30;
 const DEFAULT_BASE_DELAY: Duration = Duration::from_millis(if cfg!(test) { 1 } else { 250 });
 const DEFAULT_MAX_DELAY: Duration = Duration::from_millis(if cfg!(test) { 1 } else { 20_000 });
 
-pub trait IsRetryable {
+pub trait Retryable {
     fn is_retryable(&self) -> bool {
         false
     }
@@ -36,15 +36,15 @@ pub trait IsRetryable {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Retry<E> {
-    Retryable(E),
-    NotRetryable(E),
+    Transient(E),
+    Permanent(E),
 }
 
 impl<E> Retry<E> {
     pub fn into_inner(self) -> E {
         match self {
-            Self::Retryable(e) => e,
-            Self::NotRetryable(e) => e,
+            Self::Transient(e) => e,
+            Self::Permanent(e) => e,
         }
     }
 }
@@ -52,21 +52,21 @@ impl<E> Retry<E> {
 impl<E: Display> Display for Retry<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Retry::Retryable(e) => {
-                write!(f, "Retryable({})", e)
+            Retry::Transient(e) => {
+                write!(f, "Transient({})", e)
             }
-            Retry::NotRetryable(e) => {
-                write!(f, "NotRetryable({})", e)
+            Retry::Permanent(e) => {
+                write!(f, "Permanent({})", e)
             }
         }
     }
 }
 
-impl<E> IsRetryable for Retry<E> {
+impl<E> Retryable for Retry<E> {
     fn is_retryable(&self) -> bool {
         match self {
-            Retry::Retryable(_) => true,
-            Retry::NotRetryable(_) => false,
+            Retry::Transient(_) => true,
+            Retry::Permanent(_) => false,
         }
     }
 }
@@ -94,7 +94,7 @@ pub async fn retry<F, U, E, Fut>(retry_params: &RetryParams, f: F) -> Result<U, 
 where
     F: Fn() -> Fut,
     Fut: Future<Output = Result<U, E>>,
-    E: IsRetryable + Display + 'static,
+    E: Retryable + Display + 'static,
 {
     let mut attempt_count = 0;
 
@@ -160,7 +160,7 @@ mod tests {
     #[tokio::test]
     async fn test_retry_does_retry() {
         assert_eq!(
-            simulate_retries(vec![Err(Retry::Retryable(1)), Ok(())]).await,
+            simulate_retries(vec![Err(Retry::Transient(1)), Ok(())]).await,
             Ok(())
         );
     }
@@ -168,27 +168,27 @@ mod tests {
     #[tokio::test]
     async fn test_retry_stops_retrying_on_non_retryable_error() {
         assert_eq!(
-            simulate_retries(vec![Err(Retry::NotRetryable(1)), Ok(())]).await,
-            Err(Retry::NotRetryable(1))
+            simulate_retries(vec![Err(Retry::Permanent(1)), Ok(())]).await,
+            Err(Retry::Permanent(1))
         );
     }
 
     #[tokio::test]
     async fn test_retry_retries_up_at_most_attempts_times() {
         let retry_sequence: Vec<_> = (0..30)
-            .map(|retry_id| Err(Retry::Retryable(retry_id)))
+            .map(|retry_id| Err(Retry::Transient(retry_id)))
             .chain(Some(Ok(())))
             .collect();
         assert_eq!(
             simulate_retries(retry_sequence).await,
-            Err(Retry::Retryable(29))
+            Err(Retry::Transient(29))
         );
     }
 
     #[tokio::test]
     async fn test_retry_retries_up_to_max_attempts_times() {
         let retry_sequence: Vec<_> = (0..29)
-            .map(|retry_id| Err(Retry::Retryable(retry_id)))
+            .map(|retry_id| Err(Retry::Transient(retry_id)))
             .chain(Some(Ok(())))
             .collect();
         assert_eq!(simulate_retries(retry_sequence).await, Ok(()));

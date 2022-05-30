@@ -29,7 +29,7 @@ pub mod test_suite {
     use time::OffsetDateTime;
     use tokio::time::{sleep, Duration};
 
-    use crate::checkpoint::{CheckpointDelta, SourceCheckpoint};
+    use crate::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
     use crate::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
 
     #[async_trait]
@@ -282,6 +282,58 @@ pub mod test_suite {
         assert!(matches!(result, MetastoreError::InternalError { .. }));
 
         cleanup_index(&metastore, index_id).await;
+    }
+
+    pub async fn test_metastore_publish_splits_empty_splits_array_is_allowed<
+        MetastoreToTest: Metastore + DefaultForTest,
+    >() {
+        let metastore = MetastoreToTest::default_for_test().await;
+
+        let index_id = "publish-splits-empty-index";
+        let source_id = "publish-splits-empty-source";
+
+        // Publish a split on a non-existent index
+        {
+            let result = metastore
+                .publish_splits(
+                    "non-existent-index",
+                    source_id,
+                    &[],
+                    CheckpointDelta::from(1..10),
+                )
+                .await
+                .unwrap_err();
+            assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
+        }
+
+        // Update the checkpoint, by publishing an empty array of splits with a non-empty
+        // checkpoint. This operation is allowed and used in the Indexer.
+        {
+            let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+            metastore
+                .create_index(index_metadata.clone())
+                .await
+                .unwrap();
+
+            let result = metastore
+                .publish_splits(index_id, source_id, &[], CheckpointDelta::from(0..100))
+                .await;
+            assert!(result.is_ok());
+
+            let index_metadata = metastore.index_metadata(index_id).await.unwrap();
+            let source_checkpoint = index_metadata
+                .checkpoint
+                .source_checkpoint(source_id)
+                .unwrap();
+            assert_eq!(source_checkpoint.num_partitions(), 1);
+            assert_eq!(
+                source_checkpoint
+                    .position_for_partition(&PartitionId::default())
+                    .unwrap(),
+                &Position::from(100u64 - 1)
+            );
+            cleanup_index(&metastore, index_id).await;
+        }
     }
 
     pub async fn test_metastore_publish_splits<MetastoreToTest: Metastore + DefaultForTest>() {
@@ -1936,6 +1988,11 @@ macro_rules! metastore_test_suite {
             #[tokio::test]
             async fn test_metastore_publish_splits() {
                 crate::tests::test_suite::test_metastore_publish_splits::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_publish_splits_empty_splits_array_is_allowed() {
+                crate::tests::test_suite::test_metastore_publish_splits_empty_splits_array_is_allowed::<$metastore_type>().await;
             }
 
             #[tokio::test]
