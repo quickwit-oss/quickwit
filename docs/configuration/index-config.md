@@ -140,7 +140,7 @@ record: position
 | ------------- | ------------- |
 | `basic`       |  Records only the `DocId`s |
 | `freq`        |  Records the document ids as well as the term frequency  |
-| `position`    |  Records the document id, the term frequency and the positions of occurences.  |
+| `position`    |  Records the document id, the term frequency and the positions of occurrences.  |
 
 Indexing with position is required to run phrase queries.
 

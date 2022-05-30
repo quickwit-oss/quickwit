@@ -7,12 +7,12 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 
-Before running Quickwit search instances on your servers, you will need to create indexes, add documents, and finally launch the server. In this quick start guide, we will install Quickwit and pass through these steps one by one. All Quickwit commands used in this guide are documented [in the CLI reference documentation](../reference/cli.md).
+Before running Quickwit search instances on your servers, you will need to create indexes, add documents, and finally launch the server. In this quick start guide, we will install Quickwit and go through these steps one by one. All the Quickwit commands used in this guide are documented [in the CLI reference documentation](../reference/cli.md).
 
 ## Install Quickwit using Quickwit installer 
 
-The Quickwit installer automatically pick the correct binary archive for your environment and then download and unpack it in your working directory.
-This method works only for [some OS/architectures](installation.md#download), and you will also need to install [external dependencies](installation.md#note-on-external-dependencies).
+The Quickwit installer automatically picks the correct binary archive for your environment and then downloads and unpacks it in your working directory.
+This method works only for [some OS/architectures](installation.md#download), and you will also need to install some [external dependencies](installation.md#note-on-external-dependencies).
 
 ```bash
 curl -L https://install.quickwit.io | sh
@@ -23,11 +23,11 @@ cd ./quickwit-v*/
 ./quickwit --version
 ```
 
-You can now move this executable directory wherever sensible for your environment and possibly add it to your `PATH` environement.
+You can now move this executable directory wherever sensible for your environment and possibly add it to your `PATH` environment.
 
-## Use Quickwit's docker image
+## Use Quickwit's Docker image
 
-You can also pull and run the Quickwit binary in an isolated docker container.
+You can also pull and run the Quickwit binary in an isolated Docker container.
 
 ```bash
 docker run quickwit/quickwit --version
@@ -187,7 +187,7 @@ Check it's working by browsing the [UI at http://localhost:7280](http://localhos
 curl "http://127.0.0.1:7280/api/v1/wikipedia/search?query=barack+AND+obama"
 ```
 
-You can also specify the search field with `body:barack AND obbama`:
+You can also specify the search field with `body:barack AND obama`:
 ```bash
 curl "http://127.0.0.1:7280/api/v1/wikipedia/search?query=body:barack+AND+obama"
 ```
