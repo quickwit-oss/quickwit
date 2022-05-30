@@ -20,7 +20,6 @@
 #[cfg(test)]
 pub mod test_suite {
     use std::collections::{BTreeSet, HashSet};
-    use std::ops::{Range, RangeInclusive};
 
     use async_trait::async_trait;
     use itertools::Itertools;
@@ -28,6 +27,7 @@ pub mod test_suite {
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use time::OffsetDateTime;
     use tokio::time::{sleep, Duration};
+    use tracing::{error, info};
 
     use crate::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
     use crate::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
@@ -69,19 +69,20 @@ pub mod test_suite {
         }
 
         // Delete index.
-        let result = metastore.delete_index(index_id).await.unwrap();
-        assert!(matches!(result, ()));
+        metastore.delete_index(index_id).await.unwrap();
     }
 
-    pub async fn test_metastore_add_source<MetastoreToTest: Metastore + DefaultForTest>(
-    ) -> anyhow::Result<()> {
+    pub async fn test_metastore_add_source<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = "test-metastore-add-source";
         let index_uri = "ram://indexes/test-metastore-add-source";
         let index_metadata = IndexMetadata::for_test(index_id, index_uri);
 
-        metastore.create_index(index_metadata.clone()).await?;
+        metastore
+            .create_index(index_metadata.clone())
+            .await
+            .unwrap();
 
         let source_id = "test-metastore-add-source--void-source-id";
 
@@ -93,15 +94,19 @@ pub mod test_suite {
         assert_eq!(
             metastore
                 .index_metadata(index_id)
-                .await?
+                .await
+                .unwrap()
                 .checkpoint
                 .source_checkpoint(source_id),
             None
         );
 
-        metastore.add_source(index_id, source.clone()).await?;
+        metastore
+            .add_source(index_id, source.clone())
+            .await
+            .unwrap();
 
-        let index_metadata = metastore.index_metadata(index_id).await?;
+        let index_metadata = metastore.index_metadata(index_id).await.unwrap();
 
         assert_eq!(
             index_metadata.checkpoint.source_checkpoint(source_id),
@@ -128,10 +133,11 @@ pub mod test_suite {
                 .unwrap_err(),
             MetastoreError::IndexDoesNotExist { .. }
         ));
-        Ok(())
+        cleanup_index(&metastore, &index_metadata.index_id).await;
     }
 
     pub async fn test_metastore_delete_source<MetastoreToTest: Metastore + DefaultForTest>() {
+        let _ = tracing_subscriber::fmt::try_init();
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = "test-metastore-delete-source";
@@ -169,6 +175,8 @@ pub mod test_suite {
                 .unwrap_err(),
             MetastoreError::IndexDoesNotExist { .. }
         ));
+
+        cleanup_index(&metastore, &index_metadata.index_id).await;
     }
 
     pub async fn test_metastore_create_index<MetastoreToTest: Metastore + DefaultForTest>() {
@@ -249,7 +257,7 @@ pub mod test_suite {
             split_id: split_id.to_string(),
             num_docs: 1,
             original_size_in_bytes: 2,
-            time_range: Some(RangeInclusive::new(0, 99)),
+            time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             footer_offsets: 1000..2000,
             ..Default::default()
@@ -351,7 +359,7 @@ pub mod test_suite {
             split_id: split_id_1.to_string(),
             num_docs: 1,
             original_size_in_bytes: 2,
-            time_range: Some(RangeInclusive::new(0, 99)),
+            time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             ..Default::default()
         };
@@ -362,7 +370,7 @@ pub mod test_suite {
             split_id: split_id_2.to_string(),
             num_docs: 5,
             original_size_in_bytes: 6,
-            time_range: Some(RangeInclusive::new(30, 99)),
+            time_range: Some(30..=99),
             create_timestamp: current_timestamp,
             ..Default::default()
         };
@@ -957,6 +965,7 @@ pub mod test_suite {
     pub async fn test_metastore_mark_splits_for_deletion<
         MetastoreToTest: Metastore + DefaultForTest,
     >() {
+        let _ = tracing_subscriber::fmt::try_init();
         let metastore = MetastoreToTest::default_for_test().await;
 
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
@@ -969,18 +978,22 @@ pub mod test_suite {
             split_id: split_id_1.to_string(),
             num_docs: 1,
             original_size_in_bytes: 2,
-            time_range: Some(RangeInclusive::new(0, 99)),
+            time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             ..Default::default()
         };
 
         // Mark a split for deletion on a non-existent index
         {
-            let result = metastore
+            let index_does_not_exist_error = metastore
                 .mark_splits_for_deletion("non-existent-index", &["non-existent-split"])
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
+            info!(err=?index_does_not_exist_error);
+            assert!(matches!(
+                index_does_not_exist_error,
+                MetastoreError::IndexDoesNotExist { .. }
+            ));
         }
 
         // Mark a non-existent split for deletion on an index
@@ -1011,17 +1024,17 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let result = metastore
+            metastore
                 .mark_splits_for_deletion(index_id, &[split_id_1])
                 .await
                 .unwrap();
-            assert!(matches!(result, ()));
 
             cleanup_index(&metastore, index_id).await;
         }
     }
 
     pub async fn test_metastore_delete_splits<MetastoreToTest: Metastore + DefaultForTest>() {
+        let _ = tracing_subscriber::fmt::try_init();
         let metastore = MetastoreToTest::default_for_test().await;
 
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
@@ -1036,13 +1049,13 @@ pub mod test_suite {
             split_id: split_id_1.to_string(),
             num_docs: 1,
             original_size_in_bytes: 2,
-            time_range: Some(RangeInclusive::new(0, 99)),
+            time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             ..Default::default()
         };
 
-        // Delete a split marked for deletion on a non-existent index
         {
+            info!("Delete a split marked for deletion on a non-existent index");
             let result = metastore
                 .delete_splits("non-existent-index", &["non-existent-split"])
                 .await
@@ -1051,8 +1064,8 @@ pub mod test_suite {
             assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
         }
 
-        // Delete a non-existent split marked for deletion on an index
         {
+            info!("Delete a non-existent split marked for deletion on an index.");
             metastore
                 .create_index(index_metadata.clone())
                 .await
@@ -1067,8 +1080,8 @@ pub mod test_suite {
             cleanup_index(&metastore, index_id).await;
         }
 
-        // Delete a staged split on an index
         {
+            info!("Delete a staged split on an index.");
             metastore
                 .create_index(index_metadata.clone())
                 .await
@@ -1088,8 +1101,8 @@ pub mod test_suite {
             cleanup_index(&metastore, index_id).await;
         }
 
-        // Delete a split that has been marked for deletion on an index
         {
+            info!("Delete a split that has been marked for deletion on an index");
             metastore
                 .create_index(index_metadata.clone())
                 .await
@@ -1114,8 +1127,8 @@ pub mod test_suite {
             cleanup_index(&metastore, index_id).await;
         }
 
-        // Delete a split that is not marked for deletion
         {
+            info!("Delete a split that is not marked for deletion");
             metastore
                 .create_index(index_metadata.clone())
                 .await
@@ -1136,11 +1149,14 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let result = metastore
+            let metastore_err = metastore
                 .delete_splits(index_id, &[split_id_1])
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitsNotDeletable { .. }));
+            assert!(matches!(
+                metastore_err,
+                MetastoreError::SplitsNotDeletable { .. }
+            ));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -1160,7 +1176,7 @@ pub mod test_suite {
             split_id: split_id_1.to_string(),
             num_docs: 1,
             original_size_in_bytes: 2,
-            time_range: Some(RangeInclusive::new(0, 99)),
+            time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             ..Default::default()
         };
@@ -1170,7 +1186,7 @@ pub mod test_suite {
             split_id: "list-all-splits-index-two".to_string(),
             num_docs: 1,
             original_size_in_bytes: 2,
-            time_range: Some(RangeInclusive::new(100, 199)),
+            time_range: Some(100..=199),
             create_timestamp: current_timestamp,
             ..Default::default()
         };
@@ -1180,7 +1196,7 @@ pub mod test_suite {
             split_id: "list-all-splits-index-three".to_string(),
             num_docs: 1,
             original_size_in_bytes: 2,
-            time_range: Some(RangeInclusive::new(200, 299)),
+            time_range: Some(200..=299),
             create_timestamp: current_timestamp,
             ..Default::default()
         };
@@ -1190,7 +1206,7 @@ pub mod test_suite {
             split_id: "list-all-splits-index-four".to_string(),
             num_docs: 1,
             original_size_in_bytes: 2,
-            time_range: Some(RangeInclusive::new(300, 399)),
+            time_range: Some(300..=399),
             create_timestamp: current_timestamp,
             ..Default::default()
         };
@@ -1262,6 +1278,7 @@ pub mod test_suite {
     }
 
     pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForTest>() {
+        let _ = tracing_subscriber::fmt::try_init();
         let metastore = MetastoreToTest::default_for_test().await;
 
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
@@ -1275,7 +1292,7 @@ pub mod test_suite {
             split_id: split_id_1.to_string(),
             num_docs: 1,
             original_size_in_bytes: 2,
-            time_range: Some(RangeInclusive::new(0, 99)),
+            time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:foo", "tag:bar"]),
             demux_num_ops: 0,
@@ -1286,7 +1303,7 @@ pub mod test_suite {
             split_id: "list-splits-two".to_string(),
             num_docs: 1,
             original_size_in_bytes: 2,
-            time_range: Some(RangeInclusive::new(100, 199)),
+            time_range: Some(100..=199),
             create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:bar"]),
             demux_num_ops: 0,
@@ -1297,7 +1314,7 @@ pub mod test_suite {
             split_id: "list-splits-three".to_string(),
             num_docs: 1,
             original_size_in_bytes: 2,
-            time_range: Some(RangeInclusive::new(200, 299)),
+            time_range: Some(200..=299),
             create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:foo", "tag:baz"]),
             demux_num_ops: 0,
@@ -1308,7 +1325,7 @@ pub mod test_suite {
             split_id: "list-splits-four".to_string(),
             num_docs: 1,
             original_size_in_bytes: 2,
-            time_range: Some(RangeInclusive::new(300, 399)),
+            time_range: Some(300..=399),
             create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:foo"]),
             demux_num_ops: 0,
@@ -1325,17 +1342,21 @@ pub mod test_suite {
             demux_num_ops: 0,
         };
 
-        // List all splits on a non-existent index
         {
-            let result = metastore
+            info!("List all splits on a non-existent index");
+            let metastore_err = metastore
                 .list_splits("non-existent-index", SplitState::Staged, None, None)
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
+            error!(err=?metastore_err);
+            assert!(matches!(
+                metastore_err,
+                MetastoreError::IndexDoesNotExist { .. }
+            ));
         }
 
-        // List all splits on an index
         {
+            info!("List all splits on an index");
             metastore
                 .create_index(index_metadata.clone())
                 .await
@@ -1356,6 +1377,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
+            info!("stage split 4");
             metastore
                 .stage_split(index_id, split_metadata_4.clone())
                 .await
@@ -1366,12 +1388,8 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let time_range_opt = Some(Range {
-                start: 0i64,
-                end: 99i64,
-            });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, time_range_opt, None)
+                .list_splits(index_id, SplitState::Staged, Some(0i64..99i64), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1383,10 +1401,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-five"])
             );
 
-            let time_range_opt = Some(Range {
-                start: 200,
-                end: i64::MAX,
-            });
+            let time_range_opt = Some(200..i64::MAX);
             let splits = metastore
                 .list_splits(index_id, SplitState::Staged, time_range_opt, None)
                 .await
@@ -1399,12 +1414,8 @@ pub mod test_suite {
                 split_ids,
                 to_hash_set(&["list-splits-three", "list-splits-four", "list-splits-five"])
             );
-            let time_range_opt = Some(Range {
-                start: i64::MIN,
-                end: 200,
-            });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, time_range_opt, None)
+                .list_splits(index_id, SplitState::Staged, Some(i64::MIN..200), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1416,9 +1427,8 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-two", "list-splits-five"])
             );
 
-            let range = Some(Range { start: 0, end: 100 });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, Some(0..100), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1430,9 +1440,8 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-five"])
             );
 
-            let range = Some(Range { start: 0, end: 101 });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, Some(0..101), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1444,9 +1453,8 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-two", "list-splits-five"])
             );
 
-            let range = Some(Range { start: 0, end: 199 });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, Some(0..199), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1458,9 +1466,8 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-two", "list-splits-five"])
             );
 
-            let range = Some(Range { start: 0, end: 200 });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, Some(0..200), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1472,9 +1479,8 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-two", "list-splits-five"])
             );
 
-            let range = Some(Range { start: 0, end: 201 });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, Some(0..201), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1491,9 +1497,8 @@ pub mod test_suite {
                 ])
             );
 
-            let range = Some(Range { start: 0, end: 299 });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, Some(0..299), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1510,9 +1515,8 @@ pub mod test_suite {
                 ])
             );
 
-            let range = Some(0..300);
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, Some(0..300), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1529,9 +1533,8 @@ pub mod test_suite {
                 ])
             );
 
-            let range = Some(0..301);
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, Some(0..301), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1549,9 +1552,8 @@ pub mod test_suite {
                 ])
             );
 
-            let range = Some(301..400);
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, Some(301..400), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1563,9 +1565,8 @@ pub mod test_suite {
                 split_ids,
                 to_hash_set(&["list-splits-four", "list-splits-five"])
             );
-            let range = Some(300..400);
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, Some(300..400), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1577,9 +1578,8 @@ pub mod test_suite {
                 split_ids,
                 to_hash_set(&["list-splits-four", "list-splits-five"])
             );
-            let range = Some(299..400);
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, Some(299..400), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1591,9 +1591,8 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-three", "list-splits-four", "list-splits-five"])
             );
 
-            let range = Some(201..400);
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, Some(201..400), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1605,9 +1604,8 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-three", "list-splits-four", "list-splits-five"])
             );
 
-            let range = Some(200..400);
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, Some(200..400), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1620,9 +1618,8 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-three", "list-splits-four", "list-splits-five"])
             );
 
-            let range = Some(199..400);
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, Some(199..400), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1639,9 +1636,8 @@ pub mod test_suite {
                 ])
             );
 
-            let range = Some(101..400);
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, Some(101..400), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1658,9 +1654,8 @@ pub mod test_suite {
                 ])
             );
 
-            let range = Some(101..400);
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, Some(101..400), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1677,9 +1672,8 @@ pub mod test_suite {
                 ])
             );
 
-            let range = Some(100..400);
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, Some(100..400), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1697,9 +1691,8 @@ pub mod test_suite {
                 ])
             );
 
-            let range = Some(99..400);
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, Some(99..400), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1717,9 +1710,8 @@ pub mod test_suite {
                 ])
             );
 
-            let range = Some(1000..1100);
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, Some(1000..1100), None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1744,9 +1736,8 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let range = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, None)
+                .list_splits(index_id, SplitState::Staged, None, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1765,13 +1756,12 @@ pub mod test_suite {
                 ])
             );
 
-            let range = None;
             let tag_filter_ast = TagFilterAst::Or(vec![
                 TagFilterAst::Or(vec![no_tag("tag!"), tag("tag:bar")]),
                 TagFilterAst::Or(vec![no_tag("tag!"), tag("tag:baz")]),
             ]);
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, Some(tag_filter_ast))
+                .list_splits(index_id, SplitState::Staged, None, Some(tag_filter_ast))
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1809,7 +1799,7 @@ pub mod test_suite {
             split_id: split_id.to_string(),
             num_docs: 1,
             original_size_in_bytes: 2,
-            time_range: Some(RangeInclusive::new(0, 99)),
+            time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             ..Default::default()
         };
@@ -1958,35 +1948,39 @@ macro_rules! metastore_test_suite {
     ($metastore_type:ty) => {
         #[cfg(test)]
         mod common_tests {
-
-
             #[tokio::test]
             async fn test_metastore_create_index() {
+                let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_create_index::<$metastore_type>().await;
             }
 
             #[tokio::test]
             async fn test_metastore_delete_index() {
+                let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_delete_index::<$metastore_type>().await;
             }
 
             #[tokio::test]
             async fn test_metastore_index_metadata() {
+                let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_index_metadata::<$metastore_type>().await;
             }
 
             #[tokio::test]
             async fn test_metastore_list_indexes() {
+                let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_list_indexes::<$metastore_type>().await;
             }
 
             #[tokio::test]
             async fn test_metastore_stage_split() {
+                let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_stage_split::<$metastore_type>().await;
             }
 
             #[tokio::test]
             async fn test_metastore_publish_splits() {
+                let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_publish_splits::<$metastore_type>().await;
             }
 
@@ -1997,119 +1991,54 @@ macro_rules! metastore_test_suite {
 
             #[tokio::test]
             async fn test_metastore_replace_splits() {
+                let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_replace_splits::<$metastore_type>().await;
             }
 
             #[tokio::test]
             async fn test_metastore_mark_splits_for_deletion() {
-                crate::tests::test_suite::test_metastore_mark_splits_for_deletion::<$metastore_type>(
-                )
+                let _ = tracing_subscriber::fmt::try_init();
+                crate::tests::test_suite::test_metastore_mark_splits_for_deletion::<$metastore_type>()
                 .await;
             }
 
             #[tokio::test]
             async fn test_metastore_delete_splits() {
+                let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_delete_splits::<$metastore_type>().await;
             }
 
             #[tokio::test]
             async fn test_metastore_list_all_splits() {
+                let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_list_all_splits::<$metastore_type>().await;
             }
 
             #[tokio::test]
             async fn test_metastore_list_splits() {
+                let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_list_splits::<$metastore_type>().await;
             }
 
             #[tokio::test]
             async fn test_metastore_split_update_timestamp() {
+                let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_split_update_timestamp::<$metastore_type>(
                 )
                 .await;
             }
 
             #[tokio::test]
-            async fn test_metastore_add_source() -> anyhow::Result<()> {
-                crate::tests::test_suite::test_metastore_add_source::<$metastore_type>().await
+            async fn test_metastore_add_source() {
+                let _ = tracing_subscriber::fmt::try_init();
+                crate::tests::test_suite::test_metastore_add_source::<$metastore_type>().await;
             }
 
             #[tokio::test]
             async fn test_metastore_delete_source() {
+                let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_delete_source::<$metastore_type>().await;
             }
         }
-    };
-}
-
-#[cfg(feature = "postgres")]
-macro_rules! metastore_test_suite_for_postgresql {
-    ($metastore_type:ty) => {
-        #[cfg(test)]
-        mod common_tests {
-            #[tokio::test]
-            async fn test_metastore_create_index() {
-                crate::tests::test_suite::test_metastore_create_index::<$metastore_type>().await;
-            }
-
-            #[tokio::test]
-            async fn test_metastore_delete_index() {
-                crate::tests::test_suite::test_metastore_delete_index::<$metastore_type>().await;
-            }
-
-            #[tokio::test]
-            async fn test_metastore_index_metadata() {
-                crate::tests::test_suite::test_metastore_index_metadata::<$metastore_type>().await;
-            }
-
-            #[tokio::test]
-            async fn test_metastore_list_indexes() {
-                crate::tests::test_suite::test_metastore_list_indexes::<$metastore_type>().await;
-            }
-
-            #[tokio::test]
-            async fn test_metastore_stage_split() {
-                crate::tests::test_suite::test_metastore_stage_split::<$metastore_type>().await;
-            }
-
-            #[tokio::test]
-            async fn test_metastore_publish_splits() {
-                crate::tests::test_suite::test_metastore_publish_splits::<$metastore_type>().await;
-            }
-
-            #[tokio::test]
-            async fn test_metastore_replace_splits() {
-                crate::tests::test_suite::test_metastore_replace_splits::<$metastore_type>().await;
-            }
-
-            #[tokio::test]
-            async fn test_metastore_mark_splits_for_deletion() {
-                crate::tests::test_suite::test_metastore_mark_splits_for_deletion::<$metastore_type>(
-                )
-                .await;
-            }
-
-            #[tokio::test]
-            async fn test_metastore_delete_splits() {
-                crate::tests::test_suite::test_metastore_delete_splits::<$metastore_type>().await;
-            }
-
-            #[tokio::test]
-            async fn test_metastore_list_all_splits() {
-                crate::tests::test_suite::test_metastore_list_all_splits::<$metastore_type>().await;
-            }
-
-            #[tokio::test]
-            async fn test_metastore_list_splits() {
-                crate::tests::test_suite::test_metastore_list_splits::<$metastore_type>().await;
-            }
-
-            #[tokio::test]
-            async fn test_metastore_split_update_timestamp() {
-                crate::tests::test_suite::test_metastore_split_update_timestamp::<$metastore_type>(
-                )
-                .await;
-            }
-        }
-    };
+    }
 }

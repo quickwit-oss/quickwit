@@ -20,50 +20,30 @@
 use std::convert::TryInto;
 use std::str::FromStr;
 
-use chrono::NaiveDateTime;
-use diesel::sql_types::{Nullable, Text};
 use tracing::error;
 
-use crate::postgresql::schema::{indexes, splits};
 use crate::{
     IndexMetadata, MetastoreError, MetastoreResult, Split as QuickwitSplit, SplitMetadata,
     SplitState,
 };
 
-// A raw query that helps figure out if index exist, non-existant
-// splits and not deletable splits.
-pub const SELECT_SPLITS_FOR_INDEX: &str = r#"
-SELECT i.index_id, s.split_id 
-FROM indexes AS i 
-LEFT JOIN (
-    SELECT index_id, split_id 
-    FROM splits
-    WHERE split_id = ANY ($1)
-) AS s 
-ON i.index_id = s.index_id
-WHERE i.index_id = $2"#;
-
-#[derive(Queryable, QueryableByName, Debug, Clone)]
+#[derive(sqlx::FromRow, Debug)]
 pub struct IndexIdSplitIdRow {
-    #[sql_type = "Text"]
     pub index_id: String,
-    #[sql_type = "Nullable<Text>"]
-    pub split_id: Option<String>,
+    pub split_id: Option<String>, // TODO can we get rid of option
 }
 
 /// A model structure for handling index metadata in a database.
-#[derive(Identifiable, Insertable, Queryable, Debug)]
-#[primary_key(index_id)]
-#[table_name = "indexes"]
+#[derive(sqlx::FromRow)]
 pub struct Index {
     /// Index ID. The index ID identifies the index when querying the metastore.
     pub index_id: String,
     // A JSON string containing all of the IndexMetadata.
     pub index_metadata_json: String,
     /// Timestamp for tracking when the split was created.
-    pub create_timestamp: NaiveDateTime,
+    pub create_timestamp: sqlx::types::time::PrimitiveDateTime,
     /// Timestamp for tracking when the split was last updated.
-    pub update_timestamp: NaiveDateTime,
+    pub update_timestamp: sqlx::types::time::PrimitiveDateTime,
 }
 
 impl Index {
@@ -78,17 +58,14 @@ impl Index {
         // `create_timestamp` and `update_timestamp` are stored in dedicated columns but are also
         // duplicated in [`IndexMetadata`]. We must override the duplicates with the authentic
         // values upon deserialization.
-        index_metadata.create_timestamp = self.create_timestamp.timestamp();
-        index_metadata.update_timestamp = self.update_timestamp.timestamp();
+        index_metadata.create_timestamp = self.create_timestamp.assume_utc().unix_timestamp();
+        index_metadata.update_timestamp = self.update_timestamp.assume_utc().unix_timestamp();
         Ok(index_metadata)
     }
 }
 
 /// A model structure for handling split metadata in a database.
-#[derive(Identifiable, Insertable, Associations, Queryable, Debug)]
-#[belongs_to(Index)]
-#[primary_key(split_id)]
-#[table_name = "splits"]
+#[derive(sqlx::FromRow)]
 pub struct Split {
     /// Split ID.
     pub split_id: String,
@@ -100,9 +77,9 @@ pub struct Split {
     /// If a timestamp field is available, the max timestamp of the split.
     pub time_range_end: Option<i64>,
     /// Timestamp for tracking when the split was created.
-    pub create_timestamp: NaiveDateTime,
+    pub create_timestamp: sqlx::types::time::PrimitiveDateTime,
     /// Timestamp for tracking when the split was last updated.
-    pub update_timestamp: NaiveDateTime,
+    pub update_timestamp: sqlx::types::time::PrimitiveDateTime,
     /// A list of tags for categorizing and searching group of splits.
     pub tags: Vec<String>,
     // The split's metadata serialized as a JSON string.
@@ -156,9 +133,9 @@ impl TryInto<QuickwitSplit> for Split {
         let mut split_metadata = self.split_metadata()?;
         // `create_timestamp` is duplicated in `SplitMetadata` and needs to be overridden with the
         // "true" value stored in a column.
-        split_metadata.create_timestamp = self.create_timestamp.timestamp();
+        split_metadata.create_timestamp = self.create_timestamp.assume_utc().unix_timestamp();
         let split_state = self.split_state()?;
-        let update_timestamp = self.update_timestamp.timestamp();
+        let update_timestamp = self.update_timestamp.assume_utc().unix_timestamp();
         Ok(QuickwitSplit {
             split_metadata,
             split_state,
