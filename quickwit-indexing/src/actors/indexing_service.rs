@@ -38,15 +38,15 @@ use thiserror::Error;
 use tracing::{error, info};
 
 use crate::models::{
-    DetachPipeline, IndexingPipelineId, Observe, ObservePipeline, SpawnMergePipeline,
-    SpawnPipeline, SpawnPipelinesForIndex,
+    DetachPipeline, IndexingPipelineId, Observe, ObservePipeline, ShutdownPipeline,
+    SpawnMergePipeline, SpawnPipeline, SpawnPipelinesForIndex,
 };
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingStatistics};
 
 pub const INDEXING: &str = "indexing";
 
 /// Reserved source ID used for the ingest API.
-const INGEST_API_SOURCE_ID: &str = ".ingest-api";
+pub const INGEST_API_SOURCE_ID: &str = ".ingest-api";
 
 #[derive(Error, Debug)]
 pub enum IndexingServiceError {
@@ -424,8 +424,28 @@ impl Handler<SpawnPipelinesForIndex> for IndexingService {
         &mut self,
         message: SpawnPipelinesForIndex,
         ctx: &ActorContext<Self>,
-    ) -> Result<Result<Vec<IndexingPipelineId>, IndexingServiceError>, ActorExitStatus> {
+    ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self.spawn_pipelines(message.index_id, ctx).await)
+    }
+}
+
+#[async_trait]
+impl Handler<ShutdownPipeline> for IndexingService {
+    type Reply = Result<(), IndexingServiceError>;
+    async fn handle(
+        &mut self,
+        message: ShutdownPipeline,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        let pipeline_id = IndexingPipelineId {
+            index_id: message.index_id,
+            source_id: message.source_id,
+        };
+        let pipeline_handle_opt = self.pipeline_handles.remove(&pipeline_id);
+        if let Some(pipeline_handle) = pipeline_handle_opt {
+            pipeline_handle.quit().await;
+        }
+        Ok(Ok(()))
     }
 }
 
