@@ -57,7 +57,7 @@ impl SourceConfig {
                 uri,
                 extension
             ),
-            None => bail!(>>>>>>> main
+            None => bail!(
                 "Failed to read source config file `{}`: file extension is missing. Supported \
                  file formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or \
                  .yml).",
