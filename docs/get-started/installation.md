@@ -18,12 +18,12 @@ Downloads `.tar.gz`:
 - [macOS x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.3.0/quickwit-v0.3.0-x86_64-apple-darwin.tar.gz)
 
 
-Checkout all builds on [github](https://github.com/quickwit-oss/quickwit/releases)
+Check out the available builds in greater detail on [GitHub](https://github.com/quickwit-oss/quickwit/releases)
 
 ### Note on external dependencies
 
 Quickwit depends on the following external libraries to work correctly:
-- `libpq`: the Postgres client library.
+- `libpq`: the PostgreSQL client library.
 - `libssl`: the industry defacto cryptography library.
 These libraries can be installed on your system using the native package manager.
 You can install these dependencies using the following command:
@@ -42,6 +42,14 @@ apt-get -y update && apt-get -y install libpq-dev libssl-dev
 
 ```bash
 yum -y update && yum -y install postgresql-libs openssl-devel
+```
+
+</TabItem>
+
+<TabItem value="arch-linux" label="Arch Linux">
+
+```bash
+pacman -S postgresql-libs openssl
 ```
 
 </TabItem>
@@ -77,12 +85,12 @@ quickwit-{version}
 - `qwdata/`: the default data directory.
 
 
-## Use the docker image
+## Use the Docker image
 
-If you use docker, this might be one of the quickest way to get going.
-The following command will pull the image from [dockerhub](https://hub.docker.com/r/quickwit/quickwit)
+If you use Docker, this might be one of the quickest way to get going.
+The following command will pull the image from [Docker Hub](https://hub.docker.com/r/quickwit/quickwit)
 and gets you right in the shell of the running container ready to execute Quickwit commands.
-Note that we are also mounting the working directory as volume. This is useful when you already have your dataset ready on your machine and want to work with Quickwit docker image.
+Note that we are also mounting the working directory as volume. This is useful when you already have your dataset ready on your machine and want to work with Quickwit Docker image.
 
 ```bash
 docker run -it -v "$(pwd)":"/quickwit/files" --entrypoint ash quickwit/quickwit
