@@ -21,12 +21,13 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_ingest_api::IngestApiService;
 use quickwit_metastore::Metastore;
 use quickwit_proto::ingest_api::{DropQueueRequest, ListQueuesRequest};
-use tracing::{error, info};
+use tracing::{debug, error, info, instrument};
 
 use super::IndexingService;
 use crate::actors::indexing_service::INGEST_API_SOURCE_ID;
@@ -50,6 +51,11 @@ pub struct IngestApiGarbageCollectorCounters {
 struct Loop;
 
 /// An actor for deleting not needed ingest api queues.
+///
+/// This actor has been introduced for Quickwit 0.3, in which indexes are
+/// deleted by the quickwit CLI without any communication with the (unique) indexing node.
+///
+/// This actor is meant to be removed in the future.
 pub struct IngestApiGarbageCollector {
     metastore: Arc<dyn Metastore>,
     ingest_api_service: Mailbox<IngestApiService>,
@@ -89,6 +95,41 @@ impl IngestApiGarbageCollector {
 
         Ok(())
     }
+
+    #[instrument(skip_all, "ingest-queues-gc")]
+    async fn run_ingest_queues_gc(&mut self) -> anyhow::Result<()> {
+        let queues: HashSet<String> = self
+            .ingest_api_service
+            .ask_for_res(ListQueuesRequest {})
+            .await
+            .context("Failed to list queues")?
+            .queues
+            .into_iter()
+            .collect();
+        debug!(queues=?queues, "list-queues");
+
+        let index_ids: HashSet<String> = self
+            .metastore
+            .list_indexes_metadatas()
+            .await
+            .context("Failed to list queues")?
+            .into_iter()
+            .map(|index_metadata| index_metadata.index_id)
+            .collect();
+        debug!(index_ids=?index_ids, "list-index-ids");
+
+        let queue_ids_to_delete = queues.difference(&index_ids);
+        for queue_id in queue_ids_to_delete {
+            if let Err(delete_queue_error) = self.delete_queue(queue_id).await {
+                error!(error=?delete_queue_error, queue_id=%queue_id, "queue-delete-failure");
+            } else {
+                info!(queue_id=%queue_id, "queue-delete-success");
+                self.counters.num_deleted_queues += 1;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -119,38 +160,10 @@ impl Handler<Loop> for IngestApiGarbageCollector {
         info!("ingest-api-garbage-collect-operation");
         self.counters.num_passes += 1;
 
-        let list_queues_result = self
-            .ingest_api_service
-            .ask_for_res(ListQueuesRequest {})
-            .await;
-        let queues: HashSet<String> = match list_queues_result {
-            Ok(list_queues_resp) => list_queues_resp.queues.into_iter().collect(),
-            Err(error) => {
-                error!(error=?error, "Failed to list queues.");
-                ctx.schedule_self_msg(RUN_INTERVAL, Loop).await;
-                return Ok(());
-            }
-        };
-
-        let list_indexes_result = self.metastore.list_indexes_metadatas().await;
-        let indexes: HashSet<String> = match list_indexes_result {
-            Ok(list_indexes_resp) => list_indexes_resp
-                .into_iter()
-                .map(|index_metadata| index_metadata.index_id)
-                .collect(),
-            Err(error) => {
-                error!(error=?error, "Failed to list indexes.");
-                ctx.schedule_self_msg(RUN_INTERVAL, Loop).await;
-                return Ok(());
-            }
-        };
-
-        for queue_id in queues.difference(&indexes) {
-            if let Err(delete_queue_error) = self.delete_queue(queue_id).await {
-                error!(error=?delete_queue_error, queue_id=?queue_id, "Failed to delete queue.");
-            } else {
-                self.counters.num_deleted_queues += 1;
-            }
+        if let Err(gc_err) = self.run_ingest_queues_gc().await {
+            // We do not stop the actor here.
+            // It will retry in one hour.
+            error!(error=?gc_err, "ingest-queue-gc-failed");
         }
 
         ctx.schedule_self_msg(RUN_INTERVAL, Loop).await;
