@@ -411,16 +411,24 @@ impl Indexer {
             return Ok(());
         };
 
-        // Avoid sending empty split.
+        // Avoid producing empty split, but still update the checkpoint to avoid
+        // reprocessing the same faulty documents.
         if indexed_split.num_docs == 0 {
             self.metastore
-                .apply_checkpoint(
+                .publish_splits(
                     &indexed_split.index_id,
                     &self.source_id,
+                    &[],
                     indexed_split.checkpoint_delta,
                 )
                 .await
-                .context("Failed to apply checkpoint.")?;
+                .with_context(|| {
+                    format!(
+                        "Failed to update the checkpoint for {}, {} after a split containing only \
+                         errors.",
+                        &indexed_split.index_id, &self.source_id
+                    )
+                })?;
             return Ok(());
         }
 
@@ -476,8 +484,11 @@ mod tests {
         let (mailbox, inbox) = create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
-            .expect_apply_checkpoint()
-            .returning(move |_, _, _| Ok(()));
+            .expect_publish_splits()
+            .returning(move |_, _, splits, _| {
+                assert!(splits.is_empty());
+                Ok(())
+            });
 
         let indexer = Indexer::new(
             "test-index".to_string(),
@@ -555,8 +566,11 @@ mod tests {
         let (mailbox, inbox) = create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
-            .expect_apply_checkpoint()
-            .returning(move |_, _, _| Ok(()));
+            .expect_publish_splits()
+            .returning(move |_, _, splits, _| {
+                assert!(splits.is_empty());
+                Ok(())
+            });
 
         let indexer = Indexer::new(
             "test-index".to_string(),
@@ -620,8 +634,11 @@ mod tests {
         let (mailbox, inbox) = create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
-            .expect_apply_checkpoint()
-            .returning(move |_, _, _| Ok(()));
+            .expect_publish_splits()
+            .returning(move |_, _, splits, _| {
+                assert!(splits.is_empty());
+                Ok(())
+            });
         let indexer = Indexer::new(
             "test-index".to_string(),
             doc_mapper,

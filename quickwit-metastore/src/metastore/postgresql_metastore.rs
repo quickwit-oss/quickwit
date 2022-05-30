@@ -596,6 +596,10 @@ impl Metastore for PostgresqlMetastore {
             // Update the index checkpoint.
             self.apply_checkpoint_delta(&conn, index_id, source_id, checkpoint_delta)?;
 
+            if split_ids.is_empty() {
+                return Ok(());
+            }
+
             let published_split_ids =
                 self.mark_splits_as_published_helper(&conn, index_id, split_ids)?;
 
@@ -769,21 +773,6 @@ impl Metastore for PostgresqlMetastore {
             let mut index_metadata = self.index_metadata_inner(&conn, index_id)?;
             index_metadata.delete_source(source_id)?;
             self.update_index(&conn, index_metadata)?;
-            Ok(())
-        })?;
-        Ok(())
-    }
-
-    async fn apply_checkpoint(
-        &self,
-        index_id: &str,
-        source_id: &str,
-        checkpoint_delta: CheckpointDelta,
-    ) -> MetastoreResult<()> {
-        let conn = self.get_conn()?;
-        conn.transaction::<_, MetastoreError, _>(|| {
-            // Update the index checkpoint.
-            self.apply_checkpoint_delta(&conn, index_id, source_id, checkpoint_delta)?;
             Ok(())
         })?;
         Ok(())

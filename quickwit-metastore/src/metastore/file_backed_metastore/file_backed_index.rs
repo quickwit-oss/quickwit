@@ -394,15 +394,4 @@ impl FileBackedIndex {
         self.metadata.delete_source(source_id)?;
         Ok(true)
     }
-
-    pub(crate) fn apply_checkpoint(
-        &mut self,
-        source_id: &str,
-        checkpoint_delta: CheckpointDelta,
-    ) -> MetastoreResult<bool> {
-        self.metadata
-            .checkpoint
-            .try_apply_delta(source_id, checkpoint_delta)?;
-        Ok(true)
-    }
 }
