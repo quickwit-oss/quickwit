@@ -144,14 +144,15 @@ impl Actor for ShardConsumer {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        self.state.next_shard_iterator = get_shard_iterator(
-            &self.kinesis_client,
-            &self.retry_params,
-            &self.stream_name,
-            &self.shard_id,
-            self.from_sequence_number_exclusive.clone(),
-        )
-        .await?;
+        self.state.next_shard_iterator = ctx
+            .protect_future(get_shard_iterator(
+                &self.kinesis_client,
+                &self.retry_params,
+                &self.stream_name,
+                &self.shard_id,
+                self.from_sequence_number_exclusive.clone(),
+            ))
+            .await?;
         ctx.send_self_message(Loop).await?;
         Ok(())
     }
@@ -178,8 +179,13 @@ impl Handler<Loop> for ShardConsumer {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         if let Some(shard_iterator) = self.state.next_shard_iterator.take() {
-            let response =
-                get_records(&self.kinesis_client, &self.retry_params, shard_iterator).await?;
+            let response = ctx
+                .protect_future(get_records(
+                    &self.kinesis_client,
+                    &self.retry_params,
+                    shard_iterator,
+                ))
+                .await?;
             self.state.lag_millis = response.millis_behind_latest.clone();
             self.state.next_shard_iterator = response.next_shard_iterator;
 

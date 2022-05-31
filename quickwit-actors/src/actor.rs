@@ -26,6 +26,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures::Future;
 use thiserror::Error;
 use tokio::sync::oneshot;
 use tokio::sync::watch::Sender;
@@ -254,6 +255,13 @@ impl<A: Actor> ActorContext<A> {
     /// from an external library that you trust.
     pub fn protect_zone(&self) -> ProtectedZoneGuard {
         self.progress.protect_zone()
+    }
+
+    /// Executes a future in a protected zone.
+    pub async fn protect_future<Fut, T>(&self, future: Fut) -> T
+    where Fut: Future<Output = T> {
+        let _guard = self.protect_zone();
+        future.await
     }
 
     /// Gets a copy of the actor kill switch.
