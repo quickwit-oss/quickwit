@@ -83,6 +83,30 @@ wget -O gh-archive.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/
 ./quickwit index create --index-config gh-archive.yaml
 ```
 
+
+## Create and populate Kinesis stream
+
+Now, let's create a Kinesis stream and load some events into it.
+
+:::tip
+This step may be fairly slow depending on how much bandwidth is available. You can reduce the volume of data to ingest by downloading a single file from the GH Archive and/or place a `| head -n <number of records> \ ` after the `gunzip` command. You can also speed things up by increasing the number of shards and/or the number of jobs launched by `parallel` (`-j` option).
+:::
+
+```bash
+# Create a stream named `gh-archive` with 3 shards.
+aws kinesis create-stream --stream-name gh-archive --shard-count 8
+
+# Download a few GH Archive files.
+wget https://data.gharchive.org/2022-05-12-{10..12}.json.gz
+
+# Load the events into Kinesis stream
+gunzip -c 2022-05-12*.json.gz | \
+jq -c '.created_at = (.created_at | fromdate) | .public = if .public then 1 else 0 end' | \
+parallel --gnu -j8 -N 500 --pipe \
+'jq --slurp -c "{\"Records\": [.[] | {\"Data\": (. | tostring), \"PartitionKey\": .id }], \"StreamName\": \"gh-archive\"}" > records-{%}.json && \
+aws kinesis put-records --cli-input-json file://records-{%}.json --cli-binary-format raw-in-base64-out >> out.log'
+```
+
 ## Create Kinesis source
 
 ```yaml title="kinesis-source.yaml"
@@ -105,28 +129,19 @@ wget https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutoria
 ./quickwit source create --index gh-archive --source-config kinesis-source.yaml
 ```
 
-## Create and populate Kinesis stream
+:::note
 
-Now, let's create a Kinesis stream and load some events into it.
-
-:::tip
-This step may be fairly slow depending on how much bandwidth is available. You can reduce the volume of data to ingest by downloading a single file from the GH Archive and/or place a `| head -n <number of records> \ ` after the `gunzip` command. You can also speed things up by increasing the number of shards and/or the number of jobs launched by `parallel` (`-j` option).
-:::
-
-```bash
-# Create a stream named `gh-archive` with 3 shards.
-aws kinesis create-stream --stream-name gh-archive --shard-count 8
-
-# Download a few GH Archive files.
-wget https://data.gharchive.org/2022-05-12-{10..12}.json.gz
-
-# Load the events into Kinesis stream
-gunzip -c 2022-05-12*.json.gz | \
-jq -c '.created_at = (.created_at | fromdate) | .public = if .public then 1 else 0 end' | \
-parallel --gnu -j8 -N 500 --pipe \
-'jq --slurp -c "{\"Records\": [.[] | {\"Data\": (. | tostring), \"PartitionKey\": .id }], \"StreamName\": \"gh-archive\"}" > records-{%}.json && \
-aws kinesis put-records --cli-input-json file://records-{%}.json >> out.log'
+If this command fails with the folllowing error message:
 ```
+Command failed: Stream gh-archive under account XXXXXXXXX not found.
+
+Caused by:
+    0: Stream gh-archive under account XXXXXXXX not found.
+    1: Stream gh-archive under account XXXXXXXX not found.
+```
+
+it means the kinesis stream was not properly created in the previous step.
+:::
 
 ## Launch indexing and search services
 
@@ -151,6 +166,8 @@ Once the first split is published, you can start running search queries. For ins
 ```bash
 curl 'http://localhost:7280/api/v1/gh-archive/search?query=org.login:kubernetes%20AND%20repo.name:kubernetes'
 ```
+
+It is also possible to access these results through the [Quickwit UI](http://localhost:7280/ui/search?query=org.login%3Akubernetes+AND+repo.name%3Akubernetes&index_id=gh-archive&max_hits=10).
 
 We can also group these events by type and count them:
 
