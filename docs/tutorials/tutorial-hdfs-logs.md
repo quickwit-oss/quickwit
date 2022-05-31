@@ -42,7 +42,7 @@ curl -o hdfs_logs_index_config.yaml https://raw.githubusercontent.com/quickwit-o
 ```
 
 The index config defines five fields: `timestamp`, `tenant_id`, `severity_text`, `body`, and one object field
-for the nested values `resource.service` . It also sets the `default_search_fields`, the `tag_fields`, and the `timestamp_field`.The `timestamp_field` and `tag_fields` are used by Quickwit for [splits pruning](../concepts/architecture.md) at query time to boost search speed. Check out the [index config docs](../configuration/index-config.md) for more details.
+for the nested values `resource.service` . It also sets the `default_search_fields`, the `tag_fields`, and the `timestamp_field`.The `timestamp_field` and `tag_fields` are used by Quickwit for [splits pruning](/docs/concepts/architecture) at query time to boost search speed. Check out the [index config docs](/docs/configuration/index-config) for more details.
 
 ```yaml title="hdfs_logs_index_config.yaml"
 version: 0
@@ -105,14 +105,14 @@ You can check it's working by using `search` subcommand and look for `INFO` in `
 
 :::note
 
-The `ingest` subcommand generates [splits](../concepts/architecture.md) of 5 million documents. Each split is a small piece of index represented by a file in which index files and metadata files are saved.
+The `ingest` subcommand generates [splits](/docs/concepts/architecture) of 5 million documents. Each split is a small piece of index represented by a file in which index files and metadata files are saved.
 
 :::
 
 
 ## Start your server
 
-The command `run --service searcher` starts an http server which provides a [REST API](../reference/rest-api.md).
+The command `run --service searcher` starts an http server which provides a [REST API](/docs/reference/rest-api).
 
 
 ```bash
@@ -146,7 +146,7 @@ which returns the json
 }
 ```
 
-The index config shows that we can use the timestamp field parameters `start_timestamp` and `end_timestamp` and benefit from time pruning. Behind the scenes, Quickwit will only query [splits](../concepts/architecture.md) that have logs in this time range.
+The index config shows that we can use the timestamp field parameters `start_timestamp` and `end_timestamp` and benefit from time pruning. Behind the scenes, Quickwit will only query [splits](/docs/concepts/architecture) that have logs in this time range.
 
 Let's use these parameters with the following query:
 
@@ -167,5 +167,5 @@ Let's do some cleanup by deleting the index:
 Congratz! You finished this tutorial!
 
 
-To continue your Quickwit journey, check out the [tutorial for distributed search](tutorial-hdfs-logs-distributed-search-aws-s3.md) or dig into the [search REST API](../reference/rest-api.md) or [query language](../reference/query-language.md).
+To continue your Quickwit journey, check out the [tutorial for distributed search](tutorial-hdfs-logs-distributed-search-aws-s3.md) or dig into the [search REST API](/docs/reference/rest-api) or [query language](/docs/reference/query-language).
 

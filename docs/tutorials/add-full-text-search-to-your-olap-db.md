@@ -99,7 +99,7 @@ You can check it's working by using the `search` command and looking for `tantiv
 ./quickwit run --service searcher
 ```
 
-This command will start an HTTP server with a [REST API](../reference/rest-api.md). We are now
+This command will start an HTTP server with a [REST API](/docs/reference/rest-api). We are now
 ready to fetch some ids with the search stream endpoint. Let's start by streaming them on a simple
 query and with a `csv` output format.
 
