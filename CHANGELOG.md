@@ -14,6 +14,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.3.0] - 2022-05-31
+
+### Added
+- Search and cluster overview web UI
+- Ingestion API
+- Aggregation queries
+- Kinesis data source
+- Support for Json Field
+
+### Fixed
+- Switched from S.W.I.M to Chitchat
+
+### Removed
+- u64 as Date Field
+
 ## [0.2.1] - 2022-02-28
 
 ### Added
