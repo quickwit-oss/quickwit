@@ -24,9 +24,10 @@ use toml::Value;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let version_text = format!(
-        "{} (commit-hash: {})",
+        "{} ({} {})",
         env!("CARGO_PKG_VERSION"),
-        env!("GIT_COMMIT_HASH")
+        env!("QW_COMMIT_SHORT_HASH"),
+        env!("QW_COMMIT_DATE"),
     );
 
     let app = build_cli()

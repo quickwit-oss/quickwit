@@ -58,11 +58,23 @@ Quickwit is the next-gen search & analytics engine built for log management. It 
 - Search stream API that notably unlocks full-text search in ClickHouse
 
 
-### 🔮 Upcoming Features
-- Ingest your logs from your object storage
-- Distributed indexing
-- Support for tracing
-- Native support for OpenTelemetry
+### 🔮 Roadmap
+- [Quickwit 0.4 - August 2022](https://github.com/quickwit-oss/quickwit/projects/5)
+  - Native support for Kubernetes
+  - Boolean, datetime, and IP address fields
+  - Range queries
+  - Sort
+  - Retention policies
+- [Quickwit 0.5 - October 2022](https://github.com/quickwit-oss/quickwit/projects/6)
+  - Grafana data source
+  - Native support for OpenTelemetry
+  - REST API for managing indexes
+- [Long-term roadmap](ROADMAP.md)
+  - Distributed indexing
+  - Pipe-based query language
+  - Security (TLS, authentication, RBAC)
+  - [and more...](ROADMAP.md)
+
 
 # 🔎 Uses & Limitations
 | :white_check_mark: &nbsp; When to use                                                  	| :x: &nbsp; When not to use                                       	|
@@ -158,4 +170,3 @@ We are always super happy to have contributions: code, documentation, issues, fe
 [twitter]: https://twitter.com/Quickwit_Inc
 [discord]: https://discord.gg/MT27AG5EVE
 [blogs]: https://quickwit.io/blog
-
