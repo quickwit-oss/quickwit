@@ -126,7 +126,7 @@ If you get the following error:
 
 ``` Command failed: Topic `gh-archive` has no partitions.```
 
-It means the kafka topic `gh-archive` was not properly created in the previous step.
+It means the Kafka topic `gh-archive` was not properly created in the previous step.
 
 :::
 
