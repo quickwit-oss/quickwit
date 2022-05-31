@@ -57,7 +57,7 @@ doc_mapping:
     - name: actor
       type: json
       tokenizer: default
-    -name: other
+    - name: other
       type: json
       tokenizer: default
     - name: created_at
