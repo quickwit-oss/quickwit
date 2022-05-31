@@ -52,7 +52,7 @@ doc_mapping:
     - name: actor
       type: json
       tokenizer: default
-    -name: other
+    - name: other
       type: json
       tokenizer: default
     - name: created_at
@@ -74,6 +74,23 @@ wget -O gh-archive.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/
 
 # Create index.
 ./quickwit index create --index-config gh-archive.yaml
+```
+
+## Create and populate Kafka topic
+
+Now, let's create a Kafka topic and load some events into it.
+
+```bash
+# Create a topic named `gh-archive` with 3 partitions.
+bin/kafka-topics.sh --create --topic gh-archive --partitions 3 --bootstrap-server localhost:9092
+
+# Download a few GH Archive files.
+wget https://data.gharchive.org/2022-05-12-{10..15}.json.gz
+
+# Load the events into Kafka topic.
+gunzip -c 2022-05-12*.json.gz | \
+jq -c '.created_at = (.created_at | fromdate) | .public = if .public then 1 else 0 end' | \
+bin/kafka-console-producer.sh --topic gh-archive --bootstrap-server localhost:9092
 ```
 
 ## Create Kafka source
@@ -103,23 +120,17 @@ wget https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutoria
 # Create source.
 ./quickwit source create --index gh-archive --source-config kafka-source.yaml
 ```
+:::note
 
-## Create and populate Kafka topic
+If you get the following error:
 
-Now, let's create a Kafka topic and load some events into it.
+``` Command failed: Topic `gh-archive` has no partitions.```
 
-```bash
-# Create a topic named `gh-archive` with 3 partitions.
-bin/kafka-topics.sh --create --topic gh-archive --partitions 3 --bootstrap-server localhost:9092
+It means the Kafka topic `gh-archive` was not properly created in the previous step.
 
-# Download a few GH Archive files.
-wget https://data.gharchive.org/2022-05-12-{10..15}.json.gz
+:::
 
-# Load the events into Kafka topic.
-gunzip -c 2022-05-12*.json.gz | \
-jq -c '.created_at = (.created_at | fromdate) | .public = if .public then 1 else 0 end' | \
-bin/kafka-console-producer.sh --topic gh-archive --bootstrap-server localhost:9092
-```
+
 
 ## Launch indexing and search services
 
@@ -144,6 +155,9 @@ Once the first split is published, you can start running search queries. For ins
 ```bash
 curl 'http://localhost:7280/api/v1/gh-archive/search?query=org.login:kubernetes%20AND%20repo.name:kubernetes'
 ```
+
+It is also possible to access these results through the [Quickwit UI](http://localhost:7280/ui/search?query=org.login%3Akubernetes+AND+repo.name%3Akubernetes&index_id=gh-archive&max_hits=10).
+
 
 We can also group these events by type and count them:
 
