@@ -1,6 +1,8 @@
 ---
 title: Full-text search on Clickhouse
-sidebar_position: 2
+description: Add full-text search to Clickhouse, using the Quickwit search streaming feature.
+tags: [clickhouse, integration]
+icon_url: /img/tutorials/clickhouse.svg
 ---
 
 

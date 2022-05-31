@@ -1,6 +1,8 @@
 ---
 title: Distributed search on AWS S3
-sidebar_position: 1
+description: Index log entries on AWS S3 using an EC2 instance and launch a distributed cluster.
+tags: [aws, integration]
+icon_url: /img/tutorials/aws-logo.png
 ---
 
 In this guide, we will index about 40 million log entries (13 GB decompressed) on AWS S3 using an EC2 instance and launch a three-node distributed search cluster.

@@ -1,6 +1,8 @@
 ---
 title: Ingesting data from Apache Kafka
 description: A short tutorial describing how to set up Quickwit to ingest data from Kafka in a few minutes
+tags: [kafka, integration]
+icon_url: /img/tutorials/kafka.svg
 ---
 
 In this tutorial, we will describe how to set up Quickwit to ingest data from Kafka in a few minutes. First, we will create an index and configure a Kafka source. Then, we will create a Kafka topic and load some events from the [GH Archive](https://www.gharchive.org/) into it. Finally, we will execute some search and aggregation queries to explore the freshly ingested data.
