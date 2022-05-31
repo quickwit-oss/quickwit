@@ -19,17 +19,48 @@
 
 use std::process::Command;
 
+const NONE: &str = "none";
+
 const UNKNOWN: &str = "unknown";
 
 fn main() {
-    println!("cargo:rustc-env=GIT_COMMIT_HASH={}", git_rev_parse_head());
+    commit_info();
 }
 
-fn git_rev_parse_head() -> String {
-    let mut stdout = match Command::new("git").args(&["rev-parse", "HEAD"]).output() {
+fn commit_info() {
+    // Extract commit hash and date
+    let output_bytes = match Command::new("git")
+        .arg("log")
+        .arg("-1")
+        .arg("--date=short")
+        .arg("--format=%H %h %cd")
+        .arg("--abbrev=9")
+        .output()
+    {
         Ok(output) if output.status.success() => output.stdout,
-        _ => return UNKNOWN.to_string(),
+        _ => Vec::new(),
     };
-    stdout.truncate(7);
-    String::from_utf8(stdout).unwrap_or_else(|_| UNKNOWN.to_string())
+    let output = String::from_utf8(output_bytes).unwrap();
+    let mut parts = output.split_whitespace();
+    let mut next = || parts.next().unwrap_or(UNKNOWN);
+    println!("cargo:rustc-env=QW_COMMIT_HASH={}", next());
+    println!("cargo:rustc-env=QW_COMMIT_SHORT_HASH={}", next());
+    println!("cargo:rustc-env=QW_COMMIT_DATE={}", next());
+
+    // Extract commit version tag
+    let output_bytes = match Command::new("git")
+        .arg("tag")
+        .arg("--points-at")
+        .arg("HEAD")
+        .output()
+    {
+        Ok(output) if output.status.success() => output.stdout,
+        _ => Vec::new(),
+    };
+    let output = String::from_utf8(output_bytes).unwrap();
+    let version_tag = output
+        .split_whitespace()
+        .find(|tag| tag.ends_with(env!("CARGO_PKG_VERSION")))
+        .unwrap_or(NONE);
+    println!("cargo:rustc-env=QW_COMMIT_VERSION_TAG={}", version_tag);
 }
