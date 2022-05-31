@@ -1,6 +1,8 @@
 ---
 title: Ingesting data from Apache Kafka
 description: A short tutorial describing how to set up Quickwit to ingest data from Kafka in a few minutes
+tags: [kafka, integration]
+icon_url: /img/tutorials/kafka.svg
 ---
 
 In this tutorial, we will describe how to set up Quickwit to ingest data from Kafka in a few minutes. First, we will create an index and configure a Kafka source. Then, we will create a Kafka topic and load some events from the [GH Archive](https://www.gharchive.org/) into it. Finally, we will execute some search and aggregation queries to explore the freshly ingested data.
@@ -9,7 +11,7 @@ In this tutorial, we will describe how to set up Quickwit to ingest data from Ka
 
 You will need the following to complete this tutorial:
 - A running Kafka cluster (see Kafka [quickstart](https://kafka.apache.org/quickstart))
-- A local Quickwit [installation](../get-started/installation.md)
+- A local Quickwit [installation](/docs/get-started/installation)
 - [jq](https://stedolan.github.io/jq/download/)
 
 :::note
@@ -141,7 +143,7 @@ Finally, execute this command to start Quickwit in server mode.
 ./quickwit run
 ```
 
-Under the hood, this command spawns an indexer and a searcher. On startup, the indexer will connect to the Kafka topic specified by the source and start streaming and indexing events from the partitions composing the topic. With the default commit timeout value (see [indexing settings](../configuration/index-config.md#indexing-settings)), the indexer should publish the first split after approximately 60 seconds.
+Under the hood, this command spawns an indexer and a searcher. On startup, the indexer will connect to the Kafka topic specified by the source and start streaming and indexing events from the partitions composing the topic. With the default commit timeout value (see [indexing settings](/docs/configuration/index-config#indexing-settings)), the indexer should publish the first split after approximately 60 seconds.
 
 You can run this command (in another shell) to inspect the properties of the index and check the current number of published splits:
 
