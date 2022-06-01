@@ -205,5 +205,6 @@ export type Member = {
 }
 
 export type MemberList = {
+  cluster_id: string;
   members: Member[];
 }
