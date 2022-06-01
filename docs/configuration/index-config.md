@@ -112,8 +112,8 @@ Example of a mapping for a text field:
 
 ```yaml
 name: body
-type: text
 description: Body of the document
+type: text
 tokenizer: default
 record: position
 ```
@@ -156,8 +156,8 @@ Example of a mapping for an i64 field:
 
 ```yaml
 name: timestamp
-type: i64
 descripton: UNIX timestamp of the document creation date
+type: i64
 stored: true
 indexed: true
 fast: true

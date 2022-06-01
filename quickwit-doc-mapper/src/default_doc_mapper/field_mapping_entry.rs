@@ -1028,8 +1028,8 @@ mod tests {
             r#"
             {
                 "name": "my_field_name",
-                "type": "i64",
-                "description": "If you see this description, your test is failed"
+                "description": "If you see this description, your test is failed",
+                "type": "i64"
             }"#,
         )
         .unwrap();
@@ -1039,8 +1039,8 @@ mod tests {
             entry_str,
             serde_json::json!({
                 "name": "my_field_name",
-                "type": "i64",
                 "description": "If you see this description, your test is failed",
+                "type": "i64",
                 "stored": true,
                 "fast": false,
                 "indexed": true
@@ -1054,8 +1054,8 @@ mod tests {
             r#"
             {
                 "name": "my_field_name",
-                "type": "text",
-                "description": "If you see this description, your test is failed"
+                "description": "If you see this description, your test is failed",
+                "type": "text"
             }"#,
         )
         .unwrap();
@@ -1065,8 +1065,8 @@ mod tests {
             entry_str,
             serde_json::json!({
                 "name": "my_field_name",
-                "type": "text",
                 "description": "If you see this description, your test is failed",
+                "type": "text",
                 "fast": false,
                 "stored": true,
                 "indexed": true,
@@ -1081,8 +1081,8 @@ mod tests {
             r#"
             {
                 "name": "my_field_name",
-                "type": "json",
-                "description": "If you see this description, your test is failed"
+                "description": "If you see this description, your test is failed",
+                "type": "json"
             }"#,
         )
         .unwrap();
@@ -1092,8 +1092,8 @@ mod tests {
             entry_str,
             serde_json::json!({
                 "name": "my_field_name",
-                "type": "json",
                 "description": "If you see this description, your test is failed",
+                "type": "json",
                 "tokenizer": "default",
                 "record": "basic",
                 "stored": true,
