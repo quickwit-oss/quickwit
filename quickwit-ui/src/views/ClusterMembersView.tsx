@@ -25,12 +25,12 @@ import { ViewUnderAppBarBox, FullBoxContainer, QBreadcrumbs } from '../component
 import Loader from '../components/Loader';
 import ErrorResponseDisplay from '../components/ResponseErrorDisplay';
 import { Client } from '../services/client';
-import { Member, ResponseError } from '../utils/models';
+import { MemberList, ResponseError } from '../utils/models';
 
 
 function ClusterView() {
   const [loading, setLoading] = useState(false);
-  const [members, setMembers] = useState<null | Member[]>(null);
+  const [members, setMembers] = useState<null | MemberList>(null);
   const [responseError, setResponseError] = useState<ResponseError | null>(null);
   const quickwitClient = useMemo(() => new Client(), []);
 
@@ -40,7 +40,7 @@ function ClusterView() {
       (clusterMembers) => {
         setResponseError(null);
         setLoading(false);
-        setMembers(clusterMembers.members);
+        setMembers(clusterMembers);
       },
       (error) => {
         setLoading(false);
@@ -63,7 +63,7 @@ function ClusterView() {
     <ViewUnderAppBarBox>
       <FullBoxContainer>
         <QBreadcrumbs aria-label="breadcrumb">
-          <Typography color="text.primary">Cluster members</Typography>
+          <Typography color="text.primary">Cluster state</Typography>
         </QBreadcrumbs>
         <FullBoxContainer sx={{ px: 0 }}>
           { renderResult() }

@@ -61,8 +61,12 @@ impl ClusterService for Cluster {
         &self,
         _request: ListMembersRequest,
     ) -> Result<ListMembersResponse, ClusterError> {
+        let cluster_id = self.cluster_id.clone();
         let members = self.members().into_iter().map(PMember::from).collect();
-        Ok(ListMembersResponse { members })
+        Ok(ListMembersResponse {
+            cluster_id,
+            members,
+        })
     }
 
     /// This is the API to leave the member from the cluster.
