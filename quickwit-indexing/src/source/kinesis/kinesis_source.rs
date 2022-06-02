@@ -173,13 +173,14 @@ impl KinesisSource {
 #[async_trait]
 impl Source for KinesisSource {
     async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        let shards = list_shards(
-            &self.kinesis_client,
-            &self.retry_params,
-            &self.stream_name,
-            None,
-        )
-        .await?;
+        let shards = ctx
+            .protect_future(list_shards(
+                &self.kinesis_client,
+                &self.retry_params,
+                &self.stream_name,
+                None,
+            ))
+            .await?;
         for shard in shards {
             self.spawn_shard_consumer(ctx, shard.shard_id);
         }
