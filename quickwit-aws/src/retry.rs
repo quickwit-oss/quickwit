@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::fmt::Display;
+use std::fmt::Debug;
 use std::time::Duration;
 
 use futures::Future;
@@ -45,19 +45,6 @@ impl<E> Retry<E> {
         match self {
             Self::Transient(e) => e,
             Self::Permanent(e) => e,
-        }
-    }
-}
-
-impl<E: Display> Display for Retry<E> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Retry::Transient(e) => {
-                write!(f, "Transient({})", e)
-            }
-            Retry::Permanent(e) => {
-                write!(f, "Permanent({})", e)
-            }
         }
     }
 }
@@ -94,7 +81,7 @@ pub async fn retry<F, U, E, Fut>(retry_params: &RetryParams, f: F) -> Result<U, 
 where
     F: Fn() -> Fut,
     Fut: Future<Output = Result<U, E>>,
-    E: Retryable + Display + 'static,
+    E: Retryable + Debug + 'static,
 {
     let mut attempt_count = 0;
 
@@ -126,7 +113,7 @@ where
                 debug!(
                     attempt_count = %attempt_count,
                     delay_ms = %delay_ms,
-                    error = %error,
+                    error = ?error,
                     "Request failed, retrying"
                 );
 

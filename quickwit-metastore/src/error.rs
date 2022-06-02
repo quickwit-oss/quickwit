@@ -42,16 +42,16 @@ pub enum MetastoreError {
     /// Any generic internal error.
     /// The message can be helpful to users, but the detail of the error
     /// are judged uncoverable and not useful for error handling.
-    #[error("Internal error: `{message}` Cause: `{cause}`.")]
+    #[error("Internal error: `{message}` Cause: `{cause:?}`.")]
     InternalError {
         message: String,
         cause: anyhow::Error,
     },
 
-    #[error("Failed to deserialize index metadata: `{cause}`")]
+    #[error("Failed to deserialize index metadata: `{cause:?}`")]
     InvalidManifest { cause: serde_json::Error },
 
-    #[error("IOError `{0}`")]
+    #[error("IOError `{0:?}`")]
     Io(io::Error),
 
     #[error("Splits `{split_ids:?}` do not exist.")]
