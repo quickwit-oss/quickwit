@@ -43,7 +43,7 @@ pub struct PackagedSplit {
 }
 
 impl fmt::Debug for PackagedSplit {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("PackagedSplit")
             .field("split_id", &self.split_id)
             .field("replaced_split_ids", &self.replaced_split_ids)

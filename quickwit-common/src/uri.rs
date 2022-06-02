@@ -193,7 +193,7 @@ impl AsRef<str> for Uri {
 }
 
 impl Display for Uri {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(formatter, "{}", self.uri)
     }
 }

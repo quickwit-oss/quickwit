@@ -41,7 +41,7 @@ pub struct ScratchDirectory {
 }
 
 impl fmt::Debug for ScratchDirectory {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("ScratchDirectory")
             .field("dir", &self.path())

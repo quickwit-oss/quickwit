@@ -107,7 +107,7 @@ pub(crate) async fn list_shards(
         let request = ListShardsInput {
             stream_name,
             next_token,
-            max_results: limit_per_request.map(|limit| limit as i64).clone(),
+            max_results: limit_per_request.map(|limit| limit as i64),
             ..Default::default()
         };
         let response = retry(retry_params, || async {
@@ -217,7 +217,7 @@ pub(crate) mod tests {
         while has_more_streams {
             let request = ListStreamsInput {
                 exclusive_start_stream_name,
-                limit: limit_per_request.map(|limit| limit as i64).clone(),
+                limit: limit_per_request.map(|limit| limit as i64),
             };
             let response = retry(&DEFAULT_RETRY_PARAMS, || async {
                 kinesis_client

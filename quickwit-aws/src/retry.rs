@@ -50,7 +50,7 @@ impl<E> Retry<E> {
 }
 
 impl<E: Display> Display for Retry<E> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Retry::Transient(e) => {
                 write!(f, "Transient({})", e)

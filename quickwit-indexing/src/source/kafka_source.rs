@@ -121,7 +121,7 @@ pub struct KafkaSource {
 }
 
 impl fmt::Debug for KafkaSource {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "KafkaSource {{ source_id: {}, topic: {} }}",
@@ -543,7 +543,7 @@ fn compute_next_offset(
 /// messages.
 fn parse_message_payload(message: &BorrowedMessage) -> Option<String> {
     match message.payload_view::<str>() {
-        Some(Ok(payload)) if payload.len() > 0 => {
+        Some(Ok(payload)) if !payload.is_empty() => {
             let doc = payload.to_string();
             debug!(
                 topic = ?message.topic(),
