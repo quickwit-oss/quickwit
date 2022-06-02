@@ -154,6 +154,7 @@ impl IndexingSplitStore {
 
         info!(
             split_size_in_megabytes = %split_size_in_megabytes,
+            num_docs = %split.num_docs,
             elapsed_secs = %elapsed_secs,
             throughput_mb_s = %throughput_mb_s,
             is_mature = is_mature,

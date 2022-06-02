@@ -11,7 +11,7 @@ Quickwit is particularly well-suited for dealing with large, immutable datasets 
 Common use cases for Quickwit include:
 
 - Searching through logs, from small amounts of data to terabytes.
-- Adding full-text search capabilities to [OLAP databases such as ClickHouse](./guides/add-full-text-search-to-your-olap-db.md).
+- Adding full-text search capabilities to [OLAP databases such as ClickHouse](/tutorials/add-full-text-search-to-your-olap-db).
 - Searching through backups sitting on your cloud storage by adding Quickwit index files on your same storage.
 
 # Key features of Quickwit

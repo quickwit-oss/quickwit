@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::env;
 use std::process::Command;
 
 const NONE: &str = "none";
@@ -25,6 +26,10 @@ const UNKNOWN: &str = "unknown";
 
 fn main() {
     commit_info();
+    println!(
+        "cargo:rustc-env=CARGO_BUILD_TARGET={}",
+        env::var("TARGET").unwrap()
+    );
 }
 
 fn commit_info() {

@@ -112,6 +112,7 @@ Example of a mapping for a text field:
 
 ```yaml
 name: body
+description: Body of the document
 type: text
 tokenizer: default
 record: position
@@ -121,6 +122,7 @@ record: position
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
+| `description` | Optional description for the field. | `None` |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `tokenizer` | Name of the `Tokenizer`, choices between `raw`, `default` and `en_stem` | `default` |
 | `record`    | Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
@@ -154,6 +156,7 @@ Example of a mapping for an i64 field:
 
 ```yaml
 name: timestamp
+descripton: UNIX timestamp of the document creation date
 type: i64
 stored: true
 indexed: true
@@ -164,6 +167,7 @@ fast: true
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
+| `description` | Optional description for the field. | `None` |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
 | `fast`      | Whether value is stored in a fast field | `false` |
@@ -185,6 +189,7 @@ fast: true
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
+| `description` | Optional description for the field. | `None` |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
 | `fast`     | Whether value is stored in a fast field. Only on 1:1 cardinality, not supported on `array<bytes>` fields | `false` |
@@ -207,6 +212,7 @@ tokenizer: "default"
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
+| `description` | Optional description for the field. | `None` |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
 | `tokenizer` | **Only affects strings in the json object**. Name of the `Tokenizer`, choices between `raw`, `default` and `en_stem` | `default` |

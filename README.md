@@ -23,15 +23,13 @@ Search more with less
 <h4 align="center">
   <a href="https://quickwit.io/docs/get-started/quickstart">Quickstart</a> |
   <a href="https://quickwit.io/docs/">Docs</a> |
-  <a href="https://quickwit.io/docs/guides/tutorial-hdfs-logs">Tutorials</a> |
+  <a href="https://quickwit.io/tutorials">Tutorials</a> |
   <a href="https://discord.gg/rpRRTezWhW">Chat</a> |
   <a href="https://quickwit.io/docs/get-started/installation">Download</a>
 </h4>
 <br/>
 
-❗**Disclaimer: you are reading the README of Quickwit 0.3 version that will be shipped in May 2022.**
-
-Quickwit is the next-gen search & analytics engine built for log management. It is a highly reliable & cost-efficient alternative to Elasticsearch.
+Quickwit is a cloud-native search engine for log management & analytics. It is designed to be very cost-effective, easy to operate, and scale to petabytes.
 
 <br/>
 
@@ -103,16 +101,16 @@ Take a look at our [Quick Start]([https://quickwit.io/docs/get-started/quickstar
 
 # 📚 Tutorials
 
-- [Search on logs with timestamp pruning](https://quickwit.io/docs/guides/tutorial-hdfs-logs)
-- [Set up a distributed search on AWS S3](https://quickwit.io/docs/guides/tutorial-hdfs-logs-distributed-search-aws-s3)
-- [Add full-text search to a well-known OLAP database, ClickHouse](https://quickwit.io/docs/guides/add-full-text-search-to-your-olap-db)
+- [Search on logs with timestamp pruning](https://quickwit.io/tutorials/tutorial-hdfs-logs)
+- [Set up a distributed search on AWS S3](https://quickwit.io/tutorials/tutorial-hdfs-logs-distributed-search-aws-s3)
+- [Add full-text search to a well-known OLAP database, ClickHouse](https://quickwit.io/tutorials/add-full-text-search-to-your-olap-db)
 
 # 💬 Community
 
-- Chat with us in [Discord][discord]
+- Chat with us in [Discord][https://discord.gg/rpRRTezWhW]
 - 📝 [Blog Posts](https://quickwit.io/blog)
 - 📺 [Youtube Videos](https://www.youtube.com/channel/UCvZVuRm2FiDq1_ul0mY85wA)
-- Follow us on [Twitter][twitter]
+- Follow us on [Twitter][https://twitter.com/quickwit_inc]
 
 
 # 🙋 FAQ

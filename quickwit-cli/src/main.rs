@@ -91,9 +91,10 @@ async fn main() -> anyhow::Result<()> {
         ""
     };
     let version_text = format!(
-        "{}{} ({} {})",
+        "{}{} ({} {} {})",
         env!("CARGO_PKG_VERSION"),
         nightly,
+        env!("CARGO_BUILD_TARGET"),
         env!("QW_COMMIT_SHORT_HASH"),
         env!("QW_COMMIT_DATE"),
     );

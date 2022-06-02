@@ -23,6 +23,10 @@ pub struct ListMembersRequest {
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListMembersResponse {
+    //// Cluster ID
+    #[prost(string, tag="2")]
+    pub cluster_id: ::prost::alloc::string::String,
+    //// All nodes belonging to the cluster.
     #[prost(message, repeated, tag="1")]
     pub members: ::prost::alloc::vec::Vec<Member>,
 }

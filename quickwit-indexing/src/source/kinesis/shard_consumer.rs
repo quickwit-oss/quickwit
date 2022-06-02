@@ -77,7 +77,7 @@ pub(super) struct ShardConsumer {
 }
 
 impl fmt::Debug for ShardConsumer {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "KinesisShardConsumer {{ stream_name: {}, shard_id: {} }}",
@@ -186,7 +186,7 @@ impl Handler<Loop> for ShardConsumer {
                     shard_iterator,
                 ))
                 .await?;
-            self.state.lag_millis = response.millis_behind_latest.clone();
+            self.state.lag_millis = response.millis_behind_latest;
             self.state.next_shard_iterator = response.next_shard_iterator;
 
             if !response.records.is_empty() {
