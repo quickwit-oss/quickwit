@@ -506,8 +506,8 @@ impl S3CompatibleObjectStorage {
                 if let Err(abort_error) = abort_multipart_upload_res {
                     warn!(
                         key = %key,
-                        error = %abort_error,
-                        "Failed to abort multipart upload"
+                        error = ?abort_error,
+                        "Failed to abort multipart upload."
                     );
                 }
                 Err(upload_error)
