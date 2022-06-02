@@ -38,7 +38,7 @@ pub struct LocalFileStorage {
 }
 
 impl fmt::Debug for LocalFileStorage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "LocalFileStorage(root={:?})", &self.root)
     }
 }

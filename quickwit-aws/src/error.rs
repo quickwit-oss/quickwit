@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#![allow(clippy::match_like_matches_macro)]
+
 use std::error::Error as StdError;
 use std::{fmt, io};
 
@@ -54,7 +56,7 @@ impl<T: Retryable + StdError> fmt::Debug for RusotoErrorWrapper<T> {
 }
 
 impl<T: Retryable + StdError + 'static> fmt::Display for RusotoErrorWrapper<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }

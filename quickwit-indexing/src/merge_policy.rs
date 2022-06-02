@@ -57,7 +57,7 @@ impl MergeOperation {
 }
 
 impl fmt::Debug for MergeOperation {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             MergeOperation::Merge {
                 merge_split_id: split_id,
@@ -192,7 +192,7 @@ fn remove_matching_items<T, Pred: Fn(&T) -> bool>(items: &mut Vec<T>, predicate:
 struct SplitShortDebug<'a>(&'a SplitMetadata);
 
 impl<'a> fmt::Debug for SplitShortDebug<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Split")
             .field("split_id", &self.0.split_id())
             .field("num_docs", &self.0.num_docs)

@@ -28,7 +28,7 @@ pub struct RawDocBatch {
 }
 
 impl fmt::Debug for RawDocBatch {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("RawDocBatch")
             .field("docs_len", &self.docs.len())

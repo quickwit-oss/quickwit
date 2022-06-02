@@ -68,7 +68,7 @@ pub struct IndexedSplit {
 }
 
 impl fmt::Debug for IndexedSplit {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("IndexedSplit")
             .field("id", &self.split_id)
