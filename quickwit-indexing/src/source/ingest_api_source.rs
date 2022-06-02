@@ -59,7 +59,7 @@ pub struct IngestApiSource {
 }
 
 impl fmt::Debug for IngestApiSource {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "IngestApiSource {{ source_id: {} }}", self.source_id)
     }
 }

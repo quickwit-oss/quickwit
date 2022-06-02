@@ -53,7 +53,7 @@ pub struct FileSource {
 }
 
 impl fmt::Debug for FileSource {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "FileSource {{ source_id: {} }}", self.source_id)
     }
 }
