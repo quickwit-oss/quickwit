@@ -525,6 +525,12 @@ fn compute_next_offset(
     // We found a gap between the last checkpoint and the low watermark, so we resume from the low
     // watermark.
     if checkpoint_offset < low_watermark {
+        warn!(
+            partition = %partition_id,
+            checkpointed_offset = %checkpoint_offset,
+            low_watermark = %low_watermark,
+            "Last checkpointed offset for partition is lower than low watermark. Resuming from low watermark.",
+        );
         return Ok(Offset::Offset(low_watermark));
     }
     // This is the happy path, we resume right after the last checkpointed offset.
@@ -533,8 +539,10 @@ fn compute_next_offset(
     }
     // Remember, the high watermark is the offset of the last message in the partition + 1.
     bail!(
-        "Last checkpointed offset `{}` is greater or equal to high watermark `{}`.",
+        "Last checkpointed offset `{}` for partition `{}` is greater or equal to high watermark \
+         `{}`.",
         checkpoint_offset,
+        partition_id,
         high_watermark
     );
 }
