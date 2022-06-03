@@ -113,7 +113,7 @@ fn region_from_str(region_str: &str) -> anyhow::Result<Region> {
     }
     Ok(Region::Custom {
         name: "qw-custom-endpoint".to_string(),
-        endpoint: region_str.to_string(),
+        endpoint: region_str.trim_end_matches('/').to_string(),
     })
 }
 
@@ -780,7 +780,7 @@ mod tests {
     use quickwit_common::chunk_range;
     use rusoto_core::Region;
 
-    use super::{compute_md5, parse_uri};
+    use super::{compute_md5, parse_uri, region_from_str};
 
     #[test]
     fn test_parse_uri() {
@@ -809,17 +809,21 @@ mod tests {
 
     #[test]
     fn test_region_from_str() {
+        assert_eq!(region_from_str("us-east-1").unwrap(), Region::UsEast1);
         assert_eq!(
-            super::region_from_str("us-east-1").unwrap(),
-            Region::UsEast1
-        );
-        assert_eq!(
-            super::region_from_str("http://localhost:4566").unwrap(),
+            region_from_str("http://localhost:4566").unwrap(),
             Region::Custom {
                 name: "qw-custom-endpoint".to_string(),
                 endpoint: "http://localhost:4566".to_string()
             }
         );
-        assert!(super::region_from_str("us-eat-1").is_err());
+        assert_eq!(
+            region_from_str("http://localhost:4566/").unwrap(),
+            Region::Custom {
+                name: "qw-custom-endpoint".to_string(),
+                endpoint: "http://localhost:4566".to_string()
+            }
+        );
+        assert!(region_from_str("us-eat-1").is_err());
     }
 }
