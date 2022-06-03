@@ -32,7 +32,7 @@ thiserror = "1"
 async-trait = "0.1"
 termcolor = "1"
 bytes = "1"
-tokio = { version = "1.18", features = [ "full" ] }
+tokio = { version = "1.19", features = [ "full" ] }
 tokio-stream = "0.1"
 opentelemetry = "0.17"
 tracing-opentelemetry = "0.17"
