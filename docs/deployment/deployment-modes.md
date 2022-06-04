@@ -3,7 +3,7 @@ title: Deployment modes
 sidebar_position: 1
 ---
 
-Quickwit is built out of 3 services:
+Quickwit is composed of 3 services:
 - the indexer service: it starts the indexing pipelines and serves the [Ingest API](../reference/rest-api.md);
 - the searcher service: it serves the [Search and Aggregation API](../reference/rest-api.md);
 - the UI service: it serves the static assets required by the UI React app.
