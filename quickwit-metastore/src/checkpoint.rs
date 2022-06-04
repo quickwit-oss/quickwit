@@ -129,7 +129,7 @@ pub struct IndexCheckpoint {
 }
 
 impl fmt::Debug for IndexCheckpoint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let json = serde_json::to_string_pretty(&self).map_err(|_| fmt::Error)?;
         write!(f, "{}", json)?;
         Ok(())
@@ -339,7 +339,7 @@ impl SourceCheckpoint {
 }
 
 impl fmt::Debug for SourceCheckpoint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("Ckpt(")?;
         for (i, (partition_id, position)) in self.per_partition.iter().enumerate() {
             f.write_str(&partition_id.0)?;
@@ -378,7 +378,7 @@ pub struct CheckpointDelta {
 }
 
 impl fmt::Debug for CheckpointDelta {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("∆(")?;
         for (i, (partition_id, partition_delta)) in self.per_partition.iter().enumerate() {
             write!(

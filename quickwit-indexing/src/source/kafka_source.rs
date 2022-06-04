@@ -121,7 +121,7 @@ pub struct KafkaSource {
 }
 
 impl fmt::Debug for KafkaSource {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "KafkaSource {{ source_id: {}, topic: {} }}",
@@ -184,7 +184,7 @@ impl Source for KafkaSource {
         let mut docs = Vec::new();
         let mut checkpoint_delta = CheckpointDelta::default();
 
-        let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT);
+        let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT / 2);
         let mut message_stream = Box::pin(self.consumer.stream().take_until(deadline));
 
         let mut batch_num_bytes = 0;
@@ -299,7 +299,7 @@ fn previous_position_for_offset(offset: i64) -> Position {
     }
 }
 
-/// Checks if connecting with the given parameters works.
+/// Checks whether we can establish a connection to the Kafka broker.
 pub(super) async fn check_connectivity(params: KafkaSourceParams) -> anyhow::Result<()> {
     let source_id = "quickwit-connectivity-check";
     let consumer = create_consumer(source_id, params.client_log_level, params.client_params)?;
@@ -543,7 +543,7 @@ fn compute_next_offset(
 /// messages.
 fn parse_message_payload(message: &BorrowedMessage) -> Option<String> {
     match message.payload_view::<str>() {
-        Some(Ok(payload)) if payload.len() > 0 => {
+        Some(Ok(payload)) if !payload.is_empty() => {
             let doc = payload.to_string();
             debug!(
                 topic = ?message.topic(),

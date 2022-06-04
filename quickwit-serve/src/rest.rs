@@ -85,33 +85,72 @@ pub(crate) async fn start_rest_server(
 
 /// This function returns a formatted error based on the given rejection reason.
 pub async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
+    let err = get_status_with_error(rejection);
+    Ok(Format::PrettyJson.make_reply_for_err(err))
+}
+
+fn get_status_with_error(rejection: Rejection) -> FormatError {
     if rejection.is_not_found() {
-        Ok(Format::PrettyJson.make_reply_for_err(FormatError {
+        FormatError {
             code: ServiceErrorCode::NotFound,
             error: "Route not found".to_string(),
-        }))
+        }
+    } else if let Some(error) = rejection.find::<warp::reject::UnsupportedMediaType>() {
+        FormatError {
+            code: ServiceErrorCode::UnsupportedMediaType,
+            error: error.to_string(),
+        }
+    } else if let Some(error) = rejection.find::<warp::reject::InvalidQuery>() {
+        FormatError {
+            code: ServiceErrorCode::BadRequest,
+            error: error.to_string(),
+        }
+    } else if let Some(error) = rejection.find::<warp::reject::LengthRequired>() {
+        FormatError {
+            code: ServiceErrorCode::BadRequest,
+            error: error.to_string(),
+        }
+    } else if let Some(error) = rejection.find::<warp::reject::MissingHeader>() {
+        FormatError {
+            code: ServiceErrorCode::BadRequest,
+            error: error.to_string(),
+        }
+    } else if let Some(error) = rejection.find::<warp::reject::InvalidHeader>() {
+        FormatError {
+            code: ServiceErrorCode::BadRequest,
+            error: error.to_string(),
+        }
+    } else if let Some(error) = rejection.find::<warp::reject::MethodNotAllowed>() {
+        FormatError {
+            code: ServiceErrorCode::MethodNotAllowed,
+            error: error.to_string(),
+        }
+    } else if let Some(error) = rejection.find::<warp::reject::PayloadTooLarge>() {
+        FormatError {
+            code: ServiceErrorCode::BadRequest,
+            error: error.to_string(),
+        }
     } else if let Some(error) = rejection.find::<warp::filters::body::BodyDeserializeError>() {
         // Happens when the request body could not be deserialized correctly.
-        Ok(Format::PrettyJson.make_reply_for_err(FormatError {
+        FormatError {
             code: ServiceErrorCode::BadRequest,
             error: error.to_string(),
-        }))
+        }
     } else if let Some(error) = rejection.find::<serde_qs::Error>() {
-        Ok(Format::PrettyJson.make_reply_for_err(FormatError {
+        FormatError {
             code: ServiceErrorCode::BadRequest,
             error: error.to_string(),
-        }))
+        }
     } else if let Some(error) = rejection.find::<crate::ingest_api::BulkApiError>() {
-        Ok(Format::PrettyJson.make_reply_for_err(FormatError {
+        FormatError {
             code: ServiceErrorCode::BadRequest,
             error: error.to_string(),
-        }))
+        }
     } else {
         error!("REST server error: {:?}", rejection);
-        Ok(Format::PrettyJson.make_reply_for_err(FormatError {
+        FormatError {
             code: ServiceErrorCode::Internal,
             error: "Internal server error.".to_string(),
-        }))
+        }
     }
-    // TODO: handle more error types like Rejection([UnsupportedMediaType, MethodNotAllowed])
 }

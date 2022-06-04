@@ -3,41 +3,58 @@ title: Installation
 sidebar_position: 2
 ---
 
-Quickwit compiles to a single binary, we provide different methods to install it.
-We notably provide musl builds to provide static binaries with no dependencies.
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
+Quickwit compiles to a single binary, we provide different methods to install it.
 
 ## Download
 
-Version: 0.2.0 - [Release note](https://github.com/quickwit-oss/quickwit/releases/tag/v0.2.0)
+Version: 0.3.0 - [Release note](https://github.com/quickwit-oss/quickwit/releases/tag/v0.3.0)
 License: [AGPL V3](https://github.com/quickwit-oss/quickwit/blob/main/LICENSE.md)
 Downloads `.tar.gz`:
-- [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-aarch64-unknown-linux-gnu.tar.gz)
-- [Linux ARM64 (static build)](https://github.com/quickwit-oss/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-aarch64-unknown-linux-musl.tar.gz)
-- [Linux x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-x86_64-unknown-linux-gnu.tar.gz)
-- [Linux x86_64 (static build)](https://github.com/quickwit-oss/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-x86_64-unknown-linux-musl.tar.gz)
-- [macOS x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-x86_64-apple-darwin.tar.gz)
+- [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/v0.3.0/quickwit-v0.3.0-aarch64-unknown-linux-gnu.tar.gz)
+- [Linux x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.3.0/quickwit-v0.3.0-x86_64-unknown-linux-gnu.tar.gz)
+- [macOS x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.3.0/quickwit-v0.3.0-x86_64-apple-darwin.tar.gz)
 
 
-Checkout all builds on [github](https://github.com/quickwit-oss/quickwit/releases)
+Check out the available builds in greater detail on [GitHub](https://github.com/quickwit-oss/quickwit/releases)
 
 ### Note on external dependencies
 
 Quickwit depends on the following external libraries to work correctly:
-- `libpq`: the Postgres client library.
+- `libpq`: the PostgreSQL client library.
 - `libssl`: the industry defacto cryptography library.
 These libraries can be installed on your system using the native package manager.
-On Ubuntu for instance, you can install these dependencies using the following command:
+You can install these dependencies using the following command:
+
+<Tabs>
+
+<TabItem value="ubuntu" label="Ubuntu">
 
 ```bash
 apt-get -y update && apt-get -y install libpq-dev libssl-dev
 ```
 
-:::note
+</TabItem>
 
-Quickwit static binary packages are also provided as `musl` builds. These packages don't require you to install any external library and can be automatically picked during installation on your system if the required libc version is not present. You can also download and manually install a static binary package.
+<TabItem value="aws-linux" label="AWS Linux">
 
-:::
+```bash
+yum -y update && yum -y install postgresql-libs openssl-devel
+```
+
+</TabItem>
+
+<TabItem value="arch-linux" label="Arch Linux">
+
+```bash
+pacman -S postgresql-libs openssl
+```
+
+</TabItem>
+
+</Tabs>
 
 
 ## Install script
@@ -68,12 +85,12 @@ quickwit-{version}
 - `qwdata/`: the default data directory.
 
 
-## Use the docker image
+## Use the Docker image
 
-If you use docker, this might be one of the quickest way to get going.
-The following command will pull the image from [dockerhub](https://hub.docker.com/r/quickwit/quickwit)
+If you use Docker, this might be one of the quickest way to get going.
+The following command will pull the image from [Docker Hub](https://hub.docker.com/r/quickwit/quickwit)
 and gets you right in the shell of the running container ready to execute Quickwit commands.
-Note that we are also mounting the working directory as volume. This is useful when you already have your dataset ready on your machine and want to work with Quickwit docker image.
+Note that we are also mounting the working directory as volume. This is useful when you already have your dataset ready on your machine and want to work with Quickwit Docker image.
 
 ```bash
 docker run -it -v "$(pwd)":"/quickwit/files" --entrypoint ash quickwit/quickwit

@@ -17,14 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-// TODO: Remove when `KinesisSource` is fully implemented.
-#![allow(dead_code)]
-
 use std::fmt;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox};
+use quickwit_aws::retry::RetryParams;
 use rusoto_kinesis::{KinesisClient, Record};
 use serde_json::json;
 use tokio::sync::mpsc;
@@ -75,10 +73,11 @@ pub(super) struct ShardConsumer {
     state: ShardConsumerState,
     kinesis_client: KinesisClient,
     sink: mpsc::Sender<ShardConsumerMessage>,
+    retry_params: RetryParams,
 }
 
 impl fmt::Debug for ShardConsumer {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "KinesisShardConsumer {{ stream_name: {}, shard_id: {} }}",
@@ -95,6 +94,7 @@ impl ShardConsumer {
         shutdown_at_shard_eof: bool,
         kinesis_client: KinesisClient,
         sink: mpsc::Sender<ShardConsumerMessage>,
+        retry_params: RetryParams,
     ) -> Self {
         Self {
             stream_name,
@@ -104,16 +104,15 @@ impl ShardConsumer {
             shutdown_at_shard_eof,
             kinesis_client,
             sink,
+            retry_params,
         }
     }
 
     pub fn spawn(self, ctx: &SourceContext) -> ShardConsumerHandle {
-        let shard_id = self.shard_id.clone();
-        let (mailbox, actor_handle) = ctx.spawn_actor(self).spawn();
+        let (_mailbox, _actor_handle) = ctx.spawn_actor(self).spawn();
         ShardConsumerHandle {
-            shard_id,
-            mailbox,
-            actor_handle,
+            _mailbox,
+            _actor_handle,
         }
     }
 
@@ -129,9 +128,8 @@ impl ShardConsumer {
 }
 
 pub(super) struct ShardConsumerHandle {
-    shard_id: String,
-    mailbox: Mailbox<ShardConsumer>,
-    actor_handle: ActorHandle<ShardConsumer>,
+    _mailbox: Mailbox<ShardConsumer>,
+    _actor_handle: ActorHandle<ShardConsumer>,
 }
 
 #[derive(Debug)]
@@ -146,13 +144,15 @@ impl Actor for ShardConsumer {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        self.state.next_shard_iterator = get_shard_iterator(
-            &self.kinesis_client,
-            &self.stream_name,
-            &self.shard_id,
-            self.from_sequence_number_exclusive.clone(),
-        )
-        .await?;
+        self.state.next_shard_iterator = ctx
+            .protect_future(get_shard_iterator(
+                &self.kinesis_client,
+                &self.retry_params,
+                &self.stream_name,
+                &self.shard_id,
+                self.from_sequence_number_exclusive.clone(),
+            ))
+            .await?;
         ctx.send_self_message(Loop).await?;
         Ok(())
     }
@@ -179,8 +179,14 @@ impl Handler<Loop> for ShardConsumer {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         if let Some(shard_iterator) = self.state.next_shard_iterator.take() {
-            let response = get_records(&self.kinesis_client, shard_iterator).await?;
-            self.state.lag_millis = response.millis_behind_latest.clone();
+            let response = ctx
+                .protect_future(get_records(
+                    &self.kinesis_client,
+                    &self.retry_params,
+                    shard_iterator,
+                ))
+                .await?;
+            self.state.lag_millis = response.millis_behind_latest;
             self.state.next_shard_iterator = response.next_shard_iterator;
 
             if !response.records.is_empty() {
@@ -219,8 +225,8 @@ impl Handler<Loop> for ShardConsumer {
                 self.send_message(ctx, message).await?;
                 return Err(ActorExitStatus::Success);
             };
-            // The `GetRecords` API has a limit of 5 transactions per second. 1s / 5 + ε = 205ms.
-            let interval = Duration::from_millis(205);
+            // The `GetRecords` API has a limit of 5 transactions per second. 1s / 5 + ε = 210ms.
+            let interval = Duration::from_millis(210);
             ctx.schedule_self_msg(interval, Loop).await;
             return Ok(());
         }
@@ -237,7 +243,7 @@ mod tests {
     use super::*;
     use crate::source::kinesis::api::tests::{merge_shards, split_shard};
     use crate::source::kinesis::helpers::tests::{
-        make_shard_id, put_records_into_shards, setup, teardown,
+        make_shard_id, put_records_into_shards, setup, teardown, DEFAULT_RETRY_PARAMS,
     };
 
     async fn drain_messages(
@@ -263,6 +269,7 @@ mod tests {
             true,
             kinesis_client.clone(),
             sink_tx,
+            DEFAULT_RETRY_PARAMS.clone(),
         );
         let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn();
         let (exit_status, exit_state) = handle.join().await;
@@ -308,6 +315,7 @@ mod tests {
             true,
             kinesis_client.clone(),
             sink_tx,
+            DEFAULT_RETRY_PARAMS.clone(),
         );
         let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn();
         let (exit_status, exit_state) = handle.join().await;
@@ -365,6 +373,7 @@ mod tests {
             true,
             kinesis_client.clone(),
             sink_tx,
+            DEFAULT_RETRY_PARAMS.clone(),
         );
         let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn();
         let (exit_status, exit_state) = handle.join().await;
@@ -418,6 +427,7 @@ mod tests {
                 false,
                 kinesis_client.clone(),
                 sink_tx.clone(),
+                DEFAULT_RETRY_PARAMS.clone(),
             );
             let (_mailbox, handle) = universe.spawn_actor(shard_consumer_0).spawn();
             let (exit_status, _exit_state) = handle.join().await;
@@ -443,6 +453,7 @@ mod tests {
                 false,
                 kinesis_client.clone(),
                 sink_tx,
+                DEFAULT_RETRY_PARAMS.clone(),
             );
             let (_mailbox, handle) = universe.spawn_actor(shard_consumer_1).spawn();
             let (exit_status, _exit_state) = handle.join().await;
@@ -478,6 +489,7 @@ mod tests {
             false,
             kinesis_client.clone(),
             sink_tx,
+            DEFAULT_RETRY_PARAMS.clone(),
         );
         let (_mailbox, handle) = universe.spawn_actor(shard_consumer).spawn();
         let (exit_status, _exit_state) = handle.join().await;

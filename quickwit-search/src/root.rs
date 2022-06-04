@@ -109,6 +109,29 @@ impl From<FetchDocsJob> for SplitIdAndFooterOffsets {
     }
 }
 
+fn validate_request(search_request: &SearchRequest) -> crate::Result<()> {
+    if let Some(agg) = search_request.aggregation_request.as_ref() {
+        let _agg: Aggregations = serde_json::from_str(agg)
+            .map_err(|err| SearchError::InvalidAggregationRequest(err.to_string()))?;
+    };
+
+    if search_request.start_offset > 10_000 {
+        return Err(SearchError::InvalidArgument(format!(
+            "max value for start_offset is 10_000, but got {}",
+            search_request.start_offset
+        )));
+    }
+
+    if search_request.max_hits > 10_000 {
+        return Err(SearchError::InvalidArgument(format!(
+            "max value for max_hits is 10_000, but got {}",
+            search_request.max_hits
+        )));
+    }
+
+    Ok(())
+}
+
 /// Performs a distributed search.
 /// 1. Sends leaf request over gRPC to multiple leaf nodes.
 /// 2. Merges the search results.
@@ -134,10 +157,7 @@ pub async fn root_search(
         SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
     })?;
 
-    if let Some(agg) = search_request.aggregation_request.as_ref() {
-        let _agg: Aggregations = serde_json::from_str(agg)
-            .map_err(|err| SearchError::InvalidAggregationRequest(err.to_string()))?;
-    };
+    validate_request(search_request)?;
 
     // try to build query against current schema
     let _query = doc_mapper.query(doc_mapper.schema(), search_request)?;
@@ -1235,6 +1255,64 @@ mod tests {
             "Invalid aggregation request: data did not match any variant of untagged enum \
              Aggregation at line 18 column 2",
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_root_search_invalid_request() -> anyhow::Result<()> {
+        let search_request = quickwit_proto::SearchRequest {
+            index_id: "test-idx".to_string(),
+            query: "test".to_string(),
+            search_fields: vec!["body".to_string()],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 10,
+            start_offset: 20_000,
+            ..Default::default()
+        };
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
+            });
+        metastore.expect_list_splits().returning(
+            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+                Ok(vec![mock_split("split1")])
+            },
+        );
+        let client_pool =
+            SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
+        let cluster_client = ClusterClient::new(client_pool.clone());
+        let search_response =
+            root_search(&search_request, &metastore, &cluster_client, &client_pool).await;
+        assert!(search_response.is_err());
+        assert_eq!(
+            search_response.unwrap_err().to_string(),
+            "Invalid argument: max value for start_offset is 10_000, but got 20000",
+        );
+
+        let search_request = quickwit_proto::SearchRequest {
+            index_id: "test-idx".to_string(),
+            query: "test".to_string(),
+            search_fields: vec!["body".to_string()],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 20_000,
+            ..Default::default()
+        };
+
+        let search_response =
+            root_search(&search_request, &metastore, &cluster_client, &client_pool).await;
+        assert!(search_response.is_err());
+        assert_eq!(
+            search_response.unwrap_err().to_string(),
+            "Invalid argument: max value for max_hits is 10_000, but got 20000",
+        );
+
         Ok(())
     }
 }

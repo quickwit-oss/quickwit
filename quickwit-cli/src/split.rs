@@ -499,6 +499,7 @@ fn make_split_table(splits: &[Split]) -> Table {
 
             SplitRow {
                 split_id: split.split_metadata.split_id.clone(),
+                split_state: split.split_state,
                 num_docs: split.split_metadata.num_docs,
                 size_mega_bytes: split.split_metadata.original_size_in_bytes / 1_000_000,
                 created_at,
@@ -553,6 +554,8 @@ fn parse_split_state(split_state_arg: &str) -> anyhow::Result<SplitState> {
 struct SplitRow {
     #[tabled(rename = "ID")]
     split_id: String,
+    #[tabled(rename = "State")]
+    split_state: SplitState,
     #[tabled(rename = "Num docs")]
     num_docs: usize,
     #[tabled(rename = "Size (MB)")]

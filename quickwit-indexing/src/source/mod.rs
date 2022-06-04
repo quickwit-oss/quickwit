@@ -266,6 +266,17 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
                 Ok(())
             }
         }
+        #[allow(unused_variables)]
+        SourceParams::Kinesis(params) => {
+            #[cfg(not(feature = "kinesis"))]
+            bail!("Quickwit binary was not compiled with the `kinesis` feature.");
+
+            #[cfg(feature = "kinesis")]
+            {
+                kinesis::check_connectivity(params.clone()).await?;
+                Ok(())
+            }
+        }
         _ => Ok(()),
     }
 }

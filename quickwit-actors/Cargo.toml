@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-actors"
-version = "0.2.1"
+version = "0.3.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = 'AGPL-3.0-or-later'  # For a commercial, license, contact hello@quickwit.io
@@ -13,14 +13,14 @@ documentation = "https://quickwit.io/docs/"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "^1.18", features = ["full"] }
+tokio = { version = "^1.19", features = ["full"] }
 async-trait = "0.1"
 anyhow = "1"
 thiserror = "1"
 flume = "0.10"
 futures = "0.3"
 tracing = "0.1.29"
-quickwit-common = { version = "0.2.1", path = "../quickwit-common" }
+quickwit-common = { version = "0.3.0", path = "../quickwit-common" }
 
 [dev-dependencies]
 rand = "0.8"

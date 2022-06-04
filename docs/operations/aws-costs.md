@@ -29,7 +29,7 @@ With default indexing parameters `commit_timeout_secs` of 60 seconds and `merge_
 When querying, Quickwit needs to make multiple GET requests:
 
 ```jsx
-#num requests = #num splits * ((#num search fields * #num terms * 3) + 1 (timestamp fast field if present))
+#num requests = #num splits * ((#num search fields * #num terms * 3) + 1 (timestamp fast field if present)) + #num docs returned
 ```
 
 The above formula assumes that the hotcache is cached, which will be loaded after the first query for every split.

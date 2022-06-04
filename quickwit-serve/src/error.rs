@@ -37,6 +37,8 @@ use warp::http;
 pub enum ServiceErrorCode {
     NotFound,
     Internal,
+    MethodNotAllowed,
+    UnsupportedMediaType,
     BadRequest,
     PermissionDenied,
 }
@@ -47,6 +49,8 @@ impl ServiceErrorCode {
             ServiceErrorCode::NotFound => tonic::Code::NotFound,
             ServiceErrorCode::Internal => tonic::Code::Internal,
             ServiceErrorCode::BadRequest => tonic::Code::InvalidArgument,
+            ServiceErrorCode::MethodNotAllowed => tonic::Code::InvalidArgument,
+            ServiceErrorCode::UnsupportedMediaType => tonic::Code::InvalidArgument,
             ServiceErrorCode::PermissionDenied => tonic::Code::PermissionDenied,
         }
     }
@@ -55,6 +59,8 @@ impl ServiceErrorCode {
             ServiceErrorCode::NotFound => http::StatusCode::NOT_FOUND,
             ServiceErrorCode::Internal => http::StatusCode::INTERNAL_SERVER_ERROR,
             ServiceErrorCode::BadRequest => http::StatusCode::BAD_REQUEST,
+            ServiceErrorCode::MethodNotAllowed => http::StatusCode::METHOD_NOT_ALLOWED,
+            ServiceErrorCode::UnsupportedMediaType => http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
             ServiceErrorCode::PermissionDenied => http::StatusCode::FORBIDDEN,
         }
     }
@@ -67,6 +73,7 @@ impl ServiceError for SearchError {
             SearchError::InternalError(_) => ServiceErrorCode::Internal,
             SearchError::StorageResolverError(_) => ServiceErrorCode::BadRequest,
             SearchError::InvalidQuery(_) => ServiceErrorCode::BadRequest,
+            SearchError::InvalidArgument(_) => ServiceErrorCode::BadRequest,
             SearchError::InvalidAggregationRequest(_) => ServiceErrorCode::BadRequest,
         }
     }

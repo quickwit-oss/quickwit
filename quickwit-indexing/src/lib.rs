@@ -27,7 +27,9 @@ use quickwit_storage::StorageUriResolver;
 use tracing::info;
 
 pub use crate::actors::IndexingServiceError;
-use crate::actors::{IndexingPipeline, IndexingPipelineParams, IndexingService};
+use crate::actors::{
+    IndexingPipeline, IndexingPipelineParams, IndexingService, IngestApiGarbageCollector,
+};
 use crate::models::{IndexingStatistics, SpawnPipelinesForIndex};
 pub use crate::split_store::{
     get_tantivy_directory_from_split_bundle, IndexingSplitStore, IndexingSplitStoreParams,
@@ -67,9 +69,9 @@ pub async fn start_indexer_service(
     let indexing_server = IndexingService::new(
         config.data_dir_path.to_path_buf(),
         config.indexer_config.clone(),
-        metastore,
+        metastore.clone(),
         storage_uri_resolver,
-        ingest_api_service,
+        ingest_api_service.clone(),
     );
     let (indexer_service_mailbox, _) = universe.spawn_actor(indexing_server).spawn();
     for index_metadata in index_metadatas {
@@ -80,5 +82,16 @@ pub async fn start_indexer_service(
             })
             .await?;
     }
+
+    // IngestApi garbage collector
+    if let Some(ingest_api_service_mailbox) = ingest_api_service {
+        let ingest_api_garbage_collector = IngestApiGarbageCollector::new(
+            metastore,
+            ingest_api_service_mailbox,
+            indexer_service_mailbox.clone(),
+        );
+        universe.spawn_actor(ingest_api_garbage_collector).spawn();
+    }
+
     Ok(indexer_service_mailbox)
 }

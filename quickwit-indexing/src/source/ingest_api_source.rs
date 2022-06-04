@@ -40,8 +40,14 @@ const INGEST_API_POLLING_COOL_DOWN: Duration = Duration::from_secs(1);
 
 #[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct IngestApiSourceCounters {
-    pub previous_offset: u64,
-    pub current_offset: u64,
+    /// Maintains the value of where we stopped in queue from
+    /// a previous call on `emit_batch` and allows
+    /// setting the lower-bound of the checkpoint delta.
+    /// It has the same value as `current_offset` at the end of emit_batch.
+    pub previous_offset: Option<u64>,
+    /// Maintains the value of where we are in queue and allows
+    /// setting the upper-bound of the checkpoint delta.
+    pub current_offset: Option<u64>,
     pub num_docs_processed: u64,
 }
 
@@ -53,7 +59,7 @@ pub struct IngestApiSource {
 }
 
 impl fmt::Debug for IngestApiSource {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "IngestApiSource {{ source_id: {} }}", self.source_id)
     }
 }
@@ -69,9 +75,9 @@ impl IngestApiSource {
         let offset = if let Some(Position::Offset(offset_str)) =
             checkpoint.position_for_partition(&partition_id).cloned()
         {
-            offset_str.parse::<u64>()?
+            Some(offset_str.parse::<u64>()?)
         } else {
-            0
+            None
         };
 
         let ingest_api_source = IngestApiSource {
@@ -89,8 +95,8 @@ impl IngestApiSource {
 
     fn update_counters(&mut self, current_offset: u64, num_docs: u64) {
         self.counters.num_docs_processed += num_docs;
-        self.counters.current_offset = current_offset;
-        self.counters.previous_offset = current_offset;
+        self.counters.current_offset = Some(current_offset);
+        self.counters.previous_offset = Some(current_offset);
     }
 }
 
@@ -101,15 +107,9 @@ impl Source for IngestApiSource {
         batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
-        let start_after = if self.counters.current_offset == 0 {
-            None
-        } else {
-            Some(self.counters.current_offset)
-        };
-
         let fetch_req = FetchRequest {
             index_id: self.params.index_id.clone(),
-            start_after,
+            start_after: self.counters.current_offset,
             num_bytes_limit: self
                 .params
                 .batch_num_bytes_threshold
@@ -143,7 +143,7 @@ impl Source for IngestApiSource {
         checkpoint_delta
             .record_partition_delta(
                 partition_id,
-                Position::from(self.counters.previous_offset),
+                Position::from(self.counters.previous_offset.unwrap_or(0)),
                 Position::from(current_offset),
             )
             .unwrap();
@@ -398,6 +398,66 @@ mod tests {
         assert_eq!(indexer_msgs.len(), 1);
         let received_batch = indexer_msgs[0].downcast_ref::<RawDocBatch>().unwrap();
         assert!(received_batch.docs[0].starts_with("1201"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_ingest_api_source_with_one_doc() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
+        let index_id = "my-index".to_string();
+        let queue_path = tempfile::tempdir()?;
+
+        // create queue
+        let mut queues = Queues::open(queue_path.path())?;
+        queues.create_queue(&index_id)?;
+        drop(queues);
+
+        let ingest_api_mailbox = spawn_ingest_api_actor(&universe, queue_path.path())?;
+
+        let ingest_req = make_ingest_request(index_id.clone(), 1, 1);
+
+        ingest_api_mailbox
+            .ask_for_res(ingest_req)
+            .await
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+
+        let (mailbox, inbox) = create_test_mailbox();
+        let params = IngestApiSourceParams {
+            index_id,
+            batch_num_bytes_threshold: None,
+        };
+        let ingest_api_source = IngestApiSource::make(
+            "my-source".to_string(),
+            params,
+            ingest_api_mailbox,
+            SourceCheckpoint::default(),
+        )
+        .await?;
+        let ingest_api_source_actor = SourceActor {
+            source: Box::new(ingest_api_source),
+            batch_sink: mailbox,
+        };
+        let (_ingest_api_source_mailbox, ingest_api_source_handle) =
+            universe.spawn_actor(ingest_api_source_actor).spawn();
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let counters = ingest_api_source_handle
+            .process_pending_and_observe()
+            .await
+            .state;
+        assert_eq!(
+            counters,
+            serde_json::json!({
+                "previous_offset": 0u64,
+                "current_offset": 0u64,
+                "num_docs_processed": 1u64
+            })
+        );
+        let indexer_msgs = inbox.drain_for_test();
+        assert_eq!(indexer_msgs.len(), 1);
+        let received_batch = indexer_msgs[0].downcast_ref::<RawDocBatch>().unwrap();
+        assert!(received_batch.docs[0].starts_with("0000"));
         Ok(())
     }
 }

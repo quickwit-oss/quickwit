@@ -1,6 +1,8 @@
 ---
 title: Full-text search on Clickhouse
-sidebar_position: 2
+description: Add full-text search to Clickhouse, using the Quickwit search streaming feature.
+tags: [clickhouse, integration]
+icon_url: /img/tutorials/clickhouse.svg
 ---
 
 
@@ -13,9 +15,6 @@ We will take the [Github archive dataset](https://www.gharchive.org/), which gat
 ```bash
 curl -L https://install.quickwit.io | sh
 cd quickwit-v*/
-# Quickwit detects the config from CLI args or the QW_CONFIG env variable.
-# Let's set QW_CONFIG to the default config.
-export QW_CONFIG=./config/quickwit.yaml
 ```
 
 ## Create a Quickwit index
@@ -82,7 +81,7 @@ curl -o gh-archive-index-config.yaml https://raw.githubusercontent.com/quickwit-
 
 ## Indexing events
 
-The dataset is a compressed [ndjson file](https://quickwit-datasets-public.s3.amazonaws.com/gh-archive/gh-archive-2021-12.json.gz).
+The dataset is a compressed [NDJSON file](https://quickwit-datasets-public.s3.amazonaws.com/gh-archive/gh-archive-2021-12.json.gz).
 Let's index it.
 
 ```bash
@@ -102,15 +101,15 @@ You can check it's working by using the `search` command and looking for `tantiv
 ./quickwit run --service searcher
 ```
 
-This command will start an HTTP server with a [REST API](../reference/rest-api.md). We are now
+This command will start an HTTP server with a [REST API](/docs/reference/rest-api). We are now
 ready to fetch some ids with the search stream endpoint. Let's start by streaming them on a simple
-query and with a `CSV` output format.
+query and with a `csv` output format.
 
 ```bash
-curl "http://0.0.0.0:7280/api/v1/gh-archive/search/stream?query=tantivy&outputFormat=csv&fastField=id"
+curl "http://0.0.0.0:7280/api/v1/gh-archive/search/stream?query=tantivy&output_format=csv&fast_field=id"
 ```
 
-We will use the `Clickhouse` binary output format in the following sections to speed up queries.
+We will use the `click_house` binary output format in the following sections to speed up queries.
 
 
 ## Clickhouse
@@ -186,7 +185,7 @@ Clickhouse has an exciting feature called [URL Table Engine](https://clickhouse.
 This is precisely what we need: by creating a table pointing to Quickwit search stream endpoint, we will fetch ids that match a query from Clickhouse.
 
 ```SQL
-SELECT count(*) FROM url('http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=log4j+OR+log4shell&fastField=id&outputFormat=clickHouseRowBinary', RowBinary, 'id UInt64')
+SELECT count(*) FROM url('http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=log4j+OR+log4shell&fast_field=id&output_format=click_house_row_binary', RowBinary, 'id UInt64')
 
 ┌─count()─┐
 │   99584 │
@@ -207,7 +206,7 @@ SELECT
 FROM github_events
 WHERE id IN (
     SELECT id
-    FROM url('http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=log4j+OR+log4shell&fastField=id&outputFormat=clickHouseRowBinary', RowBinary, 'id UInt64')
+    FROM url('http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=log4j+OR+log4shell&fast_field=id&output_format=click_house_row_binary', RowBinary, 'id UInt64')
 )
 GROUP BY date
 

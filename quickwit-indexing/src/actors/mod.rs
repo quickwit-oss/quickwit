@@ -22,6 +22,7 @@ mod indexing_pipeline;
 mod garbage_collector;
 mod indexer;
 mod indexing_service;
+mod ingest_api_garbage_collector;
 mod packager;
 mod publisher;
 mod uploader;
@@ -35,6 +36,9 @@ mod merge_split_downloader;
 
 pub use self::garbage_collector::{GarbageCollector, GarbageCollectorCounters};
 pub use self::indexer::{Indexer, IndexerCounters};
+pub use self::ingest_api_garbage_collector::{
+    IngestApiGarbageCollector, IngestApiGarbageCollectorCounters,
+};
 pub use self::merge_executor::MergeExecutor;
 pub use self::merge_planner::MergePlanner;
 pub use self::merge_split_downloader::MergeSplitDownloader;

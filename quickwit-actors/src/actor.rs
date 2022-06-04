@@ -26,6 +26,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures::Future;
 use thiserror::Error;
 use tokio::sync::oneshot;
 use tokio::sync::watch::Sender;
@@ -256,6 +257,13 @@ impl<A: Actor> ActorContext<A> {
         self.progress.protect_zone()
     }
 
+    /// Executes a future in a protected zone.
+    pub async fn protect_future<Fut, T>(&self, future: Fut) -> T
+    where Fut: Future<Output = T> {
+        let _guard = self.protect_zone();
+        future.await
+    }
+
     /// Gets a copy of the actor kill switch.
     /// This should rarely be used.
     ///
@@ -293,28 +301,31 @@ impl<A: Actor> ActorContext<A> {
         self.actor_state.get_state()
     }
 
-    pub(crate) fn process(&mut self) {
+    pub(crate) fn process(&self) {
         self.actor_state.process();
     }
 
-    pub(crate) fn idle(&mut self) {
+    pub(crate) fn idle(&self) {
         self.actor_state.idle();
     }
 
-    pub(crate) fn pause(&mut self) {
+    pub(crate) fn pause(&self) {
         self.actor_state.pause();
     }
 
-    pub(crate) fn resume(&mut self) {
+    pub(crate) fn resume(&self) {
         self.actor_state.resume();
     }
 
-    pub(crate) fn exit(&mut self, exit_status: &ActorExitStatus) {
+    pub(crate) fn exit(&self, exit_status: &ActorExitStatus) {
+        if !exit_status.is_success() {
+            error!(actor_name=self.actor_instance_id(), actor_exit_status=?exit_status, "actor-failure");
+        }
+        self.actor_state.exit(exit_status.is_success());
         if should_activate_kill_switch(exit_status) {
             error!(actor=%self.actor_instance_id(), exit_status=?exit_status, "exit activating-kill-switch");
             self.kill_switch().kill();
         }
-        self.actor_state.exit();
     }
 }
 
@@ -452,7 +463,7 @@ impl<A: Actor> ActorContext<A> {
 pub(crate) fn process_command<A: Actor>(
     actor: &mut A,
     command: Command,
-    ctx: &mut ActorContext<A>,
+    ctx: &ActorContext<A>,
     state_tx: &Sender<A::ObservableState>,
 ) -> Option<ActorExitStatus> {
     match command {

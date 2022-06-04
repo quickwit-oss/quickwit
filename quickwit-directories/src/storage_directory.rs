@@ -42,7 +42,7 @@ impl HasLen for StorageDirectoryFileHandle {
 }
 
 impl fmt::Debug for StorageDirectoryFileHandle {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "StorageDirectoryFileHandle({:?}, dir={:?})",
@@ -86,7 +86,7 @@ pub struct StorageDirectory {
 }
 
 impl Debug for StorageDirectory {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "StorageDirectory({:?})", self.uri())
     }
 }

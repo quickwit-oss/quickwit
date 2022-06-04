@@ -1,6 +1,8 @@
 ---
 title: Send logs from Vector to Quickwit
 description: A simple tutorial to send logs from Vector to Quickwit in a few minutes.
+icon_url: /img/tutorials/vector-logo.png
+tags: [logs, ingestion]
 ---
 
 import Tabs from '@theme/Tabs';
@@ -83,7 +85,7 @@ curl -o otel-logs.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/m
 # Create quickwit datadir.
 mkdir -p qwdata
 # Create index.
-./quickwit index create --index-confg otel-logs.yaml
+./quickwit index create --index-config otel-logs.yaml
 ```
 
 Then we start Quickwit server that will be ready so receive logs on `/api/v1/otel-logs/ingest` endpoint:
@@ -199,4 +201,4 @@ curl -XPOST -H "Content-Type: application/json" http://127.0.0.1:7280/api/v1/ote
 
 ## Further improvements
 
-Coming soon: deploy Vector + Quickwit on your infrastucture, use Grafana to query Quickwit, and more!
+Coming soon: deploy Vector + Quickwit on your infrastructure, use Grafana to query Quickwit, and more!

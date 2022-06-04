@@ -32,7 +32,7 @@ pub struct IngestRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestResponse {
     #[prost(uint64, tag="1")]
-    pub num_ingested_docs: u64,
+    pub num_docs_for_processing: u64,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -88,6 +88,16 @@ pub struct SuggestTruncateRequest {
 pub struct TailRequest {
     #[prost(string, tag="1")]
     pub index_id: ::prost::alloc::string::String,
+}
+#[derive(Serialize, Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListQueuesRequest {
+}
+#[derive(Serialize, Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListQueuesResponse {
+    #[prost(string, repeated, tag="1")]
+    pub queues: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// Generated client implementations.
 pub mod ingest_api_service_client {

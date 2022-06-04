@@ -25,8 +25,8 @@ use std::time::Duration;
 
 use chitchat::transport::Transport;
 use chitchat::{
-    spawn_chitchat, ChitchatConfig, ChitchatHandle, FailureDetectorConfig, NodeId,
-    SerializableClusterState,
+    spawn_chitchat, ChitchatConfig, ChitchatHandle, ClusterStateSnapshot, FailureDetectorConfig,
+    NodeId,
 };
 use itertools::Itertools;
 use quickwit_common::net::get_socket_addr;
@@ -104,6 +104,9 @@ impl From<Member> for NodeId {
 
 /// This is an implementation of a cluster using Chitchat.
 pub struct Cluster {
+    /// ID of the cluster joined.
+    pub cluster_id: String,
+    /// Node ID.
     pub node_id: String,
     /// A socket address that represents itself.
     pub listen_addr: SocketAddr,
@@ -112,7 +115,7 @@ pub struct Cluster {
     /// If it is dropped, the chitchat server will stop.
     chitchat_handle: ChitchatHandle,
 
-    /// A receiver(channel) for exchanging members in a cluster.
+    /// A receiver (channel) for exchanging information about the nodes in the cluster.
     members: watch::Receiver<Vec<Member>>,
 
     /// A stop flag of cluster monitoring task.
@@ -137,14 +140,19 @@ impl Cluster {
         failure_detector_config: FailureDetectorConfig,
         transport: &dyn Transport,
     ) -> ClusterResult<Self> {
-        info!(member=?me, listen_addr=?listen_addr, "Create new cluster.");
+        info!(
+            cluster_id=%cluster_id,
+            node_id=%me.node_unique_id,
+            listen_address=%listen_addr,
+            gossip_address=%me.gossip_public_address,
+            "Joining cluster."
+        );
         let chitchat_config = ChitchatConfig {
             node_id: NodeId::from(me.clone()),
-            cluster_id,
+            cluster_id: cluster_id.clone(),
             gossip_interval: GOSSIP_INTERVAL,
             listen_addr,
             seed_nodes,
-            mtu: 1_500,
             failure_detector_config,
         };
         let chitchat_handle = spawn_chitchat(
@@ -169,6 +177,7 @@ impl Cluster {
 
         // Create cluster.
         let cluster = Cluster {
+            cluster_id,
             node_id: me.internal_id(),
             listen_addr,
             chitchat_handle,
@@ -285,11 +294,11 @@ impl Cluster {
         let chitchat = self.chitchat_handle.chitchat();
         let chitchat_guard = chitchat.lock().await;
 
-        let cluster_state = chitchat_guard.cluster_state();
+        let state = chitchat_guard.state_snapshot();
         let live_nodes = chitchat_guard.live_nodes().cloned().collect::<Vec<_>>();
         let dead_nodes = chitchat_guard.dead_nodes().cloned().collect::<Vec<_>>();
         ClusterState {
-            state: SerializableClusterState::from(cluster_state),
+            state,
             live_nodes,
             dead_nodes,
         }
@@ -348,7 +357,7 @@ fn parse_available_services_val(
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ClusterState {
-    state: SerializableClusterState,
+    state: ClusterStateSnapshot,
     live_nodes: Vec<NodeId>,
     dead_nodes: Vec<NodeId>,
 }

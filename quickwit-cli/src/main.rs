@@ -85,15 +85,23 @@ async fn main() -> anyhow::Result<()> {
 
     let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
     let about_text = about_text();
+    let nightly = if env!("QW_COMMIT_VERSION_TAG") == "none" {
+        "-nightly"
+    } else {
+        ""
+    };
     let version_text = format!(
-        "{} (commit-hash: {})",
+        "{}{} ({} {} {})",
         env!("CARGO_PKG_VERSION"),
-        env!("GIT_COMMIT_HASH")
+        nightly,
+        env!("CARGO_BUILD_TARGET"),
+        env!("QW_COMMIT_SHORT_HASH"),
+        env!("QW_COMMIT_DATE"),
     );
 
     let app = build_cli()
-        .version(version_text.as_str())
-        .about(about_text.as_str());
+        .about(about_text.as_str())
+        .version(version_text.as_str());
     let matches = app.get_matches();
 
     let command = match CliCommand::parse_cli_args(&matches) {
@@ -107,7 +115,7 @@ async fn main() -> anyhow::Result<()> {
     setup_logging_and_tracing(command.default_log_level())?;
     info!(
         version = env!("CARGO_PKG_VERSION"),
-        commit = env!("GIT_COMMIT_HASH"),
+        commit = env!("QW_COMMIT_SHORT_HASH"),
     );
 
     let return_code: i32 = if let Err(err) = command.execute().await {

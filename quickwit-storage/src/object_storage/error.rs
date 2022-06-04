@@ -17,63 +17,18 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::error::Error as StdError;
-use std::{fmt, io};
-
+use quickwit_aws::error::RusotoErrorWrapper;
+use quickwit_aws::retry::Retryable;
 use rusoto_core::RusotoError;
 use rusoto_s3::{
     AbortMultipartUploadError, CompleteMultipartUploadError, CreateMultipartUploadError,
     DeleteObjectError, GetObjectError, HeadObjectError, PutObjectError, UploadPartError,
 };
 
-use crate::retry::IsRetryable;
 use crate::{StorageError, StorageErrorKind};
 
-pub struct RusotoErrorWrapper<T: StdError>(pub RusotoError<T>);
-
-impl<T: StdError> From<RusotoError<T>> for RusotoErrorWrapper<T> {
-    fn from(err: RusotoError<T>) -> Self {
-        RusotoErrorWrapper(err)
-    }
-}
-
-impl<T: StdError + 'static> StdError for RusotoErrorWrapper<T> {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        Some(&self.0)
-    }
-}
-
-impl<T: StdError> fmt::Debug for RusotoErrorWrapper<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self.0)
-    }
-}
-
-impl<T: StdError + 'static> fmt::Display for RusotoErrorWrapper<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl<T: StdError> From<io::Error> for RusotoErrorWrapper<T> {
-    fn from(err: io::Error) -> Self {
-        RusotoErrorWrapper::from(RusotoError::from(err))
-    }
-}
-
-impl<T: StdError> IsRetryable for RusotoErrorWrapper<T> {
-    fn is_retryable(&self) -> bool {
-        match &self.0 {
-            RusotoError::HttpDispatch(_) => true,
-            RusotoError::Service(_) => false,
-            RusotoError::Unknown(http_resp) => http_resp.status.is_server_error(),
-            _ => false,
-        }
-    }
-}
-
 impl<T> From<RusotoErrorWrapper<T>> for StorageError
-where T: Send + Sync + std::error::Error + 'static + ToStorageErrorKind
+where T: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retryable
 {
     fn from(err: RusotoErrorWrapper<T>) -> StorageError {
         let error_kind = match &err.0 {

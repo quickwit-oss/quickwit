@@ -1,6 +1,8 @@
 ---
 title: Distributed search on AWS S3
-sidebar_position: 1
+description: Index log entries on AWS S3 using an EC2 instance and launch a distributed cluster.
+tags: [aws, integration]
+icon_url: /img/tutorials/aws-logo.png
 ---
 
 In this guide, we will index about 40 million log entries (13 GB decompressed) on AWS S3 using an EC2 instance and launch a three-node distributed search cluster.
@@ -22,14 +24,14 @@ Example of a log entry:
 
 :::caution
 
-Before using Quickwit with an object storage, check out our [advice](../operations/aws-costs.md) for deploying on AWS S3 to avoid some bad surprises at the end of the month.
+Before using Quickwit with an object storage, check out our [advice](/docs/operations/aws-costs) for deploying on AWS S3 to avoid some bad surprises at the end of the month.
 
 :::
 
 
 ## Install
 
-First of all, let's create an EC2 instance, install a Quickwit binary, and [configure it](configure-aws-env.md) to let Quickwit access your S3 buckets. This instance will be used for indexing our dataset.
+First of all, let's create an EC2 instance, install a Quickwit binary, and [configure it](/docs/guides/aws-setup) to let Quickwit access your S3 buckets. This instance will be used for indexing our dataset.
 
 ```bash
 curl -L https://install.quickwit.io | sh
@@ -44,7 +46,7 @@ curl -o hdfs_logs_index_config.yaml https://raw.githubusercontent.com/quickwit-o
 ```
 
 The index config defines five fields: `timestamp`, `tenant_id`, `severity_text`, `body`, and one object field
-for the nested values `resource.service` . It also sets the `default_search_fields`, the `tag_fields`, and the `timestamp_field`. The `timestamp_field` and `tag_fields` are used by Quickwit for [splits pruning](../concepts/architecture.md) at query time to boost search speed. Check out the [index config docs](../configuration/index-config.md) for more details.
+for the nested values `resource.service` . It also sets the `default_search_fields`, the `tag_fields`, and the `timestamp_field`. The `timestamp_field` and `tag_fields` are used by Quickwit for [splits pruning](/docs/concepts/architecture) at query time to boost search speed. Check out the [index config docs](/docs/configuration/index-config) for more details.
 
 ```yaml title="hdfs_logs_index_config.yaml"
 version: 0
@@ -103,7 +105,7 @@ This step can also be executed on your local machine. The `create` command creat
 :::
 
 ## Index logs
-The dataset is a compressed [ndjson file](https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz). Instead of downloading and indexing the data in separate steps, we will use pipes to send a decompressed stream to Quickwit directly.
+The dataset is a compressed [NDJSON file](https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz). Instead of downloading and indexing the data in separate steps, we will use pipes to send a decompressed stream to Quickwit directly.
 
 ```bash
 curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz | gunzip | ./quickwit index ingest --index hdfs-logs --config ./config.yaml
@@ -113,12 +115,12 @@ curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.js
 
 4GB of RAM is enough to index this dataset; an instance like `t4g.medium` with 4GB and 2 vCPU indexed this dataset in 20 minutes.
 
-This step can also be done on your local machine. The `ingest` subcommand generates locally [splits](../concepts/architecture.md) of 10 million documents and will upload them on your bucket. Concretely, each split is a bundle of index files and metadata files.
+This step can also be done on your local machine. The `ingest` subcommand generates locally [splits](/docs/concepts/architecture) of 10 million documents and will upload them on your bucket. Concretely, each split is a bundle of index files and metadata files.
 
 :::
 
 
-You can check it's working by using `search` subcommand and look for `ERROR` in `serverity_text` field:
+You can check it's working by using `search` subcommand and look for `ERROR` in `severity_text` field:
 ```bash
 ./quickwit index search --index hdfs-logs --config ./config.yaml --query "severity_text:ERROR"
 ```
@@ -129,11 +131,11 @@ Now that we have indexed the logs and can search from one instance, It's time to
 
 Quickwit needs a port `rest_listen_port` for serving the HTTP rest API via TCP as well as maintaining the cluster formation via UDP. Also, it needs `{rest_listen_port} + 1` for gRPC communication between instances.
 
-In AWS, you can create a security group to group these inbound rules. Check out the [network section](configure-aws-env.md) of our AWS setup guide.
+In AWS, you can create a security group to group these inbound rules. Check out the [network section](/docs/guides/aws-setup) of our AWS setup guide.
 
 To make things easier, let's create a security group that opens the TCP/UDP port range [7200-7300]. Next, create three EC2 instances using the previously created security group. Take note of each instance's public IP address.
 
-Now ssh into the first EC2 instance, install Quickwit, and [configure the environment](configure-aws-env.md) to let Quickwit access the index S3 buckets.
+Now ssh into the first EC2 instance, install Quickwit, and [configure the environment](/docs/guides/aws-setup) to let Quickwit access the index S3 buckets.
 
 ```bash
 curl -L https://install.quickwit.io | sh
@@ -228,28 +230,30 @@ which returns the json
 
 ```json
 {
-  "num_hits": 364,
+  "num_hits": 10000,
   "hits": [
     {
-      "attributes.class": "org.apache.hadoop.hdfs.server.datanode.DataNode",
-      "body": "RECEIVED SIGNAL 15: SIGTERM",
-      "resource": {"service": "datanode/02"},
-      "severity_text": "ERROR",
-      "timestamp": 1442629246
+      "body": "Receiving BP-108841162-10.10.34.11-1440074360971:blk_1073836032_95208 src: /10.10.34.20:60300 dest: /10.10.34.13:50010",
+      "resource": {
+        "service": "datanode/03"
+      },
+      "severity_text": "INFO",
+      "tenant_id": 58,
+      "timestamp": 1440670490
     }
     ...
   ],
-  "elapsed_time_micros": 505923
+  "elapsed_time_micros": 2502
 }
 ```
 
-You can see that this query has only 364 hits and that the server responds in 0.5 seconds.
+You can see that this query has 10 000 hits and that the server responds in 2.5 milliseconds.
 
-The index config shows that we can use the timestamp field parameters `startTimestamp` and `endTimestamp` and benefit from time pruning. Behind the scenes, Quickwit will only query [splits](../concepts/architecture.md) that have logs in this time range. This can have a significant impact on speed.
+The index config shows that we can use the timestamp field parameters `start_timestamp` and `end_timestamp` and benefit from time pruning. Behind the scenes, Quickwit will only query [splits](/docs/concepts/architecture) that have logs in this time range. This can have a significant impact on speed.
 
 
 ```bash
-curl -v 'http://your-load-balancer/api/v1/hdfs_logs/search?query=severity_text:ERROR&startTimestamp=1442834249&endTimestamp=1442900000'
+curl -v 'http://your-load-balancer/api/v1/hdfs_logs/search?query=severity_text:ERROR&start_timestamp=1442834249&end_timestamp=1442900000'
 ```
 
 Returns 6 hits in 0.36 seconds.
@@ -267,4 +271,4 @@ Also remember to remove the security group to protect your EC2 instances. You ca
 
 Congratz! You finished this tutorial!
 
-To continue your Quickwit journey, check out the [search REST API reference](../reference/rest-api.md) or the [query language reference](../reference/query-language.md).
+To continue your Quickwit journey, check out the [search REST API reference](/docs/reference/rest-api) or the [query language reference](/docs/reference/query-language).

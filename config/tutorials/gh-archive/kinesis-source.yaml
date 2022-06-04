@@ -1,0 +1,4 @@
+source_id: kinesis-source
+source_type: kinesis
+params:
+  stream_name: gh-archive

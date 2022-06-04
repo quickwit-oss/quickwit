@@ -55,3 +55,9 @@ pub struct SpawnPipeline {
     pub index_id: String,
     pub source: SourceConfig,
 }
+
+#[derive(Debug, Clone)]
+pub struct ShutdownPipeline {
+    pub index_id: String,
+    pub source_id: String,
+}

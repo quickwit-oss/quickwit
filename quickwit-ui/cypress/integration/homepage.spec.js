@@ -26,10 +26,10 @@ describe('Home navigation', () => {
         .should('contain.text', 'Indexes')
         .should('contain.text', 'Cluster');
   });
-  it('Should navigate to cluster members', () => {
+  it('Should navigate to cluster state', () => {
     cy.visit('http://127.0.0.1:7280/ui');
     cy.get('a').contains('Cluster').click();
-    cy.get('p').should('contain.text', 'Cluster members');
+    cy.get('p').should('contain.text', 'Cluster state');
     cy.get('span').should('contain.text', 'listen_address');
   });
 })

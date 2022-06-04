@@ -20,13 +20,15 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use quickwit_proto::ingest_api::{DocBatch, FetchResponse};
+use quickwit_proto::ingest_api::{DocBatch, FetchResponse, ListQueuesResponse};
 use rocksdb::{Direction, IteratorMode, WriteBatch, WriteOptions, DB};
 use tracing::warn;
 
 use crate::{add_doc, Position};
 
 const FETCH_PAYLOAD_LIMIT: usize = 2_000_000; // 2MB
+
+const QUICKWIT_CF_PREFIX: &str = ".queue_";
 
 pub struct Queues {
     db: DB,
@@ -84,7 +86,8 @@ impl Queues {
     }
 
     pub fn queue_exists(&self, queue_id: &str) -> bool {
-        self.db.cf_handle(queue_id).is_some()
+        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
+        self.db.cf_handle(&real_queue_id).is_some()
     }
 
     pub fn create_queue(&mut self, queue_id: &str) -> crate::Result<()> {
@@ -93,15 +96,17 @@ impl Queues {
                 index_id: queue_id.to_string(),
             });
         }
+        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
         let cf_opts = default_rocks_db_options();
-        self.db.create_cf(queue_id, &cf_opts)?;
-        self.last_position_per_queue
-            .insert(queue_id.to_string(), None);
+        self.db.create_cf(&real_queue_id, &cf_opts)?;
+        self.last_position_per_queue.insert(real_queue_id, None);
         Ok(())
     }
 
     pub fn drop_queue(&mut self, queue_id: &str) -> crate::Result<()> {
-        self.db.drop_cf(queue_id)?;
+        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
+        self.db.drop_cf(&real_queue_id)?;
+        self.last_position_per_queue.remove(&real_queue_id);
         Ok(())
     }
 
@@ -123,13 +128,15 @@ impl Queues {
         queue_id: &str,
         up_to_offset_included: Position,
     ) -> crate::Result<()> {
-        let cf_ref = self.db.cf_handle(queue_id).unwrap(); // FIXME
-                                                           // We want to keep the last record.
-        let last_position_opt = *self.last_position_per_queue.get(queue_id).ok_or_else(|| {
-            crate::IngestApiError::IndexDoesNotExist {
+        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
+        let cf_ref = self.db.cf_handle(&real_queue_id).unwrap(); // FIXME
+                                                                 // We want to keep the last record.
+        let last_position_opt = *self
+            .last_position_per_queue
+            .get(&real_queue_id)
+            .ok_or_else(|| crate::IngestApiError::IndexDoesNotExist {
                 index_id: queue_id.to_string(),
-            }
-        })?;
+            })?;
 
         let last_position = if let Some(last_position) = last_position_opt {
             last_position
@@ -165,12 +172,13 @@ impl Queues {
         queue_id: &str,
         records_it: impl Iterator<Item = &'a [u8]>,
     ) -> crate::Result<()> {
+        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
         let column_does_not_exist = || crate::IngestApiError::IndexDoesNotExist {
             index_id: queue_id.to_string(),
         };
         let last_position_opt = self
             .last_position_per_queue
-            .get_mut(queue_id)
+            .get_mut(&real_queue_id)
             .ok_or_else(column_does_not_exist)?;
 
         let mut next_position = last_position_opt
@@ -180,7 +188,7 @@ impl Queues {
 
         let cf_ref = self
             .db
-            .cf_handle(queue_id)
+            .cf_handle(&real_queue_id)
             .ok_or_else(column_does_not_exist)?;
 
         let mut batch = WriteBatch::default();
@@ -204,8 +212,9 @@ impl Queues {
         queue_id: &str,
         start_after: Option<Position>,
         num_bytes_limit: Option<usize>,
-    ) -> crate::Result<quickwit_proto::ingest_api::FetchResponse> {
-        let cf = self.db.cf_handle(queue_id).ok_or_else(|| {
+    ) -> crate::Result<FetchResponse> {
+        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
+        let cf = self.db.cf_handle(&real_queue_id).ok_or_else(|| {
             crate::IngestApiError::IndexDoesNotExist {
                 index_id: queue_id.to_string(),
             }
@@ -239,8 +248,9 @@ impl Queues {
     }
 
     // Streams messages from the start of the Stream.
-    pub fn tail(&self, queue_id: &str) -> crate::Result<quickwit_proto::ingest_api::FetchResponse> {
-        let cf = self.db.cf_handle(queue_id).ok_or_else(|| {
+    pub fn tail(&self, queue_id: &str) -> crate::Result<FetchResponse> {
+        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
+        let cf = self.db.cf_handle(&real_queue_id).ok_or_else(|| {
             crate::IngestApiError::IndexDoesNotExist {
                 index_id: queue_id.to_string(),
             }
@@ -264,10 +274,22 @@ impl Queues {
             doc_batch: Some(doc_batch),
         })
     }
+
+    pub fn list_queues(&self) -> crate::Result<ListQueuesResponse> {
+        Ok(ListQueuesResponse {
+            queues: self
+                .last_position_per_queue
+                .keys()
+                .filter_map(|real_queue_id| real_queue_id.strip_prefix(QUICKWIT_CF_PREFIX))
+                .map(ToString::to_string)
+                .collect(),
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::ops::{Deref, DerefMut};
 
     use super::Queues;
@@ -346,6 +368,25 @@ mod tests {
             queue_err,
             IngestApiError::IndexAlreadyExists { .. }
         ));
+    }
+
+    #[test]
+    fn test_list_queues() {
+        let queue_ids = vec!["foo".to_string(), "bar".to_string(), "baz".to_string()];
+        let mut queues = QueuesForTest::default();
+        for queue_id in queue_ids.iter() {
+            queues.create_queue(queue_id).unwrap();
+        }
+        assert_eq!(
+            HashSet::<String>::from_iter(queue_ids),
+            HashSet::from_iter(queues.list_queues().unwrap().queues)
+        );
+
+        queues.drop_queue("foo").unwrap();
+        assert_eq!(
+            HashSet::<String>::from_iter(vec!["bar".to_string(), "baz".to_string()]),
+            HashSet::from_iter(queues.list_queues().unwrap().queues)
+        );
     }
 
     #[test]

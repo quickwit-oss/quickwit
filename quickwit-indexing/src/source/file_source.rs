@@ -53,7 +53,7 @@ pub struct FileSource {
 }
 
 impl fmt::Debug for FileSource {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "FileSource {{ source_id: {} }}", self.source_id)
     }
 }
@@ -202,8 +202,8 @@ mod tests {
         assert_eq!(
             counters,
             serde_json::json!({
-                "previous_offset": 70u64,
-                "current_offset": 70u64,
+                "previous_offset": 1030u64,
+                "current_offset": 1030u64,
                 "num_lines_processed": 4u32
             })
         );
