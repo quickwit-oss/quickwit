@@ -28,6 +28,11 @@ As soon as you are running at least 2 nodes, there are several restrictions:
 Coming soon :)
 
 ## General limitations
+
+:::note
+We're actively working on removing those limitations. Most of them should be resolved in the next releases.
+:::
+
 ### CLI limitations
 
 While running one or several nodes, we strongly discourage you to use the [CLI](../reference/cli.md) to manage indexes (add/delete operations) as we do not notify the running services of the modifications.
