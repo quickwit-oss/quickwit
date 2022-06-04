@@ -17,7 +17,7 @@ This is the simplest way to get started with Quickwit. First, launch all the ser
 
 ## Multi nodes: single indexer, multiple searchers
 
-Currently, one Quickwit node running on a reasonable VM ingests at 40 MB/sec from Kafka, a deployment with one indexer is thus a good start. But you may need several searchers on large datasets or answer many heavy queries like aggregations.
+One Quickwit node running on a decent instance can ingest data at speeds up to 40 MB/sec from Kafka. A deployment with one indexer is thus a good start. However, you may need several searchers for handling large datasets or serving many resource-intensive queries such as aggregation queries.
 
 As soon as you are running at least 2 nodes, there are several restrictions:
 - you have to use a distributed storage like AWS S3 or MinIO for storing your index, a local file system storage will not work;
