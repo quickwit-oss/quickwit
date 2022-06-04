@@ -32,7 +32,7 @@ Coming soon :)
 
 While running one or several nodes, we strongly discourage you to use the [CLI](../reference/cli.md) to manage indexes (add/delete operations) as we do not notify the running services of the modifications.
 
-For example, if you create an index with the CLI while an indexer is running, it will not be notified by the creation and it won't accept ingest requests on this new index. You will need to restart the indexer to be able to ingest documents on this index.
+For example, if you create an index with the CLI while an indexer is running, it will not be notified of the creation event and will not accept ingest requests for this new index. Therefore, you will need to restart the indexer to be able to ingest documents for this index.
 A searcher will behave similarly on index creation but not on index deletion. For example, a file-backed metastore server will not be aware of the index deletion and will continue trying to serve search queries and return 500 errors.
 
 Generally speaking:
