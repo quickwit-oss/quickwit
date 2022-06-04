@@ -9,7 +9,7 @@ Quickwit is composed of 3 services:
 - the UI service: it serves the static assets required by the UI React app.
 
 Quickwit is compiled as a single binary or Docker image, and you can choose to start the indexer or the searcher or both of them. As for the UI service, it is always launched.
-You can deploy Quickwit on a single node or multiple nodes. Please note that some deployment configurations are still rough around the edges, read carefully the current limitations.
+You can deploy Quickwit on a single node or multiple nodes. However, please note that some deployment configurations are still rough around the edges, so read the current limitations carefully.
 
 ## Single-node
 
