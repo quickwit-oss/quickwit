@@ -21,7 +21,7 @@ One Quickwit node running on a decent instance can ingest data at speeds up to 4
 
 As soon as you are running at least 2 nodes, there are several restrictions:
 - you have to use a distributed data store such as Amazon S3 or MinIO for storing your index; a local file system storage will not work;
-- if you use the [Ingest API](../reference/rest-api.md), you must send your queries directly to the indexer. If sent to a searcher, you will get a 404 response. Note that you can send search queries to an indexer, it will act as a root searcher node and send leaf requests to searchers;
+- if you use the [Ingest API](../reference/rest-api.md), you must send your queries directly to the indexer. When sent to a searcher, you will get a 404 response. Note that when search queries are addressed to an indexer, it acts as a root searcher node and dispatches leaf requests to searchers;
 
 ## Multiple indexers, multiple searchers
 
