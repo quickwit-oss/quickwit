@@ -13,7 +13,7 @@ You can deploy Quickwit on a single node or multiple nodes. Please note that som
 
 ## Single-node
 
-This is the simplest way to start with Quickwit. You can start all the services with `quickwit run` [command](../reference/cli.md) and you're ready to ingest and search data.
+This is the simplest way to get started with Quickwit. First, launch all the services with the `quickwit run` [command](../reference/cli.md), and then you're ready to ingest and search data.
 
 ## Multi nodes: single indexer, multiple searchers
 
