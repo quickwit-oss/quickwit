@@ -40,7 +40,7 @@ Generally speaking:
 - when you delete indexes, you should restart your searchers if you use a file-backed metastore.
 
 
-### On the file-backed metastore
+### File-backed metastore limitations
 
 The file-backed metastore is mainly useful for testing purposes. Though it may be very practical in specific use cases, we strongly encourage you to use a Postgresql metastore in production.
 The main limitations of the file-backed metastore are:
