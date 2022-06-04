@@ -45,4 +45,4 @@ Generally speaking:
 The file-backed metastore is mainly useful for testing purposes. Though it may be convenient for some specific use cases, we strongly encourage you to use a PostgreSQL metastore in production.
 The main limitations of the file-backed metastore are:
 - it does not support concurrent writes;
-- it caches metastore data and polls regularly files to update its cache. Thus it has a delayed view on the metastore.
+- it caches metastore data and polls files regularly to update its cache. Thus it has a delayed view on the metastore.
