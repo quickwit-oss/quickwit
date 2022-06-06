@@ -19,7 +19,7 @@
 
 use std::path::PathBuf;
 
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use clap::{arg, Arg, ArgMatches, Command};
 use humansize::{file_size_opts, FileSize};
 use itertools::Itertools;
@@ -328,7 +328,7 @@ async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
         args.create_date.map(OffsetDateTime::unix_timestamp),
         args.tags,
     );
-    let table = make_split_table(&filtered_splits);
+    let table = make_split_table(&filtered_splits, "Splits");
     println!("{table}");
 
     if args.mark_for_deletion {
@@ -366,6 +366,14 @@ async fn mark_splits_for_deletion_cli(args: MarkForDeletionArgs) -> anyhow::Resu
     Ok(())
 }
 
+#[derive(Tabled)]
+struct FileRow {
+    #[tabled(rename = "File Name")]
+    file_name: String,
+    #[tabled(rename = "Size")]
+    size: String,
+}
+
 async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "describe-split");
 
@@ -378,21 +386,54 @@ async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let index_storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
 
+    let split_metadata = metastore
+        .list_all_splits(&args.index_id)
+        .await?
+        .iter()
+        .find(|split| split.split_id() == args.split_id)
+        .cloned()
+        .ok_or_else(|| {
+            anyhow!(
+                "Could not find split metadata in metastore {}",
+                args.split_id
+            )
+        })?;
+
+    println!("{}", make_split_table(&[split_metadata], "Split"));
+
     let split_file = PathBuf::from(format!("{}.split", args.split_id));
     let (split_footer, _) = read_split_footer(index_storage, &split_file).await?;
     let stats = BundleDirectory::get_stats_split(split_footer.clone())?;
     let hotcache_bytes = get_hotcache_from_split(split_footer)?;
+
+    let mut file_rows = vec![];
+
     for (path, size) in stats {
         let readable_size = size.file_size(file_size_opts::DECIMAL).unwrap();
-        println!("{:?} {}", path, readable_size);
+        file_rows.push(FileRow {
+            file_name: path.to_str().unwrap().to_string(),
+            size: readable_size.to_string(),
+        });
     }
+    println!(
+        "{}",
+        make_table("Files in Split", file_rows.into_iter(), false)
+    );
+
     if args.verbose {
+        let mut file_in_hotcache = vec![];
         let hotcache_stats = HotDirectory::get_stats_per_file(hotcache_bytes)?;
         for (path, size) in hotcache_stats {
             let readable_size = size.file_size(file_size_opts::DECIMAL).unwrap();
-            println!("HotCache {:?} {}", path, readable_size);
+            file_in_hotcache.push(FileRow {
+                file_name: path.to_str().unwrap().to_string(),
+                size: readable_size.to_string(),
+            });
         }
+        let hotcache_table = make_table("Files in Hotcache", file_in_hotcache.into_iter(), false);
+        println!("{hotcache_table}");
     }
+
     Ok(())
 }
 
@@ -482,7 +523,7 @@ fn filter_splits(
         .collect()
 }
 
-fn make_split_table(splits: &[Split]) -> Table {
+fn make_split_table(splits: &[Split], title: &str) -> Table {
     let rows = splits
         .iter()
         .map(|split| {
@@ -508,7 +549,7 @@ fn make_split_table(splits: &[Split]) -> Table {
             }
         })
         .sorted_by(|left, right| left.created_at.cmp(&right.created_at));
-    make_table("Splits", rows, false)
+    make_table(title, rows, false)
 }
 
 fn parse_date(date_arg: &str, option_name: &str) -> anyhow::Result<OffsetDateTime> {
