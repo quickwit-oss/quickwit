@@ -30,14 +30,15 @@ lru = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 ec2_instance_metadata = "0.3"
 tempfile = '3'
+hyper-rustls = "0.23"
 
 [dependencies.rusoto_core]
-version = '0.47'
+version = '0.48'
 default-features = false
 features = ['rustls']
 
 [dependencies.rusoto_s3]
-version = '0.47'
+version = '0.48'
 default-features = false
 features = ['rustls']
 
