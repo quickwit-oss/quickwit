@@ -32,6 +32,7 @@ use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_config::CLI_INGEST_SOURCE_ID;
 use quickwit_core::get_cache_directory_path;
+use quickwit_indexing::actors::INDEXING;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore};
 use serde_json::{json, Number, Value};
 use serial_test::serial;
@@ -479,6 +480,12 @@ async fn test_cmd_delete() -> Result<()> {
         .index_metadata(&test_env.index_id)
         .await
         .is_err(),);
+    assert!(!test_env
+        .data_dir_path
+        .join(INDEXING)
+        .join(test_env.index_id)
+        .as_path()
+        .exists());
     Ok(())
 }
 

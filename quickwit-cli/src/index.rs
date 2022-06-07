@@ -34,7 +34,7 @@ use quickwit_common::GREEN_COLOR;
 use quickwit_config::{
     IndexConfig, IndexerConfig, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
 };
-use quickwit_core::{clear_cache_directory, IndexService};
+use quickwit_core::{clear_cache_directory, remove_indexing_directory, IndexService};
 use quickwit_doc_mapper::tag_pruning::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
 use quickwit_indexing::models::{
@@ -47,7 +47,7 @@ use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
 use quickwit_telemetry::payload::TelemetryEvent;
 use tabled::{Table, Tabled};
 use thousands::Separable;
-use tracing::{debug, Level};
+use tracing::{debug, warn, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
 use crate::{
@@ -984,6 +984,13 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
         }
         return Ok(());
     }
+
+    if let Err(error) =
+        remove_indexing_directory(&quickwit_config.data_dir_path, args.index_id.clone()).await
+    {
+        warn!(error= ?error, "Could not remove indexing directory.");
+    }
+
     println!("Index `{}` successfully deleted.", args.index_id);
     Ok(())
 }

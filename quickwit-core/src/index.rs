@@ -290,3 +290,18 @@ pub async fn clear_cache_directory(
     empty_dir(&cache_directory_path).await?;
     Ok(())
 }
+
+/// Removes the indexing directory of a given index.
+///
+/// * `data_dir_path` - Path to directory where data (tmp data, splits kept for caching purpose) is
+///   persisted.
+/// * `index_id` - The target index Id.
+pub async fn remove_indexing_directory(
+    data_dir_path: &Path,
+    index_id: String,
+) -> anyhow::Result<()> {
+    let indexing_directory_path = data_dir_path.join(INDEXING).join(index_id);
+    info!(path = %indexing_directory_path.display(), "Clearing indexing directory.");
+    tokio::fs::remove_dir_all(indexing_directory_path.as_path()).await?;
+    Ok(())
+}
