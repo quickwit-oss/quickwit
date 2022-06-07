@@ -3,6 +3,7 @@ name = "quickwit-ingest-api"
 version = "0.3.0"
 edition = "2021"
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
+description = "Quickwit is a cost-efficient search engine."
 
 [dependencies]
 tokio = {version = "1", features = ["full"] }

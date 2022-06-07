@@ -56,9 +56,11 @@ rand = "0.8"
 
 [dependencies.quickwit-cluster]
 path = '../quickwit-cluster'
+version = "0.3"
 
 [dependencies.quickwit-search]
 path = '../quickwit-search'
+version = "0.3"
 
 [dependencies.serde]
 version = '1.0'
