@@ -259,7 +259,7 @@ impl IndexService {
         )
         .await
         {
-            error!(metastore_uri = %self.metastore.uri(), index_id = %index_id, error = %err, "Not all split files could be deleted during garbage collection.");
+            error!(metastore_uri = %self.metastore.uri(), index_id = %index_id, error = ?err, "Not all split files could be deleted during garbage collection.");
         }
         Ok(())
     }
