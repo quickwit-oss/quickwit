@@ -210,7 +210,7 @@ fn http_client() -> HttpClient {
     let builder = HttpsConnectorBuilder::new();
     let builder = builder.with_native_roots();
     let connector = builder
-        .https_only()
+        .https_or_http()
         // We do not enable HTTP2.
         // It is not enabled on S3 and it does not seem to work with Google Cloud Storage at
         // this point. https://github.com/quickwit-oss/quickwit/issues/1584
