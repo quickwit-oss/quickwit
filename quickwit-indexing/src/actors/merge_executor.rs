@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use fail::fail_point;
 use itertools::{izip, Itertools};
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, Mailbox, QueueCapacity,
+    Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity, RuntimeType,
 };
 use quickwit_common::split_file;
 use quickwit_directories::{BundleDirectory, UnionDirectory};
@@ -60,8 +60,8 @@ pub struct MergeExecutor {
 impl Actor for MergeExecutor {
     type ObservableState = ();
 
-    fn runner(&self) -> ActorRunner {
-        ActorRunner::DedicatedThread
+    fn runtime_handle(&self) -> RuntimeType {
+        RuntimeType::Blocking
     }
 
     fn observable_state(&self) -> Self::ObservableState {}

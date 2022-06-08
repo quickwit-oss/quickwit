@@ -18,8 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use crate::mailbox::Inbox;
+use crate::runner::spawn_actor;
 use crate::scheduler::Scheduler;
-use crate::{create_mailbox, Actor, ActorContext, ActorHandle, ActorRunner, KillSwitch, Mailbox};
+use crate::{create_mailbox, Actor, ActorContext, ActorHandle, KillSwitch, Mailbox, RuntimeType};
 
 /// `SpawnBuilder` makes it possible to configure misc parameters before spawning an actor.
 pub struct SpawnBuilder<A: Actor> {
@@ -83,15 +84,18 @@ impl<A: Actor> SpawnBuilder<A> {
 impl<A: Actor> SpawnBuilder<A> {
     /// Spawns an async actor.
     pub fn spawn(self) -> (Mailbox<A>, ActorHandle<A>) {
-        let runner = self.actor.runner();
-        self.spawn_with_forced_runner(runner)
+        let runtime_handle = self.actor.runtime_handle();
+        self.spawn_with_forced_runner(runtime_handle)
     }
 
     /// Ignore the actor default runner, and run the actor on a specific one.
-    pub fn spawn_with_forced_runner(self, runner: ActorRunner) -> (Mailbox<A>, ActorHandle<A>) {
+    pub fn spawn_with_forced_runner(
+        self,
+        runtime_handle: tokio::runtime::Handle,
+    ) -> (Mailbox<A>, ActorHandle<A>) {
         let (actor, ctx, inbox) = self.create_actor_context_and_inbox();
         let mailbox = ctx.mailbox().clone();
-        let actor_handle = runner.spawn_actor(actor, ctx, inbox);
+        let actor_handle = spawn_actor(actor, ctx, inbox, runtime_handle);
         (mailbox, actor_handle)
     }
 }

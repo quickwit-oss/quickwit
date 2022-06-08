@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, Mailbox, QueueCapacity,
+    Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity, RuntimeType,
 };
 use quickwit_directories::write_hotcache;
 use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
@@ -109,8 +109,8 @@ impl Actor for Packager {
         self.actor_name.to_string()
     }
 
-    fn runner(&self) -> ActorRunner {
-        ActorRunner::DedicatedThread
+    fn runtime_handle(&self) -> RuntimeType {
+        RuntimeType::Blocking
     }
 }
 

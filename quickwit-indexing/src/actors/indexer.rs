@@ -24,7 +24,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, Mailbox, QueueCapacity,
+    Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity, RuntimeType,
 };
 use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::{DocMapper, DocParsingError, SortBy, QUICKWIT_TOKENIZER_MANAGER};
@@ -260,8 +260,8 @@ impl Actor for Indexer {
         "Indexer".to_string()
     }
 
-    fn runner(&self) -> ActorRunner {
-        ActorRunner::DedicatedThread
+    fn runtime_handle(&self) -> RuntimeType {
+        RuntimeType::Blocking
     }
 
     async fn finalize(

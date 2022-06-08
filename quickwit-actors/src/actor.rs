@@ -37,9 +37,10 @@ use crate::channel_with_priority::Priority;
 use crate::envelope::wrap_in_envelope;
 use crate::mailbox::{Command, CommandOrMessage};
 use crate::progress::{Progress, ProtectedZoneGuard};
+use crate::runner::RuntimeType;
 use crate::scheduler::{Callback, ScheduleEvent, Scheduler};
 use crate::spawn_builder::SpawnBuilder;
-use crate::{ActorRunner, AskError, KillSwitch, Mailbox, QueueCapacity, SendError};
+use crate::{AskError, KillSwitch, Mailbox, QueueCapacity, SendError};
 
 /// The actor exit status represents the outcome of the execution of an actor,
 /// after the end of the execution.
@@ -137,8 +138,8 @@ pub trait Actor: Send + Sync + Sized + 'static {
     ///
     /// Actor with a handler that may block for more than 50microsecs should
     /// use the `ActorRunner::DedicatedThread`.
-    fn runner(&self) -> ActorRunner {
-        ActorRunner::GlobalRuntime
+    fn runtime_handle(&self) -> tokio::runtime::Handle {
+        tokio::runtime::Handle::current()
     }
 
     /// The Actor's incoming mailbox queue capacity. It is set when the actor is spawned.
