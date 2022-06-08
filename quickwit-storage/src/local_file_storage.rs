@@ -211,7 +211,7 @@ impl Storage for LocalFileStorage {
             return Ok(());
         }
         if let Err(error) = delete_all_dirs(self.root.to_path_buf(), parent.unwrap()).await {
-            warn!(error =? error, path =% path.display(), "Failed to clean up parent directories.");
+            warn!(error = ?error, path = %path.display(), "Failed to clean up parent directories.");
         }
         Ok(())
     }
