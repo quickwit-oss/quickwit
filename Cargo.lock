@@ -2559,7 +2559,10 @@ dependencies = [
 name = "quickwit-aws"
 version = "0.3.0"
 dependencies = [
+ "anyhow",
  "futures",
+ "hyper-rustls",
+ "once_cell",
  "rand",
  "rusoto_core",
  "rusoto_kinesis",
@@ -2968,7 +2971,6 @@ dependencies = [
  "bytes",
  "ec2_instance_metadata",
  "futures",
- "hyper-rustls",
  "lru",
  "md5",
  "mockall",

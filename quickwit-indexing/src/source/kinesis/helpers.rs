@@ -17,6 +17,20 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use quickwit_aws::{get_credentials_provider, get_http_client};
+use rusoto_core::Region;
+use rusoto_kinesis::KinesisClient;
+
+pub fn get_kinesis_client(region: Region) -> anyhow::Result<KinesisClient> {
+    let http_client = get_http_client();
+    let credentials_provider = get_credentials_provider()?;
+    Ok(KinesisClient::new_with(
+        http_client,
+        credentials_provider,
+        region,
+    ))
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use std::collections::HashMap;
@@ -34,14 +48,16 @@ pub(crate) mod tests {
     use crate::source::kinesis::api::tests::{
         create_stream, delete_stream, wait_for_stream_status,
     };
+    use crate::source::kinesis::helpers::get_kinesis_client;
 
     pub static DEFAULT_RETRY_PARAMS: Lazy<RetryParams> = Lazy::new(RetryParams::default);
 
-    pub fn get_localstack_client() -> KinesisClient {
-        KinesisClient::new(Region::Custom {
+    pub fn get_localstack_client() -> anyhow::Result<KinesisClient> {
+        let region = Region::Custom {
             name: "localstack".to_string(),
             endpoint: "http://localhost:4566".to_string(),
-        })
+        };
+        get_kinesis_client(region)
     }
 
     pub fn make_shard_id(id: usize) -> String {
@@ -107,7 +123,7 @@ pub(crate) mod tests {
         num_shards: usize,
     ) -> anyhow::Result<(KinesisClient, String)> {
         let stream_name = append_random_suffix(test_name.as_ref());
-        let kinesis_client = get_localstack_client();
+        let kinesis_client = get_localstack_client()?;
         create_stream(&kinesis_client, &stream_name, num_shards).await?;
         wait_for_active_stream(&kinesis_client, &stream_name).await??;
         Ok((kinesis_client, stream_name))
