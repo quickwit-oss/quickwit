@@ -66,7 +66,7 @@ thousands = "0.2.0"
 assert_cmd = "2"
 predicates = "2"
 reqwest = { version = "0.11", default-features=false, features = ["json", "rustls-tls"] }
-serial_test = "0.6.0"
+serial_test = "0.7.0"
 
 [features]
 ci-test = []
