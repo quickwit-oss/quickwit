@@ -28,7 +28,6 @@ use anyhow::Context;
 use async_trait::async_trait;
 use ec2_instance_metadata::InstanceMetadataClient;
 use futures::{stream, StreamExt};
-use hyper_rustls::HttpsConnectorBuilder;
 use once_cell::sync::OnceCell;
 use quickwit_aws::error::RusotoErrorWrapper;
 use quickwit_aws::retry::{retry, Retry, RetryParams, Retryable};
@@ -202,33 +201,19 @@ impl fmt::Debug for S3CompatibleObjectStorage {
     }
 }
 
-fn http_client() -> HttpClient {
-    let mut http_config: HttpConfig = HttpConfig::default();
-    // We experience an issue similar to https://github.com/hyperium/hyper/issues/2312.
-    // It seems like the setting below solved it.
-    http_config.pool_idle_timeout(std::time::Duration::from_secs(POOL_IDLE_TIMEOUT));
-    let builder = HttpsConnectorBuilder::new();
-    let builder = builder.with_native_roots();
-    let connector = builder
-        .https_only()
-        // We do not enable HTTP2.
-        // It is not enabled on S3 and it does not seem to work with Google Cloud Storage at
-        // this point. https://github.com/quickwit-oss/quickwit/issues/1584
-        //
-        // (Besides, HTTP2 would be awesome but rusoto does not leverage
-        // multiplexing anyway.)
-        .enable_http1()
-        .build();
-    HttpClient::from_connector_with_config(connector, http_config)
-}
-
 fn create_s3_client(region: Region) -> anyhow::Result<S3Client> {
     let mut chain_provider = ChainProvider::new();
     chain_provider.set_timeout(Duration::from_secs(CREDENTIAL_TIMEOUT));
     let credentials_provider = AutoRefreshingProvider::new(chain_provider)
         .with_context(|| "Failed to fetch credentials for the object storage.")?;
+    let mut http_config: HttpConfig = HttpConfig::default();
+    // We experience an issue similar to https://github.com/hyperium/hyper/issues/2312.
+    // It seems like the setting below solved it.
+    http_config.pool_idle_timeout(std::time::Duration::from_secs(POOL_IDLE_TIMEOUT));
+    let http_client = HttpClient::new_with_config(http_config)
+        .with_context(|| "Failed to create request dispatcher.")?;
     Ok(S3Client::new_with(
-        http_client(),
+        http_client,
         credentials_provider,
         region,
     ))
