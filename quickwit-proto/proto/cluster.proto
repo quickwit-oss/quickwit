@@ -53,6 +53,9 @@ message ListMembersRequest {
 }
 
 message ListMembersResponse {
+  /// Cluster ID
+  string cluster_id = 2;
+  /// All nodes belonging to the cluster.
   repeated Member members = 1;
 }
 

@@ -257,7 +257,7 @@ impl HasLen for BundleStorage {
 }
 
 impl fmt::Debug for BundleStorage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "BundleStorage({:?}, files={:?})",

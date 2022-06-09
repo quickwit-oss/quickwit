@@ -265,9 +265,9 @@ async fn search_stream_endpoint(
                     // trailer. Thus we also call `sender.abort()` so that the
                     // client will see something wrong happened. But he will
                     // need to look at the logs to understand that.
-                    tracing::error!(error=%error, "Error when streaming search results.");
+                    tracing::error!(error=?error, "Error when streaming search results.");
                     let header_value_str =
-                        format!("Error when streaming search results: {}.", error);
+                        format!("Error when streaming search results: {:?}.", error);
                     let header_value = HeaderValue::from_str(header_value_str.as_str())
                         .unwrap_or_else(|_| HeaderValue::from_static("Search stream error"));
                     let mut trailers = HeaderMap::new();

@@ -107,7 +107,7 @@ pub(crate) async fn list_shards(
         let request = ListShardsInput {
             stream_name,
             next_token,
-            max_results: limit_per_request.map(|limit| limit as i64).clone(),
+            max_results: limit_per_request.map(|limit| limit as i64),
             ..Default::default()
         };
         let response = retry(retry_params, || async {
@@ -217,7 +217,7 @@ pub(crate) mod tests {
         while has_more_streams {
             let request = ListStreamsInput {
                 exclusive_start_stream_name,
-                limit: limit_per_request.map(|limit| limit as i64).clone(),
+                limit: limit_per_request.map(|limit| limit as i64),
             };
             let response = retry(&DEFAULT_RETRY_PARAMS, || async {
                 kinesis_client
@@ -328,8 +328,9 @@ mod kinesis_localstack_tests {
 
     #[tokio::test]
     async fn test_create_stream() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
         let stream_name = append_random_suffix("test-create-stream");
-        let kinesis_client = get_localstack_client();
+        let kinesis_client = get_localstack_client()?;
         create_stream(&kinesis_client, &stream_name, 1).await?;
         wait_for_active_stream(&kinesis_client, &stream_name).await??;
         let description_summary = describe_stream(&kinesis_client, &stream_name).await?;
@@ -466,7 +467,7 @@ mod kinesis_localstack_tests {
 
     #[tokio::test]
     async fn test_list_streams() -> anyhow::Result<()> {
-        let kinesis_client = get_localstack_client();
+        let kinesis_client = get_localstack_client()?;
         let mut stream_names = Vec::new();
 
         for stream_name_suffix in ["foo", "bar"] {

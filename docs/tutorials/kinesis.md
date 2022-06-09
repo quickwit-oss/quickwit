@@ -1,6 +1,8 @@
 ---
 title: Ingesting data from Amazon Kinesis
 description: A short tutorial describing how to set up Quickwit to ingest data from Kinesis in a few minutes
+tags: [aws, integration]
+icon_url: /img/tutorials/aws-kinesis.svg
 ---
 
 In this tutorial, we will describe how to set up Quickwit to ingest data from Kinesis in a few minutes. First, we will create an index and configure a Kinesis source. Then, we will create a Kinesis stream and load some events from the [GH Archive](https://www.gharchive.org/) into it. Finally, we will execute some search and aggregation queries to explore the freshly ingested data.
@@ -13,7 +15,7 @@ You will incur some charges for using the Amazon Kinesis service during this tut
 
 You will need the following to complete this tutorial:
 - The AWS CLI version 2 (see [Getting started with the AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-prereqs.html) for prerequisites and installation)
-- A local Quickwit [installation](../get-started/installation.md)
+- A local Quickwit [installation](/docs/get-started/installation)
 - [jq](https://stedolan.github.io/jq/download/)
 - [GNU parallel](https://www.gnu.org/software/parallel/)
 
@@ -150,7 +152,7 @@ Finally, execute this command to start Quickwit in server mode.
 ./quickwit run
 ```
 
-Under the hood, this command spawns an indexer and a searcher. On startup, the indexer will connect to the Kinesis stream specified by the source and start streaming and indexing events from the shards composing the stream. With the default commit timeout value (see [indexing settings](../configuration/index-config.md#indexing-settings)), the indexer should publish the first split after approximately 60 seconds.
+Under the hood, this command spawns an indexer and a searcher. On startup, the indexer will connect to the Kinesis stream specified by the source and start streaming and indexing events from the shards composing the stream. With the default commit timeout value (see [indexing settings](/docs/configuration/index-config#indexing-settings)), the indexer should publish the first split after approximately 60 seconds.
 
 You can run this command (in another shell) to inspect the properties of the index and check the current number of published splits:
 

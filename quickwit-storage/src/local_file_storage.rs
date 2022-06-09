@@ -38,7 +38,7 @@ pub struct LocalFileStorage {
 }
 
 impl fmt::Debug for LocalFileStorage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "LocalFileStorage(root={:?})", &self.root)
     }
 }
@@ -211,7 +211,7 @@ impl Storage for LocalFileStorage {
             return Ok(());
         }
         if let Err(error) = delete_all_dirs(self.root.to_path_buf(), parent.unwrap()).await {
-            warn!(error =? error, path =% path.display(), "Failed to clean up parent directories.");
+            warn!(error = ?error, path = %path.display(), "Failed to clean up parent directories.");
         }
         Ok(())
     }

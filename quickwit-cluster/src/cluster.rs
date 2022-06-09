@@ -104,6 +104,9 @@ impl From<Member> for NodeId {
 
 /// This is an implementation of a cluster using Chitchat.
 pub struct Cluster {
+    /// ID of the cluster joined.
+    pub cluster_id: String,
+    /// Node ID.
     pub node_id: String,
     /// A socket address that represents itself.
     pub listen_addr: SocketAddr,
@@ -112,7 +115,7 @@ pub struct Cluster {
     /// If it is dropped, the chitchat server will stop.
     chitchat_handle: ChitchatHandle,
 
-    /// A receiver(channel) for exchanging members in a cluster.
+    /// A receiver (channel) for exchanging information about the nodes in the cluster.
     members: watch::Receiver<Vec<Member>>,
 
     /// A stop flag of cluster monitoring task.
@@ -137,10 +140,16 @@ impl Cluster {
         failure_detector_config: FailureDetectorConfig,
         transport: &dyn Transport,
     ) -> ClusterResult<Self> {
-        info!(member=?me, listen_addr=?listen_addr, "Create new cluster.");
+        info!(
+            cluster_id=%cluster_id,
+            node_id=%me.node_unique_id,
+            listen_address=%listen_addr,
+            gossip_address=%me.gossip_public_address,
+            "Joining cluster."
+        );
         let chitchat_config = ChitchatConfig {
             node_id: NodeId::from(me.clone()),
-            cluster_id,
+            cluster_id: cluster_id.clone(),
             gossip_interval: GOSSIP_INTERVAL,
             listen_addr,
             seed_nodes,
@@ -168,6 +177,7 @@ impl Cluster {
 
         // Create cluster.
         let cluster = Cluster {
+            cluster_id,
             node_id: me.internal_id(),
             listen_addr,
             chitchat_handle,

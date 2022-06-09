@@ -34,11 +34,14 @@ opentelemetry = "0.17"
 tracing-opentelemetry = "0.17"
 rayon = "1"
 tantivy = { version = "0.18.0", default-features=false, features = ["mmap", "lz4-compression", "quickwit"] }
+
 [dependencies.quickwit-cluster]
 path = '../quickwit-cluster'
+version = "0.3.0"
 
 [dependencies.quickwit-doc-mapper]
 path = '../quickwit-doc-mapper'
+version = "0.3.0"
 
 [dependencies.tokio]
 version = '1'
@@ -50,15 +53,19 @@ features = ['full']
 
 [dependencies.quickwit-directories]
 path = '../quickwit-directories'
+version = "0.3.0"
 
 [dependencies.quickwit-proto]
 path = '../quickwit-proto'
+version = "0.3.0"
 
 [dependencies.quickwit-metastore]
 path = '../quickwit-metastore'
+version = "0.3.0"
 
 [dependencies.quickwit-storage]
 path = '../quickwit-storage'
+version = "0.3.0"
 
 [dev-dependencies]
 quickwit-proto = { version = "0.3.0", path = "../quickwit-proto" }

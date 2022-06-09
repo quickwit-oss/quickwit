@@ -22,7 +22,6 @@ use std::io;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -30,11 +29,12 @@ use ec2_instance_metadata::InstanceMetadataClient;
 use futures::{stream, StreamExt};
 use once_cell::sync::OnceCell;
 use quickwit_aws::error::RusotoErrorWrapper;
+use quickwit_aws::get_http_client;
 use quickwit_aws::retry::{retry, Retry, RetryParams, Retryable};
 use quickwit_common::{chunk_range, into_u64_range};
 use regex::Regex;
-use rusoto_core::credential::{AutoRefreshingProvider, ChainProvider, ProfileProvider};
-use rusoto_core::{ByteStream, HttpClient, HttpConfig, Region, RusotoError};
+use rusoto_core::credential::ProfileProvider;
+use rusoto_core::{ByteStream, Region, RusotoError};
 use rusoto_s3::{
     AbortMultipartUploadRequest, CompleteMultipartUploadRequest, CompletedMultipartUpload,
     CompletedPart, CreateMultipartUploadError, CreateMultipartUploadRequest, DeleteObjectRequest,
@@ -47,12 +47,6 @@ use tracing::{debug, error, info, instrument, warn};
 
 use crate::object_storage::MultiPartPolicy;
 use crate::{OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResult};
-
-/// A credential timeout.
-const CREDENTIAL_TIMEOUT: u64 = 5;
-
-/// An timeout for idle sockets being kept-alive.
-const POOL_IDLE_TIMEOUT: u64 = 10;
 
 /// Default region to use, if none has been configured.
 const QUICKWIT_DEFAULT_REGION: Region = Region::UsEast1;
@@ -113,7 +107,7 @@ fn region_from_str(region_str: &str) -> anyhow::Result<Region> {
     }
     Ok(Region::Custom {
         name: "qw-custom-endpoint".to_string(),
-        endpoint: region_str.to_string(),
+        endpoint: region_str.trim_end_matches('/').to_string(),
     })
 }
 
@@ -192,7 +186,7 @@ pub struct S3CompatibleObjectStorage {
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "S3CompatibleObjectStorage(bucket={},prefix={:?})",
@@ -202,16 +196,8 @@ impl fmt::Debug for S3CompatibleObjectStorage {
 }
 
 fn create_s3_client(region: Region) -> anyhow::Result<S3Client> {
-    let mut chain_provider = ChainProvider::new();
-    chain_provider.set_timeout(Duration::from_secs(CREDENTIAL_TIMEOUT));
-    let credentials_provider = AutoRefreshingProvider::new(chain_provider)
-        .with_context(|| "Failed to fetch credentials for the object storage.")?;
-    let mut http_config: HttpConfig = HttpConfig::default();
-    // We experience an issue similar to https://github.com/hyperium/hyper/issues/2312.
-    // It seems like the setting below solved it.
-    http_config.pool_idle_timeout(std::time::Duration::from_secs(POOL_IDLE_TIMEOUT));
-    let http_client = HttpClient::new_with_config(http_config)
-        .with_context(|| "Failed to create request dispatcher.")?;
+    let http_client = get_http_client();
+    let credentials_provider = quickwit_aws::get_credentials_provider()?;
     Ok(S3Client::new_with(
         http_client,
         credentials_provider,
@@ -506,8 +492,8 @@ impl S3CompatibleObjectStorage {
                 if let Err(abort_error) = abort_multipart_upload_res {
                     warn!(
                         key = %key,
-                        error = %abort_error,
-                        "Failed to abort multipart upload"
+                        error = ?abort_error,
+                        "Failed to abort multipart upload."
                     );
                 }
                 Err(upload_error)
@@ -780,7 +766,7 @@ mod tests {
     use quickwit_common::chunk_range;
     use rusoto_core::Region;
 
-    use super::{compute_md5, parse_uri};
+    use super::{compute_md5, parse_uri, region_from_str};
 
     #[test]
     fn test_parse_uri() {
@@ -809,17 +795,21 @@ mod tests {
 
     #[test]
     fn test_region_from_str() {
+        assert_eq!(region_from_str("us-east-1").unwrap(), Region::UsEast1);
         assert_eq!(
-            super::region_from_str("us-east-1").unwrap(),
-            Region::UsEast1
-        );
-        assert_eq!(
-            super::region_from_str("http://localhost:4566").unwrap(),
+            region_from_str("http://localhost:4566").unwrap(),
             Region::Custom {
                 name: "qw-custom-endpoint".to_string(),
                 endpoint: "http://localhost:4566".to_string()
             }
         );
-        assert!(super::region_from_str("us-eat-1").is_err());
+        assert_eq!(
+            region_from_str("http://localhost:4566/").unwrap(),
+            Region::Custom {
+                name: "qw-custom-endpoint".to_string(),
+                endpoint: "http://localhost:4566".to_string()
+            }
+        );
+        assert!(region_from_str("us-eat-1").is_err());
     }
 }

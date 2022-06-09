@@ -323,7 +323,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     fail::cfg("before-merge-split", "off").unwrap();
 
     let (exit_status, _) = merge_executor_handle.join().await;
-    assert!(start.elapsed() < Duration::from_millis(10));
+    assert!(start.elapsed() < Duration::from_millis(100));
     assert!(matches!(exit_status, ActorExitStatus::Failure(_)));
     Ok(())
 }

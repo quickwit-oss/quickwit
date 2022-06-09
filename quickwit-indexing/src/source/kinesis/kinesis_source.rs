@@ -38,6 +38,7 @@ use tracing::{info, warn};
 use super::api::list_shards;
 use super::shard_consumer::{ShardConsumer, ShardConsumerHandle, ShardConsumerMessage};
 use crate::models::RawDocBatch;
+use crate::source::kinesis::helpers::get_kinesis_client;
 use crate::source::{Indexer, Source, SourceContext, TypedSourceFactory};
 
 const TARGET_BATCH_NUM_BYTES: u64 = 5_000_000;
@@ -99,7 +100,7 @@ pub struct KinesisSource {
 }
 
 impl fmt::Debug for KinesisSource {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "KinesisSource {{ source_id: {}, stream_name: {} }}",
@@ -118,7 +119,7 @@ impl KinesisSource {
         let stream_name = params.stream_name;
         let shutdown_at_stream_eof = params.shutdown_at_stream_eof;
         let region = get_region(params.region_or_endpoint)?;
-        let kinesis_client = KinesisClient::new(region);
+        let kinesis_client = get_kinesis_client(region)?;
         let (shard_consumers_tx, shard_consumers_rx) = mpsc::channel(1_000);
         let state = KinesisSourceState::default();
         let retry_params = RetryParams::default();
@@ -173,13 +174,14 @@ impl KinesisSource {
 #[async_trait]
 impl Source for KinesisSource {
     async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        let shards = list_shards(
-            &self.kinesis_client,
-            &self.retry_params,
-            &self.stream_name,
-            None,
-        )
-        .await?;
+        let shards = ctx
+            .protect_future(list_shards(
+                &self.kinesis_client,
+                &self.retry_params,
+                &self.stream_name,
+                None,
+            ))
+            .await?;
         for shard in shards {
             self.spawn_shard_consumer(ctx, shard.shard_id);
         }
@@ -218,7 +220,7 @@ impl Source for KinesisSource {
 
                             for (i, record) in records.into_iter().enumerate() {
                                 match String::from_utf8(record.data.to_vec()) {
-                                    Ok(doc) if doc.len() > 0 => docs.push(doc),
+                                    Ok(doc) if !doc.is_empty() => docs.push(doc),
                                     Ok(_) => {
                                         warn!(
                                             stream_name = %self.stream_name,

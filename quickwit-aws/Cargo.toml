@@ -11,13 +11,16 @@ documentation = "https://quickwit.io/docs/"
 
 
 [dependencies]
+anyhow = "1"
 futures = "0.3"
+once_cell = "1"
 rand = "0.8"
-rusoto_core = {version = "0.47", default-features = false, features = ["rustls"]}
-rusoto_kinesis = { version = "0.47", default-features = false, features = ["rustls"], optional = true }
-rusoto_s3 = { version = "0.47", default-features = false, features = ["rustls"] }
-tokio = "1.18"
+rusoto_core = {version = "0.48", default-features = false, features = ["rustls"]}
+rusoto_kinesis = { version = "0.48", default-features = false, features = ["rustls"], optional = true }
+rusoto_s3 = { version = "0.48", default-features = false, features = ["rustls"] }
+tokio = "1.19"
 tracing = "0.1"
+hyper-rustls = "0.23"
 
 [features]
 kinesis = ["rusoto_kinesis"]

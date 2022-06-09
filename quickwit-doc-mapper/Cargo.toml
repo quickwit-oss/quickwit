@@ -26,6 +26,7 @@ typetag = "0.1"
 fnv = "1"
 
 [dependencies.quickwit-proto]
+version = "0.3"
 path = '../quickwit-proto'
 
 [dependencies.mockall]

@@ -1,6 +1,8 @@
 ---
 title: Ingesting data from Apache Kafka
 description: A short tutorial describing how to set up Quickwit to ingest data from Kafka in a few minutes
+tags: [kafka, integration]
+icon_url: /img/tutorials/kafka.svg
 ---
 
 In this tutorial, we will describe how to set up Quickwit to ingest data from Kafka in a few minutes. First, we will create an index and configure a Kafka source. Then, we will create a Kafka topic and load some events from the [GH Archive](https://www.gharchive.org/) into it. Finally, we will execute some search and aggregation queries to explore the freshly ingested data.
@@ -9,7 +11,7 @@ In this tutorial, we will describe how to set up Quickwit to ingest data from Ka
 
 You will need the following to complete this tutorial:
 - A running Kafka cluster (see Kafka [quickstart](https://kafka.apache.org/quickstart))
-- A local Quickwit [installation](../get-started/installation.md)
+- A local Quickwit [installation](/docs/get-started/installation)
 - [jq](https://stedolan.github.io/jq/download/)
 
 :::note
@@ -52,7 +54,7 @@ doc_mapping:
     - name: actor
       type: json
       tokenizer: default
-    -name: other
+    - name: other
       type: json
       tokenizer: default
     - name: created_at
@@ -74,6 +76,23 @@ wget -O gh-archive.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/
 
 # Create index.
 ./quickwit index create --index-config gh-archive.yaml
+```
+
+## Create and populate Kafka topic
+
+Now, let's create a Kafka topic and load some events into it.
+
+```bash
+# Create a topic named `gh-archive` with 3 partitions.
+bin/kafka-topics.sh --create --topic gh-archive --partitions 3 --bootstrap-server localhost:9092
+
+# Download a few GH Archive files.
+wget https://data.gharchive.org/2022-05-12-{10..15}.json.gz
+
+# Load the events into Kafka topic.
+gunzip -c 2022-05-12*.json.gz | \
+jq -c '.created_at = (.created_at | fromdate) | .public = if .public then 1 else 0 end' | \
+bin/kafka-console-producer.sh --topic gh-archive --bootstrap-server localhost:9092
 ```
 
 ## Create Kafka source
@@ -103,23 +122,17 @@ wget https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutoria
 # Create source.
 ./quickwit source create --index gh-archive --source-config kafka-source.yaml
 ```
+:::note
 
-## Create and populate Kafka topic
+If you get the following error:
 
-Now, let's create a Kafka topic and load some events into it.
+``` Command failed: Topic `gh-archive` has no partitions.```
 
-```bash
-# Create a topic named `gh-archive` with 3 partitions.
-bin/kafka-topics.sh --create --topic gh-archive --partitions 3 --bootstrap-server localhost:9092
+It means the Kafka topic `gh-archive` was not properly created in the previous step.
 
-# Download a few GH Archive files.
-wget https://data.gharchive.org/2022-05-12-{10..15}.json.gz
+:::
 
-# Load the events into Kafka topic.
-gunzip -c 2022-05-12*.json.gz | \
-jq -c '.created_at = (.created_at | fromdate) | .public = if .public then 1 else 0 end' | \
-bin/kafka-console-producer.sh --topic gh-archive --bootstrap-server localhost:9092
-```
+
 
 ## Launch indexing and search services
 
@@ -130,7 +143,7 @@ Finally, execute this command to start Quickwit in server mode.
 ./quickwit run
 ```
 
-Under the hood, this command spawns an indexer and a searcher. On startup, the indexer will connect to the Kafka topic specified by the source and start streaming and indexing events from the partitions composing the topic. With the default commit timeout value (see [indexing settings](../configuration/index-config.md#indexing-settings)), the indexer should publish the first split after approximately 60 seconds.
+Under the hood, this command spawns an indexer and a searcher. On startup, the indexer will connect to the Kafka topic specified by the source and start streaming and indexing events from the partitions composing the topic. With the default commit timeout value (see [indexing settings](/docs/configuration/index-config#indexing-settings)), the indexer should publish the first split after approximately 60 seconds.
 
 You can run this command (in another shell) to inspect the properties of the index and check the current number of published splits:
 
@@ -144,6 +157,9 @@ Once the first split is published, you can start running search queries. For ins
 ```bash
 curl 'http://localhost:7280/api/v1/gh-archive/search?query=org.login:kubernetes%20AND%20repo.name:kubernetes'
 ```
+
+It is also possible to access these results through the [Quickwit UI](http://localhost:7280/ui/search?query=org.login%3Akubernetes+AND+repo.name%3Akubernetes&index_id=gh-archive&max_hits=10).
+
 
 We can also group these events by type and count them:
 
