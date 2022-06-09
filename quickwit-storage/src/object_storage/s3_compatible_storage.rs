@@ -22,20 +22,19 @@ use std::io;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
 use ec2_instance_metadata::InstanceMetadataClient;
 use futures::{stream, StreamExt};
-use hyper_rustls::HttpsConnectorBuilder;
 use once_cell::sync::OnceCell;
 use quickwit_aws::error::RusotoErrorWrapper;
+use quickwit_aws::get_http_client;
 use quickwit_aws::retry::{retry, Retry, RetryParams, Retryable};
 use quickwit_common::{chunk_range, into_u64_range};
 use regex::Regex;
-use rusoto_core::credential::{AutoRefreshingProvider, ChainProvider, ProfileProvider};
-use rusoto_core::{ByteStream, HttpClient, HttpConfig, Region, RusotoError};
+use rusoto_core::credential::ProfileProvider;
+use rusoto_core::{ByteStream, Region, RusotoError};
 use rusoto_s3::{
     AbortMultipartUploadRequest, CompleteMultipartUploadRequest, CompletedMultipartUpload,
     CompletedPart, CreateMultipartUploadError, CreateMultipartUploadRequest, DeleteObjectRequest,
@@ -48,12 +47,6 @@ use tracing::{debug, error, info, instrument, warn};
 
 use crate::object_storage::MultiPartPolicy;
 use crate::{OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResult};
-
-/// A credential timeout.
-const CREDENTIAL_TIMEOUT: u64 = 5;
-
-/// An timeout for idle sockets being kept-alive.
-const POOL_IDLE_TIMEOUT: u64 = 10;
 
 /// Default region to use, if none has been configured.
 const QUICKWIT_DEFAULT_REGION: Region = Region::UsEast1;
@@ -202,33 +195,11 @@ impl fmt::Debug for S3CompatibleObjectStorage {
     }
 }
 
-fn http_client() -> HttpClient {
-    let mut http_config: HttpConfig = HttpConfig::default();
-    // We experience an issue similar to https://github.com/hyperium/hyper/issues/2312.
-    // It seems like the setting below solved it.
-    http_config.pool_idle_timeout(std::time::Duration::from_secs(POOL_IDLE_TIMEOUT));
-    let builder = HttpsConnectorBuilder::new();
-    let builder = builder.with_native_roots();
-    let connector = builder
-        .https_or_http()
-        // We do not enable HTTP2.
-        // It is not enabled on S3 and it does not seem to work with Google Cloud Storage at
-        // this point. https://github.com/quickwit-oss/quickwit/issues/1584
-        //
-        // (Besides, HTTP2 would be awesome but rusoto does not leverage
-        // multiplexing anyway.)
-        .enable_http1()
-        .build();
-    HttpClient::from_connector_with_config(connector, http_config)
-}
-
 fn create_s3_client(region: Region) -> anyhow::Result<S3Client> {
-    let mut chain_provider = ChainProvider::new();
-    chain_provider.set_timeout(Duration::from_secs(CREDENTIAL_TIMEOUT));
-    let credentials_provider = AutoRefreshingProvider::new(chain_provider)
-        .with_context(|| "Failed to fetch credentials for the object storage.")?;
+    let http_client = get_http_client();
+    let credentials_provider = quickwit_aws::get_credentials_provider()?;
     Ok(S3Client::new_with(
-        http_client(),
+        http_client,
         credentials_provider,
         region,
     ))
