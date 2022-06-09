@@ -131,7 +131,7 @@ wget https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutoria
 
 :::note
 
-If this command fails with the folllowing error message:
+If this command fails with the following error message:
 ```
 Command failed: Stream gh-archive under account XXXXXXXXX not found.
 
