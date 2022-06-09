@@ -34,7 +34,7 @@ const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(10);
 /// A credential timeout.
 const CREDENTIAL_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Returns a singleton hyper http client.
+/// Returns a hyper http client.
 pub fn get_http_client() -> HttpClient {
     let mut http_config: HttpConfig = HttpConfig::default();
     // We experience an issue similar to https://github.com/hyperium/hyper/issues/2312.
