@@ -138,7 +138,7 @@ Caused by:
     1: Stream gh-archive under account XXXXXXXX not found.
 ```
 
-it means the kinesis stream was not properly created in the previous step.
+it means the Kinesis stream was not properly created in the previous step.
 :::
 
 ## Launch indexing and search services
