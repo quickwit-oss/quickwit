@@ -28,7 +28,7 @@ use rusoto_core::{HttpClient, HttpConfig};
 pub mod error;
 pub mod retry;
 
-/// An timeout for idle sockets being kept-alive.
+/// A timeout for idle sockets being kept-alive.
 const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// A credential timeout.
@@ -55,7 +55,7 @@ pub fn get_http_client() -> HttpClient {
     HttpClient::from_connector_with_config(connector, http_config)
 }
 
-/// Returns a singleton credential provider.
+/// Returns a singleton credentials provider.
 pub fn get_credentials_provider() -> anyhow::Result<impl ProvideAwsCredentials + Send + Sync> {
     static CREDENTIALS_PROVIDER_SINGLETON: OnceCell<AutoRefreshingProvider<ChainProvider>> =
         OnceCell::new();
@@ -64,7 +64,7 @@ pub fn get_credentials_provider() -> anyhow::Result<impl ProvideAwsCredentials +
             let mut chain_provider = ChainProvider::new();
             chain_provider.set_timeout(CREDENTIAL_TIMEOUT);
             let credentials_provider = AutoRefreshingProvider::new(chain_provider)
-                .with_context(|| "Failed to fetch credentials for the object storage.")?;
+                .with_context(|| "Failed to instantiate AWS credentials provider.")?;
             Ok(credentials_provider)
         })
         .cloned()
