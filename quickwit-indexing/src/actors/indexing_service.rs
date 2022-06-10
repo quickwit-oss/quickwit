@@ -43,7 +43,7 @@ use crate::models::{
 };
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingStatistics};
 
-pub const INDEXING: &str = "indexing";
+pub const INDEXING_DIR_NAME: &str = "indexing";
 
 /// Reserved source ID used for the ingest API.
 pub const INGEST_API_SOURCE_ID: &str = ".ingest-api";
@@ -94,7 +94,7 @@ impl IndexingService {
         ingest_api_service: Option<Mailbox<IngestApiService>>,
     ) -> IndexingService {
         Self {
-            indexing_dir_path: data_dir_path.join(INDEXING),
+            indexing_dir_path: data_dir_path.join(INDEXING_DIR_NAME),
             split_store_max_num_bytes: indexer_config.split_store_max_num_bytes.get_bytes()
                 as usize,
             split_store_max_num_splits: indexer_config.split_store_max_num_splits,
