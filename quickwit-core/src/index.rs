@@ -24,7 +24,7 @@ use std::time::Duration;
 use quickwit_common::fs::empty_dir;
 use quickwit_common::uri::Uri;
 use quickwit_config::IndexConfig;
-use quickwit_indexing::actors::INDEXING;
+use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_indexing::models::CACHE;
 use quickwit_indexing::{
     delete_splits_with_files, run_garbage_collect, FileEntry, IndexingSplitStore,
@@ -268,7 +268,7 @@ impl IndexService {
 /// Helper function to get the cache path.
 pub fn get_cache_directory_path(data_dir_path: &Path, index_id: &str, source_id: &str) -> PathBuf {
     data_dir_path
-        .join(INDEXING)
+        .join(INDEXING_DIR_NAME)
         .join(index_id)
         .join(source_id)
         .join(CACHE)
@@ -300,7 +300,7 @@ pub async fn remove_indexing_directory(
     data_dir_path: &Path,
     index_id: String,
 ) -> anyhow::Result<()> {
-    let indexing_directory_path = data_dir_path.join(INDEXING).join(index_id);
+    let indexing_directory_path = data_dir_path.join(INDEXING_DIR_NAME).join(index_id);
     info!(path = %indexing_directory_path.display(), "Clearing indexing directory.");
     tokio::fs::remove_dir_all(indexing_directory_path.as_path()).await?;
     Ok(())
