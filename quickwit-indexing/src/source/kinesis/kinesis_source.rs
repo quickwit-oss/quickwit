@@ -38,6 +38,7 @@ use tracing::{info, warn};
 use super::api::list_shards;
 use super::shard_consumer::{ShardConsumer, ShardConsumerHandle, ShardConsumerMessage};
 use crate::models::RawDocBatch;
+use crate::source::kinesis::helpers::get_kinesis_client;
 use crate::source::{Indexer, Source, SourceContext, TypedSourceFactory};
 
 const TARGET_BATCH_NUM_BYTES: u64 = 5_000_000;
@@ -118,7 +119,7 @@ impl KinesisSource {
         let stream_name = params.stream_name;
         let shutdown_at_stream_eof = params.shutdown_at_stream_eof;
         let region = get_region(params.region_or_endpoint)?;
-        let kinesis_client = KinesisClient::new(region);
+        let kinesis_client = get_kinesis_client(region)?;
         let (shard_consumers_tx, shard_consumers_rx) = mpsc::channel(1_000);
         let state = KinesisSourceState::default();
         let retry_params = RetryParams::default();
