@@ -988,7 +988,7 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     if let Err(error) =
         remove_indexing_directory(&quickwit_config.data_dir_path, args.index_id.clone()).await
     {
-        warn!(error= ?error, "Could not remove indexing directory.");
+        warn!(error= ?error, "Failed to remove indexing directory.");
     }
 
     println!("Index `{}` successfully deleted.", args.index_id);

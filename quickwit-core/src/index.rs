@@ -295,7 +295,7 @@ pub async fn clear_cache_directory(
 ///
 /// * `data_dir_path` - Path to directory where data (tmp data, splits kept for caching purpose) is
 ///   persisted.
-/// * `index_id` - The target index Id.
+/// * `index_id` - The target index ID.
 pub async fn remove_indexing_directory(
     data_dir_path: &Path,
     index_id: String,
