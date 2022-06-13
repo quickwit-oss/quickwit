@@ -16,31 +16,111 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
-//
 
+use std::collections::HashMap;
+
+use anyhow::bail;
+use once_cell::sync::OnceCell;
+use tokio::runtime::Runtime;
 
 static RUNTIMES: OnceCell<HashMap<RuntimeType, tokio::runtime::Runtime>> = OnceCell::new();
 
-fn get_tokio_runtime_handle(runtime_type: RuntimeType) -> tokio::runtime::Handle {
-    let runtime: &Runtime = RUNTIMES
-        .get_or_init(|| {
-            let mut runtimes = HashMap::default();
-            // TODO make configurable
-            let blocking_runtime = tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(2)
-                .enable_all()
-                .build()
-                .unwrap();
-            runtimes.insert(RuntimeType::Blocking, blocking_runtime);
-            let non_blocking_runtime = tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(2)
-                .enable_all()
-                .build()
-                .unwrap();
-            runtimes.insert(RuntimeType::NonBlocking, non_blocking_runtime);
-            runtimes
-        })
-        .get(&runtime_type)
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub enum RuntimeType {
+    Blocking,
+    NonBlocking,
+    IngestApi,
+}
+
+#[derive(Debug)]
+pub struct RuntimesConfiguration {
+    num_threads_non_blocking: usize,
+    num_threads_blocking: usize,
+}
+
+impl RuntimesConfiguration {
+    pub fn with_num_cpus(num_cpus: usize) -> Self {
+        let num_threads_non_blocking = if num_cpus > 6 { 2 } else { 1 };
+        let num_threads_blocking = (num_cpus - num_threads_non_blocking).max(1);
+        RuntimesConfiguration {
+            num_threads_non_blocking,
+            num_threads_blocking,
+        }
+    }
+}
+
+impl Default for RuntimesConfiguration {
+    fn default() -> RuntimesConfiguration {
+        let num_cpus = num_cpus::get();
+        RuntimesConfiguration::with_num_cpus(num_cpus)
+    }
+}
+
+fn start_runtimes(config: RuntimesConfiguration) -> HashMap<RuntimeType, Runtime> {
+    let mut runtimes = HashMap::default();
+    let blocking_runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(config.num_threads_blocking)
+        .enable_all()
+        .build()
         .unwrap();
-    runtime.handle().clone()
+    runtimes.insert(RuntimeType::Blocking, blocking_runtime);
+    let non_blocking_runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(config.num_threads_non_blocking)
+        .enable_all()
+        .build()
+        .unwrap();
+    runtimes.insert(RuntimeType::NonBlocking, non_blocking_runtime);
+    let ingest_api_runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_time()
+        .build()
+        .unwrap();
+    runtimes.insert(RuntimeType::IngestApi, ingest_api_runtime);
+    runtimes
+}
+
+impl RuntimeType {
+    // TODO call this in quickwit's main
+    pub fn initialize(runtime_config: RuntimesConfiguration) -> anyhow::Result<()> {
+        let runtimes = start_runtimes(runtime_config);
+        if RUNTIMES.set(runtimes).is_err() {
+            bail!("Runtimes have already been initialized.");
+        }
+        Ok(())
+    }
+
+    pub fn get_runtime_handle(self) -> tokio::runtime::Handle {
+        RUNTIMES
+            .get_or_init(|| start_runtimes(RuntimesConfiguration::default()))
+            .get(&self)
+            .unwrap()
+            .handle()
+            .clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_runtimes_config_default() {
+        let runtime_default = RuntimesConfiguration::default();
+        assert!(runtime_default.num_threads_non_blocking <= runtime_default.num_threads_blocking);
+        assert!(runtime_default.num_threads_non_blocking <= 2);
+    }
+
+    #[test]
+    fn test_runtimes_with_given_num_cpus_10() {
+        let runtime = RuntimesConfiguration::with_num_cpus(10);
+        assert_eq!(runtime.num_threads_blocking, 8);
+        assert_eq!(runtime.num_threads_non_blocking, 2);
+    }
+
+    #[test]
+    fn test_runtimes_with_given_num_cpus_3() {
+        let runtime = RuntimesConfiguration::with_num_cpus(3);
+        assert_eq!(runtime.num_threads_blocking, 2);
+        assert_eq!(runtime.num_threads_non_blocking, 1);
+    }
 }

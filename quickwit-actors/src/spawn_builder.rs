@@ -17,10 +17,17 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use crate::mailbox::Inbox;
-use crate::runner::spawn_actor;
+use anyhow::Context;
+use tokio::sync::watch;
+use tracing::{debug, error, info, Instrument};
+
+use crate::actor_with_state_tx::ActorWithStateTx;
+use crate::mailbox::{CommandOrMessage, Inbox};
 use crate::scheduler::Scheduler;
-use crate::{create_mailbox, Actor, ActorContext, ActorHandle, KillSwitch, Mailbox, RuntimeType};
+use crate::{
+    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Command, KillSwitch,
+    Mailbox, RecvError,
+};
 
 /// `SpawnBuilder` makes it possible to configure misc parameters before spawning an actor.
 pub struct SpawnBuilder<A: Actor> {
@@ -85,17 +92,147 @@ impl<A: Actor> SpawnBuilder<A> {
     /// Spawns an async actor.
     pub fn spawn(self) -> (Mailbox<A>, ActorHandle<A>) {
         let runtime_handle = self.actor.runtime_handle();
-        self.spawn_with_forced_runner(runtime_handle)
-    }
-
-    /// Ignore the actor default runner, and run the actor on a specific one.
-    pub fn spawn_with_forced_runner(
-        self,
-        runtime_handle: tokio::runtime::Handle,
-    ) -> (Mailbox<A>, ActorHandle<A>) {
         let (actor, ctx, inbox) = self.create_actor_context_and_inbox();
+        debug!(actor_id = %ctx.actor_instance_id(), "spawn-actor");
         let mailbox = ctx.mailbox().clone();
-        let actor_handle = spawn_actor(actor, ctx, inbox, runtime_handle);
+        let (state_tx, state_rx) = watch::channel(actor.observable_state());
+        let ctx_clone = ctx.clone();
+        let span = actor.span(&ctx);
+        let loop_async_actor_future =
+            async move { actor_loop(actor, inbox, ctx, state_tx).await }.instrument(span);
+        let join_handle = runtime_handle.spawn(loop_async_actor_future);
+        let actor_handle = ActorHandle::new(state_rx, join_handle, ctx_clone);
         (mailbox, actor_handle)
     }
+}
+
+fn process_command<A: Actor>(
+    actor: &mut A,
+    command: Command,
+    ctx: &ActorContext<A>,
+    state_tx: &watch::Sender<A::ObservableState>,
+) -> Option<ActorExitStatus> {
+    match command {
+        Command::Pause => {
+            ctx.pause();
+            None
+        }
+        Command::ExitWithSuccess => Some(ActorExitStatus::Success),
+        Command::Quit => Some(ActorExitStatus::Quit),
+        Command::Kill => Some(ActorExitStatus::Killed),
+        Command::Resume => {
+            ctx.resume();
+            None
+        }
+        Command::Observe(cb) => {
+            let state = actor.observable_state();
+            let _ = state_tx.send(state.clone());
+            // We voluntarily ignore the error here. (An error only occurs if the
+            // sender dropped its receiver.)
+            let _ = cb.send(Box::new(state));
+            None
+        }
+    }
+}
+
+async fn process_msg<A: Actor>(
+    actor: &mut A,
+    msg_id: u64,
+    inbox: &mut Inbox<A>,
+    ctx: &ActorContext<A>,
+    state_tx: &watch::Sender<A::ObservableState>,
+) -> Option<ActorExitStatus> {
+    if ctx.kill_switch().is_dead() {
+        return Some(ActorExitStatus::Killed);
+    }
+    ctx.progress().record_progress();
+
+    let command_or_msg_recv_res = if ctx.state().is_running() {
+        ctx.protect_future(inbox.recv_timeout()).await
+    } else {
+        // The actor is paused. We only process command and scheduled message.
+        ctx.protect_future(inbox.recv_timeout_cmd_and_scheduled_msg_only()).await
+    };
+
+    if ctx.kill_switch().is_dead() {
+        return Some(ActorExitStatus::Killed);
+    }
+
+    match command_or_msg_recv_res {
+        Ok(CommandOrMessage::Command(cmd)) => {
+            ctx.process();
+            process_command(actor, cmd, ctx, state_tx)
+        }
+        Ok(CommandOrMessage::Message(mut msg)) => {
+            ctx.process();
+            msg.handle_message(msg_id, actor, ctx).await.err()
+        }
+        Err(RecvError::Disconnected) => Some(ActorExitStatus::Success),
+        Err(RecvError::Timeout) => {
+            ctx.idle();
+            if ctx.mailbox().is_last_mailbox() {
+                // No one will be able to send us more messages.
+                // We can exit the actor.
+                Some(ActorExitStatus::Success)
+            } else {
+                None
+            }
+        }
+    }
+}
+
+async fn actor_loop<A: Actor>(
+    actor: A,
+    mut inbox: Inbox<A>,
+    ctx: ActorContext<A>,
+    state_tx: watch::Sender<A::ObservableState>,
+) -> ActorExitStatus {
+    // We rely on this object internally to fetch a post-mortem state,
+    // even in case of a panic.
+    let mut actor_with_state_tx = ActorWithStateTx { actor, state_tx };
+
+    let mut exit_status_opt: Option<ActorExitStatus> =
+        actor_with_state_tx.actor.initialize(&ctx).await.err();
+
+    let mut msg_id: u64 = 1;
+    let mut exit_status: ActorExitStatus = loop {
+        tokio::task::yield_now().await;
+        if let Some(exit_status) = exit_status_opt {
+            break exit_status;
+        }
+        exit_status_opt = process_msg(
+            &mut actor_with_state_tx.actor,
+            msg_id,
+            &mut inbox,
+            &ctx,
+            &actor_with_state_tx.state_tx,
+        )
+        .await;
+        msg_id += 1;
+    };
+    ctx.record_progress();
+    if let Err(finalize_error) = actor_with_state_tx
+        .actor
+        .finalize(&exit_status, &ctx)
+        .await
+        .with_context(|| format!("Finalization of actor {}", actor_with_state_tx.actor.name()))
+    {
+        error!(error=?finalize_error, "Finalizing failed, set exit status to panicked.");
+        exit_status = ActorExitStatus::Panicked;
+    }
+    match &exit_status {
+        ActorExitStatus::Success
+        | ActorExitStatus::Quit
+        | ActorExitStatus::DownstreamClosed
+        | ActorExitStatus::Killed => {}
+        ActorExitStatus::Failure(err) => {
+            error!(cause=?err, exit_status=?exit_status, "actor-failure");
+        }
+        ActorExitStatus::Panicked => {
+            error!(exit_status=?exit_status, "actor-failure");
+        }
+    }
+    info!(actor_id = %ctx.actor_instance_id(), exit_status = %exit_status, "actor-exit");
+    ctx.exit(&exit_status);
+    exit_status
 }

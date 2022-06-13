@@ -272,30 +272,6 @@ async fn test_timeouting_actor() {
     assert_eq!(buggy_handle.health(), Health::FailureOrUnhealthy);
 }
 
-// #[tokio::test]
-// async fn test_sync_actor_running_states() {
-//     quickwit_common::setup_logging_for_tests();
-//     let universe = Universe::new();
-//     let actor = PingReceiverActor::default();
-//     let (ping_mailbox, ping_handle) = universe.spawn_actor(actor).spawn();
-//     assert!(ping_handle.state() == ActorState::Processing);
-//     for _ in 0..10 {
-//         assert!(ping_mailbox.send_message(Ping).await.is_ok());
-//     }
-//     assert!(ping_handle.state() == ActorState::Processing);
-//     ping_handle.process_pending_and_observe().await;
-//     // Actor is still in processing state and will go idle after message timeout.
-//     assert_eq!(ping_handle.state(), ActorState::Processing);
-//     tokio::time::sleep(message_timeout().mul_f32(1.1)).await;
-//     assert_eq!(ping_handle.state(), ActorState::Idle);
-//     assert!(ping_mailbox.send_command(Command::Resume).await.is_ok());
-//     // Return into processing on sending a command and go back to idle after message timeout.
-//     tokio::time::sleep(message_timeout()).await;
-//     assert_eq!(ping_handle.state(), ActorState::Processing);
-//     tokio::time::sleep(message_timeout()).await;
-//     assert_eq!(ping_handle.state(), ActorState::Idle);
-// }
-
 #[tokio::test]
 async fn test_pause_actor() {
     quickwit_common::setup_logging_for_tests();
@@ -314,26 +290,26 @@ async fn test_pause_actor() {
     assert_eq!(end_state, 1000);
 }
 
-// #[tokio::test]
-// async fn test_actor_running_states() {
-//     quickwit_common::setup_logging_for_tests();
-//     let universe = Universe::new();
-//     let (ping_mailbox, ping_handle) = universe.spawn_actor(PingReceiverActor::default()).spawn();
-//     assert!(ping_handle.state() == ActorState::Processing);
-//     for _ in 0u32..10u32 {
-//         assert!(ping_mailbox.send_message(Ping).await.is_ok());
-//     }
-//     // Actor is still in processing state and will go idle after message timeout.
-//     assert!(ping_handle.state() == ActorState::Processing);
-//     tokio::time::sleep(message_timeout().mul_f32(1.1)).await;
-//     assert_eq!(ping_handle.state(), ActorState::Idle);
-//     assert!(ping_mailbox.send_command(Command::Resume).await.is_ok());
-//     // Return into processing on sending a command and go back to idle after message timeout.
-//     tokio::time::sleep(message_timeout()).await;
-//     assert_eq!(ping_handle.state(), ActorState::Processing);
-//     tokio::time::sleep(message_timeout()).await;
-//     assert_eq!(ping_handle.state(), ActorState::Idle);
-// }
+#[tokio::test]
+async fn test_actor_running_states() {
+    quickwit_common::setup_logging_for_tests();
+    let universe = Universe::new();
+    let (ping_mailbox, ping_handle) = universe.spawn_actor(PingReceiverActor::default()).spawn();
+    assert!(ping_handle.state() == ActorState::Processing);
+    for _ in 0u32..10u32 {
+        assert!(ping_mailbox.send_message(Ping).await.is_ok());
+    }
+    // Actor is still in processing state and will go idle after message timeout.
+    assert!(ping_handle.state() == ActorState::Processing);
+    tokio::time::sleep(message_timeout().mul_f32(1.1)).await;
+    assert_eq!(ping_handle.state(), ActorState::Idle);
+    assert!(ping_mailbox.send_command(Command::Resume).await.is_ok());
+    // Return into processing on sending a command and go back to idle after message timeout.
+    tokio::time::sleep(message_timeout()).await;
+    assert_eq!(ping_handle.state(), ActorState::Processing);
+    tokio::time::sleep(message_timeout()).await;
+    assert_eq!(ping_handle.state(), ActorState::Idle);
+}
 
 #[derive(Default, Debug, Clone)]
 struct LoopingActor {

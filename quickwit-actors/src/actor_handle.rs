@@ -271,7 +271,7 @@ mod tests {
     use async_trait::async_trait;
 
     use super::*;
-    use crate::{Handler, RuntimeType, Universe};
+    use crate::{Handler, Universe};
 
     #[derive(Default)]
     struct PanickingActor {

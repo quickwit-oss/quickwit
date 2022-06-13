@@ -38,7 +38,6 @@ mod kill_switch;
 mod mailbox;
 mod observation;
 mod progress;
-mod runner;
 mod scheduler;
 mod spawn_builder;
 
@@ -59,7 +58,6 @@ pub use self::actor::ActorContext;
 pub use self::actor_state::ActorState;
 pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError};
 pub use self::mailbox::{create_mailbox, create_test_mailbox, Command, Mailbox};
-pub use self::runner::RuntimeType;
 
 /// Heartbeat used to verify that actors are progressing.
 ///

@@ -29,7 +29,6 @@ use async_trait::async_trait;
 use futures::Future;
 use thiserror::Error;
 use tokio::sync::oneshot;
-use tokio::sync::watch::Sender;
 use tracing::{debug, error, info_span, Span};
 
 use crate::actor_state::{ActorState, AtomicState};
@@ -37,7 +36,6 @@ use crate::channel_with_priority::Priority;
 use crate::envelope::wrap_in_envelope;
 use crate::mailbox::{Command, CommandOrMessage};
 use crate::progress::{Progress, ProtectedZoneGuard};
-use crate::runner::RuntimeType;
 use crate::scheduler::{Callback, ScheduleEvent, Scheduler};
 use crate::spawn_builder::SpawnBuilder;
 use crate::{AskError, KillSwitch, Mailbox, QueueCapacity, SendError};
@@ -458,35 +456,6 @@ impl<A: Actor> ActorContext<A> {
         let _ = self
             .send_message(&self.inner.scheduler_mailbox, scheduler_msg)
             .await;
-    }
-}
-
-pub(crate) fn process_command<A: Actor>(
-    actor: &mut A,
-    command: Command,
-    ctx: &ActorContext<A>,
-    state_tx: &Sender<A::ObservableState>,
-) -> Option<ActorExitStatus> {
-    match command {
-        Command::Pause => {
-            ctx.pause();
-            None
-        }
-        Command::ExitWithSuccess => Some(ActorExitStatus::Success),
-        Command::Quit => Some(ActorExitStatus::Quit),
-        Command::Kill => Some(ActorExitStatus::Killed),
-        Command::Resume => {
-            ctx.resume();
-            None
-        }
-        Command::Observe(cb) => {
-            let state = actor.observable_state();
-            let _ = state_tx.send(state.clone());
-            // We voluntarily ignore the error here. (An error only occurs if the
-            // sender dropped its receiver.)
-            let _ = cb.send(Box::new(state));
-            None
-        }
     }
 }
 

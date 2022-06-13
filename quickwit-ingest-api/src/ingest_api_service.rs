@@ -21,7 +21,8 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, QueueCapacity, RuntimeType};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, QueueCapacity};
+use quickwit_common::runtimes::RuntimeType;
 use quickwit_proto::ingest_api::{
     CreateQueueIfNotExistsRequest, CreateQueueRequest, DropQueueRequest, FetchRequest,
     FetchResponse, IngestRequest, IngestResponse, ListQueuesRequest, ListQueuesResponse,
@@ -91,8 +92,8 @@ impl Actor for IngestApiService {
 
     fn observable_state(&self) -> Self::ObservableState {}
 
-    fn runtime_handle(&self) -> RuntimeType {
-        RuntimeType::Blocking
+    fn runtime_handle(&self) -> tokio::runtime::Handle {
+        RuntimeType::IngestApi.get_runtime_handle()
     }
 
     /// The Actor's incoming mailbox queue capacity. It is set when the actor is spawned.
