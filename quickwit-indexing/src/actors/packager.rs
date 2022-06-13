@@ -387,6 +387,8 @@ mod tests {
             schema_builder.add_i64_field("tag_i64", NumericOptions::default().set_indexed());
         let tag_f64 =
             schema_builder.add_f64_field("tag_f64", NumericOptions::default().set_indexed());
+        let tag_bool =
+            schema_builder.add_bool_field("tag_bool", NumericOptions::default().set_indexed());
         let schema = schema_builder.build();
         let mut index = Index::create_in_dir(split_scratch_directory.path(), schema)?;
         index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
@@ -407,6 +409,7 @@ mod tests {
                         tag_u64 => 42u64,
                         tag_i64 => -42i64,
                         tag_f64 => -42.02f64,
+                        tag_bool => true,
                     );
                     index_writer.add_document(doc)?;
                     num_docs += 1;
@@ -467,7 +470,9 @@ mod tests {
         let indexed_split = make_indexed_split_for_test(&[&[1628203589, 1628203640]])?;
         let tag_fields = get_tag_fields(
             indexed_split.index.schema(),
-            &["tag_str", "tag_many", "tag_u64", "tag_i64", "tag_f64"],
+            &[
+                "tag_str", "tag_many", "tag_u64", "tag_i64", "tag_f64", "tag_bool",
+            ],
         );
         let packager = Packager::new("TestPackager", tag_fields, mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn();
@@ -489,6 +494,8 @@ mod tests {
         assert_eq!(
             &split.tags.iter().map(|s| s.as_str()).collect::<Vec<&str>>(),
             &[
+                "tag_bool!",
+                "tag_bool:\u{0}\u{0}\u{0}\u{0}\u{0}\u{0}\u{0}\u{1}",
                 "tag_f64!",
                 "tag_f64:-42.02",
                 "tag_i64!",

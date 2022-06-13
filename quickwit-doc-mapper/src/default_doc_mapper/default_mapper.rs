@@ -531,6 +531,7 @@ mod tests {
             "response_time": 2.3,
             "response_payload": "YWJj",
             "owner": "foo",
+            "isImportant": false,
             "attributes": {
                 "server": "ABC",
                 "tags": [22, 23],
@@ -547,6 +548,7 @@ mod tests {
             "response_time": [2.3],
             "response_payload": [[97,98,99]],
             "owner": ["foo"],
+            "isImportant": [false],
             "body_other_tokenizer": ["20200415T072306-0700 INFO This is a great log"],
             "attributes.server": ["ABC"],
             "attributes.server\\.payload": [[97], [98]],
@@ -564,7 +566,7 @@ mod tests {
             default_search_field_names,
             ["attributes.server", r#"attributes.server\.status"#, "body"]
         );
-        assert_eq!(config.field_mappings.num_fields(), 9);
+        assert_eq!(config.field_mappings.num_fields(), 10);
         Ok(())
     }
 
@@ -601,9 +603,9 @@ mod tests {
         let json_doc = example_json_doc_value();
         let document = doc_mapper.doc_from_json(json_doc.to_string()).unwrap();
         let schema = doc_mapper.schema();
-        // 7 property entry + 1 field "_source" + two fields values for "tags" field
+        // 8 property entry + 1 field "_source" + two fields values for "tags" field
         // + 2 values inf "server.status" field + 2 values in "server.payload" field
-        assert_eq!(document.len(), 14);
+        assert_eq!(document.len(), 15);
         let expected_json_paths_and_values: HashMap<String, JsonValue> =
             serde_json::from_str(EXPECTED_JSON_PATHS_AND_VALUES).unwrap();
         document.field_values().iter().for_each(|field_value| {

@@ -2755,7 +2755,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tantivy",
- "tantivy-query-grammar",
+ "tantivy-query-grammar 0.18.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror",
  "tracing",
  "typetag",
@@ -3989,7 +3989,7 @@ dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
  "tantivy-fst",
- "tantivy-query-grammar",
+ "tantivy-query-grammar 0.18.0 (git+https://github.com/quickwit-oss/tantivy?rev=88054aa)",
  "tempfile",
  "thiserror",
  "time 0.3.9",
@@ -4027,6 +4027,16 @@ dependencies = [
 name = "tantivy-query-grammar"
 version = "0.18.0"
 source = "git+https://github.com/quickwit-oss/tantivy/?rev=328bd96#328bd96c247e107e23502933c04e56facc4c2e57"
+dependencies = [
+ "combine",
+ "once_cell",
+ "regex",
+]
+
+[[package]]
+name = "tantivy-query-grammar"
+version = "0.18.0"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=88054aa#88054aa333d0b3471240ca49dcecd23181863939"
 dependencies = [
  "combine",
  "once_cell",

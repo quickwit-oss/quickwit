@@ -51,6 +51,7 @@ pub enum LeafType {
     I64(QuickwitNumericOptions),
     U64(QuickwitNumericOptions),
     F64(QuickwitNumericOptions),
+    Bool(QuickwitNumericOptions),
     Bytes(QuickwitNumericOptions),
     Json(QuickwitJsonOptions),
 }
@@ -60,6 +61,7 @@ impl LeafType {
         match self {
             LeafType::Text(_) => JsonType::String,
             LeafType::I64(_) | LeafType::U64(_) | LeafType::F64(_) => JsonType::Number,
+            LeafType::Bool(_) => JsonType::Bool,
             LeafType::Bytes(_) => JsonType::String,
             LeafType::Json(_) => JsonType::Object,
         }
@@ -68,9 +70,11 @@ impl LeafType {
     pub fn is_fast_field(&self) -> bool {
         match self {
             LeafType::Text(_opt) => false, // TODO fixme once we have text fast field
-            LeafType::I64(opt) | LeafType::U64(opt) | LeafType::F64(opt) | LeafType::Bytes(opt) => {
-                opt.fast
-            }
+            LeafType::I64(opt)
+            | LeafType::U64(opt)
+            | LeafType::F64(opt)
+            | LeafType::Bool(opt)
+            | LeafType::Bytes(opt) => opt.fast,
             LeafType::Json(_) => false,
         }
     }
@@ -87,6 +91,13 @@ impl LeafType {
             LeafType::I64(_) => i64::from_json(json_val),
             LeafType::U64(_) => u64::from_json(json_val),
             LeafType::F64(_) => f64::from_json(json_val),
+            LeafType::Bool(_) => {
+                if let JsonValue::Bool(val) = json_val {
+                    Ok(Value::Bool(val))
+                } else {
+                    Err(format!("Expected bool value, got '{}'.", json_val))
+                }
+            }
             LeafType::Bytes(_) => {
                 let base64_str = if let JsonValue::String(base64_str) = json_val {
                     base64_str
@@ -383,6 +394,7 @@ impl From<MappingLeaf> for FieldMappingType {
             LeafType::I64(opt) => FieldMappingType::I64(opt, leaf.cardinality),
             LeafType::U64(opt) => FieldMappingType::U64(opt, leaf.cardinality),
             LeafType::F64(opt) => FieldMappingType::F64(opt, leaf.cardinality),
+            LeafType::Bool(opt) => FieldMappingType::Bool(opt, leaf.cardinality),
             LeafType::Bytes(opt) => FieldMappingType::Bytes(opt, leaf.cardinality),
             LeafType::Json(opt) => FieldMappingType::Json(opt, leaf.cardinality),
         }
@@ -569,6 +581,16 @@ fn build_mapping_from_field_type<'a>(
             };
             Ok(MappingTree::Leaf(mapping_leaf))
         }
+        FieldMappingType::Bool(options, cardinality) => {
+            let numeric_options = get_numeric_options(options, *cardinality);
+            let field = schema_builder.add_bool_field(&field_name, numeric_options);
+            let mapping_leaf = MappingLeaf {
+                field,
+                typ: LeafType::Bool(options.clone()),
+                cardinality: *cardinality,
+            };
+            Ok(MappingTree::Leaf(mapping_leaf))
+        }
         FieldMappingType::Bytes(options, cardinality) => {
             let bytes_options = get_bytes_options(options);
             let field = schema_builder.add_bytes_field(&field_name, bytes_options);
@@ -745,6 +767,34 @@ mod tests {
             leaf.value_from_json(json!(4_000u64)).unwrap(),
             Value::F64(4_000f64)
         );
+    }
+
+    #[test]
+    fn test_parse_bool_mapping() {
+        let leaf = LeafType::Bool(QuickwitNumericOptions::default());
+        assert_eq!(
+            leaf.value_from_json(json!(true)).unwrap(),
+            tantivy::schema::Value::Bool(true)
+        );
+    }
+
+    #[test]
+    fn test_parse_bool_multivalued() {
+        let typ = LeafType::Bool(QuickwitNumericOptions::default());
+        let field = Field::from_field_id(10);
+        let leaf_entry = MappingLeaf {
+            field,
+            typ,
+            cardinality: Cardinality::MultiValues,
+        };
+        let mut document = Document::default();
+        let mut path = Vec::new();
+        leaf_entry
+            .doc_from_json(json!([true, false, true]), &mut document, &mut path)
+            .unwrap();
+        assert_eq!(document.len(), 3);
+        let values: Vec<bool> = document.get_all(field).flat_map(Value::as_bool).collect();
+        assert_eq!(&values, &[true, false, true])
     }
 
     #[test]
