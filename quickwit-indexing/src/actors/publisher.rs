@@ -28,12 +28,13 @@ use quickwit_metastore::Metastore;
 use tracing::info;
 
 use crate::actors::{GarbageCollector, MergePlanner};
-use crate::models::{NewSplits, PublishOperation, PublisherMessage};
+use crate::models::{NewSplits, PublishNewSplit, PublisherMessage, ReplaceSplits};
 use crate::source::{SourceActor, SuggestTruncate};
 
 #[derive(Debug, Clone, Default)]
 pub struct PublisherCounters {
     pub num_published_splits: u64,
+    pub num_replace_operations: u64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -80,52 +81,6 @@ impl Publisher {
             counters: PublisherCounters::default(),
         }
     }
-
-    pub async fn run_publish_operation(
-        &self,
-        publisher_message: &PublisherMessage,
-    ) -> anyhow::Result<()> {
-        match &publisher_message.operation {
-            PublishOperation::PublishNewSplit {
-                new_split,
-                checkpoint_delta,
-                ..
-            } => {
-                info!("new-split-start");
-                self.metastore
-                    .publish_splits(
-                        &publisher_message.index_id,
-                        &self.source_id,
-                        &[new_split.split_id()],
-                        checkpoint_delta.clone(),
-                    )
-                    .await
-                    .context("Failed to publish splits.")?;
-                info!("new-split-success");
-            }
-            PublishOperation::ReplaceSplits {
-                new_splits: new_split_id,
-                replaced_split_ids,
-            } => {
-                info!("replace-split-start");
-                // TODO change the metastore API to take &[String]
-                let new_split_ids_ref_vec: Vec<&str> =
-                    new_split_id.iter().map(|split| split.split_id()).collect();
-                let replaced_split_ids_ref_vec: Vec<&str> =
-                    replaced_split_ids.iter().map(String::as_str).collect();
-                self.metastore
-                    .replace_splits(
-                        &publisher_message.index_id,
-                        &new_split_ids_ref_vec,
-                        &replaced_split_ids_ref_vec[..],
-                    )
-                    .await
-                    .context("Failed to replace splits.")?;
-                info!("replace-split-success");
-            }
-        }
-        Ok(())
-    }
 }
 
 #[async_trait]
@@ -163,51 +118,92 @@ impl Actor for Publisher {
 }
 
 #[async_trait]
-impl Handler<PublisherMessage> for Publisher {
+impl Handler<PublishNewSplit> for Publisher {
     type Reply = ();
 
     async fn handle(
         &mut self,
-        publisher_message: PublisherMessage,
+        publish_new_split: PublishNewSplit,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         fail_point!("publisher:before");
 
-        self.run_publish_operation(&publisher_message).await?;
+        let PublishNewSplit {
+            index_id,
+            new_split,
+            split_date_of_birth,
+            checkpoint_delta,
+        } = publish_new_split;
 
-        match &publisher_message.operation {
-            PublishOperation::PublishNewSplit {
-                new_split,
-                checkpoint_delta,
-                split_date_of_birth,
-            } => {
-                info!(new_split=new_split.split_id(), tts=%split_date_of_birth.elapsed().as_secs_f32(), checkpoint_delta=?checkpoint_delta, "publish-new-splits");
-                let checkpoint: SourceCheckpoint = checkpoint_delta.get_source_checkpoint();
-                if let Some(source_mailbox) = self.source_mailbox_opt.as_ref() {
-                    // We voluntarily do not log anything here.
-                    //
-                    // Not being to send the truncation message is a common event and should not be
-                    // considered an error. For instance, if the source is a
-                    // FileSource, it will terminate upon EOF and drop its
-                    // mailbox.
-                    let _ = ctx
-                        .send_message(source_mailbox, SuggestTruncate(checkpoint))
-                        .await;
-                }
-            }
-            PublishOperation::ReplaceSplits {
-                new_splits,
-                replaced_split_ids,
-            } => {
-                let new_split_ids: Vec<&str> = new_splits
-                    .iter()
-                    .map(|new_split| new_split.split_id())
-                    .collect();
-                info!(new_splits=?new_split_ids, replaced_splits=?replaced_split_ids, "replace-splits");
-            }
+        self.metastore
+            .publish_splits(
+                &index_id,
+                &self.source_id,
+                &[new_split.split_id()],
+                checkpoint_delta.clone(),
+            )
+            .await
+            .context("Failed to publish splits.")?;
+
+        info!(new_split=new_split.split_id(), tts=%split_date_of_birth.elapsed().as_secs_f32(), checkpoint_delta=?checkpoint_delta, "publish-new-splits");
+        let checkpoint: SourceCheckpoint = checkpoint_delta.get_source_checkpoint();
+        if let Some(source_mailbox) = self.source_mailbox_opt.as_ref() {
+            // We voluntarily do not log anything here.
+            //
+            // Not being to send the truncation message is a common event and should not be
+            // considered an error. For instance, if the source is a
+            // FileSource, it will terminate upon EOF and drop its
+            // mailbox.
+            let _ = ctx
+                .send_message(source_mailbox, SuggestTruncate(checkpoint))
+                .await;
         }
 
-        let new_splits = publisher_message.operation.extract_new_splits();
+        // The merge planner is not necessarily awake and this is not an error.
+        // For instance, when a source reaches its end, and the last "new" split
+        // has been packaged, the packager finalizer sends a message to the merge
+        // planner in order to stop it.
+        let _ = ctx
+            .send_message(
+                &self.merge_planner_mailbox,
+                NewSplits {
+                    new_splits: vec![new_split],
+                },
+            )
+            .await;
+        self.counters.num_published_splits += 1;
+        fail_point!("publisher:after");
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<ReplaceSplits> for Publisher {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        replace_splits: ReplaceSplits,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), quickwit_actors::ActorExitStatus> {
+        let ReplaceSplits {
+            index_id,
+            new_splits,
+            replaced_split_ids,
+        } = replace_splits;
+
+        let new_split_ids: Vec<&str> = new_splits
+            .iter()
+            .map(|new_split| new_split.split_id())
+            .collect();
+        let replaced_split_ids_ref_vec: Vec<&str> =
+            replaced_split_ids.iter().map(String::as_str).collect();
+        self.metastore
+            .replace_splits(&index_id, &new_split_ids, &replaced_split_ids_ref_vec[..])
+            .await
+            .context("Failed to replace splits.")?;
+
+        info!(new_splits=?new_split_ids, replaced_splits=?replaced_split_ids, "replace-splits");
 
         // The merge planner is not necessarily awake and this is not an error.
         // For instance, when a source reaches its end, and the last "new" split
@@ -216,9 +212,28 @@ impl Handler<PublisherMessage> for Publisher {
         let _ = ctx
             .send_message(&self.merge_planner_mailbox, NewSplits { new_splits })
             .await;
-        self.counters.num_published_splits += 1;
-        fail_point!("publisher:after");
+
+        self.counters.num_replace_operations += 1;
+
         Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<PublisherMessage> for Publisher {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        publisher_message: PublisherMessage,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), quickwit_actors::ActorExitStatus> {
+        match publisher_message {
+            PublisherMessage::NewSplit(new_split) => self.handle(new_split, ctx).await,
+            PublisherMessage::ReplaceSplits(replace_splits) => {
+                self.handle(replace_splits, ctx).await
+            }
+        }
     }
 }
 
@@ -263,16 +278,14 @@ mod tests {
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
 
         assert!(publisher_mailbox
-            .send_message(PublisherMessage {
+            .send_message(PublishNewSplit {
                 index_id: "index".to_string(),
-                operation: PublishOperation::PublishNewSplit {
-                    new_split: SplitMetadata {
-                        split_id: "split".to_string(),
-                        ..Default::default()
-                    },
-                    checkpoint_delta: CheckpointDelta::from(1..3),
-                    split_date_of_birth: Instant::now(),
+                new_split: SplitMetadata {
+                    split_id: "split".to_string(),
+                    ..Default::default()
                 },
+                checkpoint_delta: CheckpointDelta::from(1..3),
+                split_date_of_birth: Instant::now(),
             })
             .await
             .is_ok());
@@ -324,22 +337,21 @@ mod tests {
         );
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
-        let publisher_message = PublisherMessage {
+        let publisher_message = ReplaceSplits {
             index_id: "index".to_string(),
-            operation: PublishOperation::ReplaceSplits {
-                new_splits: vec![SplitMetadata {
-                    split_id: "split3".to_string(),
-                    ..Default::default()
-                }],
-                replaced_split_ids: vec!["split1".to_string(), "split2".to_string()],
-            },
+            new_splits: vec![SplitMetadata {
+                split_id: "split3".to_string(),
+                ..Default::default()
+            }],
+            replaced_split_ids: vec!["split1".to_string(), "split2".to_string()],
         };
         assert!(publisher_mailbox
             .send_message(publisher_message)
             .await
             .is_ok());
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
-        assert_eq!(publisher_observation.num_published_splits, 1);
+        assert_eq!(publisher_observation.num_published_splits, 0);
+        assert_eq!(publisher_observation.num_replace_operations, 1);
         let merge_planner_msgs = merge_planner_inbox.drain_for_test_typed::<NewSplits>();
         assert_eq!(merge_planner_msgs.len(), 1);
         assert_eq!(merge_planner_msgs[0].new_splits.len(), 1);
