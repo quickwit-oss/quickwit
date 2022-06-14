@@ -22,13 +22,11 @@ use std::sync::Arc;
 use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
-use quickwit_actors::{Actor, ActorContext, Handler, Mailbox, QueueCapacity};
+use quickwit_actors::{Actor, ActorContext, Handler, Mailbox};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::Metastore;
-use tokio::sync::oneshot::Receiver;
 use tracing::info;
 
-use crate::actors::uploader::MAX_CONCURRENT_SPLIT_UPLOAD;
 use crate::actors::{GarbageCollector, MergePlanner};
 use crate::models::{NewSplits, PublishOperation, PublisherMessage};
 use crate::source::{SourceActor, SuggestTruncate};
@@ -49,13 +47,6 @@ impl PublisherType {
         match self {
             PublisherType::MainPublisher => "Publisher",
             PublisherType::MergePublisher => "MergePublisher",
-        }
-    }
-
-    pub fn queue_capacity(&self) -> QueueCapacity {
-        match self {
-            PublisherType::MainPublisher => QueueCapacity::Bounded(MAX_CONCURRENT_SPLIT_UPLOAD),
-            PublisherType::MergePublisher => QueueCapacity::Unbounded,
         }
     }
 }
@@ -145,10 +136,6 @@ impl Actor for Publisher {
         self.counters.clone()
     }
 
-    fn queue_capacity(&self) -> quickwit_actors::QueueCapacity {
-        self.publisher_type.queue_capacity()
-    }
-
     fn name(&self) -> String {
         self.publisher_type.actor_name().to_string()
     }
@@ -176,22 +163,16 @@ impl Actor for Publisher {
 }
 
 #[async_trait]
-impl Handler<Receiver<PublisherMessage>> for Publisher {
+impl Handler<PublisherMessage> for Publisher {
     type Reply = ();
 
     async fn handle(
         &mut self,
-        uploaded_split_future: Receiver<PublisherMessage>,
+        publisher_message: PublisherMessage,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         fail_point!("publisher:before");
-        let publisher_message = {
-            let _protect_guard = ctx.protect_zone();
-            uploaded_split_future
-                .await
-                .context("Failed to upload split.")? //< splits must be published in order, so one uploaded failing means we should fail
-                                                     //< entirely.
-        };
+
         self.run_publish_operation(&publisher_message).await?;
 
         match &publisher_message.operation {
@@ -246,17 +227,13 @@ mod tests {
     use std::time::Instant;
 
     use quickwit_actors::{create_test_mailbox, Universe};
-    use quickwit_metastore::checkpoint::{
-        CheckpointDelta, PartitionId, Position, SourceCheckpoint,
-    };
+    use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position};
     use quickwit_metastore::{MockMetastore, SplitMetadata};
-    use tokio::sync::oneshot;
 
     use super::*;
-    use crate::source::SuggestTruncate;
 
     #[tokio::test]
-    async fn test_publisher_publishes_in_order() {
+    async fn test_publisher_publish_operation() {
         quickwit_common::setup_logging_for_tests();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
@@ -264,22 +241,12 @@ mod tests {
             .withf(|index_id, source_id, split_ids, checkpoint_delta| {
                 index_id == "index"
                     && source_id == "source"
-                    && split_ids[..] == ["split1"]
+                    && split_ids[..] == ["split"]
                     && checkpoint_delta == &CheckpointDelta::from(1..3)
             })
             .times(1)
             .returning(|_, _, _, _| Ok(()));
-        mock_metastore
-            .expect_publish_splits()
-            .withf(|index_id, source_id, split_ids, checkpoint_delta| {
-                index_id == "index"
-                    && source_id == "source"
-                    && split_ids[..] == ["split2"]
-                    && checkpoint_delta == &CheckpointDelta::from(3..7)
-            })
-            .times(1)
-            .returning(|_, _, _, _| Ok(()));
-        let (merge_planner_mailbox, _merge_planner_inbox) = create_test_mailbox();
+        let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
         let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
 
         let (source_mailbox, source_inbox) = create_test_mailbox();
@@ -294,66 +261,43 @@ mod tests {
         );
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
-        let (split_future_tx1, split_future_rx1) = oneshot::channel::<PublisherMessage>();
-        assert!(publisher_mailbox
-            .send_message(split_future_rx1)
-            .await
-            .is_ok());
-        let (split_future_tx2, split_future_rx2) = oneshot::channel::<PublisherMessage>();
-        assert!(publisher_mailbox
-            .send_message(split_future_rx2)
-            .await
-            .is_ok());
 
         // note the future is resolved in the inverse of the expected order.
-        assert!(split_future_tx2
-            .send(PublisherMessage {
+        assert!(publisher_mailbox
+            .send_message(PublisherMessage {
                 index_id: "index".to_string(),
                 operation: PublishOperation::PublishNewSplit {
                     new_split: SplitMetadata {
-                        split_id: "split2".to_string(),
-                        ..Default::default()
-                    },
-                    checkpoint_delta: CheckpointDelta::from(3..7),
-                    split_date_of_birth: Instant::now(),
-                }
-            })
-            .is_ok());
-        assert!(split_future_tx1
-            .send(PublisherMessage {
-                index_id: "index".to_string(),
-                operation: PublishOperation::PublishNewSplit {
-                    new_split: SplitMetadata {
-                        split_id: "split1".to_string(),
+                        split_id: "split".to_string(),
                         ..Default::default()
                     },
                     checkpoint_delta: CheckpointDelta::from(1..3),
                     split_date_of_birth: Instant::now(),
                 },
             })
+            .await
             .is_ok());
+
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
-        assert_eq!(publisher_observation.num_published_splits, 2);
+        assert_eq!(publisher_observation.num_published_splits, 1);
 
         let suggest_truncate_checkpoints: Vec<SourceCheckpoint> = source_inbox
-            .drain_for_test()
+            .drain_for_test_typed::<SuggestTruncate>()
             .into_iter()
-            .map(|any_msg| any_msg.downcast::<SuggestTruncate>().unwrap().0)
+            .map(|msg| msg.0)
             .collect();
 
-        assert_eq!(suggest_truncate_checkpoints.len(), 2);
+        assert_eq!(suggest_truncate_checkpoints.len(), 1);
         assert_eq!(
             suggest_truncate_checkpoints[0]
                 .position_for_partition(&PartitionId::default())
                 .unwrap(),
             &Position::from(2u64)
         );
-        assert_eq!(
-            suggest_truncate_checkpoints[1]
-                .position_for_partition(&PartitionId::default())
-                .unwrap(),
-            &Position::from(6u64)
-        );
+
+        let merger_msgs: Vec<NewSplits> = merge_planner_inbox.drain_for_test_typed::<NewSplits>();
+        assert_eq!(merger_msgs.len(), 1);
+        assert_eq!(merger_msgs[0].new_splits.len(), 1);
     }
 
     #[tokio::test]
@@ -381,28 +325,24 @@ mod tests {
         );
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
-        let (split_future_tx, split_future_rx) = oneshot::channel::<PublisherMessage>();
+        let publisher_message = PublisherMessage {
+            index_id: "index".to_string(),
+            operation: PublishOperation::ReplaceSplits {
+                new_splits: vec![SplitMetadata {
+                    split_id: "split3".to_string(),
+                    ..Default::default()
+                }],
+                replaced_split_ids: vec!["split1".to_string(), "split2".to_string()],
+            },
+        };
         assert!(publisher_mailbox
-            .send_message(split_future_rx)
+            .send_message(publisher_message)
             .await
-            .is_ok());
-        assert!(split_future_tx
-            .send(PublisherMessage {
-                index_id: "index".to_string(),
-                operation: PublishOperation::ReplaceSplits {
-                    new_splits: vec![SplitMetadata {
-                        split_id: "split3".to_string(),
-                        ..Default::default()
-                    }],
-                    replaced_split_ids: vec!["split1".to_string(), "split2".to_string()],
-                }
-            })
             .is_ok());
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
         assert_eq!(publisher_observation.num_published_splits, 1);
-        let merge_planner_msgs = merge_planner_inbox.drain_for_test();
+        let merge_planner_msgs = merge_planner_inbox.drain_for_test_typed::<NewSplits>();
         assert_eq!(merge_planner_msgs.len(), 1);
-        let merge_planner_msg = merge_planner_msgs[0].downcast_ref::<NewSplits>().unwrap();
-        assert_eq!(merge_planner_msg.new_splits.len(), 1);
+        assert_eq!(merge_planner_msgs[0].new_splits.len(), 1);
     }
 }

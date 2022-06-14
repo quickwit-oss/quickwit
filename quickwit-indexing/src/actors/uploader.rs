@@ -32,9 +32,10 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_storage::SplitPayloadBuilder;
 use time::OffsetDateTime;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 use tracing::{info, info_span, warn, Instrument, Span};
 
+use crate::actors::sequencer::Sequencer;
 use crate::actors::Publisher;
 use crate::models::{PackagedSplit, PackagedSplitBatch, PublishOperation, PublisherMessage};
 use crate::split_store::IndexingSplitStore;
@@ -45,7 +46,7 @@ pub struct Uploader {
     actor_name: &'static str,
     metastore: Arc<dyn Metastore>,
     index_storage: IndexingSplitStore,
-    publisher_mailbox: Mailbox<Publisher>,
+    sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
     concurrent_upload_permits: Arc<Semaphore>,
     counters: UploaderCounters,
 }
@@ -55,13 +56,13 @@ impl Uploader {
         actor_name: &'static str,
         metastore: Arc<dyn Metastore>,
         index_storage: IndexingSplitStore,
-        publisher_mailbox: Mailbox<Publisher>,
+        sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
     ) -> Uploader {
         Uploader {
             actor_name,
             metastore,
             index_storage,
-            publisher_mailbox,
+            sequencer_mailbox,
             concurrent_upload_permits: Arc::new(Semaphore::new(MAX_CONCURRENT_SPLIT_UPLOAD)),
             counters: Default::default(),
         }
@@ -94,7 +95,7 @@ impl Actor for Uploader {
     }
 
     fn queue_capacity(&self) -> QueueCapacity {
-        QueueCapacity::Bounded(0)
+        QueueCapacity::Bounded(MAX_CONCURRENT_SPLIT_UPLOAD)
     }
 
     fn name(&self) -> String {
@@ -116,12 +117,12 @@ impl Handler<PackagedSplitBatch> for Uploader {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         fail_point!("uploader:before");
-        let (split_uploaded_tx, split_uploaded_rx) = tokio::sync::oneshot::channel();
+        let (split_uploaded_tx, split_uploaded_rx) = oneshot::channel::<PublisherMessage>();
 
         // We send the future to the publisher right away.
         // That way the publisher will process the uploaded split in order as opposed to
         // publishing in the order splits finish their uploading.
-        ctx.send_message(&self.publisher_mailbox, split_uploaded_rx)
+        ctx.send_message(&self.sequencer_mailbox, split_uploaded_rx)
             .await?;
 
         // The permit will be added back manually to the semaphore the task after it is finished.
