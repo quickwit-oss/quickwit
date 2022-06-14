@@ -19,7 +19,7 @@
 
 use std::path::PathBuf;
 
-use anyhow::{anyhow, bail};
+use anyhow::{bail, Context};
 use clap::{arg, Arg, ArgMatches, Command};
 use humansize::{file_size_opts, FileSize};
 use itertools::Itertools;
@@ -392,8 +392,8 @@ async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
         .iter()
         .find(|split| split.split_id() == args.split_id)
         .cloned()
-        .ok_or_else(|| {
-            anyhow!(
+        .with_context(|| {
+            format!(
                 "Could not find split metadata in metastore {}",
                 args.split_id
             )
