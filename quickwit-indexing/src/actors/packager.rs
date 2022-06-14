@@ -276,6 +276,12 @@ fn try_extract_terms(
                 FieldType::F64(_) => {
                     tantivy::u64_to_f64(u64_from_term_data(term_data)?).to_string()
                 }
+                FieldType::Bool(_) => match u64_from_term_data(term_data)? {
+                    0 => false,
+                    1 => true,
+                    _ => bail!("Invalid boolean value"),
+                }
+                .to_string(),
                 FieldType::Bytes(_) => {
                     bail!("Tags collection is not allowed on `bytes` fields.")
                 }
@@ -495,7 +501,7 @@ mod tests {
             &split.tags.iter().map(|s| s.as_str()).collect::<Vec<&str>>(),
             &[
                 "tag_bool!",
-                "tag_bool:\u{0}\u{0}\u{0}\u{0}\u{0}\u{0}\u{0}\u{1}",
+                "tag_bool:true",
                 "tag_f64!",
                 "tag_f64:-42.02",
                 "tag_i64!",
