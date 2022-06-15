@@ -32,7 +32,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_storage::SplitPayloadBuilder;
 use time::OffsetDateTime;
-use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{oneshot, Semaphore, SemaphorePermit};
 use tracing::{info, info_span, warn, Instrument, Span};
 
 use crate::actors::sequencer::Sequencer;
@@ -44,12 +44,19 @@ use crate::split_store::IndexingSplitStore;
 
 pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 4;
 
+/// This semaphore ensures that at most `MAX_CONCURRENT_SPLIT_UPLOAD` uploads can happen
+/// concurrently.
+///
+/// This permit applies to all uploader actors. In the future, we might want to have a nicer
+/// granularity, and put that semaphore back into the uploader actor, but have a single uploader
+/// actor for all indexing pipeline.
+static CONCURRENT_UPLOAD_PERMITS: Semaphore = Semaphore::const_new(MAX_CONCURRENT_SPLIT_UPLOAD);
+
 pub struct Uploader {
     actor_name: &'static str,
     metastore: Arc<dyn Metastore>,
     index_storage: IndexingSplitStore,
     sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
-    concurrent_upload_permits: Arc<Semaphore>,
     counters: UploaderCounters,
 }
 
@@ -65,7 +72,6 @@ impl Uploader {
             metastore,
             index_storage,
             sequencer_mailbox,
-            concurrent_upload_permits: Arc::new(Semaphore::new(MAX_CONCURRENT_SPLIT_UPLOAD)),
             counters: Default::default(),
         }
     }
@@ -73,9 +79,9 @@ impl Uploader {
     async fn acquire_semaphore(
         &self,
         ctx: &ActorContext<Self>,
-    ) -> anyhow::Result<OwnedSemaphorePermit> {
+    ) -> anyhow::Result<SemaphorePermit<'static>> {
         let _guard = ctx.protect_zone();
-        Semaphore::acquire_owned(self.concurrent_upload_permits.clone())
+        Semaphore::acquire(&CONCURRENT_UPLOAD_PERMITS)
             .await
             .context("The uploader semaphore is closed. (This should never happen.)")
     }
@@ -97,7 +103,14 @@ impl Actor for Uploader {
     }
 
     fn queue_capacity(&self) -> QueueCapacity {
-        QueueCapacity::Bounded(MAX_CONCURRENT_SPLIT_UPLOAD)
+        // We do not need a large capacity here...
+        // The uploader just spawns tasks that are uploading,
+        // so that in a sense, the CONCURRENT_UPLOAD_PERMITS semaphore also acts as
+        // a queue capacity.
+        //
+        // Having a large queue is costly too, because each message is a handle over
+        // a split directory. We DO need agressive backpressure here.
+        QueueCapacity::Bounded(0)
     }
 
     fn name(&self) -> String {
