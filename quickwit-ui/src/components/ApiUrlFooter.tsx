@@ -43,7 +43,13 @@ export default function ApiUrlFooter(url: string) {
     </Typography>
     <Button
       sx={{ fontSize: '0.93em', textTransform: 'inherit', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'clip' }}
-      onClick={() => {navigator.clipboard.writeText(completeUrl)}}
+      onClick={() => {
+        if(window.isSecureContext){
+          navigator.clipboard.writeText(completeUrl);
+        } else {
+          window.open(completeUrl, '_blank');
+        }
+      }}
       endIcon={<ContentCopyIcon />}
       size="small">
         {completeUrl.substring(0, urlMaxLength)}{isTooLong && "..."}
