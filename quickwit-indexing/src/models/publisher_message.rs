@@ -23,69 +23,52 @@ use std::time::Instant;
 use quickwit_metastore::checkpoint::CheckpointDelta;
 use quickwit_metastore::SplitMetadata;
 
-#[derive(Clone)]
-pub enum PublishOperation {
-    /// Publish a new split, coming from the indexer.
-    PublishNewSplit {
-        new_split: SplitMetadata,
-        checkpoint_delta: CheckpointDelta,
-        split_date_of_birth: Instant, // for logging
-    },
-    /// Publish a merge, replacing several splits (typically 10)
-    /// by a single larger split.
-    ReplaceSplits {
-        new_splits: Vec<SplitMetadata>,
-        replaced_split_ids: Vec<String>,
-    },
-}
-
-impl fmt::Debug for PublishOperation {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::PublishNewSplit {
-                new_split: new_split_id,
-                checkpoint_delta,
-                split_date_of_birth: start_time,
-            } => f
-                .debug_struct("PublishNewSplit")
-                .field("new_split_id", &new_split_id.split_id())
-                .field("checkpoint_delta", checkpoint_delta)
-                .field("tts_in_secs", &start_time.elapsed().as_secs_f32())
-                .finish(),
-            Self::ReplaceSplits {
-                new_splits,
-                replaced_split_ids,
-            } => {
-                let new_split_ids: Vec<String> = new_splits
-                    .iter()
-                    .map(|split| split.split_id().to_string())
-                    .collect();
-                f.debug_struct("ReplaceSplits")
-                    .field("new_split_ids", &new_split_ids)
-                    .field("replaced_split_ids", replaced_split_ids)
-                    .finish()
-            }
-        }
-    }
-}
-
-impl PublishOperation {
-    pub fn extract_new_splits(self) -> Vec<SplitMetadata> {
-        match self {
-            PublishOperation::PublishNewSplit {
-                new_split: new_split_id,
-                ..
-            } => vec![new_split_id],
-            PublishOperation::ReplaceSplits {
-                new_splits: new_split_ids,
-                ..
-            } => new_split_ids,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct PublisherMessage {
+/// Publish a new split, coming from the indexer.
+pub struct PublishNewSplit {
     pub index_id: String,
-    pub operation: PublishOperation,
+    pub new_split: SplitMetadata,
+    pub checkpoint_delta: CheckpointDelta,
+    pub split_date_of_birth: Instant, // for logging
+}
+
+impl fmt::Debug for PublishNewSplit {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("PublishNewSplit")
+            .field("index_id", &self.index_id)
+            .field("new_split_id", &self.new_split.split_id())
+            .field("checkpoint_delta", &self.checkpoint_delta)
+            .field(
+                "tts_in_secs",
+                &self.split_date_of_birth.elapsed().as_secs_f32(),
+            )
+            .finish()
+    }
+}
+
+/// Publish a merge, replacing several splits (typically 10)
+/// by a single larger split.
+pub struct ReplaceSplits {
+    pub index_id: String,
+    pub new_splits: Vec<SplitMetadata>,
+    pub replaced_split_ids: Vec<String>,
+}
+
+impl fmt::Debug for ReplaceSplits {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let new_split_ids: Vec<String> = self
+            .new_splits
+            .iter()
+            .map(|split| split.split_id().to_string())
+            .collect();
+        f.debug_struct("ReplaceSplits")
+            .field("new_split_ids", &new_split_ids)
+            .field("replaced_split_ids", &self.replaced_split_ids)
+            .finish()
+    }
+}
+
+#[derive(Debug)]
+pub enum PublisherMessage {
+    NewSplit(PublishNewSplit),
+    ReplaceSplits(ReplaceSplits),
 }
