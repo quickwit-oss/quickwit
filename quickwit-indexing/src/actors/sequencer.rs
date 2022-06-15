@@ -64,7 +64,10 @@ where
         message: oneshot::Receiver<M>,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        let msg = message.await.context("Message future failed.")?;
+        let msg = ctx
+            .protect_future(message)
+            .await
+            .context("Message future failed.")?;
         ctx.send_message(&self.mailbox, msg)
             .await
             .context("Failed to send message to publisher")?;
