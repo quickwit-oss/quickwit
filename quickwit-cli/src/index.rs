@@ -784,11 +784,9 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         quickwit_storage_uri_resolver().clone(),
         quickwit_config.default_index_root_uri(),
     );
-    if args.overwrite {
-        index_service.delete_index(&index_id, false).await?;
-    }
-
-    index_service.create_index(index_config).await?;
+    index_service
+        .create_index(index_config, args.overwrite)
+        .await?;
     println!("Index `{}` successfully created.", index_id);
 
     Ok(())
