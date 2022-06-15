@@ -1,4 +1,4 @@
-import { SearchRequest } from "./models";
+import { SearchRequest, SortByField, SortOrder } from "./models";
 
 export function hasSearchParams(historySearch: string): boolean {
   const searchParams = new URLSearchParams(historySearch);
@@ -26,12 +26,27 @@ export function parseSearchUrl(historySearch: string): SearchRequest {
   if (indexIdParam !== null && indexIdParam.length > 0) {
     indexId = searchParams.get("index_id");
   }
+  let sortByField = null;
+  const sortByFieldParam = searchParams.get("sort_by_field");
+  if (sortByFieldParam !== null) {
+    if (sortByFieldParam.startsWith('+')) {
+      const order: SortOrder = 'Asc';
+      sortByField = {field_name: sortByFieldParam.substring(1), order: order};
+    } else if (sortByFieldParam.startsWith('-')) {
+      const order: SortOrder = 'Desc';
+      sortByField = {field_name: sortByFieldParam.substring(1), order: order};
+    } else {
+      const order: SortOrder = 'Asc';
+      sortByField = {field_name: sortByFieldParam, order: order};
+    }
+  }
   return {
     indexId: indexId,
     query: searchParams.get("query") || "",
     maxHits: 10,
     startTimestamp: startTimestamp,
     endTimestamp: endTimestamp,
+    sortByField: sortByField,
   };
 }
 
@@ -54,5 +69,13 @@ export function toUrlSearchRequestParams(request: SearchRequest): URLSearchParam
   if (request.endTimestamp) {
     params.append("end_timestamp", request.endTimestamp.toString());
   }
+  if (request.sortByField) {
+    params.append("sort_by_field", serializeSortByField(request.sortByField));
+  }
   return params;
+}
+
+export function serializeSortByField(sortByField: SortByField): string {
+  const order = sortByField.order === 'Asc' ? '+' : '-'; 
+  return `${order}${sortByField.field_name}`;
 }

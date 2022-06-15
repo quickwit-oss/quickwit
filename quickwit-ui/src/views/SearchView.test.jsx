@@ -30,7 +30,7 @@ jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
   useLocation: () => ({
     pathname: '/search',
-    search: 'index_id=my-new-fresh-index'
+    search: 'index_id=my-new-fresh-index-idmax_hits=10&start_timestamp=1460554590&end_timestamp=1460554592&sort_by_field=-timestamp'
   }),
   useNavigate: () => mockedUsedNavigate
 }));
@@ -54,9 +54,7 @@ test('renders SearchView', async () => {
     metadata: {
       index_id: 'my-new-fresh-index-id',
       index_uri: 'my-new-fresh-index-uri',
-      indexing_settings: {
-        timestamp_field: 'timestamp'
-      },
+      indexing_settings: {},
       doc_mapping: {
         field_mappings: [{
           name: 'timestamp',
