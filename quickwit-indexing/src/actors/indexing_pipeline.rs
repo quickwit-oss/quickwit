@@ -37,6 +37,7 @@ use tracing::{debug, error, info, info_span, instrument, Span};
 
 use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::publisher::PublisherType;
+use crate::actors::sequencer::Sequencer;
 use crate::actors::{
     GarbageCollector, Indexer, MergeExecutor, MergePlanner, NamedField, Packager, Publisher,
     Uploader,
@@ -54,6 +55,7 @@ pub struct IndexingPipelineHandler {
     pub indexer: ActorHandle<Indexer>,
     pub packager: ActorHandle<Packager>,
     pub uploader: ActorHandle<Uploader>,
+    pub sequencer: ActorHandle<Sequencer<Publisher>>,
     pub publisher: ActorHandle<Publisher>,
     pub garbage_collector: ActorHandle<GarbageCollector>,
 
@@ -63,6 +65,7 @@ pub struct IndexingPipelineHandler {
     pub merge_executor: ActorHandle<MergeExecutor>,
     pub merge_packager: ActorHandle<Packager>,
     pub merge_uploader: ActorHandle<Uploader>,
+    pub merge_sequencer: ActorHandle<Sequencer<Publisher>>,
     pub merge_publisher: ActorHandle<Publisher>,
 }
 
@@ -127,6 +130,7 @@ impl IndexingPipeline {
                 &handlers.indexer,
                 &handlers.packager,
                 &handlers.uploader,
+                &handlers.sequencer,
                 &handlers.publisher,
                 &handlers.garbage_collector,
                 &handlers.merge_planner,
@@ -134,6 +138,7 @@ impl IndexingPipeline {
                 &handlers.merge_executor,
                 &handlers.merge_packager,
                 &handlers.merge_uploader,
+                &handlers.merge_sequencer,
                 &handlers.merge_publisher,
             ];
             supervisables
@@ -253,12 +258,18 @@ impl IndexingPipeline {
             .set_kill_switch(self.kill_switch.clone())
             .spawn();
 
+        let merge_sequencer = Sequencer::new(merge_publisher_mailbox);
+        let (merge_sequencer_mailbox, merge_sequencer_handler) = ctx
+            .spawn_actor(merge_sequencer)
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn();
+
         // Merge uploader
         let merge_uploader = Uploader::new(
             "MergeUploader",
             self.params.metastore.clone(),
             split_store.clone(),
-            merge_publisher_mailbox,
+            merge_sequencer_mailbox,
         );
         let (merge_uploader_mailbox, merge_uploader_handler) = ctx
             .spawn_actor(merge_uploader)
@@ -343,12 +354,18 @@ impl IndexingPipeline {
             .set_kill_switch(self.kill_switch.clone())
             .spawn();
 
+        let sequencer = Sequencer::new(publisher_mailbox);
+        let (sequencer_mailbox, sequencer_handler) = ctx
+            .spawn_actor(sequencer)
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn();
+
         // Uploader
         let uploader = Uploader::new(
             "Uploader",
             self.params.metastore.clone(),
             split_store.clone(),
-            publisher_mailbox,
+            sequencer_mailbox,
         );
         let (uploader_mailbox, uploader_handler) = ctx
             .spawn_actor(uploader)
@@ -408,6 +425,7 @@ impl IndexingPipeline {
             indexer: indexer_handler,
             packager: packager_handler,
             uploader: uploader_handler,
+            sequencer: sequencer_handler,
             publisher: publisher_handler,
             garbage_collector: garbage_collector_handler,
 
@@ -416,6 +434,7 @@ impl IndexingPipeline {
             merge_executor: merge_executor_handler,
             merge_packager: merge_packager_handler,
             merge_uploader: merge_uploader_handler,
+            merge_sequencer: merge_sequencer_handler,
             merge_publisher: merge_publisher_handler,
         });
         Ok(())
