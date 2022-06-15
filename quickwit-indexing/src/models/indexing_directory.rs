@@ -24,10 +24,14 @@ use anyhow::Context;
 use quickwit_common::fs::empty_dir;
 use tempfile::TempDir;
 use tokio::fs;
+use tokio::sync::Semaphore;
 
 use super::ScratchDirectory;
 
 pub const CACHE: &str = "cache";
+
+// Semaphore to avoid the too many file descriptor error. (See #1638)
+static FILE_DESCRIPTOR_GUARD: Semaphore = Semaphore::const_new(10);
 
 /// Root of an [`IndexingDirectory`].
 #[derive(Clone)]
@@ -56,6 +60,7 @@ pub struct IndexingDirectory {
 impl IndexingDirectory {
     pub async fn create_in_dir<P: AsRef<Path>>(dir_path: P) -> anyhow::Result<IndexingDirectory> {
         // Create cache directory if does not exist.
+        let _create_in_dir_permit = FILE_DESCRIPTOR_GUARD.acquire().await?;
         let cache_directory_path = dir_path.as_ref().join(CACHE);
         fs::create_dir_all(&cache_directory_path)
             .await
