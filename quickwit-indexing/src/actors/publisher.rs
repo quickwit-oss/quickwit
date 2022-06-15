@@ -262,7 +262,6 @@ mod tests {
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
 
-        // note the future is resolved in the inverse of the expected order.
         assert!(publisher_mailbox
             .send_message(PublisherMessage {
                 index_id: "index".to_string(),

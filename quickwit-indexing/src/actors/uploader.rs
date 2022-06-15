@@ -119,9 +119,10 @@ impl Handler<PackagedSplitBatch> for Uploader {
         fail_point!("uploader:before");
         let (split_uploaded_tx, split_uploaded_rx) = oneshot::channel::<PublisherMessage>();
 
-        // We send the future to the publisher right away.
-        // That way the publisher will process the uploaded split in order as opposed to
-        // publishing in the order splits finish their uploading.
+        // We send the future to the sequencer right away.
+
+        // The sequencer will then resolve the future in their arrival order and ensure that the
+        // publisher publishes splits in order.
         ctx.send_message(&self.sequencer_mailbox, split_uploaded_rx)
             .await?;
 

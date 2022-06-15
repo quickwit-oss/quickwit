@@ -22,6 +22,17 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use tokio::sync::oneshot;
 
+/// The sequencer serves as a proxy to another actor,
+/// delivering message in a specific order.
+///
+/// Producers of message first "reserve" a position in the
+/// queue of message by sending `oneshot::Receiver<Message>` to the `Sequencer`.
+///
+/// The Sequencer then simply resolves these messages and forwards them to the
+/// targetted actor.
+///
+/// It is used by the uploader actor, to run uploads concurrently and yet
+/// ensures that publish message are send in the right order.
 pub struct Sequencer<A: Actor> {
     mailbox: Mailbox<A>,
 }
