@@ -71,7 +71,7 @@ export function getDateTimeFormat(timeUnit: TimeUnit) {
 // Guess time unit of the timestamp field from index splits.
 export function guessTimeUnit(index: Index): TimeUnit {
   // If we have no split or , we cannot guess the time unit.
-  if (index.metadata.indexing_settings.timestamp_field === null || index.metadata.indexing_settings.timestamp_field === undefined) {
+  if (!index.metadata.indexing_settings.timestamp_field) {
     return TimeUnit.UNKNOWN;
   }
   if (index.splits.length === 0) {
