@@ -25,7 +25,9 @@ use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
 use quickwit_cli::cli::{build_cli, CliCommand};
 use quickwit_cli::QW_JAEGER_ENABLED_ENV_KEY;
+use quickwit_cluster::QuickwitService;
 use quickwit_common::metrics::new_gauge;
+use quickwit_common::runtimes::RuntimesConfiguration;
 use quickwit_serve::build_quickwit_build_info;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tikv_jemallocator::Jemalloc;
@@ -63,7 +65,7 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
                 time::format_description::parse(
                     "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z",
                 )
-                .expect("Time format invalid"),
+                .expect("Time format invalid."),
             ),
         );
     if std::env::var_os(QW_JAEGER_ENABLED_ENV_KEY).is_some() {
@@ -87,7 +89,6 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
     Ok(())
 }
 
-//
 async fn jemalloc_metrics_loop() -> tikv_jemalloc_ctl::Result<()> {
     let allocated_gauge = new_gauge(
         "allocated_num_bytes",
@@ -116,6 +117,32 @@ async fn jemalloc_metrics_loop() -> tikv_jemalloc_ctl::Result<()> {
     }
 }
 
+/// If a bunch of tokio runtimes need to be started for actors,
+/// return the right configuration.
+///
+/// TODO making it configurable could be useful in the future.
+fn runtime_configuration_for_cmd(command: &CliCommand) -> Option<RuntimesConfiguration> {
+    match command {
+        CliCommand::Run(run_cli_command) => {
+            if run_cli_command.services.contains(&QuickwitService::Indexer) {
+                Some(RuntimesConfiguration::default())
+            } else {
+                None
+            }
+        }
+        CliCommand::Index(_) => Some(RuntimesConfiguration::default()),
+        CliCommand::Split(_) | CliCommand::Source(_) => None,
+    }
+}
+
+fn start_actor_runtimes(cli_command: &CliCommand) -> anyhow::Result<()> {
+    if let Some(runtime_configuration) = runtime_configuration_for_cmd(cli_command) {
+        quickwit_common::runtimes::initialize_runtimes(runtime_configuration)
+            .context("Failed to start runtimes.")?;
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     #[cfg(feature = "openssl-support")]
@@ -137,6 +164,8 @@ async fn main() -> anyhow::Result<()> {
             std::process::exit(1);
         }
     };
+
+    start_actor_runtimes(&command)?;
 
     tokio::task::spawn(async {
         if let Err(jemalloc_metrics_err) = jemalloc_metrics_loop().await {

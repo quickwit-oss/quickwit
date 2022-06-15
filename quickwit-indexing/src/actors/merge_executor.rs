@@ -26,9 +26,8 @@ use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
 use itertools::{izip, Itertools};
-use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, Mailbox, QueueCapacity,
-};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::split_file;
 use quickwit_directories::{BundleDirectory, UnionDirectory};
 use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
@@ -40,6 +39,7 @@ use tantivy::{
     demux, DemuxMapping, Directory, DocIdToSegmentOrdinal, Index, IndexMeta, Segment, SegmentId,
     SegmentReader, TantivyError,
 };
+use tokio::runtime::Handle;
 use tracing::{debug, info, info_span, Span};
 
 use crate::actors::Packager;
@@ -60,8 +60,8 @@ pub struct MergeExecutor {
 impl Actor for MergeExecutor {
     type ObservableState = ();
 
-    fn runner(&self) -> ActorRunner {
-        ActorRunner::DedicatedThread
+    fn runtime_handle(&self) -> Handle {
+        RuntimeType::Blocking.get_runtime_handle()
     }
 
     fn observable_state(&self) -> Self::ObservableState {}
