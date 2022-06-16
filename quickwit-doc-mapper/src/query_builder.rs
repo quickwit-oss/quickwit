@@ -114,7 +114,7 @@ fn resolve_fields(schema: &Schema, field_names: &[String]) -> anyhow::Result<Vec
 #[cfg(test)]
 mod test {
     use quickwit_proto::SearchRequest;
-    use tantivy::schema::{Schema, TEXT};
+    use tantivy::schema::{Schema, FAST, INDEXED, STORED, TEXT};
 
     use super::build_query;
     use crate::{DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME};
@@ -130,6 +130,7 @@ mod test {
         schema_builder.add_text_field("desc", TEXT);
         schema_builder.add_text_field("server.name", TEXT);
         schema_builder.add_text_field("server.mem", TEXT);
+        schema_builder.add_bool_field("server.running", FAST | STORED | INDEXED);
         schema_builder.add_text_field(SOURCE_FIELD_NAME, TEXT);
         schema_builder.add_json_field(DYNAMIC_FIELD_NAME, TEXT);
         schema_builder.build()
@@ -275,6 +276,25 @@ mod test {
             vec![],
             Some(vec![DYNAMIC_FIELD_NAME.to_string()]),
             TestExpectation::Err("No default field declared and no field specified in query."),
+        )
+        .unwrap();
+        check_build_query(
+            "server.running:true",
+            vec![],
+            None,
+            TestExpectation::Ok("TermQuery"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "provided string was not `true` or `false`")]
+    fn test_build_query_not_bool_should_fail() {
+        check_build_query(
+            "server.running:not a bool",
+            vec![],
+            None,
+            TestExpectation::Err("Expected a success when parsing TermQuery, but got error"),
         )
         .unwrap();
     }
