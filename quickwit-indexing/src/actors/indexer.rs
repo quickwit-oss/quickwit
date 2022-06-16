@@ -109,7 +109,6 @@ impl IndexerState {
             docstore_compression: Compressor::Zstd(ZstdCompressor {
                 compression_level: Some(self.indexing_settings.docstore_compression_level),
             }),
-            ..Default::default()
         };
         let index_builder = IndexBuilder::new()
             .settings(index_settings)
