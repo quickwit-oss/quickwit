@@ -151,7 +151,8 @@ async fn process_msg<A: Actor>(
         ctx.protect_future(inbox.recv_timeout()).await
     } else {
         // The actor is paused. We only process command and scheduled message.
-        ctx.protect_future(inbox.recv_timeout_cmd_and_scheduled_msg_only()).await
+        ctx.protect_future(inbox.recv_timeout_cmd_and_scheduled_msg_only())
+            .await
     };
 
     if ctx.kill_switch().is_dead() {

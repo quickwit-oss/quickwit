@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::bail;
 use once_cell::sync::OnceCell;
@@ -60,12 +61,22 @@ fn start_runtimes(config: RuntimesConfiguration) -> HashMap<RuntimeType, Runtime
     let mut runtimes = HashMap::default();
     let blocking_runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(config.num_threads_blocking)
+        .thread_name_fn(|| {
+            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+            let id = ATOMIC_ID.fetch_add(1, Ordering::AcqRel);
+            format!("blocking-{}", id)
+        })
         .enable_all()
         .build()
         .unwrap();
     runtimes.insert(RuntimeType::Blocking, blocking_runtime);
     let non_blocking_runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(config.num_threads_non_blocking)
+        .thread_name_fn(|| {
+            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+            let id = ATOMIC_ID.fetch_add(1, Ordering::AcqRel);
+            format!("non-blocking-{}", id)
+        })
         .enable_all()
         .build()
         .unwrap();
