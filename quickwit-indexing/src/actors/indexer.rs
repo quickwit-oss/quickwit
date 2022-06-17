@@ -30,6 +30,7 @@ use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::{DocMapper, DocParsingError, SortBy, QUICKWIT_TOKENIZER_MANAGER};
 use quickwit_metastore::Metastore;
 use tantivy::schema::{Field, Value};
+use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
 use tracing::{info, warn};
 
@@ -104,7 +105,10 @@ impl IndexerState {
         let schema = self.doc_mapper.schema();
         let index_settings = IndexSettings {
             sort_by_field: self.sort_by_field_opt.clone(),
-            ..Default::default()
+            docstore_blocksize: self.indexing_settings.docstore_blocksize,
+            docstore_compression: Compressor::Zstd(ZstdCompressor {
+                compression_level: Some(self.indexing_settings.docstore_compression_level),
+            }),
         };
         let index_builder = IndexBuilder::new()
             .settings(index_settings)
