@@ -72,5 +72,6 @@ serial_test = "0.7.0"
 ci-test = []
 tokio-console = ["console-subscriber"]
 openssl-support = ["openssl-probe"]
+simulates3 = ["quickwit-metastore/simulates3"]
 release-feature-set = ["quickwit-metastore/postgres", "quickwit-indexing/kafka", "quickwit-indexing/kinesis", "openssl-support"]
 release-feature-vendored-set = ["quickwit-metastore/postgres", "quickwit-indexing/vendored-kafka", "quickwit-indexing/kinesis", "openssl-support"]

@@ -55,4 +55,5 @@ md5 = "0.7"
 [features]
 testsuite = ["mockall", "tempfile"]
 ci-test = []
+simulates3 = []
 postgres = [ "diesel", "diesel_migrations", "openssl"]
