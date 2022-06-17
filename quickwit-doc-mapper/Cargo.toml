@@ -24,6 +24,10 @@ thiserror = "1.0"
 tracing = "0.1.29"
 typetag = "0.1"
 fnv = "1"
+derivative = "2.2.0"
+time = { version = "0.3.9", features = ["std", "macros"] }
+chrono = "0.4.19"
+chrono-tz = "0.6"
 
 [dependencies.quickwit-proto]
 version = "0.3"
