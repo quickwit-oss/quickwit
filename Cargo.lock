@@ -964,8 +964,7 @@ checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 [[package]]
 name = "fastfield_codecs"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8dff2ee906bb242438742b5ecac909c0719cbd9db546f6c3d9ac86bd93f5b07e"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=328bd96#328bd96c247e107e23502933c04e56facc4c2e57"
 dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
@@ -2130,8 +2129,7 @@ dependencies = [
 [[package]]
 name = "ownedbytes"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2981bd7cfb2a70e6c50083c60561275a269fc7458f151c53b126ec1b15cc040"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=328bd96#328bd96c247e107e23502933c04e56facc4c2e57"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -3951,8 +3949,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08d3da9d47a874779d5a97c5f01c2d0a85fc96e38ed6d51ad21a3cf6d6eb8c47"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=328bd96#328bd96c247e107e23502933c04e56facc4c2e57"
 dependencies = [
  "async-trait",
  "base64",
@@ -3998,19 +3995,18 @@ dependencies = [
  "time 0.3.9",
  "uuid 1.1.0",
  "winapi 0.3.9",
+ "zstd",
 ]
 
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90f95c862d26a32e1fdb161ab139c5a3bba221f5fac512af40034e13e25f3131"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=328bd96#328bd96c247e107e23502933c04e56facc4c2e57"
 
 [[package]]
 name = "tantivy-common"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dec19155b3ed963ae1653bc4995ab8175281f68400c39081205ae25b53fd9750"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=328bd96#328bd96c247e107e23502933c04e56facc4c2e57"
 dependencies = [
  "byteorder",
  "ownedbytes",
@@ -4030,8 +4026,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d6bbdce99f2b8dcbe24ee25acffb36a2b45b31344531374df1008f6a64bb583"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=328bd96#328bd96c247e107e23502933c04e56facc4c2e57"
 dependencies = [
  "combine",
  "once_cell",
@@ -5066,3 +5061,32 @@ name = "zeroize"
 version = "1.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94693807d016b2f2d2e14420eb3bfcca689311ff775dcf113d74ea624b7cdf07"
+
+[[package]]
+name = "zstd"
+version = "0.11.2+zstd.1.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20cc960326ece64f010d2d2107537f26dc589a6573a316bd5b1dba685fa5fde4"
+dependencies = [
+ "zstd-safe",
+]
+
+[[package]]
+name = "zstd-safe"
+version = "5.0.2+zstd.1.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d2a5585e04f9eea4b2a3d1eca508c4dee9592a89ef6f450c11719da0726f4db"
+dependencies = [
+ "libc",
+ "zstd-sys",
+]
+
+[[package]]
+name = "zstd-sys"
+version = "2.0.1+zstd.1.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9fd07cbbc53846d9145dbffdf6dd09a7a0aa52be46741825f5c97bdd4f73f12b"
+dependencies = [
+ "cc",
+ "libc",
+]

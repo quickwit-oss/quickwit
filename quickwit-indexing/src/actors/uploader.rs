@@ -32,21 +32,31 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_storage::SplitPayloadBuilder;
 use time::OffsetDateTime;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{oneshot, Semaphore, SemaphorePermit};
 use tracing::{info, info_span, warn, Instrument, Span};
 
+use crate::actors::sequencer::Sequencer;
 use crate::actors::Publisher;
-use crate::models::{PackagedSplit, PackagedSplitBatch, PublishOperation, PublisherMessage};
+use crate::models::{
+    PackagedSplit, PackagedSplitBatch, PublishNewSplit, PublisherMessage, ReplaceSplits,
+};
 use crate::split_store::IndexingSplitStore;
 
 pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 4;
+
+/// This semaphore ensures that at most `MAX_CONCURRENT_SPLIT_UPLOAD` uploads can happen
+/// concurrently.
+///
+/// This permit applies to all uploader actors. In the future, we might want to have a nicer
+/// granularity, and put that semaphore back into the uploader actor, but have a single uploader
+/// actor for all indexing pipeline.
+static CONCURRENT_UPLOAD_PERMITS: Semaphore = Semaphore::const_new(MAX_CONCURRENT_SPLIT_UPLOAD);
 
 pub struct Uploader {
     actor_name: &'static str,
     metastore: Arc<dyn Metastore>,
     index_storage: IndexingSplitStore,
-    publisher_mailbox: Mailbox<Publisher>,
-    concurrent_upload_permits: Arc<Semaphore>,
+    sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
     counters: UploaderCounters,
 }
 
@@ -55,14 +65,13 @@ impl Uploader {
         actor_name: &'static str,
         metastore: Arc<dyn Metastore>,
         index_storage: IndexingSplitStore,
-        publisher_mailbox: Mailbox<Publisher>,
+        sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
     ) -> Uploader {
         Uploader {
             actor_name,
             metastore,
             index_storage,
-            publisher_mailbox,
-            concurrent_upload_permits: Arc::new(Semaphore::new(MAX_CONCURRENT_SPLIT_UPLOAD)),
+            sequencer_mailbox,
             counters: Default::default(),
         }
     }
@@ -70,9 +79,9 @@ impl Uploader {
     async fn acquire_semaphore(
         &self,
         ctx: &ActorContext<Self>,
-    ) -> anyhow::Result<OwnedSemaphorePermit> {
+    ) -> anyhow::Result<SemaphorePermit<'static>> {
         let _guard = ctx.protect_zone();
-        Semaphore::acquire_owned(self.concurrent_upload_permits.clone())
+        Semaphore::acquire(&CONCURRENT_UPLOAD_PERMITS)
             .await
             .context("The uploader semaphore is closed. (This should never happen.)")
     }
@@ -94,6 +103,13 @@ impl Actor for Uploader {
     }
 
     fn queue_capacity(&self) -> QueueCapacity {
+        // We do not need a large capacity here...
+        // The uploader just spawns tasks that are uploading,
+        // so that in a sense, the CONCURRENT_UPLOAD_PERMITS semaphore also acts as
+        // a queue capacity.
+        //
+        // Having a large queue is costly too, because each message is a handle over
+        // a split directory. We DO need agressive backpressure here.
         QueueCapacity::Bounded(0)
     }
 
@@ -116,12 +132,13 @@ impl Handler<PackagedSplitBatch> for Uploader {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         fail_point!("uploader:before");
-        let (split_uploaded_tx, split_uploaded_rx) = tokio::sync::oneshot::channel();
+        let (split_uploaded_tx, split_uploaded_rx) = oneshot::channel::<PublisherMessage>();
 
-        // We send the future to the publisher right away.
-        // That way the publisher will process the uploaded split in order as opposed to
-        // publishing in the order splits finish their uploading.
-        ctx.send_message(&self.publisher_mailbox, split_uploaded_rx)
+        // We send the future to the sequencer right away.
+
+        // The sequencer will then resolve the future in their arrival order and ensure that the
+        // publisher publishes splits in order.
+        ctx.send_message(&self.sequencer_mailbox, split_uploaded_rx)
             .await?;
 
         // The permit will be added back manually to the semaphore the task after it is finished.
@@ -164,11 +181,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     }
                     packaged_splits_and_metadatas.push((split, upload_result.unwrap()));
                 }
-                let operation = make_publish_operation(packaged_splits_and_metadatas);
-                let publisher_message = PublisherMessage {
-                    index_id,
-                    operation,
-                };
+                let publisher_message = make_publish_operation(index_id, packaged_splits_and_metadatas);
                 if let Err(publisher_message) = split_uploaded_tx.send(publisher_message) {
                     bail!(
                         "Failed to send upload split `{:?}`. The publisher is probably dead.",
@@ -202,8 +215,9 @@ fn create_split_metadata(split: &PackagedSplit, footer_offsets: Range<u64>) -> S
 }
 
 fn make_publish_operation(
+    index_id: String,
     mut packaged_splits_and_metadatas: Vec<(PackagedSplit, SplitMetadata)>,
-) -> PublishOperation {
+) -> PublisherMessage {
     assert!(!packaged_splits_and_metadatas.is_empty());
     let replaced_split_ids = packaged_splits_and_metadatas
         .iter()
@@ -213,19 +227,21 @@ fn make_publish_operation(
         let (mut packaged_split, split_metadata) = packaged_splits_and_metadatas.pop().unwrap();
         assert_eq!(packaged_split.checkpoint_deltas.len(), 1);
         let checkpoint_delta = packaged_split.checkpoint_deltas.pop().unwrap();
-        PublishOperation::PublishNewSplit {
+        PublisherMessage::NewSplit(PublishNewSplit {
+            index_id,
             new_split: split_metadata,
             checkpoint_delta,
             split_date_of_birth: packaged_split.split_date_of_birth,
-        }
+        })
     } else {
-        PublishOperation::ReplaceSplits {
+        PublisherMessage::ReplaceSplits(ReplaceSplits {
+            index_id,
             new_splits: packaged_splits_and_metadatas
                 .into_iter()
                 .map(|split_and_meta| split_and_meta.1)
                 .collect_vec(),
             replaced_split_ids: Vec::from_iter(replaced_split_ids),
-        }
+        })
     }
 }
 
@@ -239,13 +255,11 @@ async fn stage_and_upload_split(
         &packaged_split.split_files,
         &packaged_split.hotcache_bytes,
     )?;
-
     let split_metadata = create_split_metadata(
         packaged_split,
         split_streamer.footer_range.start as u64..split_streamer.footer_range.end as u64,
     );
     let index_id = packaged_split.index_id.clone();
-    let split_metadata = split_metadata.clone();
     info!(split_id = packaged_split.split_id.as_str(), "staging-split");
     metastore
         .stage_split(&index_id, split_metadata.clone())
@@ -282,7 +296,7 @@ mod tests {
     async fn test_uploader_1() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
-        let (mailbox, inbox) = create_test_mailbox();
+        let (mailbox, inbox) = create_test_mailbox::<Sequencer<Publisher>>();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_stage_split()
@@ -333,13 +347,14 @@ mod tests {
             .downcast::<oneshot::Receiver<PublisherMessage>>()
             .unwrap();
         let publisher_message = publish_future.await?;
-        assert_eq!(&publisher_message.index_id, "test-index");
-        if let PublishOperation::PublishNewSplit {
+        if let PublisherMessage::NewSplit(PublishNewSplit {
+            index_id,
             new_split,
             checkpoint_delta,
             ..
-        } = publisher_message.operation
+        }) = publisher_message
         {
+            assert_eq!(index_id, "test-index");
             assert_eq!(new_split.split_id(), "test-split");
             assert_eq!(checkpoint_delta, CheckpointDelta::from(3..15));
         } else {
@@ -355,7 +370,7 @@ mod tests {
     async fn test_uploader_emits_replace() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
-        let (mailbox, inbox) = create_test_mailbox();
+        let (mailbox, inbox) = create_test_mailbox::<Sequencer<Publisher>>();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_stage_split()
@@ -434,12 +449,13 @@ mod tests {
             .downcast::<oneshot::Receiver<PublisherMessage>>()
             .unwrap();
         let publisher_message = publish_future.await?;
-        assert_eq!(&publisher_message.index_id, "test-index");
-        if let PublishOperation::ReplaceSplits {
+        if let PublisherMessage::ReplaceSplits(ReplaceSplits {
+            index_id,
             new_splits,
             mut replaced_split_ids,
-        } = publisher_message.operation
+        }) = publisher_message
         {
+            assert_eq!(&index_id, "test-index");
             // Sort first to avoid test failing.
             replaced_split_ids.sort();
             assert_eq!(new_splits.len(), 2);

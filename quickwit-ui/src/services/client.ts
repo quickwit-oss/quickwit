@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import { Index, IndexMetadata, MemberList, SearchRequest, SearchResponse, SplitMetadata } from "../utils/models";
+import { serializeSortByField } from "../utils/urls";
 
 export class Client {
   private readonly _host: string
@@ -96,7 +97,7 @@ export class Client {
     }
   }
 
-  private buildSearchUrl(request: SearchRequest): URL {
+  buildSearchUrl(request: SearchRequest): URL {
     const url: URL = new URL(`${request.indexId}/search`, this.apiRoot());
     // TODO: the trim should be done in the backend.
     url.searchParams.append("query", request.query.trim() || "*");
@@ -111,6 +112,12 @@ export class Client {
       url.searchParams.append(
         "end_timestamp",
         request.endTimestamp.toString()
+      );
+    }
+    if (request.sortByField) {
+      url.searchParams.append(
+        "sort_by_field",
+        serializeSortByField(request.sortByField)
       );
     }
     return url;
