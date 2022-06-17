@@ -84,7 +84,7 @@ use quickwit_config::{SourceConfig, SourceParams};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 use tokio::runtime::Handle;
-use tracing::{error, info};
+use tracing::error;
 pub use vec_source::{VecSource, VecSourceFactory};
 pub use void_source::{VoidSource, VoidSourceFactory};
 

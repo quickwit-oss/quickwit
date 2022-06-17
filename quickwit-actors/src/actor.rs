@@ -169,6 +169,10 @@ pub trait Actor: Send + Sync + Sized + 'static {
         Ok(())
     }
 
+    async fn on_empty(&mut self) -> Result<(), ActorExitStatus> {
+        Ok(())
+    }
+
     /// Hook  that can be set up to define what should happen upon actor exit.
     /// This hook is called only once.
     ///

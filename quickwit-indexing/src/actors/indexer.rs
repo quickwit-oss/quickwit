@@ -31,10 +31,13 @@ use quickwit_metastore::Metastore;
 use tantivy::schema::{Field, Value};
 use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
 use tokio::runtime::Handle;
+use tokio::sync::Semaphore;
 use tracing::{info, warn};
 
 use crate::actors::Packager;
 use crate::models::{IndexedSplit, IndexedSplitBatch, IndexingDirectory, RawDocBatch};
+
+static INDEXER_PERMITS: Semaphore = Semaphore::const_new(5);
 
 #[derive(Debug)]
 struct CommitTimeout {
@@ -100,12 +103,16 @@ enum PrepareDocumentOutcome {
 }
 
 impl IndexerState {
-    fn create_indexed_split(&self, ctx: &ActorContext<Indexer>) -> anyhow::Result<IndexedSplit> {
+    async fn create_indexed_split(
+        &self,
+        ctx: &ActorContext<Indexer>,
+    ) -> anyhow::Result<IndexedSplit> {
         let schema = self.doc_mapper.schema();
         let index_settings = IndexSettings {
             sort_by_field: self.sort_by_field_opt.clone(),
             ..Default::default()
         };
+        let permit = INDEXER_PERMITS.acquire().await?;
         let index_builder = IndexBuilder::new()
             .settings(index_settings)
             .schema(schema)
@@ -117,6 +124,7 @@ impl IndexerState {
             index_builder,
             ctx.progress().clone(),
             ctx.kill_switch().clone(),
+            permit,
         )?;
         info!(split_id = %indexed_split.split_id, "new-split");
         Ok(indexed_split)
@@ -132,7 +140,7 @@ impl IndexerState {
         ctx: &ActorContext<Indexer>,
     ) -> anyhow::Result<&'a mut IndexedSplit> {
         if current_split_opt.is_none() {
-            let new_indexed_split = self.create_indexed_split(ctx)?;
+            let new_indexed_split = self.create_indexed_split(ctx).await?;
             let commit_timeout_message = CommitTimeout {
                 split_id: new_indexed_split.split_id.clone(),
             };
@@ -262,6 +270,11 @@ impl Actor for Indexer {
 
     fn runtime_handle(&self) -> Handle {
         RuntimeType::Blocking.get_runtime_handle()
+    }
+
+    async fn on_empty(&mut self) -> Result<(), ActorExitStatus> {
+        warn!("on empty indexer");
+        Ok(())
     }
 
     async fn finalize(
