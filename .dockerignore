@@ -1,7 +1,10 @@
 **/*.md
 **/*.txt
 **/.*
+**/build
 **/Dockerfile
+**/node_modules
+**/qwdata
 **/target
 docs
 examples

@@ -27,7 +27,7 @@ version: 0
 # listen_address: 127.0.0.1
 # rest_listen_port: 7280
 #
-# In order to connect to a cluster, one needs to specify a list of
+# In order to join a cluster, one needs to specify a list of
 # seeds to connect to. If no port is specified, Quickwit will assume
 # the seeds are using the same port as the current node gossip port.
 # By default, the peer seed list is empty.

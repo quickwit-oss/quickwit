@@ -19,6 +19,7 @@
 
 use std::sync::Arc;
 
+use itertools::Itertools;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_config::QuickwitConfig;
 use quickwit_ingest_api::IngestApiService;
@@ -64,8 +65,7 @@ pub async fn start_indexer_service(
     storage_uri_resolver: StorageUriResolver,
     ingest_api_service: Option<Mailbox<IngestApiService>>,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
-    info!("start-indexer-service");
-    let index_metadatas = metastore.list_indexes_metadatas().await?;
+    info!("Starting indexer service.");
     let indexing_server = IndexingService::new(
         config.data_dir_path.to_path_buf(),
         config.indexer_config.clone(),
@@ -74,8 +74,11 @@ pub async fn start_indexer_service(
         ingest_api_service.clone(),
     );
     let (indexer_service_mailbox, _) = universe.spawn_actor(indexing_server).spawn();
+
+    let index_metadatas = metastore.list_indexes_metadatas().await?;
+    info!(index_ids = %index_metadatas.iter().map(|im| &im.index_id).join(", "), "Spawning indexing pipeline(s).");
+
     for index_metadata in index_metadatas {
-        info!(index_id=%index_metadata.index_id, "spawn-indexing-pipeline");
         indexer_service_mailbox
             .ask_for_res(SpawnPipelinesForIndex {
                 index_id: index_metadata.index_id,

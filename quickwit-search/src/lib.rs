@@ -190,7 +190,7 @@ pub async fn single_node_search(
 ) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
-    let index_storage = storage_resolver.resolve(&index_metadata.index_uri)?;
+    let index_storage = storage_resolver.resolve(index_metadata.index_uri.as_ref())?;
     let metas = list_relevant_splits(search_request, metastore).await?;
     let split_metadata: Vec<SplitIdAndFooterOffsets> =
         metas.iter().map(extract_split_and_footer_offsets).collect();
