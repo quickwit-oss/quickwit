@@ -169,7 +169,7 @@ pub trait Actor: Send + Sync + Sized + 'static {
         Ok(())
     }
 
-    async fn on_empty(&mut self) -> Result<(), ActorExitStatus> {
+    async fn on_empty(&mut self, _ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         Ok(())
     }
 
@@ -312,11 +312,15 @@ impl<A: Actor> ActorContext<A> {
         self.actor_state.idle();
     }
 
-    pub(crate) fn pause(&self) {
+    pub fn pause(&self) {
         self.actor_state.pause();
     }
 
-    pub(crate) fn resume(&self) {
+    pub fn is_paused(&self) -> bool {
+        self.actor_state.get_state() == ActorState::Paused
+    }
+
+    pub fn resume(&self) {
         self.actor_state.resume();
     }
 

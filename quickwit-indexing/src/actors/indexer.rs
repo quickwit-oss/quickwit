@@ -23,7 +23,9 @@ use std::sync::Arc;
 use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_actors::{
+    Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity,
+};
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::{DocMapper, DocParsingError, SortBy, QUICKWIT_TOKENIZER_MANAGER};
@@ -272,8 +274,8 @@ impl Actor for Indexer {
         RuntimeType::Blocking.get_runtime_handle()
     }
 
-    async fn on_empty(&mut self) -> Result<(), ActorExitStatus> {
-        warn!("on empty indexer");
+    async fn on_empty(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+        ctx.pause();
         Ok(())
     }
 
@@ -315,8 +317,11 @@ impl Handler<CommitTimeout> for Indexer {
         commit_timeout: CommitTimeout,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        self.process_commit_timeout(&commit_timeout.split_id, ctx)
-            .await?;
+        if ctx.is_paused() {
+            ctx.resume();
+        } else {
+            self.process_commit(&commit_timeout.split_id, ctx).await?;
+        }
         Ok(())
     }
 }
@@ -396,7 +401,7 @@ impl Indexer {
         Ok(())
     }
 
-    async fn process_commit_timeout(
+    async fn process_commit(
         &mut self,
         split_id: &str,
         ctx: &ActorContext<Self>,
