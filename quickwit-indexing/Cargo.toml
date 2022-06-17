@@ -37,7 +37,7 @@ rusoto_kinesis = { version = "0.48", default-features = false, features = ["rust
 serde = "1"
 serde_json = "1"
 serde_yaml = "0.8"
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "328bd96", default-features=false, features = ["mmap", "lz4-compression", "zstd-compression", "quickwit"] }
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "88054aa", default-features=false, features = ["mmap", "lz4-compression", "zstd-compression", "quickwit"] }
 tempfile = "3.3"
 thiserror = "1"
 tokio = { version = "1", features = ["sync"] }
