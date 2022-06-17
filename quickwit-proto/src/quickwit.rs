@@ -434,11 +434,9 @@ pub mod search_service_client {
             &mut self,
             request: impl tonic::IntoRequest<super::LeafSearchStreamRequest>,
         ) -> Result<
-                tonic::Response<
-                    tonic::codec::Streaming<super::LeafSearchStreamResponse>,
-                >,
-                tonic::Status,
-            > {
+            tonic::Response<tonic::codec::Streaming<super::LeafSearchStreamResponse>>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
