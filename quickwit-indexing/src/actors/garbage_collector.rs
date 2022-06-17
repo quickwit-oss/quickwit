@@ -24,7 +24,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_metastore::Metastore;
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::garbage_collection::run_garbage_collect;
 use crate::split_store::IndexingSplitStore;
@@ -107,7 +107,7 @@ impl Handler<Loop> for GarbageCollector {
         _: Loop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
-        info!("garbage-collect-operation");
+        debug!("garbage-collect-operation");
         self.counters.num_passes += 1;
 
         let deleted_file_entries = run_garbage_collect(
