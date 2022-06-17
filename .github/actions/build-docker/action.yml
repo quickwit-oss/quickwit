@@ -2,10 +2,10 @@ name: 'Build Quickwit docker image'
 description: 'Build & push docker image'
 inputs:
   username:
-    description: 'Dockerhub username'
+    description: 'Docker Hub username'
     required: true
   token:
-    description: 'Dockerhub access token'
+    description: 'Docker Hub access token'
     required: true
   version:
     description: 'Image version suffix'

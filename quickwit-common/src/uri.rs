@@ -203,6 +203,7 @@ impl PartialEq<&str> for Uri {
         &self.uri == other
     }
 }
+
 impl PartialEq<String> for Uri {
     fn eq(&self, other: &String) -> bool {
         &self.uri == other

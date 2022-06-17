@@ -9,7 +9,7 @@ LABEL maintainer="Quickwit, Inc. <hello@quickwit.io>"
 LABEL org.opencontainers.image.vendor="Quickwit, Inc."
 LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
-RUN echo "Add nodejs ppa" \
+RUN echo "Adding Node.js PPA" \
     && curl -s https://deb.nodesource.com/setup_16.x | bash
 
 RUN apt-get -y update \
@@ -26,13 +26,20 @@ RUN apt-get -y update \
 # Required by tonic
 RUN rustup component add rustfmt
 
+# Build UI
+COPY quickwit-ui /quickwit/quickwit-ui
+
+WORKDIR /quickwit/quickwit-ui
+
+RUN echo "Building Quickwit UI" \
+    && npm install --location=global yarn \
+    && yarn install \
+    && yarn build
+
+# Build workspace
 COPY . /quickwit
 
 WORKDIR /quickwit
-
-RUN echo "Building quickwit ui" \
-    && npm install --global yarn \
-    && make build-ui
 
 RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CARGO_PROFILE'" \
     && cargo build \
@@ -42,8 +49,8 @@ RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CAR
     && mkdir -p /quickwit/bin \
     && find target/$CARGO_PROFILE -maxdepth 1 -perm /a+x -type f -exec mv {} /quickwit/bin \;
 
-# Change the default configuration file in order to make the rest,
-# grpc servers and gossip accessible from outside of docker.
+# Change the default configuration file in order to make the REST,
+# gRPC, and gossip services accessible outside of Docker container.
 COPY ./config/quickwit.yaml ./config/quickwit.yaml
 RUN sed -i 's/#[ ]*listen_address: 127.0.0.1/listen_address: 0.0.0.0/g' ./config/quickwit.yaml
 

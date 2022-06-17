@@ -1,15 +1,17 @@
-FROM alpine:3.15 AS builder
+FROM alpine:3 AS builder
 
 COPY quickwit-*-unknown-linux-musl.tar.gz ./
 RUN tar -xzf quickwit-*-$(cat /etc/apk/arch)-unknown-linux-musl.tar.gz
 RUN mv ./quickwit-*/* ./
 RUN chmod 744 ./quickwit
 
-# Change the default configuration file in order to make the rest,
-# grpc servers and gossip accessible from outside of docker.
+# Change the default configuration file in order to make the REST,
+# gRPC and gossip services accessible outside of Docker.
 RUN sed -i 's/#listen_address: 127.0.0.1/listen_address: 0.0.0.0/g' ./config/quickwit.yaml
 
-FROM alpine:3.15
+
+FROM alpine:3
+
 LABEL org.opencontainers.image.title="Quickwit"
 LABEL maintainer="Quickwit, Inc. <hello@quickwit.io>"
 LABEL org.opencontainers.image.vendor="Quickwit, Inc."

@@ -113,7 +113,7 @@ impl StorageUriResolver {
                 kind: storage_error.kind(),
                 message: storage_error
                     .source()
-                    .map(|err| format!("{}", err))
+                    .map(|err| format!("{:?}", err))
                     .unwrap_or_else(String::new),
             }
         })?;
