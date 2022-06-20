@@ -407,13 +407,11 @@ version = "0.4.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "670ad68c9088c2a963aaa298cb369688cf3f9465ce5e2d4ca10e6e0098a1ce73"
 dependencies = [
- "js-sys",
  "libc",
  "num-integer",
  "num-traits",
  "serde",
  "time 0.1.44",
- "wasm-bindgen",
  "winapi 0.3.9",
 ]
 
@@ -4585,12 +4583,12 @@ dependencies = [
 
 [[package]]
 name = "ulid"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "220b18413e1fe5e85a5580b22f44241f82404a66c792c9f3c9eda74c52d9a22e"
+checksum = "3be932d774bfad49722da2c4915ac7cc77b77dd223890739a0240de2b2a15957"
 dependencies = [
- "chrono",
  "rand",
+ "time 0.3.9",
 ]
 
 [[package]]
