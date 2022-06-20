@@ -9,6 +9,7 @@ description = "Quickwit is a cost-efficient search engine."
 tokio = {version = "1", features = ["full"] }
 async-trait = "0.1"
 quickwit-actors = {path="../quickwit-actors", version ="0.3.0"}
+quickwit-common = {path="../quickwit-common", version = "0.3.0"}
 quickwit-metastore = {path="../quickwit-metastore", version = "0.3.0"}
 quickwit-proto = {path="../quickwit-proto", version ="0.3.0"}
 rocksdb = {version = "0.18", features = [], default-features= false}

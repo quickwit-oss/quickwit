@@ -38,11 +38,9 @@ mod kill_switch;
 mod mailbox;
 mod observation;
 mod progress;
-mod runner;
 mod scheduler;
 mod spawn_builder;
 
-mod join_handle;
 #[cfg(test)]
 mod tests;
 mod universe;
@@ -60,7 +58,6 @@ pub use self::actor::ActorContext;
 pub use self::actor_state::ActorState;
 pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError};
 pub use self::mailbox::{create_mailbox, create_test_mailbox, Command, Mailbox};
-pub use crate::runner::ActorRunner;
 
 /// Heartbeat used to verify that actors are progressing.
 ///

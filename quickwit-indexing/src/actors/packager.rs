@@ -26,13 +26,13 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
-use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, Mailbox, QueueCapacity,
-};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::runtimes::RuntimeType;
 use quickwit_directories::write_hotcache;
 use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
 use tantivy::schema::FieldType;
 use tantivy::{InvertedIndexReader, ReloadPolicy, SegmentId, SegmentMeta};
+use tokio::runtime::Handle;
 use tracing::{debug, info, info_span, warn, Span};
 
 /// Maximum distinct values allowed for a tag field within a split.
@@ -102,15 +102,15 @@ impl Actor for Packager {
     }
 
     fn queue_capacity(&self) -> QueueCapacity {
-        QueueCapacity::Bounded(0)
+        QueueCapacity::Bounded(1)
     }
 
     fn name(&self) -> String {
         self.actor_name.to_string()
     }
 
-    fn runner(&self) -> ActorRunner {
-        ActorRunner::DedicatedThread
+    fn runtime_handle(&self) -> Handle {
+        RuntimeType::Blocking.get_runtime_handle()
     }
 }
 

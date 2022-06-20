@@ -26,9 +26,8 @@ use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
 use itertools::{izip, Itertools};
-use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, Mailbox, QueueCapacity,
-};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::split_file;
 use quickwit_directories::{BundleDirectory, UnionDirectory};
 use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
@@ -40,12 +39,16 @@ use tantivy::{
     demux, DemuxMapping, Directory, DocIdToSegmentOrdinal, Index, IndexMeta, Segment, SegmentId,
     SegmentReader, TantivyError,
 };
+use tokio::runtime::Handle;
+use tokio::sync::Semaphore;
 use tracing::{debug, info, info_span, Span};
 
 use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeOperation;
 use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, ScratchDirectory};
+
+static MERGER_PERMITS: Semaphore = Semaphore::const_new(5);
 
 pub struct MergeExecutor {
     index_id: String,
@@ -60,8 +63,8 @@ pub struct MergeExecutor {
 impl Actor for MergeExecutor {
     type ObservableState = ();
 
-    fn runner(&self) -> ActorRunner {
-        ActorRunner::DedicatedThread
+    fn runtime_handle(&self) -> Handle {
+        RuntimeType::Blocking.get_runtime_handle()
     }
 
     fn observable_state(&self) -> Self::ObservableState {}
@@ -321,6 +324,7 @@ impl MergeExecutor {
         let index_writer = merged_index.writer_with_num_threads(1, 3_000_000)?;
         ctx.record_progress();
 
+        let permit = MERGER_PERMITS.acquire().await?;
         let indexed_split = IndexedSplit {
             split_id: split_merge_id,
             index_id: self.index_id.clone(),
@@ -336,6 +340,7 @@ impl MergeExecutor {
             index_writer,
             split_scratch_directory: merge_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),
+            permit,
         };
 
         ctx.send_message(
@@ -466,6 +471,7 @@ impl MergeExecutor {
                 None
             };
             let index_writer = index.writer_with_num_threads(1, 3_000_000)?;
+            let permit = MERGER_PERMITS.acquire().await?;
             let indexed_split = IndexedSplit {
                 split_id,
                 index_id: self.index_id.clone(),
@@ -480,6 +486,7 @@ impl MergeExecutor {
                 index_writer,
                 split_scratch_directory: scratched_directory,
                 controlled_directory_opt: Some(controlled_directory),
+                permit,
             };
             indexed_splits.push(indexed_split);
             ctx.record_progress();

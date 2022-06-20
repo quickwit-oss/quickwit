@@ -24,18 +24,23 @@ use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, Mailbox, QueueCapacity,
+    Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity,
 };
+use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::{DocMapper, DocParsingError, SortBy, QUICKWIT_TOKENIZER_MANAGER};
 use quickwit_metastore::Metastore;
 use tantivy::schema::{Field, Value};
 use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
+use tokio::runtime::Handle;
+use tokio::sync::Semaphore;
 use tracing::{info, warn};
 
 use crate::actors::Packager;
 use crate::models::{IndexedSplit, IndexedSplitBatch, IndexingDirectory, RawDocBatch};
+
+static INDEXER_PERMITS: Semaphore = Semaphore::const_new(5);
 
 #[derive(Debug)]
 struct CommitTimeout {
@@ -101,7 +106,10 @@ enum PrepareDocumentOutcome {
 }
 
 impl IndexerState {
-    fn create_indexed_split(&self, ctx: &ActorContext<Indexer>) -> anyhow::Result<IndexedSplit> {
+    async fn create_indexed_split(
+        &self,
+        ctx: &ActorContext<Indexer>,
+    ) -> anyhow::Result<IndexedSplit> {
         let schema = self.doc_mapper.schema();
         let index_settings = IndexSettings {
             sort_by_field: self.sort_by_field_opt.clone(),
@@ -110,6 +118,7 @@ impl IndexerState {
                 compression_level: Some(self.indexing_settings.docstore_compression_level),
             }),
         };
+        let permit = ctx.protect_future(INDEXER_PERMITS.acquire()).await?;
         let index_builder = IndexBuilder::new()
             .settings(index_settings)
             .schema(schema)
@@ -121,8 +130,9 @@ impl IndexerState {
             index_builder,
             ctx.progress().clone(),
             ctx.kill_switch().clone(),
+            permit,
         )?;
-        info!(split_id = %indexed_split.split_id, "new-split");
+        info!(split_id = %indexed_split.split_id, index=%self.index_id, "new-split");
         Ok(indexed_split)
     }
 
@@ -136,7 +146,7 @@ impl IndexerState {
         ctx: &ActorContext<Indexer>,
     ) -> anyhow::Result<&'a mut IndexedSplit> {
         if current_split_opt.is_none() {
-            let new_indexed_split = self.create_indexed_split(ctx)?;
+            let new_indexed_split = self.create_indexed_split(ctx).await?;
             let commit_timeout_message = CommitTimeout {
                 split_id: new_indexed_split.split_id.clone(),
             };
@@ -264,8 +274,14 @@ impl Actor for Indexer {
         "Indexer".to_string()
     }
 
-    fn runner(&self) -> ActorRunner {
-        ActorRunner::DedicatedThread
+    fn runtime_handle(&self) -> Handle {
+        RuntimeType::Blocking.get_runtime_handle()
+    }
+
+    async fn on_empty(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+        info!("on_empty");
+        ctx.pause();
+        Ok(())
     }
 
     async fn finalize(
@@ -306,8 +322,12 @@ impl Handler<CommitTimeout> for Indexer {
         commit_timeout: CommitTimeout,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        self.process_commit_timeout(&commit_timeout.split_id, ctx)
-            .await?;
+        info!("timeout");
+        if ctx.is_paused() {
+            ctx.resume();
+        } else {
+            self.process_commit(&commit_timeout.split_id, ctx).await?;
+        }
         Ok(())
     }
 }
@@ -387,7 +407,7 @@ impl Indexer {
         Ok(())
     }
 
-    async fn process_commit_timeout(
+    async fn process_commit(
         &mut self,
         split_id: &str,
         ctx: &ActorContext<Self>,

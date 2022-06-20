@@ -20,9 +20,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, Mailbox, QueueCapacity,
-};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::SplitMetadata;
 use tracing::info;
 
@@ -51,10 +49,6 @@ impl Actor for MergePlanner {
 
     fn queue_capacity(&self) -> QueueCapacity {
         QueueCapacity::Bounded(0)
-    }
-
-    fn runner(&self) -> ActorRunner {
-        ActorRunner::DedicatedThread
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {

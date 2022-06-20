@@ -22,12 +22,12 @@ use std::borrow::Borrow;
 use std::fmt;
 
 use tokio::sync::{oneshot, watch};
+use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tracing::error;
 
 use crate::actor_state::ActorState;
 use crate::channel_with_priority::Priority;
-use crate::join_handle::JoinHandle;
 use crate::mailbox::Command;
 use crate::observation::ObservationType;
 use crate::{Actor, ActorContext, ActorExitStatus, Mailbox, Observation};
@@ -36,7 +36,7 @@ use crate::{Actor, ActorContext, ActorExitStatus, Mailbox, Observation};
 pub struct ActorHandle<A: Actor> {
     actor_context: ActorContext<A>,
     last_state: watch::Receiver<A::ObservableState>,
-    join_handle: JoinHandle,
+    join_handle: JoinHandle<ActorExitStatus>,
 }
 
 /// Describes the health of a given actor.
@@ -92,7 +92,7 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
 impl<A: Actor> ActorHandle<A> {
     pub(crate) fn new(
         last_state: watch::Receiver<A::ObservableState>,
-        join_handle: JoinHandle,
+        join_handle: JoinHandle<ActorExitStatus>,
         actor_context: ActorContext<A>,
     ) -> Self {
         ActorHandle {
@@ -188,7 +188,13 @@ impl<A: Actor> ActorHandle<A> {
 
     /// Waits until the actor exits by itself. This is the equivalent of `Thread::join`.
     pub async fn join(self) -> (ActorExitStatus, A::ObservableState) {
-        let exit_status = self.join_handle.join().await;
+        let exit_status = self.join_handle.await.unwrap_or_else(|join_err| {
+            if join_err.is_panic() {
+                ActorExitStatus::Panicked
+            } else {
+                ActorExitStatus::Killed
+            }
+        });
         let observation = self.last_state.borrow().clone();
         (exit_status, observation)
     }
@@ -265,7 +271,7 @@ mod tests {
     use async_trait::async_trait;
 
     use super::*;
-    use crate::{ActorRunner, Handler, Universe};
+    use crate::{Handler, Universe};
 
     #[derive(Default)]
     struct PanickingActor {
@@ -324,12 +330,10 @@ mod tests {
         }
     }
 
-    #[track_caller]
-    async fn test_panic_in_actor_aux(runner: ActorRunner) -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn test_panic_in_actor() -> anyhow::Result<()> {
         let universe = Universe::new();
-        let (mailbox, handle) = universe
-            .spawn_actor(PanickingActor::default())
-            .spawn_with_forced_runner(runner);
+        let (mailbox, handle) = universe.spawn_actor(PanickingActor::default()).spawn();
         mailbox.send_message(Panic).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Panicked));
@@ -338,37 +342,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_panic_in_actor_dedicated_thread() -> anyhow::Result<()> {
-        test_panic_in_actor_aux(ActorRunner::DedicatedThread).await?;
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_panic_in_actor_tokio_task() -> anyhow::Result<()> {
-        test_panic_in_actor_aux(ActorRunner::GlobalRuntime).await?;
-        Ok(())
-    }
-
-    #[track_caller]
-    async fn test_exit_aux(runner: ActorRunner) -> anyhow::Result<()> {
+    async fn test_exit() -> anyhow::Result<()> {
         let universe = Universe::new();
-        let (mailbox, handle) = universe
-            .spawn_actor(ExitActor::default())
-            .spawn_with_forced_runner(runner);
+        let (mailbox, handle) = universe.spawn_actor(ExitActor::default()).spawn();
         mailbox.send_message(Exit).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::DownstreamClosed));
         assert!(matches!(count, 1)); //< Upon panick we cannot get a post mortem state.
         Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_exit_dedicated_thread() -> anyhow::Result<()> {
-        test_exit_aux(ActorRunner::DedicatedThread).await
-    }
-
-    #[tokio::test]
-    async fn test_exit_tokio_task() -> anyhow::Result<()> {
-        test_exit_aux(ActorRunner::GlobalRuntime).await
     }
 }
