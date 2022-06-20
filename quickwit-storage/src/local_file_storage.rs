@@ -21,6 +21,7 @@ use std::io::{ErrorKind, SeekFrom};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 use std::{fmt, io};
 
 use async_trait::async_trait;
@@ -185,12 +186,20 @@ impl Storage for LocalFileStorage {
         let mut f = tokio::fs::File::create(full_path).await?;
         tokio::io::copy(&mut reader, &mut f).await?;
 
+        if cfg!(feature = "simulates3") {
+            simulate_s3(payload.len() as u64).await;
+        }
+
         Ok(())
     }
 
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
         let full_path = self.root.join(path);
         fs::copy(full_path, output_path).await?;
+        if cfg!(feature = "simulates3") {
+            simulate_s3(0).await;
+        }
+
         Ok(())
     }
 
@@ -200,6 +209,11 @@ impl Storage for LocalFileStorage {
         file.seek(SeekFrom::Start(range.start as u64)).await?;
         let mut content_bytes: Vec<u8> = vec![0u8; range.len()];
         file.read_exact(&mut content_bytes).await?;
+
+        if cfg!(feature = "simulates3") {
+            simulate_s3(range.len() as u64).await;
+        }
+
         Ok(OwnedBytes::new(content_bytes))
     }
 
@@ -213,6 +227,10 @@ impl Storage for LocalFileStorage {
         if let Err(error) = delete_all_dirs(self.root.to_path_buf(), parent.unwrap()).await {
             warn!(error = ?error, path = %path.display(), "Failed to clean up parent directories.");
         }
+        if cfg!(feature = "simulates3") {
+            simulate_s3(0).await;
+        }
+
         Ok(())
     }
 
@@ -225,6 +243,11 @@ impl Storage for LocalFileStorage {
                 path.to_string_lossy()
             ))
         })?;
+
+        if cfg!(feature = "simulates3") {
+            simulate_s3(content_bytes.len() as u64).await;
+        }
+
         Ok(OwnedBytes::new(content_bytes))
     }
 
@@ -234,6 +257,10 @@ impl Storage for LocalFileStorage {
 
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
         let full_path = self.root.join(path);
+        if cfg!(feature = "simulates3") {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
         match fs::metadata(full_path).await {
             Ok(metadata) => {
                 if metadata.is_file() {
@@ -254,6 +281,12 @@ impl Storage for LocalFileStorage {
             }
         }
     }
+}
+
+async fn simulate_s3(num_bytes: u64) {
+    // 70ms delay + max throughput 100MBs
+    let sleep_duration_ms = 70 + (num_bytes / 100000);
+    tokio::time::sleep(Duration::from_millis(sleep_duration_ms)).await;
 }
 
 /// A File storage resolver
