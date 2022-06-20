@@ -42,7 +42,7 @@ tempfile = "3.3"
 thiserror = "1"
 tokio = { version = "1", features = ["sync"] }
 tracing = "0.1.29"
-ulid = "0.5"
+ulid = "0.6"
 tokio-stream = "0.1"
 arc-swap = "1.4"
 time = { version = "0.3.9", features = ["std"] }
