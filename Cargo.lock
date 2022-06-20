@@ -2693,7 +2693,7 @@ dependencies = [
  "tabled",
  "tempfile",
  "thousands",
- "time 0.3.9",
+ "time 0.3.10",
  "tokio",
  "tokio-util 0.7.1",
  "toml",
@@ -2812,7 +2812,7 @@ dependencies = [
  "tantivy",
  "tempfile",
  "thiserror",
- "time 0.3.9",
+ "time 0.3.10",
  "tokio",
  "tracing",
  "uuid 1.1.0",
@@ -2841,7 +2841,7 @@ dependencies = [
  "tantivy",
  "tantivy-query-grammar",
  "thiserror",
- "time 0.3.9",
+ "time 0.3.10",
  "tracing",
  "typetag",
 ]
@@ -2885,7 +2885,7 @@ dependencies = [
  "tantivy",
  "tempfile",
  "thiserror",
- "time 0.3.9",
+ "time 0.3.10",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -2942,7 +2942,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
- "time 0.3.9",
+ "time 0.3.10",
  "tokio",
  "tracing",
 ]
@@ -4083,7 +4083,7 @@ dependencies = [
  "tantivy-query-grammar",
  "tempfile",
  "thiserror",
- "time 0.3.9",
+ "time 0.3.10",
  "uuid 1.1.0",
  "winapi 0.3.9",
  "zstd",
@@ -4252,9 +4252,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.9"
+version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2702e08a7a860f005826c6815dcac101b19b5eb330c27fe4a5928fec1d20ddd"
+checksum = "82501a4c1c0330d640a6e176a3d6a204f5ec5237aca029029d21864a902e27b0"
 dependencies = [
  "itoa 1.0.1",
  "libc",
@@ -4612,7 +4612,7 @@ dependencies = [
  "sharded-slab",
  "smallvec",
  "thread_local",
- "time 0.3.9",
+ "time 0.3.10",
  "tracing",
  "tracing-core",
  "tracing-log",

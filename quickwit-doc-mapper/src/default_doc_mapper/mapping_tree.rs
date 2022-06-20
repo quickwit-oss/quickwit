@@ -29,7 +29,7 @@ use tantivy::schema::{
 };
 use tantivy::Document;
 
-use super::date_time_type::{QuickwitDateTimeOptions, TimePrecision};
+use super::date_time_type::{timestamp_to_datetime_str, QuickwitDateTimeOptions, TimePrecision};
 use crate::default_doc_mapper::field_mapping_entry::{
     QuickwitNumericOptions, QuickwitObjectOptions, QuickwitTextOptions,
 };
@@ -62,7 +62,7 @@ impl LeafType {
         match self {
             LeafType::Text(_) => JsonType::String,
             LeafType::I64(_) | LeafType::U64(_) | LeafType::F64(_) => JsonType::Number,
-            LeafType::DateTime(_) => JsonType::String,
+            LeafType::DateTime(_) => JsonType::Number,
             LeafType::Bytes(_) => JsonType::String,
             LeafType::Json(_) => JsonType::Object,
         }
@@ -194,6 +194,18 @@ impl MappingLeaf {
         let json_type = self.typ.json_type();
         if let Some(json_val) = extract_json_val(json_type, named_doc, field_path, self.cardinality)
         {
+            if let (LeafType::DateTime(options), Some(timestamp)) =
+                (self.get_type(), json_val.as_i64())
+            {
+                let date_time_str = timestamp_to_datetime_str(
+                    timestamp,
+                    &options.precision,
+                    &options.output_format,
+                )
+                .unwrap();
+                return insert_json_val(field_path, JsonValue::String(date_time_str), doc_json);
+            }
+
             insert_json_val(field_path, json_val, doc_json);
         }
     }

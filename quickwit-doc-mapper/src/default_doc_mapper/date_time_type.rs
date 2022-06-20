@@ -21,12 +21,12 @@ use std::collections::{HashSet, VecDeque};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
-use chrono::TimeZone;
+use chrono::{NaiveDate, TimeZone};
 use chrono_tz::Tz;
 use derivative::Derivative;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use time::format_description::well_known::{Rfc2822, Rfc3339};
+use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
 use time::OffsetDateTime;
 
 use super::default_as_true;
@@ -159,6 +159,9 @@ impl From<QuickwitDateTimeOptions> for DateTimeParsersHolder {
                 DateTimeFormat::RFC2822 => {
                     parser.string_parsers.push_back(Arc::new(rfc2822_parser))
                 }
+                DateTimeFormat::ISO8601 => {
+                    parser.string_parsers.push_back(Arc::new(iso8601_parser))
+                }
                 DateTimeFormat::Strftime(str_format) => parser
                     .string_parsers
                     .push_back(make_strftime_parser(str_format, opts.input_timezone)),
@@ -176,9 +179,15 @@ fn rfc3339_parser(value: &str) -> Result<OffsetDateTime, String> {
     OffsetDateTime::parse(value, &Rfc3339).map_err(|error| error.to_string())
 }
 
-/// Parses datetime strings using RFC2822 formatting.
+/// Parses DateTime strings using RFC2822 formatting.
 fn rfc2822_parser(value: &str) -> Result<OffsetDateTime, String> {
     OffsetDateTime::parse(value, &Rfc2822).map_err(|error| error.to_string())
+}
+
+/// Parses DateTime strings using default ISO8601 formatting.
+/// Examples: 2010-11-21T09:55:06.000000000+02:00, 2010-11-12 9:55:06 +2:00
+fn iso8601_parser(value: &str) -> Result<OffsetDateTime, String> {
+    OffsetDateTime::parse(value, &Iso8601::DEFAULT).map_err(|error| error.to_string())
 }
 
 /// Configures and returns a function for parsing datetime strings
@@ -267,6 +276,7 @@ impl Serialize for TimePrecision {
 pub enum DateTimeFormat {
     RCF3339,
     RFC2822,
+    ISO8601,
     Strftime(String),
     UnixTimestamp(
         #[derivative(PartialEq = "ignore")]
@@ -282,6 +292,7 @@ impl<'de> Deserialize<'de> for DateTimeFormat {
         match value.to_lowercase().as_str() {
             "rfc3339" => Ok(DateTimeFormat::RCF3339),
             "rfc2822" => Ok(DateTimeFormat::RFC2822),
+            "iso8601" => Ok(DateTimeFormat::ISO8601),
             "unix_ts_secs" => Ok(DateTimeFormat::UnixTimestamp(TimePrecision::Seconds)),
             "unix_ts_millis" => Ok(DateTimeFormat::UnixTimestamp(TimePrecision::Milliseconds)),
             "unix_ts_micros" => Ok(DateTimeFormat::UnixTimestamp(TimePrecision::Microseconds)),
@@ -296,7 +307,8 @@ impl Serialize for DateTimeFormat {
     where S: serde::Serializer {
         match self {
             DateTimeFormat::RCF3339 => serializer.serialize_str("rfc3339"),
-            DateTimeFormat::RFC2822 => serializer.serialize_str("rfc2828"),
+            DateTimeFormat::RFC2822 => serializer.serialize_str("rfc2822"),
+            DateTimeFormat::ISO8601 => serializer.serialize_str("iso8601"),
             DateTimeFormat::Strftime(format) => serializer.serialize_str(format),
             DateTimeFormat::UnixTimestamp(precision) => match precision {
                 TimePrecision::Seconds => serializer.serialize_str("unix_ts_secs"),
@@ -336,6 +348,46 @@ fn default_time_precision() -> TimePrecision {
 
 fn default_output_format() -> DateTimeFormat {
     DateTimeFormat::RCF3339
+}
+
+/// Converts a timestamp to displayable date_time in available formats.
+pub fn timestamp_to_datetime_str(
+    timestamp: i64,
+    precision: &TimePrecision,
+    format: &DateTimeFormat,
+) -> Result<String, String> {
+    let date_time = match precision {
+        TimePrecision::Seconds => OffsetDateTime::from_unix_timestamp(timestamp),
+        TimePrecision::Milliseconds => {
+            OffsetDateTime::from_unix_timestamp_nanos((timestamp as i128) * 1_000_000)
+        }
+        TimePrecision::Microseconds => {
+            OffsetDateTime::from_unix_timestamp_nanos((timestamp as i128) * 1000)
+        }
+        TimePrecision::Nanoseconds => OffsetDateTime::from_unix_timestamp_nanos(timestamp as i128),
+    }
+    .map_err(|error| error.to_string())?;
+
+    match format {
+        DateTimeFormat::RCF3339 => date_time
+            .format(&Rfc3339)
+            .map_err(|error| error.to_string()),
+        DateTimeFormat::RFC2822 => date_time
+            .format(&Rfc2822)
+            .map_err(|error| error.to_string()),
+        DateTimeFormat::ISO8601 => date_time
+            .format(&Iso8601::DEFAULT)
+            .map_err(|error| error.to_string()),
+        DateTimeFormat::Strftime(str_fmt) => {
+            let date = date_time.to_calendar_date();
+            let time = date_time.to_hms_nano();
+            NaiveDate::from_ymd(date.0, date.1 as u32, date.2 as u32)
+                .and_hms_nano_opt(time.0 as u32, time.1 as u32, time.2 as u32, time.3)
+                .ok_or_else(|| "Couldn't create NaiveDate from OffsetDateTime".to_string())
+                .map(|datetime| datetime.format(str_fmt).to_string())
+        }
+        DateTimeFormat::UnixTimestamp(_) => Ok(timestamp.to_string()),
+    }
 }
 
 #[cfg(test)]
@@ -470,7 +522,20 @@ mod tests {
         )
         .unwrap();
 
-        let entry_json = serde_json::to_value(&entry).unwrap();
+        // re-order the input-formats array
+        let mut entry_json = serde_json::to_value(&entry).unwrap();
+        let mut formats = entry_json
+            .get("input_formats")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|val| val.as_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+        formats.sort();
+        let input_formats = entry_json.get_mut("input_formats").unwrap();
+        *input_formats = serde_json::to_value(formats).unwrap();
+
         assert_eq!(
             entry_json,
             serde_json::json!({
