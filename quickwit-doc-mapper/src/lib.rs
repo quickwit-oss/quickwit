@@ -96,6 +96,10 @@ pub fn default_doc_mapper_for_tests() -> DefaultDocMapper {
                     "tokenizer": "raw"
                 },
                 {
+                    "name": "isImportant",
+                    "type": "bool"
+                },
+                {
                     "name": "properties",
                     "type": "json"
                 },

@@ -195,9 +195,10 @@ async fn warm_up_term_dict_fields(
 // E.g. a single valued bytes field has a multivalued fast field cardinality.
 fn get_fastfield_cardinality(field_type: &FieldType) -> Option<Cardinality> {
     match field_type {
-        FieldType::U64(options) | FieldType::I64(options) | FieldType::F64(options) => {
-            options.get_fastfield_cardinality()
-        }
+        FieldType::U64(options)
+        | FieldType::I64(options)
+        | FieldType::F64(options)
+        | FieldType::Bool(options) => options.get_fastfield_cardinality(),
         FieldType::Date(options) => options.get_fastfield_cardinality(),
         FieldType::Facet(_) => Some(Cardinality::MultiValues),
         FieldType::Bytes(options) if options.is_fast() => Some(Cardinality::MultiValues),

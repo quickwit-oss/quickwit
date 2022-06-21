@@ -25,7 +25,7 @@ quickwit-config = { version = "0.3.0", path = "../quickwit-config" }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["full"] }
 rand = "0.8"
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "328bd96", default-features=false, features = ["mmap", "lz4-compression", "zstd-compression", "quickwit"] }
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "88054aa", default-features=false, features = ["mmap", "lz4-compression", "zstd-compression", "quickwit"] }
 futures = "0.3"
 futures-util = { version = "0.3.1", default-features = false }
 uuid = { version = "1.1", features = ["v4", "serde"] }

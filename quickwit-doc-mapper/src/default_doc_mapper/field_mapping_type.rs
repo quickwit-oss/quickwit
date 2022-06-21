@@ -35,6 +35,8 @@ pub enum FieldMappingType {
     U64(QuickwitNumericOptions, Cardinality),
     /// 64-bit float mapping type configuration.
     F64(QuickwitNumericOptions, Cardinality),
+    /// Bool mapping type configuration.
+    Bool(QuickwitNumericOptions, Cardinality),
     /// Bytes mapping type configuration.
     Bytes(QuickwitNumericOptions, Cardinality),
     Json(QuickwitJsonOptions, Cardinality),
@@ -49,6 +51,7 @@ impl FieldMappingType {
             FieldMappingType::I64(_, cardinality) => (Type::I64, *cardinality),
             FieldMappingType::U64(_, cardinality) => (Type::U64, *cardinality),
             FieldMappingType::F64(_, cardinality) => (Type::F64, *cardinality),
+            FieldMappingType::Bool(_, cardinality) => (Type::Bool, *cardinality),
             FieldMappingType::Bytes(_, cardinality) => (Type::Bytes, *cardinality),
             FieldMappingType::Json(_, cardinality) => (Type::Json, *cardinality),
             FieldMappingType::Object(_) => {
@@ -97,6 +100,7 @@ fn parse_primitive_type(primitive_type_str: &str) -> Option<Type> {
         "u64" => Some(Type::U64),
         "i64" => Some(Type::I64),
         "f64" => Some(Type::F64),
+        "bool" => Some(Type::Bool),
         "date" => Some(Type::Date),
         "bytes" => Some(Type::Bytes),
         "json" => Some(Type::Json),
@@ -110,6 +114,7 @@ fn primitive_type_to_str(primitive_type: &Type) -> &'static str {
         Type::U64 => "u64",
         Type::I64 => "i64",
         Type::F64 => "f64",
+        Type::Bool => "bool",
         Type::Date => "date",
         Type::Bytes => "bytes",
         Type::Json => "json",
@@ -139,5 +144,6 @@ mod tests {
         test_parse_type_aux("text", Some(QuickwitFieldType::Simple(Type::Str)));
         test_parse_type_aux("object", Some(QuickwitFieldType::Object));
         test_parse_type_aux("object2", None);
+        test_parse_type_aux("bool", Some(QuickwitFieldType::Simple(Type::Bool)));
     }
 }
