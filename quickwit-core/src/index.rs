@@ -92,7 +92,22 @@ impl IndexService {
     pub async fn create_index(
         &self,
         index_config: IndexConfig,
+        overwrite: bool,
     ) -> Result<IndexMetadata, IndexServiceError> {
+        // Delete existing index if it exists.
+        if overwrite {
+            match self.delete_index(&index_config.index_id, false).await {
+                Ok(_)
+                | Err(IndexServiceError::MetastoreError(MetastoreError::IndexDoesNotExist {
+                    index_id: _,
+                })) => {
+                    // Ignore IndexDoesNotExist error.
+                }
+                Err(error) => {
+                    return Err(error);
+                }
+            }
+        }
         index_config
             .validate()
             .map_err(|error| IndexServiceError::InvalidIndexConfig(error.to_string()))?;
