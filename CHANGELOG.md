@@ -7,7 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
- - Support for boolean field
 
 ### Fixed
 
@@ -22,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sort hits by timestamp desc by default in search UI
 - Add `description` attribute to field mappings
 - Display split state in output of `quickwit split list` command
+- Support for boolean field
 
 ### Fixed
 - Clean up local split cache after index deletion
