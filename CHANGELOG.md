@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
- - Support for Boolean Field
+ - Support for boolean field
 
 ### Fixed
 
@@ -15,20 +15,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.3.1] - 2022-06-22
+
+### Added
+- Add support for Google Cloud Storage
+- Sort hits by timestamp desc by default in search UI
+- Add `description` attribute to field mappings
+- Display split state in output of `quickwit split list` command
+
+### Fixed
+- Clean up local split cache after index deletion
+- Fix API URLs displayed for copy and paste in UI
+- Fix custom S3 endpoint with trailing `/`
+- Fix `quickwit index create` command with `--overwrite` option
+
 ## [0.3.0] - 2022-05-31
 
 ### Added
-- Search and cluster overview web UI
-- Ingestion API
+- Embedded UI for displaying search hits and cluster state
+- Schemaless indexing with JSON field
+- Ingest API (Elasticsearch-compatible)
 - Aggregation queries
-- Kinesis data source
-- Support for Json Field
+- Support for Amazon Kinesis
 
 ### Fixed
-- Switched from S.W.I.M to Chitchat
+- Switched cluster membership algorithm from S.W.I.M. to Chitchat
 
 ### Removed
-- u64 as Date Field
+- u64 as date field
 
 ## [0.2.1] - 2022-02-28
 
