@@ -1,8 +1,8 @@
 [package]
-name = 'quickwit-serve'
+name = "quickwit-serve"
 version = "0.3.0"
-authors = ['Quickwit, Inc. <hello@quickwit.io>']
-edition = '2021'
+authors = ["Quickwit, Inc. <hello@quickwit.io>"]
+edition = "2021"
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
 description = "Quickwit's search service"
 repository = "https://github.com/quickwit-oss/quickwit"
@@ -10,62 +10,58 @@ homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
-anyhow = '1'
-warp = '0.3'
-hyper = { version = "0.14", features = ["stream", "server", "http1", "http2", "tcp", "client"] }
+anyhow = "1"
+async-trait = "0.1"
+bytes = "1"
 futures = "0.3"
 futures-util = { version = "0.3.1", default-features = false }
-tracing = "0.1.29"
-quickwit-proto = { version = "0.3.0", path = "../quickwit-proto" }
-serde_json = "1"
-quickwit-config = { version = "0.3.0", path = "../quickwit-config" }
-quickwit-doc-mapper = { version = "0.3.0", path = "../quickwit-doc-mapper" }
-quickwit-storage = { version = "0.3.0", path = "../quickwit-storage" }
+hyper = { version = "0.14", features = [
+  "stream",
+  "server",
+  "http1",
+  "http2",
+  "tcp",
+  "client"
+] }
+mime_guess = { version = "2.0.4" }
+once_cell = "1"
+opentelemetry = "0.17"
+prometheus = "0.13"
+quickwit-actors = { version = "0.3.0", path = "../quickwit-actors" }
+quickwit-cluster = { version = "0.3.0", path = "../quickwit-cluster" }
 quickwit-common = { version = "0.3.0", path = "../quickwit-common" }
-quickwit-metastore = { version = "0.3.0", path = "../quickwit-metastore" }
-quickwit-telemetry = { version = "0.3.0", path = "../quickwit-telemetry" }
+quickwit-config = { version = "0.3.0", path = "../quickwit-config" }
+quickwit-core = { version = "0.3.0", path = "../quickwit-core" }
 quickwit-directories = { version = "0.3.0", path = "../quickwit-directories" }
+quickwit-doc-mapper = { version = "0.3.0", path = "../quickwit-doc-mapper" }
 quickwit-indexing = { version = "0.3.0", path = "../quickwit-indexing" }
 quickwit-ingest-api = { version = "0.3.0", path = "../quickwit-ingest-api" }
-quickwit-core = { version = "0.3.0", path = "../quickwit-core" }
-thiserror = "1"
-async-trait = "0.1"
-termcolor = "1"
-bytes = "1"
-tokio = { version = "1.19", features = [ "full" ] }
-tokio-stream = "0.1"
-opentelemetry = "0.17"
-tracing-opentelemetry = "0.17"
-prometheus = "0.13"
-once_cell = '1'
-quickwit-actors = {version = "0.3.0", path="../quickwit-actors"}
-rust-embed="6.4.0"
-mime_guess = { version = "2.0.4" }
+quickwit-metastore = { version = "0.3.0", path = "../quickwit-metastore" }
+quickwit-proto = { version = "0.3.0", path = "../quickwit-proto" }
+quickwit-search = { version = "0.3.0", path = "../quickwit-search" }
+quickwit-storage = { version = "0.3.0", path = "../quickwit-storage" }
+quickwit-telemetry = { version = "0.3.0", path = "../quickwit-telemetry" }
 regex = "1"
+rust-embed = "6.4.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
+serde_qs = { version = "0.9", features = ["warp"] }
+termcolor = "1"
+thiserror = "1"
+tokio = { version = "1.19", features = ["full"] }
+tokio-stream = "0.1"
+tracing = "0.1.29"
+tracing-opentelemetry = "0.17"
+warp = "0.3"
 
 [dev-dependencies]
-mockall = "0.11"
 assert-json-diff = "2.0.1"
-tokio = { version = "1", features = ["full"] }
-quickwit-storage = { version = "0.3.0", path = "../quickwit-storage", features = ["testsuite"] }
-quickwit-core = { version = "0.3.0", path = "../quickwit-core" }
-quickwit-indexing= { version = "0.3.0", path = "../quickwit-indexing" }
-quickwit-doc-mapper = { version = "0.3.0", path = "../quickwit-doc-mapper" }
-quickwit-metastore = { version = "0.3.0", path = "../quickwit-metastore", features = ["testsuite"] }
+mockall = "0.11"
+quickwit-metastore = { version = "0.3.0", path = "../quickwit-metastore", features = [
+  "testsuite"
+] }
+quickwit-storage = { version = "0.3.0", path = "../quickwit-storage", features = [
+  "testsuite"
+] }
 rand = "0.8"
-
-[dependencies.quickwit-cluster]
-path = '../quickwit-cluster'
-version = "0.3"
-
-[dependencies.quickwit-search]
-path = '../quickwit-search'
-version = "0.3"
-
-[dependencies.serde]
-version = '1.0'
-features = ['derive']
-
-[dependencies.serde_qs]
-version = '0.9'
-features = ['warp']
+tokio = { version = "1", features = ["full"] }
