@@ -1,9 +1,9 @@
 [package]
-name = 'quickwit-indexing'
+name = "quickwit-indexing"
 version = "0.3.0"
-authors = ['Quickwit, Inc. <hello@quickwit.io>']
-edition = '2021'
-license = 'AGPL-3.0-or-later'  # For a commercial, license, contact hello@quickwit.io
+authors = ["Quickwit, Inc. <hello@quickwit.io>"]
+edition = "2021"
+license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
 description = "Quickwit indexing"
 repository = "https://github.com/quickwit-oss/quickwit"
 homepage = "https://quickwit.io/"
@@ -11,6 +11,7 @@ documentation = "https://quickwit.io/docs/"
 
 [dependencies]
 anyhow = "1"
+arc-swap = "1.4"
 async-trait = "0.1"
 backoff = { version = "0.4", features = ["tokio"] }
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
@@ -18,40 +19,55 @@ fail = "0.5"
 flume = "0.10"
 futures = "0.3"
 itertools = "0.10.3"
+libz-sys = { version = "1.1.3", optional = true }
 once_cell = "1"
+openssl = { version = "0.10.36", default-features = false, optional = true }
 quickwit-actors = { version = "0.3.0", path = "../quickwit-actors" }
-quickwit-aws = {version = "0.3.0", path = "../quickwit-aws"}
+quickwit-aws = { version = "0.3.0", path = "../quickwit-aws" }
 quickwit-common = { version = "0.3.0", path = "../quickwit-common" }
 quickwit-config = { version = "0.3.0", path = "../quickwit-config" }
-quickwit-directories = { version = "0.3.0", path = "../quickwit-directories"}
-quickwit-doc-mapper = { version = "0.3.0", path = "../quickwit-doc-mapper", features = ["testsuite"] }
+quickwit-directories = { version = "0.3.0", path = "../quickwit-directories" }
+quickwit-doc-mapper = { version = "0.3.0", path = "../quickwit-doc-mapper", features = [
+  "testsuite"
+] }
+quickwit-ingest-api = { path = "../quickwit-ingest-api", version = "0.3.0" }
 quickwit-metastore = { version = "0.3.0", path = "../quickwit-metastore" }
+quickwit-proto = { path = "../quickwit-proto", version = "0.3.0" }
 quickwit-storage = { version = "0.3.0", path = "../quickwit-storage" }
-quickwit-ingest-api = { path="../quickwit-ingest-api", version = "0.3.0"}
-quickwit-proto = { path="../quickwit-proto", version ="0.3.0"}
-rdkafka = { version = "0.28", default-features = false, features = ["tokio", "libz", "ssl", "cmake-build"], optional = true }
-openssl = { version = "0.10.36", default-features = false, optional = true}
-libz-sys = {version = "1.1.3", optional = true}
-rusoto_core = { version = "0.48", default-features = false, features = ["rustls"], optional = true }
-rusoto_kinesis = { version = "0.48", default-features = false, features = ["rustls"], optional = true }
+rdkafka = { version = "0.28", default-features = false, features = [
+  "tokio",
+  "libz",
+  "ssl",
+  "cmake-build"
+], optional = true }
+rusoto_core = { version = "0.48", default-features = false, features = [
+  "rustls"
+], optional = true }
+rusoto_kinesis = { version = "0.48", default-features = false, features = [
+  "rustls"
+], optional = true }
 serde = "1"
 serde_json = "1"
 serde_yaml = "0.8"
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "88054aa", default-features=false, features = ["mmap", "lz4-compression", "zstd-compression", "quickwit"] }
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "88054aa", default-features = false, features = [
+  "mmap",
+  "lz4-compression",
+  "zstd-compression",
+  "quickwit"
+] }
 tempfile = "3.3"
 thiserror = "1"
+time = { version = "0.3.9", features = ["std"] }
 tokio = { version = "1", features = ["sync"] }
+tokio-stream = "0.1"
 tracing = "0.1.29"
 ulid = "0.6"
-tokio-stream = "0.1"
-arc-swap = "1.4"
-time = { version = "0.3.9", features = ["std"] }
 
 [features]
 kafka = ["rdkafka"]
 kafka-broker-tests = []
 vendored-kafka = ["kafka", "libz-sys/static", "openssl/vendored"]
-kinesis = ["rusoto_core", "rusoto_kinesis","quickwit-aws/kinesis"]
+kinesis = ["rusoto_core", "rusoto_kinesis", "quickwit-aws/kinesis"]
 kinesis-localstack-tests = []
 
 [dev-dependencies]
@@ -59,9 +75,13 @@ bytes = "1"
 mockall = "0.11"
 proptest = "1"
 quickwit-common = { version = "0.3.0", path = "../quickwit-common" }
-quickwit-metastore = { version = "0.3.0", path = "../quickwit-metastore", features = ["testsuite"] }
-quickwit-storage = { version = "0.3.0", path = "../quickwit-storage", features = ["testsuite"] }
-rand = '0.8'
+quickwit-metastore = { version = "0.3.0", path = "../quickwit-metastore", features = [
+  "testsuite"
+] }
+quickwit-storage = { version = "0.3.0", path = "../quickwit-storage", features = [
+  "testsuite"
+] }
+rand = "0.8"
 tempfile = "3"
 
 [[test]]
