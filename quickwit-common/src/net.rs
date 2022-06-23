@@ -122,13 +122,10 @@ pub async fn get_socket_addr<T: ToSocketAddrs + std::fmt::Debug>(
 ) -> anyhow::Result<SocketAddr> {
     lookup_host(addr)
         .await
-        .with_context(|| format!("Failed to parse address or resolve hostname `{:?}`.", addr))?
+        .with_context(|| format!("Failed to parse address or resolve hostname {addr:?}."))?
         .next()
         .ok_or_else(|| {
-            anyhow::anyhow!(
-                "DNS resolution did not yield any record for hostname `{:?}`.",
-                addr
-            )
+            anyhow::anyhow!("DNS resolution did not yield any record for hostname {addr:?}.")
         })
 }
 
@@ -221,8 +218,7 @@ mod tests {
         ] {
             assert!(
                 is_valid_hostname(hostname),
-                "Hostname `{}` is valid.",
-                hostname
+                "Hostname `{hostname}` is valid.",
             );
         }
 
@@ -241,8 +237,7 @@ mod tests {
         ] {
             assert!(
                 !is_valid_hostname(hostname),
-                "Hostname `{}` is invalid.",
-                hostname
+                "Hostname `{hostname}` is invalid."
             );
         }
     }

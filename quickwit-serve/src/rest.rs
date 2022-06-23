@@ -40,7 +40,7 @@ pub(crate) async fn start_rest_server(
     rest_listen_addr: SocketAddr,
     quickwit_services: &QuickwitServices,
 ) -> anyhow::Result<()> {
-    info!(rest_listen_addr = ?rest_listen_addr, "Starting REST server.");
+    info!(rest_listen_addr = %rest_listen_addr, "Starting REST server.");
     let request_counter = warp::log::custom(|_| {
         crate::COUNTERS.num_requests.inc();
     });
