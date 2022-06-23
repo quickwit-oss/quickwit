@@ -1,5 +1,8 @@
 build: src/*
-	yarn run build
+	yarn build
+
+install:
+	yarn install
 
 start:
 	yarn start
