@@ -335,6 +335,10 @@ impl QuickwitConfig {
         let mut peer_seed_addrs = Vec::new();
         let default_gossip_port = self.gossip_listen_port();
 
+        // We want to pass non-resolved addresses to Chitchat but still want to resolve them for
+        // validation purposes. Additionally, we need to append a default port if necessary and
+        // finally return the addresses as strings, which is tricky for IPv6. We let the logic baked
+        // in `HostAddr` handle this complexity.
         for peer_seed in &self.peer_seeds {
             let peer_seed_addr =
                 HostAddr::parse_with_default_port(peer_seed.as_str(), default_gossip_port)?;
