@@ -33,8 +33,7 @@ WORKDIR /quickwit/quickwit-ui
 
 RUN echo "Building Quickwit UI" \
     && npm install --location=global yarn \
-    && yarn install \
-    && yarn build
+    && make install build
 
 # Build workspace
 COPY . /quickwit
