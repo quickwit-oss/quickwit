@@ -281,7 +281,8 @@ fn deserialize_mapping_type(
             Ok(FieldMappingType::Bool(numeric_options, cardinality))
         }
         Type::DateTime | Type::Date => {
-            let date_time_options: QuickwitDateTimeOptions = serde_json::from_value(json)?;
+            let date_time_options = serde_json::from_value::<QuickwitDateTimeOptions>(json)?
+                .into_with_parsers_handle_initialized();
             Ok(FieldMappingType::DateTime(date_time_options, cardinality))
         }
         Type::Facet => unimplemented!("Facet are not supported in quickwit yet."),

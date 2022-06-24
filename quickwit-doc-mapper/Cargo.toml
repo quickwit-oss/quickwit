@@ -19,12 +19,11 @@ once_cell = "1.12"
 regex = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "4b1ce74", default-features=false, features = ["mmap", "lz4-compression", "zstd-compression", "quickwit"] }
+tantivy = { path = "/home/evance/PROJECTS/tantivy",  default-features=false, features = ["mmap", "lz4-compression", "zstd-compression", "quickwit"] }
 tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "88054aa"}
 thiserror = "1.0"
 tracing = "0.1.29"
 typetag = "0.1"
-fnv = "1"
 derivative = "2.2.0"
 time = { version = "0.3.10", features = ["std", "macros"] }
 chrono = "0.4.19"

@@ -27,7 +27,7 @@ use tantivy::schema::{
     BytesOptions, Cardinality, Field, JsonObjectOptions, NumericOptions, SchemaBuilder,
     TextOptions, Value,
 };
-use tantivy::{Document, DateTime, DateTimeOptions};
+use tantivy::{DateTime, DateTimeOptions, Document};
 
 use super::date_time_type::{timestamp_to_datetime_str, QuickwitDateTimeOptions};
 use crate::default_doc_mapper::field_mapping_entry::{
@@ -113,7 +113,10 @@ impl LeafType {
                         ))
                     }
                 };
-                Ok(Value::DateTime(DateTime::from_utc_with_precision(date_time, opt.precision)))
+                Ok(Value::DateTime(DateTime::from_utc_with_precision(
+                    date_time,
+                    options.precision,
+                )))
             }
             LeafType::Bytes(_) => {
                 let base64_str = if let JsonValue::String(base64_str) = json_val {
@@ -540,10 +543,9 @@ fn get_date_time_options(
     if quickwit_date_time_options.fast {
         date_time_options = date_time_options.set_fast(cardinality);
     }
-    date_time_options.set_input_formats(quickwit_date_time_options.input_formats);
-    date_time_options.set_precision(quickwit_date_time_options.precision);
-
     date_time_options
+        .set_input_formats(quickwit_date_time_options.input_formats.clone())
+        .set_precision(quickwit_date_time_options.precision)
 }
 
 fn get_bytes_options(quickwit_numeric_options: &QuickwitNumericOptions) -> BytesOptions {
@@ -632,15 +634,15 @@ fn build_mapping_from_field_type<'a>(
             Ok(MappingTree::Leaf(mapping_leaf))
         }
         FieldMappingType::Bool(options, cardinality) => {
-          let numeric_options = get_numeric_options(options, *cardinality);
-          let field = schema_builder.add_bool_field(&field_name, numeric_options);
-          let mapping_leaf = MappingLeaf {
-              field,
-              typ: LeafType::Bool(options.clone()),
-              cardinality: *cardinality,
+            let numeric_options = get_numeric_options(options, *cardinality);
+            let field = schema_builder.add_bool_field(&field_name, numeric_options);
+            let mapping_leaf = MappingLeaf {
+                field,
+                typ: LeafType::Bool(options.clone()),
+                cardinality: *cardinality,
             };
             Ok(MappingTree::Leaf(mapping_leaf))
-        }   
+        }
         FieldMappingType::DateTime(options, cardinality) => {
             let date_time_options = get_date_time_options(options, *cardinality);
             let field = schema_builder.add_datetime_field(&field_name, date_time_options);
