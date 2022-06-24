@@ -167,7 +167,7 @@ pub struct StorageConfig {
 
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct QuickwitConfig {
+pub struct NodeConfig {
     pub version: usize,
     #[serde(default = "default_cluster_id")]
     pub cluster_id: String,
@@ -200,14 +200,14 @@ pub struct QuickwitConfig {
     pub storage_config: Option<StorageConfig>,
 }
 
-impl QuickwitConfig {
+impl NodeConfig {
     /// Parses and validates a [`QuickwitConfig`] from a given URI and config content.
     pub async fn load(
         uri: &Uri,
         config_content: &[u8],
         data_dir_path_opt: Option<PathBuf>,
     ) -> anyhow::Result<Self> {
-        let mut config = QuickwitConfig::from_uri(uri, config_content).await?;
+        let mut config = NodeConfig::from_uri(uri, config_content).await?;
         if let Some(data_dir_path) = data_dir_path_opt {
             info!(
                 data_dir_path = %data_dir_path.display(),
@@ -369,7 +369,7 @@ impl QuickwitConfig {
     }
 }
 
-impl QuickwitConfig {
+impl NodeConfig {
     pub fn metastore_uri(&self) -> Uri {
         self.metastore_uri
             .as_ref()
@@ -385,7 +385,7 @@ impl QuickwitConfig {
     }
 }
 
-impl Default for QuickwitConfig {
+impl Default for NodeConfig {
     fn default() -> Self {
         Self {
             version: 0,
@@ -406,7 +406,7 @@ impl Default for QuickwitConfig {
     }
 }
 
-impl std::fmt::Debug for QuickwitConfig {
+impl std::fmt::Debug for NodeConfig {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter
             .debug_struct("QuickwitConfig")
@@ -525,7 +525,7 @@ mod tests {
     #[test]
     fn test_quickwit_config_default_values_minimal() {
         let minimal_config_yaml = "version: 0";
-        let config = serde_yaml::from_str::<QuickwitConfig>(minimal_config_yaml).unwrap();
+        let config = serde_yaml::from_str::<NodeConfig>(minimal_config_yaml).unwrap();
         assert_eq!(config.version, 0);
         assert!(config.node_id.starts_with("node-"));
         assert_eq!(
@@ -545,7 +545,7 @@ mod tests {
             node_id: 1
             metastore_uri: postgres://username:password@host:port/db
         "#;
-        let config = serde_yaml::from_str::<QuickwitConfig>(config_yaml).unwrap();
+        let config = serde_yaml::from_str::<NodeConfig>(config_yaml).unwrap();
         assert_eq!(config.version, 0);
         assert_eq!(config.cluster_id, DEFAULT_CLUSTER_ID);
         assert_eq!(config.node_id, "1");
@@ -563,7 +563,7 @@ mod tests {
             metastore_uri: postgres://username:password@host:port/db
             data_dir: /opt/quickwit/data
         "#;
-        let config = serde_yaml::from_str::<QuickwitConfig>(config_yaml).unwrap();
+        let config = serde_yaml::from_str::<NodeConfig>(config_yaml).unwrap();
         assert_eq!(config.version, 0);
         assert_eq!(
             config.metastore_uri(),
@@ -579,7 +579,7 @@ mod tests {
         let file_content = std::fs::read_to_string(&config_filepath).unwrap();
 
         let config_uri = Uri::try_new(&config_filepath).unwrap();
-        let mut quickwit_config = QuickwitConfig::from_uri(&config_uri, file_content.as_bytes())
+        let mut quickwit_config = NodeConfig::from_uri(&config_uri, file_content.as_bytes())
             .await
             .unwrap();
         quickwit_config.data_dir_path = env::current_dir().unwrap();
@@ -589,14 +589,14 @@ mod tests {
     #[tokio::test]
     async fn test_peer_socket_addrs() {
         {
-            let quickwit_config = QuickwitConfig {
+            let quickwit_config = NodeConfig {
                 rest_listen_port: 1789,
                 ..Default::default()
             };
             assert!(quickwit_config.peer_seed_addrs().await.unwrap().is_empty());
         }
         {
-            let quickwit_config = QuickwitConfig {
+            let quickwit_config = NodeConfig {
                 rest_listen_port: 1789,
                 peer_seeds: vec!["unresolvable-host".to_string()],
                 ..Default::default()
@@ -604,7 +604,7 @@ mod tests {
             assert!(quickwit_config.peer_seed_addrs().await.is_err());
         }
         {
-            let quickwit_config = QuickwitConfig {
+            let quickwit_config = NodeConfig {
                 rest_listen_port: 1789,
                 peer_seeds: vec![
                     "unresolvable-host".to_string(),
@@ -630,7 +630,7 @@ mod tests {
     #[tokio::test]
     async fn test_socket_addr_ports() {
         {
-            let quickwit_config = QuickwitConfig {
+            let quickwit_config = NodeConfig {
                 listen_address: "127.0.0.1".to_string(),
                 ..Default::default()
             };
@@ -660,7 +660,7 @@ mod tests {
             );
         }
         {
-            let quickwit_config = QuickwitConfig {
+            let quickwit_config = NodeConfig {
                 listen_address: "127.0.0.1".to_string(),
                 rest_listen_port: 1789,
                 ..Default::default()
@@ -691,7 +691,7 @@ mod tests {
             );
         }
         {
-            let quickwit_config = QuickwitConfig {
+            let quickwit_config = NodeConfig {
                 listen_address: "127.0.0.1".to_string(),
                 rest_listen_port: 1789,
                 gossip_listen_port: Some(1889),
@@ -730,7 +730,7 @@ mod tests {
         let config_filepath = get_config_filepath("quickwit.yaml");
         let config_uri = Uri::try_new(&config_filepath).unwrap();
         let file = std::fs::read_to_string(&config_filepath).unwrap();
-        let config = QuickwitConfig::load(&config_uri, file.as_bytes(), None)
+        let config = NodeConfig::load(&config_uri, file.as_bytes(), None)
             .await
             .unwrap_err();
         assert!(config.to_string().contains("Data dir"));
@@ -744,7 +744,7 @@ mod tests {
             node_id: 1
             metastore_uri: ''
         "#;
-            serde_yaml::from_str::<QuickwitConfig>(config_yaml).unwrap_err();
+            serde_yaml::from_str::<NodeConfig>(config_yaml).unwrap_err();
         }
         {
             let config_yaml = r#"
@@ -753,7 +753,7 @@ mod tests {
             metastore_uri: postgres://username:password@host:port/db
             default_index_root_uri: ''
         "#;
-            serde_yaml::from_str::<QuickwitConfig>(config_yaml).unwrap_err();
+            serde_yaml::from_str::<NodeConfig>(config_yaml).unwrap_err();
         }
     }
 }

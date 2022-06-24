@@ -20,7 +20,7 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 
-use quickwit_core::IndexService;
+use quickwit_core::IndexManager;
 use quickwit_search::SearchError;
 use tracing::info;
 use warp::{Filter, Rejection};
@@ -29,7 +29,7 @@ use crate::format::Format;
 use crate::with_arg;
 
 pub fn index_management_handlers(
-    index_service: Arc<IndexService>,
+    index_service: Arc<IndexManager>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     get_index_metadata_handler(index_service.clone())
         .or(get_indexes_metadatas_handler(index_service.clone()))
@@ -41,7 +41,7 @@ pub fn index_management_handlers(
 }
 
 fn get_index_metadata_handler(
-    index_service: Arc<IndexService>,
+    index_service: Arc<IndexManager>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     warp::path!("indexes" / String)
         .and(warp::get())
@@ -51,7 +51,7 @@ fn get_index_metadata_handler(
 
 async fn get_index_metadata(
     index_id: String,
-    index_service: Arc<IndexService>,
+    index_service: Arc<IndexManager>,
 ) -> Result<impl warp::Reply, Infallible> {
     info!(index_id = %index_id, "get-index");
     let index_metadata = index_service.get_index(&index_id).await;
@@ -59,7 +59,7 @@ async fn get_index_metadata(
 }
 
 fn get_indexes_metadatas_handler(
-    index_service: Arc<IndexService>,
+    index_service: Arc<IndexManager>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     warp::path!("indexes")
         .and(warp::get())
@@ -69,7 +69,7 @@ fn get_indexes_metadatas_handler(
 
 async fn get_all_splits(
     index_id: String,
-    index_service: Arc<IndexService>,
+    index_service: Arc<IndexManager>,
 ) -> Result<impl warp::Reply, Infallible> {
     info!(index_id = %index_id, "get-index");
     let splits = index_service.get_all_splits(&index_id).await;
@@ -77,7 +77,7 @@ async fn get_all_splits(
 }
 
 fn get_all_splits_handler(
-    index_service: Arc<IndexService>,
+    index_service: Arc<IndexManager>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     warp::path!("indexes" / String / "splits")
         .and(warp::get())
@@ -86,7 +86,7 @@ fn get_all_splits_handler(
 }
 
 async fn get_indexes_metadatas(
-    index_service: Arc<IndexService>,
+    index_service: Arc<IndexManager>,
 ) -> Result<impl warp::Reply, Infallible> {
     info!("get-indexes-metadatas");
     let index_metadata = index_service.get_indexes().await.map_err(SearchError::from);
@@ -159,7 +159,7 @@ mod tests {
                     "file:///path/to/index/quickwit-demo-index",
                 ))
             });
-        let index_service = IndexService::new(
+        let index_service = IndexManager::new(
             Arc::new(metastore),
             StorageUriResolver::for_test(),
             Uri::new("file:///default-index-uri".to_string()),
@@ -186,7 +186,7 @@ mod tests {
         metastore
             .expect_list_all_splits()
             .returning(|_index_id: &str| Ok(vec![mock_split("split_1")]));
-        let index_service = IndexService::new(
+        let index_service = IndexManager::new(
             Arc::new(metastore),
             StorageUriResolver::for_test(),
             Uri::try_new("file:///default-index-uri").unwrap(),
@@ -216,7 +216,7 @@ mod tests {
                 "file:///path/to/index/quickwit-demo-index",
             )])
         });
-        let index_service = IndexService::new(
+        let index_service = IndexManager::new(
             Arc::new(metastore),
             StorageUriResolver::for_test(),
             Uri::new("file:///default-index-uri".to_string()),

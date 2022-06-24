@@ -18,9 +18,11 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // TODO: discover files in proto folder
     println!("cargo:rerun-if-changed=proto/cluster.proto");
-    println!("cargo:rerun-if-changed=proto/search_api.proto");
     println!("cargo:rerun-if-changed=proto/ingest_api.proto");
+    println!("cargo:rerun-if-changed=proto/nodelet.proto");
+    println!("cargo:rerun-if-changed=proto/search_api.proto");
 
     let mut prost_config = prost_build::Config::default();
     // prost_config.type_attribute("LeafSearchResponse", "#[derive(Default)]");
@@ -33,8 +35,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             prost_config,
             &[
                 "./proto/cluster.proto",
-                "./proto/search_api.proto",
                 "./proto/ingest_api.proto",
+                "./proto/nodelet.proto",
+                "./proto/search_api.proto",
             ],
             &["./proto"],
         )?;

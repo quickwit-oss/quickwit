@@ -51,7 +51,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use itertools::Itertools;
 use quickwit_cluster::Cluster;
-use quickwit_config::{build_doc_mapper, QuickwitConfig, SEARCHER_CONFIG_INSTANCE};
+use quickwit_config::{build_doc_mapper, NodeConfig, SEARCHER_CONFIG_INSTANCE};
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{Metastore, SplitMetadata, SplitState};
@@ -249,7 +249,7 @@ pub async fn single_node_search(
 
 /// Starts a search node, aka a `searcher`.
 pub async fn start_searcher_service(
-    quickwit_config: &QuickwitConfig,
+    quickwit_config: &NodeConfig,
     metastore: Arc<dyn Metastore>,
     storage_uri_resolver: StorageUriResolver,
     cluster: Arc<Cluster>,

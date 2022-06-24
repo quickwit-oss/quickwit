@@ -20,6 +20,7 @@
 use std::net::SocketAddr;
 
 use quickwit_cluster::QuickwitService;
+use quickwit_config::NodeConfig;
 use quickwit_proto::cluster_service_server::ClusterServiceServer;
 use quickwit_proto::search_service_server::SearchServiceServer;
 use quickwit_proto::tonic;

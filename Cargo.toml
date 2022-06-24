@@ -13,6 +13,7 @@ members = [
   "quickwit-indexing",
   "quickwit-ingest-api",
   "quickwit-metastore",
+  "quickwit-nodelet",
   "quickwit-proto",
   "quickwit-search",
   "quickwit-serve",

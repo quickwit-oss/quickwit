@@ -22,7 +22,7 @@ use std::fmt;
 
 use quickwit_actors::AskError;
 use quickwit_cluster::ClusterError;
-use quickwit_core::IndexServiceError;
+use quickwit_core::IndexManagerError;
 use quickwit_indexing::IndexingServiceError;
 use quickwit_ingest_api::IngestApiError;
 use quickwit_proto::tonic;
@@ -124,7 +124,7 @@ impl<E: fmt::Debug + ServiceError> ServiceError for AskError<E> {
     }
 }
 
-impl ServiceError for IndexServiceError {
+impl ServiceError for IndexManagerError {
     fn status_code(&self) -> ServiceErrorCode {
         match self {
             Self::StorageError(_) => ServiceErrorCode::Internal,

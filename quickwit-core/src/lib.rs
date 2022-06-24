@@ -30,8 +30,8 @@
 mod index;
 
 pub use index::{
-    clear_cache_directory, get_cache_directory_path, remove_indexing_directory, IndexService,
-    IndexServiceError,
+    clear_cache_directory, get_cache_directory_path, remove_indexing_directory, IndexManager,
+    IndexManagerError,
 };
 
 #[cfg(test)]
@@ -44,7 +44,7 @@ mod tests {
     use quickwit_metastore::quickwit_metastore_uri_resolver;
     use quickwit_storage::StorageUriResolver;
 
-    use crate::IndexService;
+    use crate::IndexManager;
 
     const METASTORE_URI: &str = "ram://quickwit-test-indexes";
 
@@ -83,7 +83,7 @@ mod tests {
             assert_eq!(split_num_bytes, file_entry.file_size_in_bytes);
         }
         // Now delete the index.
-        let index_service = IndexService::new(
+        let index_service = IndexManager::new(
             test_sandbox.metastore(),
             StorageUriResolver::for_test(),
             Uri::new("file:///quickwit".to_string()),
@@ -115,7 +115,7 @@ mod tests {
             .resolve(METASTORE_URI)
             .await?;
         let storage_resolver = StorageUriResolver::for_test();
-        let index_service = IndexService::new(
+        let index_service = IndexManager::new(
             metastore,
             storage_resolver,
             Uri::new("ram://test-storage-indexes".to_string()),

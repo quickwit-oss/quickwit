@@ -1,5 +1,6 @@
 ignore = [
   "quickwit-proto/src/cluster.rs",
+  "quickwit-proto/src/nodelet.rs",
   "quickwit-proto/src/quickwit.rs",
   "quickwit-proto/src/quickwit_ingest_api.rs",
 ]

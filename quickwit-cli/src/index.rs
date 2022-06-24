@@ -34,7 +34,7 @@ use quickwit_common::GREEN_COLOR;
 use quickwit_config::{
     IndexConfig, IndexerConfig, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
 };
-use quickwit_core::{clear_cache_directory, remove_indexing_directory, IndexService};
+use quickwit_core::{clear_cache_directory, remove_indexing_directory, IndexManager};
 use quickwit_doc_mapper::tag_pruning::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
 use quickwit_indexing::models::{
@@ -779,7 +779,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri())
         .await?;
-    let index_service = IndexService::new(
+    let index_service = IndexManager::new(
         metastore,
         quickwit_storage_uri_resolver().clone(),
         quickwit_config.default_index_root_uri(),
@@ -814,7 +814,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         .await?;
 
     if args.overwrite {
-        let index_service = IndexService::new(
+        let index_service = IndexManager::new(
             metastore.clone(),
             quickwit_storage_uri_resolver().clone(),
             config.default_index_root_uri(),
@@ -960,7 +960,7 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&quickwit_config.metastore_uri())
         .await?;
-    let index_service = IndexService::new(
+    let index_service = IndexManager::new(
         metastore,
         quickwit_storage_uri_resolver().clone(),
         quickwit_config.default_index_root_uri(),
@@ -999,7 +999,7 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&quickwit_config.metastore_uri())
         .await?;
-    let index_service = IndexService::new(
+    let index_service = IndexManager::new(
         metastore,
         quickwit_storage_uri_resolver().clone(),
         quickwit_config.default_index_root_uri(),

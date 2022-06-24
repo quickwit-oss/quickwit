@@ -24,7 +24,7 @@ use anyhow::bail;
 use once_cell::sync::Lazy;
 use quickwit_common::run_checklist;
 use quickwit_common::uri::Uri;
-use quickwit_config::{QuickwitConfig, SourceConfig};
+use quickwit_config::{NodeConfig, SourceConfig};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
@@ -70,12 +70,9 @@ pub fn parse_duration_with_unit(duration_with_unit_str: &str) -> anyhow::Result<
     };
 }
 
-async fn load_quickwit_config(
-    uri: &Uri,
-    data_dir: Option<PathBuf>,
-) -> anyhow::Result<QuickwitConfig> {
+async fn load_quickwit_config(uri: &Uri, data_dir: Option<PathBuf>) -> anyhow::Result<NodeConfig> {
     let config_content = load_file(uri).await?;
-    let config = QuickwitConfig::load(uri, config_content.as_slice(), data_dir).await?;
+    let config = NodeConfig::load(uri, config_content.as_slice(), data_dir).await?;
     info!(config_uri = %uri, config = ?config, "Loaded Quickwit config.");
     Ok(config)
 }

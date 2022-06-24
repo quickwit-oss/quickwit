@@ -65,7 +65,7 @@ pub(crate) async fn start_rest_server(
             quickwit_services.ingest_api_service.clone(),
         ))
         .or(index_management_handlers(
-            quickwit_services.index_service.clone(),
+            quickwit_services.index_manager.clone(),
         ));
     let api_v1_root_route = api_v1_root_url.and(api_v1_routes);
     let redirect_root_to_ui_route =

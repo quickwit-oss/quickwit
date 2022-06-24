@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod cluster;
+mod nodelet;
 mod quickwit;
 mod quickwit_ingest_api;
 
@@ -31,6 +32,7 @@ extern crate serde;
 use std::fmt;
 
 pub use cluster::*;
+pub use nodelet::*;
 pub use quickwit::*;
 pub use tonic;
 

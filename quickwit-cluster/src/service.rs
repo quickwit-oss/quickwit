@@ -39,7 +39,7 @@ impl From<Member> for PMember {
 }
 
 #[async_trait]
-pub trait ClusterService: 'static + Send + Sync {
+pub trait ClusterService: Send + Sync + 'static {
     async fn list_members(
         &self,
         request: ListMembersRequest,

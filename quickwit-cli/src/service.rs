@@ -130,7 +130,6 @@ impl RunCliCommand {
         }
         // Revalidate config because of overrides.
         config.validate()?;
-
         serve_quickwit(&config, &self.services).await?;
         Ok(())
     }

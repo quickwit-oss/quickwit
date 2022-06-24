@@ -41,8 +41,8 @@ use format::Format;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::{ClusterService, QuickwitService};
 use quickwit_common::uri::{Uri, FILE_PROTOCOL, S3_PROTOCOL};
-use quickwit_config::QuickwitConfig;
-use quickwit_core::IndexService;
+use quickwit_config::NodeConfig;
+use quickwit_core::IndexManager;
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexer_service;
 use quickwit_ingest_api::{init_ingest_api, IngestApiService};
@@ -83,12 +83,12 @@ struct QuickwitServices {
     pub search_service: Arc<dyn SearchService>,
     pub indexer_service: Option<Mailbox<IndexingService>>,
     pub ingest_api_service: Option<Mailbox<IngestApiService>>,
-    pub index_service: Arc<IndexService>,
+    pub index_manager: Arc<IndexManager>,
     pub services: HashSet<QuickwitService>,
 }
 
 pub async fn serve_quickwit(
-    config: &QuickwitConfig,
+    config: &NodeConfig,
     services: &HashSet<QuickwitService>,
 ) -> anyhow::Result<()> {
     let metastore = quickwit_metastore_uri_resolver()
@@ -134,7 +134,7 @@ pub async fn serve_quickwit(
     .await?;
 
     // Always instanciate index management service.
-    let index_service = Arc::new(IndexService::new(
+    let index_manager = Arc::new(IndexManager::new(
         metastore,
         storage_resolver,
         config.default_index_root_uri(),
@@ -144,7 +144,7 @@ pub async fn serve_quickwit(
         cluster_service,
         search_service,
         indexer_service,
-        index_service,
+        index_manager,
         services: services.clone(),
     };
     let grpc_listen_addr = config.grpc_listen_addr().await?;
@@ -162,7 +162,7 @@ pub async fn serve_quickwit(
 /// - A FileBacked metastore
 /// - A FileStorage
 async fn check_is_configured_for_cluster(
-    config: &QuickwitConfig,
+    config: &NodeConfig,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<()> {
     if config.peer_seeds.is_empty() {
@@ -196,7 +196,7 @@ mod tests {
     use std::sync::Arc;
 
     use futures::TryStreamExt;
-    use quickwit_config::QuickwitConfig;
+    use quickwit_config::NodeConfig;
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::search_service_server::SearchServiceServer;
@@ -306,7 +306,7 @@ mod tests {
             .returning(|| "file:///path/to/metastore".to_string());
         let metastore = Arc::new(mock_metastore);
 
-        let config = QuickwitConfig::default();
+        let config = NodeConfig::default();
         assert!(matches!(
             check_is_configured_for_cluster(&config, metastore.clone()).await,
             Ok(())
@@ -322,7 +322,7 @@ mod tests {
         });
         let metastore = Arc::new(mock_metastore);
 
-        let mut config = QuickwitConfig::default();
+        let mut config = NodeConfig::default();
         config.peer_seeds = vec!["127.0.0.1:1234".to_string()];
         assert!(matches!(
             check_is_configured_for_cluster(&config, metastore).await,
@@ -346,7 +346,7 @@ mod tests {
             });
         let metastore = Arc::new(mock_metastore);
 
-        let mut config = QuickwitConfig::default();
+        let mut config = NodeConfig::default();
         config.peer_seeds = vec!["127.0.0.1:1234".to_string()];
         assert!(matches!(
             check_is_configured_for_cluster(&config, metastore).await,
@@ -370,7 +370,7 @@ mod tests {
             });
         let metastore = Arc::new(mock_metastore);
 
-        let mut config = QuickwitConfig::default();
+        let mut config = NodeConfig::default();
         config.peer_seeds = vec!["127.0.0.1:1234".to_string()];
         assert!(matches!(
             check_is_configured_for_cluster(&config, metastore).await,

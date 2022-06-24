@@ -40,7 +40,7 @@ use thiserror::Error;
 use tracing::{error, info};
 
 #[derive(Error, Debug)]
-pub enum IndexServiceError {
+pub enum IndexManagerError {
     #[error("Failed to resolve the storage `{0}`.")]
     StorageError(#[from] StorageResolverError),
     #[error("Metastore error `{0}`.")]
@@ -52,13 +52,13 @@ pub enum IndexServiceError {
 }
 
 /// Index service responsible for creating, updating and deleting indexes.
-pub struct IndexService {
+pub struct IndexManager {
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
     default_index_root_uri: Uri,
 }
 
-impl IndexService {
+impl IndexManager {
     /// Creates an `IndexService`.
     pub fn new(
         metastore: Arc<dyn Metastore>,
@@ -72,13 +72,13 @@ impl IndexService {
         }
     }
     /// Get an index from `index_id`.
-    pub async fn get_index(&self, index_id: &str) -> Result<IndexMetadata, IndexServiceError> {
+    pub async fn get_index(&self, index_id: &str) -> Result<IndexMetadata, IndexManagerError> {
         let index_metadata = self.metastore.index_metadata(index_id).await?;
         Ok(index_metadata)
     }
 
     /// Get all splits from index `index_id`.
-    pub async fn get_all_splits(&self, index_id: &str) -> Result<Vec<Split>, IndexServiceError> {
+    pub async fn get_all_splits(&self, index_id: &str) -> Result<Vec<Split>, IndexManagerError> {
         let splits = self.metastore.list_all_splits(index_id).await?;
         Ok(splits)
     }
@@ -94,12 +94,12 @@ impl IndexService {
         &self,
         index_config: IndexConfig,
         overwrite: bool,
-    ) -> Result<IndexMetadata, IndexServiceError> {
+    ) -> Result<IndexMetadata, IndexManagerError> {
         // Delete existing index if it exists.
         if overwrite {
             match self.delete_index(&index_config.index_id, false).await {
                 Ok(_)
-                | Err(IndexServiceError::MetastoreError(MetastoreError::IndexDoesNotExist {
+                | Err(IndexManagerError::MetastoreError(MetastoreError::IndexDoesNotExist {
                     index_id: _,
                 })) => {
                     // Ignore IndexDoesNotExist error.
@@ -111,7 +111,7 @@ impl IndexService {
         }
         index_config
             .validate()
-            .map_err(|error| IndexServiceError::InvalidIndexConfig(error.to_string()))?;
+            .map_err(|error| IndexManagerError::InvalidIndexConfig(error.to_string()))?;
         let index_id = index_config.index_id.clone();
         let index_uri = if let Some(index_uri) = &index_config.index_uri {
             index_uri.clone()
@@ -155,7 +155,7 @@ impl IndexService {
         &self,
         index_id: &str,
         dry_run: bool,
-    ) -> Result<Vec<FileEntry>, IndexServiceError> {
+    ) -> Result<Vec<FileEntry>, IndexManagerError> {
         let index_uri = self.metastore.index_metadata(index_id).await?.index_uri;
         let storage = self.storage_resolver.resolve(&index_uri)?;
 

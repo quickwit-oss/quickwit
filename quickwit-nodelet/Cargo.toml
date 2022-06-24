@@ -1,27 +1,23 @@
 [package]
-name = "quickwit-ingest-api"
+name = "quickwit-nodelet"
 version = "0.3.1"
+authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
 description = "Quickwit is a cost-efficient search engine."
+repository = "https://github.com/quickwit-oss/quickwit"
+homepage = "https://quickwit.io/"
+documentation = "https://quickwit.io/docs/"
 
 [dependencies]
-anyhow = "1"
+anyhow = "1.0"
 async-trait = "0.1"
-flume = "0.10"
-futures = "0.3.17"
-once_cell = "1"
 quickwit-actors = { version = "0.3.1", path = "../quickwit-actors" }
+quickwit-config = { version = "0.3.1", path = "../quickwit-config" }
 quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore" }
 quickwit-proto = { version = "0.3.1", path = "../quickwit-proto" }
-rocksdb = { version = "0.18", features = [], default-features = false }
-serde = { version = "1.0", features = ["derive", "rc"] }
-serde_json = "1"
+serde = { version = "1.0", features = ["derive"] }
 thiserror = "1"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1.19", features = ["full"] }
+tonic = "0.7"
 tracing = "0.1.29"
-
-[dev-dependencies]
-rand = "0.8"
-rand_distr = "0.4"
-tempfile = "3"
