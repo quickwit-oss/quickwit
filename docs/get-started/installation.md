@@ -10,12 +10,12 @@ Quickwit compiles to a single binary, we provide different methods to install it
 
 ## Download
 
-Version: 0.3.0 - [Release note](https://github.com/quickwit-oss/quickwit/releases/tag/v0.3.0)
+Version: 0.3.1 - [Release note](https://github.com/quickwit-oss/quickwit/releases/tag/v0.3.1)
 License: [AGPL V3](https://github.com/quickwit-oss/quickwit/blob/main/LICENSE.md)
 Downloads `.tar.gz`:
-- [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/v0.3.0/quickwit-v0.3.0-aarch64-unknown-linux-gnu.tar.gz)
-- [Linux x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.3.0/quickwit-v0.3.0-x86_64-unknown-linux-gnu.tar.gz)
-- [macOS x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.3.0/quickwit-v0.3.0-x86_64-apple-darwin.tar.gz)
+- [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/v0.3.1/quickwit-v0.3.1-aarch64-unknown-linux-gnu.tar.gz)
+- [Linux x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.3.1/quickwit-v0.3.1-x86_64-unknown-linux-gnu.tar.gz)
+- [macOS x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.3.1/quickwit-v0.3.1-x86_64-apple-darwin.tar.gz)
 
 
 Check out the available builds in greater detail on [GitHub](https://github.com/quickwit-oss/quickwit/releases)
