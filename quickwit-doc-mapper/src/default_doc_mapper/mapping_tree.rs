@@ -27,9 +27,9 @@ use tantivy::schema::{
     BytesOptions, Cardinality, Field, JsonObjectOptions, NumericOptions, SchemaBuilder,
     TextOptions, Value,
 };
-use tantivy::Document;
+use tantivy::{Document, DateTime, DateTimeOptions};
 
-use super::date_time_type::{timestamp_to_datetime_str, QuickwitDateTimeOptions, TimePrecision};
+use super::date_time_type::{timestamp_to_datetime_str, QuickwitDateTimeOptions};
 use crate::default_doc_mapper::field_mapping_entry::{
     QuickwitNumericOptions, QuickwitObjectOptions, QuickwitTextOptions,
 };
@@ -62,7 +62,7 @@ impl LeafType {
         match self {
             LeafType::Text(_) => JsonType::String,
             LeafType::I64(_) | LeafType::U64(_) | LeafType::F64(_) => JsonType::Number,
-            LeafType::DateTime(_) => JsonType::Number,
+            LeafType::DateTime(_) => JsonType::String,
             LeafType::Bytes(_) => JsonType::String,
             LeafType::Json(_) => JsonType::Object,
         }
@@ -91,17 +91,10 @@ impl LeafType {
             LeafType::I64(_) => i64::from_json(json_val),
             LeafType::U64(_) => u64::from_json(json_val),
             LeafType::F64(_) => f64::from_json(json_val),
-            LeafType::DateTime(opt) => {
-                let date_parsers = opt.get_parsers();
-                let mut date_parsers_guard = date_parsers.lock().unwrap();
+            LeafType::DateTime(options) => {
                 let date_time = match json_val {
-                    JsonValue::String(text) => {
-                        date_parsers_guard.as_mut().unwrap().parse_string(text)?
-                    }
-                    JsonValue::Number(number) => date_parsers_guard
-                        .as_mut()
-                        .unwrap()
-                        .parse_number(number.as_i64().unwrap())?,
+                    JsonValue::String(text) => options.parse_string(text)?,
+                    JsonValue::Number(number) => options.parse_number(number.as_i64().unwrap())?,
                     _ => {
                         return Err(format!(
                             "Expected date as string or number, got '{}'.",
@@ -109,16 +102,7 @@ impl LeafType {
                         ))
                     }
                 };
-
-                let value = match opt.precision {
-                    TimePrecision::Seconds => date_time.unix_timestamp(),
-                    TimePrecision::Milliseconds => {
-                        (date_time.unix_timestamp_nanos() / 1_000_000) as i64
-                    }
-                    TimePrecision::Microseconds => (date_time.unix_timestamp_nanos() / 1000) as i64,
-                    TimePrecision::Nanoseconds => date_time.unix_timestamp_nanos() as i64,
-                };
-                Ok(Value::I64(value))
+                Ok(Value::DateTime(DateTime::from_utc_with_precision(date_time, opt.precision)))
             }
             LeafType::Bytes(_) => {
                 let base64_str = if let JsonValue::String(base64_str) = json_val {
@@ -533,18 +517,21 @@ fn get_numeric_options(
 fn get_date_time_options(
     quickwit_date_time_options: &QuickwitDateTimeOptions,
     cardinality: Cardinality,
-) -> NumericOptions {
-    let mut numeric_options = NumericOptions::default();
+) -> DateTimeOptions {
+    let mut date_time_options = DateTimeOptions::default();
     if quickwit_date_time_options.stored {
-        numeric_options = numeric_options.set_stored();
+        date_time_options = date_time_options.set_stored();
     }
     if quickwit_date_time_options.indexed {
-        numeric_options = numeric_options.set_indexed();
+        date_time_options = date_time_options.set_indexed();
     }
     if quickwit_date_time_options.fast {
-        numeric_options = numeric_options.set_fast(cardinality);
+        date_time_options = date_time_options.set_fast(cardinality);
     }
-    numeric_options
+    date_time_options.set_input_formats(quickwit_date_time_options.input_formats);
+    date_time_options.set_precision(quickwit_date_time_options.precision);
+
+    date_time_options
 }
 
 fn get_bytes_options(quickwit_numeric_options: &QuickwitNumericOptions) -> BytesOptions {
@@ -634,7 +621,7 @@ fn build_mapping_from_field_type<'a>(
         }
         FieldMappingType::DateTime(options, cardinality) => {
             let date_time_options = get_date_time_options(options, *cardinality);
-            let field = schema_builder.add_i64_field(&field_name, date_time_options);
+            let field = schema_builder.add_datetime_field(&field_name, date_time_options);
             let mapping_leaf = MappingLeaf {
                 field,
                 typ: LeafType::DateTime(options.clone()),

@@ -52,7 +52,7 @@ impl FieldMappingType {
             FieldMappingType::I64(_, cardinality) => (Type::I64, *cardinality),
             FieldMappingType::U64(_, cardinality) => (Type::U64, *cardinality),
             FieldMappingType::F64(_, cardinality) => (Type::F64, *cardinality),
-            FieldMappingType::DateTime(_, cardinality) => (Type::Date, *cardinality),
+            FieldMappingType::DateTime(_, cardinality) => (Type::DateTime, *cardinality),
             FieldMappingType::Bytes(_, cardinality) => (Type::Bytes, *cardinality),
             FieldMappingType::Json(_, cardinality) => (Type::Json, *cardinality),
             FieldMappingType::Object(_) => {
@@ -101,7 +101,8 @@ fn parse_primitive_type(primitive_type_str: &str) -> Option<Type> {
         "u64" => Some(Type::U64),
         "i64" => Some(Type::I64),
         "f64" => Some(Type::F64),
-        "datetime" => Some(Type::Date),
+        "bool" => Some(Type::Bool),
+        "datetime" => Some(Type::DateTime),
         "bytes" => Some(Type::Bytes),
         "json" => Some(Type::Json),
         _unknown_type => None,
@@ -114,7 +115,8 @@ fn primitive_type_to_str(primitive_type: &Type) -> &'static str {
         Type::U64 => "u64",
         Type::I64 => "i64",
         Type::F64 => "f64",
-        Type::Date => "datetime",
+        Type::Bool => "bool",
+        Type::DateTime | Type::Date => "datetime",
         Type::Bytes => "bytes",
         Type::Json => "json",
         Type::Facet => {

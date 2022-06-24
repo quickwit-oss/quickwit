@@ -276,7 +276,11 @@ fn deserialize_mapping_type(
             let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
             Ok(FieldMappingType::F64(numeric_options, cardinality))
         }
-        Type::Date => {
+        Type::Bool => {
+            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
+            Ok(FieldMappingType::Bool(numeric_options, cardinality))
+        }
+        Type::DateTime | Type::Date => {
             let date_time_options: QuickwitDateTimeOptions = serde_json::from_value(json)?;
             Ok(FieldMappingType::DateTime(date_time_options, cardinality))
         }
