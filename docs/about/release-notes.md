@@ -1,10 +1,8 @@
 ---
-title: Release notes
+title: Releases
 sidebar_position: 1
 ---
 
-## Quickwit 0.1
+## Quickwit releases
 
-This is the first release of Quickwit featuring indexing and distributed search from object storage.
-
-Check out our [blog post](https://quickwit.io/blog/quickwit-first-release) and [github release notes](https://github.com/quickwit-oss/quickwit/releases/tag/v0.1.0).
+Checkout our [release notes](https://github.com/quickwit-oss/quickwit/releases) and our [changelog](https://github.com/quickwit-oss/quickwit/blob/main/CHANGELOG.md).
