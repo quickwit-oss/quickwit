@@ -49,7 +49,7 @@ The index config defines three text fields: `title`, `body` and `url`. It also s
 
 And here is the complete config:
 
-```yaml title="wikipedia_index_config.yaml"
+```yaml title="wikipedia-index-config.yaml"
 version: 0
 index_id: wikipedia
 doc_mapping:
