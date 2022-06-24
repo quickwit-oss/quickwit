@@ -93,19 +93,22 @@ fn initialize_db(pool: &Pool<ConnectionManager<PgConnection>>) -> anyhow::Result
     match embedded_migrations::run_with_output(&*db_conn, &mut migrations_log_buffer) {
         Ok(_) => {
             let migrations_log = String::from_utf8_lossy(&migrations_log_buffer);
-            info!(
-                migrations_log = migrations_log.as_ref(),
-                "Database migrations succeeded"
-            );
+            if !migrations_log.is_empty() {
+                info!(
+                    migrations_log = migrations_log.as_ref(),
+                    "Database migrations succeeded."
+                );
+            }
             Ok(())
         }
-        Err(err) => {
+        Err(error) => {
             let migrations_log = String::from_utf8_lossy(&migrations_log_buffer);
             error!(
                 migrations_log = migrations_log.as_ref(),
-                "Database migrations failed"
+                error = ?error,
+                "Database migrations failed."
             );
-            Err(anyhow::anyhow!(err))
+            Err(anyhow::anyhow!(error))
         }
     }
 }
@@ -141,13 +144,13 @@ impl PostgresqlMetastore {
             );
             match connection_pool.get() {
                 Ok(_conn) => {
-                    info!("The connection pool works fine");
+                    info!("Connection to PostgreSQL database successfully established.");
                     is_status_ok = true;
                     break;
                 }
                 Err(err) => {
-                    warn!(err=?err, "Failed to get connection from the connection pool. Trying again");
                     retry_cnt += 1;
+                    warn!(num_attempts = %retry_cnt, err = ?err, "Failed to get connection from the connection pool. Trying again");
                     tokio::time::sleep(CONNECTION_STATUS_CHECK_INTERVAL).await;
                 }
             }
@@ -158,10 +161,9 @@ impl PostgresqlMetastore {
                 CONNECTION_STATUS_CHECK_MAX_RETRY_COUNT
             );
             return Err(MetastoreError::ConnectionError {
-                message: "The connection pool does not work fine".to_string(),
+                message: "Failed to establish connection to PostgreSQL database.".to_string(),
             });
         }
-
         initialize_db(&connection_pool).map_err(|err| MetastoreError::InternalError {
             message: "Failed to initialize database".to_string(),
             cause: anyhow::anyhow!(err),

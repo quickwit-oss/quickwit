@@ -35,12 +35,12 @@ use crate::search_api::{search_get_handler, search_post_handler, search_stream_h
 use crate::ui_handler::ui_handler;
 use crate::{Format, QuickwitServices};
 
-/// Start REST service given a HTTP address and a search service.
+/// Starts REST service given a HTTP address and a search service.
 pub(crate) async fn start_rest_server(
-    rest_addr: SocketAddr,
+    rest_listen_addr: SocketAddr,
     quickwit_services: &QuickwitServices,
 ) -> anyhow::Result<()> {
-    info!(rest_addr=?rest_addr, "Starting REST service.");
+    info!(rest_listen_addr = %rest_listen_addr, "Starting REST server.");
     let request_counter = warp::log::custom(|_| {
         crate::COUNTERS.num_requests.inc();
     });
@@ -78,8 +78,8 @@ pub(crate) async fn start_rest_server(
         .with(request_counter)
         .recover(recover_fn);
 
-    info!("Searcher ready to accept requests at http://{rest_addr}/");
-    warp::serve(rest_routes).run(rest_addr).await;
+    info!("Searcher ready to accept requests at http://{rest_listen_addr}/");
+    warp::serve(rest_routes).run(rest_listen_addr).await;
     Ok(())
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-doc-mapper"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
@@ -13,13 +13,14 @@ documentation = "https://quickwit.io/docs/"
 anyhow = "1"
 base64 = "0.13"
 dyn-clone = "1.0.4"
-itertools = '0.10'
+fnv = "1"
+itertools = "0.10"
 once_cell = "1.12"
 regex = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "4b1ce74", default-features=false, features = ["mmap", "lz4-compression", "zstd-compression", "quickwit"] }
-tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "328bd96"}
+tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "88054aa"}
 thiserror = "1.0"
 tracing = "0.1.29"
 typetag = "0.1"
@@ -28,21 +29,14 @@ derivative = "2.2.0"
 time = { version = "0.3.10", features = ["std", "macros"] }
 chrono = "0.4.19"
 chrono-tz = "0.6"
+quickwit-proto = { version = "0.3", path = "../quickwit-proto" }
+mockall = { version = "0.11", optional = true }
 
-[dependencies.quickwit-proto]
-version = "0.3"
-path = '../quickwit-proto'
-
-[dependencies.mockall]
-version = "0.11"
-optional = true
 
 [dev-dependencies]
-mockall = "0.11"
 criterion = "0.3"
-
-[dev-dependencies.matches]
-version = "0.1.8"
+matches = "0.1.8"
+mockall = "0.11"
 
 [features]
 testsuite = ["mockall"]

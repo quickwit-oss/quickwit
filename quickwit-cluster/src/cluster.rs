@@ -29,7 +29,6 @@ use chitchat::{
     NodeId,
 };
 use itertools::Itertools;
-use quickwit_common::net::get_socket_addr;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::time::timeout;
@@ -109,7 +108,7 @@ pub struct Cluster {
     /// Node ID.
     pub node_id: String,
     /// A socket address that represents itself.
-    pub listen_addr: SocketAddr,
+    pub gossip_listen_addr: SocketAddr,
 
     /// A handle to command Chitchat.
     /// If it is dropped, the chitchat server will stop.
@@ -133,32 +132,34 @@ impl Cluster {
     pub async fn join(
         me: Member,
         services: &HashSet<QuickwitService>,
-        listen_addr: SocketAddr,
+        gossip_listen_addr: SocketAddr,
         cluster_id: String,
-        grpc_addr: SocketAddr,
-        seed_nodes: Vec<String>,
+        grpc_public_addr: SocketAddr,
+        peer_seed_addrs: Vec<String>,
         failure_detector_config: FailureDetectorConfig,
         transport: &dyn Transport,
     ) -> ClusterResult<Self> {
         info!(
-            cluster_id=%cluster_id,
-            node_id=%me.node_unique_id,
-            listen_address=%listen_addr,
-            gossip_address=%me.gossip_public_address,
+            cluster_id = %cluster_id,
+            node_id = %me.node_unique_id,
+            grpc_public_addr = %grpc_public_addr,
+            gossip_listen_addr = %gossip_listen_addr,
+            gossip_public_addr = %me.gossip_public_address,
+            peer_seed_addrs = %peer_seed_addrs.join(", "),
             "Joining cluster."
         );
         let chitchat_config = ChitchatConfig {
             node_id: NodeId::from(me.clone()),
             cluster_id: cluster_id.clone(),
             gossip_interval: GOSSIP_INTERVAL,
-            listen_addr,
-            seed_nodes,
+            listen_addr: gossip_listen_addr,
+            seed_nodes: peer_seed_addrs,
             failure_detector_config,
         };
         let chitchat_handle = spawn_chitchat(
             chitchat_config,
             vec![
-                (GRPC_ADDRESS_KEY.to_string(), grpc_addr.to_string()),
+                (GRPC_ADDRESS_KEY.to_string(), grpc_public_addr.to_string()),
                 (
                     AVAILABLE_SERVICES_KEY.to_string(),
                     services.iter().map(|service| service.as_str()).join(","),
@@ -168,7 +169,7 @@ impl Cluster {
         )
         .await
         .map_err(|cause| ClusterError::UDPPortBindingError {
-            listen_addr,
+            listen_addr: gossip_listen_addr,
             cause: cause.to_string(),
         })?;
         let chitchat = chitchat_handle.chitchat();
@@ -179,7 +180,7 @@ impl Cluster {
         let cluster = Cluster {
             cluster_id,
             node_id: me.internal_id(),
-            listen_addr,
+            gossip_listen_addr,
             chitchat_handle,
             members: members_receiver,
             stop: Arc::new(AtomicBool::new(false)),
@@ -204,13 +205,13 @@ impl Cluster {
                 members.push(me.clone());
 
                 if task_stop.load(Ordering::Relaxed) {
-                    debug!("receive a stop signal");
+                    debug!("Received a stop signal. Stopping.");
                     break;
                 }
 
                 if members_sender.send(members).is_err() {
                     // Somehow the cluster has been dropped.
-                    error!("Failed to send a member list.");
+                    error!("Failed to send members list. Stopping.");
                     break;
                 }
             }
@@ -268,7 +269,7 @@ impl Cluster {
                         member.internal_id()
                     )
                 })
-                .map(|addr_str| get_socket_addr(&addr_str))??;
+                .map(|addr_str| addr_str.parse::<SocketAddr>())??;
             grpc_addresses.push(grpc_address);
         }
 
@@ -284,7 +285,7 @@ impl Cluster {
 
     /// Leave the cluster.
     pub async fn leave(&self) {
-        info!(self_addr = ?self.listen_addr, "Leaving the cluster.");
+        info!(self_addr = ?self.gossip_listen_addr, "Leaving the cluster.");
         // TODO: implements leave/join on Chitchat
         // https://github.com/quickwit-oss/chitchat/issues/30
         self.stop.store(true, Ordering::Relaxed);
@@ -306,10 +307,10 @@ impl Cluster {
 
     /// Leave the cluster.
     pub async fn shutdown(self) {
-        info!(self_addr = ?self.listen_addr, "Shutting down the cluster.");
+        info!(self_addr = ?self.gossip_listen_addr, "Shutting down the cluster.");
         let result = self.chitchat_handle.shutdown().await;
         if let Err(error) = result {
-            error!(self_addr = ?self.listen_addr, error = ?error, "Error while shuting down.");
+            error!(self_addr = ?self.gossip_listen_addr, error = ?error, "Error while shuting down.");
         }
 
         self.stop.store(true, Ordering::Relaxed);
@@ -443,7 +444,7 @@ mod tests {
             .iter()
             .map(|member| member.gossip_public_address)
             .collect();
-        let expected_members = vec![cluster.listen_addr];
+        let expected_members = vec![cluster.gossip_listen_addr];
         assert_eq!(members, expected_members);
         cluster.shutdown().await;
         Ok(())
@@ -454,14 +455,14 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
         let cluster1 = create_cluster_for_test(Vec::new(), &["searcher"], &transport).await?;
-        let node_1 = cluster1.listen_addr.to_string();
+        let node_1 = cluster1.gossip_listen_addr.to_string();
         let cluster2 =
             create_cluster_for_test(vec![node_1.clone()], &["searcher"], &transport).await?;
         let cluster3 = create_cluster_for_test(vec![node_1], &["indexer"], &transport).await?;
 
         let mut expected_searchers = vec![
-            grpc_addr_from_listen_addr_for_test(cluster1.listen_addr),
-            grpc_addr_from_listen_addr_for_test(cluster2.listen_addr),
+            grpc_addr_from_listen_addr_for_test(cluster1.gossip_listen_addr),
+            grpc_addr_from_listen_addr_for_test(cluster2.gossip_listen_addr),
         ];
         expected_searchers.sort();
 
@@ -487,16 +488,16 @@ mod tests {
         let transport = ChannelTransport::default();
         let cluster1 =
             create_cluster_for_test(Vec::new(), &["searcher", "indexer"], &transport).await?;
-        let node_1 = cluster1.listen_addr.to_string();
+        let node_1 = cluster1.gossip_listen_addr.to_string();
         let cluster2 =
             create_cluster_for_test(vec![node_1.clone()], &["indexer"], &transport).await?;
         let cluster3 =
             create_cluster_for_test(vec![node_1], &["indexer", "searcher"], &transport).await?;
 
         let mut expected_indexers = vec![
-            grpc_addr_from_listen_addr_for_test(cluster1.listen_addr),
-            grpc_addr_from_listen_addr_for_test(cluster2.listen_addr),
-            grpc_addr_from_listen_addr_for_test(cluster3.listen_addr),
+            grpc_addr_from_listen_addr_for_test(cluster1.gossip_listen_addr),
+            grpc_addr_from_listen_addr_for_test(cluster2.gossip_listen_addr),
+            grpc_addr_from_listen_addr_for_test(cluster3.gossip_listen_addr),
         ];
         expected_indexers.sort();
 
@@ -523,7 +524,7 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
         let cluster1 = create_cluster_for_test(Vec::new(), &[], &transport).await?;
-        let node_1 = cluster1.listen_addr.to_string();
+        let node_1 = cluster1.gossip_listen_addr.to_string();
         let cluster2 = create_cluster_for_test(vec![node_1.clone()], &[], &transport).await?;
         let cluster3 = create_cluster_for_test(vec![node_1], &[], &transport).await?;
 
@@ -542,9 +543,9 @@ mod tests {
             .sorted()
             .collect();
         let mut expected_members = vec![
-            cluster1.listen_addr,
-            cluster2.listen_addr,
-            cluster3.listen_addr,
+            cluster1.gossip_listen_addr,
+            cluster2.gossip_listen_addr,
+            cluster3.gossip_listen_addr,
         ];
         expected_members.sort();
         assert_eq!(members, expected_members);
@@ -579,7 +580,7 @@ mod tests {
         let cluster2a = create_cluster_for_test_with_id(
             21u16,
             "cluster2".to_string(),
-            vec![cluster1a.listen_addr.to_string()],
+            vec![cluster1a.gossip_listen_addr.to_string()],
             &HashSet::default(),
             &transport,
         )
@@ -588,8 +589,8 @@ mod tests {
             12,
             "cluster1".to_string(),
             vec![
-                cluster1a.listen_addr.to_string(),
-                cluster2a.listen_addr.to_string(),
+                cluster1a.gossip_listen_addr.to_string(),
+                cluster2a.gossip_listen_addr.to_string(),
             ],
             &HashSet::default(),
             &transport,
@@ -599,8 +600,8 @@ mod tests {
             22,
             "cluster2".to_string(),
             vec![
-                cluster1a.listen_addr.to_string(),
-                cluster2a.listen_addr.to_string(),
+                cluster1a.gossip_listen_addr.to_string(),
+                cluster2a.gossip_listen_addr.to_string(),
             ],
             &HashSet::default(),
             &transport,
@@ -622,7 +623,8 @@ mod tests {
             .map(|member| member.gossip_public_address)
             .sorted()
             .collect();
-        let mut expected_members_a = vec![cluster1a.listen_addr, cluster1b.listen_addr];
+        let mut expected_members_a =
+            vec![cluster1a.gossip_listen_addr, cluster1b.gossip_listen_addr];
         expected_members_a.sort();
         assert_eq!(members_a, expected_members_a);
 
@@ -632,7 +634,8 @@ mod tests {
             .map(|member| member.gossip_public_address)
             .sorted()
             .collect();
-        let mut expected_members_b = vec![cluster2a.listen_addr, cluster2b.listen_addr];
+        let mut expected_members_b =
+            vec![cluster2a.gossip_listen_addr, cluster2b.gossip_listen_addr];
         expected_members_b.sort();
         assert_eq!(members_b, expected_members_b);
 
@@ -652,7 +655,7 @@ mod tests {
             &transport,
         )
         .await?;
-        let node_1 = cluster1.listen_addr.to_string();
+        let node_1 = cluster1.gossip_listen_addr.to_string();
         let cluster2 = create_cluster_for_test_with_id(
             2u16,
             cluster_id.to_string(),
@@ -676,11 +679,11 @@ mod tests {
             .map(|member| member.gossip_public_address)
             .sorted()
             .collect();
-        let mut expected_members = vec![cluster1.listen_addr, cluster2.listen_addr];
+        let mut expected_members = vec![cluster1.gossip_listen_addr, cluster2.gossip_listen_addr];
         expected_members.sort();
         assert_eq!(members, expected_members);
 
-        let cluster2_listen_addr = cluster2.listen_addr;
+        let cluster2_listen_addr = cluster2.gossip_listen_addr;
         cluster2.shutdown().await;
         cluster1
             .wait_for_members(|members| members.len() == 1, wait_secs)
@@ -733,7 +736,7 @@ mod tests {
             &transport,
         )
         .await?;
-        let node_1 = cluster1.listen_addr.to_string();
+        let node_1 = cluster1.gossip_listen_addr.to_string();
         let cluster2 = create_cluster_for_test_with_id(
             2u16,
             cluster_id.to_string(),
@@ -742,7 +745,7 @@ mod tests {
             &transport,
         )
         .await?;
-        let node_2 = cluster2.listen_addr.to_string();
+        let node_2 = cluster2.gossip_listen_addr.to_string();
         let cluster3 = create_cluster_for_test_with_id(
             3u16,
             cluster_id.to_string(),
@@ -767,15 +770,15 @@ mod tests {
             .sorted()
             .collect();
         let mut expected_members = vec![
-            cluster1.listen_addr,
-            cluster2.listen_addr,
-            cluster3.listen_addr,
+            cluster1.gossip_listen_addr,
+            cluster2.gossip_listen_addr,
+            cluster3.gossip_listen_addr,
         ];
         expected_members.sort();
         assert_eq!(members, expected_members);
 
-        let cluster2_listen_addr = cluster2.listen_addr;
-        let cluster3_listen_addr = cluster3.listen_addr;
+        let cluster2_listen_addr = cluster2.gossip_listen_addr;
+        let cluster3_listen_addr = cluster3.gossip_listen_addr;
         cluster2.shutdown().await;
         cluster3.shutdown().await;
         cluster1
@@ -796,7 +799,7 @@ mod tests {
             &transport,
         )
         .await?;
-        let node_2 = cluster2.listen_addr.to_string();
+        let node_2 = cluster2.gossip_listen_addr.to_string();
 
         let cluster3 = Cluster::join(
             Member::new("new_node_3".to_string(), 1, cluster3_listen_addr),

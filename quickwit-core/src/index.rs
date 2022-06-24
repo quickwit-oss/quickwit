@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -92,7 +93,22 @@ impl IndexService {
     pub async fn create_index(
         &self,
         index_config: IndexConfig,
+        overwrite: bool,
     ) -> Result<IndexMetadata, IndexServiceError> {
+        // Delete existing index if it exists.
+        if overwrite {
+            match self.delete_index(&index_config.index_id, false).await {
+                Ok(_)
+                | Err(IndexServiceError::MetastoreError(MetastoreError::IndexDoesNotExist {
+                    index_id: _,
+                })) => {
+                    // Ignore IndexDoesNotExist error.
+                }
+                Err(error) => {
+                    return Err(error);
+                }
+            }
+        }
         index_config
             .validate()
             .map_err(|error| IndexServiceError::InvalidIndexConfig(error.to_string()))?;
@@ -296,12 +312,12 @@ pub async fn clear_cache_directory(
 /// * `data_dir_path` - Path to directory where data (tmp data, splits kept for caching purpose) is
 ///   persisted.
 /// * `index_id` - The target index ID.
-pub async fn remove_indexing_directory(
-    data_dir_path: &Path,
-    index_id: String,
-) -> anyhow::Result<()> {
+pub async fn remove_indexing_directory(data_dir_path: &Path, index_id: String) -> io::Result<()> {
     let indexing_directory_path = data_dir_path.join(INDEXING_DIR_NAME).join(index_id);
     info!(path = %indexing_directory_path.display(), "Clearing indexing directory.");
-    tokio::fs::remove_dir_all(indexing_directory_path.as_path()).await?;
-    Ok(())
+    match tokio::fs::remove_dir_all(indexing_directory_path.as_path()).await {
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
 }

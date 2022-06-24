@@ -139,7 +139,6 @@ pub async fn serve_quickwit(
         storage_resolver,
         config.default_index_root_uri(),
     ));
-
     let quickwit_services = QuickwitServices {
         ingest_api_service,
         cluster_service,
@@ -148,15 +147,13 @@ pub async fn serve_quickwit(
         index_service,
         services: services.clone(),
     };
+    let grpc_listen_addr = config.grpc_listen_addr().await?;
+    let grpc_server = grpc::start_grpc_server(grpc_listen_addr, &quickwit_services);
 
-    let rest_addr = config.rest_socket_addr()?;
-    let grpc_addr = config.grpc_socket_addr()?;
+    let rest_listen_addr = config.rest_listen_addr().await?;
+    let rest_server = rest::start_rest_server(rest_listen_addr, &quickwit_services);
 
-    let grpc_server = grpc::start_grpc_server(grpc_addr, &quickwit_services);
-    let rest_server = rest::start_rest_server(rest_addr, &quickwit_services);
-
-    tokio::try_join!(rest_server, grpc_server)?;
-
+    tokio::try_join!(grpc_server, rest_server)?;
     Ok(())
 }
 
@@ -171,19 +168,21 @@ async fn check_is_configured_for_cluster(
     if config.peer_seeds.is_empty() {
         return Ok(());
     }
-
     let metastore_uri = Uri::try_new(&metastore.uri())?;
     if metastore_uri.protocol() == FILE_PROTOCOL || metastore_uri.protocol() == S3_PROTOCOL {
         anyhow::bail!(
-            "Cluster feature cannot be used in conjunction with a file backed metastore."
+            "Quickwit cannot run in cluster mode with a file-backed metastore. Please, use a \
+             PostgreSQL metastore instead."
         );
     }
-
     for index_metadata in metastore.list_indexes_metadatas().await? {
         let index_uri = Uri::try_new(&index_metadata.index_uri)?;
         if index_uri.protocol() == FILE_PROTOCOL {
             anyhow::bail!(
-                "Quickwit cluster feature cannot be used in conjunction with a file storage."
+                "Quickwit cannot run in cluster mode with an index whose data is stored on a \
+                 local file system. Index URI for index `{}` is `{}`.",
+                index_metadata.index_id,
+                index_uri
             );
         }
     }

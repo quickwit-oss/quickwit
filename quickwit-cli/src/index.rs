@@ -63,7 +63,7 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 .about("List indexes.")
                 .alias("ls")
                 .args(&[
-                    arg!(--"metastore-uri" <METASTORE_URI> "Metastore URI. Override the `metastore_uri` parameter defined in the config file. Default to file-backed, but could be Amazon S3 or PostgreSQL.")
+                    arg!(--"metastore-uri" <METASTORE_URI> "Metastore URI. Override the `metastore_uri` parameter defined in the config file. Defaults to file-backed, but could be Amazon S3 or PostgreSQL.")
                         .required(false)
                 ])
             )
@@ -784,11 +784,9 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         quickwit_storage_uri_resolver().clone(),
         quickwit_config.default_index_root_uri(),
     );
-    if args.overwrite {
-        index_service.delete_index(&index_id, false).await?;
-    }
-
-    index_service.create_index(index_config).await?;
+    index_service
+        .create_index(index_config, args.overwrite)
+        .await?;
     println!("Index `{}` successfully created.", index_id);
 
     Ok(())
@@ -984,13 +982,11 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
         }
         return Ok(());
     }
-
     if let Err(error) =
         remove_indexing_directory(&quickwit_config.data_dir_path, args.index_id.clone()).await
     {
         warn!(error= ?error, "Failed to remove indexing directory.");
     }
-
     println!("Index `{}` successfully deleted.", args.index_id);
     Ok(())
 }

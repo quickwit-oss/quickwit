@@ -139,6 +139,10 @@ pub struct IndexingSettings {
     pub sort_order: Option<SortOrder>,
     #[serde(default = "IndexingSettings::default_commit_timeout_secs")]
     pub commit_timeout_secs: usize,
+    #[serde(default = "IndexingSettings::default_docstore_compression_level")]
+    pub docstore_compression_level: i32,
+    #[serde(default = "IndexingSettings::default_docstore_blocksize")]
+    pub docstore_blocksize: usize,
     /// A split containing a number of docs greather than or equal to this value is considered
     /// mature.
     #[serde(default = "IndexingSettings::default_split_num_docs_target")]
@@ -158,6 +162,14 @@ impl IndexingSettings {
 
     fn default_commit_timeout_secs() -> usize {
         60
+    }
+
+    pub fn default_docstore_blocksize() -> usize {
+        1_000_000
+    }
+
+    pub fn default_docstore_compression_level() -> i32 {
+        8
     }
 
     fn default_split_num_docs_target() -> usize {
@@ -194,6 +206,8 @@ impl Default for IndexingSettings {
             sort_field: None,
             sort_order: None,
             commit_timeout_secs: Self::default_commit_timeout_secs(),
+            docstore_blocksize: Self::default_docstore_blocksize(),
+            docstore_compression_level: Self::default_docstore_compression_level(),
             split_num_docs_target: Self::default_split_num_docs_target(),
             merge_enabled: Self::default_merge_enabled(),
             merge_policy: MergePolicy::default(),

@@ -121,6 +121,20 @@ async fn test_cmd_create() -> Result<()> {
     assert_eq!(index_metadata.index_id, test_env.index_id);
     assert_eq!(index_metadata.index_uri, test_env.index_uri.as_ref());
 
+    // Create non existing index with --overwrite.
+    let index_id = append_random_suffix("test-create-non-existing-index-with-overwrite");
+    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    make_command(
+        format!(
+            "index create --index-config {} --config {} --overwrite",
+            test_env.resource_files["index_config_without_uri"].display(),
+            test_env.resource_files["config"].display(),
+        )
+        .as_str(),
+    )
+    .assert()
+    .success();
+
     // Attempt to create with ill-formed new command.
     make_command("index create")
         .assert()

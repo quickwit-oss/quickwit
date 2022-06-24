@@ -155,7 +155,7 @@ We are always super happy to have contributions: code, documentation, issues, fe
 
 # 🔗 Reference
 - [Quickwit CLI](https://quickwit.io/docs/reference/cli)
-- [Index Config](https://quickwit.io/docs/reference/index-config)
+- [Index Config](https://quickwit.io/docs/configuration/index-config)
 - [Search API](https://quickwit.io/docs/reference/rest-api)
 - [Query language](https://quickwit.io/docs/reference/query-language)
 - [Code of conduct](CODE_OF_CONDUCT.md)

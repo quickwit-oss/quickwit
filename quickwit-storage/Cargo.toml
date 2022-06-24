@@ -1,8 +1,8 @@
 [package]
-name = 'quickwit-storage'
-version = "0.3.0"
-authors = ['Quickwit, Inc. <hello@quickwit.io>']
-edition = '2021'
+name = "quickwit-storage"
+version = "0.3.1"
+authors = ["Quickwit, Inc. <hello@quickwit.io>"]
+edition = "2021"
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
 description = "Quickwit's storage abstraction"
 repository = "https://github.com/quickwit-oss/quickwit"
@@ -10,52 +10,44 @@ homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
-quickwit-common = { version = "0.3.0", path = "../quickwit-common" }
-quickwit-config = { version = "0.3.0", path = "../quickwit-config" }
-quickwit-aws = {version = "0.3.0", path = "../quickwit-aws"}
-async-trait = '0.1'
-md5 = '0.7'
-anyhow = '1'
-bytes = '1'
-futures = '0.3'
-serde_json = "1"
-base64 = '0.13'
-tracing = "0.1.29"
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "328bd96", default-features=false, features = ["mmap", "lz4-compression", "zstd-compression", "quickwit"] }
-once_cell = '1'
-regex = '1'
-thiserror = '1'
-rand = '0.8'
-lru = "0.7"
-serde = { version = "1.0", features = ["derive"] }
+anyhow = "1"
+async-trait = "0.1"
+base64 = "0.13"
+bytes = "1"
 ec2_instance_metadata = "0.3"
-tempfile = '3'
-
-[dependencies.rusoto_core]
-version = '0.48'
-default-features = false
-features = ['rustls']
-
-[dependencies.rusoto_s3]
-version = '0.48'
-default-features = false
-features = ['rustls']
-
-[dependencies.tokio]
-version = '1'
-features = ['full']
-
-[dependencies.tokio-util]
-version = '0.7'
-features = ['full']
-
-[dependencies.mockall]
-version = "0.11"
-optional = true
+futures = "0.3"
+lru = "0.7"
+md5 = "0.7"
+mockall = { version = "0.11", optional = true }
+once_cell = "1"
+quickwit-aws = { version = "0.3.1", path = "../quickwit-aws" }
+quickwit-common = { version = "0.3.1", path = "../quickwit-common" }
+quickwit-config = { version = "0.3.1", path = "../quickwit-config" }
+rand = "0.8"
+regex = "1"
+rusoto_core = { version = "0.48", default-features = false, features = [
+  "rustls"
+] }
+rusoto_s3 = { version = "0.48", default-features = false, features = [
+  "rustls"
+] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "88054aa", default-features = false, features = [
+  "mmap",
+  "lz4-compression",
+  "zstd-compression",
+  "quickwit"
+] }
+tempfile = "3"
+thiserror = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["full"] }
+tracing = "0.1.29"
 
 [dev-dependencies]
-tracing-subscriber = "0.3"
 mockall = "0.11"
+tracing-subscriber = "0.3"
 
 [features]
 testsuite = ["mockall"]

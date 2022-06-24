@@ -36,7 +36,19 @@ pub fn build_run_command<'a>() -> Command<'a> {
         .about("Runs quickwit services. By default, `indexer` and `searcher` are started.")
         .args(&[
             arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.").env("QW_DATA_DIR").required(false),
-            arg!(--"service" <SERVICE> "Services (searcher|indexer) to run. If unspecified run both `searcher` and `indexer`.").required(false)
+            arg!(--"service" <SERVICE> "Services (searcher|indexer) to run. If unspecified run both `searcher` and `indexer`.").required(false),
+            arg!(--"metastore-uri" <METASTORE_URI> "Metastore URI. Override the `metastore_uri` parameter defined in the config file. Defaults to file-backed, but could be Amazon S3 or PostgreSQL.")
+                .env("QW_METASTORE_URI")
+                .required(false),
+            arg!(--"cluster-id" <CLUSTER_ID> "ID of the cluster to connect to.")
+                .env("QW_CLUSTER_ID")
+                .required(false),
+            arg!(--"node-id" <NODE_ID> "Node ID identifying uniquely the node in the cluster.")
+                .env("QW_NODE_ID")
+                .required(false),
+            arg!(--"peer-seeds" <PEER_SEEDS> "Comma-separated list of peer seeds to connect to in order to join a cluster.")
+                .env("QW_PEER_SEEDS")
+                .required(false),
         ])
 }
 
@@ -45,6 +57,10 @@ pub struct RunCliCommand {
     pub config_uri: Uri,
     pub data_dir_path: Option<PathBuf>,
     pub services: HashSet<QuickwitService>,
+    pub metastore_uri: Option<Uri>,
+    pub cluster_id: Option<String>,
+    pub node_id: Option<String>,
+    pub peer_seeds: Option<Vec<String>>,
 }
 
 impl RunCliCommand {
@@ -63,10 +79,23 @@ impl RunCliCommand {
                     .into_iter()
                     .collect()
             };
+        let metastore_uri = matches
+            .value_of("metastore-uri")
+            .map(Uri::try_new)
+            .transpose()?;
+        let cluster_id = matches.value_of("cluster-id").map(String::from);
+        let node_id = matches.value_of("node-id").map(String::from);
+        let peer_seeds = matches
+            .value_of("peer-seeds")
+            .map(|peer_seeds_str| peer_seeds_str.split(',').map(String::from).collect());
         Ok(RunCliCommand {
             config_uri,
             data_dir_path,
             services,
+            metastore_uri,
+            cluster_id,
+            node_id,
+            peer_seeds,
         })
     }
 
@@ -80,7 +109,28 @@ impl RunCliCommand {
         let telemetry_event = TelemetryEvent::RunService(service_str);
         quickwit_telemetry::send_telemetry_event(telemetry_event).await;
 
-        let config = load_quickwit_config(&self.config_uri, self.data_dir_path.clone()).await?;
+        let mut config = load_quickwit_config(&self.config_uri, self.data_dir_path.clone()).await?;
+
+        // TODO: Remove these overrides when #1011 lands.
+        if let Some(metastore_uri) = &self.metastore_uri {
+            tracing::info!(metastore_uri = %metastore_uri, "Setting metastore URI from override.");
+            config.metastore_uri = Some(metastore_uri.clone());
+        }
+        if let Some(cluster_id) = &self.cluster_id {
+            tracing::info!(cluster_id = %cluster_id, "Setting cluster ID from override.");
+            config.cluster_id = cluster_id.clone();
+        }
+        if let Some(node_id) = &self.node_id {
+            tracing::info!(node_id = %node_id, "Setting node ID from override.");
+            config.node_id = node_id.clone();
+        }
+        if let Some(peer_seeds) = &self.peer_seeds {
+            tracing::info!(peer_seeds = %peer_seeds.join(", "), "Setting peer seeds from override.");
+            config.peer_seeds = peer_seeds.clone();
+        }
+        // Revalidate config because of overrides.
+        config.validate()?;
+
         serve_quickwit(&config, &self.services).await?;
         Ok(())
     }
@@ -103,7 +153,8 @@ mod tests {
             CliCommand::Run(RunCliCommand {
                 config_uri,
                 data_dir_path: None,
-                services
+                services,
+                ..
             })
             if config_uri == expected_config_uri && services.len() == 2
         ));
@@ -127,7 +178,8 @@ mod tests {
             CliCommand::Run(RunCliCommand {
                 config_uri,
                 data_dir_path: None,
-                services
+                services,
+                ..
             })
             if config_uri == expected_config_uri && services.len() == 1 && services.iter().cloned().next().unwrap() == QuickwitService::Indexer
         ));
@@ -150,7 +202,8 @@ mod tests {
             CliCommand::Run(RunCliCommand {
                 config_uri,
                 data_dir_path: None,
-                services
+                services,
+                ..
             })
             if config_uri == expected_config_uri && services.len() == 1 && services.contains(&QuickwitService::Indexer)
         ));

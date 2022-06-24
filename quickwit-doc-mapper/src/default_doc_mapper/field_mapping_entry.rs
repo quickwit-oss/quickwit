@@ -341,7 +341,8 @@ fn typed_mapping_to_json_params(
         FieldMappingType::U64(options, _)
         | FieldMappingType::I64(options, _)
         | FieldMappingType::Bytes(options, _)
-        | FieldMappingType::F64(options, _) => serialize_to_map(&options),
+        | FieldMappingType::F64(options, _)
+        | FieldMappingType::Bool(options, _) => serialize_to_map(&options),
         FieldMappingType::DateTime(date_time_options, _) => serialize_to_map(&date_time_options),
         FieldMappingType::Json(json_options, _) => serialize_to_map(&json_options),
         FieldMappingType::Object(object_options) => serialize_to_map(&object_options),
@@ -788,6 +789,30 @@ mod tests {
             json!({
                 "name": "my_field_name",
                 "type":"f64",
+                "stored": true,
+                "fast": false,
+                "indexed": true
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_bool_mapping() {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "bool"
+            }
+            "#,
+        )
+        .unwrap();
+        let entry_deserser = serde_json::to_value(&entry).unwrap();
+        assert_eq!(
+            entry_deserser,
+            json!({
+                "name": "my_field_name",
+                "type": "bool",
                 "stored": true,
                 "fast": false,
                 "indexed": true

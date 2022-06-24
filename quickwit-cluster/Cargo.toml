@@ -1,7 +1,7 @@
 [package]
 name = "quickwit-cluster"
-version = "0.3.0"
-authors = ['Quickwit, Inc. <hello@quickwit.io>']
+version = "0.3.1"
+authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
 description = "Quickwit's cluster membership"
@@ -12,19 +12,19 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 anyhow = "1.0"
 async-trait = "0.1"
+chitchat = "0.4"
 flume = "0.10"
-quickwit-common = { version = "0.3.0", path = "../quickwit-common"}
-quickwit-config = { version = "0.3.0", path = "../quickwit-config"}
+itertools = "0.10"
+quickwit-common = { version = "0.3.1", path = "../quickwit-common" }
+quickwit-config = { version = "0.3.1", path = "../quickwit-config" }
+quickwit-proto = { version = "0.3.1", path = "../quickwit-proto" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
-tokio = { version = "1.19", features = [ "full" ] }
-tokio-stream = { version = "0.1", features = [ "sync" ] }
+tokio = { version = "1.19", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
 tracing = "0.1.29"
 uuid = { version = "1.1", features = ["v4", "serde"] }
-quickwit-proto = { version = "0.3.0", path = "../quickwit-proto"}
-chitchat = "0.4"
-itertools = '0.10'
 
 [dev-dependencies]
 tempfile = "3"

@@ -345,7 +345,9 @@ mod tests {
         let client_pool = SearchClientPool::create_and_keep_updated(cluster.clone()).await?;
         let clients = client_pool.clients();
         let addrs: Vec<SocketAddr> = clients.into_keys().collect();
-        let expected_addrs = vec![grpc_addr_from_listen_addr_for_test(cluster.listen_addr)];
+        let expected_addrs = vec![grpc_addr_from_listen_addr_for_test(
+            cluster.gossip_listen_addr,
+        )];
         assert_eq!(addrs, expected_addrs);
         Ok(())
     }
@@ -354,7 +356,7 @@ mod tests {
     async fn test_search_client_pool_multiple_nodes() -> anyhow::Result<()> {
         let transport = ChannelTransport::default();
         let cluster1 = create_cluster_simple_for_test(&transport).await?;
-        let node_1 = cluster1.listen_addr.to_string();
+        let node_1 = cluster1.gossip_listen_addr.to_string();
         let cluster2 = create_cluster_for_test(vec![node_1], &["searcher"], &transport).await?;
 
         cluster1
@@ -366,8 +368,8 @@ mod tests {
 
         let addrs: Vec<SocketAddr> = clients.into_keys().sorted().collect();
         let mut expected_addrs = vec![
-            grpc_addr_from_listen_addr_for_test(cluster1.listen_addr),
-            grpc_addr_from_listen_addr_for_test(cluster2.listen_addr),
+            grpc_addr_from_listen_addr_for_test(cluster1.gossip_listen_addr),
+            grpc_addr_from_listen_addr_for_test(cluster2.gossip_listen_addr),
         ];
         expected_addrs.sort();
         assert_eq!(addrs, expected_addrs);
@@ -388,8 +390,10 @@ mod tests {
 
         let assigned_jobs = client_pool.assign_jobs(jobs, &HashSet::default())?;
         let expected_assigned_jobs = vec![(
-            create_search_service_client(grpc_addr_from_listen_addr_for_test(cluster.listen_addr))
-                .await?,
+            create_search_service_client(grpc_addr_from_listen_addr_for_test(
+                cluster.gossip_listen_addr,
+            ))
+            .await?,
             vec![
                 SearchJob::for_test("split4", 4),
                 SearchJob::for_test("split3", 3),
