@@ -156,7 +156,7 @@ Example of a mapping for an i64 field:
 
 ```yaml
 name: timestamp
-descripton: UNIX timestamp of the document creation date
+description: UNIX timestamp of the document creation date
 type: i64
 stored: true
 indexed: true
