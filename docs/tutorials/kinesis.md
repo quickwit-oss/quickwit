@@ -122,7 +122,7 @@ params:
 Run these commands to download the source config file and create the source.
 
 ```bash
-# Download Kinesis soure config.
+# Download Kinesis source config.
 wget https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/gh-archive/kinesis-source.yaml
 
 # Create source.

@@ -2,9 +2,9 @@
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
-## Beforehands
+## Prerequisites
 
-`node` and `npm` needs to be installed on your system.
+`node` and `npm` need to be installed on your system.
 The project then relies on misc nodejs tools that can be installed locally by 
 running `npm install`.
 
