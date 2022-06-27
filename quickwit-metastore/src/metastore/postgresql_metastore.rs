@@ -327,11 +327,11 @@ impl PostgresqlMetastore {
 
         if let Some(time_range) = time_range_opt {
             select_statement = select_statement.filter(
-                schema::splits::dsl::time_range_end.is_null().or(
-                    schema::splits::dsl::time_range_end
-                        .ge(time_range.start)
-                        .and(schema::splits::dsl::time_range_start.lt(time_range.end)),
-                ),
+                schema::splits::dsl::time_range_end
+                    .is_null()
+                    .or(schema::splits::dsl::time_range_end
+                    .ge(time_range.start)
+                    .and(schema::splits::dsl::time_range_start.lt(time_range.end))),
             );
         }
 
@@ -723,17 +723,16 @@ impl Metastore for PostgresqlMetastore {
                 SplitState::MarkedForDeletion.to_string(),
             ];
 
-            let deleted_split_ids: Vec<String> = diesel::delete(
-                schema::splits::dsl::splits.filter(
+            let deleted_split_ids: Vec<String> =
+                diesel::delete(schema::splits::dsl::splits.filter(
                     schema::splits::dsl::index_id
                         .eq(index_id)
                         .and(schema::splits::dsl::split_id.eq_any(split_ids))
                         .and(schema::splits::dsl::split_state.eq_any(deletable_states)),
-                ),
-            )
-            .returning(schema::splits::dsl::split_id)
-            .get_results(&conn)
-            .map_err(MetastoreError::DbError)?;
+                ))
+                .returning(schema::splits::dsl::split_id)
+                .get_results(&conn)
+                .map_err(MetastoreError::DbError)?;
 
             // returning `Ok` means `commit` the transaction.
             if deleted_split_ids.len() == split_ids.len() {
