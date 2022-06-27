@@ -112,7 +112,9 @@ impl IndexerState {
             sort_by_field: self.sort_by_field_opt.clone(),
             ..Default::default()
         };
+        info!("wait");
         let permit = ctx.protect_future(INDEXER_PERMITS.acquire()).await?;
+        info!("acquired");
         let index_builder = IndexBuilder::new()
             .settings(index_settings)
             .schema(schema)
@@ -273,7 +275,7 @@ impl Actor for Indexer {
     }
 
     async fn on_empty(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        info!("on_empty");
+        self.send_to_packager(CommitTrigger::Timeout, ctx).await?;
         ctx.pause();
         Ok(())
     }
@@ -424,6 +426,7 @@ impl Indexer {
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         let indexed_split = if let Some(indexed_split) = self.current_split_opt.take() {
+            info!("send_to_packager");
             indexed_split
         } else {
             return Ok(());

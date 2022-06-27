@@ -17,7 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::time::Duration;
+
 use anyhow::Context;
+use flume::TryRecvError;
 use tokio::sync::watch;
 use tracing::{debug, error, info, Instrument};
 
@@ -148,11 +151,10 @@ async fn process_msg<A: Actor>(
     ctx.progress().record_progress();
 
     let command_or_msg_recv_res = if ctx.state().is_running() {
-        ctx.protect_future(inbox.recv_timeout()).await
+        inbox.try_recv()
     } else {
         // The actor is paused. We only process command and scheduled message.
-        ctx.protect_future(inbox.recv_timeout_cmd_and_scheduled_msg_only())
-            .await
+        inbox.try_recv_timeout_cmd_and_scheduled_msg_only()
     };
 
     if ctx.kill_switch().is_dead() {
@@ -168,9 +170,13 @@ async fn process_msg<A: Actor>(
             ctx.process();
             msg.handle_message(msg_id, actor, ctx).await.err()
         }
-        Err(RecvError::Disconnected) => Some(ActorExitStatus::Success),
-        Err(RecvError::Timeout) => {
+        Err(TryRecvError::Disconnected) => Some(ActorExitStatus::Success),
+        Err(TryRecvError::Empty) => {
             ctx.idle();
+            // FIXME
+            if let Err(exit_status) = actor.on_empty(ctx).await {
+                return Some(exit_status);
+            }
             if ctx.mailbox().is_last_mailbox() {
                 // No one will be able to send us more messages.
                 // We can exit the actor.

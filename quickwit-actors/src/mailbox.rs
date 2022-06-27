@@ -23,6 +23,7 @@ use std::fmt;
 use std::hash::Hash;
 use std::sync::Arc;
 
+use flume::TryRecvError;
 use tokio::sync::oneshot;
 
 use crate::channel_with_priority::{Priority, Receiver, Sender};
@@ -258,8 +259,17 @@ pub struct Inbox<A: Actor> {
 }
 
 impl<A: Actor> Inbox<A> {
+    pub(crate) fn try_recv(&mut self) -> Result<CommandOrMessage<A>, TryRecvError> {
+        self.rx.try_recv()
+    }
     pub(crate) async fn recv_timeout(&mut self) -> Result<CommandOrMessage<A>, RecvError> {
         self.rx.recv_timeout(crate::message_timeout()).await
+    }
+
+    pub(crate) fn try_recv_timeout_cmd_and_scheduled_msg_only(
+        &mut self,
+    ) -> Result<CommandOrMessage<A>, TryRecvError> {
+        self.rx.try_recv_high_priority()
     }
 
     pub(crate) async fn recv_timeout_cmd_and_scheduled_msg_only(

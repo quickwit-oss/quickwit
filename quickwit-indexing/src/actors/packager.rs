@@ -370,11 +370,16 @@ mod tests {
     use quickwit_metastore::checkpoint::CheckpointDelta;
     use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};
     use tantivy::{doc, Index};
+    use tokio::sync::Semaphore;
+
+    static INDEXER_PERMITS_FOR_TESTS: Semaphore = Semaphore::const_new(5);
 
     use super::*;
     use crate::models::ScratchDirectory;
 
-    fn make_indexed_split_for_test(segments_timestamps: &[&[i64]]) -> anyhow::Result<IndexedSplit> {
+    async fn make_indexed_split_for_test(
+        segments_timestamps: &[&[i64]],
+    ) -> anyhow::Result<IndexedSplit> {
         let split_scratch_directory = ScratchDirectory::for_test()?;
         let mut schema_builder = Schema::builder();
         let text_field = schema_builder.add_text_field("text", TEXT);
@@ -422,6 +427,9 @@ mod tests {
                 }
             }
         }
+
+        let permit = INDEXER_PERMITS_FOR_TESTS.acquire().await.unwrap();
+
         // We don't commit, that's the job of the packager.
         //
         // TODO: In the future we would like that kind of segment flush to emit a new split,
@@ -440,6 +448,7 @@ mod tests {
             checkpoint_delta: CheckpointDelta::from(10..20),
             replaced_split_ids: Vec::new(),
             controlled_directory_opt: None,
+            permit,
         };
         Ok(indexed_split)
     }
@@ -464,7 +473,7 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
-        let indexed_split = make_indexed_split_for_test(&[&[1628203589, 1628203640]])?;
+        let indexed_split = make_indexed_split_for_test(&[&[1628203589, 1628203640]]).await?;
         let tag_fields = get_tag_fields(
             indexed_split.index.schema(),
             &["tag_str", "tag_many", "tag_u64", "tag_i64", "tag_f64"],
@@ -507,7 +516,7 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
-        let indexed_split = make_indexed_split_for_test(&[&[1628203589], &[1628203640]])?;
+        let indexed_split = make_indexed_split_for_test(&[&[1628203589], &[1628203640]]).await?;
         let tag_fields = get_tag_fields(indexed_split.index.schema(), &[]);
         let packager = Packager::new("TestPackager", tag_fields, mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn();
@@ -530,8 +539,8 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
-        let indexed_split_1 = make_indexed_split_for_test(&[&[1628203589], &[1628203640]])?;
-        let indexed_split_2 = make_indexed_split_for_test(&[&[1628204589], &[1629203640]])?;
+        let indexed_split_1 = make_indexed_split_for_test(&[&[1628203589], &[1628203640]]).await?;
+        let indexed_split_2 = make_indexed_split_for_test(&[&[1628204589], &[1629203640]]).await?;
         let tag_fields = get_tag_fields(indexed_split_1.index.schema(), &[]);
         let packager = Packager::new("TestPackager", tag_fields, mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn();

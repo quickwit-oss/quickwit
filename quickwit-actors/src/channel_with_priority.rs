@@ -137,6 +137,10 @@ impl<T> Receiver<T> {
         }
     }
 
+    pub fn try_recv_high_priority(&mut self) -> Result<T, TryRecvError> {
+        self.high_priority_rx.try_recv()
+    }
+
     pub async fn recv_high_priority_timeout(&mut self, duration: Duration) -> Result<T, RecvError> {
         tokio::select! {
             high_priority_msg_res = self.high_priority_rx.recv_async() => {
@@ -148,6 +152,13 @@ impl<T> Receiver<T> {
                 Err(RecvError::Timeout)
             }
         }
+    }
+
+    pub fn try_recv(&mut self) -> Result<T, TryRecvError> {
+        if let Ok(msg) = self.high_priority_rx.try_recv() {
+            return Ok(msg);
+        }
+        self.low_priority_rx.try_recv()
     }
 
     pub async fn recv_timeout(&mut self, duration: Duration) -> Result<T, RecvError> {

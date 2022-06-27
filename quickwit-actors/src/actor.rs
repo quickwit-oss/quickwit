@@ -170,6 +170,7 @@ pub trait Actor: Send + Sync + Sized + 'static {
     }
 
     async fn on_empty(&mut self, _ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+        tokio::time::sleep(Duration::from_millis(100)).await;
         Ok(())
     }
 
