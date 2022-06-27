@@ -1,3 +1,21 @@
+DO $$
+BEGIN
+    IF EXISTS (SELECT * FROM pg_tables WHERE tablename  = '__diesel_schema_migrations')
+	THEN
+	    -- We are migrating from a diesel table.
+	    -- That's ok, but let's make sure we are at the last version.
+	    --
+	    -- If you hit this Assert, the workaround is to download Quickwit 0.3.1
+	    -- and run the missing migrations.
+	    ASSERT EXISTS (
+		    SELECT FROM __diesel_schema_migrations
+		    WHERE version = '20211217102648'
+		);
+		DROP TABLE __diesel_schema_migrations;
+	END IF;
+END $$;
+
+
 CREATE TABLE IF NOT EXISTS indexes (
     index_id VARCHAR(50) PRIMARY KEY,
     index_metadata_json TEXT NOT NULL,
