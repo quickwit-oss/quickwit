@@ -77,14 +77,7 @@ pub enum MetastoreError {
 
     #[cfg(feature = "postgres")]
     #[error("Database error: {0:?}.")]
-    DbError(diesel::result::Error),
-}
-
-#[cfg(feature = "postgres")]
-impl From<diesel::result::Error> for MetastoreError {
-    fn from(err: diesel::result::Error) -> MetastoreError {
-        MetastoreError::DbError(err)
-    }
+    DbError(#[from] sqlx::Error),
 }
 
 /// Generic Result type for metastore operations.

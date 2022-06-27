@@ -23,569 +23,497 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use diesel::dsl::sql;
-use diesel::pg::Pg;
-use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
-use diesel::result::DatabaseErrorKind;
-use diesel::result::Error::DatabaseError;
-use diesel::sql_types::{Array, Bool, Text};
-use diesel::{
-    debug_query, sql_query, BoolExpressionMethods, BoxableExpression, Connection,
-    ExpressionMethods, IntoSql, PgConnection, QueryDsl, RunQueryDsl, Table,
-};
+use itertools::Itertools;
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
+use sqlx::migrate::Migrator;
+use sqlx::postgres::{PgDatabaseError, PgPoolOptions};
+use sqlx::{ConnectOptions, Pool, Postgres, Row, Transaction};
 use tokio::sync::Mutex;
-use tracing::{debug, error, info, warn};
+use tracing::log::LevelFilter;
+use tracing::{debug, error, instrument, warn};
 
-use crate::metastore::CheckpointDelta;
-use crate::postgresql::model::SELECT_SPLITS_FOR_INDEX;
-use crate::postgresql::schema::splits;
-use crate::postgresql::{model, schema};
+use crate::metastore::postgresql_model::{Index, IndexIdSplitIdRow};
+use crate::metastore::{postgresql_model, CheckpointDelta};
 use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
     MetastoreResult, Split, SplitMetadata, SplitState,
 };
 
-embed_migrations!("migrations/postgresql");
+static MIGRATOR: Migrator = sqlx::migrate!("migrations/postgresql");
 
 const CONNECTION_POOL_MAX_SIZE: u32 = 10;
-const CONNECTION_POOL_TIMEOUT: Duration = Duration::from_secs(10);
-const CONNECTION_POOL_MAX_RETRY_COUNT: u32 = 10;
-const CONNECTION_STATUS_CHECK_MAX_RETRY_COUNT: u32 = 3;
-const CONNECTION_STATUS_CHECK_INTERVAL: Duration = Duration::from_secs(2);
+
+// https://www.postgresql.org/docs/current/errcodes-appendix.html
+mod pg_error_code {
+    pub const FOREIGN_KEY_VIOLATION: &str = "23503";
+    pub const UNIQUE_VIOLATION: &str = "23505";
+}
 
 /// Establishes a connection to the given database URI.
-fn establish_connection(
-    database_uri: &str,
-) -> anyhow::Result<Pool<ConnectionManager<PgConnection>>> {
-    let mut retry_cnt = 0;
-    while retry_cnt <= CONNECTION_POOL_MAX_RETRY_COUNT {
-        let connection_manager: ConnectionManager<PgConnection> =
-            ConnectionManager::new(database_uri);
-        match Pool::builder()
-            .max_size(CONNECTION_POOL_MAX_SIZE)
-            .connection_timeout(CONNECTION_POOL_TIMEOUT)
-            .build(connection_manager)
-        {
-            Ok(pool) => {
-                return Ok(pool);
+async fn establish_connection(database_uri: &str) -> MetastoreResult<Pool<Postgres>> {
+    let pool_options = PgPoolOptions::new()
+        .max_connections(CONNECTION_POOL_MAX_SIZE)
+        .idle_timeout(Duration::from_secs(1))
+        .connect_timeout(Duration::from_secs(2)); //< connecting should take less than 2 secs;
+    let mut pg_connect_options: sqlx::postgres::PgConnectOptions = database_uri.parse()?;
+    pg_connect_options.log_statements(LevelFilter::Debug);
+    pool_options
+        .connect_with(pg_connect_options)
+        .await
+        .map_err(|err| {
+            error!(err=?err, "Failed to establish connection");
+            MetastoreError::ConnectionError {
+                message: err.to_string(),
             }
-            Err(err) => {
-                warn!(err=?err, "Failed to connect to postgres. Trying again");
-                retry_cnt += 1;
-            }
-        }
-    }
-
-    anyhow::bail!(
-        "The retry count has exceeded the limit ({})",
-        CONNECTION_POOL_MAX_RETRY_COUNT
-    );
+        })
 }
 
 /// Initialize the database.
 /// The sql used for the initialization is stored in quickwit-metastore/migrations directory.
-fn initialize_db(pool: &Pool<ConnectionManager<PgConnection>>) -> anyhow::Result<()> {
-    let db_conn = pool.get()?;
-    let mut migrations_log_buffer = Vec::new();
-
-    match embedded_migrations::run_with_output(&*db_conn, &mut migrations_log_buffer) {
-        Ok(_) => {
-            let migrations_log = String::from_utf8_lossy(&migrations_log_buffer);
-            if !migrations_log.is_empty() {
-                info!(
-                    migrations_log = migrations_log.as_ref(),
-                    "Database migrations succeeded."
-                );
-            }
-            Ok(())
-        }
-        Err(error) => {
-            let migrations_log = String::from_utf8_lossy(&migrations_log_buffer);
-            error!(
-                migrations_log = migrations_log.as_ref(),
-                error = ?error,
-                "Database migrations failed."
-            );
-            Err(anyhow::anyhow!(error))
-        }
+#[instrument(skip_all)]
+async fn run_postgres_migrations(pool: &Pool<Postgres>) -> MetastoreResult<()> {
+    let tx = pool.begin().await?;
+    let migration_res = MIGRATOR.run(pool).await;
+    if let Err(migration_err) = migration_res {
+        tx.rollback().await?;
+        error!(err=?migration_err, "Database migrations failed");
+        return Err(MetastoreError::InternalError {
+            message: "Failed to run migrator on Postgresql database.".to_string(),
+            cause: anyhow::anyhow!(migration_err),
+        });
     }
+    tx.commit().await?;
+    Ok(())
 }
 
 /// PostgreSQL metastore implementation.
 #[derive(Clone)]
 pub struct PostgresqlMetastore {
     uri: String,
-    connection_pool: Pool<ConnectionManager<PgConnection>>,
+    connection_pool: Pool<Postgres>,
 }
-
-type Conn = PooledConnection<ConnectionManager<PgConnection>>;
 
 impl PostgresqlMetastore {
     /// Creates a meta store given a database URI.
     pub async fn new(database_uri: &str) -> MetastoreResult<Self> {
-        let connection_pool = establish_connection(database_uri).map_err(|err| {
-            error!(err=?err, "Failed to establish connection");
-            MetastoreError::ConnectionError {
-                message: err.to_string(),
-            }
-        })?;
-
-        // Check the connection pool.
-        let mut is_status_ok = false;
-        let mut retry_cnt = 0;
-        while retry_cnt <= CONNECTION_STATUS_CHECK_MAX_RETRY_COUNT {
-            let connection_pool_state = connection_pool.state();
-            debug!(
-                connections = connection_pool_state.connections,
-                idle_connections = connection_pool_state.idle_connections,
-                "Connection pool state"
-            );
-            match connection_pool.get() {
-                Ok(_conn) => {
-                    info!("Connection to PostgreSQL database successfully established.");
-                    is_status_ok = true;
-                    break;
-                }
-                Err(err) => {
-                    retry_cnt += 1;
-                    warn!(num_attempts = %retry_cnt, err = ?err, "Failed to get connection from the connection pool. Trying again");
-                    tokio::time::sleep(CONNECTION_STATUS_CHECK_INTERVAL).await;
-                }
-            }
-        }
-        if !is_status_ok {
-            error!(
-                "The retry count has exceeded the limit ({})",
-                CONNECTION_STATUS_CHECK_MAX_RETRY_COUNT
-            );
-            return Err(MetastoreError::ConnectionError {
-                message: "Failed to establish connection to PostgreSQL database.".to_string(),
-            });
-        }
-        initialize_db(&connection_pool).map_err(|err| MetastoreError::InternalError {
-            message: "Failed to initialize database".to_string(),
-            cause: anyhow::anyhow!(err),
-        })?;
-
+        let connection_pool = establish_connection(database_uri).await?;
+        run_postgres_migrations(&connection_pool).await?;
         Ok(PostgresqlMetastore {
             uri: database_uri.to_string(),
             connection_pool,
         })
     }
+}
 
-    fn get_conn(&self) -> MetastoreResult<Conn> {
-        self.connection_pool.get().map_err(|err| {
-            error!(err=?err, "Failed to get connection from pool.");
-            MetastoreError::ConnectionError {
-                message: format!("Failed to get connection from pool: `{:?}`.", err),
-            }
-        })
+/// Returns an Index object given an index_id or None if it does not exists.
+async fn index_opt<'a>(
+    tx: &mut Transaction<'a, Postgres>,
+    index_id: &str,
+) -> MetastoreResult<Option<Index>> {
+    let index_opt: Option<Index> = sqlx::query_as::<_, Index>(
+        r#"
+        SELECT *
+        FROM indexes
+        WHERE index_id = $1
+    "#,
+    )
+    .bind(index_id)
+    .fetch_optional(tx)
+    .await
+    .map_err(MetastoreError::DbError)?;
+    Ok(index_opt)
+}
+
+async fn index_metadata(
+    tx: &mut Transaction<'_, Postgres>,
+    index_id: &str,
+) -> MetastoreResult<IndexMetadata> {
+    index_opt(tx, index_id)
+        .await?
+        .ok_or_else(|| MetastoreError::IndexDoesNotExist {
+            index_id: index_id.to_string(),
+        })?
+        .index_metadata()
+}
+
+/// Publish splits.
+/// Returns the successful split IDs.
+#[instrument(skip(tx))]
+async fn mark_splits_as_published_helper(
+    tx: &mut Transaction<'_, Postgres>,
+    index_id: &str,
+    split_ids: &[&str],
+) -> MetastoreResult<Vec<String>> {
+    let publishable_states = [SplitState::Staged.as_str(), SplitState::Published.as_str()];
+    let published_split_ids: Vec<String> = sqlx::query(
+        r#"
+        UPDATE splits
+        SET split_state = $1
+        WHERE
+                index_id = $2
+            AND split_id = ANY($3)
+            AND split_state = ANY($4)
+        RETURNING split_id
+    "#,
+    )
+    .bind(SplitState::Published.as_str())
+    .bind(index_id)
+    .bind(split_ids)
+    .bind(&publishable_states[..])
+    .map(|row| row.get(0))
+    .fetch_all(tx)
+    .await?;
+    Ok(published_split_ids)
+}
+
+/// Mark splits for deletion.
+/// Returns the IDs of the splits that were successfully marked for deletion.
+#[instrument(skip(tx))]
+async fn mark_splits_for_deletion(
+    tx: &mut Transaction<'_, Postgres>,
+    index_id: &str,
+    split_ids: &[&str],
+) -> MetastoreResult<Vec<String>> {
+    if split_ids.is_empty() {
+        return Ok(Vec::new());
     }
+    let marked_split_ids: Vec<String> = sqlx::query(
+        r#"
+        UPDATE splits
+        SET split_state = $1
+        WHERE
+                index_id = $2
+            AND split_id = ANY($3)
+        RETURNING split_id
+    "#,
+    )
+    .bind(SplitState::MarkedForDeletion.as_str())
+    .bind(index_id)
+    .bind(split_ids)
+    .map(|row| row.get(0))
+    .fetch_all(tx)
+    .await?;
+    Ok(marked_split_ids)
+}
 
-    /// Check index existence.
-    /// Returns true if the index exists.
-    fn index_exists(
-        &self,
-        conn: &PooledConnection<ConnectionManager<PgConnection>>,
-        index_id: &str,
-    ) -> MetastoreResult<bool> {
-        let check_index_existence_statement = diesel::select(diesel::dsl::exists(
-            schema::indexes::dsl::indexes.filter(schema::indexes::dsl::index_id.eq(index_id)),
+async fn list_splits_helper(
+    tx: &mut Transaction<'_, Postgres>,
+    index_id: &str,
+    state_opt: Option<SplitState>,
+    time_range_opt: Option<Range<i64>>,
+    tags_opt: Option<TagFilterAst>,
+) -> MetastoreResult<Vec<Split>> {
+    let mut sql = r#"
+        SELECT *
+        FROM splits
+        WHERE index_id = $1
+    "#
+    .to_string();
+    if let Some(state) = state_opt {
+        sql.push_str(&format!(" AND split_state = '{}'", state.as_str()));
+    }
+    if let Some(time_range) = time_range_opt {
+        sql.push_str(&format!(
+            " AND (time_range_end >= {} OR time_range_end IS NULL) ",
+            time_range.start
         ));
-        debug!(sql=%debug_query::<Pg, _>(&check_index_existence_statement).to_string());
-        let index_exists: bool = check_index_existence_statement
-            .get_result(conn)
-            .map_err(MetastoreError::DbError)?;
-
-        Ok(index_exists)
+        sql.push_str(&format!(
+            " AND (time_range_start < {} OR time_range_start IS NULL) ",
+            time_range.end
+        ));
     }
 
-    fn index_metadata_inner(
-        &self,
-        conn: &PooledConnection<ConnectionManager<PgConnection>>,
-        index_id: &str,
-    ) -> MetastoreResult<IndexMetadata> {
-        let statement = schema::indexes::dsl::indexes.find(index_id);
-        debug!(index_id = %index_id, query = %debug_query::<Pg, _>(&statement).to_string(), "Get index.");
-
-        let index = statement
-            .first::<model::Index>(conn)
-            .map_err(|err| match err {
-                diesel::result::Error::NotFound => MetastoreError::IndexDoesNotExist {
-                    index_id: index_id.to_string(),
-                },
-                _ => MetastoreError::DbError(err),
-            })?;
-        let index_metadata = index.index_metadata()?;
-        Ok(index_metadata)
+    if let Some(tags) = tags_opt {
+        sql.push_str(" AND (");
+        sql.push_str(&tags_filter_expression_helper(tags));
+        sql.push_str(") ");
     }
 
-    fn update_index(
-        &self,
-        conn: &PooledConnection<ConnectionManager<PgConnection>>,
-        index_metadata: IndexMetadata,
-    ) -> MetastoreResult<()> {
-        let index_id = index_metadata.index_id.clone();
-        let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|err| {
-            MetastoreError::InternalError {
-                message: "Failed to serialize index metadata.".to_string(),
-                cause: anyhow::anyhow!(err),
-            }
-        })?;
-        let statement = diesel::update(schema::indexes::dsl::indexes.find(&index_id))
-            .set(schema::indexes::dsl::index_metadata_json.eq(index_metadata_json));
-        debug!(index_id = %index_id, query = %debug_query::<Pg, _>(&statement).to_string(), "Update index.");
-        let num_updated_rows = statement.execute(&*conn).map_err(MetastoreError::DbError)?;
-        assert_eq!(num_updated_rows, 1);
-        Ok(())
+    let splits = sqlx::query_as::<_, postgresql_model::Split>(&sql)
+        .bind(index_id)
+        .fetch_all(&mut *tx)
+        .await?;
+
+    // If no splits was returned, maybe the index itself does not exist
+    // in the first place?
+    if splits.is_empty() && index_opt(&mut *tx, index_id).await?.is_none() {
+        return Err(MetastoreError::IndexDoesNotExist {
+            index_id: index_id.to_string(),
+        });
     }
 
-    /// Publish splits.
-    /// Returns the successful split IDs.
-    fn mark_splits_as_published_helper(
-        &self,
-        conn: &PooledConnection<ConnectionManager<PgConnection>>,
-        index_id: &str,
-        split_ids: &[&str],
-    ) -> MetastoreResult<Vec<String>> {
-        let publishable_states = [
-            SplitState::Staged.to_string(),
-            SplitState::Published.to_string(),
-        ];
+    splits.into_iter().map(|split| split.try_into()).collect()
+}
 
-        let published_split_ids: Vec<String> = diesel::update(
-            schema::splits::dsl::splits.filter(
-                schema::splits::dsl::index_id
-                    .eq(index_id)
-                    .and(schema::splits::dsl::split_id.eq_any(split_ids))
-                    .and(schema::splits::dsl::split_state.eq_any(publishable_states)),
-            ),
-        )
-        .set((schema::splits::dsl::split_state.eq(SplitState::Published.to_string()),))
-        .returning(schema::splits::dsl::split_id)
-        .get_results(conn)?;
+/// Query the database to find out if:
+/// - index exists?
+/// - splits exist?
+/// Returns split that are not in valid state.
+async fn get_splits_with_invalid_state<'a>(
+    tx: &mut Transaction<'_, Postgres>,
+    index_id: &str,
+    split_ids: &[&'a str],
+    affected_split_ids: &[String],
+) -> MetastoreResult<Vec<String>> {
+    let affected_ids_set: HashSet<&str> = affected_split_ids
+        .iter()
+        .map(|split_id| split_id.as_str())
+        .collect();
+    let unaffected_ids_set: HashSet<&str> = split_ids
+        .iter()
+        .copied()
+        .filter(|&split_id| !affected_ids_set.contains(split_id))
+        .collect();
 
-        Ok(published_split_ids)
-    }
+    // SQL query that helps figure out if index exist, non-existent
+    // splits and not deletable splits.
+    const SELECT_SPLITS_FOR_INDEX: &str = r#"
+        SELECT i.index_id, s.split_id
+        FROM indexes AS i
+        LEFT JOIN (
+            SELECT index_id, split_id
+            FROM splits
+            WHERE split_id = ANY ($1)
+        ) AS s
+        ON i.index_id = s.index_id
+        WHERE i.index_id = $2"#;
 
-    /// Mark splits for deletion.
-    /// Returns the IDs of the splits that were successfully marked for deletion.
-    fn mark_splits_for_deletion(
-        &self,
-        conn: &PooledConnection<ConnectionManager<PgConnection>>,
-        index_id: &str,
-        split_ids: &[&str],
-    ) -> MetastoreResult<Vec<String>> {
-        let marked_split_ids: Vec<String> = diesel::update(
-            schema::splits::dsl::splits.filter(
-                schema::splits::dsl::index_id
-                    .eq(index_id)
-                    .and(schema::splits::dsl::split_id.eq_any(split_ids)),
-            ),
-        )
-        .set((schema::splits::dsl::split_state.eq(SplitState::MarkedForDeletion.to_string()),))
-        .returning(schema::splits::dsl::split_id)
-        .get_results(conn)?;
-
-        Ok(marked_split_ids)
-    }
-
-    /// Apply checkpoint delta.
-    fn apply_checkpoint_delta(
-        &self,
-        conn: &PooledConnection<ConnectionManager<PgConnection>>,
-        index_id: &str,
-        source_id: &str,
-        checkpoint_delta: CheckpointDelta,
-    ) -> MetastoreResult<()> {
-        let mut index_metadata = self.index_metadata_inner(conn, index_id)?;
-        index_metadata
-            .checkpoint
-            .try_apply_delta(source_id, checkpoint_delta)?;
-        self.update_index(conn, index_metadata)?;
-        Ok(())
-    }
-
-    fn list_splits_helper(
-        &self,
-        conn: &PooledConnection<ConnectionManager<PgConnection>>,
-        index_id: &str,
-        state_opt: Option<SplitState>,
-        time_range_opt: Option<Range<i64>>,
-        tags_opt: Option<TagFilterAst>,
-    ) -> MetastoreResult<Vec<Split>> {
-        let mut select_statement = schema::splits::dsl::splits
-            .filter(schema::splits::dsl::index_id.eq(index_id))
-            .into_boxed();
-
-        if let Some(state) = state_opt {
-            select_statement =
-                select_statement.filter(schema::splits::dsl::split_state.eq(state.to_string()));
-        }
-
-        if let Some(time_range) = time_range_opt {
-            select_statement = select_statement.filter(
-                schema::splits::dsl::time_range_end.is_null().or(
-                    schema::splits::dsl::time_range_end
-                        .ge(time_range.start)
-                        .and(schema::splits::dsl::time_range_start.lt(time_range.end)),
-                ),
-            );
-        }
-
-        if let Some(tags) = tags_opt {
-            select_statement = select_statement.filter(tags_filter_expression_helper(tags));
-        }
-
-        debug!(sql=%debug_query::<Pg, _>(&select_statement).to_string());
-        let splits: Vec<model::Split> = select_statement
-            .load(conn)
-            .map_err(MetastoreError::DbError)?;
-
-        if splits.is_empty() {
-            // Check for the existence of index.
-            if !self.index_exists(conn, index_id)? {
-                return Err(MetastoreError::IndexDoesNotExist {
-                    index_id: index_id.to_string(),
-                });
-            }
-            return Ok(Vec::new());
-        }
-        splits.into_iter().map(|split| split.try_into()).collect()
-    }
-
-    /// Query the database to find out if:
-    /// - index exists?
-    /// - splits exist?
-    /// Returns split that are not in valid state.
-    fn get_splits_with_invalid_state<'a>(
-        &self,
-        conn: &PooledConnection<ConnectionManager<PgConnection>>,
-        index_id: &str,
-        split_ids: &[&'a str],
-        affected_split_ids: &[String],
-    ) -> MetastoreResult<Vec<String>> {
-        // Using raw sql for now (Diesel ORM doesn't support join on sub query).
-        // https://github.com/diesel-rs/diesel/discussions/2921
-        let affected_ids_set: HashSet<&str> = affected_split_ids
-            .iter()
-            .map(|split_id| split_id.as_str())
-            .collect();
-        let unaffected_ids_set: HashSet<&str> = split_ids
-            .iter()
-            .filter(|split_id| !affected_ids_set.contains(*split_id))
-            .copied()
-            .collect();
-
-        let index_split_rows: Vec<model::IndexIdSplitIdRow> = sql_query(SELECT_SPLITS_FOR_INDEX)
-            .bind::<Array<Text>, _>(
+    let index_split_rows: Vec<IndexIdSplitIdRow> =
+        sqlx::query_as::<_, IndexIdSplitIdRow>(SELECT_SPLITS_FOR_INDEX)
+            .bind(
                 unaffected_ids_set
                     .iter()
-                    .map(|split_id| split_id.to_string())
+                    .map(ToString::to_string)
                     .collect::<Vec<String>>(),
             )
-            .bind::<Text, _>(index_id)
-            .get_results(conn)?;
+            .bind(index_id)
+            .fetch_all(tx)
+            .await?;
 
-        // Index does not exist if empty.
-        if index_split_rows.is_empty() {
-            return Err(MetastoreError::IndexDoesNotExist {
-                index_id: index_id.to_string(),
-            });
-        }
-
-        // None of the unaffected splits exist if we have a single row
-        // with the split_id being `null`
-        if index_split_rows.len() == 1 && index_split_rows[0].split_id.is_none() {
-            return Err(MetastoreError::SplitsDoNotExist {
-                split_ids: unaffected_ids_set
-                    .iter()
-                    .map(|split_id| split_id.to_string())
-                    .collect(),
-            });
-        }
-
-        // The unaffected splits might be a mix of non-existant splits and splits in non valid
-        // state.
-        let not_in_correct_state_ids_set: HashSet<&str> = index_split_rows
-            .iter()
-            .flat_map(|item| item.split_id.as_deref())
-            .collect();
-        let not_found_ids_set: HashSet<&str> = &unaffected_ids_set - &not_in_correct_state_ids_set;
-
-        if !not_found_ids_set.is_empty() {
-            return Err(MetastoreError::SplitsDoNotExist {
-                split_ids: not_found_ids_set
-                    .iter()
-                    .map(|split_id| split_id.to_string())
-                    .collect(),
-            });
-        }
-
-        Ok(not_in_correct_state_ids_set
-            .iter()
-            .map(|split_id| split_id.to_string())
-            .collect())
+    // Index does not exist if empty.
+    if index_split_rows.is_empty() {
+        return Err(MetastoreError::IndexDoesNotExist {
+            index_id: index_id.to_string(),
+        });
     }
+
+    // None of the unaffected splits exist if we have a single row
+    // with the split_id being `null`
+    if index_split_rows.len() == 1 && index_split_rows[0].split_id.is_none() {
+        error!("none of the unaffected split exists");
+        return Err(MetastoreError::SplitsDoNotExist {
+            split_ids: unaffected_ids_set
+                .iter()
+                .map(|split_id| split_id.to_string())
+                .collect(),
+        });
+    }
+
+    // The unaffected splits might be a mix of non-existant splits and splits in non valid
+    // state.
+    let not_in_correct_state_ids_set: HashSet<&str> = index_split_rows
+        .iter()
+        .flat_map(|item| item.split_id.as_deref())
+        .collect();
+    let not_found_ids_set: HashSet<&str> = &unaffected_ids_set - &not_in_correct_state_ids_set;
+
+    if !not_found_ids_set.is_empty() {
+        return Err(MetastoreError::SplitsDoNotExist {
+            split_ids: not_found_ids_set
+                .iter()
+                .map(|split_id| split_id.to_string())
+                .collect(),
+        });
+    }
+
+    Ok(not_in_correct_state_ids_set
+        .iter()
+        .map(|split_id| split_id.to_string())
+        .collect())
+}
+
+fn convert_sqlx_err(index_id: &str, sqlx_err: sqlx::Error) -> MetastoreError {
+    match &sqlx_err {
+        sqlx::Error::Database(boxed_db_err) => {
+            error!(pg_db_err=?boxed_db_err, "postgresql-error");
+            let pg_error_code = boxed_db_err.downcast_ref::<PgDatabaseError>().code();
+            match pg_error_code {
+                pg_error_code::FOREIGN_KEY_VIOLATION => MetastoreError::IndexDoesNotExist {
+                    index_id: index_id.to_string(),
+                },
+                pg_error_code::UNIQUE_VIOLATION => MetastoreError::InternalError {
+                    message: "Unique key violation.".to_string(),
+                    cause: anyhow::anyhow!("DB error {:?}", boxed_db_err),
+                },
+                _ => MetastoreError::DbError(sqlx_err),
+            }
+        }
+        _ => {
+            error!(err=?sqlx_err, "An error has occurred in the database operation.");
+            MetastoreError::DbError(sqlx_err)
+        }
+    }
+}
+
+/// This macro is used to systematically wrap the metastore
+/// into transaction, commit them on Result::Ok and rollback on Error.
+///
+/// Note this is suboptimal.
+/// Some of the methods actually did not require a transaction.
+///
+/// We still use this macro for them in order to make the code
+/// "trivially correct".
+macro_rules! run_with_tx {
+    ($connection_pool:expr, $tx_refmut:ident, $x:block) => {{
+        let mut tx: Transaction<'_, Postgres> = $connection_pool.begin().await?;
+        let $tx_refmut = &mut tx;
+        let op_fut = move || async move { $x };
+        let op_result: MetastoreResult<_> = op_fut().await;
+        if op_result.is_ok() {
+            debug!("commit");
+            tx.commit().await?;
+        } else {
+            warn!("rollback");
+            tx.rollback().await?;
+        }
+        op_result
+    }};
+}
+
+async fn mutate_index_metadata<E, M: FnOnce(&mut IndexMetadata) -> Result<(), E>>(
+    tx: &mut Transaction<'_, Postgres>,
+    index_id: &str,
+    mutation: M,
+) -> MetastoreResult<()>
+where
+    MetastoreError: From<E>,
+{
+    let mut index_metadata = index_metadata(tx, index_id).await?;
+    mutation(&mut index_metadata)?;
+    let index_metadata_json =
+        serde_json::to_string(&index_metadata).map_err(|err| MetastoreError::InternalError {
+            message: "Failed to serialize index metadata.".to_string(),
+            cause: anyhow::anyhow!(err),
+        })?;
+    let update_index_res = sqlx::query(
+        r#"
+        UPDATE indexes
+        SET index_metadata_json = $1
+        WHERE index_id = $2
+    "#,
+    )
+    .bind(index_metadata_json)
+    .bind(&index_id)
+    .execute(tx)
+    .await?;
+    if update_index_res.rows_affected() == 0 {
+        return Err(MetastoreError::IndexDoesNotExist {
+            index_id: index_id.to_string(),
+        });
+    }
+    Ok(())
 }
 
 #[async_trait]
 impl Metastore for PostgresqlMetastore {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
-        self.connection_pool.get_timeout(CONNECTION_POOL_TIMEOUT)?;
+        self.connection_pool.acquire().await?;
         Ok(())
     }
 
     async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>> {
-        let conn = self.get_conn()?;
-        let select_statement = schema::indexes::dsl::indexes
-            .select(schema::indexes::dsl::indexes::all_columns())
-            .into_boxed();
-
-        let indexes: Vec<model::Index> = select_statement
-            .load(&conn)
-            .map_err(MetastoreError::DbError)?;
-
-        indexes
-            .into_iter()
-            .map(|index| index.index_metadata())
-            .collect()
+        run_with_tx!(self.connection_pool, tx, {
+            let indexes: Vec<Index> = sqlx::query_as::<_, Index>("SELECT * FROM indexes")
+                .fetch_all(tx)
+                .await?;
+            let index_metadata: MetastoreResult<Vec<IndexMetadata>> = indexes
+                .into_iter()
+                .map(|index| index.index_metadata())
+                .collect::<MetastoreResult<_>>();
+            index_metadata
+        })
     }
 
+    #[instrument(skip(self),fields(index_id=index_metadata.index_id.as_str()))]
     async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
-        // Serialize the index metadata to fit the database model.
-        let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|err| {
-            MetastoreError::InternalError {
-                message: "Failed to serialize index metadata.".to_string(),
-                cause: anyhow::anyhow!(err),
-            }
-        })?;
-        let conn = self.get_conn()?;
-        conn.transaction::<_, MetastoreError, _>(|| {
+        run_with_tx!(self.connection_pool, tx, {
+            // Serialize the index metadata to fit the database model.
+            let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|err| {
+                MetastoreError::InternalError {
+                    message: "Failed to serialize index metadata.".to_string(),
+                    cause: anyhow::anyhow!(err),
+                }
+            })?;
             // Create index.
-            let create_index_statement =
-                diesel::insert_into(schema::indexes::dsl::indexes).values((
-                    schema::indexes::dsl::index_id.eq(index_metadata.index_id.clone()),
-                    schema::indexes::dsl::index_metadata_json.eq(index_metadata_json),
-                ));
-            debug!(sql=%debug_query::<Pg, _>(&create_index_statement).to_string());
-            create_index_statement
-                .execute(&*conn)
-                .map_err(|err| match err {
-                    DatabaseError(db_err_kind, ref err_info) => match db_err_kind {
-                        DatabaseErrorKind::UniqueViolation => {
-                            error!(index_id=?index_metadata.index_id, "Index already exists");
-                            MetastoreError::IndexAlreadyExists {
-                                index_id: index_metadata.index_id.clone(),
-                            }
-                        }
-                        _ => {
-                            error!(index_id=?index_metadata.index_id, "An error has occurred in the database operation. {:?}", err_info.message());
-                            MetastoreError::DbError(err)
-                        }
-                    },
-                    _ => {
-                        error!(index_id=?index_metadata.index_id, "An error has occurred in the database operation. {:?}", err);
-                        MetastoreError::DbError(err)
-                    }
-                })?;
-            debug!(index_id=?index_metadata.index_id, "The index has been created");
+            let create_index_statement_res =
+                sqlx::query("INSERT INTO indexes (index_id, index_metadata_json) VALUES ($1, $2)")
+                    .bind(&index_metadata.index_id)
+                    .bind(&index_metadata_json)
+                    .execute(tx)
+                    .await;
+            create_index_statement_res
+                .map_err(|err| convert_sqlx_err(&index_metadata.index_id, err))?;
             Ok(())
-        })?;
-        Ok(())
+        })
     }
 
+    #[instrument(skip(self))]
     async fn delete_index(&self, index_id: &str) -> MetastoreResult<()> {
-        let conn = self.get_conn()?;
-        conn.transaction::<_, MetastoreError, _>(|| {
-            // Delete index.
-            let delete_index_statement =
-                diesel::delete(schema::indexes::dsl::indexes.find(index_id));
-            debug!(sql=%debug_query::<Pg, _>(&delete_index_statement).to_string());
-            let num_affected_rows = delete_index_statement
-                .execute(&*conn)
-                .map_err(MetastoreError::DbError)?;
-
-            if num_affected_rows == 0 {
+        run_with_tx!(self.connection_pool, tx, {
+            let query_res = sqlx::query("DELETE FROM indexes WHERE index_id = $1")
+                .bind(index_id)
+                .execute(tx)
+                .await?;
+            if query_res.rows_affected() == 0 {
                 return Err(MetastoreError::IndexDoesNotExist {
                     index_id: index_id.to_string(),
                 });
             }
             Ok(())
-        })?;
-        info!(index_id = index_id, "deleted-index");
-        Ok(())
+        })
     }
 
+    #[instrument(skip(self, metadata),fields(split_id=metadata.split_id.as_str()))]
     async fn stage_split(&self, index_id: &str, metadata: SplitMetadata) -> MetastoreResult<()> {
-        // Fit the time_range to the database model.
-        let time_range_start = metadata.time_range.clone().map(|range| *range.start());
-        let time_range_end = metadata.time_range.clone().map(|range| *range.end());
+        run_with_tx!(self.connection_pool, tx, {
+            // Fit the time_range to the database model.
+            let time_range_start = metadata.time_range.clone().map(|range| *range.start());
+            let time_range_end = metadata.time_range.clone().map(|range| *range.end());
 
-        // Serialize the split metadata and footer offsets to fit the database model.
-        let split_metadata_json =
-            serde_json::to_string(&metadata).map_err(|err| MetastoreError::InternalError {
-                message: "Failed to serialize split metadata and footer offsets".to_string(),
-                cause: anyhow::anyhow!(err),
-            })?;
+            // Serialize the split metadata and footer offsets to fit the database model.
+            let split_metadata_json =
+                serde_json::to_string(&metadata).map_err(|err| MetastoreError::InternalError {
+                    message: "Failed to serialize split metadata and footer offsets".to_string(),
+                    cause: anyhow::anyhow!(err),
+                })?;
 
-        let conn = self.get_conn()?;
-        conn.transaction::<_, MetastoreError, _>(|| {
+            let tags: Vec<String> = metadata.tags.into_iter().collect();
             // Insert a new split metadata as `Staged` state.
-            let split_id =  metadata.split_id.clone();
-            let insert_staged_split_statement =
-                diesel::insert_into(schema::splits::dsl::splits)
-                .values((
-                    schema::splits::dsl::split_id.eq(metadata.split_id),
-                    schema::splits::dsl::split_state.eq(SplitState::Staged.to_string()),
-                    schema::splits::dsl::time_range_start.eq(time_range_start),
-                    schema::splits::dsl::time_range_end.eq(time_range_end),
-                    schema::splits::dsl::tags.eq(metadata
-                        .tags
-                        .into_iter()
-                        .collect::<Vec<String>>()),
-                    schema::splits::dsl::split_metadata_json.eq(split_metadata_json),
-                    schema::splits::dsl::index_id.eq(index_id.to_string())
-                ));
-            debug!(sql=%debug_query::<Pg, _>(&insert_staged_split_statement).to_string());
-            insert_staged_split_statement.execute(&*conn).map_err(|err| {
-                match err {
-                    DatabaseError(err_kind, ref err_info) => match err_kind {
-                        DatabaseErrorKind::ForeignKeyViolation => {
-                            error!(index_id=?index_id, split_id=?split_id, "Index does not exist");
-                            MetastoreError::IndexDoesNotExist {
-                                index_id: index_id.to_string(),
-                            }
-                        },
-                        DatabaseErrorKind::UniqueViolation => {
-                            error!(index_id=?index_id, split_id=?split_id, "Split already exists");
-                            MetastoreError::InternalError {
-                                message: format!(
-                                    "Try to stage split that already exists ({})",
-                                    split_id
-                                ),
-                                cause: anyhow::anyhow!(err),
-                            }
-                        }
-                        _ => {
-                            error!(index_id=?index_id, split_id=?split_id, "An error has occurred in the database operation. {:?}", err_info.message());
-                            MetastoreError::DbError(err)
-                        }
-                    },
-                    _ => {
-                        error!(index_id=?index_id, split_id=?split_id, "An error has occurred in the database operation. {:?}", err);
-                        MetastoreError::DbError(err)
-                    }
-                }
-            })?;
-            debug!(index_id=?index_id, spliet_id=?split_id, "The split has been staged");
+            let split_id = metadata.split_id.clone();
+            sqlx::query(r#"
+                INSERT INTO splits
+                    (split_id, split_state, time_range_start, time_range_end, tags, split_metadata_json, index_id)
+                VALUES
+                    ($1, $2, $3, $4, $5, $6, $7)
+            "#)
+            .bind(&metadata.split_id)
+            .bind(&SplitState::Staged.as_str())
+            .bind(time_range_start)
+            .bind(time_range_end)
+            .bind(tags)
+            .bind(split_metadata_json)
+            .bind(index_id)
+            .execute(tx)
+            .await
+                .map_err(|err| convert_sqlx_err(index_id, err))?;
+
+            debug!(index_id=?index_id, split_id=?split_id, "The split has been staged");
             Ok(())
-        })?;
-        Ok(())
+        })
     }
 
+    #[instrument(skip(self, checkpoint_delta))]
     async fn publish_splits<'a>(
         &self,
         index_id: &str,
@@ -593,54 +521,58 @@ impl Metastore for PostgresqlMetastore {
         split_ids: &[&'a str],
         checkpoint_delta: CheckpointDelta,
     ) -> MetastoreResult<()> {
-        let conn = self.get_conn()?;
-        conn.transaction::<_, MetastoreError, _>(|| {
+        run_with_tx!(self.connection_pool, tx, {
             // Update the index checkpoint.
-            self.apply_checkpoint_delta(&conn, index_id, source_id, checkpoint_delta)?;
+            mutate_index_metadata(tx, index_id, |index_metadata| {
+                index_metadata
+                    .checkpoint
+                    .try_apply_delta(source_id, checkpoint_delta)
+            })
+            .await?;
 
             if split_ids.is_empty() {
                 return Ok(());
             }
 
             let published_split_ids =
-                self.mark_splits_as_published_helper(&conn, index_id, split_ids)?;
+                mark_splits_as_published_helper(tx, index_id, split_ids).await?;
 
-            // returning `Ok` means `commit` the transaction.
             if published_split_ids.len() == split_ids.len() {
                 return Ok(());
             }
 
+            error!(
+                num_split_ids = split_ids.len(),
+                published = published_split_ids.len(),
+                "published_splits_ids_not_match"
+            );
+
             // Investigate and report the error.
-            let not_staged_ids = self.get_splits_with_invalid_state(
-                &conn,
-                index_id,
-                split_ids,
-                &published_split_ids,
-            )?;
+            let not_staged_ids =
+                get_splits_with_invalid_state(tx, index_id, split_ids, &published_split_ids)
+                    .await?;
 
             Err(MetastoreError::SplitsNotStaged {
                 split_ids: not_staged_ids,
             })
-        })?;
-
-        Ok(())
+        })
     }
 
+    #[instrument(skip(self))]
     async fn replace_splits<'a>(
         &self,
         index_id: &str,
         new_split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
-        let conn = self.get_conn()?;
-        conn.transaction::<_, MetastoreError, _>(|| {
+        run_with_tx!(self.connection_pool, tx, {
             // Publish splits.
             let published_split_ids =
-                self.mark_splits_as_published_helper(&conn, index_id, new_split_ids)?;
+                mark_splits_as_published_helper(tx, index_id, new_split_ids).await?;
 
             // Mark splits for deletion
             let marked_split_ids =
-                self.mark_splits_for_deletion(&conn, index_id, replaced_split_ids)?;
+                mark_splits_for_deletion(tx, index_id, replaced_split_ids).await?;
 
             // returning `Ok` means `commit` the transaction.
             if published_split_ids.len() == new_split_ids.len()
@@ -659,20 +591,17 @@ impl Metastore for PostgresqlMetastore {
                 .copied()
                 .collect();
 
-            let not_staged_ids = self.get_splits_with_invalid_state(
-                &conn,
-                index_id,
-                &split_ids,
-                &affected_split_ids,
-            )?;
+            let not_staged_ids =
+                get_splits_with_invalid_state(tx, index_id, &split_ids, &affected_split_ids)
+                    .await?;
 
             Err(MetastoreError::SplitsNotStaged {
                 split_ids: not_staged_ids,
             })
-        })?;
-        Ok(())
+        })
     }
 
+    #[instrument(skip(self))]
     async fn list_splits(
         &self,
         index_id: &str,
@@ -680,62 +609,69 @@ impl Metastore for PostgresqlMetastore {
         time_range_opt: Option<Range<i64>>,
         tags: Option<TagFilterAst>,
     ) -> MetastoreResult<Vec<Split>> {
-        let conn = self.get_conn()?;
-        self.list_splits_helper(&conn, index_id, Some(state), time_range_opt, tags)
+        run_with_tx!(self.connection_pool, tx, {
+            list_splits_helper(tx, index_id, Some(state), time_range_opt, tags).await
+        })
     }
 
+    #[instrument(skip(self))]
     async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
-        let conn = self.get_conn()?;
-        self.list_splits_helper(&conn, index_id, None, None, None)
+        run_with_tx!(self.connection_pool, tx, {
+            list_splits_helper(tx, index_id, None, None, None).await
+        })
     }
 
+    #[instrument(skip(self))]
     async fn mark_splits_for_deletion<'a>(
         &self,
         index_id: &str,
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
-        let conn = self.get_conn()?;
-        conn.transaction::<_, MetastoreError, _>(|| {
-            let marked_split_ids = self.mark_splits_for_deletion(&conn, index_id, split_ids)?;
+        run_with_tx!(self.connection_pool, tx, {
+            let marked_split_ids: Vec<String> =
+                mark_splits_for_deletion(tx, index_id, split_ids).await?;
 
-            // returning `Ok` means `commit` the transaction.
             if marked_split_ids.len() == split_ids.len() {
                 return Ok(());
             }
 
-            let _ =
-                self.get_splits_with_invalid_state(&conn, index_id, split_ids, &marked_split_ids)?;
+            get_splits_with_invalid_state(tx, index_id, split_ids, &marked_split_ids).await?;
 
-            Err(diesel::result::Error::RollbackTransaction).map_err(MetastoreError::DbError)?
-        })?;
-        Ok(())
+            let err_msg = format!("Failed to mark splits for deletion for index {index_id}.");
+            let cause = anyhow::anyhow!(err_msg.clone());
+            Err(MetastoreError::InternalError {
+                message: err_msg,
+                cause,
+            })
+        })
     }
 
+    #[instrument(skip(self))]
     async fn delete_splits<'a>(
         &self,
         index_id: &str,
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
-        let conn = self.get_conn()?;
-        conn.transaction::<_, MetastoreError, _>(|| {
+        run_with_tx!(self.connection_pool, tx, {
             let deletable_states = [
-                SplitState::Staged.to_string(),
-                SplitState::MarkedForDeletion.to_string(),
+                SplitState::Staged.as_str(),
+                SplitState::MarkedForDeletion.as_str(),
             ];
-
-            let deleted_split_ids: Vec<String> = diesel::delete(
-                schema::splits::dsl::splits.filter(
-                    schema::splits::dsl::index_id
-                        .eq(index_id)
-                        .and(schema::splits::dsl::split_id.eq_any(split_ids))
-                        .and(schema::splits::dsl::split_state.eq_any(deletable_states)),
-                ),
+            let deleted_split_ids: Vec<String> = sqlx::query(
+                r#"
+                DELETE FROM splits
+                WHERE
+                        split_id = ANY($1)
+                    AND split_state = ANY($2)
+                RETURNING split_id
+            "#,
             )
-            .returning(schema::splits::dsl::split_id)
-            .get_results(&conn)
-            .map_err(MetastoreError::DbError)?;
+            .bind(split_ids)
+            .bind(&deletable_states[..])
+            .map(|pg_row| pg_row.get(0))
+            .fetch_all(&mut *tx)
+            .await?;
 
-            // returning `Ok` means `commit` the transaction.
             if deleted_split_ids.len() == split_ids.len() {
                 return Ok(());
             }
@@ -743,41 +679,39 @@ impl Metastore for PostgresqlMetastore {
             // There is an error, but we want to investigate and return a meaningful error.
             // From this point, we always have to return `Err` to abort the transaction.
             let not_deletable_ids =
-                self.get_splits_with_invalid_state(&conn, index_id, split_ids, &deleted_split_ids)?;
+                get_splits_with_invalid_state(tx, index_id, split_ids, &deleted_split_ids).await?;
 
             Err(MetastoreError::SplitsNotDeletable {
                 split_ids: not_deletable_ids,
             })
-        })?;
-        Ok(())
+        })
     }
 
+    #[instrument(skip(self))]
     async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata> {
-        let conn = self.get_conn()?;
-        let index_metadata = self.index_metadata_inner(&conn, index_id)?;
-        Ok(index_metadata)
+        run_with_tx!(self.connection_pool, tx, {
+            index_metadata(tx, index_id).await
+        })
     }
 
+    #[instrument(skip(self, source), fields(source_id=source.source_id.as_str()))]
     async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()> {
-        let conn = self.get_conn()?;
-        conn.transaction::<_, MetastoreError, _>(|| {
-            let mut index_metadata = self.index_metadata_inner(&conn, index_id)?;
-            index_metadata.add_source(source)?;
-            self.update_index(&conn, index_metadata)?;
-            Ok(())
-        })?;
-        Ok(())
+        run_with_tx!(self.connection_pool, tx, {
+            mutate_index_metadata(tx, index_id, |index_metadata| {
+                index_metadata.add_source(source)
+            })
+            .await
+        })
     }
 
+    #[instrument(skip(self))]
     async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()> {
-        let conn = self.get_conn()?;
-        conn.transaction::<_, MetastoreError, _>(|| {
-            let mut index_metadata = self.index_metadata_inner(&conn, index_id)?;
-            index_metadata.delete_source(source_id)?;
-            self.update_index(&conn, index_metadata)?;
-            Ok(())
-        })?;
-        Ok(())
+        run_with_tx!(self.connection_pool, tx, {
+            mutate_index_metadata(tx, index_id, |index_metadata| {
+                index_metadata.delete_source(source_id)
+            })
+            .await
+        })
     }
 
     fn uri(&self) -> String {
@@ -785,51 +719,59 @@ impl Metastore for PostgresqlMetastore {
     }
 }
 
-fn true_expr() -> Box<dyn BoxableExpression<splits::table, Pg, SqlType = Bool>> {
-    Box::new(true.into_sql::<Bool>()) // as FilterExpression<QS>;
+// We use dollar-quoted strings in Postgresql.
+//
+// In order to ensure that we do not risk SQL injection,
+// we need to generate a string that does not appear in
+// the literal we want to dollar quote.
+fn generate_dollar_guard(s: &str) -> String {
+    if !s.contains('$') {
+        // That's our happy path here.
+        return String::new();
+    }
+    let mut dollar_guard = String::new();
+    loop {
+        dollar_guard.push_str("Quickwit!");
+        // This terminates because `dollar_guard`
+        // will eventually be longer than s.
+        if !s.contains(&dollar_guard) {
+            return dollar_guard;
+        }
+    }
 }
 
 /// Takes a tag filters AST and returns a sql expression that can be used as
 /// a filter.
-///
-/// Tag string literals are properly bound to avoid SQL injection.
-fn tags_filter_expression_helper(
-    tags: TagFilterAst,
-) -> Box<dyn BoxableExpression<splits::table, Pg, SqlType = Bool>> {
+fn tags_filter_expression_helper(tags: TagFilterAst) -> String {
     match tags {
         TagFilterAst::And(child_asts) => {
-            let mut child_exprs_it = child_asts.into_iter().map(tags_filter_expression_helper);
-            let mut and_expr = if let Some(first_child_expr) = child_exprs_it.next() {
-                first_child_expr
-            } else {
-                // child_asts is empty.
-                return true_expr();
-            };
-            for child_expr in child_exprs_it {
-                and_expr = Box::new(and_expr.and(child_expr));
+            if child_asts.is_empty() {
+                return "TRUE".to_string();
             }
-            and_expr
+            let expr_without_parenthesis = child_asts
+                .into_iter()
+                .map(tags_filter_expression_helper)
+                .join(" AND ");
+            format!("({expr_without_parenthesis})")
         }
         TagFilterAst::Or(child_asts) => {
-            let mut child_exprs_it = child_asts.into_iter().map(tags_filter_expression_helper);
-            let mut or_expr = if let Some(first_child_expr) = child_exprs_it.next() {
-                first_child_expr
-            } else {
-                // child_asts is empty.
-                return true_expr();
-            };
-            for child_expr in child_exprs_it {
-                or_expr = Box::new(or_expr.or(child_expr));
+            if child_asts.is_empty() {
+                return "TRUE".to_string();
             }
-            or_expr
+            let expr_without_parenthesis = child_asts
+                .into_iter()
+                .map(tags_filter_expression_helper)
+                .join(" OR ");
+            format!("({expr_without_parenthesis})")
         }
-        TagFilterAst::Tag { is_present, tag } => Box::new(if is_present {
-            sql::<Bool>("").bind::<Text, _>(tag).sql("= ANY(tags)")
-        } else {
-            sql::<Bool>("NOT (")
-                .bind::<Text, _>(tag)
-                .sql("= ANY(tags))")
-        }),
+        TagFilterAst::Tag { is_present, tag } => {
+            let dollar_guard = generate_dollar_guard(&tag);
+            if is_present {
+                format!("${dollar_guard}${tag}${dollar_guard}$ = ANY(tags)")
+            } else {
+                format!("NOT (${dollar_guard}${tag}${dollar_guard}$ = ANY(tags))")
+            }
+        }
     }
 }
 
@@ -877,77 +819,63 @@ impl MetastoreFactory for PostgresqlMetastoreFactory {
             return Ok(metastore);
         }
         debug!("metastore not found in cache");
-
         let metastore = PostgresqlMetastore::new(uri)
             .await
             .map_err(MetastoreResolverError::FailedToOpenMetastore)?;
         let metastore = self
             .cache_metastore(uri.to_string(), Arc::new(metastore))
             .await;
-
         Ok(metastore)
     }
-}
-
-#[cfg(test)]
-/// Get the PostgreSQL-based metastore for testing.
-pub async fn get_or_init_postgresql_metastore_for_test() -> &'static PostgresqlMetastore {
-    use std::env;
-
-    use dotenv::dotenv;
-    use tokio::sync::OnceCell;
-
-    static POSTGRESQL_METASTORE: OnceCell<PostgresqlMetastore> = OnceCell::const_new();
-
-    POSTGRESQL_METASTORE
-        .get_or_init(|| async {
-            dotenv().ok();
-            let uri = env::var("TEST_DATABASE_URL").unwrap();
-
-            PostgresqlMetastore::new(&uri)
-                .await
-                .expect("PostgreSQL metastore is not initialized.")
-        })
-        .await
 }
 
 #[cfg(test)]
 #[async_trait]
 impl crate::tests::test_suite::DefaultForTest for PostgresqlMetastore {
     async fn default_for_test() -> Self {
-        let metastore = get_or_init_postgresql_metastore_for_test().await;
-        (*metastore).clone()
+        // We cannot use a singleton here,
+        // because sqlx needs the runtime used to create a connection to
+        // not being dropped.
+        //
+        // Each unit test runs its own tokio Runtime, so a singleton would mean
+        // tying the connection pool to the runtime of one unit test.
+        // Concretely this results in a "IO driver has terminated"
+        // once the first unit test finishes and its runtime is dropped.
+        //
+        // The number of connections to Postgres should not be
+        // too catastrophic, as it is limited by the number of concurrent
+        // unit tests running (= number of test-threads).
+        dotenv::dotenv().ok();
+        let uri = std::env::var("TEST_DATABASE_URL").unwrap();
+        PostgresqlMetastore::new(&uri)
+            .await
+            .expect("PostgreSQL metastore is not initialized.")
     }
 }
 
-#[cfg(feature = "postgres")]
-metastore_test_suite_for_postgresql!(crate::PostgresqlMetastore);
+metastore_test_suite!(crate::PostgresqlMetastore);
 
 #[cfg(test)]
 mod tests {
-    use diesel::debug_query;
-    use diesel::pg::Pg;
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
 
     use super::tags_filter_expression_helper;
 
     fn test_tags_filter_expression_helper(tags_ast: TagFilterAst, expected: &str) {
-        let tags_expr = tags_filter_expression_helper(tags_ast);
-        let sql = debug_query::<Pg, _>(&tags_expr).to_string();
-        assert_eq!(&sql, expected);
+        assert_eq!(tags_filter_expression_helper(tags_ast), expected);
     }
 
     #[test]
     fn test_tags_filter_expression_single_tag() {
         let tags_ast = tag("my_field:titi");
-        test_tags_filter_expression_helper(tags_ast, "$1= ANY(tags) -- binds: [\"my_field:titi\"]");
+        test_tags_filter_expression_helper(tags_ast, r#"$$my_field:titi$$ = ANY(tags)"#);
     }
 
     #[test]
     fn test_tags_filter_expression_not_tag() {
         test_tags_filter_expression_helper(
             no_tag("my_field:titi"),
-            "NOT ($1= ANY(tags)) -- binds: [\"my_field:titi\"]",
+            r#"NOT ($$my_field:titi$$ = ANY(tags))"#,
         );
     }
 
@@ -956,8 +884,7 @@ mod tests {
         let tags_ast = TagFilterAst::And(vec![tag("tag:val1"), tag("tag:val2"), tag("tag:val3")]);
         test_tags_filter_expression_helper(
             tags_ast,
-            "$1= ANY(tags) AND $2= ANY(tags) AND $3= ANY(tags) -- binds: [\"tag:val1\", \
-             \"tag:val2\", \"tag:val3\"]",
+            "($$tag:val1$$ = ANY(tags) AND $$tag:val2$$ = ANY(tags) AND $$tag:val3$$ = ANY(tags))",
         );
     }
 
@@ -969,8 +896,7 @@ mod tests {
         ]);
         test_tags_filter_expression_helper(
             tags_ast,
-            "($1= ANY(tags) AND $2= ANY(tags) OR $3= ANY(tags)) -- binds: [\"tag:val1\", \
-             \"tag:val2\", \"tag:val3\"]",
+            "(($$tag:val1$$ = ANY(tags) AND $$tag:val2$$ = ANY(tags)) OR $$tag:val3$$ = ANY(tags))",
         );
     }
 
@@ -982,8 +908,16 @@ mod tests {
         ]);
         test_tags_filter_expression_helper(
             tags_ast,
-            "($1= ANY(tags) OR $2= ANY(tags)) AND $3= ANY(tags) -- binds: [\"tag:val1\", \
-             \"tag:val2\", \"tag:val3\"]",
+            r#"(($$tag:val1$$ = ANY(tags) OR $$tag:val2$$ = ANY(tags)) AND $$tag:val3$$ = ANY(tags))"#,
+        );
+    }
+
+    #[test]
+    fn test_tags_sql_injection_attempt() {
+        let tags_ast = tag("tag:$$;DELETE FROM something_evil");
+        test_tags_filter_expression_helper(
+            tags_ast,
+            "$Quickwit!$tag:$$;DELETE FROM something_evil$Quickwit!$ = ANY(tags)",
         );
     }
 }

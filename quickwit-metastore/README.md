@@ -1,55 +1,17 @@
 # quickwit-metastore
 
-## Setup the environment.
+## Starting postgres
 
-### Install libpg-dev and diesel_cli
+The following command starts a postgresql server
+locally to test the postgres metastore implementation.
 
-If you do not have libpg-dev and diesel_cli installed, please install them with the following command.
+`docker-compose up postgres`
 
-```
-% sudo apt install libpq-dev
-% cargo install diesel_cli --no-default-features --features postgres 
-```
+It's data is saved in the tmp directory, and
+is not necessarily cleaned up between two runs.
 
-### Setup Diesel for quickwit-metastore
-
-Let's set up the environment using diesel_cli.
-First, run the following command to start PostgreSQL using Docker.
-
-```
-$ docker-compose up -d
-```
-
-After PostgreSQL has been successfully started, you can start the Diesel setup.
-Execute the following command to create `migrations/postgresql` and `diesel_postgresql.toml`.
-
-```
-$ diesel setup --migration-dir=migrations/postgresql --config-file=diesel_postgresql.toml
-```
-
-In order to change the output destination of `schema.rs`, modify `diesel_postgresql.tom`l as follows.
-
-```
-[print_schema]
-file = "src/postgresql/schema.rs"
-```
-
-Next, create a `*.sql` file under the `migrations/postgresql` directory.
-
-```
-$ diesel migration generate --migration-dir=migrations/postgresql create_indexes
-$ diesel migration generate --migration-dir=migrations/postgresql create_splits
-```
-
-Since the generated file is empty, update the SQL statement.
-After updating the SQL statement, generate `quickwit-metastore/src/postgresql/schema.rs` with the following command
-
-```
-$ diesel migration run --migration-dir=migrations/postgresql --config-file=diesel_postgresql.toml
-```
-
-Once you have successfully generated the `quickwit-metastore/src/postgresql/schema.rs`, you can start developing with Diesel.
-
+You can execute `make rm-postgres` to remove the
+data of this postgresql database.
 
 ## Testing quickwit-metastore
 
@@ -76,4 +38,18 @@ You can stop PostgreSQL with the following command.
 
 ```
 $ docker-compose down
+```
+
+## Sqlx-cli and migrations
+
+This sqlx-cli can be useful (but is not necessary) to work with migrations.
+
+```
+cargo install sqlx
+```
+
+You can then use the following commands to apply/revert your postgresql migrations.
+```
+sqlx migrate run  --database-url postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev --source migrations/postgresql
+sqlx migrate revert  --database-url postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev --source migrations/postgresql
 ```

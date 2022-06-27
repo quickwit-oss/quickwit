@@ -17,29 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-table! {
-    indexes (index_id) {
-        index_id -> Varchar,
-        index_metadata_json -> Text,
-        create_timestamp -> Timestamp,
-        update_timestamp -> Timestamp,
-    }
+fn main() {
+    println!("cargo:rerun-if-changed=migrations/postgresql");
 }
-
-table! {
-    splits (split_id) {
-        split_id -> Varchar,
-        split_state -> Varchar,
-        time_range_start -> Nullable<Int8>,
-        time_range_end -> Nullable<Int8>,
-        create_timestamp -> Timestamp,
-        update_timestamp -> Timestamp,
-        tags -> Array<Text>,
-        split_metadata_json -> Text,
-        index_id -> Varchar,
-    }
-}
-
-joinable!(splits -> indexes (index_id));
-
-allow_tables_to_appear_in_same_query!(indexes, splits,);

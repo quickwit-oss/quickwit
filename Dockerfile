@@ -16,8 +16,6 @@ RUN apt-get -y update \
     && apt-get -y install ca-certificates \
                           clang \
                           cmake \
-                          libpq-dev \
-                          libpq5  \
                           libssl-dev \
                           llvm \
                           nodejs \
@@ -57,7 +55,6 @@ FROM debian:bullseye-slim AS quickwit
 
 RUN apt-get -y update \
     && apt-get -y install ca-certificates \
-                          libpq5  \
                           libssl1.1 \
     && rm -rf /var/lib/apt/lists/*
 

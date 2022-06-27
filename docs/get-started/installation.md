@@ -23,7 +23,6 @@ Check out the available builds in greater detail on [GitHub](https://github.com/
 ### Note on external dependencies
 
 Quickwit depends on the following external libraries to work correctly:
-- `libpq`: the PostgreSQL client library.
 - `libssl`: the industry defacto cryptography library.
 These libraries can be installed on your system using the native package manager.
 You can install these dependencies using the following command:
@@ -33,7 +32,7 @@ You can install these dependencies using the following command:
 <TabItem value="ubuntu" label="Ubuntu">
 
 ```bash
-apt-get -y update && apt-get -y install libpq-dev libssl-dev
+apt-get -y update && apt-get -y install libssl
 ```
 
 </TabItem>
@@ -41,7 +40,7 @@ apt-get -y update && apt-get -y install libpq-dev libssl-dev
 <TabItem value="aws-linux" label="AWS Linux">
 
 ```bash
-yum -y update && yum -y install postgresql-libs openssl-devel
+yum -y update && yum -y install openssl
 ```
 
 </TabItem>
@@ -49,7 +48,7 @@ yum -y update && yum -y install postgresql-libs openssl-devel
 <TabItem value="arch-linux" label="Arch Linux">
 
 ```bash
-pacman -S postgresql-libs openssl
+pacman -S openssl
 ```
 
 </TabItem>
