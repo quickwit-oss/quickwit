@@ -266,7 +266,7 @@ async fn get_splits_with_invalid_state<'a>(
         .filter(|&split_id| !affected_ids_set.contains(split_id))
         .collect();
 
-    // SQL query query that helps figure out if index exist, non-existent
+    // SQL query that helps figure out if index exist, non-existent
     // splits and not deletable splits.
     const SELECT_SPLITS_FOR_INDEX: &str = r#"
         SELECT i.index_id, s.split_id
