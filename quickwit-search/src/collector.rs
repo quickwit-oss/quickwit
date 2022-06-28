@@ -264,6 +264,8 @@ impl QuickwitCollector {
     }
 }
 
+const AGGREGATION_BUCKET_LIMIT: u32 = 65000;
+
 impl Collector for QuickwitCollector {
     type Child = QuickwitSegmentCollector;
     type Fruit = LeafSearchResponse;
@@ -301,7 +303,11 @@ impl Collector for QuickwitCollector {
                 .aggregation
                 .as_ref()
                 .map(|aggs| {
-                    AggregationSegmentCollector::from_agg_req_and_reader(aggs, segment_reader)
+                    AggregationSegmentCollector::from_agg_req_and_reader(
+                        aggs,
+                        segment_reader,
+                        AGGREGATION_BUCKET_LIMIT,
+                    )
                 })
                 .transpose()?,
         })

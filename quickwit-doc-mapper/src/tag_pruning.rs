@@ -325,6 +325,7 @@ fn collect_tag_filters(user_input_ast: UserInputAst) -> UnsimplifiedTagFilterAst
             UserInputLeaf::Literal(UserInputLiteral {
                 field_name: Some(field_name),
                 phrase,
+                slop: _,
             }) => UnsimplifiedTagFilterAst::Tag {
                 is_present: true,
                 field: field_name,
