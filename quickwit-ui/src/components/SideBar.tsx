@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -70,7 +70,7 @@ const SideBarWrapper = styled('div')({
   flexDirection: 'column',
   borderRight: '1px solid rgba(0, 0, 0, 0.12)',
 });
-  
+
 const SideBar = () => {
   const lastSearchRequest = useLocalStorage().lastSearchRequest;
   let searchUrl = '/search';

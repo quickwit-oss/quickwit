@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -38,7 +38,7 @@ animation: ${spin} infinite 5s linear;
 
 export default function Loader() {
   return <Box
-    display="flex" 
+    display="flex"
     justifyContent="center"
     alignItems="center"
     minHeight="40vh"
