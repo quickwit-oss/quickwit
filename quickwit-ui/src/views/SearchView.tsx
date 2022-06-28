@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -71,7 +71,7 @@ function SearchView() {
   }
   const onIndexMetadataUpdate = (indexMetadata: IndexMetadata | null) => {
     setSearchRequest(previousRequest => {
-      return {...previousRequest, indexId: indexMetadata === null ? null : indexMetadata.index_id}; 
+      return {...previousRequest, indexId: indexMetadata === null ? null : indexMetadata.index_id};
     });
   }
   const onSearchRequestUpdate = (searchRequest: SearchRequest) => {

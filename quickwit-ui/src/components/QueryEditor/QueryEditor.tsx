@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -40,10 +40,10 @@ export function QueryEditor(props: SearchComponentProps) {
   const runSearchRef = useRef(props.runSearch);
   const searchRequestRef = useRef(props.searchRequest);
   const defaultValue = props.searchRequest.query === null ? `// Select an index and type your query. Example: field_name:"phrase query"` : props.searchRequest.query;
-  
+
   /* eslint-disable  @typescript-eslint/no-explicit-any */
   function handleEditorDidMount(editor: any, monaco: any) {
-    monacoRef.current = monaco; 
+    monacoRef.current = monaco;
     editor.addAction({
       id: 'SEARCH',
       label: "Run search",

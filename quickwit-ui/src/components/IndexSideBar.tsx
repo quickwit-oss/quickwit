@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -125,7 +125,7 @@ export interface IndexMetadataProps {
 function fieldTypeLabel(fieldMapping: FieldMapping): string {
   if (fieldMapping.type[0] !== undefined) {
     return fieldMapping.type[0].toUpperCase();
-    
+
   } else {
     return "";
   }
