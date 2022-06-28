@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -20,7 +20,7 @@
 import * as React from 'react';
 
 // Mock MonocoEditor as the current jest setup does not work when Monaco JS files
-// are loaded.  
+// are loaded.
 export default function MonacoEditor(props) {
   return <div>{props.value}</div>;
 }

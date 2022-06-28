@@ -19,6 +19,8 @@ docker-compose-logs:
 fmt:
 	@echo "Formatting Rust files"
 	@(rustup toolchain list | ( ! grep -q nightly && echo "Toolchain 'nightly' is not installed. Please install using 'rustup toolchain install nightly'.") ) || cargo +nightly fmt
+	@echo "Checking license"
+	@bash check_license.sh
 
 # Usage:
 # `make test-all` starts the Docker services and runs all the tests.

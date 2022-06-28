@@ -1,3 +1,22 @@
+// Copyright (C) 2022 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
+
 import { SearchRequest, SortByField, SortOrder } from "./models";
 
 export function hasSearchParams(historySearch: string): boolean {
@@ -54,7 +73,7 @@ export function toUrlSearchRequestParams(request: SearchRequest): URLSearchParam
   const params = new URLSearchParams();
   params.append("query", request.query || '*');
   // We have to set the index ID in url params as it's not present in the UI path params.
-  // This enables the react app to be able to get index ID from url params 
+  // This enables the react app to be able to get index ID from url params
   // if the user enter directly the UI url.
   params.append("index_id", request.indexId || "");
   if (request.maxHits) {
@@ -76,6 +95,6 @@ export function toUrlSearchRequestParams(request: SearchRequest): URLSearchParam
 }
 
 export function serializeSortByField(sortByField: SortByField): string {
-  const order = sortByField.order === 'Asc' ? '+' : '-'; 
+  const order = sortByField.order === 'Asc' ? '+' : '-';
   return `${order}${sortByField.field_name}`;
 }

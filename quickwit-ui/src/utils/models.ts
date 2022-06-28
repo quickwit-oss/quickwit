@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -55,7 +55,7 @@ function getFlattenFields(field_mappings: FieldMapping[]): FlattenField[] {
       fields.push({name: field_mapping.name, path: [field_mapping.name], type: field_mapping.type});
     }
   }
-   
+
   return fields;
 }
 
@@ -102,7 +102,7 @@ export function guessTimeUnit(index: Index): TimeUnit {
 
 export function getAllFields(doc_mapping: DocMapping) {
   return getFlattenFields(doc_mapping.field_mappings);
-} 
+}
 
 export type DocMapping = {
   field_mappings: FieldMapping[];
