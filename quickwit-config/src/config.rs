@@ -125,6 +125,8 @@ pub struct SearcherConfig {
     pub fast_field_cache_capacity: Byte,
     #[serde(default = "SearcherConfig::default_split_footer_cache_capacity")]
     pub split_footer_cache_capacity: Byte,
+    #[serde(default = "SearcherConfig::default_max_num_concurrent_split_searchs")]
+    pub max_num_concurrent_split_searchs: usize,
     #[serde(default = "SearcherConfig::default_max_num_concurrent_split_streams")]
     pub max_num_concurrent_split_streams: usize,
 }
@@ -138,6 +140,10 @@ impl SearcherConfig {
         Byte::from_bytes(500_000_000) // 500M
     }
 
+    fn default_max_num_concurrent_split_searchs() -> usize {
+        200
+    }
+
     fn default_max_num_concurrent_split_streams() -> usize {
         100
     }
@@ -149,6 +155,7 @@ impl Default for SearcherConfig {
             fast_field_cache_capacity: Self::default_fast_field_cache_capacity(),
             split_footer_cache_capacity: Self::default_split_footer_cache_capacity(),
             max_num_concurrent_split_streams: Self::default_max_num_concurrent_split_streams(),
+            max_num_concurrent_split_searchs: Self::default_max_num_concurrent_split_searchs(),
         }
     }
 }
@@ -490,6 +497,7 @@ mod tests {
                     SearcherConfig {
                         fast_field_cache_capacity: Byte::from_str("10G").unwrap(),
                         split_footer_cache_capacity: Byte::from_str("1G").unwrap(),
+                        max_num_concurrent_split_searchs: 150,
                         max_num_concurrent_split_streams: 120,
                     }
                 );

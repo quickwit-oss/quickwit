@@ -18,7 +18,8 @@
     "searcher": {
         "fast_field_cache_capacity": "10G",
         "split_footer_cache_capacity": "1G",
-        "max_num_concurrent_split_streams": 120
+        "max_num_concurrent_split_streams": 120,
+        "max_num_concurrent_split_searchs": 150
     },
     "storage": {
         "s3": {
