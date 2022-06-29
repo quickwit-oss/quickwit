@@ -20,7 +20,7 @@ byte-unit = { version = "4", default-features = false, features = ["serde"] }
 #   "extras"
 # ], optional = true }
 # diesel_migrations = { version = "1.4", optional = true }
-sqlx = {version = "0.5", features = ["runtime-tokio-rustls", "postgres", "migrate", "time"], optional=true}
+sqlx = {version = "0.6", features = ["runtime-tokio-rustls", "postgres", "migrate", "time"], optional=true}
 futures = "0.3.17"
 itertools = "0.10.3"
 mockall = { version = "0.11", optional = true }
