@@ -53,7 +53,7 @@ async fn get_leaf_search_split_semaphore() -> SemaphorePermit<'static> {
     static INSTANCE: OnceCell<Semaphore> = OnceCell::new();
     INSTANCE
         .get_or_init(|| {
-            let max_num_concurrent_split_streams = get_searcher_config_instance().max_num_concurrent_split_searchs;
+            let max_num_concurrent_split_streams = get_searcher_config_instance().max_num_concurrent_split_searches;
             Semaphore::new(max_num_concurrent_split_streams)
         })
         .acquire()
