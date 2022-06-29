@@ -524,12 +524,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_config_contains_wrong_values() {
-        let config_filepath =
-                    get_config_filepath("quickwit.wrongkey.yaml");
+        let config_filepath = get_config_filepath("quickwit.wrongkey.yaml");
         let config_uri = Uri::try_new(&config_filepath).unwrap();
         let file = std::fs::read_to_string(&config_filepath).unwrap();
-        let parsing_error = QuickwitConfig::from_uri(&config_uri, file.as_bytes()).await.unwrap_err();
-        assert!(format!("{parsing_error:?}").contains("unknown field `max_num_concurrent_split_searchs`"));
+        let parsing_error = QuickwitConfig::from_uri(&config_uri, file.as_bytes())
+            .await
+            .unwrap_err();
+        assert!(format!("{parsing_error:?}")
+            .contains("unknown field `max_num_concurrent_split_searchs`"));
     }
 
     #[test]
