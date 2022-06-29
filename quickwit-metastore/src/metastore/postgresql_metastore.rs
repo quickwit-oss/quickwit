@@ -55,7 +55,7 @@ async fn establish_connection(database_uri: &str) -> MetastoreResult<Pool<Postgr
     let pool_options = PgPoolOptions::new()
         .max_connections(CONNECTION_POOL_MAX_SIZE)
         .idle_timeout(Duration::from_secs(1))
-        .connect_timeout(Duration::from_secs(2)); //< connecting should take less than 2 secs;
+        .acquire_timeout(Duration::from_secs(2));
     let mut pg_connect_options: sqlx::postgres::PgConnectOptions = database_uri.parse()?;
     pg_connect_options.log_statements(LevelFilter::Debug);
     pool_options
