@@ -45,16 +45,16 @@ use crate::leaf::{open_index, warmup};
 use crate::{Result, SearchError};
 
 fn get_max_num_concurrent_split_streams() -> usize {
-    static INSTANCE: OnceCell<usize> = OnceCell::new();
-    *INSTANCE.get_or_init(|| get_searcher_config_instance().max_num_concurrent_split_streams)
+    get_searcher_config_instance().max_num_concurrent_split_streams
 }
 
-async fn get_split_stream_semaphore() -> SemaphorePermit<'static> {
-    static INSTANCE: OnceCell<Arc<Semaphore>> = OnceCell::new();
+async fn get_split_stream_permit() -> SemaphorePermit<'static> {
+    static INSTANCE: OnceCell<Semaphore> = OnceCell::new();
     INSTANCE
         .get_or_init(|| {
-            let max_num_concurrent_split_streams = get_max_num_concurrent_split_streams();
-            Arc::new(Semaphore::new(max_num_concurrent_split_streams))
+            let max_num_concurrent_split_streams =
+                get_max_num_concurrent_split_streams();
+            Semaphore::new(max_num_concurrent_split_streams)
         })
         .acquire()
         .await
@@ -122,7 +122,7 @@ async fn leaf_search_stream_single_split(
     stream_request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchStreamResponse> {
-    let _leaf_permit = get_split_stream_semaphore().await;
+    let _leaf_split_stream_permit = get_split_stream_permit().await;
 
     let index = open_index(storage, &split).await?;
     let split_schema = index.schema();

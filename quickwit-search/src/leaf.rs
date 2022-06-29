@@ -42,11 +42,24 @@ use tantivy::error::AsyncIoError;
 use tantivy::query::Query;
 use tantivy::schema::{Cardinality, FieldType};
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
+use tokio::sync::{Semaphore, SemaphorePermit};
 use tokio::task::spawn_blocking;
 use tracing::*;
 
 use crate::collector::{make_collector_for_split, make_merge_collector};
 use crate::SearchError;
+
+async fn get_leaf_search_split_semaphore() -> SemaphorePermit<'static> {
+    static INSTANCE: OnceCell<Semaphore> = OnceCell::new();
+    INSTANCE
+        .get_or_init(|| {
+            let max_num_concurrent_split_streams = get_searcher_config_instance().max_num_concurrent_split_searches;
+            Semaphore::new(max_num_concurrent_split_streams)
+        })
+        .acquire()
+        .await
+        .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
+}
 
 fn global_split_footer_cache() -> &'static MemorySizedCache<String> {
     static INSTANCE: OnceCell<MemorySizedCache<String>> = OnceCell::new();
@@ -207,6 +220,13 @@ fn get_fastfield_cardinality(field_type: &FieldType) -> Option<Cardinality> {
     }
 }
 
+fn fast_field_idxs(fast_field_cardinality: Cardinality) -> &'static [usize] {
+    match fast_field_cardinality {
+        Cardinality::SingleValue => &[0],
+        Cardinality::MultiValues => &[0, 1],
+    }
+}
+
 async fn warm_up_fastfields(
     searcher: &Searcher,
     fast_field_names: &HashSet<String>,
@@ -242,26 +262,13 @@ async fn warm_up_fastfields(
     let mut warm_up_futures: Vec<Pin<Box<SendableFuture>>> = Vec::new();
     for (field, cardinality) in fast_fields {
         for segment_reader in searcher.segment_readers() {
-            match cardinality {
-                Cardinality::SingleValue => {
-                    let fast_field_slice =
-                        segment_reader.fast_fields().fast_field_data(field, 0)?;
-                    warm_up_futures.push(Box::pin(async move {
-                        fast_field_slice.read_bytes_async().await
-                    }));
-                }
-                Cardinality::MultiValues => {
-                    let fast_field_slice =
-                        segment_reader.fast_fields().fast_field_data(field, 0)?;
-                    warm_up_futures.push(Box::pin(async move {
-                        fast_field_slice.read_bytes_async().await
-                    }));
-                    let fast_field_slice =
-                        segment_reader.fast_fields().fast_field_data(field, 1)?;
-                    warm_up_futures.push(Box::pin(async move {
-                        fast_field_slice.read_bytes_async().await
-                    }));
-                }
+            for &fast_field_idx in fast_field_idxs(cardinality) {
+                let fast_field_slice = segment_reader
+                    .fast_fields()
+                    .fast_field_data(field, fast_field_idx)?;
+                warm_up_futures.push(Box::pin(async move {
+                    fast_field_slice.read_bytes_async().await
+                }));
             }
         }
     }
@@ -299,6 +306,7 @@ async fn leaf_search_single_split(
     split: SplitIdAndFooterOffsets,
     doc_mapper: Arc<dyn DocMapper>,
 ) -> crate::Result<LeafSearchResponse> {
+    let _leaf_split_search_permit = get_leaf_search_split_semaphore().await;
     let split_id = split.split_id.to_string();
     let index = open_index(storage, &split).await?;
     let split_schema = index.schema();
