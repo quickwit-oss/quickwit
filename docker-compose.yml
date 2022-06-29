@@ -47,7 +47,7 @@ services:
       test: ["CMD", "curl", "-k", "https://localhost:4566"]
 
   postgres:
-    image: postgres:latest
+    image: postgres:9.6.20 # Oldest version we support.
     container_name: postgres
     ports:
       - "5432:5432"

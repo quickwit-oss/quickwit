@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS splits (
     FOREIGN KEY(index_id) REFERENCES indexes(index_id)
 );
 
-CREATE OR REPLACE TRIGGER quickwit_set_index_update_timestamp_on_split_change
+DROP TRIGGER IF EXISTS quickwit_set_index_update_timestamp_on_split_change ON splits CASCADE;
+CREATE TRIGGER quickwit_set_index_update_timestamp_on_split_change
     AFTER INSERT OR DELETE OR UPDATE ON splits
     FOR EACH ROW
     EXECUTE PROCEDURE set_index_update_timestamp_for_split();

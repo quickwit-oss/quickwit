@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS indexes (
 
 CREATE OR REPLACE FUNCTION quickwit_manage_update_timestamp(_tbl regclass) RETURNS VOID AS $$
 BEGIN
-    EXECUTE format('CREATE OR REPLACE TRIGGER set_update_timestamp BEFORE UPDATE ON %s
+    EXECUTE format('DROP TRIGGER IF EXISTS set_update_timestamp ON %s CASCADE', _tbl);
+    EXECUTE format('CREATE TRIGGER set_update_timestamp BEFORE UPDATE ON %s
                     FOR EACH ROW EXECUTE PROCEDURE quickwit_set_update_timestamp()', _tbl);
 END;
 $$ LANGUAGE plpgsql;
