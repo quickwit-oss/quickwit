@@ -17,7 +17,37 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod grpc_adapter;
-mod rest_handler;
 
-pub use self::rest_handler::index_service_handlers;
+syntax = "proto3";
+
+package quicklet_api;
+
+// Rename to IndexingService?
+service QuickletService {
+  // Apply a PhsysicalIndexingPlan.
+  rpc applyPhysicalIndexingPlan(PhysicalIndexingPlanRequest) returns (PhysicalIndexingPlanResponse);
+}
+
+message PhysicalIndexingPlanRequest {
+  repeated IndexingTask tasks = 1;
+}
+
+message PhysicalIndexingPlanResponse {
+}
+
+message IndexingTask {
+  // Index ID.
+  string index_id = 1;
+
+  // Source ID.
+  string source_id = 2;
+
+  // Number of tasks for this index ID and source ID.
+  uint64 num_tasks = 3;
+
+  // Task index, value in [0, num_workers[.
+  uint64 task_idx = 4;
+
+  // Publish token.
+  string publish_token = 5;
+}

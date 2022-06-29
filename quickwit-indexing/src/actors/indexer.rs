@@ -130,8 +130,8 @@ impl IndexerState {
     /// the indexed_split does not exist yet.
     ///
     /// This function will then create it, and can hence return an Error.
-    async fn get_or_create_current_indexed_split<'a>(
-        &self,
+    async fn get_or_create_current_indexed_split<'a, 'b>(
+        &'b self,
         current_split_opt: &'a mut Option<IndexedSplit>,
         ctx: &ActorContext<Indexer>,
     ) -> anyhow::Result<&'a mut IndexedSplit> {

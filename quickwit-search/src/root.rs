@@ -36,7 +36,7 @@ use tantivy::TantivyError;
 use tokio::task::spawn_blocking;
 use tracing::{debug, error, instrument};
 
-use crate::cluster_client::ClusterClient;
+use crate::cluster_client::ClusterSearchClient;
 use crate::collector::make_merge_collector;
 use crate::search_client_pool::Job;
 use crate::{
@@ -141,7 +141,7 @@ fn validate_request(search_request: &SearchRequest) -> crate::Result<()> {
 pub async fn root_search(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
-    cluster_client: &ClusterClient,
+    cluster_client: &ClusterSearchClient,
     client_pool: &SearchClientPool,
 ) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
@@ -474,7 +474,7 @@ mod tests {
             Arc::new(mock_search_service2),
         ])
         .await?;
-        let cluster_client = ClusterClient::new(client_pool.clone());
+        let cluster_client = ClusterSearchClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
         assert_eq!(search_response.num_hits, 5);
@@ -532,7 +532,7 @@ mod tests {
             },
         );
         let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
-        let cluster_client = ClusterClient::new(client_pool.clone());
+        let cluster_client = ClusterSearchClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
         assert_eq!(search_response.num_hits, 3);
@@ -612,7 +612,7 @@ mod tests {
             Arc::new(mock_search_service2),
         ])
         .await?;
-        let cluster_client = ClusterClient::new(client_pool.clone());
+        let cluster_client = ClusterSearchClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
         assert_eq!(search_response.num_hits, 3);
@@ -720,7 +720,7 @@ mod tests {
             Arc::new(mock_search_service2),
         ])
         .await?;
-        let cluster_client = ClusterClient::new(client_pool.clone());
+        let cluster_client = ClusterSearchClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
         assert_eq!(search_response.num_hits, 3);
@@ -843,7 +843,7 @@ mod tests {
             Arc::new(mock_search_service2),
         ])
         .await?;
-        let cluster_client = ClusterClient::new(client_pool.clone());
+        let cluster_client = ClusterSearchClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
         assert_eq!(search_response.num_hits, 3);
@@ -916,7 +916,7 @@ mod tests {
         );
         let client_pool =
             SearchClientPool::from_mocks(vec![Arc::new(mock_search_service1)]).await?;
-        let cluster_client = ClusterClient::new(client_pool.clone());
+        let cluster_client = ClusterSearchClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
         assert_eq!(search_response.num_hits, 1);
@@ -975,7 +975,7 @@ mod tests {
         );
         let client_pool =
             SearchClientPool::from_mocks(vec![Arc::new(mock_search_service1)]).await?;
-        let cluster_client = ClusterClient::new(client_pool.clone());
+        let cluster_client = ClusterSearchClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await;
         assert!(search_response.is_err());
@@ -1057,7 +1057,7 @@ mod tests {
             Arc::new(mock_search_service2),
         ])
         .await?;
-        let cluster_client = ClusterClient::new(client_pool.clone());
+        let cluster_client = ClusterSearchClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
         assert_eq!(search_response.num_hits, 1);
@@ -1130,7 +1130,7 @@ mod tests {
             Arc::new(mock_search_service2),
         ])
         .await?;
-        let cluster_client = ClusterClient::new(client_pool.clone());
+        let cluster_client = ClusterSearchClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
         assert_eq!(search_response.num_hits, 1);
@@ -1157,7 +1157,7 @@ mod tests {
 
         let client_pool =
             SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
-        let cluster_client = ClusterClient::new(client_pool.clone());
+        let cluster_client = ClusterSearchClient::new(client_pool.clone());
 
         assert!(root_search(
             &quickwit_proto::SearchRequest {
@@ -1246,7 +1246,7 @@ mod tests {
         );
         let client_pool =
             SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
-        let cluster_client = ClusterClient::new(client_pool.clone());
+        let cluster_client = ClusterSearchClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await;
         assert!(search_response.is_err());
@@ -1286,7 +1286,7 @@ mod tests {
         );
         let client_pool =
             SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
-        let cluster_client = ClusterClient::new(client_pool.clone());
+        let cluster_client = ClusterSearchClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await;
         assert!(search_response.is_err());

@@ -37,12 +37,12 @@ use crate::{SearchClientPool, SearchError, SearchServiceClient};
 /// retry policies for `FetchDocsRequest`, `LeafSearchRequest` and `LeafSearchStreamRequest`
 /// to retry on other `SearchServiceClient`.
 #[derive(Clone)]
-pub struct ClusterClient {
+pub struct ClusterSearchClient {
     client_pool: SearchClientPool,
 }
 
-impl ClusterClient {
-    /// Instantiates [`ClusterClient`].
+impl ClusterSearchClient {
+    /// Instantiates [`ClusterSearchClient`].
     pub fn new(client_pool: SearchClientPool) -> Self {
         Self { client_pool }
     }
@@ -322,7 +322,7 @@ mod tests {
         let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_service)]).await?;
         let first_client =
             client_pool.assign_job(SearchJob::for_test("split_1", 0), &HashSet::new())?;
-        let cluster_client = ClusterClient::new(client_pool);
+        let cluster_client = ClusterSearchClient::new(client_pool);
         let result = cluster_client.fetch_docs(request, first_client).await;
         assert!(result.is_ok());
         Ok(())
@@ -349,7 +349,7 @@ mod tests {
         let client_hashmap = client_pool.clients();
         let first_grpc_addr: SocketAddr = "127.0.0.1:20000".parse()?;
         let first_client = client_hashmap.get(&first_grpc_addr).unwrap().clone();
-        let cluster_client = ClusterClient::new(client_pool.clone());
+        let cluster_client = ClusterSearchClient::new(client_pool.clone());
         let result = cluster_client.fetch_docs(request, first_client).await;
         assert!(result.is_ok());
         Ok(())
@@ -368,7 +368,7 @@ mod tests {
         let client_hashmap = client_pool.clients();
         let first_grpc_addr: SocketAddr = "127.0.0.1:20000".parse()?;
         let first_client = client_hashmap.get(&first_grpc_addr).unwrap().clone();
-        let cluster_client = ClusterClient::new(client_pool.clone());
+        let cluster_client = ClusterSearchClient::new(client_pool.clone());
         let result = cluster_client.fetch_docs(request, first_client).await;
         assert!(result.is_err());
         Ok(())
@@ -392,7 +392,7 @@ mod tests {
         let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_service)]).await?;
         let first_client =
             client_pool.assign_job(SearchJob::for_test("split_1", 0), &HashSet::new())?;
-        let cluster_client = ClusterClient::new(client_pool);
+        let cluster_client = ClusterSearchClient::new(client_pool);
         let result = cluster_client.leaf_search(request, first_client).await;
         assert!(result.is_ok());
         Ok(())
@@ -438,7 +438,7 @@ mod tests {
         let first_client = client_pool
             .assign_job(SearchJob::for_test("split_1", 0), &HashSet::new())
             .unwrap();
-        let cluster_client = ClusterClient::new(client_pool);
+        let cluster_client = ClusterSearchClient::new(client_pool);
         let result = cluster_client.leaf_search(request, first_client).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().num_hits, 2);
@@ -538,7 +538,7 @@ mod tests {
         let client_hashmap = client_pool.clients();
         let first_grpc_addr: SocketAddr = "127.0.0.1:20000".parse()?;
         let first_client = client_hashmap.get(&first_grpc_addr).unwrap().clone();
-        let cluster_client = ClusterClient::new(client_pool);
+        let cluster_client = ClusterSearchClient::new(client_pool);
         let result = cluster_client
             .leaf_search_stream(request, first_client)
             .await;

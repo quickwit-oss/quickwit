@@ -49,6 +49,8 @@ pub enum IndexServiceError {
     SplitDeletionError(#[from] SplitDeletionError),
     #[error("Invalid index config: {0}.")]
     InvalidIndexConfig(String),
+    #[error("Internal error: `{0}`.")]
+    InternalError(String),
 }
 
 /// Index service responsible for creating, updating and deleting indexes.

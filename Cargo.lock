@@ -2985,6 +2985,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-control-plane"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chitchat",
+ "itertools",
+ "quickwit-actors",
+ "quickwit-cluster",
+ "quickwit-common",
+ "quickwit-config",
+ "quickwit-core",
+ "quickwit-indexing",
+ "quickwit-metastore",
+ "quickwit-proto",
+ "quickwit-storage",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "quickwit-core"
 version = "0.3.1"
 dependencies = [
@@ -3234,6 +3258,7 @@ dependencies = [
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
+ "quickwit-control-plane",
  "quickwit-core",
  "quickwit-directories",
  "quickwit-doc-mapper",

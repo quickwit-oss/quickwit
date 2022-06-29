@@ -45,6 +45,7 @@ pub mod models;
 pub mod source;
 mod split_store;
 mod test_utils;
+pub mod indexing_service_client;
 
 pub use test_utils::{mock_split, mock_split_meta, TestSandbox};
 

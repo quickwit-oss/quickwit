@@ -32,6 +32,7 @@ use quickwit_config::{
 use quickwit_ingest_api::IngestApiService;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
+use quickwit_proto::PhysicalIndexingPlanRequest;
 use quickwit_storage::{StorageResolverError, StorageUriResolver};
 use serde::Serialize;
 use thiserror::Error;
@@ -446,6 +447,23 @@ impl Handler<ShutdownPipeline> for IndexingService {
             pipeline_handle.quit().await;
         }
         Ok(Ok(()))
+    }
+}
+
+// This is where serious things happen. There are many things todo here:
+// - Check if there is a diff between running pipelines and the `PhysicalIndexingPlan`.
+// - Shutdown pipelines that should be removed and create pipelines that should run.
+// - Return an error if not successful. On error, the control planner will reevaluate the indexing
+//   plan.
+#[async_trait]
+impl Handler<PhysicalIndexingPlanRequest> for IndexingService {
+    type Reply = Result<(), IndexingServiceError>;
+    async fn handle(
+        &mut self,
+        _message: PhysicalIndexingPlanRequest,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        todo!();
     }
 }
 

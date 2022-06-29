@@ -8,6 +8,7 @@ members = [
   "quickwit-common",
   "quickwit-config",
   "quickwit-core",
+  "quickwit-control-plane",
   "quickwit-directories",
   "quickwit-doc-mapper",
   "quickwit-indexing",

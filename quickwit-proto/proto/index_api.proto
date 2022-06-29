@@ -1,0 +1,83 @@
+// Copyright (C) 2022 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+
+syntax = "proto3";
+
+package index_api;
+
+service IndexService {
+  // Get an index.
+  rpc get_index_metadata(GetIndexMetadataRequest) returns (GetIndexMetadataResponse);
+
+  // Get all splits from index.
+  rpc get_splits_metadatas(GetSplitsMetadatasRequest) returns (GetSplitsMetadatasResponse);
+
+  // Stage split.
+  rpc stage_split(StageSplitRequest) returns (SplitResponse);
+
+  // Publish split.
+  rpc publish_split(PublishSplitRequest) returns (SplitResponse);
+
+  // Replace split.
+  rpc replace_splits(ReplaceSplitsRequest) returns (SplitResponse);
+
+  //
+  // TODO: Not needed right now but we can add create/delete index/source calls.
+  //
+}
+
+message GetIndexMetadataRequest {
+  string index_id = 1;
+}
+
+message GetIndexMetadataResponse {
+  string index_metadata_serialized_json = 1;
+}
+
+message GetSplitsMetadatasRequest {
+  string index_id = 1;
+  // TODO: add filter options
+}
+
+message GetSplitsMetadatasResponse {
+  string splits_metadatas_serialized_json = 1;
+}
+
+message StageSplitRequest {
+  string publish_token = 1;
+  string index_id = 2;
+  string split_metadata_serialized_json = 3;
+}
+
+message PublishSplitRequest {
+  string publish_token = 1;
+  string index_id = 2;
+  string split_metadata_serialized_json = 3;
+}
+
+message ReplaceSplitsRequest {
+  string publish_token = 1;
+  string index_id = 2;
+  repeated string new_split_ids = 3;
+  repeated string replaced_split_ids = 4;
+}
+
+message SplitResponse {
+}

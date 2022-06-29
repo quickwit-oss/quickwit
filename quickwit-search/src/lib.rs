@@ -67,7 +67,7 @@ use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResult
 use tantivy::DocAddress;
 
 pub use crate::client::SearchServiceClient;
-pub use crate::cluster_client::ClusterClient;
+pub use crate::cluster_client::ClusterSearchClient;
 pub use crate::error::{parse_grpc_error, SearchError};
 use crate::fetch_docs::fetch_docs;
 use crate::leaf::leaf_search;
@@ -261,7 +261,7 @@ pub async fn start_searcher_service(
         .set(quickwit_config.searcher_config.clone())
         .expect("could not set searcher config in global once cell");
     let client_pool = SearchClientPool::create_and_keep_updated(cluster).await?;
-    let cluster_client = ClusterClient::new(client_pool.clone());
+    let cluster_client = ClusterSearchClient::new(client_pool.clone());
     let search_service = Arc::new(SearchServiceImpl::new(
         metastore,
         storage_uri_resolver,

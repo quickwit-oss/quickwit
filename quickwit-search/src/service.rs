@@ -35,14 +35,14 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 
 use crate::search_stream::{leaf_search_stream, root_search_stream};
-use crate::{fetch_docs, leaf_search, root_search, ClusterClient, SearchClientPool, SearchError};
+use crate::{fetch_docs, leaf_search, root_search, ClusterSearchClient, SearchClientPool, SearchError};
 
 #[derive(Clone)]
 /// The search service implementation.
 pub struct SearchServiceImpl {
     metastore: Arc<dyn Metastore>,
     storage_uri_resolver: StorageUriResolver,
-    cluster_client: ClusterClient,
+    cluster_client: ClusterSearchClient,
     client_pool: SearchClientPool,
 }
 
@@ -93,7 +93,7 @@ impl SearchServiceImpl {
     pub fn new(
         metastore: Arc<dyn Metastore>,
         storage_uri_resolver: StorageUriResolver,
-        cluster_client: ClusterClient,
+        cluster_client: ClusterSearchClient,
         client_pool: SearchClientPool,
     ) -> Self {
         SearchServiceImpl {

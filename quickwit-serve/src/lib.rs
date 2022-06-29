@@ -43,7 +43,8 @@ use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::{Cluster, QuickwitService};
 use quickwit_common::uri::Uri;
 use quickwit_config::QuickwitConfig;
-use quickwit_core::IndexService;
+use quickwit_control_plane::actors::IndexService;
+use quickwit_control_plane::start_control_plane_service;
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexer_service;
 use quickwit_ingest_api::{init_ingest_api, IngestApiService};
@@ -87,7 +88,7 @@ struct QuickwitServices {
     pub search_service: Arc<dyn SearchService>,
     pub indexer_service: Option<Mailbox<IndexingService>>,
     pub ingest_api_service: Option<Mailbox<IngestApiService>>,
-    pub index_service: Arc<IndexService>,
+    pub index_service: Option<Mailbox<IndexService>>,
     pub services: HashSet<QuickwitService>,
 }
 
@@ -144,12 +145,23 @@ pub async fn serve_quickwit(
     )
     .await?;
 
-    // Always instanciate index management service.
-    let index_service = Arc::new(IndexService::new(
-        metastore,
-        storage_resolver,
-        config.default_index_root_uri(),
-    ));
+    // Start ControlPlaneService and IndexService (required by the Control Plane).
+    let index_service: Option<Mailbox<IndexService>> = if services
+        .contains(&QuickwitService::ControlPlane)
+    {
+        // start_control_plane_service that returns index service mailbox is confusing.
+        let index_service_mailbox = start_control_plane_service(
+            &universe,
+            cluster.clone(),
+            metastore.clone(),
+            storage_resolver.clone(),
+            config.default_index_root_uri(),
+            ).await?;
+        Some(index_service_mailbox)
+    } else {
+        None
+    };
+
     let grpc_listen_addr = config.grpc_listen_addr().await?;
     let rest_listen_addr = config.rest_listen_addr().await?;
 
@@ -243,7 +255,7 @@ mod tests {
     use quickwit_proto::search_service_server::SearchServiceServer;
     use quickwit_proto::{tonic, OutputFormat};
     use quickwit_search::{
-        root_search_stream, ClusterClient, MockSearchService, SearchClientPool, SearchError,
+        root_search_stream, ClusterSearchClient, MockSearchService, SearchClientPool, SearchError,
         SearchService,
     };
     use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -327,7 +339,7 @@ mod tests {
         let grpc_addr: SocketAddr = "127.0.0.1:20000".parse()?;
         start_test_server(grpc_addr, Arc::new(mock_search_service)).await?;
         let client_pool = SearchClientPool::for_addrs(&[grpc_addr]).await?;
-        let cluster_client = ClusterClient::new(client_pool.clone());
+        let cluster_client = ClusterSearchClient::new(client_pool.clone());
         let stream = root_search_stream(request, &metastore, cluster_client, &client_pool).await?;
         let result: Result<Vec<_>, SearchError> = stream.try_collect().await;
         assert!(result.is_err());
