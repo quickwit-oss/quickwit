@@ -20,12 +20,25 @@ version: 0
 # - for its gRPC service (TCP)
 # - for its Gossip cluster membership service (UDP)
 #
-# All three services are bound to the same host and different port.
+# All three services are bound to the same host and a different port. The host can be an IP address or a hostname.
 #
 # Default HTTP server host is `127.0.0.1` and default HTTP port is 7280.
+# The default host value was chosen to avoid exposing the node to the open-world without users' explicit consent.
+# This allows for testing Quickwit in single-node mode or with multiple nodes running on the same host and listening
+# on different ports. However, in cluster mode, using this value is never appropriate because it causes the node to
+# ignore incoming traffic.
+# There are two options to set up a node in cluster mode:
+#   1. specify the node's hostname or IP
+#   2. pass `0.0.0.0` and let Quickwit do its best to discover the node's IP (see `advertise_address`)
 #
 # listen_address: 127.0.0.1
 # rest_listen_port: 7280
+#
+# IP address advertised by the node, i.e. the IP address that peer nodes should use to connect to the node for RPCs.
+# The environment variable `QW_ADVERTISE_ADDRESS` can also be used to configure this value.
+# The default advertise address is `listen_address`. If `listen_address` is unspecified (`0.0.0.0`),
+# Quickwit attempts to sniff the node's IP by scanning the available network interfaces.
+# advertise_address: 192.168.0.42
 #
 # In order to join a cluster, one needs to specify a list of
 # seeds to connect to. If no port is specified, Quickwit will assume
@@ -33,7 +46,7 @@ version: 0
 # By default, the peer seed list is empty.
 #
 # peer_seeds:
-#   - quickwit-searcher-0.local:10000
+#   - quickwit-searcher-0.local
 #   - quickwit-searcher-1.local:10000
 #
 # Path to directory where temporary data (caches, intermediate indexing data structures)
