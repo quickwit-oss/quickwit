@@ -1,0 +1,5 @@
+version: 0
+searcher:
+  fast_field_cache_capacity: 10G
+  # Typo here. It is supposed to be searchs.
+  max_num_concurrent_split_searchs: 150

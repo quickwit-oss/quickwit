@@ -78,6 +78,7 @@ fn default_rest_listen_port() -> u16 {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct IndexerConfig {
     #[serde(default = "IndexerConfig::default_split_store_max_num_bytes")]
     pub split_store_max_num_bytes: Byte,
@@ -120,6 +121,7 @@ pub fn get_searcher_config_instance() -> &'static SearcherConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct SearcherConfig {
     #[serde(default = "SearcherConfig::default_fast_field_cache_capacity")]
     pub fast_field_cache_capacity: Byte,
@@ -161,12 +163,14 @@ impl Default for SearcherConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct S3Config {
     pub region: Option<String>,
     pub endpoint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct StorageConfig {
     #[serde(rename = "s3")]
     pub s3_config: S3Config,
@@ -517,6 +521,16 @@ mod tests {
     test_parser!(test_config_from_json, json);
     test_parser!(test_config_from_toml, toml);
     test_parser!(test_config_from_yaml, yaml);
+
+    #[tokio::test]
+    async fn test_config_contains_wrong_values() {
+        let config_filepath =
+                    get_config_filepath("quickwit.wrongkey.yaml");
+        let config_uri = Uri::try_new(&config_filepath).unwrap();
+        let file = std::fs::read_to_string(&config_filepath).unwrap();
+        let parsing_error = QuickwitConfig::from_uri(&config_uri, file.as_bytes()).await.unwrap_err();
+        assert!(format!("{parsing_error:?}").contains("unknown field `max_num_concurrent_split_searchs`"));
+    }
 
     #[test]
     fn test_indexer_config_default_values() {
