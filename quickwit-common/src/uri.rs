@@ -17,12 +17,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::borrow::Cow;
 use std::env;
 use std::ffi::OsStr;
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
+use std::hash::Hash;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{bail, Context};
+use once_cell::sync::OnceCell;
+use regex::Regex;
 use serde::{Serialize, Serializer};
 
 /// Default file protocol `file://`
@@ -58,7 +62,7 @@ impl Extension {
 }
 
 /// Encapsulates the URI type.
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(PartialEq, Eq, Hash, Clone)]
 pub struct Uri {
     uri: String,
     protocol_idx: usize,
@@ -137,6 +141,21 @@ impl Uri {
         &self.uri[..self.protocol_idx]
     }
 
+    /// Strips sensitive information such as credentials from URI.
+    pub fn as_redacted_str(&self) -> Cow<str> {
+        if self.protocol() == POSTGRES_PROTOCOL || self.protocol() == POSTGRESQL_PROTOCOL {
+            static POSTGRESQL_URI_PATTERN: OnceCell<Regex> = OnceCell::new();
+            POSTGRESQL_URI_PATTERN
+                .get_or_init(||
+                    Regex::new("(?P<before>^postgres(ql)?://.*)(?P<password>:.*@)(?P<after>.*)")
+                        .expect("Failed to compile regular expression. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
+                )
+                .replace(&self.uri, "$before:***redacted***@$after")
+        } else {
+            Cow::Borrowed(&self.uri)
+        }
+    }
+
     /// Returns the file path of the URI.
     /// Applies only to `file://` URIs.
     pub fn filepath(&self) -> Option<&Path> {
@@ -192,9 +211,18 @@ impl AsRef<str> for Uri {
     }
 }
 
+impl Debug for Uri {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter
+            .debug_struct("Uri")
+            .field("uri", &self.as_redacted_str())
+            .finish()
+    }
+}
+
 impl Display for Uri {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(formatter, "{}", self.uri)
+        write!(formatter, "{}", self.as_redacted_str())
     }
 }
 
@@ -374,6 +402,40 @@ mod tests {
         Uri::new("postgres://username:password@localhost:5432/metastore".to_string())
             .join("table")
             .unwrap_err();
+    }
+
+    #[test]
+    fn test_uri_as_redacted_str() {
+        assert_eq!(
+            Uri::new("s3://bucket/key".to_string()).as_redacted_str(),
+            "s3://bucket/key"
+        );
+        assert_eq!(
+            Uri::new("postgres://localhost:5432/metastore".to_string()).as_redacted_str(),
+            "postgres://localhost:5432/metastore"
+        );
+        assert_eq!(
+            Uri::new("postgres://username@localhost:5432/metastore".to_string()).as_redacted_str(),
+            "postgres://username@localhost:5432/metastore"
+        );
+        {
+            for protocol in [POSTGRES_PROTOCOL, POSTGRESQL_PROTOCOL] {
+                let uri = Uri::new(format!(
+                    "{}://username:password@localhost:5432/metastore",
+                    protocol
+                ));
+                let expected_uri = format!(
+                    "{}://username:***redacted***@localhost:5432/metastore",
+                    protocol
+                );
+                assert_eq!(uri.as_redacted_str(), expected_uri);
+                assert_eq!(format!("{uri}"), expected_uri);
+                assert_eq!(
+                    format!("{uri:?}"),
+                    format!("Uri {{ uri: \"{expected_uri}\" }}")
+                );
+            }
+        }
     }
 
     #[test]
