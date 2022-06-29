@@ -50,8 +50,8 @@ jobs:
       - uses: Swatinem/rust-cache@v1
       - name: rustfmt
         run: cargo +nightly fmt --all -- --check
-      - name: license-check
-        run: bash check_license.sh
+      - name: license-headers-check
+        run: bash scripts/check_license_headers.sh
       - uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}

@@ -8,8 +8,8 @@ do
     DIFFRESULT=$?
     if [ $DIFFRESULT -ne 0 ]; then
         echo $DIFFRESULT
-        echo "----"
-        echo "License error in $file"
+        echo "---"
+        echo "Incomplete or missing license header in $file"
         echo "---"
         echo
         RESULT=1
