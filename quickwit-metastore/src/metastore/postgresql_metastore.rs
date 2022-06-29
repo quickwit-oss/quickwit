@@ -24,10 +24,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use itertools::Itertools;
+use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use sqlx::migrate::Migrator;
-use sqlx::postgres::{PgDatabaseError, PgPoolOptions};
+use sqlx::postgres::{PgConnectOptions, PgDatabaseError, PgPoolOptions};
 use sqlx::{ConnectOptions, Pool, Postgres, Row, Transaction};
 use tokio::sync::Mutex;
 use tracing::log::LevelFilter;
@@ -51,18 +52,18 @@ mod pg_error_code {
 }
 
 /// Establishes a connection to the given database URI.
-async fn establish_connection(database_uri: &str) -> MetastoreResult<Pool<Postgres>> {
+async fn establish_connection(connection_uri: &Uri) -> MetastoreResult<Pool<Postgres>> {
     let pool_options = PgPoolOptions::new()
         .max_connections(CONNECTION_POOL_MAX_SIZE)
         .idle_timeout(Duration::from_secs(1))
         .acquire_timeout(Duration::from_secs(2));
-    let mut pg_connect_options: sqlx::postgres::PgConnectOptions = database_uri.parse()?;
-    pg_connect_options.log_statements(LevelFilter::Debug);
+    let mut pg_connect_options: PgConnectOptions = connection_uri.as_str().parse()?;
+    pg_connect_options.log_statements(LevelFilter::Info);
     pool_options
         .connect_with(pg_connect_options)
         .await
         .map_err(|err| {
-            error!(err=?err, "Failed to establish connection");
+            error!(connection_uri=%connection_uri, err=?err, "Failed to establish connection to database.");
             MetastoreError::ConnectionError {
                 message: err.to_string(),
             }
@@ -90,17 +91,17 @@ async fn run_postgres_migrations(pool: &Pool<Postgres>) -> MetastoreResult<()> {
 /// PostgreSQL metastore implementation.
 #[derive(Clone)]
 pub struct PostgresqlMetastore {
-    uri: String,
+    uri: Uri,
     connection_pool: Pool<Postgres>,
 }
 
 impl PostgresqlMetastore {
     /// Creates a meta store given a database URI.
-    pub async fn new(database_uri: &str) -> MetastoreResult<Self> {
-        let connection_pool = establish_connection(database_uri).await?;
+    pub async fn new(connection_uri: Uri) -> MetastoreResult<Self> {
+        let connection_pool = establish_connection(&connection_uri).await?;
         run_postgres_migrations(&connection_pool).await?;
         Ok(PostgresqlMetastore {
-            uri: database_uri.to_string(),
+            uri: connection_uri,
             connection_pool,
         })
     }
@@ -715,7 +716,9 @@ impl Metastore for PostgresqlMetastore {
     }
 
     fn uri(&self) -> String {
-        self.uri.clone()
+        // TODO: This is dangerous because it may leak the db credentials. We must generalize the
+        // use of the `Uri` struct eventually.
+        self.uri.to_string()
     }
 }
 
@@ -783,11 +786,11 @@ pub struct PostgresqlMetastoreFactory {
     // In contrast to the file backe metastore, we use a strong pointer here, so that Metastore
     // doesn't get dropped. This is done in order to keep the underlying connection pool to
     // postgres alive.
-    cache: Arc<Mutex<HashMap<String, Arc<dyn Metastore>>>>,
+    cache: Arc<Mutex<HashMap<Uri, Arc<dyn Metastore>>>>,
 }
 
 impl PostgresqlMetastoreFactory {
-    async fn get_from_cache(&self, uri: &str) -> Option<Arc<dyn Metastore>> {
+    async fn get_from_cache(&self, uri: &Uri) -> Option<Arc<dyn Metastore>> {
         let cache_lock = self.cache.lock().await;
         cache_lock.get(uri).map(Arc::clone)
     }
@@ -797,11 +800,7 @@ impl PostgresqlMetastoreFactory {
     ///
     /// This way we make sure that we keep only one instance associated
     /// to the key `uri` outside of this struct.
-    async fn cache_metastore(
-        &self,
-        uri: String,
-        metastore: Arc<dyn Metastore>,
-    ) -> Arc<dyn Metastore> {
+    async fn cache_metastore(&self, uri: Uri, metastore: Arc<dyn Metastore>) -> Arc<dyn Metastore> {
         let mut cache_lock = self.cache.lock().await;
         if let Some(metastore) = cache_lock.get(&uri) {
             return metastore.clone();
@@ -814,17 +813,16 @@ impl PostgresqlMetastoreFactory {
 #[async_trait]
 impl MetastoreFactory for PostgresqlMetastoreFactory {
     async fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
-        if let Some(metastore) = self.get_from_cache(uri).await {
+        let uri = Uri::new(uri.to_string());
+        if let Some(metastore) = self.get_from_cache(&uri).await {
             debug!("using metastore from cache");
             return Ok(metastore);
         }
         debug!("metastore not found in cache");
-        let metastore = PostgresqlMetastore::new(uri)
+        let metastore = PostgresqlMetastore::new(uri.clone())
             .await
             .map_err(MetastoreResolverError::FailedToOpenMetastore)?;
-        let metastore = self
-            .cache_metastore(uri.to_string(), Arc::new(metastore))
-            .await;
+        let metastore = self.cache_metastore(uri, Arc::new(metastore)).await;
         Ok(metastore)
     }
 }
@@ -846,10 +844,11 @@ impl crate::tests::test_suite::DefaultForTest for PostgresqlMetastore {
         // too catastrophic, as it is limited by the number of concurrent
         // unit tests running (= number of test-threads).
         dotenv::dotenv().ok();
-        let uri = std::env::var("TEST_DATABASE_URL").unwrap();
-        PostgresqlMetastore::new(&uri)
+        let uri = Uri::try_new(&std::env::var("TEST_DATABASE_URL").unwrap())
+            .expect("Failed to parse test database URL.");
+        PostgresqlMetastore::new(uri)
             .await
-            .expect("PostgreSQL metastore is not initialized.")
+            .expect("Failed to initialize test PostgreSQL metastore.")
     }
 }
 
