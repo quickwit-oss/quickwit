@@ -31,8 +31,8 @@ use quickwit_janitor::{
     delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
 };
 use quickwit_metastore::{
-    quickwit_metastore_uri_resolver, IndexMetadata, Metastore, MetastoreError,
-    MetastoreUriResolver, Split, SplitMetadata, SplitState,
+    quickwit_metastore_uri_resolver, IndexMetadata, Metastore, MetastoreError, Split,
+    SplitMetadata, SplitState,
 };
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use quickwit_storage::{quickwit_storage_uri_resolver, StorageResolverError, StorageUriResolver};
@@ -345,17 +345,15 @@ pub async fn remove_indexing_directory(data_dir_path: &Path, index_id: String) -
 
 /// Resolve storage endpoints to validate.
 pub async fn validate_storage_uri(
-    metastore_uri_resolver: &MetastoreUriResolver,
+    storage_uri_resolver: &StorageUriResolver,
     quickwit_config: &QuickwitConfig,
     index_config: &IndexConfig,
 ) -> anyhow::Result<()> {
-    metastore_uri_resolver
-        .resolve(&quickwit_config.default_index_root_uri)
-        .await?;
+    storage_uri_resolver.resolve(&quickwit_config.default_index_root_uri)?;
 
     // Optional: check custom index uri
     if let Some(index_uri) = index_config.index_uri.as_ref() {
-        metastore_uri_resolver.resolve(index_uri).await?;
+        storage_uri_resolver.resolve(index_uri)?;
     }
     Ok(())
 }
