@@ -23,11 +23,11 @@ import SideBar from '../components/SideBar';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import SearchView from './SearchView';
 import IndexesView from './IndexesView';
-import ClusterMembersView from './ClusterMembersView';
 import { theme } from '../utils/theme';
 import IndexView from './IndexView';
 import { FullBoxContainer } from '../components/LayoutUtils';
 import { LocalStorageProvider } from '../providers/LocalStorageProvider';
+import ClusterStateView from './ClusterStateView';
 
 function App() {
   return (
@@ -42,7 +42,7 @@ function App() {
             <Route path="search" element={<SearchView />} />
             <Route path="indexes" element={<IndexesView />} />
             <Route path="indexes/:indexId" element={<IndexView />} />
-            <Route path="cluster/members" element={<ClusterMembersView />} />
+            <Route path="cluster/state" element={<ClusterStateView />} />
           </Routes>
         </FullBoxContainer>
       </LocalStorageProvider>

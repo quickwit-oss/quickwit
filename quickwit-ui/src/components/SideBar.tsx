@@ -88,7 +88,7 @@ const SideBar = () => {
           <Typography variant="body1">Admin</Typography>
         </ListSubheader>
           <ListItemLink to="/indexes" primary={<Typography variant="body1">Indexes</Typography>} icon={<Database size="18px" />} />
-          <ListItemLink to="/cluster/members" primary={<Typography variant="body1">Cluster</Typography>} icon={<GroupWork size="18px" />} />
+          <ListItemLink to="/cluster/state" primary={<Typography variant="body1">Cluster state</Typography>} icon={<GroupWork size="18px" />} />
       </List>
     </SideBarWrapper>
   );
