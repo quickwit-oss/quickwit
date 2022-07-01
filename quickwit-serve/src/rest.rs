@@ -84,6 +84,16 @@ pub(crate) async fn start_rest_server(
 }
 
 /// This function returns a formatted error based on the given rejection reason.
+/// The ordering of rejection processing is very important, we need to start
+/// with the most specific rejections and end with the most generic. If not, Quickwit
+/// will return useless errors to the user.
+// TODO: we may want in the future revamp rejections as our usage does not exactly
+// match rejection behaviour. When a filter returns a rejection, it means that it
+// did not match, but maybe another filter can. Consequently warp will continue
+// to try to match other filters. Once a filter is matched, we can enter into
+// our own logic and return a proper reply.
+// More on this here: https://github.com/seanmonstar/warp/issues/388.
+// We may use this work on the PR is merged: https://github.com/seanmonstar/warp/pull/909.
 pub async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
     let err = get_status_with_error(rejection);
     Ok(Format::PrettyJson.make_reply_for_err(err))
@@ -94,6 +104,17 @@ fn get_status_with_error(rejection: Rejection) -> FormatError {
         FormatError {
             code: ServiceErrorCode::NotFound,
             error: "Route not found".to_string(),
+        }
+    } else if let Some(error) = rejection.find::<serde_qs::Error>() {
+        FormatError {
+            code: ServiceErrorCode::BadRequest,
+            error: error.to_string(),
+        }
+    } else if let Some(error) = rejection.find::<warp::filters::body::BodyDeserializeError>() {
+        // Happens when the request body could not be deserialized correctly.
+        FormatError {
+            code: ServiceErrorCode::BadRequest,
+            error: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::UnsupportedMediaType>() {
         FormatError {
@@ -126,17 +147,6 @@ fn get_status_with_error(rejection: Rejection) -> FormatError {
             error: error.to_string(),
         }
     } else if let Some(error) = rejection.find::<warp::reject::PayloadTooLarge>() {
-        FormatError {
-            code: ServiceErrorCode::BadRequest,
-            error: error.to_string(),
-        }
-    } else if let Some(error) = rejection.find::<warp::filters::body::BodyDeserializeError>() {
-        // Happens when the request body could not be deserialized correctly.
-        FormatError {
-            code: ServiceErrorCode::BadRequest,
-            error: error.to_string(),
-        }
-    } else if let Some(error) = rejection.find::<serde_qs::Error>() {
         FormatError {
             code: ServiceErrorCode::BadRequest,
             error: error.to_string(),
