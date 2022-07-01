@@ -42,7 +42,7 @@ pub(crate) async fn start_rest_server(
 ) -> anyhow::Result<()> {
     info!(rest_listen_addr = %rest_listen_addr, "Starting REST server.");
     let request_counter = warp::log::custom(|_| {
-        crate::COUNTERS.num_requests.inc();
+        crate::SERVE_METRICS.http_requests_total.inc();
     });
     let metrics_service = warp::path("metrics")
         .and(warp::get())

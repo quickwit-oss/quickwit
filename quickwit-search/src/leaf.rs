@@ -66,7 +66,8 @@ fn global_split_footer_cache() -> &'static MemorySizedCache<String> {
     INSTANCE.get_or_init(|| {
         let config = get_searcher_config_instance();
         MemorySizedCache::with_capacity_in_bytes(
-            config.split_footer_cache_capacity.get_bytes() as usize
+            config.split_footer_cache_capacity.get_bytes() as usize,
+            &quickwit_storage::STORAGE_METRICS.split_footer_cache,
         )
     })
 }
@@ -305,8 +306,8 @@ async fn leaf_search_single_split(
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
     doc_mapper: Arc<dyn DocMapper>,
+    leaf_split_search_permit: SemaphorePermit<'static>,
 ) -> crate::Result<LeafSearchResponse> {
-    let _leaf_split_search_permit = get_leaf_search_split_semaphore().await;
     let split_id = split.split_id.to_string();
     let index = open_index(storage, &split).await?;
     let split_schema = index.schema();
@@ -360,11 +361,14 @@ pub async fn leaf_search(
             let doc_mapper_clone = doc_mapper.clone();
             let index_storage_clone = index_storage.clone();
             async move {
+                let leaf_split_search_permit = get_leaf_search_split_semaphore().await;
+                crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
                 leaf_search_single_split(
                     request,
                     index_storage_clone,
                     split.clone(),
                     doc_mapper_clone,
+                    leaf_split_search_permit,
                 )
                 .await
                 .map_err(|err| (split.split_id.clone(), err))

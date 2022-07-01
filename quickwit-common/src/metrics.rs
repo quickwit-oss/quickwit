@@ -17,17 +17,19 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use prometheus::{Encoder, IntCounter, IntGauge, Opts, TextEncoder};
+use prometheus::{Encoder, Opts, TextEncoder};
+pub use prometheus::{IntCounter, IntGauge};
 
-pub fn new_counter(name: &str, description: &str) -> IntCounter {
-    let counter =
-        IntCounter::with_opts(Opts::new(name, description)).expect("Failed to create counter");
+pub fn new_counter(name: &str, description: &str, namespace: &str) -> IntCounter {
+    let counter_opts = Opts::new(name, description).namespace(namespace);
+    let counter = IntCounter::with_opts(counter_opts).expect("Failed to create counter");
     prometheus::register(Box::new(counter.clone())).expect("Failed to register counter");
     counter
 }
 
-pub fn new_gauge(name: &str, description: &str) -> IntGauge {
-    let gauge = IntGauge::with_opts(Opts::new(name, description)).expect("Failed to create gauge");
+pub fn new_gauge(name: &str, description: &str, namespace: &str) -> IntGauge {
+    let gauge_opts = Opts::new(name, description).namespace(namespace);
+    let gauge = IntGauge::with_opts(gauge_opts).expect("Failed to create gauge");
     prometheus::register(Box::new(gauge.clone())).expect("Failed to register gauge");
     gauge
 }

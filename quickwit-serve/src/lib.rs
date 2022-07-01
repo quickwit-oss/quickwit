@@ -18,9 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod args;
-mod counters;
 mod error;
 mod format;
+mod metrics;
 
 mod grpc;
 mod rest;
@@ -52,7 +52,7 @@ use quickwit_storage::quickwit_storage_uri_resolver;
 use warp::{Filter, Rejection};
 
 pub use crate::args::ServeArgs;
-pub use crate::counters::COUNTERS;
+pub use crate::metrics::SERVE_METRICS;
 #[cfg(test)]
 use crate::rest::recover_fn;
 

@@ -37,8 +37,11 @@ mod search_stream;
 mod service;
 mod thread_pool;
 
+mod metrics;
 #[cfg(test)]
 mod tests;
+
+use metrics::SEARCH_METRICS;
 
 /// Refer to this as `crate::Result<T>`.
 pub type Result<T> = std::result::Result<T, SearchError>;
