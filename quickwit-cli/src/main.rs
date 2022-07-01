@@ -18,21 +18,25 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::env;
+use std::time::Duration;
 
 use anyhow::Context;
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
 use quickwit_cli::cli::{build_cli, CliCommand};
 use quickwit_cli::QW_JAEGER_ENABLED_ENV_KEY;
+use quickwit_common::metrics::new_gauge;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tikv_jemallocator::Jemalloc;
-use tracing::{info, Level};
+use tracing::{error, info, Level};
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
+
+const POLL_JEMALLOC_METRICS_INTERVAL: Duration = Duration::from_secs(1);
 
 fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
     #[cfg(feature = "tokio-console")]
@@ -82,6 +86,35 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
     Ok(())
 }
 
+//
+async fn jemalloc_metrics_loop() -> tikv_jemalloc_ctl::Result<()> {
+    let allocated_gauge = new_gauge(
+        "allocated_num_bytes",
+        "Number of bytes allocated memory, as reported by jemallocated.",
+        "quickwit",
+    );
+
+    // Obtain a MIB for the `epoch`, `stats.allocated`, and
+    // `atats.resident` keys:
+    let epoch_management_information_base = tikv_jemalloc_ctl::epoch::mib()?;
+    let allocated = tikv_jemalloc_ctl::stats::allocated::mib()?;
+
+    let mut poll_interval = tokio::time::interval(POLL_JEMALLOC_METRICS_INTERVAL);
+
+    loop {
+        poll_interval.tick().await;
+
+        // Many statistics are cached and only updated
+        // when the epoch is advanced:
+        epoch_management_information_base.advance()?;
+
+        // Read statistics using MIB key:
+        let allocated = allocated.read()?;
+
+        allocated_gauge.set(allocated as i64);
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     #[cfg(feature = "openssl-support")]
@@ -115,6 +148,12 @@ async fn main() -> anyhow::Result<()> {
             std::process::exit(1);
         }
     };
+
+    tokio::task::spawn(async {
+        if let Err(jemalloc_metrics_err) = jemalloc_metrics_loop().await {
+            error!(err=?jemalloc_metrics_err, "Failed to gather metrics from jemalloc.");
+        }
+    });
 
     setup_logging_and_tracing(command.default_log_level())?;
     info!(

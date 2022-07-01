@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use once_cell::sync::OnceCell;
+use quickwit_common::metrics::create_gauge_guard;
 use tracing::error;
 
 fn search_thread_pool() -> &'static rayon::ThreadPool {
@@ -59,6 +60,8 @@ where
 {
     let (tx, rx) = tokio::sync::oneshot::channel();
     search_thread_pool().spawn(move || {
+        let _active_thread_guard =
+            create_gauge_guard(&crate::SEARCH_METRICS.active_search_threads_count);
         if tx.is_closed() {
             return;
         }
