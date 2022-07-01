@@ -154,7 +154,7 @@ fn search_get_filter(
 ) -> impl Filter<Extract = (String, SearchRequestQueryString), Error = Rejection> + Clone {
     warp::path!(String / "search")
         .and(warp::get())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(warp::query::<SearchRequestQueryString>())
 }
 
 fn search_post_filter(
@@ -548,7 +548,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "error": "unknown field `end_unix_timestamp`, expected one of `query`, `aggs`, `search_field`, `start_timestamp`, `end_timestamp`, `max_hits`, `start_offset`, `format`, `sort_by_field`"
+            "error": "Invalid query string"
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())
