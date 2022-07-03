@@ -20,7 +20,7 @@
 import { render, unmountComponentAtNode } from "react-dom";
 import { waitFor } from "@testing-library/react";
 import { screen } from '@testing-library/dom';
-import ClusterStateView from './ClusterStateView';
+import ClusterView from './ClusterView';
 import { act } from "react-dom/test-utils";
 import { Client } from "../services/client";
 
@@ -72,10 +72,10 @@ test('renders ClusterStateView', async () => {
       "live_nodes": [],
       "dead_nodes": []
   };
-  Client.prototype.clusterState.mockImplementation(() => Promise.resolve(clusterState));
+  Client.prototype.cluster.mockImplementation(() => Promise.resolve(clusterState));
 
   await act(async () => {
-    render(<ClusterStateView />, container);
+    render(<ClusterView />, container);
   });
 
   await waitFor(() => expect(screen.getByText(/node-green-uCdq/)).toBeInTheDocument());

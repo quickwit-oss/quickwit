@@ -21,7 +21,7 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use quickwit_cluster::{Cluster, ClusterState};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
 
 use crate::Format;
@@ -32,7 +32,7 @@ pub fn cluster_handler(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     cluster_state_filter()
         .and(warp::path::end().map(move || cluster.clone()))
-        .and_then(cluster_state)
+        .and_then(get_cluster)
 }
 
 /// This struct represents the QueryString passed to
@@ -53,16 +53,27 @@ fn cluster_state_filter(
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 
-async fn cluster_state(
+async fn get_cluster(
     request: ClusterStateQueryString,
     cluster: Arc<Cluster>,
 ) -> Result<impl warp::Reply, Infallible> {
     Ok(request
         .format
-        .make_rest_reply_non_serializable_error(cluster_state_endpoint(cluster).await))
+        .make_rest_reply_non_serializable_error(cluster_endpoint(cluster).await))
 }
 
-async fn cluster_state_endpoint(cluster: Arc<Cluster>) -> Result<ClusterState, Infallible> {
+#[derive(Serialize)]
+struct SerializedCluster {
+    cluster_id: String,
+    node_id: String,
+    state: ClusterState,
+}
+
+async fn cluster_endpoint(cluster: Arc<Cluster>) -> Result<SerializedCluster, Infallible> {
     let cluster_state = cluster.state().await;
-    Ok(cluster_state)
+    Ok(SerializedCluster {
+        cluster_id: cluster.cluster_id.clone(),
+        node_id: cluster.node_id.clone(),
+        state: cluster_state,
+    })
 }

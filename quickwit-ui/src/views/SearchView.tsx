@@ -44,7 +44,7 @@ function SearchView() {
 
   const runSearch = (updatedSearchRequest: SearchRequest) => {
     console.log('Run search...', updatedSearchRequest);
-    // If we have a timstamp field, order by desc on the timestamp field.
+    // If we have a timestamp field, order by desc on the timestamp field.
     if (index?.metadata.indexing_settings.timestamp_field) {
       updatedSearchRequest.sortByField = {
         field_name: index?.metadata.indexing_settings.timestamp_field,
