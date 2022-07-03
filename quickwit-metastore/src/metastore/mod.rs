@@ -28,6 +28,7 @@ use std::ops::Range;
 
 use async_trait::async_trait;
 pub use index_metadata::IndexMetadata;
+use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 
@@ -189,5 +190,5 @@ pub trait Metastore: Send + Sync + 'static {
     async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()>;
 
     /// Returns the metastore uri.
-    fn uri(&self) -> String;
+    fn uri(&self) -> Uri;
 }

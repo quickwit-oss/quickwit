@@ -33,6 +33,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::try_join_all;
+use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_storage::Storage;
@@ -485,8 +486,8 @@ impl Metastore for FileBackedMetastore {
         .await
     }
 
-    fn uri(&self) -> String {
-        self.storage.uri()
+    fn uri(&self) -> Uri {
+        Uri::new(self.storage.uri())
     }
 
     async fn check_connectivity(&self) -> anyhow::Result<()> {

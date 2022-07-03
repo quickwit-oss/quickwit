@@ -168,7 +168,7 @@ async fn check_is_configured_for_cluster(
     if config.peer_seeds.is_empty() {
         return Ok(());
     }
-    let metastore_uri = Uri::try_new(&metastore.uri())?;
+    let metastore_uri = metastore.uri();
     if metastore_uri.protocol() == FILE_PROTOCOL || metastore_uri.protocol() == S3_PROTOCOL {
         anyhow::bail!(
             "Quickwit cannot run in cluster mode with a file-backed metastore. Please, use a \
@@ -196,6 +196,7 @@ mod tests {
     use std::sync::Arc;
 
     use futures::TryStreamExt;
+    use quickwit_common::uri::Uri;
     use quickwit_config::QuickwitConfig;
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
@@ -303,7 +304,7 @@ mod tests {
         let mut mock_metastore = MockMetastore::new();
         mock_metastore
             .expect_uri()
-            .returning(|| "file:///path/to/metastore".to_string());
+            .returning(|| Uri::new("file:///path/to/metastore".to_string()));
         let metastore = Arc::new(mock_metastore);
 
         let config = QuickwitConfig::default();
@@ -318,7 +319,7 @@ mod tests {
         let mut mock_metastore = MockMetastore::new();
         mock_metastore.expect_uri().returning(|| {
             let uris = vec!["file:///path/to/metastore", "s3:///path/to/metastore"];
-            uris.choose(&mut rand::thread_rng()).unwrap().to_string()
+            Uri::new(uris.choose(&mut rand::thread_rng()).unwrap().to_string())
         });
         let metastore = Arc::new(mock_metastore);
 
@@ -335,7 +336,7 @@ mod tests {
         let mut mock_metastore = MockMetastore::new();
         mock_metastore
             .expect_uri()
-            .returning(|| "postgres:///host/to/metastore".to_string());
+            .returning(|| Uri::new("postgres:///host/to/metastore".to_string()));
         mock_metastore
             .expect_list_indexes_metadatas()
             .returning(|| {
@@ -359,7 +360,7 @@ mod tests {
         let mut mock_metastore = MockMetastore::new();
         mock_metastore
             .expect_uri()
-            .returning(|| "postgres:///host/to/metastore".to_string());
+            .returning(|| Uri::new("postgres:///host/to/metastore".to_string()));
         mock_metastore
             .expect_list_indexes_metadatas()
             .returning(|| {

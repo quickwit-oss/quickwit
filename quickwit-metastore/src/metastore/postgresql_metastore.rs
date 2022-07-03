@@ -715,10 +715,8 @@ impl Metastore for PostgresqlMetastore {
         })
     }
 
-    fn uri(&self) -> String {
-        // TODO: This is dangerous because it may leak the db credentials. We must generalize the
-        // use of the `Uri` struct eventually.
-        self.uri.to_string()
+    fn uri(&self) -> Uri {
+        self.uri.clone()
     }
 }
 
