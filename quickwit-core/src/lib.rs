@@ -33,6 +33,41 @@ pub use index::{
     clear_cache_directory, get_cache_directory_path, remove_indexing_directory, IndexService,
     IndexServiceError,
 };
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct QuickwitBuildInfo {
+    commit_version_tag: String,
+    cargo_pkg_version: String,
+    cargo_build_target: String,
+    commit_short_hash: String,
+    commit_date: String,
+    pub version: String,
+}
+
+impl QuickwitBuildInfo {
+    pub fn new(
+        commit_version_tag: String,
+        cargo_pkg_version: String,
+        cargo_build_target: String,
+        commit_short_hash: String,
+        commit_date: String,
+    ) -> Self {
+        let nightly = if commit_version_tag == "none" {
+            "-nightly"
+        } else {
+            ""
+        };
+        Self {
+            version: format!("{}{}", cargo_pkg_version, nightly),
+            commit_version_tag,
+            cargo_pkg_version,
+            cargo_build_target,
+            commit_short_hash,
+            commit_date,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

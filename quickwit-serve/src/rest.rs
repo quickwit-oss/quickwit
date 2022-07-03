@@ -31,6 +31,7 @@ use crate::health_check_api::liveness_check_handler;
 use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::{elastic_bulk_handler, ingest_handler, tail_handler};
+use crate::node_info_handler::node_info_handler;
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
 use crate::ui_handler::ui_handler;
 use crate::{Format, QuickwitServices};
@@ -49,6 +50,10 @@ pub(crate) async fn start_rest_server(
         .map(metrics::metrics_handler);
     let api_v1_root_url = warp::path!("api" / "v1" / ..);
     let api_v1_routes = cluster_handler(quickwit_services.cluster.clone())
+        .or(node_info_handler(
+            quickwit_services.build_info.clone(),
+            quickwit_services.config.clone(),
+        ))
         .or(indexing_get_handler(
             quickwit_services.indexer_service.clone(),
         ))

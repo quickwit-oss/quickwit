@@ -24,7 +24,7 @@ use anyhow::Context;
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
 use quickwit_cli::cli::{build_cli, CliCommand};
-use quickwit_cli::QW_JAEGER_ENABLED_ENV_KEY;
+use quickwit_cli::{get_qw_build_info, QW_JAEGER_ENABLED_ENV_KEY};
 use quickwit_common::metrics::new_gauge;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tikv_jemallocator::Jemalloc;
@@ -122,23 +122,11 @@ async fn main() -> anyhow::Result<()> {
 
     let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
     let about_text = about_text();
-    let nightly = if env!("QW_COMMIT_VERSION_TAG") == "none" {
-        "-nightly"
-    } else {
-        ""
-    };
-    let version_text = format!(
-        "{}{} ({} {} {})",
-        env!("CARGO_PKG_VERSION"),
-        nightly,
-        env!("CARGO_BUILD_TARGET"),
-        env!("QW_COMMIT_SHORT_HASH"),
-        env!("QW_COMMIT_DATE"),
-    );
+    let build_info = get_qw_build_info();
 
     let app = build_cli()
         .about(about_text.as_str())
-        .version(version_text.as_str());
+        .version(build_info.version.as_str());
     let matches = app.get_matches();
 
     let command = match CliCommand::parse_cli_args(&matches) {
