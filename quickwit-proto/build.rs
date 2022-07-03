@@ -20,7 +20,9 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=proto/cluster.proto");
     println!("cargo:rerun-if-changed=proto/search_api.proto");
+    println!("cargo:rerun-if-changed=proto/index_api.proto");
     println!("cargo:rerun-if-changed=proto/ingest_api.proto");
+    println!("cargo:rerun-if-changed=proto/quicklet_api.proto");
 
     let mut prost_config = prost_build::Config::default();
     // prost_config.type_attribute("LeafSearchResponse", "#[derive(Default)]");
@@ -34,7 +36,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &[
                 "./proto/cluster.proto",
                 "./proto/search_api.proto",
+                "./proto/index_api.proto",
                 "./proto/ingest_api.proto",
+                "./proto/quicklet_api.proto",
             ],
             &["./proto"],
         )?;

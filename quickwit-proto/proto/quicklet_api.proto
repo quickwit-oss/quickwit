@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package quicklet_api;
+
+service QuickletService {
+  // Execute an IndexingPlan.
+  rpc executeIndexingPlan(ExecuteIndexingPlanRequest) returns (ExecuteIndexingPlanResponse);
+}
+
+message ExecuteIndexingPlanRequest {
+  repeated IndexingTask tasks = 1;
+}
+
+message ExecuteIndexingPlanResponse {
+}
+
+message IndexingTask {
+  // Index ID
+  string index_id = 1;
+
+  // Source ID
+  string source_id = 2;
+
+  // Partitions
+  repeated string partitions = 3;
+}
