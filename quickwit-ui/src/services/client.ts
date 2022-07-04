@@ -45,7 +45,7 @@ export class Client {
   }
 
   async clusterState(): Promise<ClusterState> {
-    return await this.fetch(`${this.apiRoot()}cluster/state`, this.defaultGetRequestParams());
+    return await this.fetch(`${this.apiRoot()}cluster`, this.defaultGetRequestParams());
   }
 
   //

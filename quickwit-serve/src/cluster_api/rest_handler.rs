@@ -47,7 +47,8 @@ struct ClusterStateQueryString {
 
 fn cluster_state_filter(
 ) -> impl Filter<Extract = (ClusterStateQueryString,), Error = Rejection> + Clone {
-    warp::path!("cluster" / "state")
+    warp::path!("cluster")
+        .and(warp::path::end())
         .and(warp::get())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }

@@ -42,7 +42,7 @@ function App() {
             <Route path="search" element={<SearchView />} />
             <Route path="indexes" element={<IndexesView />} />
             <Route path="indexes/:indexId" element={<IndexView />} />
-            <Route path="cluster/state" element={<ClusterStateView />} />
+            <Route path="cluster" element={<ClusterStateView />} />
           </Routes>
         </FullBoxContainer>
       </LocalStorageProvider>

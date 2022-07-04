@@ -69,7 +69,7 @@ function ClusterStateView() {
           { renderResult() }
         </FullBoxContainer>
       </FullBoxContainer>
-      { ApiUrlFooter('api/v1/cluster/state') }
+      { ApiUrlFooter('api/v1/cluster') }
     </ViewUnderAppBarBox>
   );
 }
