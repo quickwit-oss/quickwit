@@ -149,12 +149,12 @@ impl<D: Directory> DebugProxyDirectory<D> {
 
     /// Adds a new operation
     fn register(&self, read_op: ReadOperation) {
-        let _ = self.operations.push(read_op);
+        self.operations.push(read_op);
     }
 
     /// Adds a new operation in an async fashion.
     async fn register_async(&self, read_op: ReadOperation) {
-        let _ = self.operations.push(read_op);
+        self.operations.push(read_op);
     }
 }
 
