@@ -207,13 +207,8 @@ export type Index = {
   splits: SplitMetadata[];
 }
 
-export type Member = {
-  id: string;
-  listen_address: string;
-  is_self: boolean;
-}
-
-export type MemberList = {
-  cluster_id: string;
-  members: Member[];
+export type ClusterState = {
+  state: any;
+  live_nodes: any[];
+  dead_nodes: any[];
 }

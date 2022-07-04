@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod cluster;
 mod quickwit;
 mod quickwit_ingest_api;
 
@@ -30,7 +29,6 @@ extern crate serde;
 
 use std::fmt;
 
-pub use cluster::*;
 pub use quickwit::*;
 pub use tonic;
 
