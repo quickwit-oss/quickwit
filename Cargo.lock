@@ -2969,6 +2969,7 @@ dependencies = [
  "base64",
  "bytes",
  "ec2_instance_metadata",
+ "fnv",
  "futures",
  "lru",
  "md5",
