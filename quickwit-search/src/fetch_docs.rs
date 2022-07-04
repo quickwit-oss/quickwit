@@ -28,7 +28,7 @@ use quickwit_storage::Storage;
 use tantivy::{IndexReader, ReloadPolicy};
 use tracing::error;
 
-use crate::leaf::open_index;
+use crate::leaf::open_index_with_cache;
 use crate::GlobalDocAddress;
 
 /// Given a list of global doc address, fetches all the documents and
@@ -126,12 +126,12 @@ pub async fn fetch_docs(
     Ok(FetchDocsResponse { hits })
 }
 
-async fn get_searcher_for_split(
+async fn get_searcher_for_split_without_cache(
     num_searchers: usize,
     index_storage: Arc<dyn Storage>,
     split: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<IndexReader> {
-    let index = open_index(index_storage, split)
+    let index = open_index_with_cache(index_storage, split, false)
         .await
         .with_context(|| "open-index-for-split")?;
     let reader = index
@@ -150,9 +150,11 @@ async fn fetch_docs_in_split(
     index_storage: Arc<dyn Storage>,
     split: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<Vec<(GlobalDocAddress, String)>> {
-    let index_reader = get_searcher_for_split(global_doc_addrs.len(), index_storage, split).await?;
+    let num_concurrent_requests = 10;
+    let index_reader = get_searcher_for_split_without_cache(1, index_storage, split).await?;
+    let searcher = Arc::new(index_reader.searcher());
     let doc_futures = global_doc_addrs.into_iter().map(|global_doc_addr| {
-        let searcher = index_reader.searcher();
+        let searcher = searcher.clone();
         async move {
             let doc = searcher
                 .doc_async(global_doc_addr.doc_addr)
@@ -163,6 +165,6 @@ async fn fetch_docs_in_split(
         }
     });
 
-    let stream = futures::stream::iter(doc_futures).buffer_unordered(10);
+    let stream = futures::stream::iter(doc_futures).buffer_unordered(num_concurrent_requests);
     stream.try_collect::<Vec<_>>().await
 }
