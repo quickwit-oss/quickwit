@@ -363,15 +363,19 @@ pub async fn leaf_search(
             async move {
                 let leaf_split_search_permit = get_leaf_search_split_semaphore().await;
                 crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
-                leaf_search_single_split(
+                let timer = crate::SEARCH_METRICS
+                    .leaf_search_split_duration_secs
+                    .start_timer();
+                let leaf_search_single_split_res = leaf_search_single_split(
                     request,
                     index_storage_clone,
                     split.clone(),
                     doc_mapper_clone,
                     leaf_split_search_permit,
                 )
-                .await
-                .map_err(|err| (split.split_id.clone(), err))
+                .await;
+                timer.observe_duration();
+                leaf_search_single_split_res.map_err(|err| (split.split_id.clone(), err))
             }
         })
         .collect();

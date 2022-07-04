@@ -96,7 +96,7 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
     {
         let item_opt = self.lru_cache.get(cache_key).cloned();
         if let Some(item) = item_opt.as_ref() {
-            self.cache_counters.hits_total.inc();
+            self.cache_counters.hits_num_items.inc();
             self.cache_counters.hits_num_bytes.inc_by(item.len() as u64);
         } else {
             self.cache_counters.misses_num_items.inc();

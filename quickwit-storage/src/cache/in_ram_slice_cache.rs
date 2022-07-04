@@ -80,10 +80,11 @@ impl SliceCache {
 mod tests {
 
     use super::*;
+    use crate::metrics::CACHE_METRICS_FOR_TESTS;
 
     #[test]
     fn test_cache_edge_condition() {
-        let cache = SliceCache::with_capacity_in_bytes(5, &crate::metrics::CACHE_METRICS_FOR_TESTS);
+        let cache = SliceCache::with_capacity_in_bytes(5, &CACHE_METRICS_FOR_TESTS);
         {
             let data = OwnedBytes::new(&b"abc"[..]);
             cache.put(PathBuf::from("3"), 0..3, data);

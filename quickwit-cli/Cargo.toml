@@ -22,6 +22,7 @@ path = "src/generate_markdown.rs"
 anyhow = "1"
 async-trait = "0.1"
 tikv-jemallocator = "0.5"
+tikv-jemalloc-ctl = "0.5"
 atty = "0.2"
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
 clap = { version = "= 3.1", features = ["yaml", "env"] }

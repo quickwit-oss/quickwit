@@ -17,14 +17,21 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use prometheus::{Encoder, Opts, TextEncoder};
-pub use prometheus::{IntCounter, IntGauge};
+use prometheus::{Encoder, HistogramOpts, Opts, TextEncoder};
+pub use prometheus::{Histogram, HistogramTimer, IntCounter, IntGauge};
 
 pub fn new_counter(name: &str, description: &str, namespace: &str) -> IntCounter {
     let counter_opts = Opts::new(name, description).namespace(namespace);
     let counter = IntCounter::with_opts(counter_opts).expect("Failed to create counter");
     prometheus::register(Box::new(counter.clone())).expect("Failed to register counter");
     counter
+}
+
+pub fn new_histogram(name: &str, description: &str, namespace: &str) -> Histogram {
+    let histogram_opts = HistogramOpts::new(name, description).namespace(namespace);
+    let histogram = Histogram::with_opts(histogram_opts).expect("Failed to create counter");
+    prometheus::register(Box::new(histogram.clone())).expect("Failed to register counter");
+    histogram
 }
 
 pub fn new_gauge(name: &str, description: &str, namespace: &str) -> IntGauge {
@@ -40,4 +47,17 @@ pub fn metrics_handler() -> impl warp::Reply {
     let encoder = TextEncoder::new();
     let _ = encoder.encode(&metric_families, &mut buffer); // TODO avoid ignoring the error.
     String::from_utf8_lossy(&buffer).to_string()
+}
+
+pub fn create_gauge_guard(gauge: &'static IntGauge) -> GaugeGuard {
+    gauge.inc();
+    GaugeGuard(gauge)
+}
+
+pub struct GaugeGuard(&'static IntGauge);
+
+impl Drop for GaugeGuard {
+    fn drop(&mut self) {
+        self.0.dec();
+    }
 }

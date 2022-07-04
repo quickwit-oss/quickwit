@@ -27,6 +27,41 @@ pub struct StorageMetrics {
     pub shortlived_cache: CacheMetrics,
     pub fast_field_cache: CacheMetrics,
     pub split_footer_cache: CacheMetrics,
+    pub object_storage_get_total: IntCounter,
+    pub object_storage_put_total: IntCounter,
+    pub object_storage_put_parts: IntCounter,
+    pub object_storage_download_num_bytes: IntCounter,
+}
+
+impl Default for StorageMetrics {
+    fn default() -> Self {
+        StorageMetrics {
+            fast_field_cache: CacheMetrics::for_component("fastfields"),
+            shortlived_cache: CacheMetrics::for_component("shortlived"),
+            split_footer_cache: CacheMetrics::for_component("splitfooter"),
+            object_storage_get_total: new_counter(
+                "object_storage_gets_total",
+                "Number of objects fetched.",
+                "quickwit_storage",
+            ),
+            object_storage_put_total: new_counter(
+                "object_storage_puts_total",
+                "Number of objects uploaded. May differ from object_storage_requests_parts due to \
+                 multipart upload.",
+                "quickwit_storage",
+            ),
+            object_storage_put_parts: new_counter(
+                "object_storage_puts_parts",
+                "Number of object parts uploaded.",
+                "",
+            ),
+            object_storage_download_num_bytes: new_counter(
+                "object_storage_download_num_bytes",
+                "Amount of data download from an object storage.",
+                "quickwit_storage",
+            ),
+        }
+    }
 }
 
 /// Counters associated to a cache.
@@ -37,7 +72,7 @@ pub struct CacheMetrics {
     pub in_cache_num_bytes: IntGauge,
     pub hits_num_items: IntCounter,
     pub hits_num_bytes: IntCounter,
-    pub miss_num_items: IntCounter,
+    pub misses_num_items: IntCounter,
 }
 
 impl CacheMetrics {
@@ -56,7 +91,7 @@ impl CacheMetrics {
                 &namespace,
             ),
             hits_num_items: new_counter(
-                &format!("cache_hit_total"),
+                "cache_hit_total",
                 "Number of {component_name} cache hits",
                 &namespace,
             ),
@@ -65,21 +100,11 @@ impl CacheMetrics {
                 "Number of {component_name} cache hits in bytes",
                 &namespace,
             ),
-            miss_num_items: new_counter(
-                &format!("cache_miss_total"),
+            misses_num_items: new_counter(
+                "cache_miss_total",
                 "Number of {component_name} cache hits",
                 &namespace,
             ),
-        }
-    }
-}
-
-impl Default for StorageMetrics {
-    fn default() -> Self {
-        StorageMetrics {
-            fast_field_cache: CacheMetrics::for_component("fastfields"),
-            shortlived_cache: CacheMetrics::for_component("shortlived"),
-            split_footer_cache: CacheMetrics::for_component("splitfooter"),
         }
     }
 }
