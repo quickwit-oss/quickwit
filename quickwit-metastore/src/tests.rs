@@ -186,11 +186,10 @@ pub mod test_suite {
         let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
 
         // Create an index
-        let result = metastore
+        metastore
             .create_index(index_metadata.clone())
             .await
             .unwrap();
-        assert!(matches!(result, ()));
 
         cleanup_index(&metastore, index_id).await;
     }
@@ -214,8 +213,7 @@ pub mod test_suite {
             .unwrap();
 
         // Delete an index
-        let result = metastore.delete_index(index_id).await.unwrap();
-        assert!(matches!(result, ()));
+        metastore.delete_index(index_id).await.unwrap();
     }
 
     #[allow(unused_variables)]
@@ -276,11 +274,10 @@ pub mod test_suite {
             .unwrap();
 
         // Stage a split on an index
-        let result = metastore
+        metastore
             .stage_split(index_id, split_metadata.clone())
             .await
             .unwrap();
-        assert!(matches!(result, ()));
 
         // Stage a existent-split on an index
         let result = metastore
@@ -422,7 +419,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let result = metastore
+            metastore
                 .publish_splits(
                     index_id,
                     source_id,
@@ -431,7 +428,6 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap();
-            assert!(matches!(result, ()));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -554,7 +550,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let result = metastore
+            metastore
                 .publish_splits(
                     index_id,
                     source_id,
@@ -563,7 +559,6 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap();
-            assert!(matches!(result, ()));
 
             let result = metastore
                 .publish_splits(
@@ -637,7 +632,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let result = metastore
+            metastore
                 .publish_splits(
                     index_id,
                     source_id,
@@ -646,7 +641,6 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap();
-            assert!(matches!(result, ()));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -678,7 +672,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let result = metastore
+            metastore
                 .publish_splits(
                     index_id,
                     source_id,
@@ -687,7 +681,6 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap();
-            assert!(matches!(result, ()));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -952,11 +945,10 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let result = metastore
+            metastore
                 .replace_splits(index_id, &[split_id_2, split_id_3], &[split_id_1])
                 .await
                 .unwrap();
-            assert!(matches!(result, ()));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -1092,11 +1084,10 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let result = metastore
+            metastore
                 .delete_splits(index_id, &[split_id_1])
                 .await
                 .unwrap();
-            assert!(matches!(result, ()));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -1118,11 +1109,10 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let result = metastore
+            metastore
                 .delete_splits(index_id, &[split_id_1])
                 .await
                 .unwrap();
-            assert!(matches!(result, ()));
 
             cleanup_index(&metastore, index_id).await;
         }
