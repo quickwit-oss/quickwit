@@ -58,6 +58,7 @@ where
     M: 'static + Send + Sync + fmt::Debug,
 {
     fn debug_msg(&self) -> String {
+        #[allow(clippy::needless_option_take)]
         if let Some((_response_tx, msg)) = self.as_ref().take() {
             format!("{msg:?}")
         } else {

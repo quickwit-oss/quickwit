@@ -20,7 +20,7 @@
 import { render, unmountComponentAtNode } from "react-dom";
 import { waitFor } from "@testing-library/react";
 import { screen } from '@testing-library/dom';
-import ClusterMembersView from './ClusterMembersView';
+import ClusterStateView from './ClusterStateView';
 import { act } from "react-dom/test-utils";
 import { Client } from "../services/client";
 
@@ -45,20 +45,38 @@ afterEach(() => {
   container = null;
 });
 
-test('renders ClusterMembersView', async () => {
-  const members = {
-    'members': [
-      {
-        'id': 'my-new-fresh-node-id',
-        'listen_address': '127:0.0.1',
-        'is_self': true,
-      }
-  ]};
-  Client.prototype.clusterMembers.mockImplementation(() => Promise.resolve(members));
+test('renders ClusterStateView', async () => {
+  const clusterState = {
+      "state": {
+        "seed_addrs": [],
+        "node_states": {
+          "node-green-uCdq/1656700092": {
+            "key_values": {
+              "available_services": {
+                "value": "searcher",
+                "version": 3
+              },
+              "grpc_address": {
+                "value": "127.0.0.1:7281",
+                "version": 2
+              },
+              "heartbeat": {
+                "value": "24",
+                "version": 27
+              }
+            },
+            "max_version": 27
+          }
+        }
+      },
+      "live_nodes": [],
+      "dead_nodes": []
+  };
+  Client.prototype.clusterState.mockImplementation(() => Promise.resolve(clusterState));
 
   await act(async () => {
-    render(<ClusterMembersView />, container);
+    render(<ClusterStateView />, container);
   });
 
-  await waitFor(() => expect(screen.getByText(/my-new-fresh-node-id/)).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText(/node-green-uCdq/)).toBeInTheDocument());
 });

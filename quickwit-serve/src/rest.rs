@@ -48,7 +48,7 @@ pub(crate) async fn start_rest_server(
         .and(warp::get())
         .map(metrics::metrics_handler);
     let api_v1_root_url = warp::path!("api" / "v1" / ..);
-    let api_v1_routes = cluster_handler(quickwit_services.cluster_service.clone())
+    let api_v1_routes = cluster_handler(quickwit_services.cluster.clone())
         .or(indexing_get_handler(
             quickwit_services.indexer_service.clone(),
         ))

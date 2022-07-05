@@ -588,6 +588,8 @@ async fn download_all(byte_stream: &mut ByteStream, output: &mut Vec<u8>) -> io:
         let chunk = chunk_res?;
         output.extend(chunk.as_ref());
     }
+    // When calling `get_all`, the Vec capacity is not properly set.
+    output.shrink_to_fit();
     Ok(())
 }
 

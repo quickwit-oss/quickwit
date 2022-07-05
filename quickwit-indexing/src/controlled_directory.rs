@@ -158,7 +158,7 @@ impl Directory for ControlledDirectory {
     fn delete(&self, path: &Path) -> Result<(), DeleteError> {
         self.check_if_alive()
             .map_err(|io_error| DeleteError::IoError {
-                io_error,
+                io_error: Arc::new(io_error),
                 filepath: path.to_path_buf(),
             })?;
         self.inner.underlying.delete(path)

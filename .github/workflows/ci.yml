@@ -60,7 +60,7 @@ jobs:
         name: cargo deny
         with:
           command: deny
-          args: check Licenses # check that all of deps have an ok license.
+          args: check licenses # check that all of deps have an ok license.
       - name: cargo doc
         uses: actions-rs/cargo@v1
         with:

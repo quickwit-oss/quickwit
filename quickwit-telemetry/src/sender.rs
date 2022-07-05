@@ -257,7 +257,7 @@ impl TelemetrySender {
                     _ = (&mut terminate_command_rx) => { true }
                     _ = inner.clock.tick() => { false }
                 };
-                let _ = inner.send_pending_events().await;
+                inner.send_pending_events().await;
                 if quit_loop {
                     break;
                 }

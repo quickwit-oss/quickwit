@@ -129,7 +129,7 @@ fn delete_all_dirs(root: PathBuf, path: &Path) -> BoxFuture<'_, std::io::Result<
             if err.kind() == ErrorKind::NotFound {
                 return Ok(());
             }
-            let _ = delete_result?;
+            delete_result?;
         }
 
         match &path.parent() {
