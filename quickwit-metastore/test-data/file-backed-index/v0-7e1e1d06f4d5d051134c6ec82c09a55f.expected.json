@@ -65,8 +65,7 @@
         "merge_factor": 9
       },
       "resources": {
-        "heap_size": 3,
-        "num_threads": 3
+        "heap_size": 3
       },
       "sort_field": "timestamp",
       "sort_order": "asc",
