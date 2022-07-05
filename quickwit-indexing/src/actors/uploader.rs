@@ -206,7 +206,7 @@ fn create_split_metadata(split: &PackagedSplit, footer_offsets: Range<u64>) -> S
         split_id: split.split_id.clone(),
         num_docs: split.num_docs as usize,
         time_range: split.time_range.clone(),
-        original_size_in_bytes: split.size_in_bytes,
+        uncompressed_docs_size_in_bytes: split.size_in_bytes,
         create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
         tags: split.tags.clone(),
         demux_num_ops: split.demux_num_ops,

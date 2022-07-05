@@ -75,7 +75,7 @@ impl Handler<NewSplits> for MergePlanner {
         let mut has_new_young_split = false;
         for split in message.new_splits {
             if self.merge_policy.is_mature(&split) {
-                info!(split_id=%split.split_id(), num_docs=split.num_docs, size_in_bytes=split.original_size_in_bytes, "mature-split");
+                info!(split_id=%split.split_id(), num_docs=split.num_docs, size_in_bytes=split.uncompressed_docs_size_in_bytes, "mature-split");
                 continue;
             }
             self.young_splits.push(split);
@@ -164,7 +164,7 @@ mod tests {
         let num_docs = splits.iter().map(|split| split.num_docs).sum();
         let size_in_bytes = splits
             .iter()
-            .map(|split| split.original_size_in_bytes)
+            .map(|split| split.uncompressed_docs_size_in_bytes)
             .sum();
         let time_range = merged_timestamp(splits);
         let merged_split_id = new_split_id();
@@ -172,7 +172,7 @@ mod tests {
         SplitMetadata {
             split_id: merged_split_id,
             num_docs,
-            original_size_in_bytes: size_in_bytes,
+            uncompressed_docs_size_in_bytes: size_in_bytes,
             time_range,
             create_timestamp: 0,
             tags,
@@ -186,7 +186,7 @@ mod tests {
         let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
         let size_in_bytes: u64 = splits
             .iter()
-            .map(|split| split.original_size_in_bytes)
+            .map(|split| split.uncompressed_docs_size_in_bytes)
             .sum();
         let time_range = merged_timestamp(splits);
         let tags = compute_merge_tags(splits);
@@ -209,7 +209,7 @@ mod tests {
             let split_metadata = SplitMetadata {
                 split_id: new_split_id(),
                 num_docs: demuxed_split.total_num_docs(),
-                original_size_in_bytes: (size_in_bytes as f32 / num_docs as f32) as u64
+                uncompressed_docs_size_in_bytes: (size_in_bytes as f32 / num_docs as f32) as u64
                     * demuxed_split.total_num_docs() as u64,
                 time_range: time_range.clone(),
                 create_timestamp: 0,
@@ -292,7 +292,7 @@ mod tests {
         SplitMetadata {
             split_id: crate::new_split_id(),
             num_docs: num_docs as usize,
-            original_size_in_bytes: 256u64 * num_docs,
+            uncompressed_docs_size_in_bytes: 256u64 * num_docs,
             time_range: Some(time_range),
             create_timestamp: 0,
             tags: BTreeSet::from_iter(vec!["tenant_id:1".to_string(), "tenant_id:2".to_string()]),

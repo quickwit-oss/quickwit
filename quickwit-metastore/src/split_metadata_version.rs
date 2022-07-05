@@ -80,7 +80,7 @@ impl From<SplitMetadataAndFooterV0> for SplitMetadata {
             footer_offsets: v0.footer_offsets,
             split_id: v0.split_metadata.split_id,
             num_docs: v0.split_metadata.num_docs,
-            original_size_in_bytes: v0.split_metadata.size_in_bytes,
+            uncompressed_docs_size_in_bytes: v0.split_metadata.size_in_bytes,
             time_range: v0.split_metadata.time_range,
             create_timestamp: v0.split_metadata.create_timestamp,
             tags: v0.split_metadata.tags,
@@ -100,11 +100,12 @@ pub(crate) struct SplitMetadataV1 {
     /// Number of records (or documents) in the split.
     pub num_docs: usize,
 
-    /// Sum of the size (in bytes) of the documents in this split.
+    /// Sum of the size (in bytes) of the raw documents in this split.
     ///
     /// Note this is not the split file size. It is the size of the original
     /// JSON payloads.
-    pub size_in_bytes: u64,
+    #[serde(alias = "size_in_bytes")]
+    pub uncompressed_docs_size_in_bytes: u64,
 
     /// If a timestamp field is available, the min / max timestamp in
     /// the split.
@@ -136,7 +137,7 @@ impl From<SplitMetadataV1> for SplitMetadata {
             footer_offsets: v1.footer_offsets,
             split_id: v1.split_id,
             num_docs: v1.num_docs,
-            original_size_in_bytes: v1.size_in_bytes,
+            uncompressed_docs_size_in_bytes: v1.uncompressed_docs_size_in_bytes,
             time_range: v1.time_range,
             create_timestamp: v1.create_timestamp,
             tags: v1.tags,
@@ -151,7 +152,7 @@ impl From<SplitMetadata> for SplitMetadataV1 {
             footer_offsets: v1.footer_offsets,
             split_id: v1.split_id,
             num_docs: v1.num_docs,
-            size_in_bytes: v1.original_size_in_bytes,
+            uncompressed_docs_size_in_bytes: v1.uncompressed_docs_size_in_bytes,
             time_range: v1.time_range,
             create_timestamp: v1.create_timestamp,
             tags: v1.tags,
