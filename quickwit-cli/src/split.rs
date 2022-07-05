@@ -542,7 +542,7 @@ fn make_split_table(splits: &[Split], title: &str) -> Table {
                 split_id: split.split_metadata.split_id.clone(),
                 split_state: split.split_state,
                 num_docs: split.split_metadata.num_docs,
-                size_mega_bytes: split.split_metadata.original_size_in_bytes / 1_000_000,
+                size_mega_bytes: split.split_metadata.uncompressed_docs_size_in_bytes / 1_000_000,
                 created_at,
                 updated_at,
                 time_range,
