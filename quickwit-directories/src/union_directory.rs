@@ -64,7 +64,7 @@ fn convert_open_to_delete_error(open_err: OpenReadError) -> DeleteError {
             DeleteError::IoError { io_error, filepath }
         }
         err @ OpenReadError::IncompatibleIndex(_) => DeleteError::IoError {
-            io_error: io::Error::new(io::ErrorKind::Unsupported, err),
+            io_error: Arc::new(io::Error::new(io::ErrorKind::Unsupported, err)),
             filepath: PathBuf::from("/"),
         },
     }
