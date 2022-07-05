@@ -951,7 +951,7 @@ checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 [[package]]
 name = "fastfield_codecs"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=db18366#db1836691ef9b4f963070bfd9ef13c6d44d2a074"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=a568857#a5688572a52b0202bfe83e868566e4e3aabe686f"
 dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
@@ -2135,7 +2135,7 @@ dependencies = [
 [[package]]
 name = "ownedbytes"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=db18366#db1836691ef9b4f963070bfd9ef13c6d44d2a074"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=a568857#a5688572a52b0202bfe83e868566e4e3aabe686f"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -4042,7 +4042,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.18.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=db18366#db1836691ef9b4f963070bfd9ef13c6d44d2a074"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=a568857#a5688572a52b0202bfe83e868566e4e3aabe686f"
 dependencies = [
  "async-trait",
  "base64",
@@ -4094,12 +4094,12 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=db18366#db1836691ef9b4f963070bfd9ef13c6d44d2a074"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=a568857#a5688572a52b0202bfe83e868566e4e3aabe686f"
 
 [[package]]
 name = "tantivy-common"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=db18366#db1836691ef9b4f963070bfd9ef13c6d44d2a074"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=a568857#a5688572a52b0202bfe83e868566e4e3aabe686f"
 dependencies = [
  "byteorder",
  "ownedbytes",
@@ -4119,7 +4119,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.18.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=db18366#db1836691ef9b4f963070bfd9ef13c6d44d2a074"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=a568857#a5688572a52b0202bfe83e868566e4e3aabe686f"
 dependencies = [
  "combine",
  "once_cell",
