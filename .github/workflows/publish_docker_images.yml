@@ -26,11 +26,11 @@ jobs:
         with:
           images: |
             quickwit/quickwit
-          flavor: |
-            suffix=-bullseye
           tags: |
-            type=semver,pattern={{version}}
             type=edge,branch=main
+            type=edge,branch=main,suffix=-bullseye
+            type=semver,pattern={{version}}
+            type=semver,pattern={{version}},suffix=-bullseye
           labels: |
             org.opencontainers.image.title=Quickwit
             maintainer=Quickwit, Inc. <hello@quickwit.io>
