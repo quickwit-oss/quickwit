@@ -54,7 +54,10 @@ impl CachingDirectory {
     ) -> CachingDirectory {
         CachingDirectory {
             underlying,
-            cache: Arc::new(SliceCache::with_capacity_in_bytes(capacity_in_bytes)),
+            cache: Arc::new(SliceCache::with_capacity_in_bytes(
+                capacity_in_bytes,
+                &quickwit_storage::STORAGE_METRICS.shortlived_cache,
+            )),
         }
     }
 
@@ -66,7 +69,9 @@ impl CachingDirectory {
     pub fn new_with_unlimited_capacity(underlying: Arc<dyn Directory>) -> CachingDirectory {
         CachingDirectory {
             underlying,
-            cache: Arc::new(SliceCache::with_infinite_capacity()),
+            cache: Arc::new(SliceCache::with_infinite_capacity(
+                &quickwit_storage::STORAGE_METRICS.shortlived_cache,
+            )),
         }
     }
 }

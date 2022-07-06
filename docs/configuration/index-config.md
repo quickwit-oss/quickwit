@@ -364,7 +364,6 @@ This section describes indexing settings for a given index.
 | `split_num_docs_target`      | Maximum number of documents in a split. Note that this is not a hard limit.   | 10_000_000 |
 | `merge_policy.merge_factor`      | Number of splits to merge.   | 10 |
 | `merge_policy.max_merge_factor`      | Maximum number of splits to merge.   | 12 |
-| `resources.num_threads`      | Number of threads per source.   | 1 |
 | `resources.heap_size`      | Indexer heap size per source per index.   | 2_000_000_000 |
 
 (1) [Learn more on time sharding](./../concepts/architecture.md)

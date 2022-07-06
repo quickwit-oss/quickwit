@@ -24,6 +24,7 @@ use std::sync::Mutex;
 use lru::{KeyRef, LruCache};
 use tracing::{error, warn};
 
+use crate::metrics::CacheMetrics;
 use crate::OwnedBytes;
 
 #[derive(Clone, Copy, Debug)]
@@ -42,21 +43,50 @@ impl Capacity {
 }
 struct NeedMutMemorySizedCache<K: Hash + Eq> {
     lru_cache: LruCache<K, OwnedBytes>,
-    num_bytes: usize,
+    num_items: usize,
+    num_bytes: u64,
     capacity: Capacity,
+    cache_counters: &'static CacheMetrics,
+}
+
+impl<K: Hash + Eq> Drop for NeedMutMemorySizedCache<K> {
+    fn drop(&mut self) {
+        self.cache_counters
+            .in_cache_count
+            .sub(self.num_items as i64);
+        self.cache_counters
+            .in_cache_num_bytes
+            .sub(self.num_bytes as i64);
+    }
 }
 
 impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
     /// Creates a new NeedMutSliceCache with the given capacity.
-    fn with_capacity(capacity: Capacity) -> Self {
+    fn with_capacity(capacity: Capacity, cache_counters: &'static CacheMetrics) -> Self {
         NeedMutMemorySizedCache {
             // The limit will be decided by the amount of memory in the cache,
             // not the number of items in the cache.
             // Enforcing this limit is done in the `NeedMutCache` impl.
             lru_cache: LruCache::unbounded(),
+            num_items: 0,
             num_bytes: 0,
             capacity,
+            cache_counters,
         }
+    }
+
+    pub fn record_item(&mut self, num_bytes: u64) {
+        self.num_items += 1;
+        self.num_bytes += num_bytes;
+        self.cache_counters.in_cache_count.inc();
+        self.cache_counters.in_cache_num_bytes.add(num_bytes as i64);
+    }
+
+    pub fn drop_item(&mut self, num_bytes: u64) {
+        self.num_items -= 1;
+        self.num_bytes -= num_bytes;
+        self.cache_counters.in_cache_count.dec();
+        self.cache_counters.in_cache_num_bytes.sub(num_bytes as i64);
     }
 
     pub fn get<Q>(&mut self, cache_key: &Q) -> Option<OwnedBytes>
@@ -64,7 +94,14 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
         KeyRef<K>: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        self.lru_cache.get(cache_key).cloned()
+        let item_opt = self.lru_cache.get(cache_key).cloned();
+        if let Some(item) = item_opt.as_ref() {
+            self.cache_counters.hits_num_items.inc();
+            self.cache_counters.hits_num_bytes.inc_by(item.len() as u64);
+        } else {
+            self.cache_counters.misses_num_items.inc();
+        }
+        item_opt
     }
 
     /// Attempt to put the given amount of data in the cache.
@@ -81,11 +118,14 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
             return;
         }
         if let Some(previous_data) = self.lru_cache.pop(&key) {
-            self.num_bytes -= previous_data.len();
+            self.drop_item(previous_data.len() as u64);
         }
-        while self.capacity.exceeds_capacity(self.num_bytes + bytes.len()) {
+        while self
+            .capacity
+            .exceeds_capacity(self.num_bytes as usize + bytes.len())
+        {
             if let Some((_, bytes)) = self.lru_cache.pop_lru() {
-                self.num_bytes -= bytes.len();
+                self.drop_item(bytes.len() as u64);
             } else {
                 error!(
                     "Logical error. Even after removing all of the items in the cache the \
@@ -95,7 +135,7 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
                 return;
             }
         }
-        self.num_bytes += bytes.len();
+        self.record_item(bytes.len() as u64);
         self.lru_cache.put(key, bytes);
     }
 }
@@ -107,18 +147,25 @@ pub struct MemorySizedCache<K: Hash + Eq> {
 
 impl<K: Hash + Eq> MemorySizedCache<K> {
     /// Creates an slice cache with the given capacity.
-    pub fn with_capacity_in_bytes(capacity_in_bytes: usize) -> Self {
+    pub fn with_capacity_in_bytes(
+        capacity_in_bytes: usize,
+        cache_counters: &'static CacheMetrics,
+    ) -> Self {
         MemorySizedCache {
-            inner: Mutex::new(NeedMutMemorySizedCache::with_capacity(Capacity::InBytes(
-                capacity_in_bytes,
-            ))),
+            inner: Mutex::new(NeedMutMemorySizedCache::with_capacity(
+                Capacity::InBytes(capacity_in_bytes),
+                cache_counters,
+            )),
         }
     }
 
     /// Creates a slice cache that nevers removes any entry.
-    pub fn with_infinite_capacity() -> Self {
+    pub fn with_infinite_capacity(cache_counters: &'static CacheMetrics) -> Self {
         MemorySizedCache {
-            inner: Mutex::new(NeedMutMemorySizedCache::with_capacity(Capacity::Unlimited)),
+            inner: Mutex::new(NeedMutMemorySizedCache::with_capacity(
+                Capacity::Unlimited,
+                cache_counters,
+            )),
         }
     }
 
@@ -143,10 +190,14 @@ impl<K: Hash + Eq> MemorySizedCache<K> {
 mod tests {
 
     use super::*;
+    use crate::STORAGE_METRICS;
 
     #[test]
     fn test_cache_edge_condition() {
-        let cache = MemorySizedCache::<String>::with_capacity_in_bytes(5);
+        let cache = MemorySizedCache::<String>::with_capacity_in_bytes(
+            5,
+            &STORAGE_METRICS.fast_field_cache,
+        );
         {
             let data = OwnedBytes::new(&b"abc"[..]);
             cache.put("3".to_string(), data);
@@ -179,7 +230,7 @@ mod tests {
 
     #[test]
     fn test_cache_edge_unlimited_capacity() {
-        let cache = MemorySizedCache::with_infinite_capacity();
+        let cache = MemorySizedCache::with_infinite_capacity(&STORAGE_METRICS.fast_field_cache);
         {
             let data = OwnedBytes::new(&b"abc"[..]);
             cache.put("3".to_string(), data);
@@ -195,7 +246,8 @@ mod tests {
 
     #[test]
     fn test_cache() {
-        let cache = MemorySizedCache::with_capacity_in_bytes(10_000);
+        let cache =
+            MemorySizedCache::with_capacity_in_bytes(10_000, &STORAGE_METRICS.fast_field_cache);
         assert!(cache.get(&"hello.seg").is_none());
         let data = OwnedBytes::new(&b"werwer"[..]);
         cache.put("hello.seg", data);
