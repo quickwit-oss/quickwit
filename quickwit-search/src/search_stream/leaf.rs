@@ -236,11 +236,18 @@ async fn leaf_search_stream_single_split(
                     )
                 })?;
             }
-            _ => {
-                return Err(SearchError::InternalError(
-                    "Mixed types (u64, i64) for fast field and partition field are not supported."
-                        .to_owned(),
-                ));
+            (fast_field_type, None) => {
+                return Err(SearchError::InternalError(format!(
+                    "Search stream does not support fast field of type `{:?}`.",
+                    fast_field_type
+                )));
+            }
+            (fast_field_type, Some(partition_fast_field_type)) => {
+                return Err(SearchError::InternalError(format!(
+                    "Search stream does not support the combination of fast field type `{:?}` and \
+                     partition fast field type `{:?}`.",
+                    fast_field_type, partition_fast_field_type
+                )));
             }
         };
         Result::<Vec<u8>>::Ok(buffer)
@@ -326,7 +333,6 @@ impl<'a> SearchStreamRequestFields {
         schema: &'a Schema,
         doc_mapper: &dyn DocMapper,
     ) -> crate::Result<SearchStreamRequestFields> {
-        // TODO make sure it's a fast field
         let fast_field = schema
             .get_field(&stream_request.fast_field)
             .ok_or_else(|| {
@@ -484,6 +490,60 @@ mod tests {
             from_utf8(&res.data)?,
             format!("{}\n", filtered_timestamp_values.join("\n"))
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_leaf_search_stream_with_string_fast_field_should_return_proper_error(
+    ) -> anyhow::Result<()> {
+        let index_id = "single-node-simple-string-fast-field";
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+              - name: app
+                type: text
+                tokenizer: raw
+                fast: true
+        "#;
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
+
+        test_sandbox
+            .add_documents(vec![json!({"body": "body", "app": "my-app"})])
+            .await?;
+
+        let request = SearchStreamRequest {
+            index_id: index_id.to_string(),
+            query: "info".to_string(),
+            search_fields: vec![],
+            start_timestamp: None,
+            end_timestamp: None,
+            fast_field: "app".to_string(),
+            output_format: 0,
+            partition_by_field: None,
+        };
+        let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
+        let splits_offsets = splits
+            .into_iter()
+            .map(|split_meta| SplitIdAndFooterOffsets {
+                split_id: split_meta.split_id().to_string(),
+                split_footer_start: split_meta.split_metadata.footer_offsets.start,
+                split_footer_end: split_meta.split_metadata.footer_offsets.end,
+            })
+            .collect();
+        let mut single_node_stream = leaf_search_stream(
+            request,
+            test_sandbox.storage(),
+            splits_offsets,
+            test_sandbox.doc_mapper(),
+        )
+        .await;
+        let res = single_node_stream.next().await.expect("no leaf result");
+        assert!(res
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("Search stream does not support fast field of type `Str`"),);
         Ok(())
     }
 
