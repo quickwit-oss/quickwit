@@ -22,13 +22,32 @@ use std::hash::Hash;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::Duration;
 
 use lru::{KeyRef, LruCache};
+use tokio::time::Instant;
 use tracing::{error, warn};
 
 use crate::cache::slice_address::{SliceAddress, SliceAddressKey, SliceAddressRef};
+use crate::cache::stored_item::StoredItem;
 use crate::metrics::CacheMetrics;
 use crate::OwnedBytes;
+
+/// We do not evict anything that has been accessed in the last 60s.
+///
+/// The goal is to behave better on scan access patterns, without being as aggressive as
+/// using a MRU strategy.
+///
+/// TLDR is:
+///
+/// If two items have been access in the last 60s it is not really worth considering the
+/// latter too be more recent than the previous and do an eviction.
+/// The difference is not significant enough to raise the probability of its future access.
+///
+/// On the other hand, for very large queries involving enough data to saturate the cache,
+/// we are facing a scanning pattern. If variations of this  query is repeated over and over
+/// a regular LRU eviction policy would yield a hit rate of 0.
+const MIN_TIME_SINCE_LAST_ACCESS: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Copy, Debug)]
 enum Capacity {
@@ -44,8 +63,9 @@ impl Capacity {
         }
     }
 }
+
 struct NeedMutMemorySizedCache<K: Hash + Eq> {
-    lru_cache: LruCache<K, OwnedBytes>,
+    lru_cache: LruCache<K, StoredItem>,
     num_items: usize,
     num_bytes: u64,
     capacity: Capacity,
@@ -97,14 +117,15 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
         KeyRef<K>: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let item_opt = self.lru_cache.get(cache_key).cloned();
-        if let Some(item) = item_opt.as_ref() {
+        let item_opt = self.lru_cache.get_mut(cache_key);
+        if let Some(item) = item_opt {
             self.cache_counters.hits_num_items.inc();
             self.cache_counters.hits_num_bytes.inc_by(item.len() as u64);
+            Some(item.payload())
         } else {
             self.cache_counters.misses_num_items.inc();
+            None
         }
-        item_opt
     }
 
     /// Attempt to put the given amount of data in the cache.
@@ -123,10 +144,22 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
         if let Some(previous_data) = self.lru_cache.pop(&key) {
             self.drop_item(previous_data.len() as u64);
         }
+
+        let now = Instant::now();
         while self
             .capacity
             .exceeds_capacity(self.num_bytes as usize + bytes.len())
         {
+            if let Some((_, candidate_for_eviction)) = self.lru_cache.peek_lru() {
+                let time_since_last_access =
+                    now.duration_since(candidate_for_eviction.last_access_time());
+                if time_since_last_access < MIN_TIME_SINCE_LAST_ACCESS {
+                    // It is not worth doing an eviction.
+                    // TODO: It is sub-optimal that we might have needlessly evicted items in this
+                    // loop before just returning.
+                    return;
+                }
+            }
             if let Some((_, bytes)) = self.lru_cache.pop_lru() {
                 self.drop_item(bytes.len() as u64);
             } else {
@@ -139,7 +172,7 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
             }
         }
         self.record_item(bytes.len() as u64);
-        self.lru_cache.put(key, bytes);
+        self.lru_cache.put(key, StoredItem::new(bytes, now));
     }
 }
 
@@ -211,8 +244,9 @@ mod tests {
     use super::*;
     use crate::metrics::CACHE_METRICS_FOR_TESTS;
 
-    #[test]
-    fn test_cache_edge_condition() {
+    #[tokio::test]
+    async fn test_cache_edge_condition() {
+        tokio::time::pause();
         let cache = MemorySizedCache::<String>::with_capacity_in_bytes(5, &CACHE_METRICS_FOR_TESTS);
         {
             let data = OwnedBytes::new(&b"abc"[..]);
@@ -229,11 +263,19 @@ mod tests {
         {
             let data = OwnedBytes::new(&b"fghij"[..]);
             cache.put("5".to_string(), data);
+            // Eviction should not happen, because all items in cache are too young.
+            assert!(cache.get(&"5".to_string()).is_none());
+        }
+        tokio::time::advance(super::MIN_TIME_SINCE_LAST_ACCESS.mul_f32(1.1f32)).await;
+        {
+            let data = OwnedBytes::new(&b"fghij"[..]);
+            cache.put("5".to_string(), data);
             assert_eq!(cache.get(&"5".to_string()).unwrap(), &b"fghij"[..]);
             // our two first entries should have be removed from the cache
             assert!(cache.get(&"2".to_string()).is_none());
             assert!(cache.get(&"3".to_string()).is_none());
         }
+        tokio::time::advance(super::MIN_TIME_SINCE_LAST_ACCESS.mul_f32(1.1f32)).await;
         {
             let data = OwnedBytes::new(&b"klmnop"[..]);
             cache.put("6".to_string(), data);
