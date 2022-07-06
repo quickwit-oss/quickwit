@@ -668,6 +668,7 @@ impl Storage for S3CompatibleObjectStorage {
         Ok(())
     }
 
+    #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         self.get_to_vec(path, Some(range.clone()))
             .await
@@ -681,11 +682,17 @@ impl Storage for S3CompatibleObjectStorage {
             })
     }
 
+    #[instrument(level = "debug", skip(self), fields(fetched_bytes_len))]
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
-        self.get_to_vec(path, None)
+        let payload = self
+            .get_to_vec(path, None)
             .await
             .map(OwnedBytes::new)
-            .map_err(|err| err.add_context(format!("Failed to fetch object: {}", self.uri(path))))
+            .map_err(|err| {
+                err.add_context(format!("Failed to fetch object: {}", self.uri(path)))
+            })?;
+        tracing::Span::current().record("fetched_bytes_len", &payload.len());
+        Ok(payload)
     }
 
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
