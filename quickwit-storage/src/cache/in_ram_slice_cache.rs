@@ -81,6 +81,7 @@ mod tests {
 
     use super::*;
     use crate::metrics::CACHE_METRICS_FOR_TESTS;
+    use crate::STORAGE_METRICS;
 
     #[test]
     fn test_cache_edge_condition() {
