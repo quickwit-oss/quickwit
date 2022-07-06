@@ -54,7 +54,6 @@
             "max_merge_factor": 11
         },
         "resources": {
-            "num_threads": 3,
             "heap_size": "3G"
         }
     },
