@@ -31,10 +31,12 @@
 //! - The `BundleStorage` bundles together multiple files into a single file.
 mod cache;
 mod debouncer;
+mod metrics;
 mod storage;
 pub use debouncer::AsyncDebouncer;
 pub(crate) use debouncer::DebouncedStorage;
 
+pub use self::metrics::STORAGE_METRICS;
 pub use self::payload::PutPayload;
 pub use self::storage::Storage;
 

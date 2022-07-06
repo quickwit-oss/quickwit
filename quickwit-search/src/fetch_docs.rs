@@ -146,11 +146,12 @@ async fn get_searcher_for_split_without_cache(
 #[tracing::instrument(skip(global_doc_addrs, index_storage, split))]
 #[allow(clippy::needless_lifetimes)]
 async fn fetch_docs_in_split(
-    global_doc_addrs: Vec<GlobalDocAddress>,
+    mut global_doc_addrs: Vec<GlobalDocAddress>,
     index_storage: Arc<dyn Storage>,
     split: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<Vec<(GlobalDocAddress, String)>> {
-    let num_concurrent_requests = 10;
+    global_doc_addrs.sort_by(|a, b| a.doc_addr.cmp(&b.doc_addr));
+
     let index_reader = get_searcher_for_split_without_cache(1, index_storage, split).await?;
     let searcher = Arc::new(index_reader.searcher());
     let doc_futures = global_doc_addrs.into_iter().map(|global_doc_addr| {
@@ -165,6 +166,8 @@ async fn fetch_docs_in_split(
         }
     });
 
-    let stream = futures::stream::iter(doc_futures).buffer_unordered(num_concurrent_requests);
+    const NUM_CONCURRENT_REQUESTS: usize = 10;
+
+    let stream = futures::stream::iter(doc_futures).buffer_unordered(NUM_CONCURRENT_REQUESTS);
     stream.try_collect::<Vec<_>>().await
 }
