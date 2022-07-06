@@ -1,10 +1,9 @@
 ---
 name: Bug report
 about: Create a report to help us improve
-title: ''
+title: ""
 labels: bug
-assignees: ''
-
+assignees: ""
 ---
 
 **Describe the bug**
@@ -12,6 +11,7 @@ A clear and concise description of what the bug is.
 
 **Steps to reproduce (if applicable)**
 Steps to reproduce the behavior:
+
 1.
 2.
 
@@ -19,6 +19,7 @@ Steps to reproduce the behavior:
 A clear and concise description of what you expected to happen.
 
 **Configuration:**
-Please provide: 
+Please provide:
+
 1. Output of `quickwit --version`
 2. The index_config.yaml

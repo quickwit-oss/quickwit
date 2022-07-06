@@ -12,7 +12,6 @@ on:
       - "Cargo.toml"
       - "quickwit-*/**"
 
-
 env:
   CARGO_INCREMENTAL: 0
   RUST_BACKTRACE: 1
