@@ -57,7 +57,7 @@ impl Default for StorageMetrics {
             ),
             object_storage_download_num_bytes: new_counter(
                 "object_storage_download_num_bytes",
-                "Amount of data download from an object storage.",
+                "Amount of data downloaded from an object storage.",
                 "quickwit_storage",
             ),
         }

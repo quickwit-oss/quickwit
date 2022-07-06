@@ -46,7 +46,7 @@ impl Default for SearchMetrics {
             ),
             active_search_threads_count: new_gauge(
                 "active_search_threads_count",
-                "Number of thread in use the CPU thread pool",
+                "Number of threads in use in the CPU thread pool",
                 "quickwit_search",
             ),
         }

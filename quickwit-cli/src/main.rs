@@ -36,7 +36,7 @@ use tracing_subscriber::EnvFilter;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-const POLL_JEMALLOC_METRICS_INTERVAL: Duration = Duration::from_secs(1);
+const JEMALLOC_METRICS_POLLING_INTERVAL: Duration = Duration::from_secs(1);
 
 fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
     #[cfg(feature = "tokio-console")]
@@ -99,7 +99,7 @@ async fn jemalloc_metrics_loop() -> tikv_jemalloc_ctl::Result<()> {
     let epoch_management_information_base = tikv_jemalloc_ctl::epoch::mib()?;
     let allocated = tikv_jemalloc_ctl::stats::allocated::mib()?;
 
-    let mut poll_interval = tokio::time::interval(POLL_JEMALLOC_METRICS_INTERVAL);
+    let mut poll_interval = tokio::time::interval(JEMALLOC_METRICS_POLLING_INTERVAL);
 
     loop {
         poll_interval.tick().await;
