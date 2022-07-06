@@ -35,7 +35,7 @@ impl Default for SearchMetrics {
         SearchMetrics {
             leaf_searches_splits_total: new_counter(
                 "leaf_searches_splits_total",
-                "Number of leaf search (count of splits) started.",
+                "Number of leaf searches (count of splits) started.",
                 "quickwit_search",
             ),
             leaf_search_split_duration_secs: new_histogram(
