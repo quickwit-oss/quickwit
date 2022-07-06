@@ -50,9 +50,6 @@ mod ram_storage;
 mod split;
 mod storage_resolver;
 
-use std::path::Path;
-
-use anyhow::Context;
 use quickwit_common::uri::Uri;
 pub use tantivy::directory::OwnedBytes;
 
@@ -64,7 +61,6 @@ pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 pub use self::object_storage::{
     MultiPartPolicy, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
 };
-pub use self::prefix_storage::add_prefix_to_storage;
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};
 pub use self::split::{SplitPayload, SplitPayloadBuilder};
 #[cfg(any(test, feature = "testsuite"))]
@@ -80,18 +76,14 @@ pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, Sto
 
 /// Loads an entire local or remote file into memory.
 pub async fn load_file(uri: &Uri) -> anyhow::Result<OwnedBytes> {
-    let path = Path::new(uri.as_ref());
-    let parent_uri = path
+    let parent = uri
         .parent()
-        .with_context(|| format!("`{}` is not a valid file URI.", uri))?
-        .to_str()
-        .with_context(|| format!("Failed to convert URI `{}` to str.", uri))?;
-
-    let storage = quickwit_storage_uri_resolver().resolve(parent_uri)?;
-    let file_name = path
+        .ok_or_else(|| anyhow::anyhow!("URI `{uri}` is not a valid file URI."))?;
+    let storage = quickwit_storage_uri_resolver().resolve(&parent)?;
+    let file_name = uri
         .file_name()
-        .with_context(|| format!("`{}` is not a valid file URI.", uri))?;
-    let bytes = storage.get_all(Path::new(file_name)).await?;
+        .ok_or_else(|| anyhow::anyhow!("URI `{uri}` is not a valid file URI."))?;
+    let bytes = storage.get_all(file_name).await?;
     Ok(bytes)
 }
 

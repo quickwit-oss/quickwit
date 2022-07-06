@@ -23,21 +23,79 @@ use std::ffi::OsStr;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::{Component, Path, PathBuf};
+use std::str::FromStr;
 
 use anyhow::{bail, Context};
 use once_cell::sync::OnceCell;
 use regex::Regex;
 use serde::{Serialize, Serializer};
 
-/// Default file protocol `file://`
-pub const FILE_PROTOCOL: &str = "file";
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum Protocol {
+    File,
+    PostgreSQL,
+    Ram,
+    S3,
+}
 
-/// S3 protocol `s3://`
-pub const S3_PROTOCOL: &str = "s3";
+impl Protocol {
+    pub fn as_str(&self) -> &str {
+        match &self {
+            Protocol::File => "file",
+            Protocol::PostgreSQL => "postgresql",
+            Protocol::Ram => "ram",
+            Protocol::S3 => "s3",
+        }
+    }
 
-const POSTGRES_PROTOCOL: &str = "postgres";
+    pub fn is_file(&self) -> bool {
+        matches!(&self, Protocol::File)
+    }
 
-const POSTGRESQL_PROTOCOL: &str = "postgresql";
+    pub fn is_postgresql(&self) -> bool {
+        matches!(&self, Protocol::PostgreSQL)
+    }
+
+    pub fn is_ram(&self) -> bool {
+        matches!(&self, Protocol::Ram)
+    }
+
+    pub fn is_s3(&self) -> bool {
+        matches!(&self, Protocol::S3)
+    }
+
+    pub fn is_file_storage(&self) -> bool {
+        matches!(&self, Protocol::File | Protocol::Ram)
+    }
+
+    pub fn is_object_storage(&self) -> bool {
+        matches!(&self, Protocol::S3)
+    }
+
+    pub fn is_database(&self) -> bool {
+        matches!(&self, Protocol::PostgreSQL)
+    }
+}
+
+impl Display for Protocol {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(formatter, "{}", self.as_str())
+    }
+}
+
+impl FromStr for Protocol {
+    type Err = anyhow::Error;
+
+    fn from_str(protocol: &str) -> anyhow::Result<Self> {
+        match protocol {
+            "file" => Ok(Protocol::File),
+            "postgres" | "postgresql" => Ok(Protocol::PostgreSQL),
+            "ram" => Ok(Protocol::Ram),
+            "s3" => Ok(Protocol::S3),
+            _ => bail!("Unknown URI protocol `{}`.", protocol),
+        }
+    }
+}
 
 const PROTOCOL_SEPARATOR: &str = "://";
 
@@ -79,10 +137,10 @@ impl Uri {
             bail!("URI is empty.");
         }
         let (protocol, mut path) = match uri.split_once(PROTOCOL_SEPARATOR) {
-            None => (FILE_PROTOCOL, uri.to_string()),
+            None => (Protocol::File.as_str(), uri.to_string()),
             Some((protocol, path)) => (protocol, path.to_string()),
         };
-        if protocol == FILE_PROTOCOL {
+        if protocol == Protocol::File.as_str() {
             if path.starts_with('~') {
                 // We only accept `~` (alias to the home directory) and `~/path/to/something`.
                 // If there is something following the `~` that is not `/`, we bail out.
@@ -120,7 +178,16 @@ impl Uri {
         let protocol_idx = uri
             .find(PROTOCOL_SEPARATOR)
             .expect("URI lacks protocol separator. Use `Uri::new` exclusively for trusted input.");
+        let protocol_str = &uri[..protocol_idx];
+        protocol_str
+            .parse::<Protocol>()
+            .expect("URI protocol is invalid. Use `Uri::new` exclusively for trusted input.`");
         Self { uri, protocol_idx }
+    }
+
+    #[cfg(test)]
+    fn for_test(uri: &str) -> Self {
+        Uri::new(uri.to_string())
     }
 
     /// Returns the extension of the URI.
@@ -137,17 +204,17 @@ impl Uri {
     }
 
     /// Returns the protocol of the URI.
-    pub fn protocol(&self) -> &str {
-        &self.uri[..self.protocol_idx]
+    pub fn protocol(&self) -> Protocol {
+        Protocol::from_str(&self.uri[..self.protocol_idx]).expect("Failed to parse URI protocol. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
     }
 
     /// Strips sensitive information such as credentials from URI.
     pub fn as_redacted_str(&self) -> Cow<str> {
-        if self.protocol() == POSTGRES_PROTOCOL || self.protocol() == POSTGRESQL_PROTOCOL {
-            static POSTGRESQL_URI_PATTERN: OnceCell<Regex> = OnceCell::new();
-            POSTGRESQL_URI_PATTERN
+        if self.protocol().is_database() {
+            static DATABASE_URI_PATTERN: OnceCell<Regex> = OnceCell::new();
+            DATABASE_URI_PATTERN
                 .get_or_init(||
-                    Regex::new("(?P<before>^postgres(ql)?://.*)(?P<password>:.*@)(?P<after>.*)")
+                    Regex::new("(?P<before>^.*://.*)(?P<password>:.*@)(?P<after>.*)")
                         .expect("Failed to compile regular expression. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
                 )
                 .replace(&self.uri, "$before:***redacted***@$after")
@@ -159,11 +226,45 @@ impl Uri {
     /// Returns the file path of the URI.
     /// Applies only to `file://` URIs.
     pub fn filepath(&self) -> Option<&Path> {
-        if self.protocol() == FILE_PROTOCOL {
-            self.uri.strip_prefix("file://").map(Path::new)
+        if self.protocol().is_file_storage() {
+            Some(Path::new(
+                &self.uri[self.protocol_idx + PROTOCOL_SEPARATOR.len()..],
+            ))
         } else {
             None
         }
+    }
+
+    /// Returns the parent URI.
+    /// Does not apply to PostgreSQL URIs.
+    pub fn parent(&self) -> Option<Uri> {
+        if self.protocol().is_database() {
+            return None;
+        }
+        let protocol = &self.uri[..self.protocol_idx];
+        let path = Path::new(&self.uri[self.protocol_idx + PROTOCOL_SEPARATOR.len()..]);
+
+        if self.protocol().is_object_storage() && path.components().count() < 2 {
+            return None;
+        }
+        path.parent().map(|parent| {
+            Uri::new(format!(
+                "{protocol}{PROTOCOL_SEPARATOR}{}",
+                parent.display()
+            ))
+        })
+    }
+
+    /// Returns the last component of the URI.
+    pub fn file_name(&self) -> Option<&Path> {
+        if self.protocol().is_postgresql() {
+            return None;
+        }
+        let path = Path::new(&self.uri[self.protocol_idx + PROTOCOL_SEPARATOR.len()..]);
+        if self.protocol().is_object_storage() && path.components().count() < 2 {
+            return None;
+        }
+        path.file_name().map(Path::new)
     }
 
     /// Consumes the [`Uri`] struct and returns the normalized URI as a string.
@@ -173,21 +274,21 @@ impl Uri {
 
     /// Creates a new [`Uri`] with `path` adjoined to `self`.
     /// Fails if `path` is absolute.
-    pub fn join(&self, path: &str) -> anyhow::Result<Self> {
-        if Path::new(path).is_absolute() {
+    pub fn join<P: AsRef<Path> + std::fmt::Debug>(&self, path: P) -> anyhow::Result<Self> {
+        if path.as_ref().is_absolute() {
             bail!(
-                "Cannot join URI `{}` with absolute path `{}`.",
+                "Cannot join URI `{}` with absolute path `{:?}`.",
                 self.uri,
                 path
             );
         }
         let joined = match self.protocol() {
-            FILE_PROTOCOL => Path::new(&self.uri)
+            Protocol::File => Path::new(&self.uri)
                 .join(path)
                 .to_string_lossy()
                 .to_string(),
-            POSTGRES_PROTOCOL | POSTGRESQL_PROTOCOL => bail!(
-                "Cannot join PostgreSQL URI `{}` with path `{}`.",
+            Protocol::PostgreSQL => bail!(
+                "Cannot join PostgreSQL URI `{}` with path `{:?}`.",
                 self.uri,
                 path
             ),
@@ -195,7 +296,7 @@ impl Uri {
                 "{}{}{}",
                 self.uri,
                 if self.uri.ends_with('/') { "" } else { "/" },
-                path
+                path.as_ref().display(),
             ),
         };
         Ok(Self {
@@ -290,11 +391,14 @@ mod tests {
         let current_dir = env::current_dir().unwrap();
 
         let uri = Uri::try_new("file:///home/foo/bar").unwrap();
-        assert_eq!(uri.protocol(), "file");
+        assert_eq!(uri.protocol(), Protocol::File);
         assert_eq!(uri.filepath(), Some(Path::new("/home/foo/bar")));
         assert_eq!(uri, "file:///home/foo/bar");
         assert_eq!(uri, "file:///home/foo/bar".to_string());
-
+        assert_eq!(
+            Uri::try_new("file:///foo./bar..").unwrap(),
+            "file:///foo./bar.."
+        );
         assert_eq!(
             Uri::try_new("home/homer/docs/dognuts").unwrap(),
             format!("file://{}/home/homer/docs/dognuts", current_dir.display())
@@ -355,21 +459,30 @@ mod tests {
     }
 
     #[test]
+    fn test_uri_protocol() {
+        assert_eq!(Uri::for_test("file:///home").protocol(), Protocol::File);
+        assert_eq!(Uri::for_test("ram:///in-memory").protocol(), Protocol::Ram);
+        assert_eq!(Uri::for_test("s3://bucket/key").protocol(), Protocol::S3);
+        assert_eq!(
+            Uri::for_test("postgres://localhost:5432/metastore").protocol(),
+            Protocol::PostgreSQL
+        );
+        assert_eq!(
+            Uri::for_test("postgresql://localhost:5432/metastore").protocol(),
+            Protocol::PostgreSQL
+        );
+    }
+
+    #[test]
     fn test_uri_extension() {
-        assert!(Uri::try_new("s3://").unwrap().extension().is_none());
+        assert!(Uri::for_test("s3://").extension().is_none());
 
         assert_eq!(
-            Uri::try_new("s3://config.json")
-                .unwrap()
-                .extension()
-                .unwrap(),
+            Uri::for_test("s3://config.json").extension().unwrap(),
             Extension::Json
         );
         assert_eq!(
-            Uri::try_new("s3://config.foo")
-                .unwrap()
-                .extension()
-                .unwrap(),
+            Uri::for_test("s3://config.foo").extension().unwrap(),
             Extension::Unknown("foo".to_string())
         );
     }
@@ -377,49 +490,141 @@ mod tests {
     #[test]
     fn test_uri_join() {
         assert_eq!(
-            Uri::new("file:///".to_string()).join("foo").unwrap(),
+            Uri::for_test("file:///").join("foo").unwrap(),
             "file:///foo"
         );
         assert_eq!(
-            Uri::new("file:///foo".to_string()).join("bar").unwrap(),
+            Uri::for_test("file:///foo").join("bar").unwrap(),
             "file:///foo/bar"
         );
         assert_eq!(
-            Uri::new("file:///foo/".to_string()).join("bar").unwrap(),
+            Uri::for_test("file:///foo/").join("bar").unwrap(),
             "file:///foo/bar"
         );
         assert_eq!(
-            Uri::new("ram://foo".to_string()).join("bar").unwrap(),
+            Uri::for_test("ram://foo").join("bar").unwrap(),
             "ram://foo/bar"
         );
         assert_eq!(
-            Uri::new("s3://bucket/".to_string()).join("key").unwrap(),
+            Uri::for_test("s3://bucket/").join("key").unwrap(),
             "s3://bucket/key"
         );
-        Uri::new("s3://bucket/".to_string())
-            .join("/key")
-            .unwrap_err();
-        Uri::new("postgres://username:password@localhost:5432/metastore".to_string())
+        Uri::for_test("s3://bucket/").join("/key").unwrap_err();
+        Uri::for_test("postgres://username:password@localhost:5432/metastore")
             .join("table")
             .unwrap_err();
     }
 
     #[test]
+    fn test_uri_parent() {
+        assert!(Uri::for_test("file:///").parent().is_none());
+        assert_eq!(Uri::for_test("file:///foo").parent().unwrap(), "file:///");
+        assert_eq!(Uri::for_test("file:///foo/").parent().unwrap(), "file:///");
+        assert_eq!(
+            Uri::for_test("file:///foo/bar").parent().unwrap(),
+            "file:///foo"
+        );
+        assert!(Uri::for_test("postgres://localhost:5432/db")
+            .parent()
+            .is_none());
+
+        assert!(Uri::for_test("ram:///").parent().is_none());
+        assert_eq!(Uri::for_test("ram:///foo").parent().unwrap(), "ram:///");
+        assert_eq!(Uri::for_test("ram:///foo/").parent().unwrap(), "ram:///");
+        assert_eq!(
+            Uri::for_test("ram:///foo/bar").parent().unwrap(),
+            "ram:///foo"
+        );
+        assert!(Uri::for_test("s3://bucket").parent().is_none());
+        assert!(Uri::for_test("s3://bucket/").parent().is_none());
+        assert_eq!(
+            Uri::for_test("s3://bucket/foo").parent().unwrap(),
+            "s3://bucket"
+        );
+        assert_eq!(
+            Uri::for_test("s3://bucket/foo/").parent().unwrap(),
+            "s3://bucket"
+        );
+        assert_eq!(
+            Uri::for_test("s3://bucket/foo/bar").parent().unwrap(),
+            "s3://bucket/foo"
+        );
+        assert_eq!(
+            Uri::for_test("s3://bucket/foo/bar/").parent().unwrap(),
+            "s3://bucket/foo"
+        );
+    }
+
+    #[test]
+    fn test_uri_file_name() {
+        assert!(Uri::for_test("file:///").file_name().is_none());
+        assert_eq!(
+            Uri::for_test("file:///foo").file_name().unwrap(),
+            Path::new("foo")
+        );
+        assert_eq!(
+            Uri::for_test("file:///foo/").file_name().unwrap(),
+            Path::new("foo")
+        );
+        assert!(Uri::for_test("postgres://localhost:5432/db")
+            .file_name()
+            .is_none());
+
+        assert!(Uri::for_test("ram:///").file_name().is_none());
+        assert_eq!(
+            Uri::for_test("ram:///foo").file_name().unwrap(),
+            Path::new("foo")
+        );
+        assert_eq!(
+            Uri::for_test("ram:///foo/").file_name().unwrap(),
+            Path::new("foo")
+        );
+        assert!(Uri::for_test("s3://bucket").file_name().is_none());
+        assert!(Uri::for_test("s3://bucket/").file_name().is_none());
+        assert_eq!(
+            Uri::for_test("s3://bucket/foo").file_name().unwrap(),
+            Path::new("foo"),
+        );
+        assert_eq!(
+            Uri::for_test("s3://bucket/foo/").file_name().unwrap(),
+            Path::new("foo"),
+        );
+    }
+
+    #[test]
+    fn test_uri_filepath() {
+        assert_eq!(
+            Uri::for_test("file:///").filepath().unwrap(),
+            Path::new("/")
+        );
+        assert_eq!(
+            Uri::for_test("file:///foo").filepath().unwrap(),
+            Path::new("/foo")
+        );
+        assert_eq!(Uri::for_test("ram:///").filepath().unwrap(), Path::new("/"));
+        assert_eq!(
+            Uri::for_test("ram:///foo").filepath().unwrap(),
+            Path::new("/foo")
+        );
+        assert!(Uri::for_test("s3://bucket/").filepath().is_none(),);
+    }
+
+    #[test]
     fn test_uri_as_redacted_str() {
         assert_eq!(
-            Uri::new("s3://bucket/key".to_string()).as_redacted_str(),
+            Uri::for_test("s3://bucket/key").as_redacted_str(),
             "s3://bucket/key"
         );
         assert_eq!(
-            Uri::new("postgres://localhost:5432/metastore".to_string()).as_redacted_str(),
+            Uri::for_test("postgres://localhost:5432/metastore").as_redacted_str(),
             "postgres://localhost:5432/metastore"
         );
         assert_eq!(
-            Uri::new("postgres://username@localhost:5432/metastore".to_string()).as_redacted_str(),
+            Uri::for_test("postgres://username@localhost:5432/metastore").as_redacted_str(),
             "postgres://username@localhost:5432/metastore"
         );
         {
-            for protocol in [POSTGRES_PROTOCOL, POSTGRESQL_PROTOCOL] {
+            for protocol in ["postgres", "postgresql"] {
                 let uri = Uri::new(format!(
                     "{}://username:password@localhost:5432/metastore",
                     protocol
@@ -440,7 +645,7 @@ mod tests {
 
     #[test]
     fn test_uri_serialize() {
-        let uri = Uri::try_new("s3://bucket/key").unwrap();
+        let uri = Uri::for_test("s3://bucket/key");
         assert_eq!(
             serde_json::to_value(&uri).unwrap(),
             serde_json::Value::String("s3://bucket/key".to_string())

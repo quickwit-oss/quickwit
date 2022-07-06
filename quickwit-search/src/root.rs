@@ -189,7 +189,7 @@ pub async fn root_search(
                 let leaf_request = jobs_to_leaf_request(
                     search_request,
                     &doc_mapper_str,
-                    &index_metadata.index_uri,
+                    index_metadata.index_uri.as_ref(),
                     client_jobs,
                 );
                 cluster_client.leaf_search(leaf_request, client)
@@ -401,7 +401,7 @@ mod tests {
     #[tokio::test]
     async fn test_root_search_offset_out_of_bounds_1085() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
-            index_id: "test-idx".to_string(),
+            index_id: "test-index".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
@@ -415,8 +415,8 @@ mod tests {
             .expect_index_metadata()
             .returning(|_index_id: &str| {
                 Ok(IndexMetadata::for_test(
-                    "test-idx",
-                    "file:///path/to/index/test-idx",
+                    "test-index",
+                    "ram:///indexes/test-index",
                 ))
             });
         metastore.expect_list_splits().returning(
@@ -485,7 +485,7 @@ mod tests {
     #[tokio::test]
     async fn test_root_search_single_split() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
-            index_id: "test-idx".to_string(),
+            index_id: "test-index".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
@@ -499,8 +499,8 @@ mod tests {
             .expect_index_metadata()
             .returning(|_index_id: &str| {
                 Ok(IndexMetadata::for_test(
-                    "test-idx",
-                    "file:///path/to/index/test-idx",
+                    "test-index",
+                    "ram:///indexes/test-index",
                 ))
             });
         metastore.expect_list_splits().returning(
@@ -543,7 +543,7 @@ mod tests {
     #[tokio::test]
     async fn test_root_search_multiple_splits() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
-            index_id: "test-idx".to_string(),
+            index_id: "test-index".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
@@ -557,8 +557,8 @@ mod tests {
             .expect_index_metadata()
             .returning(|_index_id: &str| {
                 Ok(IndexMetadata::for_test(
-                    "test-idx",
-                    "file:///path/to/index/test-idx",
+                    "test-index",
+                    "ram:///indexes/test-index",
                 ))
             });
         metastore.expect_list_splits().returning(
@@ -623,7 +623,7 @@ mod tests {
     #[tokio::test]
     async fn test_root_search_multiple_splits_retry_on_other_node() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
-            index_id: "test-idx".to_string(),
+            index_id: "test-index".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
@@ -637,8 +637,8 @@ mod tests {
             .expect_index_metadata()
             .returning(|_index_id: &str| {
                 Ok(IndexMetadata::for_test(
-                    "test-idx",
-                    "file:///path/to/index/test-idx",
+                    "test-index",
+                    "ram:///indexes/test-index",
                 ))
             });
         metastore.expect_list_splits().returning(
@@ -730,7 +730,7 @@ mod tests {
     #[tokio::test]
     async fn test_root_search_multiple_splits_retry_on_all_nodes() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
-            index_id: "test-idx".to_string(),
+            index_id: "test-index".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
@@ -744,8 +744,8 @@ mod tests {
             .expect_index_metadata()
             .returning(|_index_id: &str| {
                 Ok(IndexMetadata::for_test(
-                    "test-idx",
-                    "file:///path/to/index/test-idx",
+                    "test-index",
+                    "ram:///indexes/test-index",
                 ))
             });
         metastore.expect_list_splits().returning(
@@ -854,7 +854,7 @@ mod tests {
     #[tokio::test]
     async fn test_root_search_single_split_retry_single_node() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
-            index_id: "test-idx".to_string(),
+            index_id: "test-index".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
@@ -868,8 +868,8 @@ mod tests {
             .expect_index_metadata()
             .returning(|_index_id: &str| {
                 Ok(IndexMetadata::for_test(
-                    "test-idx",
-                    "file:///path/to/index/test-idx",
+                    "test-index",
+                    "ram:///indexes/test-index",
                 ))
             });
         metastore.expect_list_splits().returning(
@@ -927,7 +927,7 @@ mod tests {
     #[tokio::test]
     async fn test_root_search_single_split_retry_single_node_fails() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
-            index_id: "test-idx".to_string(),
+            index_id: "test-index".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
@@ -941,8 +941,8 @@ mod tests {
             .expect_index_metadata()
             .returning(|_index_id: &str| {
                 Ok(IndexMetadata::for_test(
-                    "test-idx",
-                    "file:///path/to/index/test-idx",
+                    "test-index",
+                    "ram:///indexes/test-index",
                 ))
             });
         metastore.expect_list_splits().returning(
@@ -986,7 +986,7 @@ mod tests {
     async fn test_root_search_one_splits_two_nodes_but_one_is_failing_for_split(
     ) -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
-            index_id: "test-idx".to_string(),
+            index_id: "test-index".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
@@ -1000,8 +1000,8 @@ mod tests {
             .expect_index_metadata()
             .returning(|_index_id: &str| {
                 Ok(IndexMetadata::for_test(
-                    "test-idx",
-                    "file:///path/to/index/test-idx",
+                    "test-index",
+                    "ram:///indexes/test-index",
                 ))
             });
         metastore.expect_list_splits().returning(
@@ -1069,7 +1069,7 @@ mod tests {
     async fn test_root_search_one_splits_two_nodes_but_one_is_failing_completely(
     ) -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
-            index_id: "test-idx".to_string(),
+            index_id: "test-index".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
@@ -1083,8 +1083,8 @@ mod tests {
             .expect_index_metadata()
             .returning(|_index_id: &str| {
                 Ok(IndexMetadata::for_test(
-                    "test-idx",
-                    "file:///path/to/index/test-idx",
+                    "test-index",
+                    "ram:///indexes/test-index",
                 ))
             });
         metastore.expect_list_splits().returning(
@@ -1145,8 +1145,8 @@ mod tests {
             .expect_index_metadata()
             .returning(|_index_id: &str| {
                 Ok(IndexMetadata::for_test(
-                    "test-idx",
-                    "file:///path/to/index/test-idx",
+                    "test-index",
+                    "ram:///indexes/test-index",
                 ))
             });
         metastore.expect_list_splits().returning(
@@ -1161,7 +1161,7 @@ mod tests {
 
         assert!(root_search(
             &quickwit_proto::SearchRequest {
-                index_id: "test-idx".to_string(),
+                index_id: "test-index".to_string(),
                 query: r#"invalid_field:"test""#.to_string(),
                 search_fields: vec!["body".to_string()],
                 start_timestamp: None,
@@ -1179,7 +1179,7 @@ mod tests {
 
         assert!(root_search(
             &quickwit_proto::SearchRequest {
-                index_id: "test-idx".to_string(),
+                index_id: "test-index".to_string(),
                 query: "test".to_string(),
                 search_fields: vec!["invalid_field".to_string()],
                 start_timestamp: None,
@@ -1201,26 +1201,26 @@ mod tests {
     #[tokio::test]
     async fn test_root_search_invalid_aggregation() -> anyhow::Result<()> {
         let agg_req = r#"
- {
-   "expensive_colors": {
-     "termss": {
-       "field": "color",
-       "order": {
-            "price_stats.max": "desc"
-       }
-     },
-     "aggs": {
-       "price_stats" : {
-          "stats": {
-              "field": "price"
-          }
-       }
-     }
-   }
- }"#;
+            {
+                "expensive_colors": {
+                    "termss": {
+                        "field": "color",
+                        "order": {
+                            "price_stats.max": "desc"
+                        }
+                    },
+                    "aggs": {
+                        "price_stats" : {
+                            "stats": {
+                                "field": "price"
+                            }
+                        }
+                    }
+                }
+            }"#;
 
         let search_request = quickwit_proto::SearchRequest {
-            index_id: "test-idx".to_string(),
+            index_id: "test-index".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
@@ -1235,8 +1235,8 @@ mod tests {
             .expect_index_metadata()
             .returning(|_index_id: &str| {
                 Ok(IndexMetadata::for_test(
-                    "test-idx",
-                    "file:///path/to/index/test-idx",
+                    "test-index",
+                    "ram:///indexes/test-index",
                 ))
             });
         metastore.expect_list_splits().returning(
@@ -1253,7 +1253,7 @@ mod tests {
         assert_eq!(
             search_response.unwrap_err().to_string(),
             "Invalid aggregation request: data did not match any variant of untagged enum \
-             Aggregation at line 18 column 2",
+             Aggregation at line 18 column 13",
         );
         Ok(())
     }
@@ -1261,7 +1261,7 @@ mod tests {
     #[tokio::test]
     async fn test_root_search_invalid_request() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
-            index_id: "test-idx".to_string(),
+            index_id: "test-index".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
@@ -1275,8 +1275,8 @@ mod tests {
             .expect_index_metadata()
             .returning(|_index_id: &str| {
                 Ok(IndexMetadata::for_test(
-                    "test-idx",
-                    "file:///path/to/index/test-idx",
+                    "test-index",
+                    "ram:///indexes/test-index",
                 ))
             });
         metastore.expect_list_splits().returning(
@@ -1296,7 +1296,7 @@ mod tests {
         );
 
         let search_request = quickwit_proto::SearchRequest {
-            index_id: "test-idx".to_string(),
+            index_id: "test-index".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,

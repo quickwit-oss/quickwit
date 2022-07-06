@@ -22,6 +22,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use once_cell::sync::OnceCell;
+use quickwit_common::uri::{Protocol, Uri};
 
 use crate::metastore::file_backed_metastore::FileBackedMetastoreFactory;
 #[cfg(feature = "postgres")]
@@ -32,19 +33,19 @@ use crate::{Metastore, MetastoreResolverError};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait MetastoreFactory: Send + Sync + 'static {
-    /// Given an URI, returns a [`Metastore`] object.
-    async fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError>;
+    /// Returns the appropriate [`Metastore`] object for the URI.
+    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Metastore>, MetastoreResolverError>;
 }
 
 #[derive(Default)]
 pub struct MetastoreUriResolverBuilder {
-    per_protocol_resolver: HashMap<String, Arc<dyn MetastoreFactory>>,
+    per_protocol_resolver: HashMap<Protocol, Arc<dyn MetastoreFactory>>,
 }
 
 impl MetastoreUriResolverBuilder {
-    pub fn register<S: MetastoreFactory>(mut self, protocol: &str, resolver: S) -> Self {
+    pub fn register<S: MetastoreFactory>(mut self, protocol: Protocol, resolver: S) -> Self {
         self.per_protocol_resolver
-            .insert(protocol.to_string(), Arc::new(resolver));
+            .insert(protocol, Arc::new(resolver));
         self
     }
 
@@ -58,7 +59,7 @@ impl MetastoreUriResolverBuilder {
 /// Resolves an URI by dispatching it to the right [`MetastoreFactory`]
 /// based on its protocol.
 pub struct MetastoreUriResolver {
-    per_protocol_resolver: Arc<HashMap<String, Arc<dyn MetastoreFactory>>>,
+    per_protocol_resolver: Arc<HashMap<Protocol, Arc<dyn MetastoreFactory>>>,
 }
 
 /// Quickwit supported storage resolvers.
@@ -69,35 +70,24 @@ pub fn quickwit_metastore_uri_resolver() -> &'static MetastoreUriResolver {
     METASTORE_URI_RESOLVER.get_or_init(|| {
         #[allow(unused_mut)]
         let mut builder = MetastoreUriResolver::builder()
-            .register("ram", FileBackedMetastoreFactory::default())
-            .register("file", FileBackedMetastoreFactory::default())
-            .register("s3", FileBackedMetastoreFactory::default());
+            .register(Protocol::Ram, FileBackedMetastoreFactory::default())
+            .register(Protocol::File, FileBackedMetastoreFactory::default())
+            .register(Protocol::S3, FileBackedMetastoreFactory::default());
         #[cfg(feature = "postgres")]
         {
-            builder = builder
-                .register("postgres", PostgresqlMetastoreFactory::default())
-                .register("postgresql", PostgresqlMetastoreFactory::default());
+            builder = builder.register(Protocol::PostgreSQL, PostgresqlMetastoreFactory::default());
         }
 
         #[cfg(not(feature = "postgres"))]
         {
-            builder = builder
-                .register(
-                    "postgres",
-                    UnsuportedMetastore {
-                        message: "postgres unsupported, quickwit was compiled without the \
-                                  'postgres' feature flag"
-                            .to_string(),
-                    },
-                )
-                .register(
-                    "postgresql",
-                    UnsuportedMetastore {
-                        message: "postgresql unsupported, quickwit was compiled without the \
-                                  'postgres' feature flag"
-                            .to_string(),
-                    },
-                )
+            builder = builder.register(
+                Protocol::PostgreSQL,
+                UnsuportedMetastore {
+                    message: "postgres unsupported, quickwit was compiled without the 'postgres' \
+                              feature flag"
+                        .to_string(),
+                },
+            )
         }
 
         builder.build()
@@ -112,7 +102,7 @@ pub struct UnsuportedMetastore {
 
 #[async_trait]
 impl MetastoreFactory for UnsuportedMetastore {
-    async fn resolve(&self, _uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+    async fn resolve(&self, _uri: &Uri) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
         Err(MetastoreResolverError::ProtocolUnsupported(
             self.message.to_string(),
         ))
@@ -126,46 +116,31 @@ impl MetastoreUriResolver {
     }
 
     /// Resolves the given URI.
-    pub async fn resolve<S: AsRef<str>>(
-        &self,
-        uri: S,
-    ) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
-        let protocol = uri.as_ref().split("://").next().ok_or_else(|| {
-            MetastoreResolverError::InvalidUri(format!(
-                "Protocol not found in metastore URI: {}",
-                uri.as_ref()
-            ))
-        })?;
-
+    pub async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
         let resolver = self
             .per_protocol_resolver
-            .get(protocol)
-            .ok_or_else(|| MetastoreResolverError::ProtocolUnsupported(protocol.to_string()))?;
-
-        let metastore = resolver.resolve(uri.as_ref()).await?;
+            .get(&uri.protocol())
+            .ok_or_else(|| {
+                MetastoreResolverError::ProtocolUnsupported(uri.protocol().to_string())
+            })?;
+        let metastore = resolver.resolve(uri).await?;
         Ok(metastore)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use quickwit_common::uri::Uri;
+
     use crate::quickwit_metastore_uri_resolver;
 
     #[tokio::test]
     async fn test_metastore_resolver_should_not_raise_errors_on_file() -> anyhow::Result<()> {
         let metastore_resolver = quickwit_metastore_uri_resolver();
-        metastore_resolver.resolve("file://").await?;
-        Ok(())
-    }
-
-    #[tokio::test]
-    #[should_panic(expected = "ProtocolUnsupported(\"s4\")")]
-    async fn test_metastore_resolver_should_raise_error_on_storage_error() {
-        let metastore_resolver = quickwit_metastore_uri_resolver();
         metastore_resolver
-            .resolve("s4://bucket/path/to/object")
-            .await
-            .unwrap();
+            .resolve(&Uri::new("file://".to_string()))
+            .await?;
+        Ok(())
     }
 
     #[cfg(feature = "postgres")]
@@ -180,7 +155,7 @@ mod tests {
         );
         let (_uri_protocol, uri_path) = test_database_url.split_once("://").unwrap();
         for protocol in &["postgres", "postgresql"] {
-            let postgres_uri = format!("{}://{}", protocol, uri_path);
+            let postgres_uri = Uri::new(format!("{}://{}", protocol, uri_path));
             metastore_resolver.resolve(&postgres_uri).await.unwrap();
         }
     }
