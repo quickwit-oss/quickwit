@@ -84,7 +84,3 @@ build-ui:
 
 rm-postgres:
 	rm -fr /tmp/quickwit/services/postgres
-
-start-prometheus:
-	docker run  --net=host -v `pwd`/scripts/prometheus.yml:/etc/prometheus/prometheus.yml prom/prometheus --config.file=/etc/prometheus/prometheus.yml
-
