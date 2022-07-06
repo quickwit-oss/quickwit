@@ -311,7 +311,7 @@ struct SearchStreamRequestFields {
     schema: Schema,
 }
 
-impl<'a> std::fmt::Display for SearchStreamRequestFields {
+impl std::fmt::Display for SearchStreamRequestFields {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "fast_field: {},", self.fast_field_name())?;
         write!(

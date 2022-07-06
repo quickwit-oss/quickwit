@@ -102,3 +102,10 @@ services:
       ZOOKEEPER_TICK_TIME: 2000
     healthcheck:
       test: ["CMD", "cub", "zk-ready", "localhost:2181", "30"]
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    volumes:
+      - ${PWD}/scripts/prometheus.yml:/etc/prometheus/prometheus.yml
+    network_mode: host

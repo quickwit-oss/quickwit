@@ -24,6 +24,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use quickwit_config::get_searcher_config_instance;
 
+use crate::metrics::CacheMetrics;
 use crate::{Cache, OwnedBytes, SliceCache};
 
 const FULL_SLICE: Range<usize> = 0..usize::MAX;
@@ -43,9 +44,14 @@ impl Default for QuickwitCache {
         let mut quickwit_cache = QuickwitCache::empty();
         let config = get_searcher_config_instance();
         let fast_cache_cap = config.fast_field_cache_capacity.get_bytes();
+        let fast_field_cache_counters: &'static CacheMetrics =
+            &crate::STORAGE_METRICS.fast_field_cache;
         quickwit_cache.add_route(
             ".fast",
-            Arc::new(SimpleCache::with_capacity_in_bytes(fast_cache_cap as usize)),
+            Arc::new(SimpleCache::with_capacity_in_bytes(
+                fast_cache_cap as usize,
+                fast_field_cache_counters,
+            )),
         );
         quickwit_cache
     }
@@ -110,9 +116,12 @@ struct SimpleCache {
 }
 
 impl SimpleCache {
-    fn with_capacity_in_bytes(capacity_in_bytes: usize) -> Self {
+    fn with_capacity_in_bytes(
+        capacity_in_bytes: usize,
+        cache_counters: &'static CacheMetrics,
+    ) -> Self {
         SimpleCache {
-            slice_cache: SliceCache::with_capacity_in_bytes(capacity_in_bytes),
+            slice_cache: SliceCache::with_capacity_in_bytes(capacity_in_bytes, cache_counters),
         }
     }
 }

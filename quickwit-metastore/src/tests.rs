@@ -186,11 +186,10 @@ pub mod test_suite {
         let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
 
         // Create an index
-        let result = metastore
+        metastore
             .create_index(index_metadata.clone())
             .await
             .unwrap();
-        assert!(matches!(result, ()));
 
         cleanup_index(&metastore, index_id).await;
     }
@@ -214,8 +213,7 @@ pub mod test_suite {
             .unwrap();
 
         // Delete an index
-        let result = metastore.delete_index(index_id).await.unwrap();
-        assert!(matches!(result, ()));
+        metastore.delete_index(index_id).await.unwrap();
     }
 
     #[allow(unused_variables)]
@@ -256,7 +254,7 @@ pub mod test_suite {
         let split_metadata = SplitMetadata {
             split_id: split_id.to_string(),
             num_docs: 1,
-            original_size_in_bytes: 2,
+            uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             footer_offsets: 1000..2000,
@@ -276,11 +274,10 @@ pub mod test_suite {
             .unwrap();
 
         // Stage a split on an index
-        let result = metastore
+        metastore
             .stage_split(index_id, split_metadata.clone())
             .await
             .unwrap();
-        assert!(matches!(result, ()));
 
         // Stage a existent-split on an index
         let result = metastore
@@ -358,7 +355,7 @@ pub mod test_suite {
             footer_offsets: 1000..2000,
             split_id: split_id_1.to_string(),
             num_docs: 1,
-            original_size_in_bytes: 2,
+            uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -369,7 +366,7 @@ pub mod test_suite {
             footer_offsets: 1000..2000,
             split_id: split_id_2.to_string(),
             num_docs: 5,
-            original_size_in_bytes: 6,
+            uncompressed_docs_size_in_bytes: 6,
             time_range: Some(30..=99),
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -422,7 +419,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let result = metastore
+            metastore
                 .publish_splits(
                     index_id,
                     source_id,
@@ -431,7 +428,6 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap();
-            assert!(matches!(result, ()));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -554,7 +550,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let result = metastore
+            metastore
                 .publish_splits(
                     index_id,
                     source_id,
@@ -563,7 +559,6 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap();
-            assert!(matches!(result, ()));
 
             let result = metastore
                 .publish_splits(
@@ -637,7 +632,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let result = metastore
+            metastore
                 .publish_splits(
                     index_id,
                     source_id,
@@ -646,7 +641,6 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap();
-            assert!(matches!(result, ()));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -678,7 +672,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let result = metastore
+            metastore
                 .publish_splits(
                     index_id,
                     source_id,
@@ -687,7 +681,6 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap();
-            assert!(matches!(result, ()));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -751,7 +744,7 @@ pub mod test_suite {
             footer_offsets: 1000..2000,
             split_id: split_id_1.to_string(),
             num_docs: 1,
-            original_size_in_bytes: 2,
+            uncompressed_docs_size_in_bytes: 2,
             time_range: None,
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -762,7 +755,7 @@ pub mod test_suite {
             footer_offsets: 1000..2000,
             split_id: split_id_2.to_string(),
             num_docs: 5,
-            original_size_in_bytes: 6,
+            uncompressed_docs_size_in_bytes: 6,
             time_range: None,
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -773,7 +766,7 @@ pub mod test_suite {
             footer_offsets: 1000..2000,
             split_id: split_id_3.to_string(),
             num_docs: 5,
-            original_size_in_bytes: 6,
+            uncompressed_docs_size_in_bytes: 6,
             time_range: None,
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -952,11 +945,10 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let result = metastore
+            metastore
                 .replace_splits(index_id, &[split_id_2, split_id_3], &[split_id_1])
                 .await
                 .unwrap();
-            assert!(matches!(result, ()));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -977,7 +969,7 @@ pub mod test_suite {
             footer_offsets: 1000..2000,
             split_id: split_id_1.to_string(),
             num_docs: 1,
-            original_size_in_bytes: 2,
+            uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -1048,7 +1040,7 @@ pub mod test_suite {
             footer_offsets: 1000..2000,
             split_id: split_id_1.to_string(),
             num_docs: 1,
-            original_size_in_bytes: 2,
+            uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -1092,11 +1084,10 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let result = metastore
+            metastore
                 .delete_splits(index_id, &[split_id_1])
                 .await
                 .unwrap();
-            assert!(matches!(result, ()));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -1118,11 +1109,10 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let result = metastore
+            metastore
                 .delete_splits(index_id, &[split_id_1])
                 .await
                 .unwrap();
-            assert!(matches!(result, ()));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -1175,7 +1165,7 @@ pub mod test_suite {
             footer_offsets: 1000..2000,
             split_id: split_id_1.to_string(),
             num_docs: 1,
-            original_size_in_bytes: 2,
+            uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -1185,7 +1175,7 @@ pub mod test_suite {
             footer_offsets: 1000..2000,
             split_id: "list-all-splits-index-two".to_string(),
             num_docs: 1,
-            original_size_in_bytes: 2,
+            uncompressed_docs_size_in_bytes: 2,
             time_range: Some(100..=199),
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -1195,7 +1185,7 @@ pub mod test_suite {
             footer_offsets: 1000..2000,
             split_id: "list-all-splits-index-three".to_string(),
             num_docs: 1,
-            original_size_in_bytes: 2,
+            uncompressed_docs_size_in_bytes: 2,
             time_range: Some(200..=299),
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -1205,7 +1195,7 @@ pub mod test_suite {
             footer_offsets: 1000..2000,
             split_id: "list-all-splits-index-four".to_string(),
             num_docs: 1,
-            original_size_in_bytes: 2,
+            uncompressed_docs_size_in_bytes: 2,
             time_range: Some(300..=399),
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -1215,7 +1205,7 @@ pub mod test_suite {
             footer_offsets: 1000..2000,
             split_id: "list-all-splits-index-five".to_string(),
             num_docs: 1,
-            original_size_in_bytes: 2,
+            uncompressed_docs_size_in_bytes: 2,
             time_range: None,
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -1291,7 +1281,7 @@ pub mod test_suite {
             footer_offsets: 1000..2000,
             split_id: split_id_1.to_string(),
             num_docs: 1,
-            original_size_in_bytes: 2,
+            uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:foo", "tag:bar"]),
@@ -1302,7 +1292,7 @@ pub mod test_suite {
             footer_offsets: 1000..2000,
             split_id: "list-splits-two".to_string(),
             num_docs: 1,
-            original_size_in_bytes: 2,
+            uncompressed_docs_size_in_bytes: 2,
             time_range: Some(100..=199),
             create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:bar"]),
@@ -1313,7 +1303,7 @@ pub mod test_suite {
             footer_offsets: 1000..2000,
             split_id: "list-splits-three".to_string(),
             num_docs: 1,
-            original_size_in_bytes: 2,
+            uncompressed_docs_size_in_bytes: 2,
             time_range: Some(200..=299),
             create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:foo", "tag:baz"]),
@@ -1324,7 +1314,7 @@ pub mod test_suite {
             footer_offsets: 1000..2000,
             split_id: "list-splits-four".to_string(),
             num_docs: 1,
-            original_size_in_bytes: 2,
+            uncompressed_docs_size_in_bytes: 2,
             time_range: Some(300..=399),
             create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:foo"]),
@@ -1335,7 +1325,7 @@ pub mod test_suite {
             footer_offsets: 1000..2000,
             split_id: "list-splits-five".to_string(),
             num_docs: 1,
-            original_size_in_bytes: 2,
+            uncompressed_docs_size_in_bytes: 2,
             time_range: None,
             create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:baz", "tag:biz"]),
@@ -1725,7 +1715,7 @@ pub mod test_suite {
                 footer_offsets: 1000..2000,
                 split_id: "list-splits-six".to_string(),
                 num_docs: 1,
-                original_size_in_bytes: 2,
+                uncompressed_docs_size_in_bytes: 2,
                 time_range: None,
                 create_timestamp: current_timestamp,
                 tags: to_set(&[]),
@@ -1798,7 +1788,7 @@ pub mod test_suite {
             footer_offsets: 1000..2000,
             split_id: split_id.to_string(),
             num_docs: 1,
-            original_size_in_bytes: 2,
+            uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             ..Default::default()

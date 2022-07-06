@@ -19,7 +19,6 @@
 
 mod cluster;
 mod error;
-mod service;
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -30,10 +29,9 @@ use chitchat::FailureDetectorConfig;
 use quickwit_config::QuickwitConfig;
 
 pub use crate::cluster::{
-    create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster, Member,
+    create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster, ClusterState, Member,
 };
 pub use crate::error::{ClusterError, ClusterResult};
-pub use crate::service::ClusterService;
 
 fn unix_timestamp() -> u64 {
     let duration_since_epoch = std::time::SystemTime::now()

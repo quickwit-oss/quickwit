@@ -148,7 +148,7 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
         max_merge_factor: 11,
     };
     let indexing_resources = IndexingResources {
-        num_threads: 3,
+        __num_threads_deprecated: serde::de::IgnoredAny,
         heap_size: Byte::from_bytes(3),
     };
     let indexing_settings = IndexingSettings {

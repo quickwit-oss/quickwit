@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use super::memory_sized_cache::MemorySizedCache;
+use crate::metrics::CacheMetrics;
 use crate::OwnedBytes;
 
 #[derive(Hash, Debug, Clone, PartialEq, Eq)]
@@ -38,18 +39,22 @@ pub struct SliceCache {
 
 impl SliceCache {
     /// Creates an slice cache with the given capacity.
-    pub fn with_capacity_in_bytes(capacity_in_bytes: usize) -> Self {
+    pub fn with_capacity_in_bytes(
+        capacity_in_bytes: usize,
+        cache_counters: &'static CacheMetrics,
+    ) -> Self {
         SliceCache {
             inner: Mutex::new(MemorySizedCache::<SliceAddress>::with_capacity_in_bytes(
                 capacity_in_bytes,
+                cache_counters,
             )),
         }
     }
 
     /// Creates a slice cache that nevers removes any entry.
-    pub fn with_infinite_capacity() -> Self {
+    pub fn with_infinite_capacity(cache_counters: &'static CacheMetrics) -> Self {
         SliceCache {
-            inner: Mutex::new(MemorySizedCache::with_infinite_capacity()),
+            inner: Mutex::new(MemorySizedCache::with_infinite_capacity(cache_counters)),
         }
     }
 
@@ -75,10 +80,12 @@ impl SliceCache {
 mod tests {
 
     use super::*;
+    use crate::metrics::CACHE_METRICS_FOR_TESTS;
+    use crate::STORAGE_METRICS;
 
     #[test]
     fn test_cache_edge_condition() {
-        let cache = SliceCache::with_capacity_in_bytes(5);
+        let cache = SliceCache::with_capacity_in_bytes(5, &CACHE_METRICS_FOR_TESTS);
         {
             let data = OwnedBytes::new(&b"abc"[..]);
             cache.put(PathBuf::from("3"), 0..3, data);
@@ -111,7 +118,7 @@ mod tests {
 
     #[test]
     fn test_cache_edge_unlimited_capacity() {
-        let cache = SliceCache::with_infinite_capacity();
+        let cache = SliceCache::with_infinite_capacity(&STORAGE_METRICS.fast_field_cache);
         {
             let data = OwnedBytes::new(&b"abc"[..]);
             cache.put(PathBuf::from("3"), 0..3, data);
@@ -127,7 +134,7 @@ mod tests {
 
     #[test]
     fn test_cache() {
-        let cache = SliceCache::with_capacity_in_bytes(10_000);
+        let cache = SliceCache::with_capacity_in_bytes(10_000, &STORAGE_METRICS.fast_field_cache);
         assert!(cache.get(Path::new("hello.seg"), 1..3).is_none());
         let data = OwnedBytes::new(&b"werwer"[..]);
         cache.put(PathBuf::from("hello.seg"), 1..3, data);
@@ -139,7 +146,7 @@ mod tests {
 
     #[test]
     fn test_cache_different_slice() {
-        let cache = SliceCache::with_capacity_in_bytes(10_000);
+        let cache = SliceCache::with_capacity_in_bytes(10_000, &STORAGE_METRICS.fast_field_cache);
         assert!(cache.get(Path::new("hello.seg"), 1..3).is_none());
         let data = OwnedBytes::new(&b"werwer"[..]);
         // We could actually have a cache hit here, but this is not useful for Quickwit.

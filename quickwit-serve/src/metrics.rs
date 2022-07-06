@@ -18,19 +18,23 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use once_cell::sync::Lazy;
-use prometheus::IntCounter;
-use quickwit_common::metrics::new_counter;
+use quickwit_common::metrics::{new_counter, IntCounter};
 
-pub struct Counters {
-    pub num_requests: IntCounter,
+pub struct RestMetrics {
+    pub http_requests_total: IntCounter,
 }
 
-impl Default for Counters {
+impl Default for RestMetrics {
     fn default() -> Self {
-        Counters {
-            num_requests: new_counter("rest_api:search:num_requests", "Number of search requests"),
+        RestMetrics {
+            http_requests_total: new_counter(
+                "http_requests_total",
+                "Total number of HTTP requests received",
+                "quickwit",
+            ),
         }
     }
 }
 
-pub static COUNTERS: Lazy<Counters> = Lazy::new(Counters::default);
+/// Serve counters exposes a bunch a set of metrics about the request received to quickwit.
+pub static SERVE_METRICS: Lazy<RestMetrics> = Lazy::new(RestMetrics::default);

@@ -341,6 +341,7 @@ impl S3CompatibleObjectStorage {
             content_length: Some(len as i64),
             ..Default::default()
         };
+        crate::STORAGE_METRICS.object_storage_put_parts.inc();
         self.s3_client.put_object(request).await?;
         Ok(())
     }
@@ -434,6 +435,7 @@ impl S3CompatibleObjectStorage {
             upload_id: upload_id.0,
             ..Default::default()
         };
+        crate::STORAGE_METRICS.object_storage_put_parts.inc();
         let upload_part_output = self
             .s3_client
             .upload_part(upload_part_req)
@@ -551,6 +553,7 @@ impl S3CompatibleObjectStorage {
     ) -> GetObjectRequest {
         let key = self.key(path);
         let range_str = range_opt.map(|range| format!("bytes={}-{}", range.start, range.end - 1));
+        crate::STORAGE_METRICS.object_storage_get_total.inc();
         GetObjectRequest {
             bucket: self.bucket.clone(),
             key,
@@ -584,10 +587,16 @@ impl S3CompatibleObjectStorage {
 
 async fn download_all(byte_stream: &mut ByteStream, output: &mut Vec<u8>) -> io::Result<()> {
     output.clear();
+    let object_storage_download_num_bytes = crate::STORAGE_METRICS
+        .object_storage_download_num_bytes
+        .clone();
     while let Some(chunk_res) = byte_stream.next().await {
         let chunk = chunk_res?;
+        object_storage_download_num_bytes.inc_by(chunk.len() as u64);
         output.extend(chunk.as_ref());
     }
+    // When calling `get_all`, the Vec capacity is not properly set.
+    output.shrink_to_fit();
     Ok(())
 }
 
@@ -609,6 +618,7 @@ impl Storage for S3CompatibleObjectStorage {
         path: &Path,
         payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
+        crate::STORAGE_METRICS.object_storage_put_total.inc();
         let key = self.key(path);
         let total_len = payload.len();
         let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);

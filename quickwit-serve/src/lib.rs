@@ -18,9 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod args;
-mod counters;
 mod error;
 mod format;
+mod metrics;
 
 mod grpc;
 mod rest;
@@ -39,7 +39,7 @@ use std::sync::Arc;
 
 use format::Format;
 use quickwit_actors::{Mailbox, Universe};
-use quickwit_cluster::{ClusterService, QuickwitService};
+use quickwit_cluster::{Cluster, QuickwitService};
 use quickwit_common::uri::{Uri, FILE_PROTOCOL, S3_PROTOCOL};
 use quickwit_config::QuickwitConfig;
 use quickwit_core::IndexService;
@@ -52,7 +52,7 @@ use quickwit_storage::quickwit_storage_uri_resolver;
 use warp::{Filter, Rejection};
 
 pub use crate::args::ServeArgs;
-pub use crate::counters::COUNTERS;
+pub use crate::metrics::SERVE_METRICS;
 #[cfg(test)]
 use crate::rest::recover_fn;
 
@@ -76,7 +76,7 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
 }
 
 struct QuickwitServices {
-    pub cluster_service: Arc<dyn ClusterService>,
+    pub cluster: Arc<Cluster>,
     /// We do have a search service even on nodes that are not running `search`.
     /// It is only used to serve the rest API calls and will only execute
     /// the root requests.
@@ -97,7 +97,7 @@ pub async fn serve_quickwit(
     check_is_configured_for_cluster(config, metastore.clone()).await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
 
-    let cluster_service = quickwit_cluster::start_cluster_service(config, services).await?;
+    let cluster = quickwit_cluster::start_cluster_service(config, services).await?;
 
     let universe = Universe::new();
 
@@ -129,7 +129,7 @@ pub async fn serve_quickwit(
         config,
         metastore.clone(),
         storage_resolver.clone(),
-        cluster_service.clone(),
+        cluster.clone(),
     )
     .await?;
 
@@ -140,8 +140,8 @@ pub async fn serve_quickwit(
         config.default_index_root_uri(),
     ));
     let quickwit_services = QuickwitServices {
+        cluster,
         ingest_api_service,
-        cluster_service,
         search_service,
         indexer_service,
         index_service,

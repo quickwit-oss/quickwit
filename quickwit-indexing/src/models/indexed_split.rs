@@ -100,7 +100,8 @@ impl IndexedSplit {
             ControlledDirectory::new(box_mmap_directory, progress, kill_switch);
         let index = index_builder.open_or_create(controlled_directory.clone())?;
         let index_writer = index.writer_with_num_threads(
-            indexing_resources.num_threads,
+            1, // DO NOT MODIFY THIS!
+            // This is not something that we want to use in quickwit.
             indexing_resources.heap_size.get_bytes() as usize,
         )?;
         index_writer.set_merge_policy(Box::new(NoMergePolicy));
