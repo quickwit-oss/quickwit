@@ -2614,6 +2614,7 @@ dependencies = [
  "tabled",
  "tempfile",
  "thousands",
+ "tikv-jemalloc-ctl",
  "tikv-jemallocator",
  "time 0.3.11",
  "tokio",
@@ -2930,7 +2931,6 @@ dependencies = [
  "mockall",
  "once_cell",
  "opentelemetry",
- "prometheus",
  "quickwit-actors",
  "quickwit-cluster",
  "quickwit-common",
@@ -4225,6 +4225,17 @@ dependencies = [
  "log",
  "ordered-float",
  "threadpool",
+]
+
+[[package]]
+name = "tikv-jemalloc-ctl"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e37706572f4b151dff7a0146e040804e9c26fe3a3118591112f05cf12a4216c1"
+dependencies = [
+ "libc",
+ "paste",
+ "tikv-jemalloc-sys",
 ]
 
 [[package]]
