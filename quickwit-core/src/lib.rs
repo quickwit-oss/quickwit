@@ -33,17 +33,6 @@ pub use index::{
     clear_cache_directory, get_cache_directory_path, remove_indexing_directory, IndexService,
     IndexServiceError,
 };
-use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub struct QuickwitBuildInfo {
-    pub commit_version_tag: &'static str,
-    pub cargo_pkg_version: &'static str,
-    pub cargo_build_target: &'static str,
-    pub commit_short_hash: &'static str,
-    pub commit_date: &'static str,
-    pub version: &'static str,
-}
 
 #[cfg(test)]
 mod tests {

@@ -17,26 +17,39 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { Typography } from '@mui/material';
+import { TabContext, TabList, TabPanel } from '@mui/lab';
+import { Box, Tab, Typography, styled } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 import ApiUrlFooter from '../components/ApiUrlFooter';
 import { JsonEditor } from '../components/JsonEditor';
 import { ViewUnderAppBarBox, FullBoxContainer, QBreadcrumbs } from '../components/LayoutUtils';
 import Loader from '../components/Loader';
-import ErrorResponseDisplay from '../components/ResponseErrorDisplay';
 import { Client } from '../services/client';
-import { QuickwitBuildInfo, ResponseError } from '../utils/models';
+import { QuickwitBuildInfo } from '../utils/models';
 
+const CustomTabPanel = styled(TabPanel)`
+padding-left: 0;
+padding-right: 0;
+height: 100%;
+`;
 
 function NodeInfoView() {
-  const [loading, setLoading] = useState(false);
+  const [loadingCounter, setLoadingCounter] = useState(2);
   const [nodeId, setNodeId] = useState<string>("");
   // eslint-disable-next-line
   const [nodeConfig, setNodeConfig] = useState<null | Record<string, any>>(null);
-  const [configResponseError, setConfigResponseError] = useState<ResponseError | null>(null);
   const [buildInfo, setBuildInfo] = useState<null | QuickwitBuildInfo>(null);
-  const [buildInfoResponseError, setBuildInfoResponseError] = useState<ResponseError | null>(null);
+  const [tabIndex, setTabIndex] = useState('1');
   const quickwitClient = useMemo(() => new Client(), []);
+
+  const urlByTab: Record<string, string> = {
+    '1': 'api/v1/config',
+    '2': 'api/v1/build',
+  }
+
+  const handleTabIndexChange = (_: React.SyntheticEvent, newValue: string) => {
+    setTabIndex(newValue);
+  };
 
   useEffect(() => {
     quickwitClient.cluster().then(
@@ -49,49 +62,50 @@ function NodeInfoView() {
     )
   });
   useEffect(() => {
-    setLoading(true);
+    setLoadingCounter(2);
     quickwitClient.buildInfo().then(
       (fetchedBuildInfo) => {
-        setBuildInfoResponseError(null);
-        setLoading(false);
+        setLoadingCounter(prevCounter => prevCounter - 1);
         setBuildInfo(fetchedBuildInfo);
       },
       (error) => {
-        setLoading(false);
-        setBuildInfoResponseError(error);
+        setLoadingCounter(prevCounter => prevCounter - 1);
+        console.log('Error when fetching build info: ', error);
       }
     );
     quickwitClient.config().then(
       (fetchedConfig) => {
-        setConfigResponseError(null);
-        setLoading(false);
+        setLoadingCounter(prevCounter => prevCounter - 1);
         setNodeConfig(fetchedConfig);
       },
       (error) => {
-        setLoading(false);
-        setConfigResponseError(error);
+        setLoadingCounter(prevCounter => prevCounter - 1);
+        console.log('Error when fetching node config: ', error);
       }
     );
   }, [quickwitClient]);
 
-  const renderConfigResult = () => {
-    if (configResponseError !== null) {
-      return ErrorResponseDisplay(configResponseError);
-    }
-    if (loading || nodeConfig == null) {
+  const renderResult = () => {
+    if (loadingCounter !== 0) {
       return <Loader />;
+    } else {
+      return <FullBoxContainer sx={{ px: 0 }}>
+        <TabContext value={tabIndex}>
+          <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+            <TabList onChange={handleTabIndexChange} aria-label="Index tabs">
+              <Tab label="Node config" value="1" />
+              <Tab label="Build info" value="2" />
+            </TabList>
+          </Box>
+          <CustomTabPanel value="1">
+            <JsonEditor content={nodeConfig} resizeOnMount={false} />
+          </CustomTabPanel>
+          <CustomTabPanel value="2">
+            <JsonEditor content={buildInfo} resizeOnMount={false} />
+          </CustomTabPanel>
+        </TabContext>
+      </FullBoxContainer>
     }
-    return <JsonEditor content={nodeConfig} resizeOnMount={false} />
-  }
-
-  const renderBuildInfoResult = () => {
-    if (buildInfoResponseError !== null) {
-      return ErrorResponseDisplay(buildInfoResponseError);
-    }
-    if (loading || buildInfo == null) {
-      return <Loader />;
-    }
-    return <JsonEditor content={buildInfo} resizeOnMount={false} />
   }
 
   return (
@@ -100,16 +114,9 @@ function NodeInfoView() {
         <QBreadcrumbs aria-label="breadcrumb">
           <Typography color="text.primary">Node ID: {nodeId} (self)</Typography>
         </QBreadcrumbs>
-        <Typography mt={2} color="text.secondary">Build Info</Typography>
-        <FullBoxContainer sx={{ px: 0 }}>
-          { renderBuildInfoResult() }
-        </FullBoxContainer>
-        <Typography color="text.secondary">Config</Typography>
-        <FullBoxContainer sx={{ px: 0 }}>
-          { renderConfigResult() }
-        </FullBoxContainer>
+        { renderResult() }
       </FullBoxContainer>
-      { ApiUrlFooter('api/v1/config') }
+      { ApiUrlFooter(urlByTab[tabIndex] || '') }
     </ViewUnderAppBarBox>
   );
 }
