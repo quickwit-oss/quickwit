@@ -20,7 +20,6 @@
 use std::hash::Hash;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
 use super::memory_sized_cache::MemorySizedCache;
 use crate::metrics::CacheMetrics;
@@ -34,7 +33,7 @@ struct SliceAddress {
 
 /// A simple in-resident memory slice cache.
 pub struct SliceCache {
-    inner: Mutex<MemorySizedCache<SliceAddress>>,
+    inner: MemorySizedCache<SliceAddress>,
 }
 
 impl SliceCache {
@@ -44,17 +43,17 @@ impl SliceCache {
         cache_counters: &'static CacheMetrics,
     ) -> Self {
         SliceCache {
-            inner: Mutex::new(MemorySizedCache::<SliceAddress>::with_capacity_in_bytes(
+            inner: MemorySizedCache::<SliceAddress>::with_capacity_in_bytes(
                 capacity_in_bytes,
                 cache_counters,
-            )),
+            ),
         }
     }
 
     /// Creates a slice cache that nevers removes any entry.
     pub fn with_infinite_capacity(cache_counters: &'static CacheMetrics) -> Self {
         SliceCache {
-            inner: Mutex::new(MemorySizedCache::with_infinite_capacity(cache_counters)),
+            inner: MemorySizedCache::with_infinite_capacity(cache_counters),
         }
     }
 
@@ -64,7 +63,7 @@ impl SliceCache {
             path: path.to_path_buf(),
             byte_range: bytes_range,
         };
-        self.inner.lock().unwrap().get(&slice_addr)
+        self.inner.get(&slice_addr)
     }
 
     /// Attempt to put the given amount of data in the cache.
@@ -72,7 +71,7 @@ impl SliceCache {
     /// capacity.
     pub fn put(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) {
         let slice_addr = SliceAddress { path, byte_range };
-        self.inner.lock().unwrap().put(slice_addr, bytes);
+        self.inner.put(slice_addr, bytes);
     }
 }
 
