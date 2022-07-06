@@ -715,10 +715,8 @@ impl Metastore for PostgresqlMetastore {
         })
     }
 
-    fn uri(&self) -> String {
-        // TODO: This is dangerous because it may leak the db credentials. We must generalize the
-        // use of the `Uri` struct eventually.
-        self.uri.to_string()
+    fn uri(&self) -> &Uri {
+        &self.uri
     }
 }
 
@@ -812,9 +810,8 @@ impl PostgresqlMetastoreFactory {
 
 #[async_trait]
 impl MetastoreFactory for PostgresqlMetastoreFactory {
-    async fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
-        let uri = Uri::new(uri.to_string());
-        if let Some(metastore) = self.get_from_cache(&uri).await {
+    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+        if let Some(metastore) = self.get_from_cache(uri).await {
             debug!("using metastore from cache");
             return Ok(metastore);
         }
@@ -822,7 +819,7 @@ impl MetastoreFactory for PostgresqlMetastoreFactory {
         let metastore = PostgresqlMetastore::new(uri.clone())
             .await
             .map_err(MetastoreResolverError::FailedToOpenMetastore)?;
-        let metastore = self.cache_metastore(uri, Arc::new(metastore)).await;
+        let metastore = self.cache_metastore(uri.clone(), Arc::new(metastore)).await;
         Ok(metastore)
     }
 }

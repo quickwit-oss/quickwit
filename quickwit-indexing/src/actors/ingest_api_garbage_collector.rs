@@ -176,6 +176,7 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::Universe;
+    use quickwit_common::uri::Uri;
     use quickwit_config::IndexerConfig;
     use quickwit_ingest_api::spawn_ingest_api_actor;
     use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
@@ -183,25 +184,23 @@ mod tests {
     use quickwit_storage::StorageUriResolver;
 
     use super::*;
-    const METASTORE_URI: &str = "ram:///qwdata/indexes";
 
     #[tokio::test]
     async fn test_ingest_api_garbage_collector() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
-        let universe = Universe::new();
-        let index_id = "my-index".to_string();
-        let temp_dir = tempfile::tempdir().unwrap();
-
-        // Setup metastore
-        let index_uri = format!("{}/{}", METASTORE_URI, index_id);
+        let index_id = "test-index".to_string();
+        let index_uri = format!("ram:///indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
+
+        let metastore_uri = Uri::new("ram:///metastore".to_string());
         let metastore = quickwit_metastore_uri_resolver()
-            .resolve(METASTORE_URI)
+            .resolve(&metastore_uri)
             .await
             .unwrap();
         metastore.create_index(index_metadata).await.unwrap();
 
         // Setup ingest api objects
+        let universe = Universe::new();
+        let temp_dir = tempfile::tempdir().unwrap();
         let ingest_api_mailbox =
             spawn_ingest_api_actor(&universe, temp_dir.path().join("queues").as_path())?;
         let create_queue_req = CreateQueueIfNotExistsRequest {

@@ -27,7 +27,7 @@ use json_comments::StripComments;
 use once_cell::sync::OnceCell;
 use quickwit_common::net::{find_private_ip, Host, HostAddr};
 use quickwit_common::new_coolid;
-use quickwit_common::uri::{Extension, Uri, FILE_PROTOCOL};
+use quickwit_common::uri::{Extension, Uri};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use tracing::{info, warn};
@@ -280,7 +280,7 @@ impl QuickwitConfig {
         }
         let data_dir_uri = Uri::try_new(&self.data_dir_path.to_string_lossy())?;
 
-        if data_dir_uri.protocol() != FILE_PROTOCOL {
+        if !data_dir_uri.protocol().is_file() {
             bail!("Data dir must be located on local file system")
         }
         if !self.data_dir_path.exists() {

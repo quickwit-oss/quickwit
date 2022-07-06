@@ -455,24 +455,24 @@ mod tests {
 
     use quickwit_actors::{ObservationType, Universe};
     use quickwit_common::rand::append_random_suffix;
+    use quickwit_common::uri::Uri;
     use quickwit_config::VecSourceParams;
     use quickwit_metastore::quickwit_metastore_uri_resolver;
 
     use super::*;
 
-    const METASTORE_URI: &str = "ram:///qwdata/indexes";
-
     #[tokio::test]
-    async fn test_indexing_server() {
-        quickwit_common::setup_logging_for_tests();
-        let index_id = append_random_suffix("test-indexing-service");
-        let index_uri = format!("{}/{}", METASTORE_URI, index_id);
-        let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
-
+    async fn test_indexing_service() {
+        let metastore_uri = Uri::new("ram:///metastore".to_string());
         let metastore = quickwit_metastore_uri_resolver()
-            .resolve(METASTORE_URI)
+            .resolve(&metastore_uri)
             .await
             .unwrap();
+
+        let index_id = append_random_suffix("test-indexing-service");
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
+
         metastore.create_index(index_metadata).await.unwrap();
 
         // Test `IndexingService::new`.
