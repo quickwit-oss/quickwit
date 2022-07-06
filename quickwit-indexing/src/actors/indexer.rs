@@ -44,7 +44,7 @@ struct CommitTimeout {
 
 #[derive(Clone, Default, Debug, Eq, PartialEq)]
 pub struct IndexerCounters {
-    /// Overall number of documents received, partitionned
+    /// Overall number of documents received, partitioned
     /// into 3 categories:
     /// - number docs that did not parse correctly.
     /// - number docs missing a timestamp (if the index has no timestamp,
