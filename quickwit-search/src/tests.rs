@@ -44,7 +44,6 @@ async fn test_single_node_simple() -> anyhow::Result<()> {
     let docs = vec![
         json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
         json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle"}),
-        json!({"title": "hamsters", "body": "A hamsters is a small rodent popularized these days as pets.", "url": "http://hamsters"}),
     ];
     test_sandbox.add_documents(docs.clone()).await?;
     let search_request = SearchRequest {
@@ -95,8 +94,17 @@ async fn slop_search_and_check(
         test_sandbox.storage_uri_resolver(),
     )
     .await?;
-    assert_eq!(single_node_result.num_hits, expected_num_match);
-    assert_eq!(single_node_result.hits.len(), expected_num_match as usize);
+    assert_eq!(
+        single_node_result.num_hits, expected_num_match,
+        "query: {}",
+        query
+    );
+    assert_eq!(
+        single_node_result.hits.len(),
+        expected_num_match as usize,
+        "query: {}",
+        query
+    );
     Ok(())
 }
 
