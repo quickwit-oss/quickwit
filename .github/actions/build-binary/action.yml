@@ -1,14 +1,14 @@
-name: 'Build Quickwit binary'
-description: 'Build react app and and rust with cargo cross.'
+name: "Build Quickwit binary"
+description: "Build React app and Rust binary with cargo cross."
 inputs:
   target:
-    description: 'Target'
+    description: "Target"
     required: true
   version:
-    description: 'Binary version'
+    description: "Binary version"
     required: true
   token:
-    description: 'Github access token'
+    description: "GitHub access token"
     required: true
 runs:
   using: "composite"
@@ -18,7 +18,7 @@ runs:
     - uses: actions/setup-node@v3
       with:
         node-version: 16
-        cache: 'yarn'
+        cache: "yarn"
         cache-dependency-path: quickwit-ui/yarn.lock
     - run: make build-ui
       shell: bash
@@ -37,7 +37,7 @@ runs:
         make archive BINARY_FILE=target/${{ inputs.target }}/release/quickwit \
           BINARY_VERSION=${{ inputs.version }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
       shell: bash
-    - name: Save binary archive for few days
+    - name: Save binary archive for three days
       uses: actions/upload-artifact@v3
       with:
         name: ${{ env.ASSET_FULL_NAME }}.tar.gz

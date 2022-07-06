@@ -19,11 +19,14 @@
 
 use std::borrow::Borrow;
 use std::hash::Hash;
+use std::ops::Range;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use lru::{KeyRef, LruCache};
 use tracing::{error, warn};
 
+use crate::cache::slice_address::{SliceAddress, SliceAddressKey, SliceAddressRef};
 use crate::metrics::CacheMetrics;
 use crate::OwnedBytes;
 
@@ -141,7 +144,7 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
 }
 
 /// A simple in-resident memory slice cache.
-pub struct MemorySizedCache<K: Hash + Eq> {
+pub struct MemorySizedCache<K: Hash + Eq = SliceAddress> {
     inner: Mutex<NeedMutMemorySizedCache<K>>,
 }
 
@@ -186,18 +189,31 @@ impl<K: Hash + Eq> MemorySizedCache<K> {
     }
 }
 
+impl MemorySizedCache<SliceAddress> {
+    /// If available, returns the cached view of the slice.
+    pub fn get_slice(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
+        let slice_address_ref = SliceAddressRef { path, byte_range };
+        self.get(&slice_address_ref as &dyn SliceAddressKey)
+    }
+
+    /// Attempt to put the given amount of data in the cache.
+    /// This may fail silently if the owned_bytes slice is larger than the cache
+    /// capacity.
+    pub fn put_slice(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) {
+        let slice_address = SliceAddress { path, byte_range };
+        self.put(slice_address, bytes);
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
     use super::*;
-    use crate::STORAGE_METRICS;
+    use crate::metrics::CACHE_METRICS_FOR_TESTS;
 
     #[test]
     fn test_cache_edge_condition() {
-        let cache = MemorySizedCache::<String>::with_capacity_in_bytes(
-            5,
-            &STORAGE_METRICS.fast_field_cache,
-        );
+        let cache = MemorySizedCache::<String>::with_capacity_in_bytes(5, &CACHE_METRICS_FOR_TESTS);
         {
             let data = OwnedBytes::new(&b"abc"[..]);
             cache.put("3".to_string(), data);
@@ -230,7 +246,7 @@ mod tests {
 
     #[test]
     fn test_cache_edge_unlimited_capacity() {
-        let cache = MemorySizedCache::with_infinite_capacity(&STORAGE_METRICS.fast_field_cache);
+        let cache = MemorySizedCache::with_infinite_capacity(&CACHE_METRICS_FOR_TESTS);
         {
             let data = OwnedBytes::new(&b"abc"[..]);
             cache.put("3".to_string(), data);
@@ -246,8 +262,7 @@ mod tests {
 
     #[test]
     fn test_cache() {
-        let cache =
-            MemorySizedCache::with_capacity_in_bytes(10_000, &STORAGE_METRICS.fast_field_cache);
+        let cache = MemorySizedCache::with_capacity_in_bytes(10_000, &CACHE_METRICS_FOR_TESTS);
         assert!(cache.get(&"hello.seg").is_none());
         let data = OwnedBytes::new(&b"werwer"[..]);
         cache.put("hello.seg", data);

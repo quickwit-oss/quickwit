@@ -29,8 +29,6 @@ use tantivy::directory::{FileHandle, OwnedBytes};
 use tantivy::{Directory, HasLen};
 use time::OffsetDateTime;
 
-use crate::StorageDirectory;
-
 #[derive(Clone, Default)]
 struct OperationBuffer(Arc<Mutex<Vec<ReadOperation>>>);
 
@@ -223,26 +221,6 @@ impl<D: Directory> Directory for DebugProxyDirectory<D> {
     }
 
     crate::read_only_directory!();
-}
-
-impl DebugProxyDirectory<StorageDirectory> {
-    /// Fetches a slice of byte from a file asynchronously.
-    pub async fn get_slice(&self, path: &Path, range: Range<usize>) -> io::Result<OwnedBytes> {
-        let read_operation_builder = ReadOperationBuilder::new(path);
-        let payload = self.underlying.get_slice(path, range).await?;
-        let read_operation = read_operation_builder.terminate(payload.len());
-        self.register_async(read_operation).await;
-        Ok(payload)
-    }
-
-    /// Fetches an entire file asynchronously.
-    pub async fn get_all(&self, path: &Path) -> io::Result<OwnedBytes> {
-        let read_operation_builder = ReadOperationBuilder::new(path);
-        let payload = self.underlying.get_all(path).await?;
-        let read_operation = read_operation_builder.terminate(payload.len());
-        self.register_async(read_operation).await;
-        Ok(payload)
-    }
 }
 
 #[cfg(test)]
