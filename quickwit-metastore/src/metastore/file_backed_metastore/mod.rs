@@ -655,7 +655,7 @@ mod tests {
             footer_offsets: 1000..2000,
             split_id: split_id.to_string(),
             num_docs: 1,
-            original_size_in_bytes: 2,
+            uncompressed_docs_size_in_bytes: 2,
             time_range: Some(RangeInclusive::new(0, 99)),
             create_timestamp: current_timestamp,
             ..Default::default()
@@ -745,7 +745,7 @@ mod tests {
             footer_offsets: 1000..2000,
             split_id: "split1".to_string(),
             num_docs: 1,
-            original_size_in_bytes: 2,
+            uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
             ..Default::default()
         };
@@ -776,7 +776,7 @@ mod tests {
             footer_offsets: 1000..2000,
             split_id: "split1".to_string(),
             num_docs: 1,
-            original_size_in_bytes: 2,
+            uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
             ..Default::default()
         };
@@ -815,7 +815,7 @@ mod tests {
                     footer_offsets: 1000..2000,
                     split_id: format!("split-{}", i),
                     num_docs: 1,
-                    original_size_in_bytes: 2,
+                    uncompressed_docs_size_in_bytes: 2,
                     time_range: Some(RangeInclusive::new(0, 99)),
                     create_timestamp: current_timestamp,
                     ..Default::default()

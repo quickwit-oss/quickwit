@@ -99,7 +99,7 @@
         "start": 1000
       },
       "num_docs": 12303,
-      "size_in_bytes": 234234,
+      "uncompressed_docs_size_in_bytes": 234234,
       "split_id": "split",
       "split_state": "Published",
       "tags": [

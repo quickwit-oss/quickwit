@@ -183,7 +183,7 @@ pub fn mock_split_meta(split_id: &str) -> SplitMetadata {
     SplitMetadata {
         split_id: split_id.to_string(),
         num_docs: 10,
-        original_size_in_bytes: 256,
+        uncompressed_docs_size_in_bytes: 256,
         time_range: None,
         create_timestamp: 0,
         tags: Default::default(),

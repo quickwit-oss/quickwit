@@ -65,7 +65,8 @@
         "merge_factor": 9
       },
       "resources": {
-        "heap_size": 3
+        "heap_size": 3,
+        "num_threads": 3
       },
       "sort_field": "timestamp",
       "sort_order": "asc",
@@ -99,7 +100,6 @@
         "start": 1000
       },
       "num_docs": 12303,
-      "uncompressed_docs_size_in_bytes": 234234,
       "split_id": "split",
       "split_state": "Published",
       "tags": [
@@ -110,6 +110,7 @@
         "end": 130198,
         "start": 121000
       },
+      "uncompressed_docs_size_in_bytes": 234234,
       "update_timestamp": 1789,
       "version": "1"
     }
