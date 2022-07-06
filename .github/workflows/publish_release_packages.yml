@@ -3,7 +3,7 @@ name: Build and publish release packages
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 jobs:
   build-native-binaries:
@@ -16,7 +16,7 @@ jobs:
             os: macos-latest
             target: x86_64-apple-darwin
           # TODO: uncomment this when windows is fully supported.
-          #   Also windows artifact doesn't need to be archived     
+          #   Also windows artifact doesn't need to be archived
           # - build: windows
           #   os: windows-latest
           #   target: x86_64-pc-windows.exe
@@ -66,15 +66,3 @@ jobs:
           target: ${{ matrix.target }}
           version: ${{ env.ASSET_VERSION }}
           token: ${{ secrets.GITHUB_TOKEN }}
-
-  build-and-push-docker-image:
-    name: Build & push docker images
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out the repo
-        uses: actions/checkout@v3
-      - name: Build and push main docker image
-        uses: ./.github/actions/build-docker
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          token: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}

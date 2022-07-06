@@ -14,8 +14,8 @@ on:
 env:
   QW_S3_ENDPOINT: "http://localhost:4566" # Services are exposed as localhost because we are not running coverage in a container.
   CARGO_INCREMENTAL: 0
-  AWS_DEFAULT_REGION  : "localhost"
-  AWS_ACCESS_KEY_ID   : "placeholder"
+  AWS_DEFAULT_REGION: "localhost"
+  AWS_ACCESS_KEY_ID: "placeholder"
   AWS_SECRET_ACCESS_KEY: "placeholder"
   TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev
 
