@@ -126,6 +126,8 @@ pub async fn fetch_docs(
     Ok(FetchDocsResponse { hits })
 }
 
+const NUM_CONCURRENT_REQUESTS: usize = 10;
+
 async fn get_searcher_for_split_without_cache(
     num_searchers: usize,
     index_storage: Arc<dyn Storage>,
@@ -137,6 +139,8 @@ async fn get_searcher_for_split_without_cache(
     let reader = index
         .reader_builder()
         .num_searchers(num_searchers)
+        // the docs are presorted so a cache size of NUM_CONCURRENT_REQUESTS is fine
+        .doc_store_cache_size(NUM_CONCURRENT_REQUESTS)
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     Ok(reader)
@@ -165,8 +169,6 @@ async fn fetch_docs_in_split(
             Ok((global_doc_addr, doc_json))
         }
     });
-
-    const NUM_CONCURRENT_REQUESTS: usize = 10;
 
     let stream = futures::stream::iter(doc_futures).buffer_unordered(NUM_CONCURRENT_REQUESTS);
     stream.try_collect::<Vec<_>>().await
