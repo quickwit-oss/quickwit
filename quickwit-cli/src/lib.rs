@@ -25,7 +25,6 @@ use once_cell::sync::Lazy;
 use quickwit_common::run_checklist;
 use quickwit_common::uri::Uri;
 use quickwit_config::{QuickwitConfig, SourceConfig};
-use quickwit_core::QuickwitBuildInfo;
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
@@ -52,17 +51,6 @@ pub const QW_TOKIO_CONSOLE_ENABLED_ENV_KEY: &str = "QW_TOKIO_CONSOLE_ENABLED";
 
 /// Regular expression representing a valid duration with unit.
 pub const DURATION_WITH_UNIT_PATTERN: &str = r#"^(\d{1,3})(s|m|h|d)$"#;
-
-/// Builds QuickwitBuildInfo from env variables.
-pub fn get_qw_build_info() -> QuickwitBuildInfo {
-    QuickwitBuildInfo::new(
-        env!("QW_COMMIT_VERSION_TAG").to_string(),
-        env!("CARGO_PKG_VERSION").to_string(),
-        env!("CARGO_BUILD_TARGET").to_string(),
-        env!("QW_COMMIT_SHORT_HASH").to_string(),
-        env!("QW_COMMIT_DATE").to_string(),
-    )
-}
 
 /// Parse duration with unit like `1s`, `2m`, `3h`, `5d`.
 pub fn parse_duration_with_unit(duration_with_unit_str: &str) -> anyhow::Result<Duration> {

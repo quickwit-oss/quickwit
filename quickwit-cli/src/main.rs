@@ -24,8 +24,9 @@ use anyhow::Context;
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
 use quickwit_cli::cli::{build_cli, CliCommand};
-use quickwit_cli::{get_qw_build_info, QW_JAEGER_ENABLED_ENV_KEY};
+use quickwit_cli::QW_JAEGER_ENABLED_ENV_KEY;
 use quickwit_common::metrics::new_gauge;
+use quickwit_serve::build_quickwit_build_info;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tikv_jemallocator::Jemalloc;
 use tracing::{error, info, Level};
@@ -122,11 +123,11 @@ async fn main() -> anyhow::Result<()> {
 
     let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
     let about_text = about_text();
-    let build_info = get_qw_build_info();
+    let build_info = build_quickwit_build_info();
 
     let app = build_cli()
         .about(about_text.as_str())
-        .version(build_info.version.as_str());
+        .version(build_info.version);
     let matches = app.get_matches();
 
     let command = match CliCommand::parse_cli_args(&matches) {
@@ -145,8 +146,8 @@ async fn main() -> anyhow::Result<()> {
 
     setup_logging_and_tracing(command.default_log_level())?;
     info!(
-        version = env!("CARGO_PKG_VERSION"),
-        commit = env!("QW_COMMIT_SHORT_HASH"),
+        version = build_info.version,
+        commit = build_info.commit_short_hash,
     );
 
     let return_code: i32 = if let Err(err) = command.execute().await {

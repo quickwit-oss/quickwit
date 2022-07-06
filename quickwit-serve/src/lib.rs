@@ -43,13 +43,14 @@ use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::{Cluster, QuickwitService};
 use quickwit_common::uri::{Uri, FILE_PROTOCOL, S3_PROTOCOL};
 use quickwit_config::QuickwitConfig;
-use quickwit_core::{IndexService, QuickwitBuildInfo};
+use quickwit_core::IndexService;
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexer_service;
 use quickwit_ingest_api::{init_ingest_api, IngestApiService};
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore};
 use quickwit_search::{start_searcher_service, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
+use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
 
 pub use crate::args::ServeArgs;
@@ -91,7 +92,6 @@ struct QuickwitServices {
 }
 
 pub async fn serve_quickwit(
-    build_info: QuickwitBuildInfo,
     config: QuickwitConfig,
     services: &HashSet<QuickwitService>,
 ) -> anyhow::Result<()> {
@@ -148,7 +148,7 @@ pub async fn serve_quickwit(
 
     let quickwit_services = QuickwitServices {
         config: Arc::new(config),
-        build_info: Arc::new(build_info),
+        build_info: Arc::new(build_quickwit_build_info()),
         cluster,
         ingest_api_service,
         search_service,
@@ -193,6 +193,36 @@ async fn check_is_configured_for_cluster(
         }
     }
     Ok(())
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct QuickwitBuildInfo {
+    pub commit_version_tag: &'static str,
+    pub cargo_pkg_version: &'static str,
+    pub cargo_build_target: &'static str,
+    pub commit_short_hash: &'static str,
+    pub commit_date: &'static str,
+    pub version: &'static str,
+}
+
+/// Builds QuickwitBuildInfo from env variables.
+pub fn build_quickwit_build_info() -> QuickwitBuildInfo {
+    let commit_version_tag = env!("QW_COMMIT_VERSION_TAG");
+    let cargo_pkg_version = env!("CARGO_PKG_VERSION");
+    let version = if commit_version_tag == "none" {
+        // concat macro only accepts literals.
+        concat!(env!("CARGO_PKG_VERSION"), "nightly")
+    } else {
+        cargo_pkg_version
+    };
+    QuickwitBuildInfo {
+        commit_version_tag,
+        cargo_pkg_version,
+        cargo_build_target: env!("CARGO_BUILD_TARGET"),
+        commit_short_hash: env!("QW_COMMIT_SHORT_HASH"),
+        commit_date: env!("QW_COMMIT_DATE"),
+        version,
+    }
 }
 
 #[cfg(test)]

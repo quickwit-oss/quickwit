@@ -29,7 +29,7 @@ use quickwit_serve::serve_quickwit;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::debug;
 
-use crate::{get_qw_build_info, load_quickwit_config};
+use crate::load_quickwit_config;
 
 pub fn build_run_command<'a>() -> Command<'a> {
     Command::new("run")
@@ -131,7 +131,7 @@ impl RunCliCommand {
         // Revalidate config because of overrides.
         config.validate()?;
 
-        serve_quickwit(get_qw_build_info(), config, &self.services).await?;
+        serve_quickwit(config, &self.services).await?;
         Ok(())
     }
 }

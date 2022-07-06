@@ -21,10 +21,9 @@ use std::sync::Arc;
 
 use quickwit_common::uri::Uri;
 use quickwit_config::QuickwitConfig;
-use quickwit_core::QuickwitBuildInfo;
 use warp::{Filter, Rejection};
 
-use crate::with_arg;
+use crate::{with_arg, QuickwitBuildInfo};
 
 pub fn node_info_handler(
     build_info: Arc<QuickwitBuildInfo>,
@@ -74,13 +73,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_rest_node_info() -> anyhow::Result<()> {
-        let build_info = QuickwitBuildInfo::new(
-            "commit_version_tag".to_string(),
-            "cargo_pkg_version".to_string(),
-            "cargo_build_target".to_string(),
-            "commit_short_hash".to_string(),
-            "commit_date".to_string(),
-        );
+        let build_info = QuickwitBuildInfo {
+            commit_version_tag: "commit_version_tag",
+            cargo_pkg_version: "cargo_pkg_version",
+            cargo_build_target: "cargo_build_target",
+            commit_short_hash: "commit_short_hash",
+            commit_date: "commit_date",
+            version: "version",
+        };
         let mut config = QuickwitConfig::default();
         config.metastore_uri = Some(Uri::new("postgresql://username:password@db".to_string()));
         let handler =
@@ -88,8 +88,12 @@ mod tests {
                 .recover(recover_fn);
         let resp = warp::test::request().path("/version").reply(&handler).await;
         assert_eq!(resp.status(), 200);
-        let resp_build_info: QuickwitBuildInfo = serde_json::from_slice(resp.body())?;
-        assert_eq!(resp_build_info, build_info);
+        let resp_build_info_json: serde_json::Value = serde_json::from_slice(resp.body())?;
+        let expected_build_json = serde_json::json!({
+            "commit_date": "commit_date",
+            "version": "version",
+        });
+        assert_json_include!(actual: resp_build_info_json, expected: expected_build_json);
 
         let resp = warp::test::request().path("/config").reply(&handler).await;
         assert_eq!(resp.status(), 200);
