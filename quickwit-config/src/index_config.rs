@@ -32,7 +32,7 @@ use quickwit_doc_mapper::{
 use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 
-use crate::config::deser_valid_uri;
+use crate::config::deser_and_validate_uri;
 use crate::source_config::SourceConfig;
 use crate::{is_false, validate_identifier};
 
@@ -234,7 +234,7 @@ pub struct IndexConfig {
     pub version: usize,
     pub index_id: String,
     #[serde(default)]
-    #[serde(deserialize_with = "deser_valid_uri")]
+    #[serde(deserialize_with = "deser_and_validate_uri")]
     pub index_uri: Option<Uri>,
     pub doc_mapping: DocMapping,
     #[serde(default)]

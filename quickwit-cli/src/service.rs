@@ -114,7 +114,7 @@ impl RunCliCommand {
         // TODO: Remove these overrides when #1011 lands.
         if let Some(metastore_uri) = &self.metastore_uri {
             tracing::info!(metastore_uri = %metastore_uri, "Setting metastore URI from override.");
-            config.metastore_uri = Some(metastore_uri.clone());
+            config.metastore_uri = metastore_uri.clone();
         }
         if let Some(cluster_id) = &self.cluster_id {
             tracing::info!(cluster_id = %cluster_id, "Setting cluster ID from override.");

@@ -2115,6 +2115,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "new_string_template"
+version = "1.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "427d2a595c488ee51abc942d6b7ebec8467a3edef0d928486ea2ce4f95516637"
+dependencies = [
+ "lazy_static",
+ "regex",
+]
+
+[[package]]
 name = "no-std-net"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2933,6 +2943,7 @@ dependencies = [
  "humansize",
  "humantime",
  "itertools",
+ "new_string_template",
  "once_cell",
  "openssl-probe",
  "opentelemetry",
@@ -3019,6 +3030,7 @@ version = "0.3.1"
 dependencies = [
  "anyhow",
  "byte-unit",
+ "futures",
  "json_comments",
  "once_cell",
  "quickwit-common",
