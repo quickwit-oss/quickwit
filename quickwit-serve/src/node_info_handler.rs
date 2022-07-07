@@ -57,16 +57,20 @@ fn node_config_handler(
 async fn get_config(config: Arc<QuickwitConfig>) -> Result<impl warp::Reply, Rejection> {
     // We need to hide sensitive information from metastore URI.
     let mut config_to_serialize = (*config).clone();
-    config_to_serialize.metastore_uri = config_to_serialize
-        .metastore_uri
-        .map(|uri| uri.as_redacted_str().to_string())
-        .map(Uri::new);
+    let redacted_uri = Uri::new(
+        config_to_serialize
+            .metastore_uri
+            .as_redacted_str()
+            .to_string(),
+    );
+    config_to_serialize.metastore_uri = redacted_uri;
     Ok(warp::reply::json(&config_to_serialize))
 }
 
 #[cfg(test)]
 mod tests {
     use assert_json_diff::assert_json_include;
+    use quickwit_config::QuickwitConfigBuilder;
 
     use super::*;
     use crate::recover_fn;
@@ -81,8 +85,8 @@ mod tests {
             commit_date: "commit_date",
             version: "version",
         };
-        let mut config = QuickwitConfig::default();
-        config.metastore_uri = Some(Uri::new("postgresql://username:password@db".to_string()));
+        let mut config = QuickwitConfigBuilder::default().resolve().await?;
+        config.metastore_uri = Uri::new("postgresql://username:password@db".to_string());
         let handler =
             super::node_info_handler(Arc::new(build_info.clone()), Arc::new(config.clone()))
                 .recover(recover_fn);
