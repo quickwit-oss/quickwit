@@ -3,12 +3,6 @@ FROM rust:bullseye AS builder
 ARG CARGO_FEATURES=release-feature-set
 ARG CARGO_PROFILE=release
 
-# Labels
-LABEL org.opencontainers.image.title="Quickwit"
-LABEL maintainer="Quickwit, Inc. <hello@quickwit.io>"
-LABEL org.opencontainers.image.vendor="Quickwit, Inc."
-LABEL org.opencontainers.image.licenses="AGPL-3.0"
-
 RUN echo "Adding Node.js PPA" \
     && curl -s https://deb.nodesource.com/setup_16.x | bash
 
@@ -51,7 +45,13 @@ RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CAR
 COPY ./config/quickwit.yaml ./config/quickwit.yaml
 RUN sed -i 's/#[ ]*listen_address: 127.0.0.1/listen_address: 0.0.0.0/g' ./config/quickwit.yaml
 
+
 FROM debian:bullseye-slim AS quickwit
+
+LABEL org.opencontainers.image.title="Quickwit"
+LABEL maintainer="Quickwit, Inc. <hello@quickwit.io>"
+LABEL org.opencontainers.image.vendor="Quickwit, Inc."
+LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
 RUN apt-get -y update \
     && apt-get -y install ca-certificates \

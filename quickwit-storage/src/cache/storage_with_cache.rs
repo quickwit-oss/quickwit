@@ -23,7 +23,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::{Cache, OwnedBytes, Storage, StorageResult};
+use crate::cache::Cache;
+use crate::{OwnedBytes, Storage, StorageResult};
 
 /// Use with care, StorageWithCache is read-only.
 pub(crate) struct StorageWithCache {

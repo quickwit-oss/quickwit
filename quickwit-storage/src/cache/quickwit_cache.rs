@@ -24,8 +24,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use quickwit_config::get_searcher_config_instance;
 
+use crate::cache::{Cache, MemorySizedCache};
 use crate::metrics::CacheMetrics;
-use crate::{Cache, OwnedBytes, SliceCache};
+use crate::OwnedBytes;
 
 const FULL_SLICE: Range<usize> = 0..usize::MAX;
 
@@ -79,6 +80,9 @@ impl QuickwitCache {
 #[async_trait]
 impl Cache for QuickwitCache {
     async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
+        // We don't check for the presence of the entire file in the
+        // cache.
+        // That's voluntary to avoid messing with the cache miss counts.
         if let Some(cache) = self.get_relevant_cache(path) {
             return cache.get(path, byte_range).await;
         }
@@ -112,7 +116,7 @@ impl Cache for QuickwitCache {
 /// HACK! We use `0..usize::MAX` to signify the "entire file".
 /// TODO fixme
 struct SimpleCache {
-    slice_cache: SliceCache,
+    slice_cache: MemorySizedCache,
 }
 
 impl SimpleCache {
@@ -121,7 +125,10 @@ impl SimpleCache {
         cache_counters: &'static CacheMetrics,
     ) -> Self {
         SimpleCache {
-            slice_cache: SliceCache::with_capacity_in_bytes(capacity_in_bytes, cache_counters),
+            slice_cache: MemorySizedCache::with_capacity_in_bytes(
+                capacity_in_bytes,
+                cache_counters,
+            ),
         }
     }
 }
@@ -129,25 +136,22 @@ impl SimpleCache {
 #[async_trait]
 impl Cache for SimpleCache {
     async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
-        if let Some(bytes) = self.get_all(path).await {
-            return Some(bytes.slice(byte_range.clone()));
-        }
-        if let Some(bytes) = self.slice_cache.get(path, byte_range) {
+        if let Some(bytes) = self.slice_cache.get_slice(path, byte_range) {
             return Some(bytes);
         }
         None
     }
 
     async fn put(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) {
-        self.slice_cache.put(path, byte_range, bytes);
+        self.slice_cache.put_slice(path, byte_range, bytes);
     }
 
     async fn get_all(&self, path: &Path) -> Option<OwnedBytes> {
-        self.slice_cache.get(path, FULL_SLICE.clone())
+        self.slice_cache.get_slice(path, FULL_SLICE)
     }
 
     async fn put_all(&self, path: PathBuf, bytes: OwnedBytes) {
-        self.slice_cache.put(path, FULL_SLICE.clone(), bytes);
+        self.slice_cache.put_slice(path, FULL_SLICE.clone(), bytes);
     }
 }
 
@@ -157,7 +161,8 @@ mod tests {
     use std::sync::Arc;
 
     use super::QuickwitCache;
-    use crate::{Cache, MockCache, OwnedBytes};
+    use crate::cache::{Cache, MockCache};
+    use crate::OwnedBytes;
 
     #[tokio::test]
     async fn test_quickwit_cache_get_all() {

@@ -3,8 +3,7 @@ name: Tutorial request
 about: Suggest a Quickwit tutorial
 title: "[Tutorial topic]"
 labels: tutorial
-assignees: ''
-
+assignees: ""
 ---
 
 <!--
