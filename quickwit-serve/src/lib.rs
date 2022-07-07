@@ -30,6 +30,7 @@ mod health_check_api;
 mod index_api;
 mod indexing_api;
 mod ingest_api;
+mod node_info_handler;
 mod search_api;
 mod ui_handler;
 
@@ -49,6 +50,7 @@ use quickwit_ingest_api::{init_ingest_api, IngestApiService};
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore};
 use quickwit_search::{start_searcher_service, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
+use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
 
 pub use crate::args::ServeArgs;
@@ -76,6 +78,8 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
 }
 
 struct QuickwitServices {
+    pub config: Arc<QuickwitConfig>,
+    pub build_info: Arc<QuickwitBuildInfo>,
     pub cluster: Arc<Cluster>,
     /// We do have a search service even on nodes that are not running `search`.
     /// It is only used to serve the rest API calls and will only execute
@@ -88,16 +92,16 @@ struct QuickwitServices {
 }
 
 pub async fn serve_quickwit(
-    config: &QuickwitConfig,
+    config: QuickwitConfig,
     services: &HashSet<QuickwitService>,
 ) -> anyhow::Result<()> {
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri())
         .await?;
-    check_is_configured_for_cluster(config, metastore.clone()).await?;
+    check_is_configured_for_cluster(&config, metastore.clone()).await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
 
-    let cluster = quickwit_cluster::start_cluster_service(config, services).await?;
+    let cluster = quickwit_cluster::start_cluster_service(&config, services).await?;
 
     let universe = Universe::new();
 
@@ -114,7 +118,7 @@ pub async fn serve_quickwit(
         if services.contains(&QuickwitService::Indexer) {
             let indexer_service = start_indexer_service(
                 &universe,
-                config,
+                &config,
                 metastore.clone(),
                 storage_resolver.clone(),
                 ingest_api_service.clone(),
@@ -126,7 +130,7 @@ pub async fn serve_quickwit(
         };
 
     let search_service: Arc<dyn SearchService> = start_searcher_service(
-        config,
+        &config,
         metastore.clone(),
         storage_resolver.clone(),
         cluster.clone(),
@@ -139,7 +143,12 @@ pub async fn serve_quickwit(
         storage_resolver,
         config.default_index_root_uri(),
     ));
+    let grpc_listen_addr = config.grpc_listen_addr().await?;
+    let rest_listen_addr = config.rest_listen_addr().await?;
+
     let quickwit_services = QuickwitServices {
+        config: Arc::new(config),
+        build_info: Arc::new(build_quickwit_build_info()),
         cluster,
         ingest_api_service,
         search_service,
@@ -147,10 +156,7 @@ pub async fn serve_quickwit(
         index_service,
         services: services.clone(),
     };
-    let grpc_listen_addr = config.grpc_listen_addr().await?;
     let grpc_server = grpc::start_grpc_server(grpc_listen_addr, &quickwit_services);
-
-    let rest_listen_addr = config.rest_listen_addr().await?;
     let rest_server = rest::start_rest_server(rest_listen_addr, &quickwit_services);
 
     tokio::try_join!(grpc_server, rest_server)?;
@@ -187,6 +193,36 @@ async fn check_is_configured_for_cluster(
         }
     }
     Ok(())
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct QuickwitBuildInfo {
+    pub commit_version_tag: &'static str,
+    pub cargo_pkg_version: &'static str,
+    pub cargo_build_target: &'static str,
+    pub commit_short_hash: &'static str,
+    pub commit_date: &'static str,
+    pub version: &'static str,
+}
+
+/// Builds QuickwitBuildInfo from env variables.
+pub fn build_quickwit_build_info() -> QuickwitBuildInfo {
+    let commit_version_tag = env!("QW_COMMIT_VERSION_TAG");
+    let cargo_pkg_version = env!("CARGO_PKG_VERSION");
+    let version = if commit_version_tag == "none" {
+        // concat macro only accepts literals.
+        concat!(env!("CARGO_PKG_VERSION"), "nightly")
+    } else {
+        cargo_pkg_version
+    };
+    QuickwitBuildInfo {
+        commit_version_tag,
+        cargo_pkg_version,
+        cargo_build_target: env!("CARGO_BUILD_TARGET"),
+        commit_short_hash: env!("QW_COMMIT_SHORT_HASH"),
+        commit_date: env!("QW_COMMIT_DATE"),
+        version,
+    }
 }
 
 #[cfg(test)]

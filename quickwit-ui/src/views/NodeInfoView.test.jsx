@@ -20,15 +20,17 @@
 import { render, unmountComponentAtNode } from "react-dom";
 import { waitFor } from "@testing-library/react";
 import { screen } from '@testing-library/dom';
-import ClusterStateView from './ClusterStateView';
 import { act } from "react-dom/test-utils";
 import { Client } from "../services/client";
+import NodeInfoView from "./NodeInfoView";
 
 jest.mock('../services/client');
 const mockedUsedNavigate = jest.fn();
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
-  useNavigate: () => mockedUsedNavigate,
+  useParams: () => ({
+    indexId: 'my-new-fresh-index-id'
+  })
 }));
 
 let container = null;
@@ -45,38 +47,24 @@ afterEach(() => {
   container = null;
 });
 
-test('renders ClusterStateView', async () => {
-  const clusterState = {
-      "state": {
-        "seed_addrs": [],
-        "node_states": {
-          "node-green-uCdq/1656700092": {
-            "key_values": {
-              "available_services": {
-                "value": "searcher",
-                "version": 3
-              },
-              "grpc_address": {
-                "value": "127.0.0.1:7281",
-                "version": 2
-              },
-              "heartbeat": {
-                "value": "24",
-                "version": 27
-              }
-            },
-            "max_version": 27
-          }
-        }
-      },
-      "live_nodes": [],
-      "dead_nodes": []
+test('renders NodeInfoView', async () => {
+  const cluster = {
+    cluster_id: 'my cluster id',
   };
-  Client.prototype.clusterState.mockImplementation(() => Promise.resolve(clusterState));
+  Client.prototype.cluster.mockImplementation(() => Promise.resolve(cluster));
 
+  const config = {
+    node_id: 'my-node-id',
+  };
+  Client.prototype.config.mockImplementation(() => Promise.resolve(config));
+
+  const buildInfo = {
+    version: '0.3.2',
+  };
+  Client.prototype.buildInfo.mockImplementation(() => Promise.resolve(buildInfo));
   await act(async () => {
-    render(<ClusterStateView />, container);
+    render(<NodeInfoView />, container);
   });
 
-  await waitFor(() => expect(screen.getByText(/node-green-uCdq/)).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText(/my-node-id/)).toBeInTheDocument());
 });

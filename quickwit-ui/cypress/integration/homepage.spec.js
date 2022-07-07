@@ -29,7 +29,7 @@ describe('Home navigation', () => {
   it('Should navigate to cluster state', () => {
     cy.visit('http://127.0.0.1:7280/ui');
     cy.get('a').contains('Cluster').click();
-    cy.get('p').should('contain.text', 'Cluster state');
+    cy.get('p').should('contain.text', 'Cluster');
     cy.get('span').should('contain.text', 'seed_addrs');
   });
 })

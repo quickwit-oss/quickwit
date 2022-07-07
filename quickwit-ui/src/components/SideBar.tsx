@@ -30,6 +30,7 @@ import { ListSubheader, styled, Typography } from '@mui/material';
 import { CodeSSlash } from "@styled-icons/remix-line/CodeSSlash"
 import { GroupWork } from '@styled-icons/material-outlined/GroupWork';
 import { Database } from '@styled-icons/feather/Database';
+import { Settings } from '@styled-icons/feather/Settings';
 import { useLocalStorage } from '../providers/LocalStorageProvider';
 import { toUrlSearchRequestParams } from '../utils/urls';
 import { APP_BAR_HEIGHT_PX } from './LayoutUtils';
@@ -88,7 +89,8 @@ const SideBar = () => {
           <Typography variant="body1">Admin</Typography>
         </ListSubheader>
           <ListItemLink to="/indexes" primary={<Typography variant="body1">Indexes</Typography>} icon={<Database size="18px" />} />
-          <ListItemLink to="/cluster" primary={<Typography variant="body1">Cluster state</Typography>} icon={<GroupWork size="18px" />} />
+          <ListItemLink to="/cluster" primary={<Typography variant="body1">Cluster</Typography>} icon={<GroupWork size="18px" />} />
+        <ListItemLink to="/node-info" primary={<Typography variant="body1">Node info</Typography>} icon={<Settings size="18px" />} />
       </List>
     </SideBarWrapper>
   );

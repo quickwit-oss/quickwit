@@ -207,8 +207,50 @@ export type Index = {
   splits: SplitMetadata[];
 }
 
+export type Cluster = {
+  node_id: string,
+  cluster_id: string,
+  state: ClusterState,
+}
+
 export type ClusterState = {
-  state: any;
+  state: ClusterStateSnapshot;
   live_nodes: any[];
   dead_nodes: any[];
+}
+
+export type ClusterStateSnapshot = {
+  seed_addrs: string[],
+  node_states: Record<string, NodeState>,
+}
+
+export type NodeState = {
+  key_values: KeyValues,
+  max_version: number,
+}
+
+export type KeyValues = {
+  available_services: KeyValue,
+  grpc_address: KeyValue,
+  heartbeat: KeyValue,
+}
+
+export type KeyValue = {
+  value: any,
+  version: number,
+}
+
+export type QuickwitBuildInfo = {
+  commit_version_tag: string,
+  cargo_pkg_version: string,
+  cargo_build_target: string,
+  commit_short_hash: string,
+  commit_date: string,
+  version: string,
+}
+
+export type NodeId = {
+  id: string,
+  grpc_address: string,
+  self: boolean,
 }

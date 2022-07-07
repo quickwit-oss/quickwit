@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { ClusterState, Index, IndexMetadata, SearchRequest, SearchResponse, SplitMetadata } from "../utils/models";
+import { Cluster, Index, IndexMetadata, QuickwitBuildInfo, SearchRequest, SearchResponse, SplitMetadata } from "../utils/models";
 import { serializeSortByField } from "../utils/urls";
 
 export class Client {
@@ -44,10 +44,18 @@ export class Client {
     return this.fetch(url.toString(), this.defaultGetRequestParams());
   }
 
-  async clusterState(): Promise<ClusterState> {
+  async cluster(): Promise<Cluster> {
     return await this.fetch(`${this.apiRoot()}cluster`, this.defaultGetRequestParams());
   }
 
+  async buildInfo(): Promise<QuickwitBuildInfo> {
+    return await this.fetch(`${this.apiRoot()}version`, this.defaultGetRequestParams());
+  }
+
+  // eslint-disable-next-line
+  async config(): Promise<Record<string, any>> {
+    return await this.fetch(`${this.apiRoot()}config`, this.defaultGetRequestParams());
+  }
   //
   // Index management API
   //
