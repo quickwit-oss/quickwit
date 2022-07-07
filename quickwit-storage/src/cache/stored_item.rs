@@ -47,6 +47,6 @@ impl StoredItem {
     }
 
     pub fn last_access_time(&self) -> Instant {
-        self.last_access_time.clone()
+        self.last_access_time
     }
 }
