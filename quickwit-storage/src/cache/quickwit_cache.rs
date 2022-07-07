@@ -80,6 +80,9 @@ impl QuickwitCache {
 #[async_trait]
 impl Cache for QuickwitCache {
     async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
+        // We don't check for the presence of the entire file in the
+        // cache.
+        // That's voluntary to avoid messing with the cache miss counts.
         if let Some(cache) = self.get_relevant_cache(path) {
             return cache.get(path, byte_range).await;
         }
@@ -133,9 +136,6 @@ impl SimpleCache {
 #[async_trait]
 impl Cache for SimpleCache {
     async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
-        if let Some(bytes) = self.get_all(path).await {
-            return Some(bytes.slice(byte_range.clone()));
-        }
         if let Some(bytes) = self.slice_cache.get_slice(path, byte_range) {
             return Some(bytes);
         }
