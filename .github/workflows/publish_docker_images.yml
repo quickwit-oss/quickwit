@@ -1,7 +1,6 @@
-name: Build and publish Docker images to Docker Hub
+name: Build and publish Docker images
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - "main"
@@ -28,10 +27,10 @@ jobs:
           images: |
             quickwit/quickwit
           tags: |
+            type=edge,branch=main
+            type=edge,branch=main,suffix=-bullseye
             type=semver,pattern={{version}}
             type=semver,pattern={{version}},suffix=-bullseye
-            type=edge,branch=main,value=nightly
-            type=edge,branch=main,value=nightly-bullseye
           labels: |
             org.opencontainers.image.title=Quickwit
             maintainer=Quickwit, Inc. <hello@quickwit.io>
