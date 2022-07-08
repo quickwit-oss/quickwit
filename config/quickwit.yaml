@@ -35,7 +35,7 @@ version: 0
 # rest_listen_port: 7280
 #
 # IP address advertised by the node, i.e. the IP address that peer nodes should use to connect to the node for RPCs.
-# The environment variable `QW_ADVERTISE_ADDRESS` can also be used to configure this value.
+# The environment variable `QW_ADVERTISE_ADDRESS` can also be used to override this value.
 # The default advertise address is `listen_address`. If `listen_address` is unspecified (`0.0.0.0`),
 # Quickwit attempts to sniff the node's IP by scanning the available network interfaces.
 # advertise_address: 192.168.0.42
