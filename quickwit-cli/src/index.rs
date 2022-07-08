@@ -294,6 +294,7 @@ impl IndexCliCommand {
             "describe" => Self::parse_describe_args(submatches),
             "gc" => Self::parse_garbage_collect_args(submatches),
             "ingest" => Self::parse_ingest_args(submatches),
+            "reset-checkpoint" => Self::parse_reset_checkpoint_args(submatches),
             _ => bail!("Index subcommand `{}` is not implemented.", subcommand),
         }
     }

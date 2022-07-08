@@ -73,6 +73,83 @@ pub mod test_suite {
         metastore.delete_index(index_id).await.unwrap();
     }
 
+    pub async fn test_metastore_reset_checkpoint<MetastoreToTest: Metastore + DefaultForTest>() {
+        let metastore = MetastoreToTest::default_for_test().await;
+
+        let index_id = append_random_suffix("test-metastore-reset-checkpoint");
+        let index_uri = format!("ram://indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
+
+        metastore
+            .create_index(index_metadata.clone())
+            .await
+            .unwrap();
+
+        let source_ids: Vec<String> = (0..2).map(|i| format!("{index_id}--source-{i}")).collect();
+        let split_ids: Vec<String> = (0..2).map(|i| format!("{index_id}--split-{i}")).collect();
+
+        for (source_id, split_id) in source_ids.iter().zip(split_ids.iter()) {
+            let source = SourceConfig {
+                source_id: source_id.clone(),
+                num_pipelines: 1,
+                source_params: SourceParams::void(),
+            };
+            metastore
+                .add_source(&index_id, source.clone())
+                .await
+                .unwrap();
+
+            let split_metadata = SplitMetadata {
+                split_id: split_id.clone(),
+                ..Default::default()
+            };
+            metastore
+                .stage_split(&index_id, split_metadata)
+                .await
+                .unwrap();
+            metastore
+                .publish_splits(&index_id, &[&split_id], &[], None)
+                .await
+                .unwrap();
+        }
+        assert!(!metastore
+            .index_metadata(&index_id)
+            .await
+            .unwrap()
+            .checkpoint
+            .is_empty());
+
+        metastore
+            .reset_source_checkpoint(&index_id, &source_ids[0])
+            .await
+            .unwrap();
+
+        let index_metadata = metastore.index_metadata(&index_id).await.unwrap();
+        assert!(index_metadata
+            .checkpoint
+            .source_checkpoint(&source_ids[0])
+            .is_none());
+
+        assert!(index_metadata
+            .checkpoint
+            .source_checkpoint(&source_ids[1])
+            .is_some());
+
+        metastore
+            .reset_source_checkpoint(&index_id, &source_ids[1])
+            .await
+            .unwrap();
+
+        assert!(metastore
+            .index_metadata(&index_id)
+            .await
+            .unwrap()
+            .checkpoint
+            .is_empty());
+
+        cleanup_index(&metastore, &index_metadata.index_id).await;
+    }
+
     pub async fn test_metastore_add_source<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
@@ -1995,7 +2072,6 @@ pub mod test_suite {
         cleanup_index(&metastore, index_id).await;
     }
 
-    #[allow(unused_variables)]
     pub async fn test_metastore_list_indexes<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
@@ -2145,6 +2221,12 @@ macro_rules! metastore_test_suite {
             async fn test_metastore_delete_source() {
                 let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_delete_source::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_reset_checkpoint() {
+                let _ = tracing_subscriber::fmt::try_init();
+                crate::tests::test_suite::test_metastore_reset_checkpoint::<$metastore_type>().await;
             }
         }
     }
