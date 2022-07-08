@@ -36,7 +36,8 @@ use quickwit_proto::metastore_api::metastore_api_service_client::MetastoreApiSer
 use quickwit_proto::metastore_api::{
     AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, DeleteSourceRequest,
     DeleteSplitsRequest, IndexMetadataRequest, ListAllSplitsRequest, ListIndexesMetadatasRequest,
-    ListSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest, StageSplitRequest,
+    ListSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest,
+    ResetSourceCheckpointRequest, StageSplitRequest,
 };
 use quickwit_proto::tonic::transport::{Channel, Endpoint};
 use quickwit_proto::tonic::Status;
@@ -401,6 +402,25 @@ impl Metastore for MetastoreGrpcClient {
         self.0
             .clone()
             .delete_source(request)
+            .await
+            .map(|tonic_response| tonic_response.into_inner())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+        Ok(())
+    }
+
+    /// Clears a source checkpoint.
+    async fn reset_source_checkpoint(
+        &self,
+        index_id: &str,
+        source_id: &str,
+    ) -> MetastoreResult<()> {
+        let request = ResetSourceCheckpointRequest {
+            index_id: index_id.to_string(),
+            source_id: source_id.to_string(),
+        };
+        self.0
+            .clone()
+            .reset_source_checkpoint(request)
             .await
             .map(|tonic_response| tonic_response.into_inner())
             .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
