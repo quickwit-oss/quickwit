@@ -21,11 +21,10 @@ use std::collections::HashSet;
 
 use async_trait::async_trait;
 
-use crate::mailbox::Command;
 use crate::observation::ObservationType;
 use crate::{
-    message_timeout, Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler,
-    Health, Mailbox, Observation, Supervisable, Universe,
+    message_timeout, Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Command,
+    Handler, Health, Mailbox, Observation, Supervisable, Universe,
 };
 
 // An actor that receives ping messages.
