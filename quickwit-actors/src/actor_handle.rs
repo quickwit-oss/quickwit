@@ -28,9 +28,8 @@ use tracing::error;
 
 use crate::actor_state::ActorState;
 use crate::channel_with_priority::Priority;
-use crate::mailbox::Command;
 use crate::observation::ObservationType;
-use crate::{Actor, ActorContext, ActorExitStatus, Mailbox, Observation};
+use crate::{Actor, ActorContext, ActorExitStatus, Command, Mailbox, Observation};
 
 /// An Actor Handle serves as an address to communicate with an actor.
 pub struct ActorHandle<A: Actor> {

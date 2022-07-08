@@ -20,7 +20,6 @@
 use std::any::type_name;
 use std::convert::Infallible;
 use std::fmt;
-use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,11 +33,11 @@ use tracing::{debug, error, info_span, Span};
 use crate::actor_state::{ActorState, AtomicState};
 use crate::channel_with_priority::Priority;
 use crate::envelope::wrap_in_envelope;
-use crate::mailbox::{Command, CommandOrMessage};
+use crate::mailbox::CommandOrMessage;
 use crate::progress::{Progress, ProtectedZoneGuard};
 use crate::scheduler::{Callback, ScheduleEvent, Scheduler};
 use crate::spawn_builder::SpawnBuilder;
-use crate::{AskError, KillSwitch, Mailbox, QueueCapacity, SendError};
+use crate::{AskError, Command, KillSwitch, Mailbox, QueueCapacity, SendError};
 
 /// The actor exit status represents the outcome of the execution of an actor,
 /// after the end of the execution.
@@ -190,14 +189,12 @@ pub trait Actor: Send + Sync + Sized + 'static {
 // TODO hide all of this public stuff
 pub struct ActorContext<A: Actor> {
     inner: Arc<ActorContextInner<A>>,
-    phantom_data: PhantomData<A>,
 }
 
 impl<A: Actor> Clone for ActorContext<A> {
     fn clone(&self) -> Self {
         ActorContext {
             inner: self.inner.clone(),
-            phantom_data: PhantomData,
         }
     }
 }
@@ -233,7 +230,6 @@ impl<A: Actor> ActorContext<A> {
                 actor_state: AtomicState::default(),
             }
             .into(),
-            phantom_data: PhantomData,
         }
     }
 

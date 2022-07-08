@@ -25,8 +25,7 @@ use crate::actor_with_state_tx::ActorWithStateTx;
 use crate::mailbox::{CommandOrMessage, Inbox};
 use crate::scheduler::Scheduler;
 use crate::{
-    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Command, KillSwitch,
-    Mailbox, RecvError,
+    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Command, KillSwitch, Mailbox,
 };
 
 /// `SpawnBuilder` makes it possible to configure misc parameters before spawning an actor.
@@ -135,50 +134,33 @@ fn process_command<A: Actor>(
     }
 }
 
-async fn process_msg<A: Actor>(
-    actor: &mut A,
-    msg_id: u64,
+/// Returns `None` if no message is available at the moment.
+async fn get_command_or_message<A: Actor>(
     inbox: &mut Inbox<A>,
     ctx: &ActorContext<A>,
-    state_tx: &watch::Sender<A::ObservableState>,
-) -> Option<ActorExitStatus> {
-    if ctx.kill_switch().is_dead() {
-        return Some(ActorExitStatus::Killed);
-    }
-    ctx.progress().record_progress();
-
-    let command_or_msg_recv_res = if ctx.state().is_running() {
+) -> Option<CommandOrMessage<A>> {
+    if ctx.state().is_running() {
         ctx.protect_future(inbox.recv_timeout()).await
     } else {
         // The actor is paused. We only process command and scheduled message.
         ctx.protect_future(inbox.recv_timeout_cmd_and_scheduled_msg_only())
             .await
-    };
-
-    if ctx.kill_switch().is_dead() {
-        return Some(ActorExitStatus::Killed);
     }
+    .ok()
+}
 
-    match command_or_msg_recv_res {
-        Ok(CommandOrMessage::Command(cmd)) => {
-            ctx.process();
-            process_command(actor, cmd, ctx, state_tx)
-        }
-        Ok(CommandOrMessage::Message(mut msg)) => {
-            ctx.process();
-            msg.handle_message(msg_id, actor, ctx).await.err()
-        }
-        Err(RecvError::Disconnected) => Some(ActorExitStatus::Success),
-        Err(RecvError::Timeout) => {
-            ctx.idle();
-            if ctx.mailbox().is_last_mailbox() {
-                // No one will be able to send us more messages.
-                // We can exit the actor.
-                Some(ActorExitStatus::Success)
-            } else {
-                None
-            }
-        }
+/// Attempts to get a message or a command and process it.
+async fn process_msg<A: Actor>(
+    actor: &mut A,
+    msg_id: u64,
+    msg: CommandOrMessage<A>,
+    ctx: &ActorContext<A>,
+    state_tx: &watch::Sender<A::ObservableState>,
+) -> Option<ActorExitStatus> {
+    ctx.process();
+    match msg {
+        CommandOrMessage::Command(cmd) => process_command(actor, cmd, ctx, state_tx),
+        CommandOrMessage::Message(mut msg) => msg.handle_message(msg_id, actor, ctx).await.err(),
     }
 }
 
@@ -201,15 +183,34 @@ async fn actor_loop<A: Actor>(
         if let Some(exit_status) = exit_status_opt {
             break exit_status;
         }
-        exit_status_opt = process_msg(
-            &mut actor_with_state_tx.actor,
-            msg_id,
-            &mut inbox,
-            &ctx,
-            &actor_with_state_tx.state_tx,
-        )
-        .await;
-        msg_id += 1;
+        if ctx.kill_switch().is_dead() {
+            break ActorExitStatus::Killed;
+        }
+        let command_or_message_opt = get_command_or_message(&mut inbox, &ctx).await;
+        if ctx.kill_switch().is_dead() {
+            break ActorExitStatus::Killed;
+        }
+        if let Some(command_or_message) = command_or_message_opt {
+            exit_status_opt = process_msg(
+                &mut actor_with_state_tx.actor,
+                msg_id,
+                command_or_message,
+                &ctx,
+                &actor_with_state_tx.state_tx,
+            )
+            .await;
+            msg_id += 1;
+        } else {
+            // No message is available.
+            ctx.idle();
+            if ctx.mailbox().is_last_mailbox() {
+                // No one will be able to send us more messages.
+                // We can exit the actor.
+                break ActorExitStatus::Success;
+            }
+            // No message available at the moment,
+            // but maybe later?
+        }
     };
     ctx.record_progress();
     if let Err(finalize_error) = actor_with_state_tx
