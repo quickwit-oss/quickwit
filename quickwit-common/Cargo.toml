@@ -20,9 +20,10 @@ prometheus = { version = "0.13", features = ["process"] }
 rand = "0.8"
 regex = "1"
 serde = "1.0"
-tokio = { version = "1", features = ["fs", "macros", "rt"] }
+tokio = { version = "1", features = ["full"] }
 tracing = "0.1.29"
 warp = "0.3"
+num_cpus = "1"
 
 [dev-dependencies]
 serde_json = "1.0"

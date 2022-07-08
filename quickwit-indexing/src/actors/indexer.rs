@@ -23,15 +23,15 @@ use std::sync::Arc;
 use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
-use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, Mailbox, QueueCapacity,
-};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::{DocMapper, DocParsingError, SortBy, QUICKWIT_TOKENIZER_MANAGER};
 use quickwit_metastore::Metastore;
 use tantivy::schema::{Field, Value};
 use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
+use tokio::runtime::Handle;
 use tracing::{info, warn};
 
 use crate::actors::Packager;
@@ -264,8 +264,8 @@ impl Actor for Indexer {
         "Indexer".to_string()
     }
 
-    fn runner(&self) -> ActorRunner {
-        ActorRunner::DedicatedThread
+    fn runtime_handle(&self) -> Handle {
+        RuntimeType::Blocking.get_runtime_handle()
     }
 
     async fn finalize(
