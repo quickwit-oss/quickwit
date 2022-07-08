@@ -3,6 +3,7 @@ title: Introduction
 slug: /
 sidebar_position: 1
 ---
+import CallToAction from '@theme/CallToAction';
 
 Quickwit is an open-source, cloud-native, distributed search engine for log management and analytics. Written in Rust and designed from the ground up to offer cost-efficiency and high scalability on large datasets, Quickwit is a modern and reliable alternative to Elasticsearch.
 
