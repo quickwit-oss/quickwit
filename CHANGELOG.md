@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
  - Support for boolean field
+ - Support for slop in phrase queries
 
 ### Fixed
 
