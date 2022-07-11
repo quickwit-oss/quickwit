@@ -25,22 +25,22 @@ import { ViewUnderAppBarBox, FullBoxContainer, QBreadcrumbs } from '../component
 import Loader from '../components/Loader';
 import ErrorResponseDisplay from '../components/ResponseErrorDisplay';
 import { Client } from '../services/client';
-import { ClusterState, ResponseError } from '../utils/models';
+import { Cluster, ResponseError } from '../utils/models';
 
 
-function ClusterStateView() {
+function ClusterView() {
   const [loading, setLoading] = useState(false);
-  const [clusterState, setClusterState] = useState<null | ClusterState>(null);
+  const [cluster, setCluster] = useState<null | Cluster>(null);
   const [responseError, setResponseError] = useState<ResponseError | null>(null);
   const quickwitClient = useMemo(() => new Client(), []);
 
   useEffect(() => {
     setLoading(true);
-    quickwitClient.clusterState().then(
-      (clusterState) => {
+    quickwitClient.cluster().then(
+      (cluster) => {
         setResponseError(null);
         setLoading(false);
-        setClusterState(clusterState);
+        setCluster(cluster);
       },
       (error) => {
         setLoading(false);
@@ -53,17 +53,17 @@ function ClusterStateView() {
     if (responseError !== null) {
       return ErrorResponseDisplay(responseError);
     }
-    if (loading || clusterState == null) {
+    if (loading || cluster == null) {
       return <Loader />;
     }
-    return <JsonEditor content={clusterState} resizeOnMount={false} />
+    return <JsonEditor content={cluster} resizeOnMount={false} />
   }
 
   return (
     <ViewUnderAppBarBox>
       <FullBoxContainer>
         <QBreadcrumbs aria-label="breadcrumb">
-          <Typography color="text.primary">Cluster state</Typography>
+          <Typography color="text.primary">Cluster</Typography>
         </QBreadcrumbs>
         <FullBoxContainer sx={{ px: 0 }}>
           { renderResult() }
@@ -74,4 +74,4 @@ function ClusterStateView() {
   );
 }
 
-export default ClusterStateView;
+export default ClusterView;

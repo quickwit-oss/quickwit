@@ -17,19 +17,36 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-describe('Home navigation', () => {
-  it('Should display sidebar links', () => {
-    cy.visit('http://127.0.0.1:7280/ui');
-    cy.get('a')
-        .should('be.visible')
-        .should('contain.text', 'Query editor')
-        .should('contain.text', 'Indexes')
-        .should('contain.text', 'Cluster');
-  });
-  it('Should navigate to cluster state', () => {
-    cy.visit('http://127.0.0.1:7280/ui');
-    cy.get('a').contains('Cluster').click();
-    cy.get('p').should('contain.text', 'Cluster');
-    cy.get('span').should('contain.text', 'seed_addrs');
-  });
-})
+use tantivy::directory::OwnedBytes;
+use tokio::time::Instant;
+
+/// It is a bit overkill to put this in its own module, but I
+/// wanted to ensure that no one would access payload without updating `last_access_time`.
+pub(super) struct StoredItem {
+    last_access_time: Instant,
+    payload: OwnedBytes,
+}
+
+impl StoredItem {
+    pub fn new(payload: OwnedBytes, now: Instant) -> Self {
+        StoredItem {
+            last_access_time: now,
+            payload,
+        }
+    }
+}
+
+impl StoredItem {
+    pub fn payload(&mut self) -> OwnedBytes {
+        self.last_access_time = Instant::now();
+        self.payload.clone()
+    }
+
+    pub fn len(&self) -> usize {
+        self.payload.len()
+    }
+
+    pub fn last_access_time(&self) -> Instant {
+        self.last_access_time
+    }
+}
