@@ -22,3 +22,9 @@ tracing = "0.1.29"
 
 [dev-dependencies]
 rand = "0.8"
+criterion = "0.3"
+
+[[bench]]
+name = "channel_with_priority_bench"
+harness = false
+
