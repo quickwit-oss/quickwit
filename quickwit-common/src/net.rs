@@ -207,13 +207,15 @@ pub fn find_private_ip() -> Option<(String, IpAddr)> {
     _find_private_ip(&datalink::interfaces())
 }
 
+#[allow(unused_variables)]
 fn is_dormant(interface: &NetworkInterface) -> bool {
     // "Dormant network interface" is a linux specific concept.
-    if cfg!(any(target_os = "linux", target_os = "android")) {
-        interface.is_dormant()
-    } else {
-        false
+    #[cfg(any(target_os = "macos", target_os = "android"))]
+    {
+        return interface.is_dormant();
     }
+
+    false
 }
 
 fn _find_private_ip(interfaces: &[NetworkInterface]) -> Option<(String, IpAddr)> {
