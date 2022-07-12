@@ -32,7 +32,7 @@ mod actor;
 mod actor_handle;
 mod actor_state;
 mod actor_with_state_tx;
-pub mod channel_with_priority;
+mod channel_with_priority;
 mod command;
 mod envelope;
 mod kill_switch;

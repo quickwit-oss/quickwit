@@ -21,6 +21,7 @@ use std::time::Duration;
 
 use flume::TryRecvError;
 use thiserror::Error;
+use tokio::time::timeout;
 
 #[derive(Debug, Error)]
 pub enum SendError {
@@ -74,18 +75,12 @@ pub enum QueueCapacity {
     Unbounded,
 }
 
-impl QueueCapacity {
-    pub(crate) fn create_channel<M>(&self) -> (flume::Sender<M>, flume::Receiver<M>) {
-        match *self {
-            QueueCapacity::Bounded(cap) => flume::bounded(cap),
-            QueueCapacity::Unbounded => flume::unbounded(),
-        }
-    }
-}
-
 pub fn channel<T>(queue_capacity: QueueCapacity) -> (Sender<T>, Receiver<T>) {
     let (high_priority_tx, high_priority_rx) = flume::unbounded();
-    let (low_priority_tx, low_priority_rx) = queue_capacity.create_channel();
+    let (low_priority_tx, low_priority_rx) = match queue_capacity {
+        QueueCapacity::Bounded(cap) => flume::bounded(cap),
+        QueueCapacity::Unbounded => flume::unbounded(),
+    };
     let receiver = Receiver {
         low_priority_rx,
         high_priority_rx,
@@ -111,6 +106,7 @@ impl<T> Sender<T> {
             Priority::Low => &self.low_priority_tx,
         }
     }
+
     pub async fn send(&self, msg: T, priority: Priority) -> Result<(), SendError> {
         self.channel(priority).send_async(msg).await?;
         Ok(())
@@ -125,33 +121,63 @@ pub struct Receiver<T> {
 }
 
 impl<T> Receiver<T> {
-    fn try_recv_high_priority_message(&self) -> Option<T> {
+    pub fn try_recv_high_priority_message(&mut self) -> Result<T, RecvError> {
         match self.high_priority_rx.try_recv() {
-            Ok(msg) => Some(msg),
+            Ok(msg) => Ok(msg),
             Err(TryRecvError::Disconnected) => {
                 unreachable!(
                     "This can never happen, as the high priority Sender is owned by the Receiver."
                 );
             }
-            Err(TryRecvError::Empty) => None,
-        }
-    }
-
-    pub async fn recv_high_priority_timeout(&mut self, duration: Duration) -> Result<T, RecvError> {
-        tokio::select! {
-            high_priority_msg_res = self.high_priority_rx.recv_async() => {
-                match high_priority_msg_res {
-                    Ok(high_priority_msg) => { Ok(high_priority_msg) },
-                    Err(_) => { unreachable!("The Receiver owns the high priority Sender to avoid any disconnection.") }, }
+            Err(TryRecvError::Empty) => {
+                if self.low_priority_rx.is_disconnected() {
+                    self.try_recv()
+                } else {
+                    Err(RecvError::Timeout)
                 }
-            _ = tokio::time::sleep(duration) => {
-                Err(RecvError::Timeout)
             }
         }
     }
 
+    pub fn try_recv(&mut self) -> Result<T, RecvError> {
+        if let Ok(msg) = self.high_priority_rx.try_recv() {
+            return Ok(msg);
+        }
+        if let Some(pending_msg) = self.pending.take() {
+            return Ok(pending_msg);
+        }
+        match self.low_priority_rx.try_recv() {
+            Ok(low_msg) => {
+                if let Ok(high_msg) = self.high_priority_rx.try_recv() {
+                    self.pending = Some(low_msg);
+                    Ok(high_msg)
+                } else {
+                    Ok(low_msg)
+                }
+            }
+            Err(TryRecvError::Disconnected) => {
+                if let Ok(high_msg) = self.high_priority_rx.try_recv() {
+                    Ok(high_msg)
+                } else {
+                    Err(RecvError::Disconnected)
+                }
+            }
+            Err(TryRecvError::Empty) => Err(RecvError::Timeout),
+        }
+    }
+
+    pub async fn recv_high_priority_timeout(&mut self, duration: Duration) -> Result<T, RecvError> {
+        match timeout(duration, self.high_priority_rx.recv_async()).await {
+            Ok(Ok(high_priority_msg)) => Ok(high_priority_msg),
+            Ok(Err(flume::RecvError::Disconnected)) => {
+                panic!("The Receiver owns the high priority Sender to avoid any disconnection.");
+            }
+            Err(_elapsed) => Err(RecvError::Timeout),
+        }
+    }
+
     pub async fn recv_timeout(&mut self, duration: Duration) -> Result<T, RecvError> {
-        if let Some(msg) = self.try_recv_high_priority_message() {
+        if let Ok(msg) = self.try_recv_high_priority_message() {
             return Ok(msg);
         }
         if let Some(pending_msg) = self.pending.take() {
@@ -171,7 +197,7 @@ impl<T> Receiver<T> {
             low_priority_msg_res = self.low_priority_rx.recv_async() => {
                 match low_priority_msg_res {
                     Ok(low_priority_msg) => {
-                        if let Some(high_priority_msg) = self.try_recv_high_priority_message() {
+                        if let Ok(high_priority_msg) = self.try_recv_high_priority_message() {
                             self.pending = Some(low_priority_msg);
                             Ok(high_priority_msg)
                         } else {
@@ -179,7 +205,7 @@ impl<T> Receiver<T> {
                         }
                     },
                     Err(flume::RecvError::Disconnected) => {
-                        if let Some(high_priority_msg) = self.try_recv_high_priority_message() {
+                        if let Ok(high_priority_msg) = self.try_recv_high_priority_message() {
                             Ok(high_priority_msg)
                         } else {
                             Err(RecvError::Disconnected)
@@ -287,5 +313,26 @@ mod tests {
             Err(RecvError::Disconnected)
         );
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_try_recv() {
+        let (tx, mut rx) = super::channel::<usize>(QueueCapacity::Unbounded);
+        tx.send(1, Priority::Low).await.unwrap();
+        tx.send(2, Priority::High).await.unwrap();
+        assert_eq!(rx.try_recv(), Ok(2));
+        assert_eq!(rx.try_recv(), Ok(1));
+        assert_eq!(rx.try_recv(), Err(RecvError::Timeout));
+    }
+
+    #[tokio::test]
+    async fn test_try_recv_high() {
+        let (tx, mut rx) = super::channel::<usize>(QueueCapacity::Unbounded);
+        tx.send(1, Priority::Low).await.unwrap();
+        tx.send(2, Priority::High).await.unwrap();
+        assert_eq!(rx.try_recv_high_priority_message(), Ok(2));
+        assert_eq!(rx.try_recv_high_priority_message(), Err(RecvError::Timeout));
+        assert_eq!(rx.try_recv(), Ok(1));
+        assert_eq!(rx.try_recv(), Err(RecvError::Timeout));
     }
 }

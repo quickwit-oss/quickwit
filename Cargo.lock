@@ -2658,7 +2658,6 @@ version = "0.3.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "criterion",
  "flume",
  "futures",
  "quickwit-common",
