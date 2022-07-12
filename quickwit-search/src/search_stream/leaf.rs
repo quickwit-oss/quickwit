@@ -41,6 +41,7 @@ use tracing::*;
 
 use super::collector::{PartionnedFastFieldCollector, PartitionValues};
 use super::FastFieldCollector;
+use crate::filters::TimestampFilterBuilder;
 use crate::leaf::{open_index, warmup};
 use crate::{Result, SearchError};
 
@@ -155,10 +156,20 @@ async fn leaf_search_stream_single_split(
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = reader.searcher();
+
+    let timestamp_filter_builder_opt: Option<TimestampFilterBuilder> = TimestampFilterBuilder::new(
+        request_fields
+            .timestamp_field_name()
+            .map(ToString::to_string),
+        request_fields.timestamp_field,
+        search_request.start_timestamp,
+        search_request.end_timestamp,
+    );
+
     warmup(
         &*searcher,
         query.as_ref(),
-        &request_fields.fast_fields_for_request(),
+        &request_fields.fast_fields_for_request(timestamp_filter_builder_opt.as_ref()),
         &Default::default(),
     )
     .await?;
@@ -177,8 +188,7 @@ async fn leaf_search_stream_single_split(
             (Type::I64, None) => {
                 let collected_values = collect_values::<i64>(
                     &m_request_fields,
-                    stream_request.start_timestamp,
-                    stream_request.end_timestamp,
+                    timestamp_filter_builder_opt,
                     searcher,
                     query.as_ref(),
                 )?;
@@ -193,8 +203,7 @@ async fn leaf_search_stream_single_split(
             (Type::U64, None) => {
                 let collected_values = collect_values::<u64>(
                     &m_request_fields,
-                    stream_request.start_timestamp,
-                    stream_request.end_timestamp,
+                    timestamp_filter_builder_opt,
                     searcher,
                     query.as_ref(),
                 )?;
@@ -209,8 +218,7 @@ async fn leaf_search_stream_single_split(
             (Type::I64, Some(Type::I64)) => {
                 let collected_values = collect_partitioned_values::<i64, i64>(
                     &m_request_fields,
-                    stream_request.start_timestamp,
-                    stream_request.end_timestamp,
+                    timestamp_filter_builder_opt,
                     searcher,
                     query.as_ref(),
                 )?;
@@ -224,8 +232,7 @@ async fn leaf_search_stream_single_split(
             (Type::U64, Some(Type::U64)) => {
                 let collected_values = collect_partitioned_values::<u64, u64>(
                     &m_request_fields,
-                    stream_request.start_timestamp,
-                    stream_request.end_timestamp,
+                    timestamp_filter_builder_opt,
                     searcher,
                     query.as_ref(),
                 )?;
@@ -264,16 +271,13 @@ async fn leaf_search_stream_single_split(
 
 fn collect_values<TFastValue: FastValue>(
     request_fields: &SearchStreamRequestFields,
-    start_timestamp: Option<i64>,
-    end_timestamp: Option<i64>,
+    timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
     searcher: LeasedItem<Searcher>,
     query: &dyn Query,
 ) -> crate::Result<Vec<TFastValue>> {
     let collector = FastFieldCollector::<TFastValue> {
         fast_field_to_collect: request_fields.fast_field_name().to_string(),
-        timestamp_field_opt: request_fields.timestamp_field,
-        start_timestamp_opt: start_timestamp,
-        end_timestamp_opt: end_timestamp,
+        timestamp_filter_builder_opt,
         _marker: PhantomData,
     };
     let result = searcher.search(query, &collector)?;
@@ -282,8 +286,7 @@ fn collect_values<TFastValue: FastValue>(
 
 fn collect_partitioned_values<TFastValue: FastValue, TPartitionValue: FastValue + Eq + Hash>(
     request_fields: &SearchStreamRequestFields,
-    start_timestamp_opt: Option<i64>,
-    end_timestamp_opt: Option<i64>,
+    timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
     searcher: LeasedItem<Searcher>,
     query: &dyn Query,
 ) -> crate::Result<Vec<PartitionValues<TFastValue, TPartitionValue>>> {
@@ -293,9 +296,7 @@ fn collect_partitioned_values<TFastValue: FastValue, TPartitionValue: FastValue 
             .partition_by_fast_field_name()
             .expect("`partition_by_fast_field` is not defined. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
             .to_string(),
-        timestamp_field_opt: request_fields.timestamp_field,
-        start_timestamp_opt,
-        end_timestamp_opt,
+        timestamp_filter_builder_opt,
         _marker: PhantomData,
     };
     let result = searcher.search(query, &collector)?;
@@ -383,11 +384,14 @@ impl<'a> SearchStreamRequestFields {
         )
     }
 
-    pub fn fast_fields_for_request(&self) -> HashSet<String> {
+    fn fast_fields_for_request(
+        &self,
+        timestamp_filter_builder_opt: Option<&TimestampFilterBuilder>,
+    ) -> HashSet<String> {
         let mut set = HashSet::new();
         set.insert(self.fast_field_name().to_string());
-        if let Some(timestamp_field) = self.timestamp_field_name() {
-            set.insert(timestamp_field.to_string());
+        if let Some(timestamp_filter_builder) = timestamp_filter_builder_opt {
+            set.insert(timestamp_filter_builder.timestamp_field_name.clone());
         }
         if let Some(partition_by_fast_field) = self.partition_by_fast_field_name() {
             set.insert(partition_by_fast_field.to_string());
