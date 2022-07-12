@@ -23,10 +23,9 @@ use std::marker::PhantomData;
 
 use tantivy::collector::{Collector, SegmentCollector};
 use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader, FastValue};
-use tantivy::schema::Field;
 use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader, TantivyError};
 
-use crate::filters::TimestampFilter;
+use crate::filters::{TimestampFilter, TimestampFilterBuilder};
 
 #[derive(Clone)]
 pub struct FastFieldSegmentCollector<Item: FastValue> {
@@ -74,9 +73,7 @@ impl<Item: FastValue> SegmentCollector for FastFieldSegmentCollector<Item> {
 #[derive(Clone)]
 pub struct FastFieldCollector<Item: FastValue> {
     pub fast_field_to_collect: String,
-    pub timestamp_field_opt: Option<Field>,
-    pub start_timestamp_opt: Option<i64>,
-    pub end_timestamp_opt: Option<i64>,
+    pub timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
     pub _marker: PhantomData<Item>,
 }
 
@@ -89,12 +86,12 @@ impl<Item: FastValue> Collector for FastFieldCollector<Item> {
         _segment_ord: SegmentOrdinal,
         segment_reader: &SegmentReader,
     ) -> tantivy::Result<Self::Child> {
-        let timestamp_filter_opt = helpers::make_timestamp_filter(
-            segment_reader,
-            self.timestamp_field_opt,
-            self.start_timestamp_opt,
-            self.end_timestamp_opt,
-        )?;
+        let timestamp_filter_opt =
+            if let Some(timestamp_filter_builder) = &self.timestamp_filter_builder_opt {
+                timestamp_filter_builder.build(segment_reader)?
+            } else {
+                None
+            };
 
         let fast_field_reader =
             helpers::make_fast_field_reader::<Item>(segment_reader, &self.fast_field_to_collect)?;
@@ -119,9 +116,7 @@ impl<Item: FastValue> Collector for FastFieldCollector<Item> {
 pub struct PartionnedFastFieldCollector<Item: FastValue, PartitionItem: FastValue> {
     pub fast_field_to_collect: String,
     pub partition_by_fast_field: String,
-    pub timestamp_field_opt: Option<Field>,
-    pub start_timestamp_opt: Option<i64>,
-    pub end_timestamp_opt: Option<i64>,
+    pub timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
     pub _marker: PhantomData<(Item, PartitionItem)>,
 }
 
@@ -142,13 +137,12 @@ impl<Item: FastValue, PartitionItem: FastValue + Eq + Hash> Collector
         _segment_ord: SegmentOrdinal,
         segment_reader: &SegmentReader,
     ) -> tantivy::Result<Self::Child> {
-        let timestamp_filter_opt = helpers::make_timestamp_filter(
-            segment_reader,
-            self.timestamp_field_opt,
-            self.start_timestamp_opt,
-            self.end_timestamp_opt,
-        )?;
-
+        let timestamp_filter_opt =
+            if let Some(timestamp_filter_builder) = &self.timestamp_filter_builder_opt {
+                timestamp_filter_builder.build(segment_reader)?
+            } else {
+                None
+            };
         let fast_field_reader =
             helpers::make_fast_field_reader::<Item>(segment_reader, &self.fast_field_to_collect)?;
 
@@ -256,23 +250,5 @@ mod helpers {
             .ok_or_else(|| TantivyError::SchemaError("field does not exist".to_owned()))?;
         let fast_field_slice = segment_reader.fast_fields().fast_field_data(field, 0)?;
         DynamicFastFieldReader::open(fast_field_slice)
-    }
-
-    pub fn make_timestamp_filter(
-        segment_reader: &SegmentReader,
-        timestamp_field_opt: Option<Field>,
-        start_timestamp_opt: Option<i64>,
-        end_timestamp_opt: Option<i64>,
-    ) -> tantivy::Result<Option<TimestampFilter>> {
-        if let Some(timestamp_field) = timestamp_field_opt {
-            TimestampFilter::new(
-                timestamp_field,
-                start_timestamp_opt,
-                end_timestamp_opt,
-                segment_reader,
-            )
-        } else {
-            Ok(None)
-        }
     }
 }
