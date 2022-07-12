@@ -280,13 +280,20 @@ impl Collector for QuickwitCollector {
         // starting from 0 for every leaves.
         let leaf_max_hits = self.max_hits + self.start_offset;
 
+        // Timestamp filter is needed when:
+        //   - there is a timestamp field.
+        //   - AND there is a start OR end timestamp.
         let timestamp_filter_opt = if let Some(timestamp_field) = self.timestamp_field_opt {
-            TimestampFilter::new(
-                timestamp_field,
-                self.start_timestamp_opt,
-                self.end_timestamp_opt,
-                segment_reader,
-            )?
+            if self.start_timestamp_opt.is_some() || self.end_timestamp_opt.is_some() {
+                TimestampFilter::new(
+                    timestamp_field,
+                    self.start_timestamp_opt,
+                    self.end_timestamp_opt,
+                    segment_reader,
+                )?
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -423,7 +430,9 @@ fn extract_fast_field_names(
 ) -> HashSet<String> {
     let mut fast_fields = HashSet::new();
     if let Some(timestamp_field) = doc_mapper.timestamp_field_name() {
-        fast_fields.insert(timestamp_field);
+        if search_request.start_timestamp.is_some() || search_request.end_timestamp.is_some() {
+            fast_fields.insert(timestamp_field);
+        }
     }
     if let SortBy::FastField { field_name, .. } = doc_mapper.sort_by() {
         fast_fields.insert(field_name);
