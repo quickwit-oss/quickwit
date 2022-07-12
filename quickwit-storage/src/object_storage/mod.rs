@@ -27,3 +27,5 @@ mod policy;
 pub use crate::object_storage::policy::MultiPartPolicy;
 
 mod s3_compatible_storage_uri_resolver;
+
+mod azure_compatible_storage;
