@@ -23,6 +23,7 @@ pub mod test_suite {
 
     use async_trait::async_trait;
     use itertools::Itertools;
+    use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use time::OffsetDateTime;
@@ -741,15 +742,15 @@ pub mod test_suite {
 
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
-        let index_id = "replace_splits-index";
+        let index_id = append_random_suffix("test-metastore-replace-splits");
         let index_uri = format!("ram://indexes/{index_id}");
-        let source_id = "replace_splits-source";
-        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
+        let source_id = format!("{index_id}--source");
+        let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
 
-        let split_id_1 = "replace_splits-index-one";
+        let split_id_1 = format!("{index_id}--split-one");
         let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_id: split_id_1.to_string(),
+            split_id: split_id_1.clone(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: None,
@@ -757,10 +758,10 @@ pub mod test_suite {
             ..Default::default()
         };
 
-        let split_id_2 = "replace_splits-index-two";
+        let split_id_2 = format!("{index_id}--split-two");
         let split_metadata_2 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_id: split_id_2.to_string(),
+            split_id: split_id_2.clone(),
             num_docs: 5,
             uncompressed_docs_size_in_bytes: 6,
             time_range: None,
@@ -768,10 +769,10 @@ pub mod test_suite {
             ..Default::default()
         };
 
-        let split_id_3 = "replace_splits-index-three";
+        let split_id_3 = format!("{index_id}--split-three");
         let split_metadata_3 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_id: split_id_3.to_string(),
+            split_id: split_id_3.clone(),
             num_docs: 5,
             uncompressed_docs_size_in_bytes: 6,
             time_range: None,
@@ -781,7 +782,7 @@ pub mod test_suite {
 
         // Replace splits on a non-existent index
         {
-            let result = metastore
+            let error = metastore
                 .replace_splits(
                     "non-existent-index",
                     &["non-existent-split-one"],
@@ -789,7 +790,7 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
+            assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
         }
 
         // Replace a non-existent split on an index
@@ -801,7 +802,7 @@ pub mod test_suite {
 
             let result = metastore
                 .replace_splits(
-                    index_id,
+                    &index_id,
                     &["non-existent-split"],
                     &["non-existent-split-two"],
                 )
@@ -809,7 +810,7 @@ pub mod test_suite {
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Replace a publish split with a non existing split
@@ -820,27 +821,27 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_split(&index_id, split_metadata_1.clone())
                 .await
                 .unwrap();
 
             metastore
                 .publish_splits(
-                    index_id,
-                    source_id,
-                    &[split_id_1],
+                    &index_id,
+                    &source_id,
+                    &[&split_id_1],
                     CheckpointDelta::default(),
                 )
                 .await
                 .unwrap();
 
             let result = metastore
-                .replace_splits(index_id, &[split_id_2], &[split_id_1])
+                .replace_splits(&index_id, &[&split_id_2], &[&split_id_1])
                 .await
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Replace a publish split with a deleted split
@@ -851,37 +852,37 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_split(&index_id, split_metadata_1.clone())
                 .await
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_2.clone())
+                .stage_split(&index_id, split_metadata_2.clone())
                 .await
                 .unwrap();
 
             metastore
                 .publish_splits(
-                    index_id,
-                    source_id,
-                    &[split_id_1, split_id_2],
+                    &index_id,
+                    &source_id,
+                    &[&split_id_1, &split_id_2],
                     CheckpointDelta::default(),
                 )
                 .await
                 .unwrap();
 
             metastore
-                .mark_splits_for_deletion(index_id, &[split_id_2])
+                .mark_splits_for_deletion(&index_id, &[&split_id_2])
                 .await
                 .unwrap();
 
             let result = metastore
-                .replace_splits(index_id, &[split_id_2], &[split_id_1])
+                .replace_splits(&index_id, &[&split_id_2], &[&split_id_1])
                 .await
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::SplitsNotStaged { .. }));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Replace a publish split with mixed splits
@@ -892,32 +893,75 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_split(&index_id, split_metadata_1.clone())
                 .await
                 .unwrap();
 
             metastore
                 .publish_splits(
-                    index_id,
-                    source_id,
-                    &[split_id_1],
+                    &index_id,
+                    &source_id,
+                    &[&split_id_1],
                     CheckpointDelta::default(),
                 )
                 .await
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_2.clone())
+                .stage_split(&index_id, split_metadata_2.clone())
                 .await
                 .unwrap();
 
             let result = metastore
-                .replace_splits(index_id, &[split_id_2, split_id_3], &[split_id_1])
+                .replace_splits(&index_id, &[&split_id_2, &split_id_3], &[&split_id_1])
                 .await
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
+        }
+
+        // Replace a deleted split with a new split
+        {
+            metastore
+                .create_index(index_metadata.clone())
+                .await
+                .unwrap();
+
+            metastore
+                .stage_split(&index_id, split_metadata_1.clone())
+                .await
+                .unwrap();
+
+            metastore
+                .publish_splits(
+                    &index_id,
+                    &source_id,
+                    &[&split_id_1],
+                    CheckpointDelta::default(),
+                )
+                .await
+                .unwrap();
+
+            metastore
+                .mark_splits_for_deletion(&index_id, &[&split_id_1])
+                .await
+                .unwrap();
+
+            metastore
+                .stage_split(&index_id, split_metadata_2.clone())
+                .await
+                .unwrap();
+
+            let error = metastore
+                .replace_splits(&index_id, &[&split_id_2], &[&split_id_1])
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(error, MetastoreError::SplitsNotDeletable { split_ids } if split_ids == vec![split_id_1.clone()])
+            );
+
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Replace a publish split with staged splits
@@ -928,36 +972,36 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_split(&index_id, split_metadata_1.clone())
                 .await
                 .unwrap();
 
             metastore
                 .publish_splits(
-                    index_id,
-                    source_id,
-                    &[split_id_1],
+                    &index_id,
+                    &source_id,
+                    &[&split_id_1],
                     CheckpointDelta::default(),
                 )
                 .await
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_2.clone())
+                .stage_split(&index_id, split_metadata_2.clone())
                 .await
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_3.clone())
+                .stage_split(&index_id, split_metadata_3.clone())
                 .await
                 .unwrap();
 
             metastore
-                .replace_splits(index_id, &[split_id_2, split_id_3], &[split_id_1])
+                .replace_splits(&index_id, &[&split_id_2, &split_id_3], &[&split_id_1])
                 .await
                 .unwrap();
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
     }
 
