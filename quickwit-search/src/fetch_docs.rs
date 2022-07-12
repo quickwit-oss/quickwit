@@ -154,7 +154,7 @@ async fn fetch_docs_in_split(
     index_storage: Arc<dyn Storage>,
     split: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<Vec<(GlobalDocAddress, String)>> {
-    global_doc_addrs.sort_by(|a, b| a.doc_addr.cmp(&b.doc_addr));
+    global_doc_addrs.sort_by_key(|doc| doc.doc_addr);
 
     let index_reader = get_searcher_for_split_without_cache(1, index_storage, split).await?;
     let searcher = Arc::new(index_reader.searcher());
