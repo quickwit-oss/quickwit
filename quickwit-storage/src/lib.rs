@@ -59,7 +59,8 @@ pub use self::cache::MockCache;
 pub use self::cache::{wrap_storage_with_long_term_cache, MemorySizedCache};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 pub use self::object_storage::{
-    MultiPartPolicy, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
+    AzureCompatibleBlobStorageFactory, MultiPartPolicy, S3CompatibleObjectStorage,
+    S3CompatibleObjectStorageFactory,
 };
 pub use self::prefix_storage::add_prefix_to_storage;
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};

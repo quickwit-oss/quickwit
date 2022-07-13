@@ -44,12 +44,11 @@ thiserror = "1"
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["full"] }
 tracing = "0.1.29"
-# azure_core = "0.3.0"
-# azure_storage_blobs = "0.4.0"
-# azure_storage = "0.4.0"
-azure_core = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "2671ca1" }
-azure_storage = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "2671ca1" }
-azure_storage_blobs = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "2671ca1" }
+tokio-stream = "0.1"
+# Temporary: till small our small fixes are merged and published on crates.io.
+azure_core = { git = "https://github.com/evanxg852000/azure-sdk-for-rust", rev = "ceaf597" }
+azure_storage = { git = "https://github.com/evanxg852000/azure-sdk-for-rust", rev = "ceaf597" }
+azure_storage_blobs = { git = "https://github.com/evanxg852000/azure-sdk-for-rust", rev = "ceaf597" }
 
 [dev-dependencies]
 mockall = "0.11"

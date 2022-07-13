@@ -252,10 +252,7 @@ impl S3CompatibleObjectStorage {
             bucket: self.bucket,
             prefix: prefix.to_path_buf(),
             multipart_policy: self.multipart_policy,
-            retry_params: RetryParams {
-                max_attempts: 3,
-                ..Default::default()
-            },
+            retry_params: self.retry_params,
         }
     }
 
@@ -352,8 +349,9 @@ impl S3CompatibleObjectStorage {
         payload: Box<dyn crate::PutPayload>,
         len: u64,
     ) -> StorageResult<()> {
-        retry(&self.retry_params, || {
+        retry(&self.retry_params, || async {
             self.put_single_part_single_try(key, payload.clone(), len)
+                .await
         })
         .await?;
         Ok(())

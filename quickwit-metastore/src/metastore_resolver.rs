@@ -71,7 +71,8 @@ pub fn quickwit_metastore_uri_resolver() -> &'static MetastoreUriResolver {
         let mut builder = MetastoreUriResolver::builder()
             .register("ram", FileBackedMetastoreFactory::default())
             .register("file", FileBackedMetastoreFactory::default())
-            .register("s3", FileBackedMetastoreFactory::default());
+            .register("s3", FileBackedMetastoreFactory::default())
+            .register("azure", FileBackedMetastoreFactory::default());
         #[cfg(feature = "postgres")]
         {
             builder = builder

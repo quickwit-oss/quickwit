@@ -204,7 +204,7 @@ dependencies = [
 [[package]]
 name = "azure_core"
 version = "0.3.0"
-source = "git+https://github.com/Azure/azure-sdk-for-rust?rev=2671ca1#2671ca13fbca50e8b955c1ff47ae2e351660bd3e"
+source = "git+https://github.com/evanxg852000/azure-sdk-for-rust?rev=ceaf597#ceaf59752f998a35097110510a23df42e7b9d5a8"
 dependencies = [
  "async-trait",
  "base64",
@@ -229,7 +229,7 @@ dependencies = [
 [[package]]
 name = "azure_storage"
 version = "0.4.0"
-source = "git+https://github.com/Azure/azure-sdk-for-rust?rev=2671ca1#2671ca13fbca50e8b955c1ff47ae2e351660bd3e"
+source = "git+https://github.com/evanxg852000/azure-sdk-for-rust?rev=ceaf597#ceaf59752f998a35097110510a23df42e7b9d5a8"
 dependencies = [
  "RustyXML",
  "async-trait",
@@ -253,7 +253,7 @@ dependencies = [
 [[package]]
 name = "azure_storage_blobs"
 version = "0.4.0"
-source = "git+https://github.com/Azure/azure-sdk-for-rust?rev=2671ca1#2671ca13fbca50e8b955c1ff47ae2e351660bd3e"
+source = "git+https://github.com/evanxg852000/azure-sdk-for-rust?rev=ceaf597#ceaf59752f998a35097110510a23df42e7b9d5a8"
 dependencies = [
  "RustyXML",
  "azure_core",
@@ -3298,6 +3298,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tokio-util 0.7.3",
  "tracing",
  "tracing-subscriber",

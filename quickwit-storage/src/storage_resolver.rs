@@ -25,7 +25,10 @@ use once_cell::sync::OnceCell;
 
 use crate::local_file_storage::LocalFileStorageFactory;
 use crate::ram_storage::RamStorageFactory;
-use crate::{S3CompatibleObjectStorageFactory, Storage, StorageResolverError};
+use crate::{
+    AzureCompatibleBlobStorageFactory, S3CompatibleObjectStorageFactory, Storage,
+    StorageResolverError,
+};
 
 /// Quickwit supported storage resolvers.
 pub fn quickwit_storage_uri_resolver() -> &'static StorageUriResolver {
@@ -35,6 +38,7 @@ pub fn quickwit_storage_uri_resolver() -> &'static StorageUriResolver {
             .register(RamStorageFactory::default())
             .register(LocalFileStorageFactory::default())
             .register(S3CompatibleObjectStorageFactory::default())
+            .register(AzureCompatibleBlobStorageFactory::default())
             .build()
     })
 }
@@ -92,6 +96,7 @@ impl StorageUriResolver {
             .register(RamStorageFactory::default())
             .register(LocalFileStorageFactory::default())
             .register(S3CompatibleObjectStorageFactory::default())
+            .register(AzureCompatibleBlobStorageFactory::default())
             .build()
     }
 
