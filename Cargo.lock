@@ -2672,6 +2672,7 @@ name = "quickwit-aws"
 version = "0.3.1"
 dependencies = [
  "anyhow",
+ "async-trait",
  "futures",
  "hyper-rustls",
  "once_cell",
@@ -2679,6 +2680,7 @@ dependencies = [
  "rusoto_core",
  "rusoto_kinesis",
  "rusoto_s3",
+ "rusoto_sts",
  "tokio",
  "tracing",
 ]
@@ -3456,6 +3458,21 @@ dependencies = [
  "serde",
  "sha2 0.9.9",
  "tokio",
+]
+
+[[package]]
+name = "rusoto_sts"
+version = "0.48.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1643f49aa67cb7cb895ebac5a2ff3f991c6dbdc58ad98b28158cd5706aecd1d"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "chrono",
+ "futures",
+ "rusoto_core",
+ "serde_urlencoded",
+ "xml-rs",
 ]
 
 [[package]]
