@@ -99,6 +99,17 @@ impl<K: Hash + Eq + Clone, V: Clone> AsyncDebouncer<K, V> {
 
 type DebouncerKey = (PathBuf, Range<usize>);
 
+/// Just to keep in mind there is a race condition on debouncing, when combined with delete
+///
+/// All on the same key
+/// start get R1
+/// start delete R2
+/// end delete R2
+/// start get R3
+/// end get R1
+/// end get R3
+///
+/// ==> R3 would return the cached result, although the resource has been deleted.
 pub(crate) struct DebouncedStorage<T> {
     // wrap both in Arc, because the Future is stored in the cache, which has 'static lifetime
     // associated
