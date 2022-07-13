@@ -191,6 +191,18 @@ impl<A: Actor> Inbox<A> {
             .await
     }
 
+    #[allow(dead_code)] // temporary
+    pub(crate) fn try_recv(&mut self) -> Result<CommandOrMessage<A>, RecvError> {
+        self.rx.try_recv()
+    }
+
+    #[allow(dead_code)] // temporary
+    pub(crate) fn try_recv_cmd_and_scheduled_msg_only(
+        &mut self,
+    ) -> Result<CommandOrMessage<A>, RecvError> {
+        self.rx.try_recv_high_priority_message()
+    }
+
     /// Destroys the inbox and returns the list of pending messages or commands
     /// in the low priority channel.
     ///
