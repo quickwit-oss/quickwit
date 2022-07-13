@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use fnv::FnvHashMap;
-use futures::future::{BoxFuture, Shared};
+use futures::future::{BoxFuture, WeakShared};
 use futures::{Future, FutureExt};
 use tantivy::directory::OwnedBytes;
 
@@ -38,7 +38,7 @@ use crate::{Storage, StorageResult};
 ///
 /// Since most Futures return an Result<V, Error>, this also encompasses the error.
 pub struct AsyncDebouncer<K, V: Clone> {
-    cache: Mutex<FnvHashMap<K, Shared<BoxFuture<'static, V>>>>,
+    cache: Mutex<FnvHashMap<K, WeakShared<BoxFuture<'static, V>>>>,
 }
 
 impl<K, V: Clone> Default for AsyncDebouncer<K, V> {
@@ -50,6 +50,19 @@ impl<K, V: Clone> Default for AsyncDebouncer<K, V> {
 }
 
 impl<K: Hash + Eq + Clone, V: Clone> AsyncDebouncer<K, V> {
+    /// Returns the number of inflight futures.
+    pub fn len(&self) -> usize {
+        self.cache.lock().unwrap().len()
+    }
+
+    /// Cleanup
+    /// In case there is already an existing Future for the passed key, the constructor is not
+    /// used.
+    pub fn cleanup(&self) {
+        let mut guard = self.cache.lock().unwrap();
+        guard.retain(|_, v| v.upgrade().is_some());
+    }
+
     /// Instead of the future directly, a constructor to build the future is passed.
     /// In case there is already an existing Future for the passed key, the constructor is not
     /// used.
@@ -58,15 +71,24 @@ impl<K: Hash + Eq + Clone, V: Clone> AsyncDebouncer<K, V> {
         T: FnOnce() -> F,
         F: Future<Output = V> + Send + 'static,
     {
+        self.cleanup();
+
         // explicit scope to drop the lock
-        let fut_opt = { self.cache.lock().unwrap().get(&key).cloned() };
-        if let Some(future) = fut_opt {
-            return future.await;
+        let weak_fut_opt = { self.cache.lock().unwrap().get(&key).cloned() };
+        if let Some(weak_future) = weak_fut_opt {
+            if let Some(future) = weak_future.upgrade() {
+                return future.await;
+            }
         }
 
         let fut = Box::pin(build_a_future()) as BoxFuture<'static, V>;
         let fut = fut.shared();
-        self.cache.lock().unwrap().insert(key.clone(), fut.clone());
+        self.cache.lock().unwrap().insert(
+            key.clone(),
+            fut.clone().downgrade().expect(
+                "future has been dropped, but that shouldn't happen since it's still in scope",
+            ),
+        );
         let res = fut.await;
 
         self.cache.lock().unwrap().remove(&key);
@@ -154,9 +176,11 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use once_cell::sync::OnceCell;
     use tempfile::TempDir;
     use tokio::fs::{self, File};
     use tokio::io::AsyncWriteExt;
+    use tokio::task;
 
     use super::*;
 
@@ -293,6 +317,68 @@ mod tests {
 
         // Count is only increased by one, because of debouncing
         assert_eq!(COUNT.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn test_cancellation_future() {
+        use tokio::time::timeout;
+        let cache: AsyncDebouncer<String, Result<String, String>> = AsyncDebouncer::default();
+
+        let load = || async {
+            println!("a");
+            // tokio::time::sleep(Duration::from_secs(1)).await;
+            timeout(Duration::from_millis(10), load_via_fn2())
+                .await
+                .map_err(|err| err.to_string())
+        };
+
+        cache
+            .get_or_create("key1".to_owned(), load)
+            .await
+            .unwrap_err();
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let val = cache.get_or_create("key1".to_owned(), load).await;
+        assert!(val.is_err());
+    }
+
+    async fn load_via_fn2() -> String {
+        println!("b");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        println!("c");
+        "blub".to_string()
+    }
+
+    pub static GLOBAL_DEBOUNCER: once_cell::sync::OnceCell<AsyncDebouncer<String, String>> =
+        OnceCell::new();
+    pub fn get_global_debouncer() -> &'static AsyncDebouncer<String, String> {
+        GLOBAL_DEBOUNCER.get_or_init(AsyncDebouncer::default)
+    }
+
+    #[tokio::test]
+    async fn test_cancellation_task() {
+        let load = || async { load_via_fn2().await };
+
+        let handle = task::spawn(async move {
+            get_global_debouncer()
+                .get_or_create("key1".to_owned(), load)
+                .await
+        });
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        // This will cause  the Future to be cancelled, so it will not be polled anymore.
+        // That also means the remove in the cache is not called, which is awaiting the future
+        handle.abort();
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        // The task still hangs unfinished
+        assert_eq!(get_global_debouncer().len(), 1);
+
+        // The next get clears
+        get_global_debouncer()
+            .get_or_create("key1".to_owned(), load)
+            .await;
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert_eq!(get_global_debouncer().len(), 0);
     }
 
     async fn load_via_fn(path: PathBuf, cnt: &AtomicU32) -> Result<String, String> {
