@@ -5,7 +5,7 @@
 //
 // AGPL:
 // This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU& Affero&& General Public License as
+// it under the terms of the GNU Affero General Public License as
 // published by the Free Software Foundation, either version 3 of the
 // License, or (at your option) any later version.
 //
@@ -206,35 +206,31 @@ impl AzureCompatibleBlobStorage {
         total_len: u64,
     ) -> StorageResult<()> {
         assert!(total_len > 0);
-        let multipart_ranges = chunk_range(0..total_len as usize, part_len as usize)
-            .map(into_u64_range)
-            .collect::<Vec<_>>();
+        let multipart_ranges =
+            chunk_range(0..total_len as usize, part_len as usize).map(into_u64_range);
 
         let blob_client = self.container_client.blob_client(name);
-        let mut upload_blocks_stream_result =
-            tokio_stream::iter(multipart_ranges.into_iter().enumerate())
-                .map(|(num, range)| {
-                    let moved_blob_client = blob_client.clone();
-                    let moved_payload = payload.clone();
-                    async move {
-                        retry(&self.retry_params, || async {
-                            let block_id = format!("block:{}", num);
-                            let (data, hash) = extract_range_data_and_hash(
-                                moved_payload.box_clone(),
-                                range.clone(),
-                            )
-                            .await?;
-                            moved_blob_client
-                                .put_block(block_id.clone(), data)
-                                .hash(hash)
-                                .into_future()
+        let mut upload_blocks_stream_result = tokio_stream::iter(multipart_ranges.enumerate())
+            .map(|(num, range)| {
+                let moved_blob_client = blob_client.clone();
+                let moved_payload = payload.clone();
+                async move {
+                    retry(&self.retry_params, || async {
+                        let block_id = format!("block:{}", num);
+                        let (data, hash) =
+                            extract_range_data_and_hash(moved_payload.box_clone(), range.clone())
                                 .await?;
-                            Result::<_, AzureErrorWrapper>::Ok(block_id)
-                        })
-                        .await
-                    }
-                })
-                .buffer_unordered(self.multipart_policy.max_concurrent_upload());
+                        moved_blob_client
+                            .put_block(block_id.clone(), data)
+                            .hash(hash)
+                            .into_future()
+                            .await?;
+                        Result::<_, AzureErrorWrapper>::Ok(block_id)
+                    })
+                    .await
+                }
+            })
+            .buffer_unordered(self.multipart_policy.max_concurrent_upload());
 
         // Concurrently upload block with limit.
         let mut block_list = BlockList::default();
@@ -433,7 +429,7 @@ impl Storage for AzureCompatibleBlobStorage {
             "azure://{}/{}/{}",
             self.account,
             self.container,
-            self.prefix.to_string_lossy().to_string()
+            self.prefix.to_string_lossy()
         )
     }
 }
