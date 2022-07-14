@@ -11,15 +11,18 @@ Some references for this tutorial include [Storage URI](/docs/reference/storage-
 
 ## Install & Configure
 Let's first install the Quickwit binary, configure it and provide Quickwit access to the buckets.
+
 ```bash
 curl -L https://install.quickwit.io | sh
 cd quickwit-v*/
 ```
+
 :::note
 All the steps can be done either on the virtual machine or locally.
 :::
 
-Now let's set up the endpoint url for Google Cloud Storage:
+Now let's set up the endpoint URI for Google Cloud Storage:
+
 ```bash
 export QW_S3_ENDPOINT=https://storage.googleapis.com
 ```
@@ -29,6 +32,7 @@ Lastly, get the secret & the access key from the [Google Cloud Console settings]
 export AWS_SECRET_ACCESS_KEY=***
 export AWS_ACCESS_KEY_ID=***
 ```
+
 ## Create your index
 
 ```bash
@@ -67,27 +71,30 @@ indexing_settings:
 search_settings:
   default_search_fields: [severity_text, body]
 ```
+
 Provide the bucket path:
+
 ```bash
 export S3_PATH=s3://{path/to/bucket}/indexes
 ```
+
 Create a config file:
+
 ```yaml title="config.yaml"
 version: 0
 metastore_uri: ${S3_PATH}
 default_index_root_uri: ${S3_PATH}
 ```
+
 Now we can create an index with the `create` command:
+
 ```bash
 ./quickwit index create --index-config hdfs_logs_index_config.yaml
 ```
 
 :::note
-
 If executed locally, the `create` command creates the index locally and then uploads a json file `metastore.json` to your bucket at `s3://path-to-your-bucket/hdfs-logs/metastore.json`.
-
 :::
-
 
 ## Index logs
 
@@ -98,11 +105,9 @@ curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.js
 ```
 
 :::note
-
 4GB of RAM is enough to index this dataset; an instance like `t4g.medium` with 4GB and 2 vCPU indexed this dataset in 20 minutes.
 
 This step can also be done on your local machine. The `ingest` subcommand generates locally [splits](/docs/concepts/architecture) of 10 million documents and will upload them on your bucket. Concretely, each split is a bundle of index files and metadata files.
-
 :::
 
 If you are in a hurry, use the sample dataset that contains 10 000 documents, we will use this dataset for the example queries:
@@ -111,10 +116,8 @@ If you are in a hurry, use the sample dataset that contains 10 000 documents, we
 curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10000.json | ./quickwit index ingest --index hdfs-logs
 ```
 
-
-
-
 You can check it's working by using `search` subcommand and look for `INFO` in `severity_text` field:
+
 ```bash
 ./quickwit index search --index hdfs-logs  --query "severity_text:INFO"
 ```
@@ -129,6 +132,7 @@ Let's start a Quickwit server.
 # Start the http server search service.
 ./quickwit run --service searcher
 ```
+
 Once started, you would see the following success result:
 
 ```bash
