@@ -77,7 +77,9 @@ This is done by setting an endpoint url in the `QW_S3_ENDPOINT` environment vari
 
 In this case, the region will be ignored.
 
-Set up the endpoint url:
+Example of using Google Cloud Storage: 
+```bash
+export QW_S3_ENDPOINT=https://storage.googleapis.com
 ```bash
 export QW_S3_ENDPOINT=http://localhost:9000/
 ```
