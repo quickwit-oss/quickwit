@@ -17,8 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-// This file is an integration test that assumes that the environement
-// makes it possible to connect to Amazon S3's quickwit-integration-test bucket.
+// This file is an integration test that assumes that the environment
+// makes it possible to connect to Azure blob storage with these environment
+// variables.
+// export QW_AZURE_TEST_URI=azure://azure-storage-account/azure-container
+// export QW_AZURE_ACCESS_KEY=azure-access-key.
 
 use std::path::Path;
 

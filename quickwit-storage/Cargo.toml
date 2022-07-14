@@ -46,9 +46,9 @@ tokio-util = { version = "0.7", features = ["full"] }
 tracing = "0.1.29"
 tokio-stream = "0.1"
 # Temporary: till small our small fixes are merged and published on crates.io.
-azure_core = { git = "https://github.com/evanxg852000/azure-sdk-for-rust", rev = "79f0cf3" }
-azure_storage = { git = "https://github.com/evanxg852000/azure-sdk-for-rust", rev = "79f0cf3" }
-azure_storage_blobs = { git = "https://github.com/evanxg852000/azure-sdk-for-rust", rev = "79f0cf3" }
+azure_core = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10" }
+azure_storage = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10" }
+azure_storage_blobs = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10" }
 
 [dev-dependencies]
 mockall = "0.11"
