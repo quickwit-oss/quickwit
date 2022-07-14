@@ -59,8 +59,8 @@ pub use self::cache::MockCache;
 pub use self::cache::{wrap_storage_with_long_term_cache, MemorySizedCache};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 pub use self::object_storage::{
-    AzureCompatibleBlobStorageFactory, MultiPartPolicy, S3CompatibleObjectStorage,
-    S3CompatibleObjectStorageFactory,
+    AzureCompatibleBlobStorage, AzureCompatibleBlobStorageFactory, MultiPartPolicy,
+    S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
 };
 pub use self::prefix_storage::add_prefix_to_storage;
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};
@@ -73,7 +73,9 @@ pub use self::storage_resolver::{
     quickwit_storage_uri_resolver, StorageFactory, StorageUriResolver,
 };
 #[cfg(feature = "testsuite")]
-pub use self::test_suite::storage_test_suite;
+pub use self::test_suite::{
+    storage_test_multi_part_upload, storage_test_single_part_upload, storage_test_suite,
+};
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
 
 /// Loads an entire local or remote file into memory.
@@ -257,6 +259,26 @@ pub(crate) mod test_suite {
         test_delete_missing_file(storage)
             .await
             .with_context(|| "delete_missing_file")?;
+        Ok(())
+    }
+
+    /// Generic single-part upload test.
+    pub async fn storage_test_single_part_upload(storage: &mut dyn Storage) -> anyhow::Result<()> {
+        storage
+            .put(
+                Path::new("hello_small.txt"),
+                Box::new(b"hello, happy tax payer!".to_vec()),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Generic multi-part upload test.
+    pub async fn storage_test_multi_part_upload(storage: &mut dyn Storage) -> anyhow::Result<()> {
+        let test_buffer = vec![0u8; 15_000_000];
+        storage
+            .put(Path::new("hello_large.txt"), Box::new(test_buffer))
+            .await?;
         Ok(())
     }
 }

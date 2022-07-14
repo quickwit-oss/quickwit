@@ -1,6 +1,6 @@
 // Copyright (C) 2022 Quickwit, Inc.
 //
-// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// Quickwit is offered &under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
 //
 // AGPL:
@@ -118,6 +118,13 @@ impl AzureCompatibleBlobStorage {
         }
     }
 
+    /// Sets the multipart policy.
+    ///
+    /// See `MultiPartPolicy`.
+    pub fn set_policy(&mut self, multipart_policy: MultiPartPolicy) {
+        self.multipart_policy = multipart_policy;
+    }
+
     /// Construct instance from uri.
     pub fn from_uri(uri: &str) -> crate::StorageResult<AzureCompatibleBlobStorage> {
         let (account_name, container, path) = parse_uri(uri).ok_or_else(|| {
@@ -163,7 +170,13 @@ impl AzureCompatibleBlobStorage {
             Result::<_, AzureErrorWrapper>::Ok(buf)
         })
         .await
-        .map_err(|err| err.into())
+        .map_err(|err| {
+            if name.ends_with("missingfile") {
+                println!("{}", err.inner.kind());
+            }
+
+            err.into()
+        })
     }
 
     /// Returns the absolute uri of a path for this storage.
@@ -254,6 +267,123 @@ impl AzureCompatibleBlobStorage {
     }
 }
 
+#[async_trait]
+impl Storage for AzureCompatibleBlobStorage {
+    async fn check(&self) -> anyhow::Result<()> {
+        if let Some(first_blob_result) = self
+            .container_client
+            .list_blobs()
+            .max_results(NonZeroU32::new(1u32).unwrap())
+            .into_stream()
+            .next()
+            .await
+        {
+            let _ = first_blob_result?;
+        }
+        Ok(())
+    }
+
+    async fn put(
+        &self,
+        path: &Path,
+        payload: Box<dyn crate::PutPayload>,
+    ) -> crate::StorageResult<()> {
+        crate::STORAGE_METRICS.object_storage_put_total.inc();
+        let name = self.blob_name(path);
+        let total_len = payload.len();
+        let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);
+
+        if part_num_bytes >= total_len {
+            self.put_single_part(&name, payload).await?;
+        } else {
+            self.put_multi_part(&name, payload, part_num_bytes, total_len)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
+        let name = self.blob_name(path);
+        let mut output_stream = self.container_client.blob_client(name).get().into_stream();
+
+        let mut dest_file = File::create(output_path).await?;
+        while let Some(result) = output_stream.next().await {
+            let chunk = result.map_err(AzureErrorWrapper::from)?.data;
+            dest_file.write_all(&chunk).await?;
+        }
+        dest_file.flush().await?;
+        Ok(())
+    }
+
+    async fn delete(&self, path: &Path) -> StorageResult<()> {
+        let name = self.blob_name(path);
+        let delete_result: Result<_, StorageError> = self
+            .container_client
+            .blob_client(name.clone())
+            .delete()
+            .into_future()
+            .await
+            .map_err(|err| AzureErrorWrapper::from(err).into());
+        if let Err(error) = delete_result {
+            return match error.kind() {
+                StorageErrorKind::DoesNotExist => Ok(()),
+                _ => Err(error),
+            };
+        }
+        Ok(())
+    }
+
+    #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
+    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
+        self.get_to_vec(path, Some(range.clone()))
+            .await
+            .map(OwnedBytes::new)
+            .map_err(|err| {
+                err.add_context(format!(
+                    "Failed to fetch slice {:?} for object: {}",
+                    range,
+                    self.uri(path)
+                ))
+            })
+    }
+
+    #[instrument(level = "debug", skip(self), fields(fetched_bytes_len))]
+    async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
+        let data = self
+            .get_to_vec(path, None)
+            .await
+            .map(OwnedBytes::new)
+            .map_err(|err| {
+                err.add_context(format!("Failed to fetch object: {}", self.uri(path)))
+            })?;
+        tracing::Span::current().record("fetched_bytes_len", &data.len());
+        Ok(data)
+    }
+
+    async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
+        let name = self.blob_name(path);
+        let properties_result = self
+            .container_client
+            .blob_client(name)
+            .get_properties()
+            .into_future()
+            .await;
+        match properties_result {
+            Ok(response) => Ok(response.blob.properties.content_length),
+            Err(err) => Err(StorageError::from(AzureErrorWrapper::from(err))),
+        }
+    }
+
+    fn uri(&self) -> String {
+        format!(
+            "azure://{}/{}/{}",
+            self.account,
+            self.container,
+            self.prefix.to_string_lossy()
+        )
+    }
+}
+
 /// Copy range of payload into `Bytes` and return the computed md5.
 async fn extract_range_data_and_hash(
     payload: Box<dyn PutPayload>,
@@ -316,124 +446,6 @@ async fn download_all(
     Ok(())
 }
 
-#[async_trait]
-impl Storage for AzureCompatibleBlobStorage {
-    async fn check(&self) -> anyhow::Result<()> {
-        if let Some(first_blob_result) = self
-            .container_client
-            .list_blobs()
-            .max_results(NonZeroU32::new(1u32).unwrap())
-            .into_stream()
-            .next()
-            .await
-        {
-            let _ = first_blob_result?;
-        }
-        Ok(())
-    }
-
-    async fn put(
-        &self,
-        path: &Path,
-        payload: Box<dyn crate::PutPayload>,
-    ) -> crate::StorageResult<()> {
-        crate::STORAGE_METRICS.object_storage_put_total.inc();
-        let name = self.blob_name(path);
-        let total_len = payload.len();
-        let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);
-
-        if part_num_bytes >= total_len {
-            self.put_single_part(&name, payload).await?;
-        } else {
-            self.put_multi_part(&name, payload, part_num_bytes, total_len)
-                .await?;
-        }
-        Ok(())
-    }
-
-    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
-        let name = self.blob_name(path);
-        let mut output_stream = self.container_client.blob_client(name).get().into_stream();
-
-        let mut dest_file = File::create(output_path).await?;
-        while let Some(result) = output_stream.next().await {
-            let chunk = result.map_err(AzureErrorWrapper::from)?.data;
-            dest_file.write_all(&chunk).await?;
-        }
-        dest_file.flush().await?;
-        Ok(())
-    }
-
-    async fn delete(&self, path: &Path) -> StorageResult<()> {
-        let name = self.blob_name(path);
-        self.container_client
-            .blob_client(name)
-            .delete()
-            .into_future()
-            .await
-            .map_err(AzureErrorWrapper::from)?;
-        Ok(())
-    }
-
-    #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
-    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
-        self.get_to_vec(path, Some(range.clone()))
-            .await
-            .map(OwnedBytes::new)
-            .map_err(|err| {
-                err.add_context(format!(
-                    "Failed to fetch slice {:?} for object: {}",
-                    range,
-                    self.uri(path)
-                ))
-            })
-    }
-
-    #[instrument(level = "debug", skip(self), fields(fetched_bytes_len))]
-    async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
-        let data = self
-            .get_to_vec(path, None)
-            .await
-            .map(OwnedBytes::new)
-            .map_err(|err| {
-                err.add_context(format!("Failed to fetch object: {}", self.uri(path)))
-            })?;
-        tracing::Span::current().record("fetched_bytes_len", &data.len());
-        Ok(data)
-    }
-
-    async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
-        let name = self.blob_name(path);
-        let properties_result = self
-            .container_client
-            .blob_client(name)
-            .get_properties()
-            .into_future()
-            .await;
-        match properties_result {
-            Ok(response) => Ok(response.blob.properties.content_length),
-            Err(err) => match err.kind() {
-                ErrorKind::HttpResponse { status, .. } if *status == StatusCode::NotFound => {
-                    Err(StorageErrorKind::DoesNotExist.with_error(anyhow::anyhow!(
-                        "Missing key in Azure blob storage `{}`",
-                        path.display()
-                    )))
-                }
-                _ => Err(AzureErrorWrapper::from(err).into()),
-            },
-        }
-    }
-
-    fn uri(&self) -> String {
-        format!(
-            "azure://{}/{}/{}",
-            self.account,
-            self.container,
-            self.prefix.to_string_lossy()
-        )
-    }
-}
-
 #[derive(Error, Debug)]
 #[error("AzureErrorWrapper(inner={inner})")]
 struct AzureErrorWrapper {
@@ -462,7 +474,15 @@ impl From<io::Error> for AzureErrorWrapper {
 
 impl From<AzureErrorWrapper> for StorageError {
     fn from(err: AzureErrorWrapper) -> Self {
-        crate::StorageErrorKind::InternalError.with_error(err)
+        match err.inner.kind() {
+            ErrorKind::HttpResponse { status, .. } => match status {
+                StatusCode::NotFound => StorageErrorKind::DoesNotExist.with_error(err),
+                _ => StorageErrorKind::Service.with_error(err),
+            },
+            ErrorKind::Io => StorageErrorKind::Io.with_error(err),
+            ErrorKind::Credential => StorageErrorKind::Unauthorized.with_error(err),
+            _ => StorageErrorKind::InternalError.with_error(err),
+        }
     }
 }
 

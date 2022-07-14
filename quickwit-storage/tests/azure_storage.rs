@@ -23,28 +23,44 @@
 use std::path::Path;
 
 use anyhow::Context;
-use quickwit_storage::{MultiPartPolicy, S3CompatibleObjectStorage};
+use quickwit_storage::{AzureCompatibleBlobStorage, MultiPartPolicy};
 
 #[cfg(feature = "testsuite")]
 #[tokio::test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
-// Weirdly this does not work for localstack. The error messages seem off.
-async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
+async fn test_suite_on_azure_storage() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
-    let mut object_storage =
-        S3CompatibleObjectStorage::from_uri("s3://quickwit-integration-tests")?;
-    quickwit_storage::storage_test_suite(&mut object_storage).await?;
+    // TODO: https://github.com/Azure/azure-sdk-for-rust/issues/936
+    // Azurite,the Azure blob storage emulator does not support range download.
+    // In the mean time, let's run tests against a real azure account.
+    //
+    // To achieve this we need these env variables.
+    // export QW_AZURE_TEST_URI=azure://azure-storage-account/azure-container
+    // export QW_AZURE_ACCESS_KEY=azure-access-key
+    //
+    let _ = std::env::var("QW_AZURE_ACCESS_KEY").expect("Set env variable QW_AZURE_ACCESS_KEY");
+    let base_uri = std::env::var("QW_AZURE_TEST_URI").expect("Set env variable AZURE_TEST_URI");
+
+    let test_id = uuid::Uuid::new_v4().to_string();
 
     let mut object_storage =
-        S3CompatibleObjectStorage::from_uri("s3://quickwit-integration-tests")?
-            .with_prefix(Path::new("test-s3-compatible-storage"));
+        AzureCompatibleBlobStorage::from_uri(&format!("{}/tests-{}", base_uri, test_id))?;
+    quickwit_storage::storage_test_suite(&mut object_storage).await?;
+
+    let mut object_storage = AzureCompatibleBlobStorage::from_uri(&format!(
+        "{}/integration-tests-{}",
+        base_uri, test_id
+    ))?
+    .with_prefix(Path::new("test-azure-compatible-storage"));
     quickwit_storage::storage_test_single_part_upload(&mut object_storage)
         .await
         .with_context(|| "test_single_part_upload")?;
 
-    let mut object_storage =
-        S3CompatibleObjectStorage::from_uri("s3://quickwit-integration-tests")?
-            .with_prefix(Path::new("test-s3-compatible-storage"));
+    let mut object_storage = AzureCompatibleBlobStorage::from_uri(&format!(
+        "{}/integration-tests-{}",
+        base_uri, test_id
+    ))?
+    .with_prefix(Path::new("test-azure-compatible-storage"));
     object_storage.set_policy(MultiPartPolicy {
         target_part_num_bytes: 5 * 1_024 * 1_024, //< the minimum on S3 is 5MB.
         max_num_parts: 10_000,

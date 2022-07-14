@@ -20,7 +20,9 @@
 mod error;
 
 mod s3_compatible_storage;
-pub use self::azure_compatible_storage::AzureCompatibleBlobStorageFactory;
+pub use self::azure_compatible_storage::{
+    AzureCompatibleBlobStorage, AzureCompatibleBlobStorageFactory,
+};
 pub use self::s3_compatible_storage::S3CompatibleObjectStorage;
 pub use self::s3_compatible_storage_uri_resolver::S3CompatibleObjectStorageFactory;
 
