@@ -55,6 +55,10 @@ mockall = "0.11"
 tracing-subscriber = "0.3"
 tokio = { version = "1", features = ["full", "test-util"] }
 uuid = { version = "1.1", features = ["v4", "serde"] }
+azure_core = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10", features =  ["azurite_workaround"] }
+azure_storage = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10", features =  ["azurite_workaround"] }
+azure_storage_blobs = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10", features =  ["azurite_workaround"] }
+
 
 [features]
 testsuite = ["mockall"]

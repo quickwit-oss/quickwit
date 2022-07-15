@@ -118,6 +118,23 @@ impl AzureCompatibleBlobStorage {
         }
     }
 
+    /// Creates an emulated storage for testing.
+    #[cfg(feature = "testsuite")]
+    pub fn new_emulated(container: &str) -> Self {
+        let container_client = StorageClient::new_emulator_default().container_client(container);
+        AzureCompatibleBlobStorage {
+            container_client,
+            account: container.to_string(),
+            container: container.to_string(),
+            prefix: PathBuf::new(),
+            multipart_policy: MultiPartPolicy::default(),
+            retry_params: RetryParams {
+                max_attempts: 3,
+                ..Default::default()
+            },
+        }
+    }
+
     /// Sets the multipart policy.
     ///
     /// See `MultiPartPolicy`.
@@ -144,7 +161,7 @@ impl AzureCompatibleBlobStorage {
         key_path.to_string_lossy().to_string()
     }
 
-    /// Downloads a a blob as vector of bytes.
+    /// Downloads a blob as vector of bytes.
     async fn get_to_vec(
         &self,
         path: &Path,
@@ -170,13 +187,7 @@ impl AzureCompatibleBlobStorage {
             Result::<_, AzureErrorWrapper>::Ok(buf)
         })
         .await
-        .map_err(|err| {
-            if name.ends_with("missingfile") {
-                println!("{}", err.inner.kind());
-            }
-
-            err.into()
-        })
+        .map_err(StorageError::from)
     }
 
     /// Returns the absolute uri of a path for this storage.

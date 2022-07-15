@@ -42,9 +42,6 @@ async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
         .await
         .with_context(|| "test_single_part_upload")?;
 
-    let mut object_storage =
-        S3CompatibleObjectStorage::from_uri("s3://quickwit-integration-tests")?
-            .with_prefix(Path::new("test-s3-compatible-storage"));
     object_storage.set_policy(MultiPartPolicy {
         target_part_num_bytes: 5 * 1_024 * 1_024, //< the minimum on S3 is 5MB.
         max_num_parts: 10_000,

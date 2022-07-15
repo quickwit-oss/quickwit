@@ -42,6 +42,13 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      
+      azurite:
+        image: mcr.microsoft.com/azure-storage/azurite:latest
+        container_name: azurite
+        ports:
+          - "10000:10000" # Blob store port
+        options: azurite --blobHost 0.0.0.0 --loose
 
       postgres:
         image: postgres:latest

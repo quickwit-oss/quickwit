@@ -17,15 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-// This file is an integration test that assumes that the environment
-// makes it possible to connect to Azure blob storage with these environment
-// variables.
-// export QW_AZURE_TEST_URI=azure://azure-storage-account/azure-container
-// export QW_AZURE_ACCESS_KEY=azure-access-key.
+// This file is an integration test that assumes that a connection
+// to Azurite (the emulated azure blob storage environment)
+// with default `loose` config is possible.
 
 use std::path::Path;
 
 use anyhow::Context;
+use azure_storage::core::prelude::StorageClient;
+use azure_storage_blobs::prelude::AsContainerClient;
 use quickwit_storage::{AzureCompatibleBlobStorage, MultiPartPolicy};
 
 #[cfg(feature = "testsuite")]
@@ -33,37 +33,22 @@ use quickwit_storage::{AzureCompatibleBlobStorage, MultiPartPolicy};
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_suite_on_azure_storage() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
-    // TODO: https://github.com/Azure/azure-sdk-for-rust/issues/936
-    // Azurite,the Azure blob storage emulator does not support range download.
-    // In the mean time, let's run tests against a real azure account.
-    //
-    // To achieve this we need these env variables.
-    // export QW_AZURE_TEST_URI=azure://azure-storage-account/azure-container
-    // export QW_AZURE_ACCESS_KEY=azure-access-key
-    //
-    let _ = std::env::var("QW_AZURE_ACCESS_KEY").expect("Set env variable QW_AZURE_ACCESS_KEY");
-    let base_uri = std::env::var("QW_AZURE_TEST_URI").expect("Set env variable AZURE_TEST_URI");
 
-    let test_id = uuid::Uuid::new_v4().to_string();
+    // setup container
+    const CONTAINER: &str = "quickwit";
+    let container_client = StorageClient::new_emulator_default().container_client(CONTAINER);
+    container_client.create().into_future().await?;
 
-    let mut object_storage =
-        AzureCompatibleBlobStorage::from_uri(&format!("{}/tests-{}", base_uri, test_id))?;
+    let mut object_storage = AzureCompatibleBlobStorage::new_emulated(CONTAINER);
     quickwit_storage::storage_test_suite(&mut object_storage).await?;
 
-    let mut object_storage = AzureCompatibleBlobStorage::from_uri(&format!(
-        "{}/integration-tests-{}",
-        base_uri, test_id
-    ))?
-    .with_prefix(Path::new("test-azure-compatible-storage"));
+    let mut object_storage = AzureCompatibleBlobStorage::new_emulated(CONTAINER).with_prefix(
+        Path::new("/integration-tests/test-azure-compatible-storage"),
+    );
     quickwit_storage::storage_test_single_part_upload(&mut object_storage)
         .await
         .with_context(|| "test_single_part_upload")?;
 
-    let mut object_storage = AzureCompatibleBlobStorage::from_uri(&format!(
-        "{}/integration-tests-{}",
-        base_uri, test_id
-    ))?
-    .with_prefix(Path::new("test-azure-compatible-storage"));
     object_storage.set_policy(MultiPartPolicy {
         target_part_num_bytes: 5 * 1_024 * 1_024, //< the minimum on S3 is 5MB.
         max_num_parts: 10_000,
@@ -74,6 +59,9 @@ async fn test_suite_on_azure_storage() -> anyhow::Result<()> {
     quickwit_storage::storage_test_multi_part_upload(&mut object_storage)
         .await
         .with_context(|| "test_multi_part_upload")?;
+
+    // teardown container
+    container_client.delete().into_future().await?;
 
     Ok(())
 }
