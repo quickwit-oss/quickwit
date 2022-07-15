@@ -58,7 +58,7 @@ impl<K: Hash + Eq + Clone, V: Clone> AsyncDebouncer<K, V> {
     /// Cleanup
     /// In case there is already an existing Future for the passed key, the constructor is not
     /// used.
-    pub fn cleanup(&self) {
+    fn cleanup(&self) {
         let mut guard = self.cache.lock().unwrap();
         guard.retain(|_, v| v.upgrade().is_some());
     }
