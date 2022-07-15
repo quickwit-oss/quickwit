@@ -33,13 +33,47 @@ pub struct TimestampFilter {
 }
 
 impl TimestampFilter {
+    pub fn is_within_range(&self, doc_id: DocId) -> bool {
+        let timestamp_value = self.timestamp_field_reader.get(doc_id);
+        self.time_range.contains(&timestamp_value)
+    }
+}
+
+#[derive(Clone)]
+pub struct TimestampFilterBuilder {
+    pub timestamp_field_name: String,
+    timestamp_field: Field,
+    start_timestamp_opt: Option<i64>,
+    end_timestamp_opt: Option<i64>,
+}
+
+impl TimestampFilterBuilder {
     pub fn new(
-        field: Field,
+        timestamp_field_name_opt: Option<String>,
+        timestamp_field_opt: Option<Field>,
         start_timestamp_opt: Option<i64>,
         end_timestamp_opt: Option<i64>,
+    ) -> Option<TimestampFilterBuilder> {
+        let timestamp_field_name = timestamp_field_name_opt?;
+        let timestamp_field = timestamp_field_opt?;
+        if start_timestamp_opt.is_none() && end_timestamp_opt.is_none() {
+            return None;
+        }
+        Some(TimestampFilterBuilder {
+            timestamp_field_name,
+            timestamp_field,
+            start_timestamp_opt,
+            end_timestamp_opt,
+        })
+    }
+
+    pub fn build(
+        &self,
         segment_reader: &SegmentReader,
-    ) -> tantivy::Result<Option<Self>> {
-        let field_entry = segment_reader.schema().get_field_entry(field);
+    ) -> tantivy::Result<Option<TimestampFilter>> {
+        let field_entry = segment_reader
+            .schema()
+            .get_field_entry(self.timestamp_field);
 
         let expected_type = Type::I64;
         let field_schema_type = field_entry.field_type().value_type();
@@ -52,23 +86,25 @@ impl TimestampFilter {
             )));
         }
 
-        let timestamp_field_reader = segment_reader.fast_fields().i64(field)?;
+        let timestamp_field_reader = segment_reader.fast_fields().i64(self.timestamp_field)?;
         let segment_range = (
             timestamp_field_reader.min_value(),
             timestamp_field_reader.max_value(),
         );
         let timestamp_range = (
-            start_timestamp_opt.unwrap_or(i64::MIN),
-            end_timestamp_opt.unwrap_or(i64::MAX),
+            self.start_timestamp_opt.unwrap_or(i64::MIN),
+            self.end_timestamp_opt.unwrap_or(i64::MAX),
         );
         if is_segment_always_within_timestamp_range(segment_range, timestamp_range) {
             return Ok(None);
         }
 
-        let lower_bound = start_timestamp_opt
+        let lower_bound = self
+            .start_timestamp_opt
             .map(Bound::Included)
             .unwrap_or(Bound::Unbounded);
-        let upper_bound = end_timestamp_opt
+        let upper_bound = self
+            .end_timestamp_opt
             .map(Bound::Excluded)
             .unwrap_or(Bound::Unbounded);
 
@@ -76,11 +112,6 @@ impl TimestampFilter {
             time_range: (lower_bound, upper_bound),
             timestamp_field_reader,
         }))
-    }
-
-    pub fn is_within_range(&self, doc_id: DocId) -> bool {
-        let timestamp_value = self.timestamp_field_reader.get(doc_id);
-        self.time_range.contains(&timestamp_value)
     }
 }
 

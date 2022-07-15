@@ -20,7 +20,6 @@
 use std::any::type_name;
 use std::convert::Infallible;
 use std::fmt;
-use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
@@ -29,17 +28,16 @@ use async_trait::async_trait;
 use futures::Future;
 use thiserror::Error;
 use tokio::sync::oneshot;
-use tokio::sync::watch::Sender;
 use tracing::{debug, error, info_span, Span};
 
 use crate::actor_state::{ActorState, AtomicState};
 use crate::channel_with_priority::Priority;
 use crate::envelope::wrap_in_envelope;
-use crate::mailbox::{Command, CommandOrMessage};
+use crate::mailbox::CommandOrMessage;
 use crate::progress::{Progress, ProtectedZoneGuard};
 use crate::scheduler::{Callback, ScheduleEvent, Scheduler};
 use crate::spawn_builder::SpawnBuilder;
-use crate::{ActorRunner, AskError, KillSwitch, Mailbox, QueueCapacity, SendError};
+use crate::{AskError, Command, KillSwitch, Mailbox, QueueCapacity, SendError};
 
 /// The actor exit status represents the outcome of the execution of an actor,
 /// after the end of the execution.
@@ -137,8 +135,8 @@ pub trait Actor: Send + Sync + Sized + 'static {
     ///
     /// Actor with a handler that may block for more than 50microsecs should
     /// use the `ActorRunner::DedicatedThread`.
-    fn runner(&self) -> ActorRunner {
-        ActorRunner::GlobalRuntime
+    fn runtime_handle(&self) -> tokio::runtime::Handle {
+        tokio::runtime::Handle::current()
     }
 
     /// The Actor's incoming mailbox queue capacity. It is set when the actor is spawned.
@@ -191,14 +189,12 @@ pub trait Actor: Send + Sync + Sized + 'static {
 // TODO hide all of this public stuff
 pub struct ActorContext<A: Actor> {
     inner: Arc<ActorContextInner<A>>,
-    phantom_data: PhantomData<A>,
 }
 
 impl<A: Actor> Clone for ActorContext<A> {
     fn clone(&self) -> Self {
         ActorContext {
             inner: self.inner.clone(),
-            phantom_data: PhantomData,
         }
     }
 }
@@ -234,7 +230,6 @@ impl<A: Actor> ActorContext<A> {
                 actor_state: AtomicState::default(),
             }
             .into(),
-            phantom_data: PhantomData,
         }
     }
 
@@ -457,35 +452,6 @@ impl<A: Actor> ActorContext<A> {
         let _ = self
             .send_message(&self.inner.scheduler_mailbox, scheduler_msg)
             .await;
-    }
-}
-
-pub(crate) fn process_command<A: Actor>(
-    actor: &mut A,
-    command: Command,
-    ctx: &ActorContext<A>,
-    state_tx: &Sender<A::ObservableState>,
-) -> Option<ActorExitStatus> {
-    match command {
-        Command::Pause => {
-            ctx.pause();
-            None
-        }
-        Command::ExitWithSuccess => Some(ActorExitStatus::Success),
-        Command::Quit => Some(ActorExitStatus::Quit),
-        Command::Kill => Some(ActorExitStatus::Killed),
-        Command::Resume => {
-            ctx.resume();
-            None
-        }
-        Command::Observe(cb) => {
-            let state = actor.observable_state();
-            let _ = state_tx.send(state.clone());
-            // We voluntarily ignore the error here. (An error only occurs if the
-            // sender dropped its receiver.)
-            let _ = cb.send(Box::new(state));
-            None
-        }
     }
 }
 

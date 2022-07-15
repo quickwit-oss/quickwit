@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::{fmt, io};
 
 use async_trait::async_trait;
-use quickwit_storage::SliceCache;
+use quickwit_storage::MemorySizedCache;
 use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, OwnedBytes};
 use tantivy::{AsyncIoResult, Directory, HasLen};
@@ -33,7 +33,7 @@ use tantivy::{AsyncIoResult, Directory, HasLen};
 pub struct CachingDirectory {
     underlying: Arc<dyn Directory>,
     // TODO fixme: that's a pretty ugly cache we have here.
-    cache: Arc<SliceCache>,
+    cache: Arc<MemorySizedCache>,
 }
 
 impl CachingDirectory {
@@ -54,7 +54,7 @@ impl CachingDirectory {
     ) -> CachingDirectory {
         CachingDirectory {
             underlying,
-            cache: Arc::new(SliceCache::with_capacity_in_bytes(
+            cache: Arc::new(MemorySizedCache::with_capacity_in_bytes(
                 capacity_in_bytes,
                 &quickwit_storage::STORAGE_METRICS.shortlived_cache,
             )),
@@ -69,7 +69,7 @@ impl CachingDirectory {
     pub fn new_with_unlimited_capacity(underlying: Arc<dyn Directory>) -> CachingDirectory {
         CachingDirectory {
             underlying,
-            cache: Arc::new(SliceCache::with_infinite_capacity(
+            cache: Arc::new(MemorySizedCache::with_infinite_capacity(
                 &quickwit_storage::STORAGE_METRICS.shortlived_cache,
             )),
         }
@@ -84,7 +84,7 @@ impl fmt::Debug for CachingDirectory {
 
 struct CachingFileHandle {
     path: PathBuf,
-    cache: Arc<SliceCache>,
+    cache: Arc<MemorySizedCache>,
     underlying_filehandle: Box<dyn FileHandle>,
 }
 
@@ -102,17 +102,17 @@ impl fmt::Debug for CachingFileHandle {
 #[async_trait]
 impl FileHandle for CachingFileHandle {
     fn read_bytes(&self, byte_range: Range<usize>) -> io::Result<OwnedBytes> {
-        if let Some(bytes) = self.cache.get(&self.path, byte_range.clone()) {
+        if let Some(bytes) = self.cache.get_slice(&self.path, byte_range.clone()) {
             return Ok(bytes);
         }
         let owned_bytes = self.underlying_filehandle.read_bytes(byte_range.clone())?;
         self.cache
-            .put(self.path.to_path_buf(), byte_range, owned_bytes.clone());
+            .put_slice(self.path.clone(), byte_range, owned_bytes.clone());
         Ok(owned_bytes)
     }
 
     async fn read_bytes_async(&self, byte_range: Range<usize>) -> AsyncIoResult<OwnedBytes> {
-        if let Some(owned_bytes) = self.cache.get(&self.path, byte_range.clone()) {
+        if let Some(owned_bytes) = self.cache.get_slice(&self.path, byte_range.clone()) {
             return Ok(owned_bytes);
         }
         let read_bytes = self
@@ -120,7 +120,7 @@ impl FileHandle for CachingFileHandle {
             .read_bytes_async(byte_range.clone())
             .await?;
         self.cache
-            .put(self.path.clone(), byte_range, read_bytes.clone());
+            .put_slice(self.path.clone(), byte_range, read_bytes.clone());
         Ok(read_bytes)
     }
 }

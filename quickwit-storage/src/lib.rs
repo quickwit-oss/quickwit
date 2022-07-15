@@ -59,6 +59,7 @@ pub use tantivy::directory::OwnedBytes;
 pub use self::bundle_storage::{BundleStorage, BundleStorageFileOffsets};
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::cache::MockCache;
+pub use self::cache::{wrap_storage_with_long_term_cache, MemorySizedCache};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 pub use self::object_storage::{
     MultiPartPolicy, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
@@ -75,7 +76,6 @@ pub use self::storage_resolver::{
 };
 #[cfg(feature = "testsuite")]
 pub use self::test_suite::storage_test_suite;
-pub use crate::cache::{wrap_storage_with_long_term_cache, Cache, MemorySizedCache, SliceCache};
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
 
 /// Loads an entire local or remote file into memory.

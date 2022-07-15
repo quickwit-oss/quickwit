@@ -27,7 +27,8 @@ import { theme } from '../utils/theme';
 import IndexView from './IndexView';
 import { FullBoxContainer } from '../components/LayoutUtils';
 import { LocalStorageProvider } from '../providers/LocalStorageProvider';
-import ClusterStateView from './ClusterStateView';
+import ClusterView from './ClusterView';
+import NodeInfoView from './NodeInfoView';
 
 function App() {
   return (
@@ -42,7 +43,8 @@ function App() {
             <Route path="search" element={<SearchView />} />
             <Route path="indexes" element={<IndexesView />} />
             <Route path="indexes/:indexId" element={<IndexView />} />
-            <Route path="cluster" element={<ClusterStateView />} />
+            <Route path="cluster" element={<ClusterView />} />
+            <Route path="node-info" element={<NodeInfoView />} />
           </Routes>
         </FullBoxContainer>
       </LocalStorageProvider>

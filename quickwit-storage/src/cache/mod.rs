@@ -17,10 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod in_ram_slice_cache;
 mod memory_sized_cache;
 mod quickwit_cache;
+mod slice_address;
 mod storage_with_cache;
+mod stored_item;
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -29,7 +30,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use once_cell::sync::OnceCell;
 
-pub use self::in_ram_slice_cache::SliceCache;
 pub use self::memory_sized_cache::MemorySizedCache;
 use crate::cache::quickwit_cache::QuickwitCache;
 use crate::cache::storage_with_cache::StorageWithCache;

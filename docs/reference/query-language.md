@@ -35,6 +35,36 @@ Quickwit supports parenthesis to group multiple clauses:
 (color:red OR color:green) AND size:large
 ```
 
+### Slop Operator
+
+Quickwit also supports phrase queries with a slop parameter using the slop operator `~` followed by the value of the slop. For instance, the query `body:"small bike"~2` will match documents containing the word `small`, followed by one or two words immediately followed by the word `bike`.
+
+:::caution
+Slop queries can only be used on field indexed with the [record option](./../configuration/index-config.md#text-type) set to `position` value.
+:::
+
+#### Examples:
+
+With the following corpus:
+```json 
+[
+    {"id": 1, "body": "a red bike"},
+    {"id": 2, "body": "a small blue bike"},
+    {"id": 3, "body": "a small, rusty, and yellow bike"},
+    {"id": 4, "body": "fred's small bike"},
+    {"id": 5, "body": "a tiny shelter"}
+]
+```
+The following queries will output: 
+
+- `body:"small bird"~2`: no match []
+- `body:"red bike"~2`: matches [1]
+- `body:"small blue bike"~3`: matches [2]
+- `body:"small bike"`: matches [4]
+- `body:"small bike"~1`: matches [2, 4]
+- `body:"small bike"~2`: matches [2, 4] 
+- `body:"small bike"~3`: matches [2, 3, 4]
+
 ### Escaping Special Characters
 
 Special reserved characters are: `+` , `^`, `` ` ``, `:`, `{`, `}`, `"`, `[`, `]`, `(`, `)`, `~`, `!`, `\\`, `*`, `SPACE`. Such characters can still appear in query terms, but they need to be escaped by an antislash `\` .
