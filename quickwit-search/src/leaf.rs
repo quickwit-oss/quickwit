@@ -113,6 +113,17 @@ pub(crate) async fn open_index(
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<Index> {
+    open_index_with_cache(index_storage, split_and_footer_offsets, true).await
+}
+
+/// Opens a `tantivy::Index` for the given split.
+///
+/// The resulting index uses a dynamic and a static cache.
+pub(crate) async fn open_index_with_cache(
+    index_storage: Arc<dyn Storage>,
+    split_and_footer_offsets: &SplitIdAndFooterOffsets,
+    unlimited_cache: bool,
+) -> anyhow::Result<Index> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
     let footer_data =
         get_split_footer_from_cache_or_fetch(index_storage.clone(), split_and_footer_offsets)
@@ -125,8 +136,12 @@ pub(crate) async fn open_index(
     )?;
     let bundle_storage_with_cache = wrap_storage_with_long_term_cache(Arc::new(bundle_storage));
     let directory = StorageDirectory::new(bundle_storage_with_cache);
-    let caching_directory = CachingDirectory::new_with_unlimited_capacity(Arc::new(directory));
-    let hot_directory = HotDirectory::open(caching_directory, hotcache_bytes.read_bytes()?)?;
+    let hot_directory = if unlimited_cache {
+        let caching_directory = CachingDirectory::new_with_unlimited_capacity(Arc::new(directory));
+        HotDirectory::open(caching_directory, hotcache_bytes.read_bytes()?)?
+    } else {
+        HotDirectory::open(directory, hotcache_bytes.read_bytes()?)?
+    };
     let mut index = Index::open(hot_directory)?;
     index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
     Ok(index)

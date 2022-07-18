@@ -193,6 +193,8 @@ impl Display for HostAddr {
 }
 
 /// Finds a random available TCP port.
+///
+/// This function induces a race condition, use it only in unit tests.
 pub fn find_available_tcp_port() -> anyhow::Result<u16> {
     let socket: SocketAddr = ([127, 0, 0, 1], 0u16).into();
     let listener = TcpListener::bind(socket)?;
@@ -203,6 +205,16 @@ pub fn find_available_tcp_port() -> anyhow::Result<u16> {
 /// Attempts to find the private IP of the host. Returns the matching interface name along with it.
 pub fn find_private_ip() -> Option<(String, IpAddr)> {
     _find_private_ip(&datalink::interfaces())
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn is_dormant(interface: &NetworkInterface) -> bool {
+    interface.is_dormant()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+fn is_dormant(_interface: &NetworkInterface) -> bool {
+    false
 }
 
 fn _find_private_ip(interfaces: &[NetworkInterface]) -> Option<(String, IpAddr)> {
@@ -227,9 +239,9 @@ fn _find_private_ip(interfaces: &[NetworkInterface]) -> Option<(String, IpAddr)>
         })
         .sorted_by_key(|(interface, ip_net)| {
             (
-                ip_net.is_ipv6() as u8,
-                interface.is_dormant() as u8,
-                -(ip_net.prefix() as i16),
+                ip_net.is_ipv6(),
+                is_dormant(interface),
+                std::cmp::Reverse(ip_net.prefix()),
             )
         })
         .next()
