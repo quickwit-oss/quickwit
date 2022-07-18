@@ -27,6 +27,7 @@ jobs:
     needs:
       - lint
       - test
+      - test-azure
     steps:
       - run: exit 0
 
@@ -141,6 +142,18 @@ jobs:
       #     command: test
       #     args: --features fail/failpoints test_failpoint -- --test-threads 1
 
+  # Run azure storage test here while coverage-ci get fixed
+  test-azure:
+    name: Run azure storage tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: run azurite service 
+        run: DOCKER_SERVICES=azurite make docker-compose-up
+      - name: Run tests
+        run: cargo test --package quickwit-storage --test azure_storage --all-features -- test_suite_on_azure_storage --exact --nocapture --quiet   
+    
   # test:
   #   name: Run tests
   #   runs-on: ubuntu-latest

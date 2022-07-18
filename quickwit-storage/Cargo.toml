@@ -45,21 +45,25 @@ tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["full"] }
 tracing = "0.1.29"
 tokio-stream = "0.1"
-# Temporary: till small our small fixes are merged and published on crates.io.
-azure_core = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10" }
-azure_storage = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10" }
-azure_storage_blobs = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10" }
+# Temporary: till small our small fixes are published on crates.io.
+azure_core = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10", optional = true }
+azure_storage = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10", optional = true }
+azure_storage_blobs = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10", optional = true}
+
 
 [dev-dependencies]
 mockall = "0.11"
 tracing-subscriber = "0.3"
 tokio = { version = "1", features = ["full", "test-util"] }
 uuid = { version = "1.1", features = ["v4", "serde"] }
-azure_core = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10", features =  ["azurite_workaround"] }
-azure_storage = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10", features =  ["azurite_workaround"] }
-azure_storage_blobs = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10", features =  ["azurite_workaround"] }
-
 
 [features]
-testsuite = ["mockall"]
+testsuite = [
+  "mockall",
+  "azure",
+  "azure_core/azurite_workaround", 
+  "azure_storage/azurite_workaround",
+  "azure_storage_blobs/azurite_workaround"
+]
 ci-test = []
+azure = ["azure_core", "azure_storage", "azure_storage_blobs"]

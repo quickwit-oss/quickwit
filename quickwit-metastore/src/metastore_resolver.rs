@@ -71,8 +71,8 @@ pub fn quickwit_metastore_uri_resolver() -> &'static MetastoreUriResolver {
         let mut builder = MetastoreUriResolver::builder()
             .register("ram", FileBackedMetastoreFactory::default())
             .register("file", FileBackedMetastoreFactory::default())
-            .register("s3", FileBackedMetastoreFactory::default())
-            .register("azure", FileBackedMetastoreFactory::default());
+            .register("s3", FileBackedMetastoreFactory::default());
+
         #[cfg(feature = "postgres")]
         {
             builder = builder
@@ -101,11 +101,28 @@ pub fn quickwit_metastore_uri_resolver() -> &'static MetastoreUriResolver {
                 )
         }
 
+        #[cfg(feature = "azure")]
+        {
+            builder = builder.register("azure", FileBackedMetastoreFactory::default());
+        }
+
+        #[cfg(not(feature = "azure"))]
+        {
+            builder = builder.register(
+                "azure",
+                UnsuportedMetastore {
+                    message: "azure unsupported, quickwit was compiled without the `azure` \
+                              feature flag"
+                        .to_string(),
+                },
+            )
+        }
+
         builder.build()
     })
 }
 
-/// A postgres metastore factory
+/// A metastore factory for handling unsupported metastore.
 #[derive(Clone, Default)]
 pub struct UnsuportedMetastore {
     message: String,

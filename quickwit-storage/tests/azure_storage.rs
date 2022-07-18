@@ -26,7 +26,9 @@ use std::path::Path;
 use anyhow::Context;
 use azure_storage::core::prelude::StorageClient;
 use azure_storage_blobs::prelude::AsContainerClient;
-use quickwit_storage::{AzureCompatibleBlobStorage, MultiPartPolicy};
+#[cfg(feature = "azure")]
+use quickwit_storage::AzureCompatibleBlobStorage;
+use quickwit_storage::MultiPartPolicy;
 
 #[cfg(feature = "testsuite")]
 #[tokio::test]

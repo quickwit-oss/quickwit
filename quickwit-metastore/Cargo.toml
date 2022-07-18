@@ -55,3 +55,4 @@ tracing-subscriber = "0.3"
 testsuite = ["mockall", "tempfile"]
 ci-test = []
 postgres = [ "sqlx" ]
+azure = ["quickwit-storage/azure"]

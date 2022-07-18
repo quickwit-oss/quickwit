@@ -29,7 +29,10 @@ use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tracing::warn;
 
-use crate::{OwnedBytes, Storage, StorageError, StorageErrorKind, StorageFactory, StorageResult};
+use crate::{
+    OwnedBytes, Storage, StorageError, StorageErrorKind, StorageFactory, StorageResolverError,
+    StorageResult,
+};
 
 /// File system compatible storage implementation.
 #[derive(Clone)]
@@ -45,7 +48,7 @@ impl fmt::Debug for LocalFileStorage {
 
 impl LocalFileStorage {
     /// Creates a file storage instance given a uri
-    pub fn from_uri(uri: &str) -> StorageResult<LocalFileStorage> {
+    pub fn from_uri(uri: &str) -> Result<LocalFileStorage, StorageResolverError> {
         let root_pathbuf = Self::extract_root_path_from_uri(uri)?;
         Ok(LocalFileStorage::from(root_pathbuf))
     }
@@ -55,21 +58,21 @@ impl LocalFileStorage {
     /// Both scheme `file:///{path}` and `file://{path}` are accepted.
     /// If uri starts with `file://`, a `/` is automatically added to ensure
     /// `path` starts from root.
-    pub fn extract_root_path_from_uri(uri: &str) -> StorageResult<PathBuf> {
+    pub fn extract_root_path_from_uri(uri: &str) -> Result<PathBuf, StorageResolverError> {
         if !uri.starts_with("file://") {
-            let err_msg = anyhow::anyhow!(
-                "{:?} is an invalid file storage uri. Only file:// is accepted.",
-                uri
-            );
-            return Err(StorageErrorKind::DoesNotExist.with_error(err_msg));
+            return Err(StorageResolverError::InvalidUri {
+                message: format!(
+                    "{:?} is an invalid file storage uri. Only file:// is accepted.",
+                    uri
+                ),
+            });
         }
 
         let mut root_path = uri
             .split("://")
             .nth(1)
-            .ok_or_else(|| {
-                StorageErrorKind::DoesNotExist
-                    .with_error(anyhow::anyhow!("Invalid root path: `{}`.", uri))
+            .ok_or_else(|| StorageResolverError::InvalidUri {
+                message: format!("Invalid root path: `{}`.", uri),
             })?
             .to_string();
         if !root_path.starts_with('/') {
@@ -80,10 +83,9 @@ impl LocalFileStorage {
             .iter()
             .any(|segment| segment.to_string_lossy() == "..")
         {
-            return Err(StorageErrorKind::Io.with_error(anyhow::anyhow!(
-                "Invalid uri, `..` is forbidden: `{}`.",
-                uri
-            )));
+            return Err(StorageResolverError::InvalidUri {
+                message: format!("Invalid uri, `..` is forbidden: `{}`.", uri),
+            });
         }
         Ok(pathbuf)
     }
@@ -265,7 +267,7 @@ impl StorageFactory for LocalFileStorageFactory {
         "file".to_string()
     }
 
-    fn resolve(&self, uri: &str) -> StorageResult<Arc<dyn Storage>> {
+    fn resolve(&self, uri: &str) -> Result<Arc<dyn Storage>, StorageResolverError> {
         let storage = LocalFileStorage::from_uri(uri)?;
         Ok(Arc::new(storage))
     }
@@ -277,7 +279,6 @@ mod tests {
 
     use super::*;
     use crate::test_suite::storage_test_suite;
-    use crate::StorageError;
 
     #[tokio::test]
     async fn test_storage() -> anyhow::Result<()> {
@@ -291,7 +292,10 @@ mod tests {
     fn test_storage_fail_if_uri_is_not_safe() {
         let storage = LocalFileStorage::from_uri("file:///tmp/../not_ok");
         assert!(storage.is_err());
-        assert!(matches!(storage.unwrap_err(), StorageError { .. }));
+        assert!(matches!(
+            storage.unwrap_err(),
+            StorageResolverError::InvalidUri { .. }
+        ));
     }
 
     #[test]
@@ -318,10 +322,10 @@ mod tests {
             .resolve("test://foo/bar")
             .err()
             .unwrap();
-        assert_eq!(err.kind(), StorageErrorKind::DoesNotExist);
+        assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
         let err = file_storage_factory.resolve("test://").err().unwrap();
-        assert_eq!(err.kind(), StorageErrorKind::DoesNotExist);
+        assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
         Ok(())
     }
 

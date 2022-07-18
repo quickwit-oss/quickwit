@@ -45,10 +45,10 @@ use tracing::instrument;
 
 use crate::{
     MultiPartPolicy, PutPayload, Storage, StorageError, StorageErrorKind, StorageFactory,
-    StorageResult,
+    StorageResolverError, StorageResult,
 };
 
-/// S3 Object storage Uri Resolver
+/// Azure object storage URI resolver.
 #[derive(Default)]
 pub struct AzureCompatibleBlobStorageFactory;
 
@@ -57,13 +57,13 @@ impl StorageFactory for AzureCompatibleBlobStorageFactory {
         "azure".to_string()
     }
 
-    fn resolve(&self, uri: &str) -> crate::StorageResult<std::sync::Arc<dyn crate::Storage>> {
+    fn resolve(&self, uri: &str) -> Result<Arc<dyn Storage>, StorageResolverError> {
         let storage = AzureCompatibleBlobStorage::from_uri(uri)?;
         Ok(Arc::new(storage))
     }
 }
 
-/// Azure Blob Storage compatible object storage implementation.
+/// Azure object storage implementation
 pub struct AzureCompatibleBlobStorage {
     container_client: ContainerClient,
     account: String,
@@ -84,14 +84,10 @@ impl fmt::Debug for AzureCompatibleBlobStorage {
 
 impl AzureCompatibleBlobStorage {
     /// Creates an object storage.
-    pub fn new(
-        account: &str,
-        access_key: &str,
-        container: &str,
-    ) -> anyhow::Result<AzureCompatibleBlobStorage> {
+    pub fn new(account: &str, access_key: &str, container: &str) -> AzureCompatibleBlobStorage {
         let container_client =
             StorageClient::new_access_key(account, access_key).container_client(container);
-        Ok(AzureCompatibleBlobStorage {
+        AzureCompatibleBlobStorage {
             container_client,
             account: account.to_string(),
             container: container.to_string(),
@@ -101,7 +97,7 @@ impl AzureCompatibleBlobStorage {
                 max_attempts: 3,
                 ..Default::default()
             },
-        })
+        }
     }
 
     /// Sets the prefix path.
@@ -143,15 +139,15 @@ impl AzureCompatibleBlobStorage {
     }
 
     /// Construct instance from uri.
-    pub fn from_uri(uri: &str) -> crate::StorageResult<AzureCompatibleBlobStorage> {
-        let (account_name, container, path) = parse_uri(uri).ok_or_else(|| {
-            crate::StorageErrorKind::Io.with_error(anyhow::anyhow!("Invalid uri: {}", uri))
-        })?;
+    pub fn from_uri(uri: &str) -> Result<AzureCompatibleBlobStorage, StorageResolverError> {
+        let (account_name, container, path) =
+            parse_uri(uri).ok_or_else(|| StorageResolverError::InvalidUri {
+                message: format!("Invalid uri: {}", uri),
+            })?;
         let access_key = std::env::var("QW_AZURE_ACCESS_KEY")
             .expect("The `QW_AZURE_ACCESS_KEY` environment variable must be defined.");
         let azure_compatible_storage =
-            AzureCompatibleBlobStorage::new(&account_name, &access_key, &container)
-                .map_err(|err| crate::StorageErrorKind::Service.with_error(anyhow::anyhow!(err)))?;
+            AzureCompatibleBlobStorage::new(&account_name, &access_key, &container);
         Ok(azure_compatible_storage.with_prefix(&path))
     }
 

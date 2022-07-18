@@ -29,7 +29,8 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 
 use crate::{
-    add_prefix_to_storage, OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResult,
+    add_prefix_to_storage, OwnedBytes, Storage, StorageErrorKind, StorageFactory,
+    StorageResolverError, StorageResult,
 };
 
 /// In Ram implementation of quickwit's storage.
@@ -168,19 +169,22 @@ impl StorageFactory for RamStorageFactory {
         "ram".to_string()
     }
 
-    fn resolve(&self, uri: &str) -> crate::StorageResult<Arc<dyn Storage>> {
+    fn resolve(&self, uri: &str) -> Result<Arc<dyn Storage>, StorageResolverError> {
         if !uri.starts_with("ram://") {
-            let err_msg = anyhow::anyhow!(
-                "{:?} is an invalid ram storage uri. Only ram:// is accepted.",
-                uri
-            );
-            return Err(StorageErrorKind::DoesNotExist.with_error(err_msg));
+            return Err(StorageResolverError::InvalidUri {
+                message: format!(
+                    "{:?} is an invalid ram storage uri. Only ram:// is accepted.",
+                    uri
+                ),
+            });
         }
 
-        let prefix = uri.split("://").nth(1).ok_or_else(|| {
-            StorageErrorKind::DoesNotExist
-                .with_error(anyhow::anyhow!("Invalid prefix path: {}", uri))
-        })?;
+        let prefix = uri
+            .split("://")
+            .nth(1)
+            .ok_or_else(|| StorageResolverError::InvalidUri {
+                message: format!("Invalid prefix path: {}", uri),
+            })?;
 
         Ok(add_prefix_to_storage(self.ram_storage.clone(), prefix))
     }
@@ -202,7 +206,8 @@ mod tests {
     fn test_ram_storage_factory() {
         let ram_storage_factory = RamStorageFactory::default();
         let err = ram_storage_factory.resolve("rom://toto").err().unwrap();
-        assert_eq!(err.kind(), StorageErrorKind::DoesNotExist);
+        // assert_eq!(err.kind(),  ErrorKind::DoesNotExist);
+        assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
         let data_result = ram_storage_factory.resolve("ram://data").ok().unwrap();
         let home_result = ram_storage_factory.resolve("ram://home/data").ok().unwrap();

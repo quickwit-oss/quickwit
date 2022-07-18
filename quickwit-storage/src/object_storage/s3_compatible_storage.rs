@@ -46,7 +46,9 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::object_storage::MultiPartPolicy;
-use crate::{OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResult};
+use crate::{
+    OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResolverError, StorageResult,
+};
 
 /// Default region to use, if none has been configured.
 const QUICKWIT_DEFAULT_REGION: Region = Region::UsEast1;
@@ -223,9 +225,13 @@ impl S3CompatibleObjectStorage {
     }
 
     /// Creates an object storage given a region and an uri.
-    pub fn from_uri(uri: &str) -> crate::StorageResult<S3CompatibleObjectStorage> {
-        let region =
-            sniff_s3_region_and_cache().map_err(|err| StorageErrorKind::Service.with_error(err))?;
+    pub fn from_uri(uri: &str) -> Result<S3CompatibleObjectStorage, StorageResolverError> {
+        let region = sniff_s3_region_and_cache().map_err(|err| {
+            StorageResolverError::FailedToOpenStorage {
+                kind: StorageErrorKind::Service,
+                message: err.to_string(),
+            }
+        })?;
         Self::from_uri_and_region(region, uri)
     }
 
@@ -233,12 +239,17 @@ impl S3CompatibleObjectStorage {
     pub fn from_uri_and_region(
         region: Region,
         uri: &str,
-    ) -> crate::StorageResult<S3CompatibleObjectStorage> {
-        let (bucket, path) = parse_uri(uri).ok_or_else(|| {
-            crate::StorageErrorKind::Io.with_error(anyhow::anyhow!("Invalid uri: {}", uri))
+    ) -> Result<S3CompatibleObjectStorage, StorageResolverError> {
+        let (bucket, path) = parse_uri(uri).ok_or_else(|| StorageResolverError::InvalidUri {
+            message: format!("Invalid uri: {}", uri),
         })?;
-        let s3_compatible_storage = S3CompatibleObjectStorage::new(region, &bucket)
-            .map_err(|err| crate::StorageErrorKind::Service.with_error(anyhow::anyhow!(err)))?;
+        let s3_compatible_storage =
+            S3CompatibleObjectStorage::new(region, &bucket).map_err(|err| {
+                StorageResolverError::FailedToOpenStorage {
+                    kind: StorageErrorKind::Service,
+                    message: err.to_string(),
+                }
+            })?;
         Ok(s3_compatible_storage.with_prefix(&path))
     }
 
