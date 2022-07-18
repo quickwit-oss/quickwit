@@ -27,7 +27,6 @@ use tokio::time::timeout;
 use tracing::error;
 
 use crate::actor_state::ActorState;
-use crate::channel_with_priority::Priority;
 use crate::observation::ObservationType;
 use crate::{Actor, ActorContext, ActorExitStatus, Command, Mailbox, Observation};
 
@@ -120,7 +119,7 @@ impl<A: Actor> ActorHandle<A> {
             && self
                 .actor_context
                 .mailbox()
-                .send_with_priority(Command::Observe(tx).into(), Priority::Low)
+                .send(Command::Observe(tx))
                 .await
                 .is_err()
         {
@@ -134,23 +133,21 @@ impl<A: Actor> ActorHandle<A> {
         self.wait_for_observable_state_callback(rx).await
     }
 
-    /// Pauses the actor. The actor will stop processing the message, but its
-    /// work can be resumed by calling the method `.resume()`.
-    pub async fn pause(&self) {
+    /// Pauses the actor. The actor will stop processing messages from the low priority
+    /// channel, but its work can be resumed by calling the method `.resume()`.
+    pub fn pause(&self) {
         let _ = self
             .actor_context
             .mailbox()
-            .send_command(Command::Pause)
-            .await;
+            .send_with_high_priority(Command::Pause);
     }
 
     /// Resumes a paused actor.
-    pub async fn resume(&self) {
+    pub fn resume(&self) {
         let _ = self
             .actor_context
             .mailbox()
-            .send_command(Command::Resume)
-            .await;
+            .send_with_high_priority(Command::Resume);
     }
 
     /// Kills the actor. Its finalize function will still be called.
@@ -164,8 +161,7 @@ impl<A: Actor> ActorHandle<A> {
         let _ = self
             .actor_context
             .mailbox()
-            .send_command(Command::Kill)
-            .await;
+            .send_with_high_priority(Command::Kill);
         self.join().await
     }
 
@@ -180,8 +176,7 @@ impl<A: Actor> ActorHandle<A> {
         let _ = self
             .actor_context
             .mailbox()
-            .send_command(Command::Quit)
-            .await;
+            .send_with_high_priority(Command::Quit);
         self.join().await
     }
 
@@ -200,7 +195,7 @@ impl<A: Actor> ActorHandle<A> {
 
     /// Observe the current state.
     ///
-    /// The observation will be scheduled as a command message, therefore it will be executed
+    /// The observation will be scheduled as a high priority message, therefore it will be executed
     /// after the current active message and the current command queue have been processed.
     pub async fn observe(&self) -> Observation<A::ObservableState> {
         let (tx, rx) = oneshot::channel();
@@ -214,8 +209,7 @@ impl<A: Actor> ActorHandle<A> {
         if self
             .actor_context
             .mailbox()
-            .send_command(Command::Observe(tx))
-            .await
+            .send_with_high_priority(Command::Observe(tx))
             .is_err()
         {
             error!(
@@ -333,7 +327,7 @@ mod tests {
     async fn test_panic_in_actor() -> anyhow::Result<()> {
         let universe = Universe::new();
         let (mailbox, handle) = universe.spawn_actor(PanickingActor::default()).spawn();
-        mailbox.send_message(Panic).await?;
+        mailbox.send(Panic).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Panicked));
         assert!(matches!(count, 1)); //< Upon panick we cannot get a post mortem state.
@@ -344,7 +338,7 @@ mod tests {
     async fn test_exit() -> anyhow::Result<()> {
         let universe = Universe::new();
         let (mailbox, handle) = universe.spawn_actor(ExitActor::default()).spawn();
-        mailbox.send_message(Exit).await?;
+        mailbox.send(Exit).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::DownstreamClosed));
         assert!(matches!(count, 1)); //< Upon panick we cannot get a post mortem state.

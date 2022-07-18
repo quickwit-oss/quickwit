@@ -288,7 +288,7 @@ impl Scheduler {
                 tokio::time::sleep(timeout).await;
             }
             // We ignore the send error here. The scheduler was just terminated
-            let _ = self_mailbox.send_message(Timeout).await;
+            let _ = self_mailbox.send(Timeout).await;
         });
         self.next_timeout = Some(new_join_handle);
     }
@@ -325,7 +325,7 @@ mod tests {
             universe.spawn_actor(Scheduler::default()).spawn();
         let (cb_called, callback) = create_test_callback();
         scheduler_mailbox
-            .send_message(ScheduleEvent {
+            .send(ScheduleEvent {
                 timeout: Duration::from_secs(30),
                 callback,
             })
@@ -335,7 +335,7 @@ mod tests {
         assert!(!cb_called.load(Ordering::SeqCst));
         let (tx, _rx) = oneshot::channel();
         scheduler_mailbox
-            .send_message(SimulateAdvanceTime {
+            .send(SimulateAdvanceTime {
                 time_shift: TimeShift::ByDuration(Duration::from_secs(31)),
                 tx,
             })
@@ -363,14 +363,14 @@ mod tests {
         let (cb_called1, callback1) = create_test_callback();
         let (cb_called2, callback2) = create_test_callback();
         scheduler_mailbox
-            .send_message(ScheduleEvent {
+            .send(ScheduleEvent {
                 timeout: Duration::from_secs(20),
                 callback: callback2,
             })
             .await
             .unwrap();
         scheduler_mailbox
-            .send_message(ScheduleEvent {
+            .send(ScheduleEvent {
                 timeout: Duration::from_millis(2),
                 callback: callback1,
             })
@@ -399,7 +399,7 @@ mod tests {
         assert!(!cb_called2.load(Ordering::SeqCst));
         let (tx, _rx) = oneshot::channel::<()>();
         scheduler_mailbox
-            .send_message(SimulateAdvanceTime {
+            .send(SimulateAdvanceTime {
                 time_shift: TimeShift::ByDuration(Duration::from_secs(10)),
                 tx,
             })
@@ -409,7 +409,7 @@ mod tests {
         assert!(!cb_called2.load(Ordering::SeqCst));
         let (tx, _rx) = oneshot::channel::<()>();
         scheduler_mailbox
-            .send_message(SimulateAdvanceTime {
+            .send(SimulateAdvanceTime {
                 time_shift: TimeShift::ByDuration(Duration::from_secs(10)),
                 tx,
             })

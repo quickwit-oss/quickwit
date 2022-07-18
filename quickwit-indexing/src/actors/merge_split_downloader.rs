@@ -187,9 +187,7 @@ mod tests {
         let (merge_split_downloader_mailbox, merge_split_downloader_handler) =
             universe.spawn_actor(merge_split_downloader).spawn();
         let merge_operation = MergeOperation::new_merge_operation(splits_to_merge);
-        merge_split_downloader_mailbox
-            .send_message(merge_operation)
-            .await?;
+        merge_split_downloader_mailbox.send(merge_operation).await?;
         merge_split_downloader_handler
             .process_pending_and_observe()
             .await;

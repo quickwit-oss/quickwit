@@ -278,7 +278,7 @@ mod tests {
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
 
         assert!(publisher_mailbox
-            .send_message(PublishNewSplit {
+            .send(PublishNewSplit {
                 index_id: "index".to_string(),
                 new_split: SplitMetadata {
                     split_id: "split".to_string(),
@@ -345,10 +345,7 @@ mod tests {
             }],
             replaced_split_ids: vec!["split1".to_string(), "split2".to_string()],
         };
-        assert!(publisher_mailbox
-            .send_message(publisher_message)
-            .await
-            .is_ok());
+        assert!(publisher_mailbox.send(publisher_message).await.is_ok());
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
         assert_eq!(publisher_observation.num_published_splits, 0);
         assert_eq!(publisher_observation.num_replace_operations, 1);

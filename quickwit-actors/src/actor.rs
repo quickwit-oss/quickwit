@@ -22,19 +22,16 @@ use std::convert::Infallible;
 use std::fmt;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::Future;
 use thiserror::Error;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, watch};
 use tracing::{debug, error, info_span, Span};
 
 use crate::actor_state::{ActorState, AtomicState};
-use crate::channel_with_priority::Priority;
-use crate::envelope::wrap_in_envelope;
-use crate::mailbox::CommandOrMessage;
 use crate::progress::{Progress, ProtectedZoneGuard};
 use crate::scheduler::{Callback, ScheduleEvent, Scheduler};
 use crate::spawn_builder::SpawnBuilder;
@@ -218,6 +215,33 @@ pub struct ActorContextInner<A: Actor> {
     // This counter is useful to unsure that obsolete WakeUp
     // events do not effect ulterior `sleep`.
     sleep_count: AtomicUsize,
+    observable_state_tx: Mutex<watch::Sender<A::ObservableState>>,
+}
+
+/// Internal command used to resume an actor that was paused using
+/// `ActorContext::sleep`
+#[derive(Debug)]
+struct WakeUp {
+    sleep_count: usize,
+}
+
+#[async_trait]
+impl<A: Actor> Handler<WakeUp> for A {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        message: WakeUp,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        let current_sleep_count = ctx.sleep_count();
+        if current_sleep_count == message.sleep_count {
+            // We only resume if this wake up
+            // command is targetting this precise "nap".
+            ctx.resume();
+        }
+        Ok(())
+    }
 }
 
 impl<A: Actor> ActorContext<A> {
@@ -225,6 +249,7 @@ impl<A: Actor> ActorContext<A> {
         self_mailbox: Mailbox<A>,
         kill_switch: KillSwitch,
         scheduler_mailbox: Mailbox<Scheduler>,
+        observable_state_tx: watch::Sender<A::ObservableState>,
     ) -> Self {
         ActorContext {
             inner: ActorContextInner {
@@ -234,6 +259,7 @@ impl<A: Actor> ActorContext<A> {
                 scheduler_mailbox,
                 actor_state: AtomicState::default(),
                 sleep_count: AtomicUsize::default(),
+                observable_state_tx: Mutex::new(observable_state_tx),
             }
             .into(),
         }
@@ -329,15 +355,22 @@ impl<A: Actor> ActorContext<A> {
     pub async fn sleep(&self, sleep_duration: Duration) {
         let sleep_count = self.sleep_count.fetch_add(1, Ordering::SeqCst) + 1;
         self.pause();
-        self.schedule_self_command_or_message(
-            sleep_duration,
-            Command::WakeUp { sleep_count }.into(),
-        )
-        .await;
+        self.schedule_self_msg(sleep_duration, WakeUp { sleep_count })
+            .await;
     }
 
     pub(crate) fn resume(&self) {
         self.actor_state.resume();
+    }
+
+    pub(crate) fn observe(&self, actor: &mut A) -> A::ObservableState {
+        let obs_state = actor.observable_state();
+        let _ = self
+            .observable_state_tx
+            .lock()
+            .unwrap()
+            .send(obs_state.clone());
+        obs_state
     }
 
     pub(crate) fn exit(&self, exit_status: &ActorExitStatus) {
@@ -397,7 +430,7 @@ impl<A: Actor> ActorContext<A> {
     {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg);
-        mailbox.send_message(msg).await
+        mailbox.send(msg).await
     }
 
     pub async fn ask<DestActor: Actor, M, T>(
@@ -440,12 +473,8 @@ impl<A: Actor> ActorContext<A> {
     ) -> Result<(), crate::SendError> {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), to=%mailbox.actor_instance_id(), "success");
-        mailbox
-            .send_with_priority(
-                CommandOrMessage::Command(Command::ExitWithSuccess),
-                Priority::Low,
-            )
-            .await
+        mailbox.send(Command::ExitWithSuccess).await?;
+        Ok(())
     }
 
     /// `async` version of `send_self_message`.
@@ -458,19 +487,17 @@ impl<A: Actor> ActorContext<A> {
         M: 'static + Sync + Send + fmt::Debug,
     {
         debug!(self=%self.self_mailbox.actor_instance_id(), msg=?msg, "self_send");
-        self.self_mailbox.send_message(msg).await
+        self.self_mailbox.send(msg).await
     }
 
-    pub(crate) async fn schedule_self_command_or_message(
-        &self,
-        after_duration: Duration,
-        command_or_message: CommandOrMessage<A>,
-    ) {
+    pub async fn schedule_self_msg<M>(&self, after_duration: Duration, message: M)
+    where
+        A: Handler<M>,
+        M: Sync + Send + std::fmt::Debug + 'static,
+    {
         let self_mailbox = self.inner.self_mailbox.clone();
         let callback = Callback(Box::pin(async move {
-            let _ = self_mailbox
-                .send_with_priority(command_or_message, Priority::High)
-                .await;
+            let _ = self_mailbox.send_with_high_priority(message);
         }));
         let scheduler_msg = ScheduleEvent {
             timeout: after_duration,
@@ -479,16 +506,6 @@ impl<A: Actor> ActorContext<A> {
         let _ = self
             .send_message(&self.inner.scheduler_mailbox, scheduler_msg)
             .await;
-    }
-
-    pub async fn schedule_self_msg<M>(&self, after_duration: Duration, msg: M)
-    where
-        A: Handler<M>,
-        M: 'static + Send + Sync + fmt::Debug,
-    {
-        let (envelope, _response_rx) = wrap_in_envelope(msg);
-        self.schedule_self_command_or_message(after_duration, CommandOrMessage::Message(envelope))
-            .await
     }
 }
 

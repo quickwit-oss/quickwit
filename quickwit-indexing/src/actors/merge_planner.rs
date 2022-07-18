@@ -249,7 +249,7 @@ mod tests {
         for split in incoming_splits {
             split_index.insert(split.split_id().to_string(), split.clone());
             merge_planner_mailbox
-                .send_message(NewSplits {
+                .send(NewSplits {
                     new_splits: vec![split],
                 })
                 .await?;
@@ -268,7 +268,7 @@ mod tests {
                 for merge_op in merge_ops {
                     let splits = apply_merge(&mut split_index, &merge_op);
                     merge_planner_mailbox
-                        .send_message(NewSplits { new_splits: splits })
+                        .send(NewSplits { new_splits: splits })
                         .await?;
                 }
             }
