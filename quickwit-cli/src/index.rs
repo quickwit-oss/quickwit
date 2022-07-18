@@ -51,8 +51,8 @@ use tracing::{debug, warn, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
 use crate::{
-    load_quickwit_config, make_table, parse_duration_with_unit, run_index_checklist,
-    THROUGHPUT_WINDOW_SIZE,
+    load_quickwit_config, make_table, parse_duration_with_unit, prompt_confirmation,
+    run_index_checklist, THROUGHPUT_WINDOW_SIZE,
 };
 
 pub fn build_index_command<'a>() -> Command<'a> {
@@ -75,7 +75,9 @@ pub fn build_index_command<'a>() -> Command<'a> {
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
                         .required(false),
-                    arg!(--overwrite "Overwrites pre-existing index.")
+                    arg!(--overwrite "Overwrites pre-existing index. This will delete all existing data stored at `index-uri` before creating a new index.")
+                        .required(false),
+                    arg!(-y --"assume-yes" "Assume 'yes' as an answer to all prompts and run non-interactively.")
                         .required(false),
                 ])
             )
@@ -194,6 +196,7 @@ pub struct CreateIndexArgs {
     pub config_uri: Uri,
     pub data_dir: Option<PathBuf>,
     pub overwrite: bool,
+    pub assume_yes: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -334,12 +337,14 @@ impl IndexCliCommand {
             .expect("`config` is a required arg.")?;
         let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         let overwrite = matches.is_present("overwrite");
+        let assume_yes = matches.is_present("assume-yes");
 
         Ok(Self::Create(CreateIndexArgs {
             config_uri,
             data_dir,
             index_config_uri,
             overwrite,
+            assume_yes,
         }))
     }
 
@@ -784,6 +789,18 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         quickwit_storage_uri_resolver().clone(),
         quickwit_config.default_index_root_uri(),
     );
+
+    // On overwrite and if assume yes is false, ask the user to confirm the destructive operation.
+    if args.overwrite && !args.assume_yes {
+        // Stop if user answers no.
+        if !prompt_confirmation(
+            "This operation will delete all the pre-existing index data. Continue?",
+            None,
+        ) {
+            return Ok(());
+        }
+    }
+
     index_service
         .create_index(index_config, args.overwrite)
         .await?;
