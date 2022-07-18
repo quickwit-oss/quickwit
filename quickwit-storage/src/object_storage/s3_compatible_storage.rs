@@ -241,7 +241,7 @@ impl S3CompatibleObjectStorage {
         uri: &str,
     ) -> Result<S3CompatibleObjectStorage, StorageResolverError> {
         let (bucket, path) = parse_uri(uri).ok_or_else(|| StorageResolverError::InvalidUri {
-            message: format!("Invalid uri: {}", uri),
+            message: format!("Invalid URI: {}", uri),
         })?;
         let s3_compatible_storage =
             S3CompatibleObjectStorage::new(region, &bucket).map_err(|err| {

@@ -173,7 +173,7 @@ impl StorageFactory for RamStorageFactory {
         if !uri.starts_with("ram://") {
             return Err(StorageResolverError::InvalidUri {
                 message: format!(
-                    "{:?} is an invalid ram storage uri. Only ram:// is accepted.",
+                    "{:?} is an invalid ram storage URI. Only ram:// is accepted.",
                     uri
                 ),
             });
@@ -206,7 +206,6 @@ mod tests {
     fn test_ram_storage_factory() {
         let ram_storage_factory = RamStorageFactory::default();
         let err = ram_storage_factory.resolve("rom://toto").err().unwrap();
-        // assert_eq!(err.kind(),  ErrorKind::DoesNotExist);
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
         let data_result = ram_storage_factory.resolve("ram://data").ok().unwrap();

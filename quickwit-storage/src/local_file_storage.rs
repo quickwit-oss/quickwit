@@ -30,8 +30,8 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tracing::warn;
 
 use crate::{
-    DebouncedStorage, OwnedBytes, Storage, StorageError, StorageErrorKind, StorageFactory, StorageResolverError,
-    StorageResult,
+    DebouncedStorage, OwnedBytes, Storage, StorageError, StorageErrorKind, StorageFactory,
+    StorageResolverError, StorageResult,
 };
 
 /// File system compatible storage implementation.
@@ -84,7 +84,7 @@ impl LocalFileStorage {
             .any(|segment| segment.to_string_lossy() == "..")
         {
             return Err(StorageResolverError::InvalidUri {
-                message: format!("Invalid uri, `..` is forbidden: `{}`.", uri),
+                message: format!("Invalid URI, `..` is forbidden: `{}`.", uri),
             });
         }
         Ok(pathbuf)

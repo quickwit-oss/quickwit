@@ -106,7 +106,7 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
         let (uri_stripped, polling_interval_opt) = extract_polling_interval_from_uri(uri);
         // The Uri has the benefit of canonicalizing our path.
         let uri = quickwit_common::uri::Uri::try_new(&uri_stripped).map_err(|parse_uri_err| {
-            MetastoreResolverError::InvalidUri(format!("Invalid uri: {}. {:?}", uri, parse_uri_err))
+            MetastoreResolverError::InvalidUri(format!("Invalid URI: {}. {:?}", uri, parse_uri_err))
         })?;
         if let Some(metastore) = self.get_from_cache(&uri).await {
             debug!("using metastore from cache");

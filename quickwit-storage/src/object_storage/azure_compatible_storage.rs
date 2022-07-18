@@ -138,11 +138,11 @@ impl AzureCompatibleBlobStorage {
         self.multipart_policy = multipart_policy;
     }
 
-    /// Construct instance from uri.
+    /// Builds instance from URI.
     pub fn from_uri(uri: &str) -> Result<AzureCompatibleBlobStorage, StorageResolverError> {
         let (account_name, container, path) =
             parse_uri(uri).ok_or_else(|| StorageResolverError::InvalidUri {
-                message: format!("Invalid uri: {}", uri),
+                message: format!("Invalid URI: {}", uri),
             })?;
         let access_key = std::env::var("QW_AZURE_ACCESS_KEY")
             .expect("The `QW_AZURE_ACCESS_KEY` environment variable must be defined.");
@@ -151,7 +151,7 @@ impl AzureCompatibleBlobStorage {
         Ok(azure_compatible_storage.with_prefix(&path))
     }
 
-    /// Returns the blob name (a.k.a blob key)
+    /// Returns the blob name (a.k.a blob key).
     fn blob_name(&self, relative_path: &Path) -> String {
         let key_path = self.prefix.join(relative_path);
         key_path.to_string_lossy().to_string()
@@ -408,7 +408,7 @@ async fn extract_range_data_and_hash(
 }
 
 pub fn parse_uri(uri: &str) -> Option<(String, String, PathBuf)> {
-    // ex. azure://account/container/prefix
+    // Ex: azure://account/container/prefix.
     static URI_PTN: OnceCell<Regex> = OnceCell::new();
     URI_PTN
         .get_or_init(|| {
@@ -418,19 +418,23 @@ pub fn parse_uri(uri: &str) -> Option<(String, String, PathBuf)> {
             .unwrap()
         })
         .captures(uri)
-        .and_then(|cap| {
-            cap.name("account").and_then(|account_match| {
-                cap.name("container").map(|container_match| {
-                    (
-                        account_match.as_str().to_string(),
-                        container_match.as_str().to_string(),
-                        cap.name("path").map_or_else(
-                            || PathBuf::from(""),
-                            |path_match| PathBuf::from(path_match.as_str()),
-                        ),
-                    )
-                })
-            })
+        .and_then(|captures| {
+            let account = match captures.name("account") {
+                Some(account_match) => account_match.as_str().to_string(),
+                None => return None,
+            };
+
+            let container = match captures.name("container") {
+                Some(container_match) => container_match.as_str().to_string(),
+                None => return None,
+            };
+
+            let path = captures.name("path").map_or_else(
+                || PathBuf::from(""),
+                |path_match| PathBuf::from(path_match.as_str()),
+            );
+
+            Some((account, container, path))
         })
 }
 
@@ -500,9 +504,17 @@ mod tests {
     #[test]
     fn test_parse_uri() {
         let (account, container, path) = parse_uri("azure://quickwit/indexes/wiki").unwrap();
-
         assert_eq!(account, "quickwit");
         assert_eq!(container, "indexes");
         assert_eq!(path.to_string_lossy().to_string(), "wiki");
+
+        let (account, container, path) = parse_uri("azure://jane/store").unwrap();
+        assert_eq!(account, "jane");
+        assert_eq!(container, "store");
+        assert_eq!(path.to_string_lossy().to_string(), "");
+
+        assert_eq!(parse_uri("azure://quickwit"), None);
+        assert_eq!(parse_uri("azure://quickwit/"), None);
+        assert_eq!(parse_uri("azure://"), None);
     }
 }
