@@ -30,7 +30,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tracing::warn;
 
 use crate::{
-    OwnedBytes, Storage, StorageError, StorageErrorKind, StorageFactory, StorageResolverError,
+    DebouncedStorage, OwnedBytes, Storage, StorageError, StorageErrorKind, StorageFactory, StorageResolverError,
     StorageResult,
 };
 
@@ -268,7 +268,7 @@ impl StorageFactory for LocalFileStorageFactory {
     }
 
     fn resolve(&self, uri: &str) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let storage = LocalFileStorage::from_uri(uri)?;
+        let storage = DebouncedStorage::new(LocalFileStorage::from_uri(uri)?);
         Ok(Arc::new(storage))
     }
 }

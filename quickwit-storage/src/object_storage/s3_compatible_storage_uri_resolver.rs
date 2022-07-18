@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 pub use rusoto_core::Region;
 
-use crate::{S3CompatibleObjectStorage, Storage, StorageFactory, StorageResolverError};
+use crate::{DebouncedStorage, S3CompatibleObjectStorage, Storage, StorageFactory, StorageResolverError};
 
 /// S3 compatible object storage URI resolver.
 #[derive(Default)]
@@ -33,7 +33,7 @@ impl StorageFactory for S3CompatibleObjectStorageFactory {
     }
 
     fn resolve(&self, uri: &str) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let storage = S3CompatibleObjectStorage::from_uri(uri)?;
+        let storage = DebouncedStorage::new(S3CompatibleObjectStorage::from_uri(uri)?);
         Ok(Arc::new(storage))
     }
 }
