@@ -111,6 +111,7 @@ fn process_command<A: Actor>(
     ctx: &ActorContext<A>,
     state_tx: &watch::Sender<A::ObservableState>,
 ) -> Option<ActorExitStatus> {
+    info!(command=?command, "process-command");
     match command {
         Command::Pause => {
             ctx.pause();
@@ -121,6 +122,15 @@ fn process_command<A: Actor>(
         Command::Kill => Some(ActorExitStatus::Killed),
         Command::Resume => {
             ctx.resume();
+            None
+        }
+        Command::WakeUp { sleep_count } => {
+            let current_sleep_count = ctx.sleep_count();
+            if current_sleep_count == sleep_count {
+                // We only resume if this wake up
+                // command is targetting this precise "nap".
+                ctx.resume();
+            }
             None
         }
         Command::Observe(cb) => {
@@ -202,7 +212,9 @@ async fn actor_loop<A: Actor>(
             msg_id += 1;
         } else {
             // No message is available.
-            ctx.idle();
+            if ctx.state().is_running() {
+                ctx.idle();
+            }
             if ctx.mailbox().is_last_mailbox() {
                 // No one will be able to send us more messages.
                 // We can exit the actor.
