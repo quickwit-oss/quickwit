@@ -324,7 +324,7 @@ impl<A: Actor> ActorContext<A> {
     /// It stops processing message, in a way that does not
     /// consume CPU, but it still reacts to commands.
     ///
-    /// If the actor will wake up before the `sleep_duration` is elapsed
+    /// The actor will wake up before the `sleep_duration` is elapsed
     /// if it receives a resume command.
     pub async fn sleep(&self, sleep_duration: Duration) {
         let sleep_count = self.sleep_count.fetch_add(1, Ordering::SeqCst) + 1;

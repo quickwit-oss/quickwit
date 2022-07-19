@@ -591,12 +591,12 @@ async fn test_actor_sleep_resume_sleep() -> anyhow::Result<()> {
     let universe = Universe::new();
     let adder = Adder::default();
     let (mailbox, handle) = universe.spawn_actor(adder).spawn();
-    mailbox.send_message(Sleep(Duration::from_secs(3))).await?;
-    handle.process_pending_and_observe().await;
+    mailbox.ask(Sleep(Duration::from_secs(3))).await?;
     mailbox.send_message(AddOperand(3)).await?;
     mailbox.send_command(Command::Resume).await?;
-    let total = *handle.process_pending_and_observe().await;
-    assert_eq!(total, 3);
+    let total = handle.process_pending_and_observe().await;
+    assert_eq!(total.obs_type, ObservationType::Alive);
+    assert_eq!(*total, 3);
     mailbox.send_message(Sleep(Duration::from_secs(60))).await?;
     mailbox.send_message(AddOperand(2)).await?;
     universe.simulate_time_shift(Duration::from_secs(10)).await;
