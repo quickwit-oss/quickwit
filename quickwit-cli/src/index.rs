@@ -544,7 +544,7 @@ struct IndexRow {
     #[tabled(rename = "Index ID")]
     index_id: String,
     #[tabled(rename = "Index URI")]
-    index_uri: String,
+    index_uri: Uri,
 }
 
 pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {

@@ -23,6 +23,7 @@
 use std::path::Path;
 
 use anyhow::Context;
+use quickwit_common::uri::Uri;
 use quickwit_storage::{MultiPartPolicy, S3CompatibleObjectStorage};
 
 #[cfg(feature = "testsuite")]
@@ -31,12 +32,12 @@ use quickwit_storage::{MultiPartPolicy, S3CompatibleObjectStorage};
 // Weirdly this does not work for localstack. The error messages seem off.
 async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
-    let mut object_storage =
-        S3CompatibleObjectStorage::from_uri("s3://quickwit-integration-tests")?;
+    let storage_uri = Uri::new("s3://quickwit-integration-tests".to_string());
+    let mut object_storage = S3CompatibleObjectStorage::from_uri(&storage_uri)?;
     quickwit_storage::storage_test_suite(&mut object_storage).await?;
 
     let mut object_storage =
-        S3CompatibleObjectStorage::from_uri("s3://quickwit-integration-tests")?
+        S3CompatibleObjectStorage::from_uri(&storage_uri)?
             .with_prefix(Path::new("test-s3-compatible-storage"));
     quickwit_storage::storage_test_single_part_upload(&mut object_storage)
         .await
@@ -52,6 +53,5 @@ async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
     quickwit_storage::storage_test_multi_part_upload(&mut object_storage)
         .await
         .with_context(|| "test_multi_part_upload")?;
-
     Ok(())
 }

@@ -25,6 +25,7 @@ use std::{fmt, io};
 
 use async_trait::async_trait;
 use futures::future::{BoxFuture, FutureExt};
+use quickwit_common::uri::{Protocol, Uri};
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tracing::warn;
@@ -37,16 +38,22 @@ use crate::{
 /// File system compatible storage implementation.
 #[derive(Clone)]
 pub struct LocalFileStorage {
+    uri: Uri,
     root: PathBuf,
 }
 
 impl fmt::Debug for LocalFileStorage {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "LocalFileStorage(root={:?})", &self.root)
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter
+            .debug_struct("LocalFileStorage")
+            .field("root", &self.root.display())
+            .finish()
     }
 }
 
 impl LocalFileStorage {
+
+    //EVAN <
     /// Creates a file storage instance given a uri
     pub fn from_uri(uri: &str) -> Result<LocalFileStorage, StorageResolverError> {
         let root_pathbuf = Self::extract_root_path_from_uri(uri)?;
@@ -88,6 +95,20 @@ impl LocalFileStorage {
             });
         }
         Ok(pathbuf)
+    }
+    //EVAN />
+
+    /// Creates a local file storage instance given a URI.
+    pub fn from_uri(uri: &Uri) -> StorageResult<Self> {
+        uri.filepath()
+            .map(|root| Self {
+                uri: uri.clone(),
+                root: root.to_path_buf(),
+            })
+            .ok_or_else(|| {
+                let error = anyhow::anyhow!("URI `{uri}` is not a valid file URI.");
+                StorageErrorKind::DoesNotExist.with_error(error)
+            })
     }
 
     /// Moves a file from a source to a destination.
@@ -154,12 +175,6 @@ fn missing_file_is_ok(io_result: io::Result<()>) -> io::Result<()> {
         Ok(()) => Ok(()),
         Err(io_err) if io_err.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(io_err) => Err(io_err),
-    }
-}
-
-impl From<PathBuf> for LocalFileStorage {
-    fn from(root: PathBuf) -> LocalFileStorage {
-        LocalFileStorage { root }
     }
 }
 
@@ -230,8 +245,8 @@ impl Storage for LocalFileStorage {
         Ok(OwnedBytes::new(content_bytes))
     }
 
-    fn uri(&self) -> String {
-        format!("file://{}", self.root.to_string_lossy())
+    fn uri(&self) -> &Uri {
+        &self.uri
     }
 
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
@@ -263,13 +278,13 @@ impl Storage for LocalFileStorage {
 pub struct LocalFileStorageFactory {}
 
 impl StorageFactory for LocalFileStorageFactory {
-    fn protocol(&self) -> String {
-        "file".to_string()
+    fn protocol(&self) -> Protocol {
+        Protocol::File
     }
 
-    fn resolve(&self, uri: &str) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let storage = DebouncedStorage::new(LocalFileStorage::from_uri(uri)?);
-        Ok(Arc::new(storage))
+    fn resolve(&self, uri: &Uri) -> StorageResult<Arc<dyn Storage>> {
+        let storage = LocalFileStorage::from_uri(uri)?;
+        Ok(Arc::new(DebouncedStorage::new(storage)))
     }
 }
 
@@ -282,12 +297,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_storage() -> anyhow::Result<()> {
-        let path_root = format!("file://{}", tempdir()?.path().to_string_lossy());
-        let mut file_storage = LocalFileStorage::from_uri(&path_root)?;
+        let uri = Uri::try_new(&format!("{}", tempdir()?.path().display())).unwrap();
+        let mut file_storage = LocalFileStorage::from_uri(&uri)?;
         storage_test_suite(&mut file_storage).await?;
         Ok(())
     }
 
+    //EVAN <
     #[test]
     fn test_storage_fail_if_uri_is_not_safe() {
         let storage = LocalFileStorage::from_uri("file:///tmp/../not_ok");
@@ -309,22 +325,23 @@ mod tests {
         assert_eq!(storage.uri(), "file:///tmp/abc../");
         Ok(())
     }
+    //EVAN />
 
     #[test]
     fn test_file_storage_factory() -> anyhow::Result<()> {
-        let test_dir = tempfile::tempdir()?;
-        let index_dir_uri = format!("file://{}/foo/bar", test_dir.path().display());
+        let tempdir = tempfile::tempdir()?;
+        let index_uri = Uri::new(format!("file://{}/foo/bar", tempdir.path().display()));
         let file_storage_factory = LocalFileStorageFactory::default();
-        let storage = file_storage_factory.resolve(&index_dir_uri)?;
-        assert_eq!(storage.uri().as_str(), index_dir_uri);
+        let storage = file_storage_factory.resolve(&index_uri)?;
+        assert_eq!(storage.uri(), &index_uri);
 
         let err = file_storage_factory
-            .resolve("test://foo/bar")
+            .resolve(&Uri::new("s3://foo/bar".to_string()))
             .err()
             .unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
-        let err = file_storage_factory.resolve("test://").err().unwrap();
+        let err = file_storage_factory.resolve(&Uri::new("s3://".to_string())).err().unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
         Ok(())
     }

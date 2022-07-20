@@ -19,6 +19,7 @@
 
 use std::sync::Arc;
 
+use quickwit_common::uri::{Protocol, Uri};
 pub use rusoto_core::Region;
 
 use crate::{
@@ -30,12 +31,12 @@ use crate::{
 pub struct S3CompatibleObjectStorageFactory;
 
 impl StorageFactory for S3CompatibleObjectStorageFactory {
-    fn protocol(&self) -> String {
-        "s3".to_string()
+    fn protocol(&self) -> Protocol {
+        Protocol::S3
     }
 
     fn resolve(&self, uri: &str) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let storage = DebouncedStorage::new(S3CompatibleObjectStorage::from_uri(uri)?);
-        Ok(Arc::new(storage))
+        let storage = S3CompatibleObjectStorage::from_uri(uri)?;
+        Ok(Arc::new(DebouncedStorage::new(storage)))
     }
 }

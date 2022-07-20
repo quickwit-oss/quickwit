@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use once_cell::sync::OnceCell;
+use quickwit_common::uri::{Protocol, Uri};
 
 use crate::local_file_storage::LocalFileStorageFactory;
 use crate::ram_storage::RamStorageFactory;
@@ -57,9 +58,9 @@ pub fn quickwit_storage_uri_resolver() -> &'static StorageUriResolver {
 /// A storage factory builds a [`Storage`] object from an URI.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 pub trait StorageFactory: Send + Sync + 'static {
-    /// Returns the protocol this URI resolver is serving.
-    fn protocol(&self) -> String;
-    /// Given an URI, returns a [`Storage`] object.
+    /// Returns the protocol handled by the storage factory.
+    fn protocol(&self) -> Protocol;
+    /// Returns the appropriate [`Storage`] object for the URI.
     fn resolve(&self, uri: &str) -> Result<Arc<dyn Storage>, StorageResolverError>;
 }
 
@@ -85,22 +86,22 @@ impl StorageFactory for UnsuportedStorage {
 /// based on its protocol.
 #[derive(Clone)]
 pub struct StorageUriResolver {
-    per_protocol_resolver: Arc<HashMap<String, Arc<dyn StorageFactory>>>,
+    per_protocol_resolver: Arc<HashMap<Protocol, Arc<dyn StorageFactory>>>,
 }
 
 #[derive(Default)]
 pub struct StorageUriResolverBuilder {
-    per_protocol_resolver: HashMap<String, Arc<dyn StorageFactory>>,
+    per_protocol_resolver: HashMap<Protocol, Arc<dyn StorageFactory>>,
 }
 
 impl StorageUriResolverBuilder {
-    /// Registers a resolver.
+    /// Registers a storage factory.
     ///
-    /// If a previous resolver was registered for this protocol, it is discarded
+    /// If a previous factory was registered for this protocol, it is discarded
     /// and replaced with the new one.
-    pub fn register<S: StorageFactory>(mut self, resolver: S) -> Self {
+    pub fn register<S: StorageFactory>(mut self, factory: S) -> Self {
         self.per_protocol_resolver
-            .insert(resolver.protocol(), Arc::new(resolver));
+            .insert(factory.protocol(), Arc::new(factory));
         self
     }
 
@@ -113,7 +114,7 @@ impl StorageUriResolverBuilder {
 }
 
 impl StorageUriResolver {
-    /// Creates an empty `StorageUriResolver`.
+    /// Creates an empty [`StorageUriResolverBuilder`].
     pub fn builder() -> StorageUriResolverBuilder {
         StorageUriResolverBuilder::default()
     }
@@ -136,16 +137,10 @@ impl StorageUriResolver {
     }
 
     /// Resolves the given URI.
-    pub fn resolve(&self, uri: &str) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let protocol = uri
-            .split("://")
-            .next()
-            .ok_or_else(|| StorageResolverError::InvalidUri {
-                message: format!("Protocol not found in storage uri: {}", uri),
-            })?;
-        let resolver = self.per_protocol_resolver.get(protocol).ok_or_else(|| {
+    pub fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+        let resolver = self.per_protocol_resolver.get(&uri.protocol()).ok_or_else(|| {
             StorageResolverError::ProtocolUnsupported {
-                protocol: protocol.to_string(),
+                protocol: uri.protocol().to_string(),
             }
         })?;
         let storage = resolver.resolve(uri)?;
@@ -162,11 +157,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_storage_resolver_simple() -> anyhow::Result<()> {
-        let mut first = MockStorageFactory::new();
-        first.expect_protocol().returning(|| "first".to_string());
-        let mut second = MockStorageFactory::new();
-        second.expect_protocol().returning(|| "second".to_string());
-        second.expect_resolve().returning(|_uri| {
+        let mut file_storage_factory = MockStorageFactory::new();
+        file_storage_factory
+            .expect_protocol()
+            .returning(|| Protocol::File);
+
+        let mut ram_storage_factory = MockStorageFactory::new();
+        ram_storage_factory
+            .expect_protocol()
+            .returning(|| Protocol::Ram);
+        ram_storage_factory.expect_resolve().returning(|_uri| {
             Ok(Arc::new(
                 RamStorage::builder()
                     .put("hello", b"hello_content_second")
@@ -174,37 +174,42 @@ mod tests {
             ))
         });
         let storage_resolver = StorageUriResolver::builder()
-            .register(first)
-            .register(second)
+            .register(file_storage_factory)
+            .register(ram_storage_factory)
             .build();
-        let resolved = storage_resolver.resolve("second://")?;
-        let data = resolved.get_all(Path::new("hello")).await?;
+        let storage = storage_resolver.resolve(&Uri::new("ram:///".to_string()))?;
+        let data = storage.get_all(Path::new("hello")).await?;
         assert_eq!(&data[..], b"hello_content_second");
         Ok(())
     }
 
     #[tokio::test]
     async fn test_storage_resolver_override() -> anyhow::Result<()> {
-        let mut first = MockStorageFactory::new();
-        first.expect_protocol().returning(|| "protocol".to_string());
-        let mut second = MockStorageFactory::new();
-        second
+        let mut first_ram_storage_factory = MockStorageFactory::new();
+        first_ram_storage_factory
             .expect_protocol()
-            .returning(|| "protocol".to_string());
-        second.expect_resolve().returning(|uri| {
-            assert_eq!(uri, "protocol://mystorage");
-            Ok(Arc::new(
-                RamStorage::builder()
-                    .put("hello", b"hello_content_second")
-                    .build(),
-            ))
-        });
+            .returning(|| Protocol::Ram);
+
+        let mut second_ram_storage_factory = MockStorageFactory::new();
+        second_ram_storage_factory
+            .expect_protocol()
+            .returning(|| Protocol::Ram);
+        second_ram_storage_factory
+            .expect_resolve()
+            .returning(|uri| {
+                assert_eq!(uri.as_str(), "ram:///home");
+                Ok(Arc::new(
+                    RamStorage::builder()
+                        .put("hello", b"hello_content_second")
+                        .build(),
+                ))
+            });
         let storage_resolver = StorageUriResolver::builder()
-            .register(first)
-            .register(second)
+            .register(first_ram_storage_factory)
+            .register(second_ram_storage_factory)
             .build();
-        let resolved = storage_resolver.resolve("protocol://mystorage")?;
-        let data = resolved.get_all(Path::new("hello")).await?;
+        let storage = storage_resolver.resolve(&Uri::new("ram:///home".to_string()))?;
+        let data = storage.get_all(Path::new("hello")).await?;
         assert_eq!(&data[..], b"hello_content_second");
         Ok(())
     }
@@ -212,9 +217,10 @@ mod tests {
     #[test]
     fn test_storage_resolver_unsupported_protocol() {
         let storage_resolver = StorageUriResolver::for_test();
+        let storage_uri = Uri::new("postgresql://localhost:5432/metastore".to_string());
         assert!(matches!(
-            storage_resolver.resolve("protocol://hello"),
-            Err(crate::StorageResolverError::ProtocolUnsupported { protocol }) if protocol == "protocol"
+            storage_resolver.resolve(&storage_uri),
+            Err(crate::StorageResolverError::ProtocolUnsupported { protocol }) if protocol == "postgresql"
         ));
     }
 }
