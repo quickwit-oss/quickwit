@@ -73,7 +73,7 @@ pub fn quickwit_metastore_uri_resolver() -> &'static MetastoreUriResolver {
             .register(Protocol::Ram, FileBackedMetastoreFactory::default())
             .register(Protocol::File, FileBackedMetastoreFactory::default())
             .register(Protocol::S3, FileBackedMetastoreFactory::default());
-            
+
         #[cfg(feature = "postgres")]
         {
             builder = builder.register(Protocol::PostgreSQL, PostgresqlMetastoreFactory::default());
@@ -83,7 +83,7 @@ pub fn quickwit_metastore_uri_resolver() -> &'static MetastoreUriResolver {
         {
             builder = builder.register(
                 Protocol::PostgreSQL,
-                UnsuportedMetastore {
+                UnsupportedMetastore {
                     message: "postgres unsupported, quickwit was compiled without the 'postgres' \
                               feature flag"
                         .to_string(),
@@ -93,14 +93,14 @@ pub fn quickwit_metastore_uri_resolver() -> &'static MetastoreUriResolver {
 
         #[cfg(feature = "azure")]
         {
-            builder = builder.register("azure", FileBackedMetastoreFactory::default());
+            builder = builder.register(Protocol::Azure, FileBackedMetastoreFactory::default());
         }
 
         #[cfg(not(feature = "azure"))]
         {
             builder = builder.register(
-                "azure",
-                UnsuportedMetastore {
+                Protocol::Azure,
+                UnsupportedMetastore {
                     message: "azure unsupported, quickwit was compiled without the `azure` \
                               feature flag"
                         .to_string(),
@@ -114,12 +114,12 @@ pub fn quickwit_metastore_uri_resolver() -> &'static MetastoreUriResolver {
 
 /// A metastore factory for handling unsupported metastore.
 #[derive(Clone, Default)]
-pub struct UnsuportedMetastore {
+pub struct UnsupportedMetastore {
     message: String,
 }
 
 #[async_trait]
-impl MetastoreFactory for UnsuportedMetastore {
+impl MetastoreFactory for UnsupportedMetastore {
     async fn resolve(&self, _uri: &Uri) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
         Err(MetastoreResolverError::ProtocolUnsupported(
             self.message.to_string(),

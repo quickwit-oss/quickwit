@@ -36,9 +36,8 @@ async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
     let mut object_storage = S3CompatibleObjectStorage::from_uri(&storage_uri)?;
     quickwit_storage::storage_test_suite(&mut object_storage).await?;
 
-    let mut object_storage =
-        S3CompatibleObjectStorage::from_uri(&storage_uri)?
-            .with_prefix(Path::new("test-s3-compatible-storage"));
+    let mut object_storage = S3CompatibleObjectStorage::from_uri(&storage_uri)?
+        .with_prefix(Path::new("test-s3-compatible-storage"));
     quickwit_storage::storage_test_single_part_upload(&mut object_storage)
         .await
         .with_context(|| "test_single_part_upload")?;

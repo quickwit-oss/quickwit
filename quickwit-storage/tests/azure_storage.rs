@@ -36,7 +36,7 @@ use quickwit_storage::MultiPartPolicy;
 async fn test_suite_on_azure_storage() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
 
-    // setup container
+    // Setup container.
     const CONTAINER: &str = "quickwit";
     let container_client = StorageClient::new_emulator_default().container_client(CONTAINER);
     container_client.create().into_future().await?;
@@ -52,7 +52,8 @@ async fn test_suite_on_azure_storage() -> anyhow::Result<()> {
         .with_context(|| "test_single_part_upload")?;
 
     object_storage.set_policy(MultiPartPolicy {
-        target_part_num_bytes: 5 * 1_024 * 1_024, //< the minimum on S3 is 5MB.
+        // On azure, block size is limited between 64KB and 100MB.
+        target_part_num_bytes: 5 * 1_024 * 1_024, // 5MB
         max_num_parts: 10_000,
         multipart_threshold_num_bytes: 10_000_000,
         max_object_num_bytes: 5_000_000_000_000,
@@ -62,7 +63,7 @@ async fn test_suite_on_azure_storage() -> anyhow::Result<()> {
         .await
         .with_context(|| "test_multi_part_upload")?;
 
-    // teardown container
+    // Teardown container.
     container_client.delete().into_future().await?;
 
     Ok(())

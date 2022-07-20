@@ -35,6 +35,7 @@ use futures::stream::StreamExt;
 use md5::Digest;
 use once_cell::sync::OnceCell;
 use quickwit_aws::retry::{retry, RetryParams, Retryable};
+use quickwit_common::uri::{Protocol, Uri};
 use quickwit_common::{chunk_range, into_u64_range};
 use regex::Regex;
 use tantivy::directory::OwnedBytes;
@@ -53,11 +54,11 @@ use crate::{
 pub struct AzureCompatibleBlobStorageFactory;
 
 impl StorageFactory for AzureCompatibleBlobStorageFactory {
-    fn protocol(&self) -> String {
-        "azure".to_string()
+    fn protocol(&self) -> Protocol {
+        Protocol::Azure
     }
 
-    fn resolve(&self, uri: &str) -> Result<Arc<dyn Storage>, StorageResolverError> {
+    fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
         let storage = AzureCompatibleBlobStorage::from_uri(uri)?;
         Ok(Arc::new(storage))
     }
@@ -66,8 +67,7 @@ impl StorageFactory for AzureCompatibleBlobStorageFactory {
 /// Azure object storage implementation
 pub struct AzureCompatibleBlobStorage {
     container_client: ContainerClient,
-    account: String,
-    container: String,
+    uri: Uri,
     prefix: PathBuf,
     multipart_policy: MultiPartPolicy,
     retry_params: RetryParams,
@@ -76,7 +76,7 @@ pub struct AzureCompatibleBlobStorage {
 impl fmt::Debug for AzureCompatibleBlobStorage {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("AzureCompatibleBlobStorage")
-            .field("container", &self.container)
+            .field("uri", &self.uri)
             .field("prefix", &self.prefix)
             .finish()
     }
@@ -84,13 +84,17 @@ impl fmt::Debug for AzureCompatibleBlobStorage {
 
 impl AzureCompatibleBlobStorage {
     /// Creates an object storage.
-    pub fn new(account: &str, access_key: &str, container: &str) -> AzureCompatibleBlobStorage {
+    pub fn new(
+        account: &str,
+        access_key: &str,
+        uri: Uri,
+        container: &str,
+    ) -> AzureCompatibleBlobStorage {
         let container_client =
             StorageClient::new_access_key(account, access_key).container_client(container);
         AzureCompatibleBlobStorage {
             container_client,
-            account: account.to_string(),
-            container: container.to_string(),
+            uri,
             prefix: PathBuf::new(),
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams {
@@ -106,8 +110,7 @@ impl AzureCompatibleBlobStorage {
     pub fn with_prefix(self, prefix: &Path) -> Self {
         AzureCompatibleBlobStorage {
             container_client: self.container_client,
-            account: self.account,
-            container: self.container,
+            uri: self.uri,
             prefix: prefix.to_path_buf(),
             multipart_policy: self.multipart_policy,
             retry_params: self.retry_params,
@@ -120,8 +123,7 @@ impl AzureCompatibleBlobStorage {
         let container_client = StorageClient::new_emulator_default().container_client(container);
         AzureCompatibleBlobStorage {
             container_client,
-            account: container.to_string(),
-            container: container.to_string(),
+            uri: Uri::new(format!("azure://tester/{}", container)),
             prefix: PathBuf::new(),
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams {
@@ -139,15 +141,15 @@ impl AzureCompatibleBlobStorage {
     }
 
     /// Builds instance from URI.
-    pub fn from_uri(uri: &str) -> Result<AzureCompatibleBlobStorage, StorageResolverError> {
+    pub fn from_uri(uri: &Uri) -> Result<AzureCompatibleBlobStorage, StorageResolverError> {
         let (account_name, container, path) =
-            parse_uri(uri).ok_or_else(|| StorageResolverError::InvalidUri {
+            parse_azure_uri(uri).ok_or_else(|| StorageResolverError::InvalidUri {
                 message: format!("Invalid URI: {}", uri),
             })?;
         let access_key = std::env::var("QW_AZURE_ACCESS_KEY")
             .expect("The `QW_AZURE_ACCESS_KEY` environment variable must be defined.");
         let azure_compatible_storage =
-            AzureCompatibleBlobStorage::new(&account_name, &access_key, &container);
+            AzureCompatibleBlobStorage::new(&account_name, &access_key, uri.clone(), &container);
         Ok(azure_compatible_storage.with_prefix(&path))
     }
 
@@ -184,16 +186,6 @@ impl AzureCompatibleBlobStorage {
         })
         .await
         .map_err(StorageError::from)
-    }
-
-    /// Returns the absolute uri of a path for this storage.
-    fn uri(&self, relative_path: &Path) -> String {
-        format!(
-            "azure://{}/{}/{}",
-            self.account,
-            self.container,
-            self.blob_name(relative_path)
-        )
     }
 
     /// Performs a single part upload.
@@ -347,9 +339,10 @@ impl Storage for AzureCompatibleBlobStorage {
             .map(OwnedBytes::new)
             .map_err(|err| {
                 err.add_context(format!(
-                    "Failed to fetch slice {:?} for object: {}",
+                    "Failed to fetch slice {:?} for object: {}/{}",
                     range,
-                    self.uri(path)
+                    self.uri,
+                    path.display(),
                 ))
             })
     }
@@ -361,7 +354,11 @@ impl Storage for AzureCompatibleBlobStorage {
             .await
             .map(OwnedBytes::new)
             .map_err(|err| {
-                err.add_context(format!("Failed to fetch object: {}", self.uri(path)))
+                err.add_context(format!(
+                    "Failed to fetch object: {}/{}",
+                    self.uri,
+                    path.display()
+                ))
             })?;
         tracing::Span::current().record("fetched_bytes_len", &data.len());
         Ok(data)
@@ -381,13 +378,8 @@ impl Storage for AzureCompatibleBlobStorage {
         }
     }
 
-    fn uri(&self) -> String {
-        format!(
-            "azure://{}/{}/{}",
-            self.account,
-            self.container,
-            self.prefix.to_string_lossy()
-        )
+    fn uri(&self) -> &Uri {
+        &self.uri
     }
 }
 
@@ -407,7 +399,7 @@ async fn extract_range_data_and_hash(
     Ok((data, hash))
 }
 
-pub fn parse_uri(uri: &str) -> Option<(String, String, PathBuf)> {
+pub fn parse_azure_uri(uri: &Uri) -> Option<(String, String, PathBuf)> {
     // Ex: azure://account/container/prefix.
     static URI_PTN: OnceCell<Regex> = OnceCell::new();
     URI_PTN
@@ -417,7 +409,7 @@ pub fn parse_uri(uri: &str) -> Option<(String, String, PathBuf)> {
             )
             .unwrap()
         })
-        .captures(uri)
+        .captures(uri.as_str())
         .and_then(|captures| {
             let account = match captures.name("account") {
                 Some(account_match) => account_match.as_str().to_string(),
@@ -465,7 +457,17 @@ struct AzureErrorWrapper {
 
 impl Retryable for AzureErrorWrapper {
     fn is_retryable(&self) -> bool {
-        true // TODO
+        match self.inner.kind() {
+            ErrorKind::HttpResponse { status, .. } => !matches!(
+                status,
+                StatusCode::NotFound
+                    | StatusCode::Unauthorized
+                    | StatusCode::BadRequest
+                    | StatusCode::Forbidden
+            ),
+            ErrorKind::Io => true,
+            _ => false,
+        }
     }
 }
 
@@ -499,22 +501,32 @@ impl From<AzureErrorWrapper> for StorageError {
 
 #[cfg(test)]
 mod tests {
-    use crate::object_storage::azure_compatible_storage::parse_uri;
+    use quickwit_common::uri::Uri;
+
+    use crate::object_storage::azure_compatible_storage::parse_azure_uri;
 
     #[test]
-    fn test_parse_uri() {
-        let (account, container, path) = parse_uri("azure://quickwit/indexes/wiki").unwrap();
+    fn test_parse_azure_uri() {
+        let (account, container, path) =
+            parse_azure_uri(&Uri::new("azure://quickwit/indexes/wiki".to_string())).unwrap();
         assert_eq!(account, "quickwit");
         assert_eq!(container, "indexes");
         assert_eq!(path.to_string_lossy().to_string(), "wiki");
 
-        let (account, container, path) = parse_uri("azure://jane/store").unwrap();
+        let (account, container, path) =
+            parse_azure_uri(&Uri::new("azure://jane/store".to_string())).unwrap();
         assert_eq!(account, "jane");
         assert_eq!(container, "store");
         assert_eq!(path.to_string_lossy().to_string(), "");
 
-        assert_eq!(parse_uri("azure://quickwit"), None);
-        assert_eq!(parse_uri("azure://quickwit/"), None);
-        assert_eq!(parse_uri("azure://"), None);
+        assert_eq!(
+            parse_azure_uri(&Uri::new("azure://quickwit".to_string())),
+            None
+        );
+        assert_eq!(
+            parse_azure_uri(&Uri::new("azure://quickwit/".to_string())),
+            None
+        );
+        assert_eq!(parse_azure_uri(&Uri::new("azure://".to_string())), None);
     }
 }

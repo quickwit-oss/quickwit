@@ -29,9 +29,9 @@ use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 
+use crate::prefix_storage::add_prefix_to_storage;
 use crate::{
-    add_prefix_to_storage, OwnedBytes, Storage, StorageErrorKind, StorageFactory,
-    StorageResolverError, StorageResult,
+    OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
 };
 
 /// In Ram implementation of quickwit's storage.
@@ -191,12 +191,12 @@ impl StorageFactory for RamStorageFactory {
                 prefix.to_path_buf(),
                 uri.clone(),
             )),
-            _ => {
-                Err(StorageResolverError::InvalidUri{ message: format!(
+            _ => Err(StorageResolverError::InvalidUri {
+                message: format!(
                     "URI `{uri}` is not a valid RAM storage URI. `ram://` is the only protocol \
                      accepted."
-                ) })
-            }
+                ),
+            }),
         }
     }
 }

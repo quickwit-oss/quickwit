@@ -232,14 +232,14 @@ impl S3CompatibleObjectStorage {
     }
 
     /// Creates an object storage given a region and an uri.
-    pub fn from_uri(uri: &str) -> Result<S3CompatibleObjectStorage, StorageResolverError> {
+    pub fn from_uri(uri: &Uri) -> Result<S3CompatibleObjectStorage, StorageResolverError> {
         let region = sniff_s3_region_and_cache().map_err(|err| {
             StorageResolverError::FailedToOpenStorage {
                 kind: StorageErrorKind::Service,
                 message: err.to_string(),
             }
         })?;
-        Self::from_uri_and_region(region, uri)
+        Self::from_region_and_uri(region, uri)
     }
 
     /// Creates an object storage given a region and an uri.
@@ -247,15 +247,13 @@ impl S3CompatibleObjectStorage {
         region: Region,
         uri: &Uri,
     ) -> Result<S3CompatibleObjectStorage, StorageResolverError> {
-        let (bucket, path) = parse_uri(uri).ok_or_else(|| StorageResolverError::InvalidUri {
+        let (bucket, path) = parse_s3_uri(uri).ok_or_else(|| StorageResolverError::InvalidUri {
             message: format!("URI `{uri}` is not a valid AWS S3 URI."),
         })?;
-        let s3_compatible_storage =
-            S3CompatibleObjectStorage::new(region, uri.clone(), bucket).map_err(|err| {
-                StorageResolverError::FailedToOpenStorage {
-                    kind: StorageErrorKind::Service,
-                    message: err.to_string(),
-                }
+        let s3_compatible_storage = S3CompatibleObjectStorage::new(region, uri.clone(), bucket)
+            .map_err(|err| StorageResolverError::FailedToOpenStorage {
+                kind: StorageErrorKind::Service,
+                message: err.to_string(),
             })?;
         Ok(s3_compatible_storage.with_prefix(&path))
     }

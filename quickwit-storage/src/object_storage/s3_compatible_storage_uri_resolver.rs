@@ -35,7 +35,7 @@ impl StorageFactory for S3CompatibleObjectStorageFactory {
         Protocol::S3
     }
 
-    fn resolve(&self, uri: &str) -> Result<Arc<dyn Storage>, StorageResolverError> {
+    fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
         let storage = S3CompatibleObjectStorage::from_uri(uri)?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
     }

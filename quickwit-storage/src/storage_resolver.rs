@@ -46,8 +46,8 @@ pub fn quickwit_storage_uri_resolver() -> &'static StorageUriResolver {
 
         #[cfg(not(feature = "azure"))]
         {
-            builder = builder.register(UnsuportedStorage {
-                protocol: "azure".to_string(),
+            builder = builder.register(UnsupportedStorage {
+                protocol: Protocol::Azure,
             })
         }
 
@@ -60,22 +60,23 @@ pub fn quickwit_storage_uri_resolver() -> &'static StorageUriResolver {
 pub trait StorageFactory: Send + Sync + 'static {
     /// Returns the protocol handled by the storage factory.
     fn protocol(&self) -> Protocol;
+
     /// Returns the appropriate [`Storage`] object for the URI.
-    fn resolve(&self, uri: &str) -> Result<Arc<dyn Storage>, StorageResolverError>;
+    fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError>;
 }
 
 /// A storage factory implementation for handling not supported features.
-#[derive(Clone, Default)]
-pub struct UnsuportedStorage {
-    protocol: String,
+#[derive(Clone)]
+pub struct UnsupportedStorage {
+    protocol: Protocol,
 }
 
-impl StorageFactory for UnsuportedStorage {
-    fn protocol(&self) -> String {
-        self.protocol.to_string()
+impl StorageFactory for UnsupportedStorage {
+    fn protocol(&self) -> Protocol {
+        self.protocol.clone()
     }
 
-    fn resolve(&self, _: &str) -> Result<Arc<dyn Storage>, StorageResolverError> {
+    fn resolve(&self, _: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
         Err(StorageResolverError::ProtocolUnsupported {
             protocol: self.protocol.to_string(),
         })
@@ -138,11 +139,12 @@ impl StorageUriResolver {
 
     /// Resolves the given URI.
     pub fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let resolver = self.per_protocol_resolver.get(&uri.protocol()).ok_or_else(|| {
-            StorageResolverError::ProtocolUnsupported {
+        let resolver = self
+            .per_protocol_resolver
+            .get(&uri.protocol())
+            .ok_or_else(|| StorageResolverError::ProtocolUnsupported {
                 protocol: uri.protocol().to_string(),
-            }
-        })?;
+            })?;
         let storage = resolver.resolve(uri)?;
         Ok(storage)
     }

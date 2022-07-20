@@ -52,62 +52,15 @@ impl fmt::Debug for LocalFileStorage {
 }
 
 impl LocalFileStorage {
-
-    //EVAN <
-    /// Creates a file storage instance given a uri
-    pub fn from_uri(uri: &str) -> Result<LocalFileStorage, StorageResolverError> {
-        let root_pathbuf = Self::extract_root_path_from_uri(uri)?;
-        Ok(LocalFileStorage::from(root_pathbuf))
-    }
-
-    /// Validates if the provided uri is of the correct protocol & extracts the root path.
-    ///
-    /// Both scheme `file:///{path}` and `file://{path}` are accepted.
-    /// If uri starts with `file://`, a `/` is automatically added to ensure
-    /// `path` starts from root.
-    pub fn extract_root_path_from_uri(uri: &str) -> Result<PathBuf, StorageResolverError> {
-        if !uri.starts_with("file://") {
-            return Err(StorageResolverError::InvalidUri {
-                message: format!(
-                    "{:?} is an invalid file storage uri. Only file:// is accepted.",
-                    uri
-                ),
-            });
-        }
-
-        let mut root_path = uri
-            .split("://")
-            .nth(1)
-            .ok_or_else(|| StorageResolverError::InvalidUri {
-                message: format!("Invalid root path: `{}`.", uri),
-            })?
-            .to_string();
-        if !root_path.starts_with('/') {
-            root_path.insert(0, '/');
-        }
-        let pathbuf = PathBuf::from(root_path);
-        if pathbuf
-            .iter()
-            .any(|segment| segment.to_string_lossy() == "..")
-        {
-            return Err(StorageResolverError::InvalidUri {
-                message: format!("Invalid URI, `..` is forbidden: `{}`.", uri),
-            });
-        }
-        Ok(pathbuf)
-    }
-    //EVAN />
-
     /// Creates a local file storage instance given a URI.
-    pub fn from_uri(uri: &Uri) -> StorageResult<Self> {
+    pub fn from_uri(uri: &Uri) -> Result<Self, StorageResolverError> {
         uri.filepath()
             .map(|root| Self {
                 uri: uri.clone(),
                 root: root.to_path_buf(),
             })
-            .ok_or_else(|| {
-                let error = anyhow::anyhow!("URI `{uri}` is not a valid file URI.");
-                StorageErrorKind::DoesNotExist.with_error(error)
+            .ok_or_else(|| StorageResolverError::InvalidUri {
+                message: format!("URI `{uri}` is not a valid file URI."),
             })
     }
 
@@ -282,7 +235,7 @@ impl StorageFactory for LocalFileStorageFactory {
         Protocol::File
     }
 
-    fn resolve(&self, uri: &Uri) -> StorageResult<Arc<dyn Storage>> {
+    fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
         let storage = LocalFileStorage::from_uri(uri)?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
     }
@@ -303,30 +256,6 @@ mod tests {
         Ok(())
     }
 
-    //EVAN <
-    #[test]
-    fn test_storage_fail_if_uri_is_not_safe() {
-        let storage = LocalFileStorage::from_uri("file:///tmp/../not_ok");
-        assert!(storage.is_err());
-        assert!(matches!(
-            storage.unwrap_err(),
-            StorageResolverError::InvalidUri { .. }
-        ));
-    }
-
-    #[test]
-    fn test_storage_should_not_fail_if_dots_inside_directory_name() {
-        LocalFileStorage::from_uri("file:///tmp/abc../").unwrap();
-    }
-
-    #[test]
-    fn test_storage_should_automatically_start_from_root() -> anyhow::Result<()> {
-        let storage = LocalFileStorage::from_uri("file://tmp/abc../")?;
-        assert_eq!(storage.uri(), "file:///tmp/abc../");
-        Ok(())
-    }
-    //EVAN />
-
     #[test]
     fn test_file_storage_factory() -> anyhow::Result<()> {
         let tempdir = tempfile::tempdir()?;
@@ -341,7 +270,10 @@ mod tests {
             .unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
-        let err = file_storage_factory.resolve(&Uri::new("s3://".to_string())).err().unwrap();
+        let err = file_storage_factory
+            .resolve(&Uri::new("s3://".to_string()))
+            .err()
+            .unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
         Ok(())
     }

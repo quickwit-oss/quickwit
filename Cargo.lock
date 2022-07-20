@@ -3241,7 +3241,7 @@ dependencies = [
  "rust-embed",
  "serde",
  "serde_json",
- "serde_qs 0.10.0",
+ "serde_qs 0.10.1",
  "termcolor",
  "thiserror",
  "tokio",
@@ -3975,6 +3975,17 @@ dependencies = [
  "itoa 1.0.2",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "serde_qs"
+version = "0.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7715380eec75f029a4ef7de39a9200e0a63823176b759d055b613f5a87df6a6"
+dependencies = [
+ "percent-encoding",
+ "serde",
+ "thiserror",
 ]
 
 [[package]]
