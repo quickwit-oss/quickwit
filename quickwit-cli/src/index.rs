@@ -779,6 +779,12 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri())
         .await?;
+
+    // Check if storage uri is valid
+    metastore_uri_resolver
+        .resolve(&quickwit_config.default_index_root_uri())
+        .await?;
+
     let index_service = IndexService::new(
         metastore,
         quickwit_storage_uri_resolver().clone(),
