@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -28,7 +28,7 @@ use quickwit_storage::Storage;
 use tantivy::{IndexReader, ReloadPolicy};
 use tracing::error;
 
-use crate::leaf::open_index;
+use crate::leaf::open_index_with_cache;
 use crate::GlobalDocAddress;
 
 /// Given a list of global doc address, fetches all the documents and
@@ -126,17 +126,21 @@ pub async fn fetch_docs(
     Ok(FetchDocsResponse { hits })
 }
 
-async fn get_searcher_for_split(
+const NUM_CONCURRENT_REQUESTS: usize = 10;
+
+async fn get_searcher_for_split_without_cache(
     num_searchers: usize,
     index_storage: Arc<dyn Storage>,
     split: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<IndexReader> {
-    let index = open_index(index_storage, split)
+    let index = open_index_with_cache(index_storage, split, false)
         .await
         .with_context(|| "open-index-for-split")?;
     let reader = index
         .reader_builder()
         .num_searchers(num_searchers)
+        // the docs are presorted so a cache size of NUM_CONCURRENT_REQUESTS is fine
+        .doc_store_cache_size(NUM_CONCURRENT_REQUESTS)
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     Ok(reader)
@@ -146,13 +150,16 @@ async fn get_searcher_for_split(
 #[tracing::instrument(skip(global_doc_addrs, index_storage, split))]
 #[allow(clippy::needless_lifetimes)]
 async fn fetch_docs_in_split(
-    global_doc_addrs: Vec<GlobalDocAddress>,
+    mut global_doc_addrs: Vec<GlobalDocAddress>,
     index_storage: Arc<dyn Storage>,
     split: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<Vec<(GlobalDocAddress, String)>> {
-    let index_reader = get_searcher_for_split(global_doc_addrs.len(), index_storage, split).await?;
+    global_doc_addrs.sort_by_key(|doc| doc.doc_addr);
+
+    let index_reader = get_searcher_for_split_without_cache(1, index_storage, split).await?;
+    let searcher = Arc::new(index_reader.searcher());
     let doc_futures = global_doc_addrs.into_iter().map(|global_doc_addr| {
-        let searcher = index_reader.searcher();
+        let searcher = searcher.clone();
         async move {
             let doc = searcher
                 .doc_async(global_doc_addr.doc_addr)
@@ -163,6 +170,6 @@ async fn fetch_docs_in_split(
         }
     });
 
-    let stream = futures::stream::iter(doc_futures).buffer_unordered(10);
+    let stream = futures::stream::iter(doc_futures).buffer_unordered(NUM_CONCURRENT_REQUESTS);
     stream.try_collect::<Vec<_>>().await
 }

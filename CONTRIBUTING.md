@@ -60,8 +60,8 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 
 Currently, we use [cross](https://github.com/rust-embedded/cross) to build Quickwit binaries for different architectures.
 For this to work, we've had to customize the docker images cross uses. These customizations can be found in docker files located in `./cross-images` folder. To make cross take into account any change on those
-docker files, you will need to build and push the images on dockerhub by running `make cross-images`.
-We also have nightly builds that are pushed to dockerhub. This helps continiously check our binaries are still built even with external dependency update. Successful builds let you accessed the artifacts for the next three days. Release builds always have their artifacts attached to the release.
+docker files, you will need to build and push the images on Docker Hub by running `make cross-images`.
+We also have nightly builds that are pushed to Docker Hub. This helps continuously check our binaries are still built even with external dependency update. Successful builds let you accessed the artifacts for the next three days. Release builds always have their artifacts attached to the release.
 
 ### Notes on the embedded UI
 As the react UI is embedded in the rust binary, we need to build the react app before building the binary. Hence `make cross-image` depends on the command `build-ui`.

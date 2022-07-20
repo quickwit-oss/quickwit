@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -17,8 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use core::fmt;
 use std::collections::BTreeSet;
+use std::fmt;
 use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
@@ -64,11 +64,12 @@ pub struct SplitMetadata {
     /// TODO make u64
     pub num_docs: usize,
 
-    /// Sum of the size (in bytes) of the documents in this split.
+    /// Sum of the size (in bytes) of the raw documents in this split.
     ///
     /// Note this is not the split file size. It is the size of the original
     /// JSON payloads.
-    pub original_size_in_bytes: u64,
+    #[serde(alias = "original_size_in_bytes", alias = "size_in_bytes")]
+    pub uncompressed_docs_size_in_bytes: u64,
 
     /// If a timestamp field is available, the min / max timestamp in
     /// the split.
@@ -109,7 +110,7 @@ impl SplitMetadata {
         Self {
             split_id,
             num_docs: 0,
-            original_size_in_bytes: 0,
+            uncompressed_docs_size_in_bytes: 0,
             time_range: None,
             create_timestamp: utc_now_timestamp(),
             tags: Default::default(),
@@ -137,6 +138,23 @@ pub enum SplitState {
     MarkedForDeletion,
 }
 
+impl fmt::Display for SplitState {
+    fn fmt(&self, f: &mut fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl SplitState {
+    /// Returns a string representation of the given enum.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SplitState::Staged => "Staged",
+            SplitState::Published => "Published",
+            SplitState::MarkedForDeletion => "MarkedForDeletion",
+        }
+    }
+}
+
 impl FromStr for SplitState {
     type Err = String;
 
@@ -150,12 +168,6 @@ impl FromStr for SplitState {
             _ => return Err(format!("Unknown split state `{}`.", input)),
         };
         Ok(split_state)
-    }
-}
-
-impl fmt::Display for SplitState {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
     }
 }
 

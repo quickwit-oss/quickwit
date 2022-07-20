@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -102,12 +102,9 @@ impl FileBackedMetastoreFactory {
 
 #[async_trait]
 impl MetastoreFactory for FileBackedMetastoreFactory {
-    async fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
-        let (uri_stripped, polling_interval_opt) = extract_polling_interval_from_uri(uri);
-        // The Uri has the benefit of canonicalizing our path.
-        let uri = quickwit_common::uri::Uri::try_new(&uri_stripped).map_err(|parse_uri_err| {
-            MetastoreResolverError::InvalidUri(format!("Invalid uri: {}. {:?}", uri, parse_uri_err))
-        })?;
+    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+        let (uri_stripped, polling_interval_opt) = extract_polling_interval_from_uri(uri.as_str());
+        let uri = Uri::new(uri_stripped);
         if let Some(metastore) = self.get_from_cache(&uri).await {
             debug!("using metastore from cache");
             return Ok(metastore);
@@ -115,7 +112,7 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
         debug!("metastore not found in cache");
         let storage = self
             .storage_uri_resolver
-            .resolve(uri.as_ref())
+            .resolve(&uri)
             .map_err(|err| match err {
                 StorageResolverError::InvalidUri { message } => {
                     MetastoreResolverError::InvalidUri(message)

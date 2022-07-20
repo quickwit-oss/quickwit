@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -158,7 +158,7 @@ impl Directory for ControlledDirectory {
     fn delete(&self, path: &Path) -> Result<(), DeleteError> {
         self.check_if_alive()
             .map_err(|io_error| DeleteError::IoError {
-                io_error,
+                io_error: Arc::new(io_error),
                 filepath: path.to_path_buf(),
             })?;
         self.inner.underlying.delete(path)

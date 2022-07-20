@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -30,26 +30,11 @@ mod tests;
 mod split_metadata;
 mod split_metadata_version;
 
-#[cfg(feature = "postgres")]
-extern crate openssl;
-
-#[cfg(feature = "postgres")]
-#[macro_use]
-extern crate diesel_migrations;
-
-#[cfg(feature = "postgres")]
-#[macro_use]
-extern crate diesel;
-
 #[allow(missing_docs)]
 pub mod checkpoint;
 mod error;
 mod metastore;
 mod metastore_resolver;
-
-#[cfg(feature = "postgres")]
-#[allow(missing_docs)]
-pub mod postgresql;
 
 pub use error::{MetastoreError, MetastoreResolverError, MetastoreResult};
 pub use metastore::file_backed_metastore::FileBackedMetastore;

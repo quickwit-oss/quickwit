@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -544,7 +544,7 @@ struct IndexRow {
     #[tabled(rename = "Index ID")]
     index_id: String,
     #[tabled(rename = "Index URI")]
-    index_uri: String,
+    index_uri: Uri,
 }
 
 pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {

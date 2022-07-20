@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -26,9 +26,8 @@ use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
 use itertools::{izip, Itertools};
-use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorRunner, Handler, Mailbox, QueueCapacity,
-};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::split_file;
 use quickwit_directories::{BundleDirectory, UnionDirectory};
 use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
@@ -40,6 +39,7 @@ use tantivy::{
     demux, DemuxMapping, Directory, DocIdToSegmentOrdinal, Index, IndexMeta, Segment, SegmentId,
     SegmentReader, TantivyError,
 };
+use tokio::runtime::Handle;
 use tracing::{debug, info, info_span, Span};
 
 use crate::actors::Packager;
@@ -60,8 +60,8 @@ pub struct MergeExecutor {
 impl Actor for MergeExecutor {
     type ObservableState = ();
 
-    fn runner(&self) -> ActorRunner {
-        ActorRunner::DedicatedThread
+    fn runtime_handle(&self) -> Handle {
+        RuntimeType::Blocking.get_runtime_handle()
     }
 
     fn observable_state(&self) -> Self::ObservableState {}
@@ -200,7 +200,7 @@ fn merge_time_range(splits: &[SplitMetadata]) -> Option<RangeInclusive<i64>> {
 fn sum_doc_sizes_in_bytes(splits: &[SplitMetadata]) -> u64 {
     splits
         .iter()
-        .map(|split| split.original_size_in_bytes)
+        .map(|split| split.uncompressed_docs_size_in_bytes)
         .sum::<u64>()
 }
 
@@ -430,7 +430,7 @@ impl MergeExecutor {
         // total_num_docs`. TODO: should we use another proxy to have a better estimate?
         let total_docs_size_in_bytes = splits
             .iter()
-            .map(|split| split.original_size_in_bytes)
+            .map(|split| split.uncompressed_docs_size_in_bytes)
             .sum::<u64>();
         let total_num_docs = sum_num_docs(&splits);
         let initial_demux_num_ops = splits
@@ -974,7 +974,7 @@ mod tests {
             .collect_vec();
         let total_num_bytes_docs = split_metas
             .iter()
-            .map(|meta| meta.original_size_in_bytes)
+            .map(|meta| meta.uncompressed_docs_size_in_bytes)
             .sum::<u64>();
         let merge_scratch_directory = ScratchDirectory::for_test()?;
         let downloaded_splits_directory =

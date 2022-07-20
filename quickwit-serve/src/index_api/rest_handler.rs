@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -155,28 +155,31 @@ mod tests {
             .expect_index_metadata()
             .returning(|_index_id: &str| {
                 Ok(IndexMetadata::for_test(
-                    "quickwit-demo-index",
-                    "file:///path/to/index/quickwit-demo-index",
+                    "test-index",
+                    "ram:///indexes/test-index",
                 ))
             });
         let index_service = IndexService::new(
             Arc::new(metastore),
             StorageUriResolver::for_test(),
-            Uri::new("file:///default-index-uri".to_string()),
+            Uri::new("ram:///indexes".to_string()),
         );
         let index_management_handler =
             super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
         let resp = warp::test::request()
-            .path("/indexes/quickwit-demo-index")
+            .path("/indexes/test-index")
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 200);
-        let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
+        let actual_response_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let expected_response_json = serde_json::json!({
-            "index_id": "quickwit-demo-index",
-            "index_uri": "file:///path/to/index/quickwit-demo-index",
+            "index_id": "test-index",
+            "index_uri": "ram:///indexes/test-index",
         });
-        assert_json_include!(actual: resp_json, expected: expected_response_json);
+        assert_json_include!(
+            actual: actual_response_json,
+            expected: expected_response_json
+        );
         Ok(())
     }
 
@@ -189,7 +192,7 @@ mod tests {
         let index_service = IndexService::new(
             Arc::new(metastore),
             StorageUriResolver::for_test(),
-            Uri::try_new("file:///default-index-uri").unwrap(),
+            Uri::new("ram:///indexes".to_string()),
         );
         let index_management_handler =
             super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
@@ -198,12 +201,15 @@ mod tests {
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 200);
-        let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
+        let actual_response_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let expected_response_json = serde_json::json!([{
             "create_timestamp": 0,
             "split_id": "split_1",
         }]);
-        assert_json_include!(actual: resp_json, expected: expected_response_json);
+        assert_json_include!(
+            actual: actual_response_json,
+            expected: expected_response_json
+        );
         Ok(())
     }
 
@@ -212,14 +218,14 @@ mod tests {
         let mut metastore = MockMetastore::new();
         metastore.expect_list_indexes_metadatas().returning(|| {
             Ok(vec![IndexMetadata::for_test(
-                "quickwit-demo-index",
-                "file:///path/to/index/quickwit-demo-index",
+                "test-index",
+                "ram:///indexes/test-index",
             )])
         });
         let index_service = IndexService::new(
             Arc::new(metastore),
             StorageUriResolver::for_test(),
-            Uri::new("file:///default-index-uri".to_string()),
+            Uri::new("ram:///indexes".to_string()),
         );
         let index_management_handler =
             super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
@@ -228,12 +234,15 @@ mod tests {
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 200);
-        let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
+        let actual_response_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let expected_response_json = serde_json::json!([{
-            "index_id": "quickwit-demo-index",
-            "index_uri": "file:///path/to/index/quickwit-demo-index",
+            "index_id": "test-index",
+            "index_uri": "ram:///indexes/test-index",
         }]);
-        assert_json_include!(actual: resp_json, expected: expected_response_json);
+        assert_json_include!(
+            actual: actual_response_json,
+            expected: expected_response_json
+        );
         Ok(())
     }
 

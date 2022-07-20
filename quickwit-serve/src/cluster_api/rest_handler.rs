@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -20,51 +20,60 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 
-use quickwit_cluster::{ClusterError, ClusterService};
-use serde::Deserialize;
+use quickwit_cluster::{Cluster, ClusterState};
+use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
 
 use crate::Format;
 
 /// Cluster handler.
 pub fn cluster_handler(
-    cluster_service: Arc<dyn ClusterService>,
+    cluster: Arc<Cluster>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
-    list_members_filter()
-        .and(warp::path::end().map(move || cluster_service.clone()))
-        .and_then(list_members)
+    cluster_state_filter()
+        .and(warp::path::end().map(move || cluster.clone()))
+        .and_then(get_cluster)
 }
 
 /// This struct represents the QueryString passed to
 /// the rest API.
 #[derive(Deserialize, Debug, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-struct ListMembersRequestQueryString {
+struct ClusterStateQueryString {
     /// The output format requested.
     #[serde(default)]
     pub format: Format,
 }
 
-fn list_members_filter(
-) -> impl Filter<Extract = (ListMembersRequestQueryString,), Error = Rejection> + Clone {
-    warp::path!("cluster" / "members")
+fn cluster_state_filter(
+) -> impl Filter<Extract = (ClusterStateQueryString,), Error = Rejection> + Clone {
+    warp::path!("cluster")
+        .and(warp::path::end())
         .and(warp::get())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 
-async fn list_members(
-    request: ListMembersRequestQueryString,
-    cluster_service: Arc<dyn ClusterService>,
+async fn get_cluster(
+    request: ClusterStateQueryString,
+    cluster: Arc<Cluster>,
 ) -> Result<impl warp::Reply, Infallible> {
     Ok(request
         .format
-        .make_rest_reply(list_members_endpoint(&*cluster_service).await))
+        .make_rest_reply_non_serializable_error(cluster_endpoint(cluster).await))
 }
 
-async fn list_members_endpoint(
-    cluster_service: &dyn ClusterService,
-) -> Result<quickwit_proto::ListMembersResponse, ClusterError> {
-    let list_members_req = quickwit_proto::ListMembersRequest {};
-    let list_members_resp = cluster_service.list_members(list_members_req).await?;
-    Ok(list_members_resp)
+#[derive(Serialize)]
+struct SerializedCluster {
+    cluster_id: String,
+    node_id: String,
+    state: ClusterState,
+}
+
+async fn cluster_endpoint(cluster: Arc<Cluster>) -> Result<SerializedCluster, Infallible> {
+    let cluster_state = cluster.state().await;
+    Ok(SerializedCluster {
+        cluster_id: cluster.cluster_id.clone(),
+        node_id: cluster.node_id.clone(),
+        state: cluster_state,
+    })
 }

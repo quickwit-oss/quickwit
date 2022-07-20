@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -69,6 +69,76 @@ async fn test_single_node_simple() -> anyhow::Result<()> {
     assert_json_include!(actual: hit_json, expected: expected_json);
     assert!(single_node_result.elapsed_time_micros > 10);
     assert!(single_node_result.elapsed_time_micros < 1_000_000);
+    Ok(())
+}
+
+async fn slop_search_and_check(
+    test_sandbox: &TestSandbox,
+    index_id: &str,
+    query: &str,
+    expected_num_match: u64,
+) -> anyhow::Result<()> {
+    let search_request = SearchRequest {
+        index_id: index_id.to_string(),
+        query: query.to_string(),
+        search_fields: vec!["body".to_string()],
+        start_timestamp: None,
+        end_timestamp: None,
+        max_hits: 5,
+        start_offset: 0,
+        ..Default::default()
+    };
+    let single_node_result = single_node_search(
+        &search_request,
+        &*test_sandbox.metastore(),
+        test_sandbox.storage_uri_resolver(),
+    )
+    .await?;
+    assert_eq!(
+        single_node_result.num_hits, expected_num_match,
+        "query: {}",
+        query
+    );
+    assert_eq!(
+        single_node_result.hits.len(),
+        expected_num_match as usize,
+        "query: {}",
+        query
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_slop_queries() -> anyhow::Result<()> {
+    let index_id = "slop-query";
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: title
+                type: text
+              - name: body
+                type: text
+                record: position
+        "#;
+
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
+    let docs = vec![
+        json!({"title": "one", "body": "a red bike"}),
+        json!({"title": "two", "body": "a small blue bike"}),
+        json!({"title": "three", "body": "a small, rusty, and yellow bike"}),
+        json!({"title": "four", "body": "fred's small bike"}),
+        json!({"title": "five", "body": "a tiny shelter"}),
+    ];
+    test_sandbox.add_documents(docs.clone()).await?;
+
+    slop_search_and_check(&test_sandbox, index_id, "\"small bird\"~2", 0).await?;
+    slop_search_and_check(&test_sandbox, index_id, "\"red bike\"~2", 1).await?;
+    slop_search_and_check(&test_sandbox, index_id, "\"small blue bike\"~3", 1).await?;
+    slop_search_and_check(&test_sandbox, index_id, "\"small bike\"", 1).await?;
+    slop_search_and_check(&test_sandbox, index_id, "\"small bike\"~1", 2).await?;
+    slop_search_and_check(&test_sandbox, index_id, "\"small bike\"~2", 2).await?;
+    slop_search_and_check(&test_sandbox, index_id, "\"small bike\"~3", 3).await?;
+    slop_search_and_check(&test_sandbox, index_id, "\"tiny shelter\"~3", 1).await?;
+
     Ok(())
 }
 

@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -20,6 +20,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use byte_unit::Byte;
+use quickwit_common::uri::Uri;
 use quickwit_config::{
     DocMapping, IndexingResources, IndexingSettings, KafkaSourceParams, MergePolicy,
     SearchSettings, SourceConfig, SourceParams,
@@ -148,7 +149,7 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
         max_merge_factor: 11,
     };
     let indexing_resources = IndexingResources {
-        num_threads: 3,
+        __num_threads_deprecated: serde::de::IgnoredAny,
         heap_size: Byte::from_bytes(3),
     };
     let indexing_settings = IndexingSettings {
@@ -181,7 +182,7 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
 
     IndexMetadata {
         index_id: "my-index".to_string(),
-        index_uri: "s3://quickwit-indexes/my-index".to_string(),
+        index_uri: Uri::new("s3://quickwit-indexes/my-index".to_string()),
         checkpoint,
         doc_mapping,
         indexing_settings,

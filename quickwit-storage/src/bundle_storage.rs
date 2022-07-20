@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -29,6 +29,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_common::chunk_range;
+use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
 use tantivy::directory::FileSlice;
 use tantivy::HasLen;
@@ -245,7 +246,7 @@ impl Storage for BundleStorage {
         Ok(file_range.end - file_range.start as u64)
     }
 
-    fn uri(&self) -> String {
+    fn uri(&self) -> &Uri {
         self.storage.uri()
     }
 }

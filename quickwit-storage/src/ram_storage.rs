@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -24,25 +24,38 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use quickwit_common::uri::{Protocol, Uri};
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 
-use crate::{
-    add_prefix_to_storage, OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResult,
-};
+use crate::prefix_storage::add_prefix_to_storage;
+use crate::{OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResult};
 
 /// In Ram implementation of quickwit's storage.
 ///
 /// This implementation is mostly useful in unit tests.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct RamStorage {
+    uri: Uri,
     files: Arc<RwLock<HashMap<PathBuf, OwnedBytes>>>,
 }
 
 impl fmt::Debug for RamStorage {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "RamStorage")
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter
+            .debug_struct("RamStorage")
+            .field("uri", &self.uri)
+            .finish()
+    }
+}
+
+impl Default for RamStorage {
+    fn default() -> Self {
+        Self {
+            uri: Uri::new("ram:///".to_string()),
+            files: Arc::new(RwLock::new(HashMap::new())),
+        }
     }
 }
 
@@ -114,8 +127,8 @@ impl Storage for RamStorage {
         Ok(payload_bytes)
     }
 
-    fn uri(&self) -> String {
-        "ram://".to_string()
+    fn uri(&self) -> &Uri {
+        &self.uri
     }
 
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
@@ -145,6 +158,7 @@ impl RamStorageBuilder {
     /// Finalizes the [`RamStorage`] creation.
     pub fn build(self) -> RamStorage {
         RamStorage {
+            uri: Uri::new("ram:///".to_string()),
             files: Arc::new(RwLock::new(self.files)),
         }
     }
@@ -164,25 +178,25 @@ impl Default for RamStorageFactory {
 }
 
 impl StorageFactory for RamStorageFactory {
-    fn protocol(&self) -> String {
-        "ram".to_string()
+    fn protocol(&self) -> Protocol {
+        Protocol::Ram
     }
 
-    fn resolve(&self, uri: &str) -> crate::StorageResult<Arc<dyn Storage>> {
-        if !uri.starts_with("ram://") {
-            let err_msg = anyhow::anyhow!(
-                "{:?} is an invalid ram storage uri. Only ram:// is accepted.",
-                uri
-            );
-            return Err(StorageErrorKind::DoesNotExist.with_error(err_msg));
+    fn resolve(&self, uri: &Uri) -> crate::StorageResult<Arc<dyn Storage>> {
+        match uri.filepath() {
+            Some(prefix) if uri.protocol().is_ram() => Ok(add_prefix_to_storage(
+                self.ram_storage.clone(),
+                prefix.to_path_buf(),
+                uri.clone(),
+            )),
+            _ => {
+                let error = anyhow::anyhow!(
+                    "URI `{uri}` is not a valid RAM storage URI. `ram://` is the only protocol \
+                     accepted."
+                );
+                Err(StorageErrorKind::DoesNotExist.with_error(error))
+            }
         }
-
-        let prefix = uri.split("://").nth(1).ok_or_else(|| {
-            StorageErrorKind::DoesNotExist
-                .with_error(anyhow::anyhow!("Invalid prefix path: {}", uri))
-        })?;
-
-        Ok(add_prefix_to_storage(self.ram_storage.clone(), prefix))
     }
 }
 
@@ -201,15 +215,18 @@ mod tests {
     #[test]
     fn test_ram_storage_factory() {
         let ram_storage_factory = RamStorageFactory::default();
-        let err = ram_storage_factory.resolve("rom://toto").err().unwrap();
+        let ram_uri = Uri::new("s3:///foo".to_string());
+        let err = ram_storage_factory.resolve(&ram_uri).err().unwrap();
         assert_eq!(err.kind(), StorageErrorKind::DoesNotExist);
 
-        let data_result = ram_storage_factory.resolve("ram://data").ok().unwrap();
-        let home_result = ram_storage_factory.resolve("ram://home/data").ok().unwrap();
-        assert_ne!(data_result.uri(), home_result.uri());
+        let data_uri = Uri::new("ram:///data".to_string());
+        let data_storage = ram_storage_factory.resolve(&data_uri).ok().unwrap();
+        let home_uri = Uri::new("ram:///home".to_string());
+        let home_storage = ram_storage_factory.resolve(&home_uri).ok().unwrap();
+        assert_ne!(data_storage.uri(), home_storage.uri());
 
-        let data_result_two = ram_storage_factory.resolve("ram://data").ok().unwrap();
-        assert_eq!(data_result.uri(), data_result_two.uri());
+        let data_storage_two = ram_storage_factory.resolve(&data_uri).ok().unwrap();
+        assert_eq!(data_storage.uri(), data_storage_two.uri());
     }
 
     #[tokio::test]

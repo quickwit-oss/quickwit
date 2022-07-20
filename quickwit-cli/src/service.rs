@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -131,7 +131,7 @@ impl RunCliCommand {
         // Revalidate config because of overrides.
         config.validate()?;
 
-        serve_quickwit(&config, &self.services).await?;
+        serve_quickwit(config, &self.services).await?;
         Ok(())
     }
 }

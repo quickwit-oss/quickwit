@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -20,8 +20,8 @@
 use std::any::type_name;
 use std::convert::Infallible;
 use std::fmt;
-use std::marker::PhantomData;
 use std::ops::Deref;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -29,17 +29,16 @@ use async_trait::async_trait;
 use futures::Future;
 use thiserror::Error;
 use tokio::sync::oneshot;
-use tokio::sync::watch::Sender;
 use tracing::{debug, error, info_span, Span};
 
 use crate::actor_state::{ActorState, AtomicState};
 use crate::channel_with_priority::Priority;
 use crate::envelope::wrap_in_envelope;
-use crate::mailbox::{Command, CommandOrMessage};
+use crate::mailbox::CommandOrMessage;
 use crate::progress::{Progress, ProtectedZoneGuard};
 use crate::scheduler::{Callback, ScheduleEvent, Scheduler};
 use crate::spawn_builder::SpawnBuilder;
-use crate::{ActorRunner, AskError, KillSwitch, Mailbox, QueueCapacity, SendError};
+use crate::{AskError, Command, KillSwitch, Mailbox, QueueCapacity, SendError};
 
 /// The actor exit status represents the outcome of the execution of an actor,
 /// after the end of the execution.
@@ -137,8 +136,8 @@ pub trait Actor: Send + Sync + Sized + 'static {
     ///
     /// Actor with a handler that may block for more than 50microsecs should
     /// use the `ActorRunner::DedicatedThread`.
-    fn runner(&self) -> ActorRunner {
-        ActorRunner::GlobalRuntime
+    fn runtime_handle(&self) -> tokio::runtime::Handle {
+        tokio::runtime::Handle::current()
     }
 
     /// The Actor's incoming mailbox queue capacity. It is set when the actor is spawned.
@@ -191,14 +190,12 @@ pub trait Actor: Send + Sync + Sized + 'static {
 // TODO hide all of this public stuff
 pub struct ActorContext<A: Actor> {
     inner: Arc<ActorContextInner<A>>,
-    phantom_data: PhantomData<A>,
 }
 
 impl<A: Actor> Clone for ActorContext<A> {
     fn clone(&self) -> Self {
         ActorContext {
             inner: self.inner.clone(),
-            phantom_data: PhantomData,
         }
     }
 }
@@ -217,6 +214,10 @@ pub struct ActorContextInner<A: Actor> {
     kill_switch: KillSwitch,
     scheduler_mailbox: Mailbox<Scheduler>,
     actor_state: AtomicState,
+    // Count the number of times the actor has slept.
+    // This counter is useful to unsure that obsolete WakeUp
+    // events do not effect ulterior `sleep`.
+    sleep_count: AtomicUsize,
 }
 
 impl<A: Actor> ActorContext<A> {
@@ -232,10 +233,14 @@ impl<A: Actor> ActorContext<A> {
                 kill_switch,
                 scheduler_mailbox,
                 actor_state: AtomicState::default(),
+                sleep_count: AtomicUsize::default(),
             }
             .into(),
-            phantom_data: PhantomData,
         }
+    }
+
+    pub(crate) fn sleep_count(&self) -> usize {
+        self.sleep_count.load(Ordering::SeqCst)
     }
 
     pub fn mailbox(&self) -> &Mailbox<A> {
@@ -311,6 +316,24 @@ impl<A: Actor> ActorContext<A> {
 
     pub(crate) fn pause(&self) {
         self.actor_state.pause();
+    }
+
+    /// Puts the actor to sleep for the given duration.
+    ///
+    /// For the period of the sleep, the actor is like on pause:
+    /// It stops processing message, in a way that does not
+    /// consume CPU, but it still reacts to commands.
+    ///
+    /// The actor will wake up before the `sleep_duration` is elapsed
+    /// if it receives a resume command.
+    pub async fn sleep(&self, sleep_duration: Duration) {
+        let sleep_count = self.sleep_count.fetch_add(1, Ordering::SeqCst) + 1;
+        self.pause();
+        self.schedule_self_command_or_message(
+            sleep_duration,
+            Command::WakeUp { sleep_count }.into(),
+        )
+        .await;
     }
 
     pub(crate) fn resume(&self) {
@@ -438,16 +461,15 @@ impl<A: Actor> ActorContext<A> {
         self.self_mailbox.send_message(msg).await
     }
 
-    pub async fn schedule_self_msg<M>(&self, after_duration: Duration, msg: M)
-    where
-        A: Handler<M>,
-        M: 'static + Send + Sync + fmt::Debug,
-    {
+    pub(crate) async fn schedule_self_command_or_message(
+        &self,
+        after_duration: Duration,
+        command_or_message: CommandOrMessage<A>,
+    ) {
         let self_mailbox = self.inner.self_mailbox.clone();
-        let (envelope, _response_rx) = wrap_in_envelope(msg);
         let callback = Callback(Box::pin(async move {
             let _ = self_mailbox
-                .send_with_priority(CommandOrMessage::Message(envelope), Priority::High)
+                .send_with_priority(command_or_message, Priority::High)
                 .await;
         }));
         let scheduler_msg = ScheduleEvent {
@@ -458,34 +480,15 @@ impl<A: Actor> ActorContext<A> {
             .send_message(&self.inner.scheduler_mailbox, scheduler_msg)
             .await;
     }
-}
 
-pub(crate) fn process_command<A: Actor>(
-    actor: &mut A,
-    command: Command,
-    ctx: &ActorContext<A>,
-    state_tx: &Sender<A::ObservableState>,
-) -> Option<ActorExitStatus> {
-    match command {
-        Command::Pause => {
-            ctx.pause();
-            None
-        }
-        Command::ExitWithSuccess => Some(ActorExitStatus::Success),
-        Command::Quit => Some(ActorExitStatus::Quit),
-        Command::Kill => Some(ActorExitStatus::Killed),
-        Command::Resume => {
-            ctx.resume();
-            None
-        }
-        Command::Observe(cb) => {
-            let state = actor.observable_state();
-            let _ = state_tx.send(state.clone());
-            // We voluntarily ignore the error here. (An error only occurs if the
-            // sender dropped its receiver.)
-            let _ = cb.send(Box::new(state));
-            None
-        }
+    pub async fn schedule_self_msg<M>(&self, after_duration: Duration, msg: M)
+    where
+        A: Handler<M>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
+        let (envelope, _response_rx) = wrap_in_envelope(msg);
+        self.schedule_self_command_or_message(after_duration, CommandOrMessage::Message(envelope))
+            .await
     }
 }
 

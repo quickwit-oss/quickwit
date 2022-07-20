@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -26,7 +26,7 @@ export function JsonEditor({content, resizeOnMount}: {content: unknown, resizeOn
   const onMount = useCallback((editor) => {
     if (!resizeOnMount) {
       return;
-    } 
+    }
     const editorElement = editor.getDomNode();
 
     if (!editorElement) {
@@ -41,7 +41,7 @@ export function JsonEditor({content, resizeOnMount}: {content: unknown, resizeOn
       editorElement.style.height = `${height}px`;
       editor.layout();
     }, 10);
-    
+
   }, [resizeOnMount]);
 
   /* eslint-disable  @typescript-eslint/no-explicit-any */

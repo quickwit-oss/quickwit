@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -29,6 +29,7 @@ use quickwit_doc_mapper::{
     DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, ModeType, QuickwitJsonOptions, SortBy,
     SortByConfig, SortOrder,
 };
+use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 
 use crate::config::deser_valid_uri;
@@ -55,27 +56,29 @@ pub struct DocMapping {
     pub dynamic_mapping: Option<QuickwitJsonOptions>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IndexingResources {
-    #[serde(default = "IndexingResources::default_num_threads")]
-    pub num_threads: usize,
+    #[serde(default, rename = "num_threads", skip_serializing)]
+    pub __num_threads_deprecated: IgnoredAny, // DEPRECATED
     #[serde(default = "IndexingResources::default_heap_size")]
     pub heap_size: Byte,
 }
 
-impl IndexingResources {
-    fn default_num_threads() -> usize {
-        1
+impl PartialEq for IndexingResources {
+    fn eq(&self, other: &Self) -> bool {
+        self.heap_size == other.heap_size
     }
+}
 
+impl IndexingResources {
     fn default_heap_size() -> Byte {
         Byte::from_bytes(2_000_000_000) // 2GB
     }
 
     pub fn for_test() -> Self {
         Self {
-            num_threads: 1,
+            __num_threads_deprecated: IgnoredAny,
             heap_size: Byte::from_bytes(20_000_000), // 20MB
         }
     }
@@ -84,7 +87,7 @@ impl IndexingResources {
 impl Default for IndexingResources {
     fn default() -> Self {
         Self {
-            num_threads: Self::default_num_threads(),
+            __num_threads_deprecated: IgnoredAny,
             heap_size: Self::default_heap_size(),
         }
     }
@@ -425,7 +428,7 @@ mod tests {
                 assert_eq!(
                     index_config.indexing_settings.resources,
                     IndexingResources {
-                        num_threads: 3,
+                        __num_threads_deprecated: serde::de::IgnoredAny,
                         heap_size: Byte::from_bytes(3_000_000_000)
                     }
                 );
@@ -517,7 +520,7 @@ mod tests {
                         ..Default::default()
                     },
                     resources: IndexingResources {
-                        num_threads: 3,
+                        __num_threads_deprecated: serde::de::IgnoredAny,
                         ..Default::default()
                     },
                     ..Default::default()

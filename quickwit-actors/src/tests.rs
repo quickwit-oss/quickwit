@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -18,13 +18,13 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashSet;
+use std::time::Duration;
 
 use async_trait::async_trait;
 
-use crate::mailbox::Command;
 use crate::observation::ObservationType;
 use crate::{
-    message_timeout, Actor, ActorContext, ActorExitStatus, ActorHandle, ActorRunner, ActorState,
+    message_timeout, Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Command,
     Handler, Health, Mailbox, Observation, Supervisable, Universe,
 };
 
@@ -194,6 +194,7 @@ async fn test_ping_actor() {
             }
         }
     );
+    ping_sender_handle.join().await;
     assert!(ping_sender_mailbox.send_message(Ping).await.is_err());
 }
 
@@ -272,30 +273,6 @@ async fn test_timeouting_actor() {
 }
 
 #[tokio::test]
-async fn test_sync_actor_running_states() {
-    quickwit_common::setup_logging_for_tests();
-    let universe = Universe::new();
-    let actor = PingReceiverActor::default();
-    let (ping_mailbox, ping_handle) = universe.spawn_actor(actor).spawn();
-    assert!(ping_handle.state() == ActorState::Processing);
-    for _ in 0..10 {
-        assert!(ping_mailbox.send_message(Ping).await.is_ok());
-    }
-    assert!(ping_handle.state() == ActorState::Processing);
-    ping_handle.process_pending_and_observe().await;
-    // Actor is still in processing state and will go idle after message timeout.
-    assert!(ping_handle.state() == ActorState::Processing);
-    tokio::time::sleep(message_timeout().mul_f32(1.1)).await;
-    assert!(ping_handle.state() == ActorState::Idle);
-    assert!(ping_mailbox.send_command(Command::Resume).await.is_ok());
-    // Return into processing on sending a command and go back to idle after message timeout.
-    tokio::time::sleep(message_timeout()).await;
-    assert!(ping_handle.state() == ActorState::Processing);
-    tokio::time::sleep(message_timeout()).await;
-    assert!(ping_handle.state() == ActorState::Idle);
-}
-
-#[tokio::test]
 async fn test_pause_actor() {
     quickwit_common::setup_logging_for_tests();
     let universe = Universe::new();
@@ -325,13 +302,13 @@ async fn test_actor_running_states() {
     // Actor is still in processing state and will go idle after message timeout.
     assert!(ping_handle.state() == ActorState::Processing);
     tokio::time::sleep(message_timeout().mul_f32(1.1)).await;
-    assert!(ping_handle.state() == ActorState::Idle);
+    assert_eq!(ping_handle.state(), ActorState::Idle);
     assert!(ping_mailbox.send_command(Command::Resume).await.is_ok());
     // Return into processing on sending a command and go back to idle after message timeout.
     tokio::time::sleep(message_timeout()).await;
-    assert!(ping_handle.state() == ActorState::Processing);
+    assert_eq!(ping_handle.state(), ActorState::Processing);
     tokio::time::sleep(message_timeout()).await;
-    assert!(ping_handle.state() == ActorState::Idle);
+    assert_eq!(ping_handle.state(), ActorState::Idle);
 }
 
 #[derive(Default, Debug, Clone)]
@@ -387,13 +364,11 @@ impl Handler<SingleShot> for LoopingActor {
     }
 }
 
-#[track_caller]
-async fn test_looping_aux(runner: ActorRunner) -> anyhow::Result<()> {
+#[tokio::test]
+async fn test_looping() -> anyhow::Result<()> {
     let universe = Universe::new();
     let looping_actor = LoopingActor::default();
-    let (looping_actor_mailbox, looping_actor_handle) = universe
-        .spawn_actor(looping_actor)
-        .spawn_with_forced_runner(runner);
+    let (looping_actor_mailbox, looping_actor_handle) = universe.spawn_actor(looping_actor).spawn();
     assert!(looping_actor_mailbox.send_message(SingleShot).await.is_ok());
     looping_actor_handle.process_pending_and_observe().await;
     let (exit_status, state) = looping_actor_handle.quit().await;
@@ -401,16 +376,6 @@ async fn test_looping_aux(runner: ActorRunner) -> anyhow::Result<()> {
     assert_eq!(state.single_shot_count, 1);
     assert!(state.loop_count > 0);
     Ok(())
-}
-
-#[tokio::test]
-async fn test_looping_tokio_task() -> anyhow::Result<()> {
-    test_looping_aux(ActorRunner::GlobalRuntime).await
-}
-
-#[tokio::test]
-async fn test_looping_dedicated_thread() -> anyhow::Result<()> {
-    test_looping_aux(ActorRunner::DedicatedThread).await
 }
 
 #[derive(Default)]
@@ -494,7 +459,7 @@ async fn test_actor_spawning_actor() -> anyhow::Result<()> {
     Ok(())
 }
 
-struct BuggyFinalizeActor(ActorRunner);
+struct BuggyFinalizeActor;
 
 #[async_trait]
 impl Actor for BuggyFinalizeActor {
@@ -515,14 +480,10 @@ impl Actor for BuggyFinalizeActor {
     }
 }
 
-#[track_caller]
-async fn test_actor_finalize_error_set_exit_status_to_panicked_aux(
-    actor_runner: ActorRunner,
-) -> anyhow::Result<()> {
+#[tokio::test]
+async fn test_actor_finalize_error_set_exit_status_to_panicked() -> anyhow::Result<()> {
     let universe = Universe::new();
-    let (mailbox, handle) = universe
-        .spawn_actor(BuggyFinalizeActor(actor_runner))
-        .spawn();
+    let (mailbox, handle) = universe.spawn_actor(BuggyFinalizeActor).spawn();
     assert!(matches!(handle.state(), ActorState::Processing));
     drop(mailbox);
     let (exit, _) = handle.join().await;
@@ -530,24 +491,15 @@ async fn test_actor_finalize_error_set_exit_status_to_panicked_aux(
     Ok(())
 }
 
-#[tokio::test]
-async fn test_actor_finalize_error_set_exit_status_to_panicked_tokio_task() -> anyhow::Result<()> {
-    test_actor_finalize_error_set_exit_status_to_panicked_aux(ActorRunner::GlobalRuntime).await
-}
-
-#[tokio::test]
-async fn test_actor_finalize_error_set_exit_status_to_panicked_dedicated_thread(
-) -> anyhow::Result<()> {
-    test_actor_finalize_error_set_exit_status_to_panicked_aux(ActorRunner::DedicatedThread).await
-}
-
 #[derive(Default)]
 struct Adder(u64);
 
 impl Actor for Adder {
-    type ObservableState = ();
+    type ObservableState = u64;
 
-    fn observable_state(&self) -> Self::ObservableState {}
+    fn observable_state(&self) -> Self::ObservableState {
+        self.0
+    }
 }
 
 #[derive(Debug)]
@@ -567,6 +519,9 @@ impl Handler<AddOperand> for Adder {
     }
 }
 
+#[derive(Debug)]
+struct Sleep(Duration);
+
 #[tokio::test]
 async fn test_actor_return_response() -> anyhow::Result<()> {
     let universe = Universe::new();
@@ -576,5 +531,79 @@ async fn test_actor_return_response() -> anyhow::Result<()> {
     let plus_two_plus_four = mailbox.send_message(AddOperand(4)).await?;
     assert_eq!(plus_two.await.unwrap(), 2);
     assert_eq!(plus_two_plus_four.await.unwrap(), 6);
+    Ok(())
+}
+
+#[async_trait]
+impl Handler<Sleep> for Adder {
+    type Reply = u64;
+
+    async fn handle(
+        &mut self,
+        sleep: Sleep,
+        ctx: &ActorContext<Self>,
+    ) -> Result<u64, ActorExitStatus> {
+        ctx.sleep(sleep.0).await;
+        Ok(self.0)
+    }
+}
+
+#[tokio::test]
+async fn test_actor_simple_sleep() -> anyhow::Result<()> {
+    quickwit_common::setup_logging_for_tests();
+    let universe = Universe::new();
+    let adder = Adder::default();
+    let (mailbox, handle) = universe.spawn_actor(adder).spawn();
+    mailbox.send_message(AddOperand(2)).await?;
+    let total = *handle.process_pending_and_observe().await;
+    assert_eq!(total, 2);
+    mailbox.send_message(Sleep(Duration::from_secs(3))).await?;
+    mailbox.send_message(AddOperand(3)).await?;
+    let total = *handle.observe().await;
+    assert_eq!(total, 2);
+    universe.simulate_time_shift(Duration::from_secs(3)).await;
+    let total = *handle.process_pending_and_observe().await;
+    assert_eq!(total, 5);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_actor_sleep_and_resume() -> anyhow::Result<()> {
+    quickwit_common::setup_logging_for_tests();
+    let universe = Universe::new();
+    let adder = Adder::default();
+    let (mailbox, handle) = universe.spawn_actor(adder).spawn();
+    mailbox.send_message(AddOperand(2)).await?;
+    let total = *handle.process_pending_and_observe().await;
+    assert_eq!(total, 2);
+    mailbox.send_message(Sleep(Duration::from_secs(3))).await?;
+    handle.process_pending_and_observe().await;
+    mailbox.send_message(AddOperand(3)).await?;
+    mailbox.send_command(Command::Resume).await?;
+    let total = *handle.process_pending_and_observe().await;
+    assert_eq!(total, 5);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_actor_sleep_resume_sleep() -> anyhow::Result<()> {
+    quickwit_common::setup_logging_for_tests();
+    let universe = Universe::new();
+    let adder = Adder::default();
+    let (mailbox, handle) = universe.spawn_actor(adder).spawn();
+    mailbox.ask(Sleep(Duration::from_secs(3))).await?;
+    mailbox.send_message(AddOperand(3)).await?;
+    mailbox.send_command(Command::Resume).await?;
+    let total = handle.process_pending_and_observe().await;
+    assert_eq!(total.obs_type, ObservationType::Alive);
+    assert_eq!(*total, 3);
+    mailbox.send_message(Sleep(Duration::from_secs(60))).await?;
+    mailbox.send_message(AddOperand(2)).await?;
+    universe.simulate_time_shift(Duration::from_secs(10)).await;
+    let total = *handle.process_pending_and_observe().await;
+    assert_eq!(total, 3);
+    universe.simulate_time_shift(Duration::from_secs(60)).await;
+    let total = *handle.process_pending_and_observe().await;
+    assert_eq!(total, 5);
     Ok(())
 }

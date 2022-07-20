@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -21,7 +21,6 @@ use std::convert::Infallible;
 use std::fmt;
 
 use quickwit_actors::AskError;
-use quickwit_cluster::ClusterError;
 use quickwit_core::IndexServiceError;
 use quickwit_indexing::IndexingServiceError;
 use quickwit_ingest_api::IngestApiError;
@@ -40,7 +39,6 @@ pub enum ServiceErrorCode {
     MethodNotAllowed,
     UnsupportedMediaType,
     BadRequest,
-    PermissionDenied,
 }
 
 impl ServiceErrorCode {
@@ -51,7 +49,6 @@ impl ServiceErrorCode {
             ServiceErrorCode::BadRequest => tonic::Code::InvalidArgument,
             ServiceErrorCode::MethodNotAllowed => tonic::Code::InvalidArgument,
             ServiceErrorCode::UnsupportedMediaType => tonic::Code::InvalidArgument,
-            ServiceErrorCode::PermissionDenied => tonic::Code::PermissionDenied,
         }
     }
     pub(crate) fn to_http_status_code(self) -> http::StatusCode {
@@ -61,7 +58,6 @@ impl ServiceErrorCode {
             ServiceErrorCode::BadRequest => http::StatusCode::BAD_REQUEST,
             ServiceErrorCode::MethodNotAllowed => http::StatusCode::METHOD_NOT_ALLOWED,
             ServiceErrorCode::UnsupportedMediaType => http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            ServiceErrorCode::PermissionDenied => http::StatusCode::FORBIDDEN,
         }
     }
 }
@@ -75,18 +71,6 @@ impl ServiceError for SearchError {
             SearchError::InvalidQuery(_) => ServiceErrorCode::BadRequest,
             SearchError::InvalidArgument(_) => ServiceErrorCode::BadRequest,
             SearchError::InvalidAggregationRequest(_) => ServiceErrorCode::BadRequest,
-        }
-    }
-}
-
-impl ServiceError for ClusterError {
-    fn status_code(&self) -> ServiceErrorCode {
-        match self {
-            ClusterError::CreateClusterError { .. } => ServiceErrorCode::Internal,
-            ClusterError::UDPPortBindingError { .. } => ServiceErrorCode::PermissionDenied,
-            ClusterError::ReadHostIdError { .. } => ServiceErrorCode::Internal,
-            ClusterError::WriteHostIdError { .. } => ServiceErrorCode::Internal,
-            ClusterError::ClusterStateError { .. } => ServiceErrorCode::Internal,
         }
     }
 }

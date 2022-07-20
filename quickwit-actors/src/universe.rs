@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -20,10 +20,10 @@
 use std::time::Duration;
 
 use crate::channel_with_priority::Priority;
-use crate::mailbox::{Command, CommandOrMessage};
+use crate::mailbox::CommandOrMessage;
 use crate::scheduler::{SimulateAdvanceTime, TimeShift};
 use crate::spawn_builder::SpawnBuilder;
-use crate::{Actor, KillSwitch, Mailbox, QueueCapacity, Scheduler};
+use crate::{Actor, Command, KillSwitch, Mailbox, QueueCapacity, Scheduler};
 
 /// Universe serves as the top-level context in which Actor can be spawned.
 /// It is *not* a singleton. A typical application will usually have only one universe hosting all

@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -21,6 +21,7 @@ use std::ops::Range;
 use std::path::Path;
 
 use async_trait::async_trait;
+use quickwit_common::uri::Uri;
 
 use crate::{OwnedBytes, PutPayload, StorageErrorKind, StorageResult};
 
@@ -74,5 +75,5 @@ pub trait Storage: Send + Sync + 'static {
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64>;
 
     /// Returns an URI identifying the storage
-    fn uri(&self) -> String;
+    fn uri(&self) -> &Uri;
 }

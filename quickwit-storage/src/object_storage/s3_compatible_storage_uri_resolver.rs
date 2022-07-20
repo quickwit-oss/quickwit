@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -19,21 +19,22 @@
 
 use std::sync::Arc;
 
+use quickwit_common::uri::{Protocol, Uri};
 pub use rusoto_core::Region;
 
-use crate::{S3CompatibleObjectStorage, StorageFactory};
+use crate::{DebouncedStorage, S3CompatibleObjectStorage, Storage, StorageFactory, StorageResult};
 
-/// S3 Object storage Uri Resolver
+/// S3 object storage URI resolver
 #[derive(Default)]
 pub struct S3CompatibleObjectStorageFactory;
 
 impl StorageFactory for S3CompatibleObjectStorageFactory {
-    fn protocol(&self) -> String {
-        "s3".to_string()
+    fn protocol(&self) -> Protocol {
+        Protocol::S3
     }
 
-    fn resolve(&self, uri: &str) -> crate::StorageResult<std::sync::Arc<dyn crate::Storage>> {
+    fn resolve(&self, uri: &Uri) -> StorageResult<Arc<dyn Storage>> {
         let storage = S3CompatibleObjectStorage::from_uri(uri)?;
-        Ok(Arc::new(storage))
+        Ok(Arc::new(DebouncedStorage::new(storage)))
     }
 }

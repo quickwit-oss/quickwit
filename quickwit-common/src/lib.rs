@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -19,10 +19,12 @@
 
 mod checklist;
 mod coolid;
+
 pub mod fs;
 pub mod metrics;
 pub mod net;
 pub mod rand;
+pub mod runtimes;
 pub mod uri;
 
 use std::fmt::Debug;
@@ -45,11 +47,7 @@ pub fn into_u64_range(range: Range<usize>) -> Range<u64> {
 }
 
 pub fn setup_logging_for_tests() {
-    use std::sync::Once;
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        env_logger::builder().format_timestamp(None).init();
-    });
+    let _ = env_logger::builder().format_timestamp(None).try_init();
 }
 
 pub fn split_file(split_id: &str) -> String {

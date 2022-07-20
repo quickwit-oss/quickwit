@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -25,7 +25,7 @@ pub(crate) fn sample_split_metadata_for_regression() -> SplitMetadata {
     SplitMetadata {
         split_id: "split".to_string(),
         num_docs: 12303,
-        original_size_in_bytes: 234234,
+        uncompressed_docs_size_in_bytes: 234234,
         time_range: Some(121000..=130198),
         create_timestamp: 3,
         tags: ["234".to_string(), "aaa".to_string()].into_iter().collect(),

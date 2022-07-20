@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -19,15 +19,15 @@
 
 use clap::Command;
 use quickwit_cli::cli::build_cli;
+use quickwit_serve::build_quickwit_build_info;
 use toml::Value;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let build_info = build_quickwit_build_info();
     let version_text = format!(
         "{} ({} {})",
-        env!("CARGO_PKG_VERSION"),
-        env!("QW_COMMIT_SHORT_HASH"),
-        env!("QW_COMMIT_DATE"),
+        build_info.cargo_pkg_version, build_info.cargo_pkg_version, build_info.commit_date,
     );
 
     let app = build_cli()

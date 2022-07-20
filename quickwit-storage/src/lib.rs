@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -30,7 +30,13 @@
 //!
 //! - The `BundleStorage` bundles together multiple files into a single file.
 mod cache;
+mod debouncer;
+mod metrics;
 mod storage;
+pub use debouncer::AsyncDebouncer;
+pub(crate) use debouncer::DebouncedStorage;
+
+pub use self::metrics::STORAGE_METRICS;
 pub use self::payload::PutPayload;
 pub use self::storage::Storage;
 
@@ -44,20 +50,17 @@ mod ram_storage;
 mod split;
 mod storage_resolver;
 
-use std::path::Path;
-
-use anyhow::Context;
 use quickwit_common::uri::Uri;
 pub use tantivy::directory::OwnedBytes;
 
 pub use self::bundle_storage::{BundleStorage, BundleStorageFileOffsets};
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::cache::MockCache;
+pub use self::cache::{wrap_storage_with_long_term_cache, MemorySizedCache};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 pub use self::object_storage::{
     MultiPartPolicy, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
 };
-pub use self::prefix_storage::add_prefix_to_storage;
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};
 pub use self::split::{SplitPayload, SplitPayloadBuilder};
 #[cfg(any(test, feature = "testsuite"))]
@@ -69,23 +72,18 @@ pub use self::storage_resolver::{
 };
 #[cfg(feature = "testsuite")]
 pub use self::test_suite::storage_test_suite;
-pub use crate::cache::{wrap_storage_with_long_term_cache, Cache, MemorySizedCache, SliceCache};
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
 
 /// Loads an entire local or remote file into memory.
 pub async fn load_file(uri: &Uri) -> anyhow::Result<OwnedBytes> {
-    let path = Path::new(uri.as_ref());
-    let parent_uri = path
+    let parent = uri
         .parent()
-        .with_context(|| format!("`{}` is not a valid file URI.", uri))?
-        .to_str()
-        .with_context(|| format!("Failed to convert URI `{}` to str.", uri))?;
-
-    let storage = quickwit_storage_uri_resolver().resolve(parent_uri)?;
-    let file_name = path
+        .ok_or_else(|| anyhow::anyhow!("URI `{uri}` is not a valid file URI."))?;
+    let storage = quickwit_storage_uri_resolver().resolve(&parent)?;
+    let file_name = uri
         .file_name()
-        .with_context(|| format!("`{}` is not a valid file URI.", uri))?;
-    let bytes = storage.get_all(Path::new(file_name)).await?;
+        .ok_or_else(|| anyhow::anyhow!("URI `{uri}` is not a valid file URI."))?;
+    let bytes = storage.get_all(file_name).await?;
     Ok(bytes)
 }
 

@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -22,6 +22,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use quickwit_common::uri::Uri;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::Metastore;
 use quickwit_proto::{
@@ -135,7 +136,7 @@ impl SearchService for SearchServiceImpl {
         info!(index=?search_request.index_id, splits=?leaf_search_request.split_offsets, "leaf_search");
         let storage = self
             .storage_uri_resolver
-            .resolve(&leaf_search_request.index_uri)?;
+            .resolve(&Uri::new(leaf_search_request.index_uri))?;
         let split_ids = leaf_search_request.split_offsets;
         let doc_mapper = deserialize_doc_mapper(&leaf_search_request.doc_mapper)?;
 
@@ -151,7 +152,7 @@ impl SearchService for SearchServiceImpl {
     ) -> crate::Result<FetchDocsResponse> {
         let storage = self
             .storage_uri_resolver
-            .resolve(&fetch_docs_request.index_uri)?;
+            .resolve(&Uri::new(fetch_docs_request.index_uri))?;
 
         let fetch_docs_response = fetch_docs(
             fetch_docs_request.partial_hits,
@@ -187,11 +188,11 @@ impl SearchService for SearchServiceImpl {
         info!(index=?stream_request.index_id, splits=?leaf_stream_request.split_offsets, "leaf_search");
         let storage = self
             .storage_uri_resolver
-            .resolve(&leaf_stream_request.index_uri)?;
+            .resolve(&Uri::new(leaf_stream_request.index_uri))?;
         let doc_mapper = deserialize_doc_mapper(&leaf_stream_request.doc_mapper)?;
         let leaf_receiver = leaf_search_stream(
             stream_request,
-            storage.clone(),
+            storage,
             leaf_stream_request.split_offsets,
             doc_mapper,
         )

@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -44,7 +44,7 @@ function SearchView() {
 
   const runSearch = (updatedSearchRequest: SearchRequest) => {
     console.log('Run search...', updatedSearchRequest);
-    // If we have a timstamp field, order by desc on the timestamp field.
+    // If we have a timestamp field, order by desc on the timestamp field.
     if (index?.metadata.indexing_settings.timestamp_field) {
       updatedSearchRequest.sortByField = {
         field_name: index?.metadata.indexing_settings.timestamp_field,
@@ -71,7 +71,7 @@ function SearchView() {
   }
   const onIndexMetadataUpdate = (indexMetadata: IndexMetadata | null) => {
     setSearchRequest(previousRequest => {
-      return {...previousRequest, indexId: indexMetadata === null ? null : indexMetadata.index_id}; 
+      return {...previousRequest, indexId: indexMetadata === null ? null : indexMetadata.index_id};
     });
   }
   const onSearchRequestUpdate = (searchRequest: SearchRequest) => {

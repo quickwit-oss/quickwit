@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -22,8 +22,10 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use quickwit_common::uri::Uri;
 
-use crate::{Cache, OwnedBytes, Storage, StorageResult};
+use crate::cache::Cache;
+use crate::{OwnedBytes, Storage, StorageResult};
 
 /// Use with care, StorageWithCache is read-only.
 pub(crate) struct StorageWithCache {
@@ -83,7 +85,7 @@ impl Storage for StorageWithCache {
         self.storage.file_num_bytes(path).await
     }
 
-    fn uri(&self) -> String {
+    fn uri(&self) -> &Uri {
         self.storage.uri()
     }
 }

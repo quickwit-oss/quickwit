@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -20,9 +20,11 @@
 import AppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
 import GitHubIcon from '@mui/icons-material/GitHub';
-import { Box, IconButton, Link, styled, SvgIcon } from '@mui/material';
+import { Box, IconButton, Link, styled, SvgIcon, Tooltip, Typography } from '@mui/material';
 import { Discord } from '@styled-icons/fa-brands/Discord';
 import { ReactComponent as Logo } from '../assets/img/quickwit-logo.svg';
+import { Client } from '../services/client';
+import { useEffect, useMemo, useState } from 'react';
 
 const StyledAppBar = styled(AppBar)(({ theme })=>({
   zIndex: theme.zIndex.drawer + 1,
@@ -35,13 +37,26 @@ declare module '@mui/material/AppBar' {
   }
 }
 
-
 const TopBar = () => {
+  const [clusterId, setClusterId] = useState<string>("");
+  const quickwitClient = useMemo(() => new Client(), []);
+
+  useEffect(() => {
+    quickwitClient.cluster().then(cluster => {
+      setClusterId(cluster.cluster_id);
+    });
+  }, [])
+
   return (
     <StyledAppBar position="fixed" elevation={0} color="neutral">
       <Toolbar variant="dense">
         <Box sx={{ flexGrow: 1, p: 0, m: 0, display: 'flex', alignItems: 'center' }}>
           <Logo height='25px'></Logo>
+          <Tooltip title="Cluster ID" placement="right">
+            <Typography mx={2}>
+              {clusterId}
+            </Typography>
+          </Tooltip>
         </Box>
         <Link href="https://quickwit.io/docs" target="_blank" sx={{ px: 2 }}>
             Docs
@@ -62,4 +77,5 @@ const TopBar = () => {
     </StyledAppBar>
   );
 };
+
 export default TopBar;

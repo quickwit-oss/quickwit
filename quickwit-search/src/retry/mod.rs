@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -83,9 +83,7 @@ mod tests {
     fn test_should_retry_on_error() -> anyhow::Result<()> {
         let retry_policy = DefaultRetryPolicy {};
         let result = crate::Result::<()>::Err(SearchError::InternalError("test".to_string()));
-        let req = ();
-        let retry = retry_policy.retry_request(req, result.as_ref());
-        assert_eq!(retry, Some(req));
+        assert!(retry_policy.retry_request((), result.as_ref()).is_some());
         Ok(())
     }
 
@@ -93,9 +91,7 @@ mod tests {
     fn test_should_not_retry_if_result_is_ok() -> anyhow::Result<()> {
         let retry_policy = DefaultRetryPolicy {};
         let result = crate::Result::<FetchDocsResponse>::Ok(FetchDocsResponse { hits: vec![] });
-        let req = ();
-        let retry = retry_policy.retry_request(req, result.as_ref());
-        assert_eq!(retry, None);
+        assert!(retry_policy.retry_request((), result.as_ref()).is_none());
         Ok(())
     }
 

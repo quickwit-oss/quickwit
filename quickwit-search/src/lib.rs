@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -37,8 +37,11 @@ mod search_stream;
 mod service;
 mod thread_pool;
 
+mod metrics;
 #[cfg(test)]
 mod tests;
+
+use metrics::SEARCH_METRICS;
 
 /// Refer to this as `crate::Result<T>`.
 pub type Result<T> = std::result::Result<T, SearchError>;
@@ -190,7 +193,7 @@ pub async fn single_node_search(
 ) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
-    let index_storage = storage_resolver.resolve(index_metadata.index_uri.as_ref())?;
+    let index_storage = storage_resolver.resolve(&index_metadata.index_uri)?;
     let metas = list_relevant_splits(search_request, metastore).await?;
     let split_metadata: Vec<SplitIdAndFooterOffsets> =
         metas.iter().map(extract_split_and_footer_offsets).collect();
@@ -229,7 +232,7 @@ pub async fn single_node_search(
         let res: IntermediateAggregationResults =
             serde_json::from_str(&intermediate_aggregation_result)?;
         let req: Aggregations = serde_json::from_str(search_request.aggregation_request())?;
-        let res: AggregationResults = AggregationResults::from_intermediate_and_req(res, req)?;
+        let res: AggregationResults = res.into_final_bucket_result(req)?;
         Some(serde_json::to_string(&res)?)
     } else {
         None

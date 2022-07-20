@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -41,20 +41,21 @@ use tracing::*;
 
 use super::collector::{PartionnedFastFieldCollector, PartitionValues};
 use super::FastFieldCollector;
+use crate::filters::TimestampFilterBuilder;
 use crate::leaf::{open_index, warmup};
 use crate::{Result, SearchError};
 
 fn get_max_num_concurrent_split_streams() -> usize {
-    static INSTANCE: OnceCell<usize> = OnceCell::new();
-    *INSTANCE.get_or_init(|| get_searcher_config_instance().max_num_concurrent_split_streams)
+    get_searcher_config_instance().max_num_concurrent_split_streams
 }
 
-async fn get_split_stream_semaphore() -> SemaphorePermit<'static> {
-    static INSTANCE: OnceCell<Arc<Semaphore>> = OnceCell::new();
+async fn get_split_stream_permit() -> SemaphorePermit<'static> {
+    static INSTANCE: OnceCell<Semaphore> = OnceCell::new();
     INSTANCE
         .get_or_init(|| {
-            let max_num_concurrent_split_streams = get_max_num_concurrent_split_streams();
-            Arc::new(Semaphore::new(max_num_concurrent_split_streams))
+            let max_num_concurrent_split_streams =
+                get_max_num_concurrent_split_streams();
+            Semaphore::new(max_num_concurrent_split_streams)
         })
         .acquire()
         .await
@@ -122,7 +123,7 @@ async fn leaf_search_stream_single_split(
     stream_request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchStreamResponse> {
-    let _leaf_permit = get_split_stream_semaphore().await;
+    let _leaf_split_stream_permit = get_split_stream_permit().await;
 
     let index = open_index(storage, &split).await?;
     let split_schema = index.schema();
@@ -155,10 +156,20 @@ async fn leaf_search_stream_single_split(
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = reader.searcher();
+
+    let timestamp_filter_builder_opt: Option<TimestampFilterBuilder> = TimestampFilterBuilder::new(
+        request_fields
+            .timestamp_field_name()
+            .map(ToString::to_string),
+        request_fields.timestamp_field,
+        search_request.start_timestamp,
+        search_request.end_timestamp,
+    );
+
     warmup(
         &*searcher,
         query.as_ref(),
-        &request_fields.fast_fields_for_request(),
+        &request_fields.fast_fields_for_request(timestamp_filter_builder_opt.as_ref()),
         &Default::default(),
     )
     .await?;
@@ -177,8 +188,7 @@ async fn leaf_search_stream_single_split(
             (Type::I64, None) => {
                 let collected_values = collect_values::<i64>(
                     &m_request_fields,
-                    stream_request.start_timestamp,
-                    stream_request.end_timestamp,
+                    timestamp_filter_builder_opt,
                     searcher,
                     query.as_ref(),
                 )?;
@@ -193,8 +203,7 @@ async fn leaf_search_stream_single_split(
             (Type::U64, None) => {
                 let collected_values = collect_values::<u64>(
                     &m_request_fields,
-                    stream_request.start_timestamp,
-                    stream_request.end_timestamp,
+                    timestamp_filter_builder_opt,
                     searcher,
                     query.as_ref(),
                 )?;
@@ -209,8 +218,7 @@ async fn leaf_search_stream_single_split(
             (Type::I64, Some(Type::I64)) => {
                 let collected_values = collect_partitioned_values::<i64, i64>(
                     &m_request_fields,
-                    stream_request.start_timestamp,
-                    stream_request.end_timestamp,
+                    timestamp_filter_builder_opt,
                     searcher,
                     query.as_ref(),
                 )?;
@@ -224,8 +232,7 @@ async fn leaf_search_stream_single_split(
             (Type::U64, Some(Type::U64)) => {
                 let collected_values = collect_partitioned_values::<u64, u64>(
                     &m_request_fields,
-                    stream_request.start_timestamp,
-                    stream_request.end_timestamp,
+                    timestamp_filter_builder_opt,
                     searcher,
                     query.as_ref(),
                 )?;
@@ -236,11 +243,18 @@ async fn leaf_search_stream_single_split(
                     )
                 })?;
             }
-            _ => {
-                return Err(SearchError::InternalError(
-                    "Mixed types (u64, i64) for fast field and partition field are not supported."
-                        .to_owned(),
-                ));
+            (fast_field_type, None) => {
+                return Err(SearchError::InternalError(format!(
+                    "Search stream does not support fast field of type `{:?}`.",
+                    fast_field_type
+                )));
+            }
+            (fast_field_type, Some(partition_fast_field_type)) => {
+                return Err(SearchError::InternalError(format!(
+                    "Search stream does not support the combination of fast field type `{:?}` and \
+                     partition fast field type `{:?}`.",
+                    fast_field_type, partition_fast_field_type
+                )));
             }
         };
         Result::<Vec<u8>>::Ok(buffer)
@@ -257,16 +271,13 @@ async fn leaf_search_stream_single_split(
 
 fn collect_values<TFastValue: FastValue>(
     request_fields: &SearchStreamRequestFields,
-    start_timestamp: Option<i64>,
-    end_timestamp: Option<i64>,
+    timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
     searcher: LeasedItem<Searcher>,
     query: &dyn Query,
 ) -> crate::Result<Vec<TFastValue>> {
     let collector = FastFieldCollector::<TFastValue> {
         fast_field_to_collect: request_fields.fast_field_name().to_string(),
-        timestamp_field_opt: request_fields.timestamp_field,
-        start_timestamp_opt: start_timestamp,
-        end_timestamp_opt: end_timestamp,
+        timestamp_filter_builder_opt,
         _marker: PhantomData,
     };
     let result = searcher.search(query, &collector)?;
@@ -275,8 +286,7 @@ fn collect_values<TFastValue: FastValue>(
 
 fn collect_partitioned_values<TFastValue: FastValue, TPartitionValue: FastValue + Eq + Hash>(
     request_fields: &SearchStreamRequestFields,
-    start_timestamp_opt: Option<i64>,
-    end_timestamp_opt: Option<i64>,
+    timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
     searcher: LeasedItem<Searcher>,
     query: &dyn Query,
 ) -> crate::Result<Vec<PartitionValues<TFastValue, TPartitionValue>>> {
@@ -286,9 +296,7 @@ fn collect_partitioned_values<TFastValue: FastValue, TPartitionValue: FastValue 
             .partition_by_fast_field_name()
             .expect("`partition_by_fast_field` is not defined. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
             .to_string(),
-        timestamp_field_opt: request_fields.timestamp_field,
-        start_timestamp_opt,
-        end_timestamp_opt,
+        timestamp_filter_builder_opt,
         _marker: PhantomData,
     };
     let result = searcher.search(query, &collector)?;
@@ -304,7 +312,7 @@ struct SearchStreamRequestFields {
     schema: Schema,
 }
 
-impl<'a> std::fmt::Display for SearchStreamRequestFields {
+impl std::fmt::Display for SearchStreamRequestFields {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "fast_field: {},", self.fast_field_name())?;
         write!(
@@ -326,7 +334,6 @@ impl<'a> SearchStreamRequestFields {
         schema: &'a Schema,
         doc_mapper: &dyn DocMapper,
     ) -> crate::Result<SearchStreamRequestFields> {
-        // TODO make sure it's a fast field
         let fast_field = schema
             .get_field(&stream_request.fast_field)
             .ok_or_else(|| {
@@ -377,11 +384,14 @@ impl<'a> SearchStreamRequestFields {
         )
     }
 
-    pub fn fast_fields_for_request(&self) -> HashSet<String> {
+    fn fast_fields_for_request(
+        &self,
+        timestamp_filter_builder_opt: Option<&TimestampFilterBuilder>,
+    ) -> HashSet<String> {
         let mut set = HashSet::new();
         set.insert(self.fast_field_name().to_string());
-        if let Some(timestamp_field) = self.timestamp_field_name() {
-            set.insert(timestamp_field.to_string());
+        if let Some(timestamp_filter_builder) = timestamp_filter_builder_opt {
+            set.insert(timestamp_filter_builder.timestamp_field_name.clone());
         }
         if let Some(partition_by_fast_field) = self.partition_by_fast_field_name() {
             set.insert(partition_by_fast_field.to_string());
@@ -484,6 +494,60 @@ mod tests {
             from_utf8(&res.data)?,
             format!("{}\n", filtered_timestamp_values.join("\n"))
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_leaf_search_stream_with_string_fast_field_should_return_proper_error(
+    ) -> anyhow::Result<()> {
+        let index_id = "single-node-simple-string-fast-field";
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+              - name: app
+                type: text
+                tokenizer: raw
+                fast: true
+        "#;
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
+
+        test_sandbox
+            .add_documents(vec![json!({"body": "body", "app": "my-app"})])
+            .await?;
+
+        let request = SearchStreamRequest {
+            index_id: index_id.to_string(),
+            query: "info".to_string(),
+            search_fields: vec![],
+            start_timestamp: None,
+            end_timestamp: None,
+            fast_field: "app".to_string(),
+            output_format: 0,
+            partition_by_field: None,
+        };
+        let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
+        let splits_offsets = splits
+            .into_iter()
+            .map(|split_meta| SplitIdAndFooterOffsets {
+                split_id: split_meta.split_id().to_string(),
+                split_footer_start: split_meta.split_metadata.footer_offsets.start,
+                split_footer_end: split_meta.split_metadata.footer_offsets.end,
+            })
+            .collect();
+        let mut single_node_stream = leaf_search_stream(
+            request,
+            test_sandbox.storage(),
+            splits_offsets,
+            test_sandbox.doc_mapper(),
+        )
+        .await;
+        let res = single_node_stream.next().await.expect("no leaf result");
+        assert!(res
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("Search stream does not support fast field of type `Str`"),);
         Ok(())
     }
 

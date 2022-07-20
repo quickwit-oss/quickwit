@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -128,7 +128,7 @@ impl IndexService {
         };
         let index_metadata = IndexMetadata {
             index_id,
-            index_uri: index_uri.into_string(),
+            index_uri,
             checkpoint: Default::default(),
             sources: index_config.sources(),
             doc_mapping: index_config.doc_mapping,

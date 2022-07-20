@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -30,6 +30,7 @@ import { ListSubheader, styled, Typography } from '@mui/material';
 import { CodeSSlash } from "@styled-icons/remix-line/CodeSSlash"
 import { GroupWork } from '@styled-icons/material-outlined/GroupWork';
 import { Database } from '@styled-icons/feather/Database';
+import { Settings } from '@styled-icons/feather/Settings';
 import { useLocalStorage } from '../providers/LocalStorageProvider';
 import { toUrlSearchRequestParams } from '../utils/urls';
 import { APP_BAR_HEIGHT_PX } from './LayoutUtils';
@@ -70,7 +71,7 @@ const SideBarWrapper = styled('div')({
   flexDirection: 'column',
   borderRight: '1px solid rgba(0, 0, 0, 0.12)',
 });
-  
+
 const SideBar = () => {
   const lastSearchRequest = useLocalStorage().lastSearchRequest;
   let searchUrl = '/search';
@@ -88,7 +89,8 @@ const SideBar = () => {
           <Typography variant="body1">Admin</Typography>
         </ListSubheader>
           <ListItemLink to="/indexes" primary={<Typography variant="body1">Indexes</Typography>} icon={<Database size="18px" />} />
-          <ListItemLink to="/cluster/members" primary={<Typography variant="body1">Cluster</Typography>} icon={<GroupWork size="18px" />} />
+          <ListItemLink to="/cluster" primary={<Typography variant="body1">Cluster</Typography>} icon={<GroupWork size="18px" />} />
+        <ListItemLink to="/node-info" primary={<Typography variant="body1">Node info</Typography>} icon={<Settings size="18px" />} />
       </List>
     </SideBarWrapper>
   );

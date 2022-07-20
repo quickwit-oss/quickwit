@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -22,13 +22,15 @@
 
 use std::path::Path;
 
+use quickwit_common::uri::Uri;
 use quickwit_storage::{MultiPartPolicy, S3CompatibleObjectStorage, Storage};
 
 #[tokio::test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_upload_single_part_file() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
-    let object_storage = S3CompatibleObjectStorage::from_uri("s3://quickwit-integration-tests")?;
+    let storage_uri = Uri::new("s3://quickwit-integration-tests".to_string());
+    let object_storage = S3CompatibleObjectStorage::from_uri(&storage_uri)?;
     object_storage
         .put(
             Path::new("test-s3-compatible-storage/hello_small.txt"),
@@ -42,8 +44,8 @@ async fn test_upload_single_part_file() -> anyhow::Result<()> {
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_upload_multiple_part_file() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
-    let mut object_storage =
-        S3CompatibleObjectStorage::from_uri("s3://quickwit-integration-tests")?;
+    let storage_uri = Uri::new("s3://quickwit-integration-tests".to_string());
+    let mut object_storage = S3CompatibleObjectStorage::from_uri(&storage_uri)?;
     object_storage.set_policy(MultiPartPolicy {
         target_part_num_bytes: 5 * 1_024 * 1_024, //< the minimum on S3 is 5MB.
         max_num_parts: 10_000,
@@ -67,8 +69,8 @@ async fn test_upload_multiple_part_file() -> anyhow::Result<()> {
 // Weirdly this does not work for localstack. The error messages seem off.
 async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
-    let mut object_storage =
-        S3CompatibleObjectStorage::from_uri("s3://quickwit-integration-tests")?;
+    let storage_uri = Uri::new("s3://quickwit-integration-tests".to_string());
+    let mut object_storage = S3CompatibleObjectStorage::from_uri(&storage_uri)?;
     quickwit_storage::storage_test_suite(&mut object_storage).await?;
     Ok(())
 }

@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -325,6 +325,7 @@ fn collect_tag_filters(user_input_ast: UserInputAst) -> UnsimplifiedTagFilterAst
             UserInputLeaf::Literal(UserInputLiteral {
                 field_name: Some(field_name),
                 phrase,
+                slop: _,
             }) => UnsimplifiedTagFilterAst::Tag {
                 is_present: true,
                 field: field_name,

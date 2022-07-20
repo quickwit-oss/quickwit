@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -79,9 +79,11 @@ pub use kafka_source::{KafkaSource, KafkaSourceFactory};
 pub use kinesis::kinesis_source::{KinesisSource, KinesisSourceFactory};
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
+use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceConfig, SourceParams};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
+use tokio::runtime::Handle;
 use tracing::error;
 pub use vec_source::{VecSource, VecSourceFactory};
 pub use void_source::{VoidSource, VoidSourceFactory};
@@ -196,6 +198,10 @@ impl Actor for SourceActor {
 
     fn observable_state(&self) -> Self::ObservableState {
         self.source.observable_state()
+    }
+
+    fn runtime_handle(&self) -> Handle {
+        RuntimeType::NonBlocking.get_runtime_handle()
     }
 
     async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {

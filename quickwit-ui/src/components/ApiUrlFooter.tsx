@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -39,7 +39,7 @@ export default function ApiUrlFooter(url: string) {
   const isTooLong = completeUrl.length > urlMaxLength;
   return <Footer>
     <Typography sx={{ padding: '4px 5px', fontSize: '0.95em'}}>
-      API URL: 
+      API URL:
     </Typography>
     <Button
       sx={{ fontSize: '0.93em', textTransform: 'inherit', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'clip' }}

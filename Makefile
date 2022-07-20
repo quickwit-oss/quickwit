@@ -19,6 +19,8 @@ docker-compose-logs:
 fmt:
 	@echo "Formatting Rust files"
 	@(rustup toolchain list | ( ! grep -q nightly && echo "Toolchain 'nightly' is not installed. Please install using 'rustup toolchain install nightly'.") ) || cargo +nightly fmt
+	@echo "Checking license headers"
+	@bash scripts/check_license_headers.sh
 
 # Usage:
 # `make test-all` starts the Docker services and runs all the tests.
@@ -79,3 +81,6 @@ build-docs:
 .PHONY: build-ui
 build-ui:
 	@cd quickwit-ui && $(MAKE) install build
+
+rm-postgres:
+	rm -fr /tmp/quickwit/services/postgres

@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -30,10 +30,10 @@ use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResult
 use tantivy::aggregation::AggregationSegmentCollector;
 use tantivy::collector::{Collector, SegmentCollector};
 use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader};
-use tantivy::schema::{Field, Schema};
+use tantivy::schema::Schema;
 use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader};
 
-use crate::filters::TimestampFilter;
+use crate::filters::{TimestampFilter, TimestampFilterBuilder};
 use crate::partial_hit_sorting_key;
 
 /// The `SortingFieldComputer` can be seen as the specialization of `SortBy` applied to a specific
@@ -240,18 +240,24 @@ pub struct QuickwitCollector {
     pub start_offset: usize,
     pub max_hits: usize,
     pub sort_by: SortBy,
-    pub fast_field_names: HashSet<String>,
-    pub timestamp_field_opt: Option<Field>,
-    pub start_timestamp_opt: Option<i64>,
-    pub end_timestamp_opt: Option<i64>,
+    timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
     pub aggregation: Option<Aggregations>,
 }
 
 impl QuickwitCollector {
     pub fn fast_field_names(&self) -> HashSet<String> {
-        let mut fast_field_names = self.fast_field_names.clone();
+        let mut fast_field_names = HashSet::default();
+        match &self.sort_by {
+            SortBy::DocId => {}
+            SortBy::FastField { field_name, .. } => {
+                fast_field_names.insert(field_name.clone());
+            }
+        }
         if let Some(aggregate) = self.aggregation.as_ref() {
             fast_field_names.extend(get_fast_field_names(aggregate));
+        }
+        if let Some(timestamp_filter_builder) = &self.timestamp_filter_builder_opt {
+            fast_field_names.insert(timestamp_filter_builder.timestamp_field_name.clone());
         }
         fast_field_names
     }
@@ -263,6 +269,8 @@ impl QuickwitCollector {
         term_dict_field_names
     }
 }
+
+const AGGREGATION_BUCKET_LIMIT: u32 = 65000;
 
 impl Collector for QuickwitCollector {
     type Child = QuickwitSegmentCollector;
@@ -278,16 +286,12 @@ impl Collector for QuickwitCollector {
         // starting from 0 for every leaves.
         let leaf_max_hits = self.max_hits + self.start_offset;
 
-        let timestamp_filter_opt = if let Some(timestamp_field) = self.timestamp_field_opt {
-            TimestampFilter::new(
-                timestamp_field,
-                self.start_timestamp_opt,
-                self.end_timestamp_opt,
-                segment_reader,
-            )?
-        } else {
-            None
-        };
+        let timestamp_filter_opt =
+            if let Some(timestamp_filter_builder) = &self.timestamp_filter_builder_opt {
+                timestamp_filter_builder.build(segment_reader)?
+            } else {
+                None
+            };
 
         Ok(QuickwitSegmentCollector {
             num_hits: 0u64,
@@ -301,7 +305,11 @@ impl Collector for QuickwitCollector {
                 .aggregation
                 .as_ref()
                 .map(|aggs| {
-                    AggregationSegmentCollector::from_agg_req_and_reader(aggs, segment_reader)
+                    AggregationSegmentCollector::from_agg_req_and_reader(
+                        aggs,
+                        segment_reader,
+                        AGGREGATION_BUCKET_LIMIT,
+                    )
                 })
                 .transpose()?,
         })
@@ -410,24 +418,6 @@ fn top_k_partial_hits(mut partial_hits: Vec<PartialHit>, num_hits: usize) -> Vec
     partial_hits
 }
 
-/// Extracts all fast field names.
-fn extract_fast_field_names(
-    doc_mapper: &dyn DocMapper,
-    search_request: &SearchRequest,
-) -> HashSet<String> {
-    let mut fast_fields = HashSet::new();
-    if let Some(timestamp_field) = doc_mapper.timestamp_field_name() {
-        fast_fields.insert(timestamp_field);
-    }
-    if let SortBy::FastField { field_name, .. } = doc_mapper.sort_by() {
-        fast_fields.insert(field_name);
-    }
-    if let SortBy::FastField { field_name, .. } = SortBy::from(search_request) {
-        fast_fields.insert(field_name);
-    }
-    fast_fields
-}
-
 /// Builds the QuickwitCollector, in function of the information that was requested by the user.
 pub fn make_collector_for_split(
     split_id: String,
@@ -440,15 +430,21 @@ pub fn make_collector_for_split(
     } else {
         None
     };
+
+    let timestamp_field_opt = doc_mapper.timestamp_field(split_schema);
+    let timestamp_filter_builder_opt = TimestampFilterBuilder::new(
+        doc_mapper.timestamp_field_name(),
+        timestamp_field_opt,
+        search_request.start_timestamp,
+        search_request.end_timestamp,
+    );
+
     Ok(QuickwitCollector {
         split_id,
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
         sort_by: search_request.into(),
-        fast_field_names: extract_fast_field_names(doc_mapper, search_request),
-        timestamp_field_opt: doc_mapper.timestamp_field(split_schema),
-        start_timestamp_opt: search_request.start_timestamp,
-        end_timestamp_opt: search_request.end_timestamp,
+        timestamp_filter_builder_opt,
         aggregation,
     })
 }
@@ -463,16 +459,12 @@ pub fn make_merge_collector(search_request: &SearchRequest) -> crate::Result<Qui
     } else {
         None
     };
-
     Ok(QuickwitCollector {
         split_id: String::default(),
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
         sort_by: SortBy::DocId,
-        fast_field_names: HashSet::new(),
-        timestamp_field_opt: None,
-        start_timestamp_opt: search_request.start_timestamp,
-        end_timestamp_opt: search_request.end_timestamp,
+        timestamp_filter_builder_opt: None,
         aggregation,
     })
 }

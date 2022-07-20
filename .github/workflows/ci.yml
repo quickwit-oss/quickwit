@@ -12,7 +12,6 @@ on:
       - "Cargo.toml"
       - "quickwit-*/**"
 
-
 env:
   CARGO_INCREMENTAL: 0
   RUST_BACKTRACE: 1
@@ -50,6 +49,8 @@ jobs:
       - uses: Swatinem/rust-cache@v1
       - name: rustfmt
         run: cargo +nightly fmt --all -- --check
+      - name: license-headers-check
+        run: bash scripts/check_license_headers.sh
       - uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -58,7 +59,7 @@ jobs:
         name: cargo deny
         with:
           command: deny
-          args: check Licenses # check that all of deps have an ok license.
+          args: check licenses # check that all of deps have an ok license.
       - name: cargo doc
         uses: actions-rs/cargo@v1
         with:

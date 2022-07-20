@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -64,7 +64,7 @@ fn convert_open_to_delete_error(open_err: OpenReadError) -> DeleteError {
             DeleteError::IoError { io_error, filepath }
         }
         err @ OpenReadError::IncompatibleIndex(_) => DeleteError::IoError {
-            io_error: io::Error::new(io::ErrorKind::Unsupported, err),
+            io_error: Arc::new(io::Error::new(io::ErrorKind::Unsupported, err)),
             filepath: PathBuf::from("/"),
         },
     }

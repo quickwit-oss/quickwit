@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -18,16 +18,16 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::env;
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use json_comments::StripComments;
 use once_cell::sync::OnceCell;
-use quickwit_common::net::{get_socket_addr, HostAddr};
+use quickwit_common::net::{find_private_ip, Host, HostAddr};
 use quickwit_common::new_coolid;
-use quickwit_common::uri::{Extension, Uri, FILE_PROTOCOL};
+use quickwit_common::uri::{Extension, Uri};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use tracing::{info, warn};
@@ -69,8 +69,8 @@ fn default_node_id() -> String {
     new_coolid("node")
 }
 
-fn default_listen_address() -> String {
-    "127.0.0.1".to_string()
+fn default_listen_address() -> Host {
+    Host::from(Ipv4Addr::LOCALHOST)
 }
 
 fn default_rest_listen_port() -> u16 {
@@ -78,6 +78,7 @@ fn default_rest_listen_port() -> u16 {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct IndexerConfig {
     #[serde(default = "IndexerConfig::default_split_store_max_num_bytes")]
     pub split_store_max_num_bytes: Byte,
@@ -120,11 +121,14 @@ pub fn get_searcher_config_instance() -> &'static SearcherConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct SearcherConfig {
     #[serde(default = "SearcherConfig::default_fast_field_cache_capacity")]
     pub fast_field_cache_capacity: Byte,
     #[serde(default = "SearcherConfig::default_split_footer_cache_capacity")]
     pub split_footer_cache_capacity: Byte,
+    #[serde(default = "SearcherConfig::default_max_num_concurrent_split_searches")]
+    pub max_num_concurrent_split_searches: usize,
     #[serde(default = "SearcherConfig::default_max_num_concurrent_split_streams")]
     pub max_num_concurrent_split_streams: usize,
 }
@@ -138,6 +142,10 @@ impl SearcherConfig {
         Byte::from_bytes(500_000_000) // 500M
     }
 
+    fn default_max_num_concurrent_split_searches() -> usize {
+        100
+    }
+
     fn default_max_num_concurrent_split_streams() -> usize {
         100
     }
@@ -149,17 +157,20 @@ impl Default for SearcherConfig {
             fast_field_cache_capacity: Self::default_fast_field_cache_capacity(),
             split_footer_cache_capacity: Self::default_split_footer_cache_capacity(),
             max_num_concurrent_split_streams: Self::default_max_num_concurrent_split_streams(),
+            max_num_concurrent_split_searches: Self::default_max_num_concurrent_split_searches(),
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct S3Config {
     pub region: Option<String>,
     pub endpoint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct StorageConfig {
     #[serde(rename = "s3")]
     pub s3_config: S3Config,
@@ -174,7 +185,8 @@ pub struct QuickwitConfig {
     #[serde(default = "default_node_id")]
     pub node_id: String,
     #[serde(default = "default_listen_address")]
-    pub listen_address: String,
+    pub listen_address: Host,
+    advertise_address: Option<Host>,
     #[serde(default = "default_rest_listen_port")]
     pub rest_listen_port: u16,
     pub gossip_listen_port: Option<u16>,
@@ -268,7 +280,7 @@ impl QuickwitConfig {
         }
         let data_dir_uri = Uri::try_new(&self.data_dir_path.to_string_lossy())?;
 
-        if data_dir_uri.protocol() != FILE_PROTOCOL {
+        if !data_dir_uri.protocol().is_file() {
             bail!("Data dir must be located on local file system")
         }
         if !self.data_dir_path.exists() {
@@ -283,7 +295,10 @@ impl QuickwitConfig {
     /// Returns the REST listen address of the node, i.e. the socket address on which the REST API
     /// service listens for TCP connections.
     pub async fn rest_listen_addr(&self) -> anyhow::Result<SocketAddr> {
-        get_socket_addr(&(self.listen_address.as_str(), self.rest_listen_port)).await
+        self.listen_address
+            .with_port(self.rest_listen_port)
+            .to_socket_addr()
+            .await
     }
 
     /// Returns the gRPC listen port of the node.
@@ -295,16 +310,52 @@ impl QuickwitConfig {
     /// Returns the gRPC listen address of the node, i.e. the socket address on which the gRPC
     /// service listens for TCP connections.
     pub async fn grpc_listen_addr(&self) -> anyhow::Result<SocketAddr> {
-        get_socket_addr(&(self.listen_address.as_str(), self.grpc_listen_port())).await
+        self.listen_address
+            .with_port(self.grpc_listen_port())
+            .to_socket_addr()
+            .await
+    }
+
+    /// Returns the advertise
+    pub fn advertise_addr(&self) -> anyhow::Result<Host> {
+        static ADVERTISE_ADDR: OnceCell<Host> = OnceCell::new();
+        ADVERTISE_ADDR.get_or_try_init(|| {
+        if let Ok(advertise_address) = env::var("QW_ADVERTISE_ADDRESS") {
+            return advertise_address.parse().map(|addr| {
+                info!(advertise_address=%advertise_address, "Using advertise address from environment variable `QW_ADVERTISE_ADDRESS`.");
+                addr
+            }).with_context(|| {
+                format!(
+                    "Failed to parse advertise address `{advertise_address}` read from \
+                     environment variable `QW_ADVERTISE_ADDRESS`."
+                )
+            });
+        }
+        if let Some(advertise_addr) = &self.advertise_address {
+            return Ok(advertise_addr.clone());
+        }
+        if self.listen_address.is_unspecified() {
+            if let Some((interface_name, private_ip)) = find_private_ip() {
+                info!(advertise_address=%private_ip, interface_name=%interface_name, "Using sniffed advertise address.");
+                return Ok(Host::from(private_ip));
+            }
+            bail!(
+                "Listen address `{}` is unspecified and advertise address is not set.",
+                self.listen_address
+            );
+        }
+        info!(advertise_address=%self.listen_address, "Using listen address as advertise address.");
+        Ok(self.listen_address.clone())
+        }).cloned()
     }
 
     /// Returns the gRPC public address of the node, i.e. the socket address to connect to in order
     /// to send gRPC requests to the node.
-    pub async fn grpc_public_addr(&self) -> anyhow::Result<SocketAddr> {
-        match env::var("QW_PUBLIC_IP") {
-            Ok(ip_addr) => get_socket_addr(&(ip_addr, self.grpc_listen_port())).await,
-            Err(_) => self.grpc_listen_addr().await,
-        }
+    pub async fn grpc_advertise_addr(&self) -> anyhow::Result<SocketAddr> {
+        self.advertise_addr()?
+            .with_port(self.grpc_listen_port())
+            .to_socket_addr()
+            .await
     }
 
     /// Returns the gossip listen port of the node (UDP).
@@ -317,16 +368,19 @@ impl QuickwitConfig {
     /// Returns the gossip listen address of the node, i.e. the UDP socket address on which the node
     /// receives gossip messages.
     pub async fn gossip_listen_addr(&self) -> anyhow::Result<SocketAddr> {
-        get_socket_addr(&(self.listen_address.as_str(), self.gossip_listen_port())).await
+        self.listen_address
+            .with_port(self.gossip_listen_port())
+            .to_socket_addr()
+            .await
     }
 
     /// Returns the gossip public address of the node, i.e. the socket address to send UDP packets
     /// to in order to gossip with the node.
-    pub async fn gossip_public_addr(&self) -> anyhow::Result<SocketAddr> {
-        match env::var("QW_PUBLIC_IP") {
-            Ok(ip_addr) => get_socket_addr(&(ip_addr, self.gossip_listen_port())).await,
-            Err(_) => self.gossip_listen_addr().await,
-        }
+    pub async fn gossip_advertise_addr(&self) -> anyhow::Result<SocketAddr> {
+        self.advertise_addr()?
+            .with_port(self.gossip_listen_port())
+            .to_socket_addr()
+            .await
     }
 
     /// Returns the list of peer seed addresses. The addresses MUST NOT be resolved. Otherwise, the
@@ -390,6 +444,7 @@ impl Default for QuickwitConfig {
         Self {
             version: 0,
             listen_address: default_listen_address(),
+            advertise_address: None,
             rest_listen_port: default_rest_listen_port(),
             gossip_listen_port: None,
             grpc_listen_port: None,
@@ -441,6 +496,7 @@ where D: Deserializer<'de> {
 #[cfg(test)]
 mod tests {
     use std::env;
+    use std::net::Ipv4Addr;
 
     use super::*;
 
@@ -463,7 +519,7 @@ mod tests {
                 let config = QuickwitConfig::from_uri(&config_uri, file.as_bytes()).await?;
                 assert_eq!(config.version, 0);
                 assert_eq!(config.cluster_id, "quickwit-cluster");
-                assert_eq!(config.listen_address, "0.0.0.0".to_string());
+                assert_eq!(config.listen_address, Host::from(Ipv4Addr::UNSPECIFIED));
                 assert_eq!(config.rest_listen_port, 1111);
                 assert_eq!(
                     config.peer_seeds,
@@ -490,6 +546,7 @@ mod tests {
                     SearcherConfig {
                         fast_field_cache_capacity: Byte::from_str("10G").unwrap(),
                         split_footer_cache_capacity: Byte::from_str("1G").unwrap(),
+                        max_num_concurrent_split_searches: 150,
                         max_num_concurrent_split_streams: 120,
                     }
                 );
@@ -509,6 +566,18 @@ mod tests {
     test_parser!(test_config_from_json, json);
     test_parser!(test_config_from_toml, toml);
     test_parser!(test_config_from_yaml, yaml);
+
+    #[tokio::test]
+    async fn test_config_contains_wrong_values() {
+        let config_filepath = get_config_filepath("quickwit.wrongkey.yaml");
+        let config_uri = Uri::try_new(&config_filepath).unwrap();
+        let file = std::fs::read_to_string(&config_filepath).unwrap();
+        let parsing_error = QuickwitConfig::from_uri(&config_uri, file.as_bytes())
+            .await
+            .unwrap_err();
+        assert!(format!("{parsing_error:?}")
+            .contains("unknown field `max_num_concurrent_split_searchs`"));
+    }
 
     #[test]
     fn test_indexer_config_default_values() {
@@ -631,7 +700,7 @@ mod tests {
     async fn test_socket_addr_ports() {
         {
             let quickwit_config = QuickwitConfig {
-                listen_address: "127.0.0.1".to_string(),
+                listen_address: Host::from(Ipv4Addr::LOCALHOST),
                 ..Default::default()
             };
             assert_eq!(
@@ -661,7 +730,7 @@ mod tests {
         }
         {
             let quickwit_config = QuickwitConfig {
-                listen_address: "127.0.0.1".to_string(),
+                listen_address: Host::from(Ipv4Addr::LOCALHOST),
                 rest_listen_port: 1789,
                 ..Default::default()
             };
@@ -692,7 +761,7 @@ mod tests {
         }
         {
             let quickwit_config = QuickwitConfig {
-                listen_address: "127.0.0.1".to_string(),
+                listen_address: Host::from(Ipv4Addr::LOCALHOST),
                 rest_listen_port: 1789,
                 gossip_listen_port: Some(1889),
                 grpc_listen_port: Some(1989),

@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("cargo:rerun-if-changed=proto/cluster.proto");
     println!("cargo:rerun-if-changed=proto/search_api.proto");
     println!("cargo:rerun-if-changed=proto/ingest_api.proto");
 
@@ -31,11 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .out_dir("src/")
         .compile_with_config(
             prost_config,
-            &[
-                "./proto/cluster.proto",
-                "./proto/search_api.proto",
-                "./proto/ingest_api.proto",
-            ],
+            &["./proto/search_api.proto", "./proto/ingest_api.proto"],
             &["./proto"],
         )?;
     Ok(())

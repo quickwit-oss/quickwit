@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -36,8 +36,8 @@ use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info};
 
-use crate::error::ClusterResult;
-use crate::{ClusterError, QuickwitService};
+use crate::error::{ClusterError, ClusterResult};
+use crate::QuickwitService;
 
 const GRPC_ADDRESS_KEY: &str = "grpc_address";
 const GOSSIP_INTERVAL: Duration = if cfg!(test) {

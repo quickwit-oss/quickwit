@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { Index, IndexMetadata, MemberList, SearchRequest, SearchResponse, SplitMetadata } from "../utils/models";
+import { Cluster, Index, IndexMetadata, QuickwitBuildInfo, SearchRequest, SearchResponse, SplitMetadata } from "../utils/models";
 import { serializeSortByField } from "../utils/urls";
 
 export class Client {
@@ -44,10 +44,18 @@ export class Client {
     return this.fetch(url.toString(), this.defaultGetRequestParams());
   }
 
-  async clusterMembers(): Promise<MemberList> {
-    return await this.fetch(`${this.apiRoot()}cluster/members`, this.defaultGetRequestParams());
+  async cluster(): Promise<Cluster> {
+    return await this.fetch(`${this.apiRoot()}cluster`, this.defaultGetRequestParams());
   }
 
+  async buildInfo(): Promise<QuickwitBuildInfo> {
+    return await this.fetch(`${this.apiRoot()}version`, this.defaultGetRequestParams());
+  }
+
+  // eslint-disable-next-line
+  async config(): Promise<Record<string, any>> {
+    return await this.fetch(`${this.apiRoot()}config`, this.defaultGetRequestParams());
+  }
   //
   // Index management API
   //

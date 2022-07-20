@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -19,7 +19,6 @@
 
 mod cluster;
 mod error;
-mod service;
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -30,10 +29,9 @@ use chitchat::FailureDetectorConfig;
 use quickwit_config::QuickwitConfig;
 
 pub use crate::cluster::{
-    create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster, Member,
+    create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster, ClusterState, Member,
 };
 pub use crate::error::{ClusterError, ClusterResult};
-pub use crate::service::ClusterService;
 
 fn unix_timestamp() -> u64 {
     let duration_since_epoch = std::time::SystemTime::now()
@@ -78,7 +76,7 @@ pub async fn start_cluster_service(
     let member = Member::new(
         quickwit_config.node_id.clone(),
         unix_timestamp(),
-        quickwit_config.gossip_public_addr().await?,
+        quickwit_config.gossip_advertise_addr().await?,
     );
 
     let cluster = Cluster::join(
@@ -86,7 +84,7 @@ pub async fn start_cluster_service(
         services,
         quickwit_config.gossip_listen_addr().await?,
         quickwit_config.cluster_id.clone(),
-        quickwit_config.grpc_public_addr().await?,
+        quickwit_config.grpc_advertise_addr().await?,
         quickwit_config.peer_seed_addrs().await?,
         FailureDetectorConfig::default(),
         &UdpTransport,

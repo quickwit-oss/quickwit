@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -133,8 +133,8 @@ pub struct TestEnv {
     pub indexes_dir_path: PathBuf,
     /// Resource files needed for the test.
     pub resource_files: HashMap<&'static str, PathBuf>,
-    /// The metastore uri.
-    pub metastore_uri: String,
+    /// The metastore URI.
+    pub metastore_uri: Uri,
     /// The index ID.
     pub index_id: String,
     pub index_uri: Uri,
@@ -168,24 +168,24 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
     // TODO: refactor when we have a singleton storage resolver.
     let (metastore_uri, storage) = match storage_type {
         TestStorageType::LocalFileSystem => {
-            let metastore_uri = format!("file://{}", indexes_dir_path.display());
+            let metastore_uri = Uri::new(format!("file://{}", indexes_dir_path.display()));
             let storage: Arc<dyn Storage> = Arc::new(LocalFileStorage::from_uri(&metastore_uri)?);
             (metastore_uri, storage)
         }
         TestStorageType::S3 => {
-            let metastore_uri = "s3://quickwit-integration-tests/indexes";
+            let metastore_uri = Uri::new("s3://quickwit-integration-tests/indexes".to_string());
             let storage: Arc<dyn Storage> =
-                Arc::new(S3CompatibleObjectStorage::from_uri(metastore_uri)?);
-            (metastore_uri.to_string(), storage)
+                Arc::new(S3CompatibleObjectStorage::from_uri(&metastore_uri)?);
+            (metastore_uri, storage)
         }
     };
-    let index_uri = Uri::try_new(&format!("{metastore_uri}/{index_id}"))?;
+    let index_uri = metastore_uri.join(&index_id).unwrap();
     let index_config_path = resources_dir_path.join("index_config.yaml");
     fs::write(
         &index_config_path,
         DEFAULT_INDEX_CONFIG
             .replace("#index_id", &index_id)
-            .replace("#index_uri", &index_uri.to_string()),
+            .replace("#index_uri", index_uri.as_str()),
     )?;
     let index_config_without_uri_path = resources_dir_path.join("index_config_without_uri.yaml");
     fs::write(
@@ -200,7 +200,7 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
         &quickwit_config_path,
         // A poor's man templating engine reloaded...
         DEFAULT_QUICKWIT_CONFIG
-            .replace("#metastore_uri", &metastore_uri)
+            .replace("#metastore_uri", metastore_uri.as_str())
             .replace("#data_dir", data_dir_path.to_str().unwrap())
             .replace("#rest_listen_port", &rest_listen_port.to_string()),
     )?;

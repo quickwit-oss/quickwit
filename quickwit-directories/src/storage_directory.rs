@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -24,6 +24,7 @@ use std::sync::Arc;
 use std::{fmt, io};
 
 use async_trait::async_trait;
+use quickwit_common::uri::Uri;
 use quickwit_storage::{OwnedBytes, Storage};
 use tantivy::directory::error::OpenReadError;
 use tantivy::directory::FileHandle;
@@ -110,7 +111,7 @@ impl StorageDirectory {
     }
 
     /// Returns the uri associated to the underlying storage.
-    pub fn uri(&self) -> String {
+    pub fn uri(&self) -> &Uri {
         self.storage.uri()
     }
 }

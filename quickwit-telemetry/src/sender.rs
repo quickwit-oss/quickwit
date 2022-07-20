@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -257,7 +257,7 @@ impl TelemetrySender {
                     _ = (&mut terminate_command_rx) => { true }
                     _ = inner.clock.tick() => { false }
                 };
-                let _ = inner.send_pending_events().await;
+                inner.send_pending_events().await;
                 if quit_loop {
                     break;
                 }

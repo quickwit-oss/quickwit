@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -21,6 +21,7 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 use itertools::Itertools;
+use quickwit_common::uri::Uri;
 use quickwit_config::{
     DocMapping, IndexingResources, IndexingSettings, SearchSettings, SourceConfig,
 };
@@ -39,7 +40,7 @@ pub struct IndexMetadata {
     /// Index ID, uniquely identifies an index when querying the metastore.
     pub index_id: String,
     /// Index URI, defines the location of the storage that holds the split files.
-    pub index_uri: String,
+    pub index_uri: Uri,
     /// Checkpoint relative to a source or a set of sources. It expresses up to which point
     /// documents have been indexed.
     pub checkpoint: IndexCheckpoint,
@@ -62,6 +63,7 @@ impl IndexMetadata {
     /// Returns an [`IndexMetadata`] object with multiple hard coded values for tests.
     #[doc(hidden)]
     pub fn for_test(index_id: &str, index_uri: &str) -> Self {
+        let index_uri = Uri::new(index_uri.to_string());
         let doc_mapping_json = r#"{
             "field_mappings": [
                 {
@@ -138,7 +140,7 @@ impl IndexMetadata {
         let now_timestamp = utc_now_timestamp();
         Self {
             index_id: index_id.to_string(),
-            index_uri: index_uri.to_string(),
+            index_uri,
             checkpoint: Default::default(),
             doc_mapping,
             indexing_settings,
@@ -222,7 +224,7 @@ impl From<IndexMetadata> for IndexMetadataV1 {
             .collect();
         Self {
             index_id: index_metadata.index_id,
-            index_uri: index_metadata.index_uri,
+            index_uri: index_metadata.index_uri.into_string(),
             checkpoint: index_metadata.checkpoint,
             doc_mapping: index_metadata.doc_mapping,
             indexing_settings: index_metadata.indexing_settings,
@@ -243,7 +245,7 @@ impl From<IndexMetadataV1> for IndexMetadata {
             .collect();
         Self {
             index_id: v1.index_id,
-            index_uri: v1.index_uri,
+            index_uri: Uri::new(v1.index_uri),
             checkpoint: v1.checkpoint,
             doc_mapping: v1.doc_mapping,
             indexing_settings: v1.indexing_settings,

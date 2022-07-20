@@ -8,10 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
  - Support for boolean field
+ - Support for slop in phrase queries
 
 ### Fixed
 
 ### Removed
+
+### Change
+
+- Quickwit now relies on sqlx rather than diesel for postgresql interaction.
+Migrating from 0.3 should work as expected. Migrating from earlier version however is
+not supported.
 
 ### Security
 

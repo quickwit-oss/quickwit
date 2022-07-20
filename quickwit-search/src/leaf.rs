@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -42,18 +42,32 @@ use tantivy::error::AsyncIoError;
 use tantivy::query::Query;
 use tantivy::schema::{Cardinality, FieldType};
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
+use tokio::sync::{Semaphore, SemaphorePermit};
 use tokio::task::spawn_blocking;
 use tracing::*;
 
 use crate::collector::{make_collector_for_split, make_merge_collector};
 use crate::SearchError;
 
+async fn get_leaf_search_split_semaphore() -> SemaphorePermit<'static> {
+    static INSTANCE: OnceCell<Semaphore> = OnceCell::new();
+    INSTANCE
+        .get_or_init(|| {
+            let max_num_concurrent_split_streams = get_searcher_config_instance().max_num_concurrent_split_searches;
+            Semaphore::new(max_num_concurrent_split_streams)
+        })
+        .acquire()
+        .await
+        .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
+}
+
 fn global_split_footer_cache() -> &'static MemorySizedCache<String> {
     static INSTANCE: OnceCell<MemorySizedCache<String>> = OnceCell::new();
     INSTANCE.get_or_init(|| {
         let config = get_searcher_config_instance();
         MemorySizedCache::with_capacity_in_bytes(
-            config.split_footer_cache_capacity.get_bytes() as usize
+            config.split_footer_cache_capacity.get_bytes() as usize,
+            &quickwit_storage::STORAGE_METRICS.split_footer_cache,
         )
     })
 }
@@ -99,6 +113,17 @@ pub(crate) async fn open_index(
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<Index> {
+    open_index_with_cache(index_storage, split_and_footer_offsets, true).await
+}
+
+/// Opens a `tantivy::Index` for the given split.
+///
+/// The resulting index uses a dynamic and a static cache.
+pub(crate) async fn open_index_with_cache(
+    index_storage: Arc<dyn Storage>,
+    split_and_footer_offsets: &SplitIdAndFooterOffsets,
+    unlimited_cache: bool,
+) -> anyhow::Result<Index> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
     let footer_data =
         get_split_footer_from_cache_or_fetch(index_storage.clone(), split_and_footer_offsets)
@@ -111,8 +136,12 @@ pub(crate) async fn open_index(
     )?;
     let bundle_storage_with_cache = wrap_storage_with_long_term_cache(Arc::new(bundle_storage));
     let directory = StorageDirectory::new(bundle_storage_with_cache);
-    let caching_directory = CachingDirectory::new_with_unlimited_capacity(Arc::new(directory));
-    let hot_directory = HotDirectory::open(caching_directory, hotcache_bytes.read_bytes()?)?;
+    let hot_directory = if unlimited_cache {
+        let caching_directory = CachingDirectory::new_with_unlimited_capacity(Arc::new(directory));
+        HotDirectory::open(caching_directory, hotcache_bytes.read_bytes()?)?
+    } else {
+        HotDirectory::open(directory, hotcache_bytes.read_bytes()?)?
+    };
     let mut index = Index::open(hot_directory)?;
     index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
     Ok(index)
@@ -207,6 +236,13 @@ fn get_fastfield_cardinality(field_type: &FieldType) -> Option<Cardinality> {
     }
 }
 
+fn fast_field_idxs(fast_field_cardinality: Cardinality) -> &'static [usize] {
+    match fast_field_cardinality {
+        Cardinality::SingleValue => &[0],
+        Cardinality::MultiValues => &[0, 1],
+    }
+}
+
 async fn warm_up_fastfields(
     searcher: &Searcher,
     fast_field_names: &HashSet<String>,
@@ -242,26 +278,13 @@ async fn warm_up_fastfields(
     let mut warm_up_futures: Vec<Pin<Box<SendableFuture>>> = Vec::new();
     for (field, cardinality) in fast_fields {
         for segment_reader in searcher.segment_readers() {
-            match cardinality {
-                Cardinality::SingleValue => {
-                    let fast_field_slice =
-                        segment_reader.fast_fields().fast_field_data(field, 0)?;
-                    warm_up_futures.push(Box::pin(async move {
-                        fast_field_slice.read_bytes_async().await
-                    }));
-                }
-                Cardinality::MultiValues => {
-                    let fast_field_slice =
-                        segment_reader.fast_fields().fast_field_data(field, 0)?;
-                    warm_up_futures.push(Box::pin(async move {
-                        fast_field_slice.read_bytes_async().await
-                    }));
-                    let fast_field_slice =
-                        segment_reader.fast_fields().fast_field_data(field, 1)?;
-                    warm_up_futures.push(Box::pin(async move {
-                        fast_field_slice.read_bytes_async().await
-                    }));
-                }
+            for &fast_field_idx in fast_field_idxs(cardinality) {
+                let fast_field_slice = segment_reader
+                    .fast_fields()
+                    .fast_field_data(field, fast_field_idx)?;
+                warm_up_futures.push(Box::pin(async move {
+                    fast_field_slice.read_bytes_async().await
+                }));
             }
         }
     }
@@ -298,6 +321,7 @@ async fn leaf_search_single_split(
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
     doc_mapper: Arc<dyn DocMapper>,
+    leaf_split_search_permit: SemaphorePermit<'static>,
 ) -> crate::Result<LeafSearchResponse> {
     let split_id = split.split_id.to_string();
     let index = open_index(storage, &split).await?;
@@ -352,14 +376,21 @@ pub async fn leaf_search(
             let doc_mapper_clone = doc_mapper.clone();
             let index_storage_clone = index_storage.clone();
             async move {
-                leaf_search_single_split(
+                let leaf_split_search_permit = get_leaf_search_split_semaphore().await;
+                crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
+                let timer = crate::SEARCH_METRICS
+                    .leaf_search_split_duration_secs
+                    .start_timer();
+                let leaf_search_single_split_res = leaf_search_single_split(
                     request,
                     index_storage_clone,
                     split.clone(),
                     doc_mapper_clone,
+                    leaf_split_search_permit,
                 )
-                .await
-                .map_err(|err| (split.split_id.clone(), err))
+                .await;
+                timer.observe_duration();
+                leaf_search_single_split_res.map_err(|err| (split.split_id.clone(), err))
             }
         })
         .collect();

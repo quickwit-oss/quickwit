@@ -21,6 +21,7 @@ Here is an example of a log entry:
   "attributes": {
     "class": "org.apache.hadoop.hdfs.server.datanode.DataNode"
   }
+  "tenant_id": 58
 }
 ```
 

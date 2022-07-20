@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -58,6 +58,7 @@ where
     M: 'static + Send + Sync + fmt::Debug,
 {
     fn debug_msg(&self) -> String {
+        #[allow(clippy::needless_option_take)]
         if let Some((_response_tx, msg)) = self.as_ref().take() {
             format!("{msg:?}")
         } else {

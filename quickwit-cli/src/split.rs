@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -542,7 +542,7 @@ fn make_split_table(splits: &[Split], title: &str) -> Table {
                 split_id: split.split_metadata.split_id.clone(),
                 split_state: split.split_state,
                 num_docs: split.split_metadata.num_docs,
-                size_mega_bytes: split.split_metadata.original_size_in_bytes / 1_000_000,
+                size_mega_bytes: split.split_metadata.uncompressed_docs_size_in_bytes / 1_000_000,
                 created_at,
                 updated_at,
                 time_range,

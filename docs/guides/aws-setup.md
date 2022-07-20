@@ -55,11 +55,11 @@ In order to communicate with each other, nodes must reside in security groups th
 If you set the wrong credentials, you will see this error message with `Unauthorized` in your terminal:
 
 ```bash
-Command failed: Another error occured. `Metastore error`. Cause: `StorageError(kind=Unauthorized, source=Failed to fetch object: s3://quickwit-dev/my-hdfs/metastore.json)`
+Command failed: Another error occurred. `Metastore error`. Cause: `StorageError(kind=Unauthorized, source=Failed to fetch object: s3://quickwit-dev/my-hdfs/metastore.json)`
 ```
 
 If you put the wrong region, you will see this one:
 
 ```bash
-Command failed: Another error occured. `Metastore error`. Cause: `StorageError(kind=InternalError, source=Failed to fetch object: s3://your-bucket/your-index/metastore.json)`.
+Command failed: Another error occurred. `Metastore error`. Cause: `StorageError(kind=InternalError, source=Failed to fetch object: s3://your-bucket/your-index/metastore.json)`.
 ```

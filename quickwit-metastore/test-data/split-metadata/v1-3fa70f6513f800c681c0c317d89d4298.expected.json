@@ -1,0 +1,20 @@
+{
+  "create_timestamp": 3,
+  "demux_num_ops": 1,
+  "footer_offsets": {
+    "end": 2000,
+    "start": 1000
+  },
+  "num_docs": 12303,
+  "split_id": "split",
+  "tags": [
+    "234",
+    "aaa"
+  ],
+  "time_range": {
+    "end": 130198,
+    "start": 121000
+  },
+  "uncompressed_docs_size_in_bytes": 234234,
+  "version": "1"
+}

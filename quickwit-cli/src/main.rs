@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -18,17 +18,28 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::env;
+use std::time::Duration;
 
 use anyhow::Context;
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
 use quickwit_cli::cli::{build_cli, CliCommand};
 use quickwit_cli::QW_JAEGER_ENABLED_ENV_KEY;
+use quickwit_cluster::QuickwitService;
+use quickwit_common::metrics::new_gauge;
+use quickwit_common::runtimes::RuntimesConfiguration;
+use quickwit_serve::build_quickwit_build_info;
 use quickwit_telemetry::payload::TelemetryEvent;
-use tracing::{info, Level};
+use tikv_jemallocator::Jemalloc;
+use tracing::{error, info, Level};
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
+
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
+const JEMALLOC_METRICS_POLLING_INTERVAL: Duration = Duration::from_secs(1);
 
 fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
     #[cfg(feature = "tokio-console")]
@@ -54,7 +65,7 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
                 time::format_description::parse(
                     "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z",
                 )
-                .expect("Time format invalid"),
+                .expect("Time format invalid."),
             ),
         );
     if std::env::var_os(QW_JAEGER_ENABLED_ENV_KEY).is_some() {
@@ -78,6 +89,60 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn jemalloc_metrics_loop() -> tikv_jemalloc_ctl::Result<()> {
+    let allocated_gauge = new_gauge(
+        "allocated_num_bytes",
+        "Number of bytes allocated memory, as reported by jemallocated.",
+        "quickwit",
+    );
+
+    // Obtain a MIB for the `epoch`, `stats.allocated`, and
+    // `atats.resident` keys:
+    let epoch_management_information_base = tikv_jemalloc_ctl::epoch::mib()?;
+    let allocated = tikv_jemalloc_ctl::stats::allocated::mib()?;
+
+    let mut poll_interval = tokio::time::interval(JEMALLOC_METRICS_POLLING_INTERVAL);
+
+    loop {
+        poll_interval.tick().await;
+
+        // Many statistics are cached and only updated
+        // when the epoch is advanced:
+        epoch_management_information_base.advance()?;
+
+        // Read statistics using MIB key:
+        let allocated = allocated.read()?;
+
+        allocated_gauge.set(allocated as i64);
+    }
+}
+
+/// If a bunch of tokio runtimes need to be started for actors,
+/// return the right configuration.
+///
+/// TODO making it configurable could be useful in the future.
+fn runtime_configuration_for_cmd(command: &CliCommand) -> Option<RuntimesConfiguration> {
+    match command {
+        CliCommand::Run(run_cli_command) => {
+            if run_cli_command.services.contains(&QuickwitService::Indexer) {
+                Some(RuntimesConfiguration::default())
+            } else {
+                None
+            }
+        }
+        CliCommand::Index(_) => Some(RuntimesConfiguration::default()),
+        CliCommand::Split(_) | CliCommand::Source(_) => None,
+    }
+}
+
+fn start_actor_runtimes(cli_command: &CliCommand) -> anyhow::Result<()> {
+    if let Some(runtime_configuration) = runtime_configuration_for_cmd(cli_command) {
+        quickwit_common::runtimes::initialize_runtimes(runtime_configuration)
+            .context("Failed to start runtimes.")?;
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     #[cfg(feature = "openssl-support")]
@@ -85,23 +150,11 @@ async fn main() -> anyhow::Result<()> {
 
     let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
     let about_text = about_text();
-    let nightly = if env!("QW_COMMIT_VERSION_TAG") == "none" {
-        "-nightly"
-    } else {
-        ""
-    };
-    let version_text = format!(
-        "{}{} ({} {} {})",
-        env!("CARGO_PKG_VERSION"),
-        nightly,
-        env!("CARGO_BUILD_TARGET"),
-        env!("QW_COMMIT_SHORT_HASH"),
-        env!("QW_COMMIT_DATE"),
-    );
+    let build_info = build_quickwit_build_info();
 
     let app = build_cli()
         .about(about_text.as_str())
-        .version(version_text.as_str());
+        .version(build_info.version);
     let matches = app.get_matches();
 
     let command = match CliCommand::parse_cli_args(&matches) {
@@ -112,10 +165,18 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    start_actor_runtimes(&command)?;
+
+    tokio::task::spawn(async {
+        if let Err(jemalloc_metrics_err) = jemalloc_metrics_loop().await {
+            error!(err=?jemalloc_metrics_err, "Failed to gather metrics from jemalloc.");
+        }
+    });
+
     setup_logging_and_tracing(command.default_log_level())?;
     info!(
-        version = env!("CARGO_PKG_VERSION"),
-        commit = env!("QW_COMMIT_SHORT_HASH"),
+        version = build_info.version,
+        commit = build_info.commit_short_hash,
     );
 
     let return_code: i32 = if let Err(err) = command.execute().await {

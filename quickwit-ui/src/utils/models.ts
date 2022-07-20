@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -55,7 +55,7 @@ function getFlattenFields(field_mappings: FieldMapping[]): FlattenField[] {
       fields.push({name: field_mapping.name, path: [field_mapping.name], type: field_mapping.type});
     }
   }
-   
+
   return fields;
 }
 
@@ -102,7 +102,7 @@ export function guessTimeUnit(index: Index): TimeUnit {
 
 export function getAllFields(doc_mapping: DocMapping) {
   return getFlattenFields(doc_mapping.field_mappings);
-} 
+}
 
 export type DocMapping = {
   field_mappings: FieldMapping[];
@@ -207,13 +207,50 @@ export type Index = {
   splits: SplitMetadata[];
 }
 
-export type Member = {
-  id: string;
-  listen_address: string;
-  is_self: boolean;
+export type Cluster = {
+  node_id: string,
+  cluster_id: string,
+  state: ClusterState,
 }
 
-export type MemberList = {
-  cluster_id: string;
-  members: Member[];
+export type ClusterState = {
+  state: ClusterStateSnapshot;
+  live_nodes: any[];
+  dead_nodes: any[];
+}
+
+export type ClusterStateSnapshot = {
+  seed_addrs: string[],
+  node_states: Record<string, NodeState>,
+}
+
+export type NodeState = {
+  key_values: KeyValues,
+  max_version: number,
+}
+
+export type KeyValues = {
+  available_services: KeyValue,
+  grpc_address: KeyValue,
+  heartbeat: KeyValue,
+}
+
+export type KeyValue = {
+  value: any,
+  version: number,
+}
+
+export type QuickwitBuildInfo = {
+  commit_version_tag: string,
+  cargo_pkg_version: string,
+  cargo_build_target: string,
+  commit_short_hash: string,
+  commit_date: string,
+  version: string,
+}
+
+export type NodeId = {
+  id: string,
+  grpc_address: string,
+  self: boolean,
 }

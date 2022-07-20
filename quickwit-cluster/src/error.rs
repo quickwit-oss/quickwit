@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2022 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -25,13 +25,6 @@ use thiserror::Error;
 /// Cluster error kinds.
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum ClusterError {
-    /// Create cluster error.
-    #[error("Failed to create cluster: `{message}`")]
-    CreateClusterError {
-        /// Underlying error message.
-        message: String,
-    },
-
     /// Port binding error.
     #[error(
         "Failed to bind to UDP socket addr `{listen_addr}` for the gossip membership protocol: \
@@ -43,28 +36,5 @@ pub enum ClusterError {
         /// Underlying error message.
         cause: String,
     },
-
-    /// Read host ID error.
-    #[error("Failed to read host ID: `{message}`")]
-    ReadHostIdError {
-        /// Underlying error message.
-        message: String,
-    },
-
-    /// Write host ID error.
-    #[error("Failed to write host ID: `{message}`")]
-    WriteHostIdError {
-        /// Underlying error message.
-        message: String,
-    },
-
-    /// Create cluster error.
-    #[error("Failed to read cluster state: `{message}`")]
-    ClusterStateError {
-        /// Underlying error message.
-        message: String,
-    },
 }
-
-/// Generic Result type for cluster operations.
 pub type ClusterResult<T> = Result<T, ClusterError>;
