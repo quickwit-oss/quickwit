@@ -32,10 +32,13 @@ use tantivy::schema::{Field, Value};
 use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
 use tokio::runtime::Handle;
+use tokio::sync::{Semaphore, SemaphorePermit};
 use tracing::{info, warn};
 
 use crate::actors::Packager;
 use crate::models::{IndexedSplit, IndexedSplitBatch, IndexingDirectory, RawDocBatch};
+
+static CONCURRENT_SPLIT: Semaphore = tokio::sync::Semaphore::const_new(10);
 
 #[derive(Debug)]
 struct CommitTimeout {
@@ -101,7 +104,10 @@ enum PrepareDocumentOutcome {
 }
 
 impl IndexerState {
-    fn create_indexed_split(&self, ctx: &ActorContext<Indexer>) -> anyhow::Result<IndexedSplit> {
+    async fn create_indexed_split(
+        &self,
+        ctx: &ActorContext<Indexer>,
+    ) -> anyhow::Result<IndexedSplit> {
         let schema = self.doc_mapper.schema();
         let index_settings = IndexSettings {
             sort_by_field: self.sort_by_field_opt.clone(),
@@ -114,6 +120,10 @@ impl IndexerState {
             .settings(index_settings)
             .schema(schema)
             .tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
+        let indexer_permit: SemaphorePermit<'static> = ctx
+            .protect_future(CONCURRENT_SPLIT.acquire())
+            .await
+            .unwrap();
         let indexed_split = IndexedSplit::new_in_dir(
             self.index_id.clone(),
             self.indexing_directory.scratch_directory.clone(),
@@ -121,6 +131,7 @@ impl IndexerState {
             index_builder,
             ctx.progress().clone(),
             ctx.kill_switch().clone(),
+            indexer_permit,
         )?;
         info!(split_id = %indexed_split.split_id, "new-split");
         Ok(indexed_split)
@@ -136,7 +147,7 @@ impl IndexerState {
         ctx: &ActorContext<Indexer>,
     ) -> anyhow::Result<&'a mut IndexedSplit> {
         if current_split_opt.is_none() {
-            let new_indexed_split = self.create_indexed_split(ctx)?;
+            let new_indexed_split = self.create_indexed_split(ctx).await?;
             let commit_timeout_message = CommitTimeout {
                 split_id: new_indexed_split.split_id.clone(),
             };
@@ -268,6 +279,27 @@ impl Actor for Indexer {
         RuntimeType::Blocking.get_runtime_handle()
     }
 
+    async fn on_drained_messages(
+        &mut self,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        let indexing_start = if let Some(current_split) = self.current_split_opt.as_ref() {
+            current_split.split_date_of_birth
+        } else {
+            return Ok(());
+        };
+        self.send_to_packager(CommitTrigger::Drained, ctx).await?;
+        let commit_timeout = self.indexer_state.indexing_settings.commit_timeout();
+        let elapsed = indexing_start.elapsed();
+        if elapsed > commit_timeout {
+            return Ok(());
+        }
+        // Time to take a nap.
+        let time_to_sleep = commit_timeout - elapsed;
+        ctx.sleep(time_to_sleep).await;
+        Ok(())
+    }
+
     async fn finalize(
         &mut self,
         exit_status: &ActorExitStatus,
@@ -306,8 +338,14 @@ impl Handler<CommitTimeout> for Indexer {
         commit_timeout: CommitTimeout,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        self.process_commit_timeout(&commit_timeout.split_id, ctx)
-            .await?;
+        if let Some(split) = self.current_split_opt.as_ref() {
+            // This is a timeout for a different split.
+            // We can ignore it.
+            if split.split_id != commit_timeout.split_id {
+                return Ok(());
+            }
+        }
+        self.send_to_packager(CommitTrigger::Timeout, ctx).await?;
         Ok(())
     }
 }
@@ -328,6 +366,7 @@ impl Handler<RawDocBatch> for Indexer {
 #[derive(Debug, Clone, Copy)]
 enum CommitTrigger {
     Timeout,
+    Drained,
     NoMoreDocs,
     NumDocsLimit,
 }
@@ -387,22 +426,6 @@ impl Indexer {
         Ok(())
     }
 
-    async fn process_commit_timeout(
-        &mut self,
-        split_id: &str,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
-        if let Some(split) = self.current_split_opt.as_ref() {
-            // This is a timeout for a different split.
-            // We can ignore it.
-            if split.split_id != split_id {
-                return Ok(());
-            }
-        }
-        self.send_to_packager(CommitTrigger::Timeout, ctx).await?;
-        Ok(())
-    }
-
     /// Extract the indexed split and send it to the Packager.
     async fn send_to_packager(
         &mut self,
@@ -418,21 +441,20 @@ impl Indexer {
         // Avoid producing empty split, but still update the checkpoint to avoid
         // reprocessing the same faulty documents.
         if indexed_split.num_docs == 0 {
-            self.metastore
-                .publish_splits(
-                    &indexed_split.index_id,
-                    &self.source_id,
-                    &[],
-                    indexed_split.checkpoint_delta,
+            ctx.protect_future(self.metastore.publish_splits(
+                &indexed_split.index_id,
+                &self.source_id,
+                &[],
+                indexed_split.checkpoint_delta,
+            ))
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to update the checkpoint for {}, {} after a split containing only \
+                     errors.",
+                    &indexed_split.index_id, &self.source_id
                 )
-                .await
-                .with_context(|| {
-                    format!(
-                        "Failed to update the checkpoint for {}, {} after a split containing only \
-                         errors.",
-                        &indexed_split.index_id, &self.source_id
-                    )
-                })?;
+            })?;
             return Ok(());
         }
 

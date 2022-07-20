@@ -219,6 +219,7 @@ impl IndexingService {
             self.split_store_max_num_splits,
             self.metastore.clone(),
             storage,
+            ctx,
         )
         .await
         .map_err(IndexingServiceError::InvalidParams)?;

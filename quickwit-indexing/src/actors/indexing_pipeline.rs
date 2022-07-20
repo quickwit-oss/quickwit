@@ -39,14 +39,15 @@ use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::publisher::PublisherType;
 use crate::actors::sequencer::Sequencer;
 use crate::actors::{
-    GarbageCollector, Indexer, MergeExecutor, MergePlanner, NamedField, Packager, Publisher,
-    Uploader,
+    GarbageCollector, Indexer, IndexingService, MergeExecutor, MergePlanner, NamedField, Packager,
+    Publisher, Uploader,
 };
 use crate::models::{IndexingDirectory, IndexingStatistics, Observe};
 use crate::source::{quickwit_supported_sources, SourceActor};
 use crate::split_store::{IndexingSplitStore, IndexingSplitStoreParams};
 use crate::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 
+const OBSERVE_PERIOD: Duration = Duration::from_secs(10);
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(600); // 10 min.
 
 pub struct IndexingPipelineHandler {
@@ -218,16 +219,18 @@ impl IndexingPipeline {
             },
             merge_policy.clone(),
         )?;
-        let published_splits = self
-            .params
-            .metastore
-            .list_splits(&self.params.index_id, SplitState::Published, None, None)
+        let published_splits = ctx
+            .protect_future(self.params.metastore.list_splits(
+                &self.params.index_id,
+                SplitState::Published,
+                None,
+                None,
+            ))
             .await?
             .into_iter()
             .map(|split| split.split_metadata)
             .collect::<Vec<_>>();
-        split_store
-            .remove_dangling_splits(&published_splits)
+        ctx.protect_future(split_store.remove_dangling_splits(&published_splits))
             .await?;
 
         let (merge_planner_mailbox, merge_planner_inbox) =
@@ -394,18 +397,19 @@ impl IndexingPipeline {
             .spawn();
 
         // Fetch index_metadata to be sure to have the last updated checkpoint.
-        let index_metadata = self
-            .params
-            .metastore
-            .index_metadata(&self.params.index_id)
+        let index_metadata = ctx
+            .protect_future(self.params.metastore.index_metadata(&self.params.index_id))
             .await?;
         let source_checkpoint = index_metadata
             .checkpoint
             .source_checkpoint(&self.params.source.source_id)
             .cloned()
             .unwrap_or_default(); // TODO Have a stricter check.
-        let source = quickwit_supported_sources()
-            .load_source(self.params.source.clone(), source_checkpoint)
+        let source = ctx
+            .protect_future(
+                quickwit_supported_sources()
+                    .load_source(self.params.source.clone(), source_checkpoint),
+            )
             .await?;
         let actor_source = SourceActor {
             source,
@@ -499,7 +503,7 @@ impl Handler<Observe> for IndexingPipeline {
                 .set_generation(self.statistics.generation)
                 .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
         }
-        ctx.schedule_self_msg(Duration::from_secs(1), Observe).await;
+        ctx.schedule_self_msg(OBSERVE_PERIOD, Observe).await;
         Ok(())
     }
 }
@@ -517,7 +521,7 @@ impl Handler<Supervise> for IndexingPipeline {
             match self.healthcheck() {
                 Health::Healthy => {}
                 Health::FailureOrUnhealthy => {
-                    self.terminate().await;
+                    ctx.protect_future(self.terminate()).await;
                     ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, Spawn { retry_count: 0 })
                         .await;
                 }
@@ -545,7 +549,7 @@ impl Handler<Spawn> for IndexingPipeline {
             return Ok(());
         }
         self.previous_generations_statistics.num_spawn_attempts = 1 + spawn.retry_count;
-        if let Err(spawn_error) = self.spawn_pipeline(ctx).await {
+        if let Err(spawn_error) = ctx.protect_future(self.spawn_pipeline(ctx)).await {
             if let Some(MetastoreError::IndexDoesNotExist { .. }) =
                 spawn_error.downcast_ref::<MetastoreError>()
             {
@@ -587,6 +591,7 @@ impl IndexingPipelineParams {
         split_store_max_num_splits: usize,
         metastore: Arc<dyn Metastore>,
         storage: Arc<dyn Storage>,
+        ctx: &ActorContext<IndexingService>,
     ) -> anyhow::Result<Self> {
         let doc_mapper = build_doc_mapper(
             &index_metadata.doc_mapping,
@@ -596,7 +601,9 @@ impl IndexingPipelineParams {
         let indexing_directory_path = indexing_dir_path
             .join(&index_metadata.index_id)
             .join(&source.source_id);
-        let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path).await?;
+        let indexing_directory = ctx
+            .protect_future(IndexingDirectory::create_in_dir(indexing_directory_path))
+            .await?;
         Ok(Self {
             index_id: index_metadata.index_id,
             doc_mapper,

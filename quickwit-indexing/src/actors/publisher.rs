@@ -145,7 +145,18 @@ impl Handler<PublishNewSplit> for Publisher {
             .await
             .context("Failed to publish splits.")?;
 
-        info!(new_split=new_split.split_id(), tts=%split_date_of_birth.elapsed().as_secs_f32(), checkpoint_delta=?checkpoint_delta, "publish-new-splits");
+        let time_to_search = split_date_of_birth.elapsed();
+        info!(new_split=new_split.split_id(), tts=%time_to_search.as_secs_f32(), checkpoint_delta=?checkpoint_delta, "publish-new-splits");
+        crate::metrics::INDEXING_METRICS.publish_splits_total.inc();
+        crate::metrics::INDEXING_METRICS
+            .published_docs_total
+            .inc_by(new_split.num_docs as u64);
+        crate::metrics::INDEXING_METRICS
+            .published_original_bytes_total
+            .inc_by(new_split.uncompressed_docs_size_in_bytes);
+        crate::metrics::INDEXING_METRICS
+            .time_to_search_seconds
+            .observe(time_to_search.as_secs_f64());
         let checkpoint: SourceCheckpoint = checkpoint_delta.get_source_checkpoint();
         if let Some(source_mailbox) = self.source_mailbox_opt.as_ref() {
             // We voluntarily do not log anything here.

@@ -41,6 +41,7 @@ pub mod actors;
 mod controlled_directory;
 mod garbage_collection;
 pub mod merge_policy;
+mod metrics;
 pub mod models;
 pub mod source;
 mod split_store;

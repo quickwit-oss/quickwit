@@ -28,6 +28,7 @@ use quickwit_metastore::checkpoint::CheckpointDelta;
 use tantivy::directory::MmapDirectory;
 use tantivy::merge_policy::NoMergePolicy;
 use tantivy::IndexBuilder;
+use tokio::sync::SemaphorePermit;
 
 use crate::controlled_directory::ControlledDirectory;
 use crate::models::ScratchDirectory;
@@ -65,6 +66,7 @@ pub struct IndexedSplit {
     pub split_scratch_directory: ScratchDirectory,
 
     pub controlled_directory_opt: Option<ControlledDirectory>,
+    pub semaphore_permit: SemaphorePermit<'static>,
 }
 
 impl fmt::Debug for IndexedSplit {
@@ -86,6 +88,7 @@ impl IndexedSplit {
         index_builder: IndexBuilder,
         progress: Progress,
         kill_switch: KillSwitch,
+        semaphore_permit: SemaphorePermit<'static>,
     ) -> anyhow::Result<Self> {
         // We avoid intermediary merge, and instead merge all segments in the packager.
         // The benefit is that we don't have to wait for potentially existing merges,
@@ -119,6 +122,7 @@ impl IndexedSplit {
             split_scratch_directory,
             checkpoint_delta: CheckpointDelta::default(),
             controlled_directory_opt: Some(controlled_directory),
+            semaphore_permit,
         })
     }
 

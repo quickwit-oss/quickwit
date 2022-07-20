@@ -28,12 +28,15 @@ use futures::future::{BoxFuture, FutureExt};
 use quickwit_common::uri::{Protocol, Uri};
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::sync::Semaphore;
 use tracing::warn;
 
 use crate::{
     DebouncedStorage, OwnedBytes, Storage, StorageError, StorageErrorKind, StorageFactory,
     StorageResolverError, StorageResult,
 };
+
+static FILE_DESCRIPTOR_PERMITS: Semaphore = Semaphore::const_new(5);
 
 /// File system compatible storage implementation.
 #[derive(Clone)]
@@ -67,6 +70,7 @@ impl LocalFileStorage {
     /// Moves a file from a source to a destination.
     /// from here is an external path, and to is an internal path.
     pub async fn move_into(&self, from_external: &Path, to: &Path) -> crate::StorageResult<()> {
+        let _permit = FILE_DESCRIPTOR_PERMITS.acquire().await.unwrap();
         let to_full_path = self.root.join(to);
         fs::rename(from_external, to_full_path).await?;
         Ok(())
@@ -75,6 +79,7 @@ impl LocalFileStorage {
     /// Moves a file from a source to a destination.
     /// from here is an internal path, and to is an external path.
     pub async fn move_out(&self, from_internal: &Path, to: &Path) -> crate::StorageResult<()> {
+        let _permit = FILE_DESCRIPTOR_PERMITS.acquire().await.unwrap();
         let from_full_path = self.root.join(from_internal);
         fs::rename(from_full_path, to).await?;
         Ok(())
@@ -85,6 +90,7 @@ impl LocalFileStorage {
 /// directory. Note that the `{root}` directory is not deleted.
 fn delete_all_dirs(root: PathBuf, path: &Path) -> BoxFuture<'_, std::io::Result<()>> {
     async move {
+        let _permit = FILE_DESCRIPTOR_PERMITS.acquire().await.unwrap();
         let full_path = root.join(path);
         let path_entries_result = full_path.read_dir();
         if let Err(err) = &path_entries_result {
@@ -134,6 +140,7 @@ fn missing_file_is_ok(io_result: io::Result<()>) -> io::Result<()> {
 #[async_trait]
 impl Storage for LocalFileStorage {
     async fn check(&self) -> anyhow::Result<()> {
+        let _permit = FILE_DESCRIPTOR_PERMITS.acquire().await.unwrap();
         if !self.root.exists() {
             // By creating directories, we check if we have the right permissions.
             fs::create_dir_all(self.root.as_path()).await?
@@ -146,6 +153,7 @@ impl Storage for LocalFileStorage {
         path: &Path,
         payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
+        let _permit = FILE_DESCRIPTOR_PERMITS.acquire().await.unwrap();
         let full_path = self.root.join(path);
         if let Some(parent_dir) = full_path.parent() {
             fs::create_dir_all(parent_dir).await?;
@@ -159,12 +167,14 @@ impl Storage for LocalFileStorage {
     }
 
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
+        let _permit = FILE_DESCRIPTOR_PERMITS.acquire().await.unwrap();
         let full_path = self.root.join(path);
         fs::copy(full_path, output_path).await?;
         Ok(())
     }
 
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
+        let _permit = FILE_DESCRIPTOR_PERMITS.acquire().await.unwrap();
         let full_path = self.root.join(path);
         let mut file = fs::File::open(full_path).await?;
         file.seek(SeekFrom::Start(range.start as u64)).await?;
@@ -174,6 +184,7 @@ impl Storage for LocalFileStorage {
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
+        let _permit = FILE_DESCRIPTOR_PERMITS.acquire().await.unwrap();
         let full_path = self.root.join(path);
         missing_file_is_ok(fs::remove_file(full_path).await)?;
         let parent = path.parent();
@@ -187,6 +198,7 @@ impl Storage for LocalFileStorage {
     }
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
+        let _permit = FILE_DESCRIPTOR_PERMITS.acquire().await.unwrap();
         let full_path = self.root.join(path);
         let content_bytes = fs::read(full_path).await.map_err(|err| {
             StorageError::from(err).add_context(format!(
@@ -203,6 +215,7 @@ impl Storage for LocalFileStorage {
     }
 
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
+        let _permit = FILE_DESCRIPTOR_PERMITS.acquire().await.unwrap();
         let full_path = self.root.join(path);
         match fs::metadata(full_path).await {
             Ok(metadata) => {

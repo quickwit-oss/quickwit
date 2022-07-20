@@ -40,12 +40,15 @@ use tantivy::{
     SegmentReader, TantivyError,
 };
 use tokio::runtime::Handle;
+use tokio::sync::Semaphore;
 use tracing::{debug, info, info_span, Span};
 
 use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeOperation;
 use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, ScratchDirectory};
+
+static MERGE_PERMITS: Semaphore = Semaphore::const_new(10);
 
 pub struct MergeExecutor {
     index_id: String,
@@ -321,6 +324,7 @@ impl MergeExecutor {
         let index_writer = merged_index.writer_with_num_threads(1, 3_000_000)?;
         ctx.record_progress();
 
+        let merge_permit = MERGE_PERMITS.acquire().await.unwrap();
         let indexed_split = IndexedSplit {
             split_id: split_merge_id,
             index_id: self.index_id.clone(),
@@ -336,6 +340,7 @@ impl MergeExecutor {
             index_writer,
             split_scratch_directory: merge_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),
+            semaphore_permit: merge_permit,
         };
 
         ctx.send_message(
@@ -465,6 +470,7 @@ impl MergeExecutor {
             } else {
                 None
             };
+            let merge_permit = MERGE_PERMITS.acquire().await.unwrap();
             let index_writer = index.writer_with_num_threads(1, 3_000_000)?;
             let indexed_split = IndexedSplit {
                 split_id,
@@ -480,6 +486,7 @@ impl MergeExecutor {
                 index_writer,
                 split_scratch_directory: scratched_directory,
                 controlled_directory_opt: Some(controlled_directory),
+                semaphore_permit: merge_permit,
             };
             indexed_splits.push(indexed_split);
             ctx.record_progress();
