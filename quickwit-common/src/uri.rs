@@ -36,6 +36,7 @@ pub enum Protocol {
     PostgreSQL,
     Ram,
     S3,
+    Azure,
 }
 
 impl Protocol {
@@ -45,6 +46,7 @@ impl Protocol {
             Protocol::PostgreSQL => "postgresql",
             Protocol::Ram => "ram",
             Protocol::S3 => "s3",
+            Protocol::Azure => "azure",
         }
     }
 
@@ -64,12 +66,16 @@ impl Protocol {
         matches!(&self, Protocol::S3)
     }
 
+    pub fn is_azure(&self) -> bool {
+        matches!(&self, Protocol::Azure)
+    }
+
     pub fn is_file_storage(&self) -> bool {
         matches!(&self, Protocol::File | Protocol::Ram)
     }
 
     pub fn is_object_storage(&self) -> bool {
-        matches!(&self, Protocol::S3)
+        matches!(&self, Protocol::S3 | Protocol::Azure)
     }
 
     pub fn is_database(&self) -> bool {
@@ -92,6 +98,7 @@ impl FromStr for Protocol {
             "postgres" | "postgresql" => Ok(Protocol::PostgreSQL),
             "ram" => Ok(Protocol::Ram),
             "s3" => Ok(Protocol::S3),
+            "azure" => Ok(Protocol::Azure),
             _ => bail!("Unknown URI protocol `{}`.", protocol),
         }
     }
@@ -243,8 +250,10 @@ impl Uri {
         }
         let protocol = &self.uri[..self.protocol_idx];
         let path = Path::new(&self.uri[self.protocol_idx + PROTOCOL_SEPARATOR.len()..]);
-
-        if self.protocol().is_object_storage() && path.components().count() < 2 {
+        if self.protocol().is_s3() && path.components().count() < 2 {
+            return None;
+        }
+        if self.protocol().is_azure() && path.components().count() < 3 {
             return None;
         }
         path.parent().map(|parent| {
@@ -261,7 +270,10 @@ impl Uri {
             return None;
         }
         let path = Path::new(&self.uri[self.protocol_idx + PROTOCOL_SEPARATOR.len()..]);
-        if self.protocol().is_object_storage() && path.components().count() < 2 {
+        if self.protocol().is_s3() && path.components().count() < 2 {
+            return None;
+        }
+        if self.protocol().is_azure() && path.components().count() < 3 {
             return None;
         }
         path.file_name().map(Path::new)
@@ -456,6 +468,14 @@ mod tests {
             Uri::try_new("s3://home/homer/docs/../dognuts").unwrap(),
             "s3://home/homer/docs/../dognuts"
         );
+        assert_eq!(
+            Uri::try_new("azure://account/container/docs/dognuts").unwrap(),
+            "azure://account/container/docs/dognuts"
+        );
+        assert_eq!(
+            Uri::try_new("azure://account/container/homer/docs/../dognuts").unwrap(),
+            "azure://account/container/homer/docs/../dognuts"
+        );
     }
 
     #[test]
@@ -463,6 +483,10 @@ mod tests {
         assert_eq!(Uri::for_test("file:///home").protocol(), Protocol::File);
         assert_eq!(Uri::for_test("ram:///in-memory").protocol(), Protocol::Ram);
         assert_eq!(Uri::for_test("s3://bucket/key").protocol(), Protocol::S3);
+        assert_eq!(
+            Uri::for_test("azure://account/bucket/key").protocol(),
+            Protocol::Azure
+        );
         assert_eq!(
             Uri::for_test("postgres://localhost:5432/metastore").protocol(),
             Protocol::PostgreSQL
@@ -482,7 +506,7 @@ mod tests {
             Extension::Json
         );
         assert_eq!(
-            Uri::for_test("s3://config.foo").extension().unwrap(),
+            Uri::for_test("azure://config.foo").extension().unwrap(),
             Extension::Unknown("foo".to_string())
         );
     }
@@ -509,7 +533,16 @@ mod tests {
             Uri::for_test("s3://bucket/").join("key").unwrap(),
             "s3://bucket/key"
         );
+        assert_eq!(
+            Uri::for_test("azure://account/container")
+                .join("key")
+                .unwrap(),
+            "azure://account/container/key"
+        );
         Uri::for_test("s3://bucket/").join("/key").unwrap_err();
+        Uri::for_test("azure://account/container/")
+            .join("/key")
+            .unwrap_err();
         Uri::for_test("postgres://username:password@localhost:5432/metastore")
             .join("table")
             .unwrap_err();
@@ -553,6 +586,32 @@ mod tests {
             Uri::for_test("s3://bucket/foo/bar/").parent().unwrap(),
             "s3://bucket/foo"
         );
+        assert!(Uri::for_test("azure://account/").parent().is_none());
+        assert!(Uri::for_test("azure://account").parent().is_none());
+        assert!(Uri::for_test("azure://account/container/")
+            .parent()
+            .is_none());
+        assert!(Uri::for_test("azure://account/container")
+            .parent()
+            .is_none());
+        assert_eq!(
+            Uri::for_test("azure://account/container/foo")
+                .parent()
+                .unwrap(),
+            "azure://account/container"
+        );
+        assert_eq!(
+            Uri::for_test("azure://account/container/foo/")
+                .parent()
+                .unwrap(),
+            "azure://account/container"
+        );
+        assert_eq!(
+            Uri::for_test("azure://account/container/foo/bar")
+                .parent()
+                .unwrap(),
+            "azure://account/container/foo"
+        );
     }
 
     #[test]
@@ -589,6 +648,26 @@ mod tests {
             Uri::for_test("s3://bucket/foo/").file_name().unwrap(),
             Path::new("foo"),
         );
+        assert!(Uri::for_test("azure://account").file_name().is_none());
+        assert!(Uri::for_test("azure://account/").file_name().is_none());
+        assert!(Uri::for_test("azure://account/container")
+            .file_name()
+            .is_none());
+        assert!(Uri::for_test("azure://account/container/")
+            .file_name()
+            .is_none());
+        assert_eq!(
+            Uri::for_test("azure://account/container/foo")
+                .file_name()
+                .unwrap(),
+            Path::new("foo"),
+        );
+        assert_eq!(
+            Uri::for_test("azure://account/container/foo/")
+                .file_name()
+                .unwrap(),
+            Path::new("foo"),
+        );
     }
 
     #[test]
@@ -606,7 +685,13 @@ mod tests {
             Uri::for_test("ram:///foo").filepath().unwrap(),
             Path::new("/foo")
         );
-        assert!(Uri::for_test("s3://bucket/").filepath().is_none(),);
+        assert!(Uri::for_test("s3://bucket/").filepath().is_none());
+        assert!(Uri::for_test("azure://account/container/")
+            .filepath()
+            .is_none());
+        assert!(Uri::for_test("azure://account/container/foo.json")
+            .filepath()
+            .is_none());
     }
 
     #[test]
@@ -614,6 +699,10 @@ mod tests {
         assert_eq!(
             Uri::for_test("s3://bucket/key").as_redacted_str(),
             "s3://bucket/key"
+        );
+        assert_eq!(
+            Uri::for_test("azure://account/container/key").as_redacted_str(),
+            "azure://account/container/key"
         );
         assert_eq!(
             Uri::for_test("postgres://localhost:5432/metastore").as_redacted_str(),

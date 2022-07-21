@@ -47,7 +47,9 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::object_storage::MultiPartPolicy;
-use crate::{OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResult};
+use crate::{
+    OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResolverError, StorageResult,
+};
 
 /// Default region to use, if none has been configured.
 const QUICKWIT_DEFAULT_REGION: Region = Region::UsEast1;
@@ -230,9 +232,13 @@ impl S3CompatibleObjectStorage {
     }
 
     /// Creates an object storage given a region and an uri.
-    pub fn from_uri(uri: &Uri) -> crate::StorageResult<S3CompatibleObjectStorage> {
-        let region = sniff_s3_region_and_cache()
-            .map_err(|error| StorageErrorKind::Service.with_error(error))?;
+    pub fn from_uri(uri: &Uri) -> Result<S3CompatibleObjectStorage, StorageResolverError> {
+        let region = sniff_s3_region_and_cache().map_err(|err| {
+            StorageResolverError::FailedToOpenStorage {
+                kind: StorageErrorKind::Service,
+                message: err.to_string(),
+            }
+        })?;
         Self::from_region_and_uri(region, uri)
     }
 
@@ -240,13 +246,15 @@ impl S3CompatibleObjectStorage {
     pub fn from_region_and_uri(
         region: Region,
         uri: &Uri,
-    ) -> crate::StorageResult<S3CompatibleObjectStorage> {
-        let (bucket, path) = parse_s3_uri(uri).ok_or_else(|| {
-            crate::StorageErrorKind::Io
-                .with_error(anyhow::anyhow!("URI `{uri}` is not a valid AWS S3 URI."))
+    ) -> Result<S3CompatibleObjectStorage, StorageResolverError> {
+        let (bucket, path) = parse_s3_uri(uri).ok_or_else(|| StorageResolverError::InvalidUri {
+            message: format!("URI `{uri}` is not a valid AWS S3 URI."),
         })?;
         let s3_compatible_storage = S3CompatibleObjectStorage::new(region, uri.clone(), bucket)
-            .map_err(|err| crate::StorageErrorKind::Service.with_error(anyhow::anyhow!(err)))?;
+            .map_err(|err| StorageResolverError::FailedToOpenStorage {
+                kind: StorageErrorKind::Service,
+                message: err.to_string(),
+            })?;
         Ok(s3_compatible_storage.with_prefix(&path))
     }
 
@@ -261,10 +269,7 @@ impl S3CompatibleObjectStorage {
             bucket: self.bucket,
             prefix: prefix.to_path_buf(),
             multipart_policy: self.multipart_policy,
-            retry_params: RetryParams {
-                max_attempts: 3,
-                ..Default::default()
-            },
+            retry_params: self.retry_params,
         }
     }
 
@@ -358,8 +363,9 @@ impl S3CompatibleObjectStorage {
         payload: Box<dyn crate::PutPayload>,
         len: u64,
     ) -> StorageResult<()> {
-        retry(&self.retry_params, || {
+        retry(&self.retry_params, || async {
             self.put_single_part_single_try(key, payload.clone(), len)
+                .await
         })
         .await?;
         Ok(())

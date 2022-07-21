@@ -324,7 +324,7 @@ mod tests {
         // The test will hang on indefinitely if we don't drop the sender.
         drop(result_sender);
 
-        let grpc_addr: SocketAddr = "127.0.0.1:10000".parse()?;
+        let grpc_addr: SocketAddr = "127.0.0.1:20000".parse()?;
         start_test_server(grpc_addr, Arc::new(mock_search_service)).await?;
         let client_pool = SearchClientPool::for_addrs(&[grpc_addr]).await?;
         let cluster_client = ClusterClient::new(client_pool.clone());

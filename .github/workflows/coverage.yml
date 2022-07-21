@@ -111,6 +111,11 @@ jobs:
       - name: Prepare LocalStack S3
         run: ./quickwit-cli/tests/prepare_tests.sh
 
+      # Github actions does not allow services to be started with custom command,
+      # so we are running azurite as a container manually.         
+      - name: Run azurite service 
+        run: DOCKER_SERVICES=azurite make docker-compose-up
+
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
