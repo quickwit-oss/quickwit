@@ -29,11 +29,11 @@ Now you're ready to have your metadata or index data on GCS.
 
 ### Set the Metastore URI
 
-In your [node config file](/docs/configuration/node-config), use `metastore_uri: s3://quickwit-indexes`.
+In your [node config file](/docs/configuration/node-config), use `metastore_uri: s3://{your-bucket}/{your-indexes}`.
 
 ### Set the Index URI
 
-In your [index config file](/docs/configuration/index-config), use `index_uri: s3://quickwit-indexes/my-index`
+In your [index config file](/docs/configuration/index-config), use `index_uri: s3://{your-bucket}/{your-indexes}`
 
 :::note
 Note that the URI scheme has still the name `s3` but Quickwit is actually sending HTTP requests to `https://storage.googleapis.com`.

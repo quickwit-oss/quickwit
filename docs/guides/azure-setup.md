@@ -20,8 +20,8 @@ export QW_AZURE_ACCESS_KEY=****
 
 ### Set the Metastore URI
 
-In your [node config file](/docs/configuration/node-config), use `metastore_uri: azure://storage_account/container`.
+In your [node config file](/docs/configuration/node-config), use `metastore_uri: azure://{your-storage-account}/{your-container}`.
 
 ### Set the Index URI
 
-In your [index config file](/docs/configuration/index-config), use `index_uri: azure://storage_account/container/your_index_id`.
+In your [index config file](/docs/configuration/index-config), use `index_uri: azure://{your-storage-account}/{your-container}`.
