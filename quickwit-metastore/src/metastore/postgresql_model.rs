@@ -144,7 +144,7 @@ impl TryInto<QuickwitSplit> for Split {
     }
 }
 
-/// A model structure for handling split metadata in a database.
+/// A model structure for handling checkpoint metadata in a database.
 #[derive(sqlx::FromRow)]
 pub struct Checkpoint {
     /// Index ID.

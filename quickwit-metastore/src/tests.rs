@@ -24,14 +24,14 @@ pub mod test_suite {
     use async_trait::async_trait;
     use itertools::Itertools;
     use serde_json::json;
-    use quickwit_config::{KafkaSourceParams, SourceConfig, SourceParams};
+    use quickwit_config::{KafkaSourceParams, KinesisSourceParams, RegionOrEndpoint, SourceConfig, SourceParams};
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use time::OffsetDateTime;
     use tokio::time::{sleep, Duration};
     use tracing::{error, info};
 
     use crate::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
-    use crate::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
+    use crate::{IndexMetadata, Metastore, MetastoreError, MetastoreResult, SplitMetadata, SplitState};
 
     #[async_trait]
     pub trait DefaultForTest {
@@ -78,11 +78,89 @@ pub mod test_suite {
         metastore.delete_index(index_id).await.unwrap();
     }
 
+    // Helper function to add a checkpoint variation
+    async fn add_source(
+        metastore: &dyn Metastore, source_type: &str, index_id: &str, source_id: &str, resource: &str
+    ) -> MetastoreResult<()>{
+        let source_params = match source_type {
+            "kinesis" => SourceParams::Kinesis(KinesisSourceParams {
+                stream_name: resource.to_string(),
+                region_or_endpoint: Some(RegionOrEndpoint::Endpoint("test".to_string())),
+                shutdown_at_stream_eof: true
+            }),
+            _ => SourceParams::Kafka(KafkaSourceParams {
+                topic: resource.to_string(),
+                client_log_level: Some("debug".to_string()),
+                client_params:  json!({})
+            }),
+        };
+
+        // Add a simulated Kafka Source
+        let source = SourceConfig {
+            source_id: source_id.to_string(),
+            source_params,
+        };
+
+        metastore
+            .add_source(index_id, source.clone())
+            .await
+    }
+
+    async fn add_checkpoint(
+        metastore: &dyn Metastore,
+        index_id: &str,
+        source_id: &str,
+        partition: &str,
+        position: &str
+    ) -> MetastoreResult<()>{
+        // Verify stored commits for a single source
+        let checkpoint_delta = CheckpointDelta::from_partition_delta(
+            PartitionId::from(partition),
+            Position::from(0u64),
+            Position::from(position)
+        );
+
+        metastore
+            .publish_splits(index_id, source_id, &[], checkpoint_delta)
+            .await
+    }
+
+    async fn verify_checkpoint(
+        metastore: &dyn Metastore,
+        index_id: &str,
+        source_id: &str,
+        resource: &str,
+        partition: &str,
+        position: &str,
+        partition_count: usize
+    ) {
+        let index_checkpoint = metastore.index_checkpoint(
+            index_id,
+            Some(source_id.to_string()),
+            Some(resource.to_string()),
+            None
+        )
+            .await
+            .unwrap();
+
+        let source_checkpoint = index_checkpoint.source_checkpoint(source_id)
+            .unwrap();
+
+        assert_eq!(source_checkpoint.num_partitions(), partition_count);
+        assert_eq!(
+            source_checkpoint
+                .position_for_partition(&PartitionId::from(partition))
+                .unwrap(),
+            &Position::from(position)
+        );
+    }
+
     pub async fn test_metastore_index_checkpoint<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let index_id = "test-metastore-checkpoint-for-source";
-        let source_id = "test-metastore-checkpoint-for-source";
+        let index_id = "test-metastore-index-checkpoint";
+        let source_id = "test-metastore-index-checkpoint";
+        let topic = "test-metastore-index-checkpoint-topic";
 
         let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
         metastore
@@ -90,16 +168,48 @@ pub mod test_suite {
             .await
             .unwrap();
 
+
         // TODO: tests
         // No stored commits, no source
-        let checkpoint = metastore.index_checkpoint(index_id, Option::None,
-                                   Option::None, Option::None);
+        // let checkpoint = metastore.index_checkpoint(index_id, Option::None,
+                                   //Option::None, Option::None);
         //assert_eq!(checkpoint);
 
-        // Stored commits
-        // Stored commits for multiple sources
+        // Verify stored commits for a single kafka source
+        add_source(&metastore, "kafka", index_id, source_id, topic).await.unwrap();
 
-        info!("Checkpoint for source called")
+        add_checkpoint(&metastore, index_id, source_id, "0", "100").await.unwrap();
+
+        verify_checkpoint(&metastore, index_id, source_id, topic, "0", "100", 1)
+            .await;
+
+        // Add a second source to test stored commits for multiple sources
+        let source_id = "test-metastore-index-checkpoint-kafka2";
+        let topic = "test-metastore-index-checkpoint-topic-kafka2";
+
+        add_source(&metastore, "kafka", index_id, source_id, topic).await.unwrap();
+
+        add_checkpoint(&metastore, index_id, source_id, "0", "200").await.unwrap();
+        add_checkpoint(&metastore, index_id, source_id, "1", "300").await.unwrap();
+        add_checkpoint(&metastore, index_id, source_id, "2", "400").await.unwrap();
+
+        verify_checkpoint(&metastore, index_id, source_id, topic, "0", "200", 3)
+            .await;
+        verify_checkpoint(&metastore, index_id, source_id, topic, "1", "300", 3)
+            .await;
+        verify_checkpoint(&metastore, index_id, source_id, topic, "2", "400", 3)
+            .await;
+
+        // Verify different types of sources are isolated correctly
+        let source_id = "test-metastore-index-checkpoint-kinesis";
+        let topic = "test-metastore-index-checkpoint-topic-kinesis";
+
+        add_source(&metastore, "kinesis", index_id, source_id, topic).await.unwrap();
+        add_checkpoint(&metastore, index_id, source_id, "0", "600").await.unwrap();
+        verify_checkpoint(&metastore, index_id, source_id, topic, "0", "600", 1)
+            .await;
+
+        cleanup_index(&metastore, index_id).await;
     }
 
     pub async fn test_metastore_add_source<MetastoreToTest: Metastore + DefaultForTest>() {
@@ -366,73 +476,6 @@ pub mod test_suite {
                     .position_for_partition(&PartitionId::default())
                     .unwrap(),
                 &Position::from(100u64 - 1)
-            );
-            cleanup_index(&metastore, index_id).await;
-        }
-    }
-
-    pub async fn test_metastore_publish_splits_with_checkpoint<
-        MetastoreToTest: Metastore + DefaultForTest,
-    >() {
-        let metastore = MetastoreToTest::default_for_test().await;
-
-        let index_id = "publish-splits-with-checkpoint";
-        let source_id = "publish-splits-with-checkpoint";
-        let topic = "publish-split-with-checkpoint-topic";
-
-        // Update the checkpoint, by publishing an empty array of splits with a non-empty
-        // checkpoint. This operation is allowed and used in the Indexer.
-        {
-            let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
-            metastore
-                .create_index(index_metadata.clone())
-                .await
-                .unwrap();
-
-            // Add a simulated Kafka Source
-            let source = SourceConfig {
-                source_id: source_id.to_string(),
-                source_params: SourceParams::Kafka(KafkaSourceParams {
-                    topic: topic.to_string(),
-                    client_log_level: Some("debug".to_string()),
-                    client_params:  json!({})
-                }),
-            };
-
-            metastore
-                .add_source(index_id, source.clone())
-                .await
-                .unwrap();
-
-            let checkpoint_delta = CheckpointDelta::from_partition_delta(
-                PartitionId::from("0"),
-                Position::from(0u64),
-                Position::from(100u64)
-            );
-
-            let result = metastore
-                .publish_splits(index_id, source_id, &[], checkpoint_delta)
-                .await;
-            assert!(result.is_ok());
-
-            let index_checkpoint = metastore.index_checkpoint(
-                index_id,
-                Some(source_id.to_string()),
-                Some(topic.to_string()),
-                None
-            )
-                .await
-                .unwrap();
-
-            let source_checkpoint = index_checkpoint.source_checkpoint(source_id)
-                .unwrap();
-
-            assert_eq!(source_checkpoint.num_partitions(), 1);
-            assert_eq!(
-                source_checkpoint
-                    .position_for_partition(&PartitionId::from("0"))
-                    .unwrap(),
-                &Position::from(100u64)
             );
             cleanup_index(&metastore, index_id).await;
         }
@@ -2074,11 +2117,6 @@ macro_rules! metastore_test_suite {
             #[tokio::test]
             async fn test_metastore_publish_splits_empty_splits_array_is_allowed() {
                 crate::tests::test_suite::test_metastore_publish_splits_empty_splits_array_is_allowed::<$metastore_type>().await;
-            }
-
-            #[tokio::test]
-            async fn test_metastore_publish_splits_with_checkpoint() {
-                crate::tests::test_suite::test_metastore_publish_splits_with_checkpoint::<$metastore_type>().await;
             }
 
             #[tokio::test]
