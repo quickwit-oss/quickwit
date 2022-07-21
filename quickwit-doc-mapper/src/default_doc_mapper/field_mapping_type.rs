@@ -35,7 +35,7 @@ pub enum FieldMappingType {
     /// Unsigned 64-bit integer mapping type configuration.
     U64(QuickwitNumericOptions, Cardinality),
     /// DateTime mapping type configuration
-    DateTime(QuickwitDateTimeOptions, Cardinality),
+    Date(QuickwitDateTimeOptions, Cardinality),
     /// 64-bit float mapping type configuration.
     F64(QuickwitNumericOptions, Cardinality),
     /// Bool mapping type configuration.
@@ -55,7 +55,7 @@ impl FieldMappingType {
             FieldMappingType::U64(_, cardinality) => (Type::U64, *cardinality),
             FieldMappingType::F64(_, cardinality) => (Type::F64, *cardinality),
             FieldMappingType::Bool(_, cardinality) => (Type::Bool, *cardinality),
-            FieldMappingType::DateTime(_, cardinality) => (Type::DateTime, *cardinality),
+            FieldMappingType::Date(_, cardinality) => (Type::Date, *cardinality),
             FieldMappingType::Bytes(_, cardinality) => (Type::Bytes, *cardinality),
             FieldMappingType::Json(_, cardinality) => (Type::Json, *cardinality),
             FieldMappingType::Object(_) => {
@@ -105,7 +105,7 @@ fn parse_primitive_type(primitive_type_str: &str) -> Option<Type> {
         "i64" => Some(Type::I64),
         "f64" => Some(Type::F64),
         "bool" => Some(Type::Bool),
-        "datetime" => Some(Type::DateTime),
+        "date" => Some(Type::Date),
         "bytes" => Some(Type::Bytes),
         "json" => Some(Type::Json),
         _unknown_type => None,
@@ -119,7 +119,7 @@ fn primitive_type_to_str(primitive_type: &Type) -> &'static str {
         Type::I64 => "i64",
         Type::F64 => "f64",
         Type::Bool => "bool",
-        Type::DateTime | Type::Date => "datetime",
+        Type::Date => "date",
         Type::Bytes => "bytes",
         Type::Json => "json",
         Type::Facet => {

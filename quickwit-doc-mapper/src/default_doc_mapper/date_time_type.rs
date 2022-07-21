@@ -17,14 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
+use std::collections::BTreeSet;
+use std::sync::Arc;
 
-use chrono::NaiveDate;
 use derivative::Derivative;
-use serde::de::Error;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use tantivy::{DateTimeFormat, DateTimeOptions, DateTimePrecision};
+use tantivy::{DatePrecision, DateTime};
 use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
 use time::OffsetDateTime;
 
@@ -43,21 +42,13 @@ pub struct QuickwitDateTimeOptions {
     #[serde(default = "default_input_formats")]
     #[serde(serialize_with = "serialize_input_formats")]
     #[serde(deserialize_with = "deserialize_input_formats")]
-    pub input_formats: HashSet<DateTimeFormat>,
+    pub input_formats: BTreeSet<DateTimeFormat>,
 
     /// Internal storage precision.
     /// Used to avoid storing very large numbers when not needed.
     /// This optimizes compression.
-    #[serde(default = "default_time_precision")]
-    #[serde(serialize_with = "serialize_time_precision")]
-    #[serde(deserialize_with = "deserialize_time_precision")]
-    pub precision: DateTimePrecision,
-
-    /// DateTime format used in query result.
-    #[serde(default = "default_output_format")]
-    #[serde(serialize_with = "serialize_input_format")]
-    #[serde(deserialize_with = "deserialize_input_format")]
-    pub output_format: DateTimeFormat,
+    #[serde(default)]
+    pub precision: DatePrecision,
 
     #[serde(default = "default_as_true")]
     pub indexed: bool,
@@ -65,7 +56,7 @@ pub struct QuickwitDateTimeOptions {
     #[serde(default = "default_as_true")]
     pub stored: bool,
 
-    #[serde(default = "default_as_true")]
+    #[serde(default)]
     pub fast: bool,
 
     /// Tantivy's DateTimeOptions maintains internally a set of DateTime parsers
@@ -78,7 +69,7 @@ pub struct QuickwitDateTimeOptions {
     #[serde(default)]
     #[derivative(PartialEq = "ignore")]
     #[derivative(Debug = "ignore")]
-    parsers_handle: Option<DateTimeOptions>,
+    parsers: Option<DateTimeParsersHolder>,
 }
 
 impl Default for QuickwitDateTimeOptions {
@@ -87,78 +78,236 @@ impl Default for QuickwitDateTimeOptions {
             description: None,
             input_formats: default_input_formats(),
             precision: default_time_precision(),
-            output_format: default_output_format(),
             indexed: true,
             stored: true,
-            fast: true,
-            parsers_handle: None,
+            fast: false,
+            parsers: None,
         }
     }
 }
 
 impl QuickwitDateTimeOptions {
     pub fn into_with_parsers_handle_initialized(self) -> QuickwitDateTimeOptions {
-        let parsers_handle = DateTimeOptions::default()
-            .set_input_formats(self.input_formats.clone())
-            .set_precision(self.precision);
+        let parsers_handle = DateTimeParsersHolder::new(&self.input_formats);
         QuickwitDateTimeOptions {
             description: self.description,
             input_formats: self.input_formats,
             precision: self.precision,
-            output_format: self.output_format,
             indexed: self.indexed,
             stored: self.stored,
             fast: self.fast,
-            parsers_handle: Some(parsers_handle),
+            parsers: Some(parsers_handle),
         }
     }
 
     pub fn parse_string(&self, value: String) -> Result<OffsetDateTime, String> {
-        self.parsers_handle
+        self.parsers
             .as_ref()
             .ok_or("err".to_string())
             .map(|opts| opts.parse_string(value))?
     }
 
     pub fn parse_number(&self, value: i64) -> Result<OffsetDateTime, String> {
-        self.parsers_handle
+        self.parsers
             .as_ref()
             .ok_or("err".to_string())
             .map(|opts| opts.parse_number(value))?
     }
 }
 
-pub(super) fn serialize_time_precision<S>(
-    precision: &DateTimePrecision,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    match precision {
-        DateTimePrecision::Seconds => serializer.serialize_str("secs"),
-        DateTimePrecision::Milliseconds => serializer.serialize_str("millis"),
-        DateTimePrecision::Microseconds => serializer.serialize_str("micros"),
-        DateTimePrecision::Nanoseconds => serializer.serialize_str("nanos"),
+// Parser function types
+type StringDateTimeParser = Arc<dyn Fn(&str) -> Result<OffsetDateTime, String> + Sync + Send>;
+type NumberDateTimeParser = Arc<dyn Fn(i64) -> Result<OffsetDateTime, String> + Sync + Send>;
+
+/// A struct for holding datetime parsing functions.
+#[derive(Clone)]
+pub struct DateTimeParsersHolder {
+    /// Functions for parsing string input.
+    string_parsers: Vec<StringDateTimeParser>,
+    /// Function for parsing number input as timestamp.
+    number_parser: NumberDateTimeParser,
+}
+
+impl Default for DateTimeParsersHolder {
+    fn default() -> Self {
+        Self {
+            string_parsers: Vec::new(),
+            number_parser: make_unix_timestamp_parser(DatePrecision::default()),
+        }
     }
 }
 
-pub(super) fn deserialize_time_precision<'de, D>(
-    deserializer: D,
-) -> Result<DateTimePrecision, D::Error>
-where D: Deserializer<'de> {
-    let time_precision: String = Deserialize::deserialize(deserializer)?;
-    match time_precision.as_str() {
-        "secs" => Ok(DateTimePrecision::Seconds),
-        "millis" => Ok(DateTimePrecision::Milliseconds),
-        "micros" => Ok(DateTimePrecision::Microseconds),
-        "nanos" => Ok(DateTimePrecision::Nanoseconds),
-        unknown => Err(D::Error::custom(format!(
-            "Unknown precision value `{}` specified.",
-            unknown
-        ))),
+impl DateTimeParsersHolder {
+
+    fn new(input_formats: &BTreeSet<DateTimeFormat>) -> Self {
+        let mut parser = DateTimeParsersHolder::default();
+        for input_format in input_formats {
+            match input_format {
+                DateTimeFormat::RCF3339 => {
+                    parser.string_parsers.push(Arc::new(rfc3339_parser))
+                }
+                DateTimeFormat::RFC2822 => {
+                    parser.string_parsers.push(Arc::new(rfc2822_parser))
+                }
+                DateTimeFormat::ISO8601 => {
+                    parser.string_parsers.push(Arc::new(iso8601_parser))
+                }
+                DateTimeFormat::Strftime(str_format) => parser
+                    .string_parsers
+                    .push(make_strftime_parser(str_format.clone())),
+                DateTimeFormat::Timestamp(precision) => {
+                    parser.number_parser = make_unix_timestamp_parser(precision.clone())
+                }
+            }
+        }
+        parser
+    }
+
+    /// Parses string input.
+    pub fn parse_string(&self, value: String) -> Result<OffsetDateTime, String> {
+        for parser in self.string_parsers.iter() {
+            if let Ok(date_time) = parser(&value) {
+                return Ok(date_time);
+            }
+        }
+        Err(format!(
+            "Could not parse datetime `{}` using all specified formats.",
+            value
+        ))
+    }
+
+    /// Parses number input.
+    pub fn parse_number(&self, value: i64) -> Result<OffsetDateTime, String> {
+        (self.number_parser)(value)
     }
 }
+
+
+/// Parses datetime strings using RFC3339 formatting.
+fn rfc3339_parser(value: &str) -> Result<OffsetDateTime, String> {
+    OffsetDateTime::parse(value, &Rfc3339).map_err(|error| error.to_string())
+}
+
+/// Parses DateTime strings using RFC2822 formatting.
+fn rfc2822_parser(value: &str) -> Result<OffsetDateTime, String> {
+    OffsetDateTime::parse(value, &Rfc2822).map_err(|error| error.to_string())
+}
+
+/// Parses DateTime strings using default ISO8601 formatting.
+/// Examples: 2010-11-21T09:55:06.000000000+02:00, 2010-11-12 9:55:06 +2:00
+fn iso8601_parser(value: &str) -> Result<OffsetDateTime, String> {
+    OffsetDateTime::parse(value, &Iso8601::DEFAULT).map_err(|error| error.to_string())
+}
+
+/// Configures and returns a function for parsing datetime strings
+/// using strftime formatting.
+fn make_strftime_parser(format: String) -> StringDateTimeParser {
+    Arc::new(move |value: &str| {
+        let date_time =
+            chrono::DateTime::parse_from_str(value, &format)
+                .map_err(|error| error.to_string())
+                .map(|date_time| date_time.naive_utc())?;
+
+        OffsetDateTime::from_unix_timestamp_nanos(date_time.timestamp_nanos() as i128)
+            .map_err(|error| error.to_string())
+    })
+}
+
+/// Configures and returns a function for interpreting numbers
+/// as unix timestamp with a precision.
+fn make_unix_timestamp_parser(precision: DatePrecision) -> NumberDateTimeParser {
+    Arc::new(move |value: i64| {
+        let date_time = match precision {
+            DatePrecision::Seconds => OffsetDateTime::from_unix_timestamp(value),
+            DatePrecision::Milliseconds => {
+                OffsetDateTime::from_unix_timestamp_nanos((value as i128) * 1_000_000)
+            }
+            DatePrecision::Microseconds => {
+                OffsetDateTime::from_unix_timestamp_nanos((value as i128) * 1000)
+            }
+        };
+        date_time.map_err(|error| error.to_string())
+    })
+}
+
+// An enum specifying all supported datetime parsing format.
+#[derive(Clone, Debug, Eq, Ord, PartialOrd, Derivative)]
+#[derivative(Hash, PartialEq, )]
+pub enum DateTimeFormat {
+    RCF3339,
+    RFC2822,
+    ISO8601,
+    Strftime(String),
+    Timestamp(
+        #[derivative(PartialEq = "ignore")]
+        #[derivative(Hash = "ignore")]
+        DatePrecision,
+    ),
+}
+
+impl<'de> Deserialize<'de> for DateTimeFormat {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        let value = String::deserialize(deserializer)?;
+        match value.to_lowercase().as_str() {
+            "rfc3339" => Ok(DateTimeFormat::RCF3339),
+            "rfc2822" => Ok(DateTimeFormat::RFC2822),
+            "iso8601" => Ok(DateTimeFormat::ISO8601),
+            "unix_ts_secs" => Ok(DateTimeFormat::Timestamp(DatePrecision::Seconds)),
+            "unix_ts_millis" => Ok(DateTimeFormat::Timestamp(DatePrecision::Milliseconds)),
+            "unix_ts_micros" => Ok(DateTimeFormat::Timestamp(DatePrecision::Microseconds)),
+            _ => Ok(DateTimeFormat::Strftime(value)),
+        }
+    }
+}
+
+impl Serialize for DateTimeFormat {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: serde::Serializer {
+        match self {
+            DateTimeFormat::RCF3339 => serializer.serialize_str("rfc3339"),
+            DateTimeFormat::RFC2822 => serializer.serialize_str("rfc2822"),
+            DateTimeFormat::ISO8601 => serializer.serialize_str("iso8601"),
+            DateTimeFormat::Strftime(format) => serializer.serialize_str(format),
+            DateTimeFormat::Timestamp(precision) => match precision {
+                DatePrecision::Seconds => serializer.serialize_str("unix_ts_secs"),
+                DatePrecision::Milliseconds => serializer.serialize_str("unix_ts_millis"),
+                DatePrecision::Microseconds => serializer.serialize_str("unix_ts_micros"),
+            },
+        }
+    }
+}
+
+// pub(super) fn serialize_time_precision<S>(
+//     precision: &DatePrecision,
+//     serializer: S,
+// ) -> Result<S::Ok, S::Error>
+// where
+//     S: Serializer,
+// {
+//     match precision {
+//         DatePrecision::Seconds => serializer.serialize_str("secs"),
+//         DatePrecision::Milliseconds => serializer.serialize_str("millis"),
+//         DatePrecision::Microseconds => serializer.serialize_str("micros"),
+//     }
+// }
+
+// pub(super) fn deserialize_time_precision<'de, D>(
+//     deserializer: D,
+// ) -> Result<DateTimePrecision, D::Error>
+// where D: Deserializer<'de> {
+//     let time_precision: String = Deserialize::deserialize(deserializer)?;
+//     match time_precision.as_str() {
+//         "secs" => Ok(DateTimePrecision::Seconds),
+//         "millis" => Ok(DateTimePrecision::Milliseconds),
+//         "micros" => Ok(DateTimePrecision::Microseconds),
+//         "nanos" => Ok(DateTimePrecision::Nanoseconds),
+//         unknown => Err(D::Error::custom(format!(
+//             "Unknown precision value `{}` specified.",
+//             unknown
+//         ))),
+//     }
+// }
 
 fn date_time_format_to_string(format: &DateTimeFormat) -> String {
     let format_str = match format {
@@ -167,10 +316,9 @@ fn date_time_format_to_string(format: &DateTimeFormat) -> String {
         DateTimeFormat::ISO8601 => "iso8601",
         DateTimeFormat::Strftime(format) => format.as_str(),
         DateTimeFormat::Timestamp(precision) => match precision {
-            DateTimePrecision::Seconds => "unix_ts_secs",
-            DateTimePrecision::Milliseconds => "unix_ts_millis",
-            DateTimePrecision::Microseconds => "unix_ts_micros",
-            DateTimePrecision::Nanoseconds => "unix_ts_nanos",
+            DatePrecision::Seconds => "unix_ts_secs",
+            DatePrecision::Milliseconds => "unix_ts_millis",
+            DatePrecision::Microseconds => "unix_ts_micros",
         },
     };
     format_str.to_string()
@@ -181,35 +329,34 @@ fn date_time_format_from_string(format_str: String) -> DateTimeFormat {
         "rfc3339" => DateTimeFormat::RCF3339,
         "rfc2822" => DateTimeFormat::RFC2822,
         "iso8601" => DateTimeFormat::ISO8601,
-        "unix_ts_secs" => DateTimeFormat::Timestamp(DateTimePrecision::Seconds),
-        "unix_ts_millis" => DateTimeFormat::Timestamp(DateTimePrecision::Milliseconds),
-        "unix_ts_micros" => DateTimeFormat::Timestamp(DateTimePrecision::Microseconds),
-        "unix_ts_nanos" => DateTimeFormat::Timestamp(DateTimePrecision::Nanoseconds),
+        "unix_ts_secs" => DateTimeFormat::Timestamp(DatePrecision::Seconds),
+        "unix_ts_millis" => DateTimeFormat::Timestamp(DatePrecision::Milliseconds),
+        "unix_ts_micros" => DateTimeFormat::Timestamp(DatePrecision::Microseconds),
         _ => DateTimeFormat::Strftime(format_str),
     }
 }
 
-pub(super) fn serialize_input_format<S>(
-    input_format: &DateTimeFormat,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let format_str = date_time_format_to_string(input_format);
-    serializer.serialize_str(&format_str)
-}
+// pub(super) fn serialize_input_format<S>(
+//     input_format: &DateTimeFormat,
+//     serializer: S,
+// ) -> Result<S::Ok, S::Error>
+// where
+//     S: Serializer,
+// {
+//     let format_str = date_time_format_to_string(input_format);
+//     serializer.serialize_str(&format_str)
+// }
 
-pub(super) fn deserialize_input_format<'de, D>(
-    deserializer: D,
-) -> Result<DateTimeFormat, D::Error>
-where D: Deserializer<'de> {
-    let format_str = String::deserialize(deserializer)?;
-    Ok(date_time_format_from_string(format_str))
-}
+// pub(super) fn deserialize_input_format<'de, D>(
+//     deserializer: D,
+// ) -> Result<DateTimeFormat, D::Error>
+// where D: Deserializer<'de> {
+//     let format_str = String::deserialize(deserializer)?;
+//     Ok(date_time_format_from_string(format_str))
+// }
 
 pub(super) fn serialize_input_formats<S>(
-    input_formats: &HashSet<DateTimeFormat>,
+    input_formats: &BTreeSet<DateTimeFormat>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
@@ -225,7 +372,7 @@ where
 
 pub(super) fn deserialize_input_formats<'de, D>(
     deserializer: D,
-) -> Result<HashSet<DateTimeFormat>, D::Error>
+) -> Result<BTreeSet<DateTimeFormat>, D::Error>
 where D: Deserializer<'de> {
     let date_formats = Vec::<String>::deserialize(deserializer)?
         .into_iter()
@@ -234,72 +381,39 @@ where D: Deserializer<'de> {
     Ok(date_formats)
 }
 
-fn default_input_formats() -> HashSet<DateTimeFormat> {
-    let mut input_formats = HashSet::new();
+fn default_input_formats() -> BTreeSet<DateTimeFormat> {
+    let mut input_formats = BTreeSet::new();
     input_formats.insert(DateTimeFormat::ISO8601);
-    input_formats.insert(DateTimeFormat::Timestamp(DateTimePrecision::Milliseconds));
+    input_formats.insert(DateTimeFormat::Timestamp(DatePrecision::default()));
     input_formats
 }
 
-fn default_time_precision() -> DateTimePrecision {
-    DateTimePrecision::Milliseconds
+fn default_time_precision() -> DatePrecision {
+    DatePrecision::Milliseconds
 }
 
-fn default_output_format() -> DateTimeFormat {
-    DateTimeFormat::ISO8601
-}
+
 
 /// Converts a timestamp to displayable date_time in available formats.
 pub fn timestamp_to_datetime_str(
     timestamp: i64,
-    precision: &DateTimePrecision,
-    format: &DateTimeFormat,
+    precision: &DatePrecision,
 ) -> Result<String, String> {
     let date_time = match precision {
-        DateTimePrecision::Seconds => OffsetDateTime::from_unix_timestamp(timestamp),
-        DateTimePrecision::Milliseconds => {
-            OffsetDateTime::from_unix_timestamp_nanos((timestamp as i128) * 1_000_000)
-        }
-        DateTimePrecision::Microseconds => {
-            OffsetDateTime::from_unix_timestamp_nanos((timestamp as i128) * 1000)
-        }
-        DateTimePrecision::Nanoseconds => {
-            OffsetDateTime::from_unix_timestamp_nanos(timestamp as i128)
-        }
-    }
-    .map_err(|error| error.to_string())?;
-
-    match format {
-        DateTimeFormat::RCF3339 => date_time
-            .format(&Rfc3339)
-            .map_err(|error| error.to_string()),
-        DateTimeFormat::RFC2822 => date_time
-            .format(&Rfc2822)
-            .map_err(|error| error.to_string()),
-        DateTimeFormat::ISO8601 => date_time
-            .format(&Iso8601::DEFAULT)
-            .map_err(|error| error.to_string()),
-        DateTimeFormat::Strftime(str_fmt) => {
-            let date = date_time.to_calendar_date();
-            let time = date_time.to_hms_nano();
-            NaiveDate::from_ymd(date.0, date.1 as u32, date.2 as u32)
-                .and_hms_nano_opt(time.0 as u32, time.1 as u32, time.2 as u32, time.3)
-                .ok_or_else(|| "Couldn't create NaiveDate from OffsetDateTime".to_string())
-                .map(|datetime| datetime.format(str_fmt).to_string())
-        }
-        DateTimeFormat::Timestamp(_) => Ok(timestamp.to_string()),
-    }
+        DatePrecision::Seconds => DateTime::from_timestamp_secs(timestamp),
+        DatePrecision::Milliseconds => DateTime::from_timestamp_millis(timestamp),
+        DatePrecision::Microseconds => DateTime::from_timestamp_micros(timestamp),
+    };
+    
+    date_time.into_utc().format(&Rfc3339).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-    use std::sync::{Arc, Mutex};
+    use std::collections::BTreeSet;
 
-    use chrono_tz::Tz;
     use tantivy::schema::Cardinality;
-    use tantivy::DateTimePrecision;
-    use time::macros::{date, time};
+    use tantivy::DatePrecision;
 
     use super::DateTimeFormat;
     use crate::default_doc_mapper::date_time_type::QuickwitDateTimeOptions;
@@ -338,25 +452,24 @@ mod tests {
         .unwrap();
         assert_eq!(&field_mapping_entry.name, "updated_at");
 
-        let mut input_formats = HashSet::new();
+        let mut input_formats = BTreeSet::new();
         input_formats.insert(DateTimeFormat::RCF3339);
         input_formats.insert(DateTimeFormat::RFC2822);
-        input_formats.insert(DateTimeFormat::Timestamp(DateTimePrecision::Milliseconds));
+        input_formats.insert(DateTimeFormat::Timestamp(DatePrecision::Milliseconds));
         input_formats.insert(DateTimeFormat::Strftime("%Y %m %d %H:%M:%S %z".to_string()));
 
         let expected_dt_opts = QuickwitDateTimeOptions {
             description: Some("When was the record updated.".to_string()),
             input_formats,
-            precision: DateTimePrecision::Milliseconds,
-            output_format: DateTimeFormat::RCF3339,
+            precision: DatePrecision::Milliseconds,
             indexed: true,
             fast: true,
             stored: false,
-            parsers_handle: None,
+            parsers: None,
         };
 
         assert!(
-            matches!(field_mapping_entry.mapping_type, FieldMappingType::DateTime(date_time_opts,
+            matches!(field_mapping_entry.mapping_type, FieldMappingType::Date(date_time_opts,
             Cardinality::SingleValue) if date_time_opts == expected_dt_opts)
         );
     }
@@ -379,7 +492,7 @@ mod tests {
         };
         assert_eq!(&field_mapping_entry.name, "update_timeline");
         assert!(
-            matches!(field_mapping_entry.mapping_type, FieldMappingType::DateTime(dt_opts,
+            matches!(field_mapping_entry.mapping_type, FieldMappingType::Date(dt_opts,
             Cardinality::MultiValues) if dt_opts == expected_date_time_options)
         );
     }
