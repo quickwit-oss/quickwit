@@ -7,8 +7,7 @@ In Quickwit, Storage URIs refer to different kinds of storage.
 
 Generally speaking, you can use a storage URI or a regular file path wherever you would have expected a file path.
 
-
-For instance
+For instance:
 
 - when configuring the index storage. (Passed as the `index_uri` in the index command line.)
 - when configuring a file-backed metastore. (`metastore_uri` in the QuickwitConfig).
@@ -69,15 +68,29 @@ The region or custom endpoint will be detected using the first successful method
 - `AWS_REGION` environment variable
 - Amazon’s instance metadata API [https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html)
 
-### S3-compatible Objective storage like Minio
+### S3-compatible Object Storage like Minio, Google Cloud Storage, and more.
 
 
-Quickwit can target other S3-compatible storage like MinIO.
+Quickwit can target other S3-compatible storage.
 This is done by setting an endpoint url in the `QW_S3_ENDPOINT` environment variable.
 
 In this case, the region will be ignored.
 
-For instance:
+Example: 
 ```bash
 export QW_S3_ENDPOINT=http://localhost:9000/
 ```
+Example for Google Cloud Storage:
+```bash
+export QW_S3_ENDPOINT=https://storage.googleapis.com
+```
+
+Get an access key & a secret key from the object storage of your preference and run the following commands:
+```bash
+export AWS_SECRET_ACCESS_KEY=***
+export AWS_ACCESS_KEY_ID=***
+```
+
+:::note
+We also support Azure storage, however since it is not S3-Compatible, you can refer to our [Azure Setup Guide](/docs/guides/azure-setup.md) for more info and steps to connect. 
+:::
