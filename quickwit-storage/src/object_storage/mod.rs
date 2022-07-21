@@ -31,6 +31,4 @@ mod s3_compatible_storage_uri_resolver;
 #[cfg(feature = "azure")]
 mod azure_compatible_storage;
 #[cfg(feature = "azure")]
-pub use self::azure_compatible_storage::{
-    AzureCompatibleBlobStorage, AzureCompatibleBlobStorageFactory,
-};
+pub use self::azure_compatible_storage::{AzureBlobStorage, AzureBlobStorageFactory};

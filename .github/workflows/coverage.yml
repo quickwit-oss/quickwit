@@ -42,17 +42,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-      
-      azurite:
-        image: mcr.microsoft.com/azure-storage/azurite:latest
-        ports:
-          - "10000:10000" # Blob store port --blobHost 0.0.0.0
-        options: >-
-          --azurite --loose
-          --health-cmd "curl -k https://localhost:10000"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
       postgres:
         image: postgres:latest
@@ -121,6 +110,11 @@ jobs:
 
       - name: Prepare LocalStack S3
         run: ./quickwit-cli/tests/prepare_tests.sh
+
+      # Github actions does not allow services to be started with custom command,
+      # so we are running azurite as a container manually.         
+      - name: Run azurite service 
+        run: DOCKER_SERVICES=azurite make docker-compose-up
 
       - uses: actions-rs/toolchain@v1
         with:

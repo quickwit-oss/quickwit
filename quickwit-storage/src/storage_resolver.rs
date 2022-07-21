@@ -26,7 +26,7 @@ use quickwit_common::uri::{Protocol, Uri};
 use crate::local_file_storage::LocalFileStorageFactory;
 use crate::ram_storage::RamStorageFactory;
 #[cfg(feature = "azure")]
-use crate::AzureCompatibleBlobStorageFactory;
+use crate::AzureBlobStorageFactory;
 use crate::{S3CompatibleObjectStorageFactory, Storage, StorageResolverError};
 
 /// Quickwit supported storage resolvers.
@@ -41,7 +41,7 @@ pub fn quickwit_storage_uri_resolver() -> &'static StorageUriResolver {
 
         #[cfg(feature = "azure")]
         {
-            builder = builder.register(AzureCompatibleBlobStorageFactory::default());
+            builder = builder.register(AzureBlobStorageFactory::default());
         }
 
         #[cfg(not(feature = "azure"))]
@@ -66,14 +66,14 @@ pub trait StorageFactory: Send + Sync + 'static {
 }
 
 /// A storage factory implementation for handling not supported features.
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug)]
 pub struct UnsupportedStorage {
     protocol: Protocol,
 }
 
 impl StorageFactory for UnsupportedStorage {
     fn protocol(&self) -> Protocol {
-        self.protocol.clone()
+        self.protocol
     }
 
     fn resolve(&self, _: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
@@ -131,7 +131,7 @@ impl StorageUriResolver {
 
         #[cfg(feature = "azure")]
         {
-            builder = builder.register(AzureCompatibleBlobStorageFactory::default());
+            builder = builder.register(AzureBlobStorageFactory::default());
         }
 
         builder.build()

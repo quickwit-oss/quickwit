@@ -59,7 +59,7 @@ pub use self::cache::MockCache;
 pub use self::cache::{wrap_storage_with_long_term_cache, MemorySizedCache};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 #[cfg(feature = "azure")]
-pub use self::object_storage::{AzureCompatibleBlobStorage, AzureCompatibleBlobStorageFactory};
+pub use self::object_storage::{AzureBlobStorage, AzureBlobStorageFactory};
 pub use self::object_storage::{
     MultiPartPolicy, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
 };
@@ -249,9 +249,7 @@ pub(crate) mod test_suite {
         test_write_and_delete_with_dir_separator(storage)
             .await
             .with_context(|| "write_and_delete_with_separator")?;
-        test_file_size(storage)
-            .await
-            .with_context(|| "delete_missing_file")?;
+        test_file_size(storage).await.with_context(|| "file_size")?;
         test_delete_missing_file(storage)
             .await
             .with_context(|| "delete_missing_file")?;
@@ -260,21 +258,20 @@ pub(crate) mod test_suite {
 
     /// Generic single-part upload test.
     pub async fn storage_test_single_part_upload(storage: &mut dyn Storage) -> anyhow::Result<()> {
-        storage
-            .put(
-                Path::new("hello_small.txt"),
-                Box::new(b"hello, happy tax payer!".to_vec()),
-            )
-            .await?;
+        let test_path = Path::new("hello_small.txt");
+        let data = b"hello, happy tax payer!".to_vec();
+        let data_size = data.len() as u64;
+        storage.put(test_path, Box::new(data)).await?;
+        assert_eq!(storage.file_num_bytes(test_path).await?, data_size);
         Ok(())
     }
 
     /// Generic multi-part upload test.
     pub async fn storage_test_multi_part_upload(storage: &mut dyn Storage) -> anyhow::Result<()> {
+        let test_path = Path::new("hello_large.txt");
         let test_buffer = vec![0u8; 15_000_000];
-        storage
-            .put(Path::new("hello_large.txt"), Box::new(test_buffer))
-            .await?;
+        storage.put(test_path, Box::new(test_buffer)).await?;
+        assert_eq!(storage.file_num_bytes(test_path).await?, 15_000_000);
         Ok(())
     }
 }

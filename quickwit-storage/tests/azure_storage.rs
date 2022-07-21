@@ -27,7 +27,7 @@ use anyhow::Context;
 use azure_storage::core::prelude::StorageClient;
 use azure_storage_blobs::prelude::AsContainerClient;
 #[cfg(feature = "azure")]
-use quickwit_storage::AzureCompatibleBlobStorage;
+use quickwit_storage::AzureBlobStorage;
 use quickwit_storage::MultiPartPolicy;
 
 #[cfg(feature = "testsuite")]
@@ -41,15 +41,15 @@ async fn test_suite_on_azure_storage() -> anyhow::Result<()> {
     let container_client = StorageClient::new_emulator_default().container_client(CONTAINER);
     container_client.create().into_future().await?;
 
-    let mut object_storage = AzureCompatibleBlobStorage::new_emulated(CONTAINER);
+    let mut object_storage = AzureBlobStorage::new_emulated(CONTAINER);
     quickwit_storage::storage_test_suite(&mut object_storage).await?;
 
-    let mut object_storage = AzureCompatibleBlobStorage::new_emulated(CONTAINER).with_prefix(
-        Path::new("/integration-tests/test-azure-compatible-storage"),
-    );
+    let mut object_storage = AzureBlobStorage::new_emulated(CONTAINER).with_prefix(Path::new(
+        "/integration-tests/test-azure-compatible-storage",
+    ));
     quickwit_storage::storage_test_single_part_upload(&mut object_storage)
         .await
-        .with_context(|| "test_single_part_upload")?;
+        .context("test_single_part_upload")?;
 
     object_storage.set_policy(MultiPartPolicy {
         // On azure, block size is limited between 64KB and 100MB.
@@ -61,7 +61,7 @@ async fn test_suite_on_azure_storage() -> anyhow::Result<()> {
     });
     quickwit_storage::storage_test_multi_part_upload(&mut object_storage)
         .await
-        .with_context(|| "test_multi_part_upload")?;
+        .context("test_multi_part_upload")?;
 
     // Teardown container.
     container_client.delete().into_future().await?;

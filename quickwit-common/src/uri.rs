@@ -30,7 +30,7 @@ use once_cell::sync::OnceCell;
 use regex::Regex;
 use serde::{Serialize, Serializer};
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum Protocol {
     File,
     PostgreSQL,

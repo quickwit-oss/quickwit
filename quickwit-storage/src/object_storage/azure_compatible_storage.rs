@@ -44,6 +44,7 @@ use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tracing::instrument;
 
+use crate::debouncer::DebouncedStorage;
 use crate::{
     MultiPartPolicy, PutPayload, Storage, StorageError, StorageErrorKind, StorageFactory,
     StorageResolverError, StorageResult,
@@ -51,21 +52,21 @@ use crate::{
 
 /// Azure object storage URI resolver.
 #[derive(Default)]
-pub struct AzureCompatibleBlobStorageFactory;
+pub struct AzureBlobStorageFactory;
 
-impl StorageFactory for AzureCompatibleBlobStorageFactory {
+impl StorageFactory for AzureBlobStorageFactory {
     fn protocol(&self) -> Protocol {
         Protocol::Azure
     }
 
     fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let storage = AzureCompatibleBlobStorage::from_uri(uri)?;
-        Ok(Arc::new(storage))
+        let storage = AzureBlobStorage::from_uri(uri)?;
+        Ok(Arc::new(DebouncedStorage::new(storage)))
     }
 }
 
 /// Azure object storage implementation
-pub struct AzureCompatibleBlobStorage {
+pub struct AzureBlobStorage {
     container_client: ContainerClient,
     uri: Uri,
     prefix: PathBuf,
@@ -73,26 +74,21 @@ pub struct AzureCompatibleBlobStorage {
     retry_params: RetryParams,
 }
 
-impl fmt::Debug for AzureCompatibleBlobStorage {
+impl fmt::Debug for AzureBlobStorage {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("AzureCompatibleBlobStorage")
+        f.debug_struct("AzureBlobStorage")
             .field("uri", &self.uri)
             .field("prefix", &self.prefix)
             .finish()
     }
 }
 
-impl AzureCompatibleBlobStorage {
+impl AzureBlobStorage {
     /// Creates an object storage.
-    pub fn new(
-        account: &str,
-        access_key: &str,
-        uri: Uri,
-        container: &str,
-    ) -> AzureCompatibleBlobStorage {
+    pub fn new(account: &str, access_key: &str, uri: Uri, container: &str) -> Self {
         let container_client =
             StorageClient::new_access_key(account, access_key).container_client(container);
-        AzureCompatibleBlobStorage {
+        Self {
             container_client,
             uri,
             prefix: PathBuf::new(),
@@ -108,7 +104,7 @@ impl AzureCompatibleBlobStorage {
     ///
     /// The existing prefix is overwritten.
     pub fn with_prefix(self, prefix: &Path) -> Self {
-        AzureCompatibleBlobStorage {
+        Self {
             container_client: self.container_client,
             uri: self.uri,
             prefix: prefix.to_path_buf(),
@@ -121,7 +117,7 @@ impl AzureCompatibleBlobStorage {
     #[cfg(feature = "testsuite")]
     pub fn new_emulated(container: &str) -> Self {
         let container_client = StorageClient::new_emulator_default().container_client(container);
-        AzureCompatibleBlobStorage {
+        Self {
             container_client,
             uri: Uri::new(format!("azure://tester/{}", container)),
             prefix: PathBuf::new(),
@@ -141,7 +137,7 @@ impl AzureCompatibleBlobStorage {
     }
 
     /// Builds instance from URI.
-    pub fn from_uri(uri: &Uri) -> Result<AzureCompatibleBlobStorage, StorageResolverError> {
+    pub fn from_uri(uri: &Uri) -> Result<AzureBlobStorage, StorageResolverError> {
         let (account_name, container, path) =
             parse_azure_uri(uri).ok_or_else(|| StorageResolverError::InvalidUri {
                 message: format!("Invalid URI: {}", uri),
@@ -149,7 +145,7 @@ impl AzureCompatibleBlobStorage {
         let access_key = std::env::var("QW_AZURE_ACCESS_KEY")
             .expect("The `QW_AZURE_ACCESS_KEY` environment variable must be defined.");
         let azure_compatible_storage =
-            AzureCompatibleBlobStorage::new(&account_name, &access_key, uri.clone(), &container);
+            AzureBlobStorage::new(&account_name, &access_key, uri.clone(), &container);
         Ok(azure_compatible_storage.with_prefix(&path))
     }
 
@@ -267,7 +263,7 @@ impl AzureCompatibleBlobStorage {
 }
 
 #[async_trait]
-impl Storage for AzureCompatibleBlobStorage {
+impl Storage for AzureBlobStorage {
     async fn check(&self) -> anyhow::Result<()> {
         if let Some(first_blob_result) = self
             .container_client

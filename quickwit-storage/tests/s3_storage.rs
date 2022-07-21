@@ -40,7 +40,7 @@ async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
         .with_prefix(Path::new("test-s3-compatible-storage"));
     quickwit_storage::storage_test_single_part_upload(&mut object_storage)
         .await
-        .with_context(|| "test_single_part_upload")?;
+        .context("test_single_part_upload")?;
 
     object_storage.set_policy(MultiPartPolicy {
         target_part_num_bytes: 5 * 1_024 * 1_024, //< the minimum on S3 is 5MB.
@@ -51,6 +51,6 @@ async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
     });
     quickwit_storage::storage_test_multi_part_upload(&mut object_storage)
         .await
-        .with_context(|| "test_multi_part_upload")?;
+        .context("test_multi_part_upload")?;
     Ok(())
 }
