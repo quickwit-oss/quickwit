@@ -27,7 +27,6 @@ jobs:
     needs:
       - lint
       - test
-      - test-azure
     steps:
       - run: exit 0
 
