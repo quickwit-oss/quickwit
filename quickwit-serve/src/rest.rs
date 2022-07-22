@@ -27,7 +27,6 @@ use warp::{redirect, Filter, Rejection, Reply};
 use crate::cluster_api::cluster_handler;
 use crate::error::ServiceErrorCode;
 use crate::format::FormatError;
-use crate::health_check_api::liveness_check_handler;
 use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::{elastic_bulk_handler, ingest_handler, tail_handler};
@@ -78,7 +77,6 @@ pub(crate) async fn start_rest_server(
     let rest_routes = api_v1_root_route
         .or(redirect_root_to_ui_route)
         .or(ui_handler())
-        .or(liveness_check_handler())
         .or(metrics_service)
         .with(request_counter)
         .recover(recover_fn);
