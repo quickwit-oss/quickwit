@@ -483,7 +483,7 @@ async fn download_all(byte_stream: &mut ByteStream, output: &mut Vec<u8>) -> io:
 
 #[async_trait]
 impl Storage for S3CompatibleObjectStorage {
-    async fn check(&self) -> anyhow::Result<()> {
+    async fn check_connectivity(&self) -> anyhow::Result<()> {
         self.s3_client
             .list_objects_v2(ListObjectsV2Request {
                 bucket: self.bucket.clone(),

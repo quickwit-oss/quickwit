@@ -496,7 +496,7 @@ impl Metastore for FileBackedMetastore {
     }
 
     async fn check_connectivity(&self) -> anyhow::Result<()> {
-        self.storage.check().await?;
+        self.storage.check_connectivity().await?;
         Ok(())
     }
 }

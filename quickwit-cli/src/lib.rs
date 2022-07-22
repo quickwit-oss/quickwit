@@ -100,7 +100,7 @@ pub async fn run_index_checklist(
     let index_metadata = metastore.index_metadata(index_id).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
-    checks.push(("storage", storage.check().await));
+    checks.push(("storage", storage.check_connectivity().await));
 
     if let Some(source_config) = source_to_check {
         checks.push((

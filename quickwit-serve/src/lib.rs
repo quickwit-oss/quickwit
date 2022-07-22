@@ -278,7 +278,7 @@ pub fn build_quickwit_build_info() -> QuickwitBuildInfo {
     let cargo_pkg_version = env!("CARGO_PKG_VERSION");
     let version = if commit_version_tag == "none" {
         // concat macro only accepts literals.
-        concat!(env!("CARGO_PKG_VERSION"), "nightly")
+        concat!(env!("CARGO_PKG_VERSION"), "-nightly")
     } else {
         cargo_pkg_version
     };
