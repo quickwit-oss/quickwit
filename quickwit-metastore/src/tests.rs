@@ -168,13 +168,6 @@ pub mod test_suite {
             .await
             .unwrap();
 
-
-        // TODO: tests
-        // No stored commits, no source
-        // let checkpoint = metastore.index_checkpoint(index_id, Option::None,
-                                   //Option::None, Option::None);
-        //assert_eq!(checkpoint);
-
         // Verify stored commits for a single kafka source
         add_source(&metastore, "kafka", index_id, source_id, topic).await.unwrap();
 
@@ -208,6 +201,8 @@ pub mod test_suite {
         add_checkpoint(&metastore, index_id, source_id, "0", "600").await.unwrap();
         verify_checkpoint(&metastore, index_id, source_id, topic, "0", "600", 1)
             .await;
+
+        // TODO: tests for parameter variations
 
         cleanup_index(&metastore, index_id).await;
     }

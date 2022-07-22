@@ -17,11 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox, HEARTBEAT};
 use quickwit_config::VoidSourceParams;
+use quickwit_metastore::Metastore;
 
 use crate::actors::Indexer;
 use crate::source::{Source, SourceContext, TypedSourceFactory};
@@ -57,6 +59,7 @@ impl TypedSourceFactory for VoidSourceFactory {
     type Params = VoidSourceParams;
 
     async fn typed_create_source(
+        _metastore: Arc<dyn Metastore>,
         _source_id: String,
         _params: VoidSourceParams,
         _checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
@@ -73,7 +76,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::source::{quickwit_supported_sources, SourceActor, SourceConfig};
+    use crate::source::{quickwit_supported_sources, source_factory, SourceActor, SourceConfig};
 
     #[tokio::test]
     async fn test_void_source_loading() -> anyhow::Result<()> {
@@ -82,8 +85,9 @@ mod tests {
             source_params: SourceParams::void(),
         };
         let source_loader = quickwit_supported_sources();
+        let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
         let _ = source_loader
-            .load_source(source_config.clone(), SourceCheckpoint::default())
+            .load_source(metastore,source_config.clone(), SourceCheckpoint::default())
             .await?;
         Ok(())
     }
@@ -93,7 +97,9 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let (mailbox, _) = create_test_mailbox();
+        let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
         let void_source = VoidSourceFactory::typed_create_source(
+            metastore,
             "my-void-source".to_string(),
             VoidSourceParams {},
             SourceCheckpoint::default(),

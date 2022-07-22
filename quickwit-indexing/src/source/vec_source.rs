@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -25,6 +26,7 @@ use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::VecSourceParams;
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use tracing::info;
+use quickwit_metastore::Metastore;
 
 use crate::actors::Indexer;
 use crate::models::RawDocBatch;
@@ -50,6 +52,7 @@ impl TypedSourceFactory for VecSourceFactory {
     type Source = VecSource;
     type Params = VecSourceParams;
     async fn typed_create_source(
+        _metastore: Arc<dyn Metastore>,
         source_id: String,
         params: VecSourceParams,
         checkpoint: SourceCheckpoint,
@@ -125,7 +128,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::source::SourceActor;
+    use crate::source::{source_factory, SourceActor};
 
     #[tokio::test]
     async fn test_vec_source() -> anyhow::Result<()> {
@@ -140,7 +143,9 @@ mod tests {
             batch_num_docs: 3,
             partition: "partition".to_string(),
         };
+        let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
         let vec_source = VecSourceFactory::typed_create_source(
+            metastore,
             "my-vec-source".to_string(),
             params,
             SourceCheckpoint::default(),
@@ -187,8 +192,9 @@ mod tests {
         let mut checkpoint = SourceCheckpoint::default();
         checkpoint.try_apply_delta(CheckpointDelta::from(0u64..2u64))?;
 
+        let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
         let vec_source =
-            VecSourceFactory::typed_create_source("my-vec-source".to_string(), params, checkpoint)
+            VecSourceFactory::typed_create_source(metastore,"my-vec-source".to_string(), params, checkpoint)
                 .await?;
         let vec_source_actor = SourceActor {
             source: Box::new(vec_source),

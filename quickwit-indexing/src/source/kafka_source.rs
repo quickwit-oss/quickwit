@@ -43,6 +43,7 @@ use rdkafka::{ClientContext, Message, Offset};
 use serde_json::json;
 use tokio::task::spawn_blocking;
 use tracing::{debug, info, warn};
+use quickwit_metastore::Metastore;
 
 use crate::actors::Indexer;
 use crate::models::RawDocBatch;
@@ -68,6 +69,7 @@ impl TypedSourceFactory for KafkaSourceFactory {
     type Params = KafkaSourceParams;
 
     async fn typed_create_source(
+        metastore: Arc<dyn Metastore>,
         source_id: String,
         params: KafkaSourceParams,
         checkpoint: SourceCheckpoint,
@@ -687,7 +689,7 @@ mod kafka_broker_tests {
     use rdkafka::producer::{FutureProducer, FutureRecord};
 
     use super::*;
-    use crate::source::{quickwit_supported_sources, SourceActor};
+    use crate::source::{quickwit_supported_sources, source_factory, SourceActor};
 
     fn create_admin_client(
         bootstrap_servers: &str,
@@ -830,8 +832,9 @@ mod kafka_broker_tests {
         {
             let (sink, inbox) = create_test_mailbox();
             let checkpoint = SourceCheckpoint::default();
+            let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
             let source = source_loader
-                .load_source(source_config.clone(), checkpoint)
+                .load_source(metastore,source_config.clone(), checkpoint)
                 .await?;
             let actor = SourceActor {
                 source,
@@ -942,8 +945,9 @@ mod kafka_broker_tests {
                     (PartitionId::from(partition_id), Position::from(offset))
                 })
                 .collect();
+            let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
             let source = source_loader
-                .load_source(source_config.clone(), checkpoint)
+                .load_source(metastore,source_config.clone(), checkpoint)
                 .await?;
             let actor = SourceActor {
                 source,

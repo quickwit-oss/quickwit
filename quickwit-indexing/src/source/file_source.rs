@@ -20,6 +20,7 @@
 use std::io::SeekFrom;
 use std::time::Duration;
 use std::{fmt, io};
+use std::sync::Arc;
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -30,6 +31,7 @@ use serde::Serialize;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncSeekExt, BufReader};
 use tracing::info;
+use quickwit_metastore::Metastore;
 
 use crate::actors::Indexer;
 use crate::models::RawDocBatch;
@@ -133,6 +135,7 @@ impl TypedSourceFactory for FileSourceFactory {
 
     // TODO handle checkpoint for files.
     async fn typed_create_source(
+        _metastore: Arc<dyn Metastore>,
         source_id: String,
         params: FileSourceParams,
         checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
@@ -177,7 +180,7 @@ mod tests {
     use quickwit_metastore::checkpoint::SourceCheckpoint;
 
     use super::*;
-    use crate::source::SourceActor;
+    use crate::source::{source_factory, SourceActor};
 
     #[tokio::test]
     async fn test_file_source() -> anyhow::Result<()> {
@@ -185,7 +188,11 @@ mod tests {
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
         let params = FileSourceParams::file("data/test_corpus.json");
+
+        let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
+
         let file_source = FileSourceFactory::typed_create_source(
+            metastore,
             "my-file-source".to_string(),
             params,
             SourceCheckpoint::default(),
@@ -236,7 +243,10 @@ mod tests {
             .unwrap()
             .to_string_lossy()
             .to_string();
+
+        let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
         let source = FileSourceFactory::typed_create_source(
+            metastore,
             "my-file-source".to_string(),
             params,
             SourceCheckpoint::default(),
@@ -310,7 +320,10 @@ mod tests {
             Position::from(4u64),
         );
         checkpoint.try_apply_delta(checkpoint_delta)?;
+
+        let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
         let source = FileSourceFactory::typed_create_source(
+            metastore,
             "my-file-source".to_string(),
             params,
             checkpoint,

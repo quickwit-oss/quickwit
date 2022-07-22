@@ -18,11 +18,13 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use thiserror::Error;
+use quickwit_metastore::Metastore;
 
 use super::Source;
 use crate::source::SourceConfig;
@@ -31,6 +33,7 @@ use crate::source::SourceConfig;
 pub trait SourceFactory: 'static + Send + Sync {
     async fn create_source(
         &self,
+        metastore: Arc<dyn Metastore>,
         source_id: String,
         params: serde_json::Value,
         checkpoint: SourceCheckpoint,
@@ -42,6 +45,7 @@ pub trait TypedSourceFactory: Send + Sync + 'static {
     type Source: Source;
     type Params: serde::de::DeserializeOwned + Send + Sync + 'static;
     async fn typed_create_source(
+        metastore: Arc<dyn Metastore>,
         source_id: String,
         params: Self::Params,
         checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
@@ -52,12 +56,13 @@ pub trait TypedSourceFactory: Send + Sync + 'static {
 impl<T: TypedSourceFactory> SourceFactory for T {
     async fn create_source(
         &self,
+        metastore: Arc<dyn Metastore>,
         source_id: String,
         params: serde_json::Value,
         checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
     ) -> anyhow::Result<Box<dyn Source>> {
         let typed_params: T::Params = serde_json::from_value(params)?;
-        let file_source = Self::typed_create_source(source_id, typed_params, checkpoint).await?;
+        let file_source = Self::typed_create_source(metastore, source_id, typed_params, checkpoint).await?;
         Ok(Box::new(file_source))
     }
 }
@@ -94,6 +99,7 @@ impl SourceLoader {
 
     pub async fn load_source(
         &self,
+        metastore: Arc<dyn Metastore>,
         source_config: SourceConfig,
         checkpoint: SourceCheckpoint,
     ) -> Result<Box<dyn Source>, SourceLoaderError> {
@@ -106,6 +112,7 @@ impl SourceLoader {
             })?;
         source_factory
             .create_source(
+                metastore,
                 source_config.source_id.clone(),
                 source_config.params(),
                 checkpoint,
@@ -120,8 +127,20 @@ impl SourceLoader {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod test_helpers {
+    use std::sync::Arc;
+    use quickwit_metastore::FileBackedMetastore;
 
+    pub async fn metastore_for_test() -> FileBackedMetastore {
+        use quickwit_storage::RamStorage;
+        FileBackedMetastore::try_new(Arc::new(RamStorage::default()), None)
+            .await
+            .unwrap()
+    }
+}
+
+#[cfg(test)]
+mod tests {
     use quickwit_config::SourceParams;
 
     use super::*;
@@ -129,13 +148,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_source_loader_success() -> anyhow::Result<()> {
+        let metastore: Arc<dyn Metastore> = Arc::new(test_helpers::metastore_for_test().await);
         let source_loader = quickwit_supported_sources();
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
             source_params: SourceParams::void(),
         };
         source_loader
-            .load_source(source_config, SourceCheckpoint::default())
+            .load_source(metastore.clone(), source_config, SourceCheckpoint::default())
             .await?;
         Ok(())
     }

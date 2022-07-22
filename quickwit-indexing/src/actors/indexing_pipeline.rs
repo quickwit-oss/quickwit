@@ -405,7 +405,7 @@ impl IndexingPipeline {
             .cloned()
             .unwrap_or_default(); // TODO Have a stricter check.
         let source = quickwit_supported_sources()
-            .load_source(self.params.source.clone(), source_checkpoint)
+            .load_source(self.params.metastore.clone(), self.params.source.clone(), source_checkpoint)
             .await?;
         let actor_source = SourceActor {
             source,

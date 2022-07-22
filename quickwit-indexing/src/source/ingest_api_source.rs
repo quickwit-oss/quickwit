@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -27,6 +28,7 @@ use quickwit_ingest_api::{get_ingest_api_service, iter_doc_payloads, IngestApiSe
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use quickwit_proto::ingest_api::{FetchRequest, FetchResponse, SuggestTruncateRequest};
 use serde::Serialize;
+use quickwit_metastore::Metastore;
 
 use super::file_source::BATCH_NUM_BYTES_THRESHOLD;
 use super::{Source, SourceActor, SourceContext, TypedSourceFactory};
@@ -196,6 +198,7 @@ impl TypedSourceFactory for IngestApiSourceFactory {
     type Params = IngestApiSourceParams;
 
     async fn typed_create_source(
+        _metastore: Arc<dyn Metastore>,
         source_id: String,
         params: IngestApiSourceParams,
         checkpoint: SourceCheckpoint,
