@@ -30,7 +30,9 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 
 use crate::prefix_storage::add_prefix_to_storage;
-use crate::{OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResult};
+use crate::{
+    OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
+};
 
 /// In Ram implementation of quickwit's storage.
 ///
@@ -182,20 +184,19 @@ impl StorageFactory for RamStorageFactory {
         Protocol::Ram
     }
 
-    fn resolve(&self, uri: &Uri) -> crate::StorageResult<Arc<dyn Storage>> {
+    fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
         match uri.filepath() {
             Some(prefix) if uri.protocol().is_ram() => Ok(add_prefix_to_storage(
                 self.ram_storage.clone(),
                 prefix.to_path_buf(),
                 uri.clone(),
             )),
-            _ => {
-                let error = anyhow::anyhow!(
+            _ => Err(StorageResolverError::InvalidUri {
+                message: format!(
                     "URI `{uri}` is not a valid RAM storage URI. `ram://` is the only protocol \
                      accepted."
-                );
-                Err(StorageErrorKind::DoesNotExist.with_error(error))
-            }
+                ),
+            }),
         }
     }
 }
@@ -217,7 +218,7 @@ mod tests {
         let ram_storage_factory = RamStorageFactory::default();
         let ram_uri = Uri::new("s3:///foo".to_string());
         let err = ram_storage_factory.resolve(&ram_uri).err().unwrap();
-        assert_eq!(err.kind(), StorageErrorKind::DoesNotExist);
+        assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
         let data_uri = Uri::new("ram:///data".to_string());
         let data_storage = ram_storage_factory.resolve(&data_uri).ok().unwrap();

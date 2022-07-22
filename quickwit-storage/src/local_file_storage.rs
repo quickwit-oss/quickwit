@@ -32,7 +32,7 @@ use tracing::warn;
 
 use crate::{
     DebouncedStorage, OwnedBytes, Storage, StorageError, StorageErrorKind, StorageFactory,
-    StorageResult,
+    StorageResolverError, StorageResult,
 };
 
 /// File system compatible storage implementation.
@@ -53,15 +53,14 @@ impl fmt::Debug for LocalFileStorage {
 
 impl LocalFileStorage {
     /// Creates a local file storage instance given a URI.
-    pub fn from_uri(uri: &Uri) -> StorageResult<Self> {
+    pub fn from_uri(uri: &Uri) -> Result<Self, StorageResolverError> {
         uri.filepath()
             .map(|root| Self {
                 uri: uri.clone(),
                 root: root.to_path_buf(),
             })
-            .ok_or_else(|| {
-                let error = anyhow::anyhow!("URI `{uri}` is not a valid file URI.");
-                StorageErrorKind::DoesNotExist.with_error(error)
+            .ok_or_else(|| StorageResolverError::InvalidUri {
+                message: format!("URI `{uri}` is not a valid file URI."),
             })
     }
 
@@ -236,7 +235,7 @@ impl StorageFactory for LocalFileStorageFactory {
         Protocol::File
     }
 
-    fn resolve(&self, uri: &Uri) -> StorageResult<Arc<dyn Storage>> {
+    fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
         let storage = LocalFileStorage::from_uri(uri)?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
     }
@@ -269,13 +268,13 @@ mod tests {
             .resolve(&Uri::new("s3://foo/bar".to_string()))
             .err()
             .unwrap();
-        assert_eq!(err.kind(), StorageErrorKind::DoesNotExist);
+        assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
         let err = file_storage_factory
             .resolve(&Uri::new("s3://".to_string()))
             .err()
             .unwrap();
-        assert_eq!(err.kind(), StorageErrorKind::DoesNotExist);
+        assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
         Ok(())
     }
 
