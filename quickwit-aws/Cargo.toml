@@ -24,7 +24,7 @@ rusoto_kinesis = { version = "0.48", default-features = false, features = [
 rusoto_s3 = { version = "0.48", default-features = false, features = [
   "rustls"
 ] }
-tokio = "1.19"
+tokio = "1.20"
 tracing = "0.1"
 
 [features]

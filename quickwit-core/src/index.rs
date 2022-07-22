@@ -128,7 +128,7 @@ impl IndexService {
         };
         let index_metadata = IndexMetadata {
             index_id,
-            index_uri: index_uri.into_string(),
+            index_uri,
             checkpoint: Default::default(),
             sources: index_config.sources(),
             doc_mapping: index_config.doc_mapping,

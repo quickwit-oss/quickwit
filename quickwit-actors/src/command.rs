@@ -43,6 +43,10 @@ pub enum Command {
     /// Semantically, it is similar to SIGCONT.
     Resume,
 
+    /// Internal command used to resume an actor that was paused using
+    /// `ActorContext::sleep`.
+    WakeUp { sleep_count: usize },
+
     /// Stops the actor with a success exit status code.
     ///
     /// Upstream `actors` that terminates should send the `ExitWithSuccess`
@@ -97,6 +101,7 @@ impl fmt::Debug for Command {
             Command::ExitWithSuccess => write!(f, "Success"),
             Command::Quit => write!(f, "Quit"),
             Command::Kill => write!(f, "Kill"),
+            Command::WakeUp { sleep_count } => write!(f, "WakeUp({sleep_count})"),
         }
     }
 }

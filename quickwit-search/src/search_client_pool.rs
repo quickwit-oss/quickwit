@@ -149,7 +149,7 @@ impl SearchClientPool {
         let mut mock_clients = HashMap::new();
         for (mock_ord, mock_service) in mock_services.into_iter().enumerate() {
             let grpc_addr: SocketAddr =
-                format!("127.0.0.1:{}", 10000 + mock_ord as u16 * 10).parse()?;
+                format!("127.0.0.1:{}", 20000 + mock_ord as u16 * 10).parse()?;
             let mock_client = SearchServiceClient::from_service(mock_service, grpc_addr);
             mock_clients.insert(grpc_addr, mock_client);
         }

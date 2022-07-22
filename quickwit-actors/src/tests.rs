@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashSet;
+use std::time::Duration;
 
 use async_trait::async_trait;
 
@@ -494,9 +495,11 @@ async fn test_actor_finalize_error_set_exit_status_to_panicked() -> anyhow::Resu
 struct Adder(u64);
 
 impl Actor for Adder {
-    type ObservableState = ();
+    type ObservableState = u64;
 
-    fn observable_state(&self) -> Self::ObservableState {}
+    fn observable_state(&self) -> Self::ObservableState {
+        self.0
+    }
 }
 
 #[derive(Debug)]
@@ -516,6 +519,9 @@ impl Handler<AddOperand> for Adder {
     }
 }
 
+#[derive(Debug)]
+struct Sleep(Duration);
+
 #[tokio::test]
 async fn test_actor_return_response() -> anyhow::Result<()> {
     let universe = Universe::new();
@@ -525,5 +531,79 @@ async fn test_actor_return_response() -> anyhow::Result<()> {
     let plus_two_plus_four = mailbox.send_message(AddOperand(4)).await?;
     assert_eq!(plus_two.await.unwrap(), 2);
     assert_eq!(plus_two_plus_four.await.unwrap(), 6);
+    Ok(())
+}
+
+#[async_trait]
+impl Handler<Sleep> for Adder {
+    type Reply = u64;
+
+    async fn handle(
+        &mut self,
+        sleep: Sleep,
+        ctx: &ActorContext<Self>,
+    ) -> Result<u64, ActorExitStatus> {
+        ctx.sleep(sleep.0).await;
+        Ok(self.0)
+    }
+}
+
+#[tokio::test]
+async fn test_actor_simple_sleep() -> anyhow::Result<()> {
+    quickwit_common::setup_logging_for_tests();
+    let universe = Universe::new();
+    let adder = Adder::default();
+    let (mailbox, handle) = universe.spawn_actor(adder).spawn();
+    mailbox.send_message(AddOperand(2)).await?;
+    let total = *handle.process_pending_and_observe().await;
+    assert_eq!(total, 2);
+    mailbox.send_message(Sleep(Duration::from_secs(3))).await?;
+    mailbox.send_message(AddOperand(3)).await?;
+    let total = *handle.observe().await;
+    assert_eq!(total, 2);
+    universe.simulate_time_shift(Duration::from_secs(3)).await;
+    let total = *handle.process_pending_and_observe().await;
+    assert_eq!(total, 5);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_actor_sleep_and_resume() -> anyhow::Result<()> {
+    quickwit_common::setup_logging_for_tests();
+    let universe = Universe::new();
+    let adder = Adder::default();
+    let (mailbox, handle) = universe.spawn_actor(adder).spawn();
+    mailbox.send_message(AddOperand(2)).await?;
+    let total = *handle.process_pending_and_observe().await;
+    assert_eq!(total, 2);
+    mailbox.send_message(Sleep(Duration::from_secs(3))).await?;
+    handle.process_pending_and_observe().await;
+    mailbox.send_message(AddOperand(3)).await?;
+    mailbox.send_command(Command::Resume).await?;
+    let total = *handle.process_pending_and_observe().await;
+    assert_eq!(total, 5);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_actor_sleep_resume_sleep() -> anyhow::Result<()> {
+    quickwit_common::setup_logging_for_tests();
+    let universe = Universe::new();
+    let adder = Adder::default();
+    let (mailbox, handle) = universe.spawn_actor(adder).spawn();
+    mailbox.ask(Sleep(Duration::from_secs(3))).await?;
+    mailbox.send_message(AddOperand(3)).await?;
+    mailbox.send_command(Command::Resume).await?;
+    let total = handle.process_pending_and_observe().await;
+    assert_eq!(total.obs_type, ObservationType::Alive);
+    assert_eq!(*total, 3);
+    mailbox.send_message(Sleep(Duration::from_secs(60))).await?;
+    mailbox.send_message(AddOperand(2)).await?;
+    universe.simulate_time_shift(Duration::from_secs(10)).await;
+    let total = *handle.process_pending_and_observe().await;
+    assert_eq!(total, 3);
+    universe.simulate_time_shift(Duration::from_secs(60)).await;
+    let total = *handle.process_pending_and_observe().await;
+    assert_eq!(total, 5);
     Ok(())
 }
