@@ -318,15 +318,15 @@ impl FileBackedDirectory {
         }
     }
 
-    fn write_to_file(&self, file: &File, bytes: &[u8]) -> io::Result<()> {
-        file.write_all_at(bytes, 0)?;
+    fn write_to_file(&self, file: &File, bytes: &[u8], offset: u64) -> io::Result<()> {
+        file.write_all_at(bytes, offset)?;
         file.sync_data()?;
         Ok(())
     }
 
-    fn write_range_inner(&self, key: FileKey, bytes: &[u8]) -> io::Result<FileInfo> {
+    fn write_range_inner(&self, key: FileKey, bytes: &[u8], offset: u64) -> io::Result<FileInfo> {
         let file = self.get_open_file(key)?;
-        self.write_to_file(&file, bytes)?;
+        self.write_to_file(&file, bytes, offset)?;
         self.compute_file_info(key)
     }
 
@@ -338,7 +338,7 @@ impl FileBackedDirectory {
         // pre-allocate the blocks required when creating a new file.
         file.set_len(bytes.len() as u64)?;
 
-        self.write_to_file(&file, bytes)
+        self.write_to_file(&file, bytes, 0)
     }
 }
 
@@ -426,7 +426,7 @@ impl Directory for FileBackedDirectory {
         // this just prevents us from affecting data we dont want to touch.
         let sub_slice = &bytes[0..range.len()];
 
-        let info = match self.write_range_inner(key, sub_slice) {
+        let info = match self.write_range_inner(key, sub_slice, range.start as u64) {
             Ok(info) => info,
             Err(primary_error) => {
                 // We don't want to leave a random file laying around.
