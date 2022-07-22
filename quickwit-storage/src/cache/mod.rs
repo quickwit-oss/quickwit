@@ -22,6 +22,7 @@ mod quickwit_cache;
 mod slice_address;
 mod storage_with_cache;
 mod stored_item;
+mod disk;
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
