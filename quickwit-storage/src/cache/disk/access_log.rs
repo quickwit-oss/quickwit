@@ -6,6 +6,7 @@ use std::os::unix::fs::FileExt;
 use std::path::Path;
 use std::time::Duration;
 
+use tracing::{info, warn, error};
 use crossbeam::channel::{self, Receiver, Sender};
 
 use super::file::{FileEntry, FileKey};
@@ -87,7 +88,10 @@ fn load_and_verify_file(file: &mut File) -> io::Result<LoadedData> {
                 entries.push(entry);
             }
             Err(e) => {
-                eprintln!("Warning: Skipping row due to bad write. {:?}", e);
+                warn!(
+                    "Cache Corruption: Corrupted row detected within the persistent cache log. \
+                    Skipping row, this may affect initial cache performance."
+                );
 
                 // A corrupted row can be overwritten.
                 free_slots.push(entries.len());
@@ -183,14 +187,13 @@ impl FileAccessTask {
             // Attempt to pop events off of the backlog.
             while let Ok(event) = self.pending_changes.try_recv() {
                 if let Event::Shutdown = event {
-                    println!("Shutting down!");
+                    info!("Cache Shutdown: Received terminating event. Flushing buffers.");
                     self.try_flush_data();
                     return;
                 }
 
                 if let Err(e) = self.handle_event(event) {
-                    // TODO: Add tracing.
-                    eprintln!("Failed to handle event: {}", e);
+                    error!(error = ?e, "IO Cache Error: Failed to handle event due to the the given IO error.");
                 }
             }
 
@@ -200,14 +203,13 @@ impl FileAccessTask {
             match self.pending_changes.recv() {
                 Ok(event) => {
                     if let Event::Shutdown = event {
-                        println!("Shutting down!");
+                        info!("Cache Shutdown: Received terminating event. Flushing buffers.");
                         self.try_flush_data();
                         return;
                     }
 
                     if let Err(e) = self.handle_event(event) {
-                        // TODO: Add tracing.
-                        eprintln!("Failed to handle event: {}", e);
+                        error!(error = ?e, "IO Cache Error: Failed to handle event due to the the given IO error.");
                     }
                 }
                 Err(_) => return,
@@ -217,8 +219,11 @@ impl FileAccessTask {
 
     fn try_flush_data(&mut self) {
         if let Err(e) = self.writer.sync_data() {
-            // TODO: Add tracing.
-            eprintln!("Failed to safely synchronise log due to error: {}", e)
+            error!(
+                error = ?e, 
+                "IO Cache Flush Error: Failed to flush cache entries log, some data \
+                may not be persisted and affect cache performance on fresh start."
+            );
         }
     }
 

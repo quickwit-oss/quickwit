@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::vec::IntoIter;
 use std::{cmp, io};
+use std::fmt::format;
 
 use fasthash::FastHasher;
 use parking_lot::{Mutex, RwLock};
@@ -98,9 +99,8 @@ impl<D: Directory + Sync + Send + 'static> Store<D> {
     ///
     /// If the file does not exist `Ok(None)` is returned.
     ///
-    /// Note:
-    ///  It is possible for a empty buffer to be returned if there is no data
-    ///  within the given range.
+    /// The contents returned for the given key is an implementation detail of
+    /// the given `Directory`.
     pub(crate) fn get_range(
         &self,
         path_key: &Path,
@@ -121,6 +121,9 @@ impl<D: Directory + Sync + Send + 'static> Store<D> {
     /// Reads all the data from the file into a buffer.
     ///
     /// If the file does not exist `Ok(None)` is returned.
+    ///
+    /// The contents returned for the given key is an implementation detail of
+    /// the given `Directory`.
     pub(crate) fn get_all(&self, path_key: &Path) -> io::Result<Option<Vec<u8>>> {
         let computed_key = Self::compute_key(path_key);
 
@@ -207,8 +210,8 @@ pub(crate) trait Directory {
 
     /// Attempts to read a slice of data from the given file.
     ///
-    /// Note:
-    ///  This does not validate the file checksum.
+    /// This does not validate the file checksum.
+    /// This also does not
     fn read_range(&self, key: FileKey, range: Range<usize>) -> io::Result<Vec<u8>>;
 
     /// Attempts to read all data from the given file.
@@ -217,7 +220,7 @@ pub(crate) trait Directory {
     /// a `ErrorKind::NotFound` io error will be returned.
     fn read_all(&self, key: FileKey) -> io::Result<Vec<u8>>;
 
-    /// Writes a range of bytes to an already existing file.
+    /// Writes a range of bytes to an existing file or creates on.
     ///
     /// Returns the new checksum of the file.
     fn write_range(&self, key: FileKey, range: Range<usize>, bytes: &[u8])
@@ -291,10 +294,6 @@ impl FileBackedDirectory {
         immutable_file
     }
 
-    fn remove_open_file(&self, key: FileKey) {
-        self.opened_file_cache.lock().get(&key);
-    }
-
     fn try_get_file_metadata(&self, key: FileKey) -> io::Result<FileEntry> {
         self.file_metadata
             .read()
@@ -307,6 +306,39 @@ impl FileBackedDirectory {
         let entry = FileEntry::new(key, checksum, super::time_now(), file_size);
         self.file_metadata.write().insert(entry.key, entry);
         entry
+    }
+
+    fn register_file_removal(&self, key: FileKey) {
+        {
+            self.opened_file_cache.lock().get(&key);
+        }
+
+        {
+            self.file_metadata.write().remove(&key);
+        }
+    }
+
+    fn write_to_file(&self, file: &File, bytes: &[u8]) -> io::Result<()> {
+        file.write_all_at(bytes, 0)?;
+        file.sync_data()?;
+        Ok(())
+    }
+
+    fn write_range_inner(&self, key: FileKey, bytes: &[u8]) -> io::Result<FileInfo> {
+        let file = self.get_open_file(key)?;
+        self.write_to_file(&file, bytes)?;
+        self.compute_file_info(key)
+    }
+
+    fn write_all_inner(&self, key: FileKey, bytes: &[u8]) -> io::Result<()> {
+        let file = self.get_open_file(key)?;
+
+        // If the file already exists, this will truncate the file to the new length
+        // letting us directly overwrite the file contents. This will also
+        // pre-allocate the blocks required when creating a new file.
+        file.set_len(bytes.len() as u64)?;
+
+        self.write_to_file(&file, bytes)
     }
 }
 
@@ -326,6 +358,16 @@ impl Directory for FileBackedDirectory {
             .into_iter()
     }
 
+    /// Reads a range of data from the file with the given key.
+    ///
+    /// Note:
+    ///   It is possible for the buffer to be filled with intermediate `0` if the
+    ///   selected range spans across parts of the file which 'effectively' do not
+    ///   exist, this can occur when a file is made up purely of slices where the
+    ///   OS will infill missing parts of the file with `0`s if the writer's slice
+    ///   range lies beyond the end of the file.
+    ///
+    /// TODO: Come up with a smarter solution to storing slices.
     fn read_range(&self, key: FileKey, range: Range<usize>) -> io::Result<Vec<u8>> {
         let metadata = self.try_get_file_metadata(key)?;
 
@@ -346,6 +388,16 @@ impl Directory for FileBackedDirectory {
         Ok(buffer)
     }
 
+    /// Reads all data from the file with the given key.
+    ///
+    /// Note:
+    ///   It is possible for the buffer to be filled with intermediate `0` if the
+    ///   selected range spans across parts of the file which 'effectively' do not
+    ///   exist, this can occur when a file is made up purely of slices where the
+    ///   OS will infill missing parts of the file with `0`s if the writer's slice
+    ///   range lies beyond the end of the file.
+    ///
+    /// TODO: Come up with a smarter solution to storing slices.
     fn read_all(&self, key: FileKey) -> io::Result<Vec<u8>> {
         let metadata = self.try_get_file_metadata(key)?;
 
@@ -373,28 +425,32 @@ impl Directory for FileBackedDirectory {
         // Although unlikely, we don't want to overwrite data we shouldn't be overwriting.
         // this just prevents us from affecting data we dont want to touch.
         let sub_slice = &bytes[0..range.len()];
-        dbg!(sub_slice.len(), range.start, range.end, range.len());
 
-        let file = self.get_open_file(key)?;
-        file.write_all_at(sub_slice, range.start as u64)?;
-        file.sync_data()?;
+        let info = match self.write_range_inner(key, sub_slice) {
+            Ok(info) => info,
+            Err(primary_error) => {
+                // We don't want to leave a random file laying around.
+                return if let Err(secondary_error) = self.remove_file(key){
+                    Err(propagate_errors(primary_error, secondary_error))
+                } else {
+                    Err(primary_error)
+                }
+            }
+        };
 
-        let info = self.compute_file_info(key)?;
         let entry = self.register_file_write(key, info.checksum, info.file_size);
 
         Ok(entry)
     }
 
     fn write_all(&self, key: FileKey, bytes: &[u8]) -> io::Result<FileEntry> {
-        let file = self.get_open_file(key)?;
-
-        // If the file already exists, this will truncate the file to the new length
-        // letting us directly overwrite the file contents. This will also
-        // pre-allocate the blocks required when creating a new file.
-        file.set_len(bytes.len() as u64)?;
-
-        file.write_all_at(bytes, 0)?;
-        file.sync_data()?;
+        if let Err(primary_error) = self.write_all_inner(key, bytes) {
+            return if let Err(secondary_error) = self.remove_file(key){
+                Err(propagate_errors(primary_error, secondary_error))
+            } else {
+                Err(primary_error)
+            }
+        }
 
         let checksum = self.compute_raw_checksum(bytes);
         let entry = self.register_file_write(key, checksum, bytes.len() as u64);
@@ -404,7 +460,7 @@ impl Directory for FileBackedDirectory {
 
     fn remove_file(&self, key: FileKey) -> io::Result<()> {
         let path = self.get_file_path(key);
-        self.remove_open_file(key);
+        self.register_file_removal(key);
 
         match std::fs::remove_file(path) {
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
@@ -421,6 +477,14 @@ impl Directory for FileBackedDirectory {
 fn not_found_error() -> io::Error {
     io::Error::new(ErrorKind::NotFound, "file not found")
 }
+
+fn propagate_errors(err1: io::Error, err2: io::Error) -> io::Error {
+     io::Error::new(
+        err1.kind(),
+        format!("Failed to complete IO operation: {}, during the handling of this error, another error occurred: {}", err1, err2)
+    )
+}
+
 
 pub struct FileInfo {
     pub checksum: u32,
@@ -471,8 +535,6 @@ fn read_to_fill_buff(file: &File, mut buf: &mut [u8], mut offset: u64) -> io::Re
 #[cfg(test)]
 mod tests {
     use std::env::temp_dir;
-    use std::io::{Seek, SeekFrom};
-    use std::os::unix::fs::FileExt;
     use std::path::PathBuf;
 
     use crate::cache::disk::time_now;
@@ -513,24 +575,23 @@ mod tests {
     }
 
     #[test]
-    fn test_directory_write_slice() {
+    fn test_directory_write_range() {
         let data = b"Hello, world. This is some sample data!";
-
-        let mut expected_file_buffer = [0; 49];
-        expected_file_buffer[10..].copy_from_slice(data.as_ref());
 
         let expected_entry = FileEntry::new(
             1,
-            crc32fast::hash(&expected_file_buffer),  // We implicitly pad the file.
+            crc32fast::hash(&data[..13]),
             time_now(),
-            expected_file_buffer.len() as u64,
+            13,
         );
 
         let dir = random_tmp_dir();
 
         let directory = FileBackedDirectory::new(&dir, 2, HashMap::new());
 
-        directory.write_range(expected_entry.key, 10..49, data.as_ref()).expect("write data to disk.");
+        // We expect the writer to implicitly crop the input data to only
+        // write out the given range.
+        directory.write_range(expected_entry.key, 0..13, data.as_ref()).expect("write data to disk.");
 
         {
             let lock = directory.opened_file_cache.lock();
@@ -540,6 +601,133 @@ mod tests {
         {
             let lock = directory.file_metadata.read();
             assert_eq!(lock.get(&1), Some(&expected_entry), "Expected entry stored in metadata to be the same.");
+        }
+
+        let written_buffer = directory.read_all(expected_entry.key).expect("read all data");
+        assert_eq!(&written_buffer, &data[..13], "Expected on the first 13 bytes to be written to disk.");
+        assert_eq!(crc32fast::hash(&written_buffer), expected_entry.file_checksum, "Expected buffer checksums to match.");
+    }
+
+    fn write_basic_contents(buffer: &[u8]) -> (FileBackedDirectory, FileEntry) {
+        let expected_entry = FileEntry::new(
+            1,
+            crc32fast::hash(buffer),
+            time_now(),
+            buffer.len() as u64,
+        );
+
+        let dir = random_tmp_dir();
+
+        let directory = FileBackedDirectory::new(&dir, 2, HashMap::new());
+        directory.write_all(expected_entry.key, buffer).expect("write data to disk.");
+
+        (directory, expected_entry)
+    }
+
+    #[test]
+    fn test_directory_remove_file() {
+        let data = b"Hello, world. This is some sample data!";
+
+        let expected_entry = FileEntry::new(
+            1,
+            crc32fast::hash(data),
+            time_now(),
+            data.len() as u64,
+        );
+
+        let dir = random_tmp_dir();
+
+        let directory = FileBackedDirectory::new(&dir, 2, HashMap::new());
+        directory.write_all(expected_entry.key, data.as_ref()).expect("write data to disk.");
+
+        let expected_file_path = dir.join("1").with_extension("data");
+
+        assert!(expected_file_path.exists(), "Expected file to exist after writing buffer.");
+
+        directory.remove_file(1).expect("remove file");
+        assert!(!expected_file_path.exists(), "Expected file to not exist after removing file from directory.");
+
+        {
+            let lock = directory.file_metadata.read();
+            assert!(lock.is_empty(), "Expected metadata lookup to be empty after deleting file.");
+        }
+
+        let result = directory.read_all(expected_entry.key);
+        assert!(result.is_err(), "Expected directory to return error after deleting file.");
+
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::NotFound, "Expected directory to return NotFound ErrorKind after deleting file.");
+    }
+
+
+    #[test]
+    fn test_read_all() {
+        let data = b"Hello, world. This is some sample data!";
+        let (directory, expected_entry) = write_basic_contents(data);
+
+        let buffer = directory.read_all(expected_entry.key).expect("read all data");
+
+        assert_eq!(buffer.as_slice(), data.as_ref(), "Expected buffer read to equal buffer written.");
+        assert_eq!(expected_entry.file_checksum, crc32fast::hash(data), "Expected buffer checksums to match.");
+    }
+
+    #[test]
+    fn test_read_range() {
+        let data = b"Hello, world. This is some sample data!";
+        let (directory, expected_entry) = write_basic_contents(data);
+
+        let buffer = directory.read_range(expected_entry.key, 0..13).expect("read all data");
+
+        assert_eq!(buffer.as_slice(), b"Hello, world.".as_ref(), "Expected buffer read to equal buffer slice.");
+    }
+
+    #[test]
+    fn test_read_write_range_with_limitation() {
+        let data = b"Hello, world. This is some sample data!";
+
+        // This emulates the current limitation of writing a slice of data beyond
+        // the length of a file will cause the system to infill with `0`s
+        let mut expected_file_buffer = [0; 49];
+        expected_file_buffer[10..].copy_from_slice(data.as_ref());
+
+        let dir = random_tmp_dir();
+
+        let directory = FileBackedDirectory::new(&dir, 2, HashMap::new());
+        directory.write_range(1, 10..49, data.as_ref()).expect("write data to disk.");
+
+        // Demonstrates the limitation where reading outside of previously written bounds
+        // will cause the buffer to be passed with intermediate values.
+        let buffer = directory.read_range(1, 0..23).expect("read all data");
+
+        assert_eq!(&buffer[..10], &[0; 10], "Expected start of buffer to be zeroed.");
+        assert_eq!(&buffer[10..], b"Hello, world.".as_ref(), "Expected rest of buffer to equal sample buffer slice.");
+    }
+
+    #[test]
+    fn test_open_file_caching() {
+        let data = b"Hello, world. This is some sample data!";
+
+        let dir = random_tmp_dir();
+        let directory = FileBackedDirectory::new(&dir, 2, HashMap::new());
+
+        directory.write_all(1, data.as_ref()).expect("write data to disk.");
+        directory.write_all(2, data.as_ref()).expect("write data to disk.");
+
+        {
+            let lock = directory.opened_file_cache.lock();
+            assert_eq!(lock.len(), 2, "Expected 2 files to be cached.");
+            assert_eq!(lock.peek_lru().map(|v| v.0), Some(&1), "File key `1` to be the first to be evicted.");
+        }
+
+        directory.write_all(3, data.as_ref()).expect("write data to disk.");
+        directory.write_all(2, data.as_ref()).expect("write data to disk.");
+        directory.write_all(3, data.as_ref()).expect("write data to disk.");
+        directory.write_all(3, data.as_ref()).expect("write data to disk.");
+
+        {
+            let lock = directory.opened_file_cache.lock();
+            assert_eq!(lock.len(), 2, "Expected 2 files to be cached.");
+            assert_eq!(lock.peek_lru().map(|v| v.0), Some(&2), "File key `2` to be the first to be evicted.");
         }
     }
 }
