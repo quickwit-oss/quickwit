@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fmt::format;
 use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::io::ErrorKind;
