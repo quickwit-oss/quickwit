@@ -17,15 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::time::Duration;
 
 use async_trait::async_trait;
 
 use crate::observation::ObservationType;
 use crate::{
-    message_timeout, Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Command,
-    Handler, Health, Mailbox, Observation, Supervisable, Universe,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Command, Handler, Health,
+    Mailbox, Observation, Supervisable, Universe,
 };
 
 // An actor that receives ping messages.
@@ -56,9 +56,10 @@ impl Handler<Ping> for PingReceiverActor {
     async fn handle(
         &mut self,
         _message: Ping,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.ping_count += 1;
+        assert_eq!(ctx.state(), ActorState::Processing);
         Ok(())
     }
 }
@@ -66,7 +67,7 @@ impl Handler<Ping> for PingReceiverActor {
 #[derive(Default)]
 pub struct PingerSenderActor {
     count: usize,
-    peers: HashSet<Mailbox<PingReceiverActor>>,
+    peers: HashMap<String, Mailbox<PingReceiverActor>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -103,7 +104,7 @@ impl Handler<Ping> for PingerSenderActor {
         _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.count += 1;
-        for peer in &self.peers {
+        for peer in self.peers.values() {
             let _ = peer.send_message(Ping).await;
         }
         Ok(())
@@ -120,7 +121,8 @@ impl Handler<AddPeer> for PingerSenderActor {
         _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         let AddPeer(peer) = message;
-        self.peers.insert(peer);
+        let peer_id = peer.actor_instance_id().to_string();
+        self.peers.insert(peer_id, peer);
         Ok(())
     }
 }
@@ -280,12 +282,16 @@ async fn test_pause_actor() {
     for _ in 0u32..1000u32 {
         assert!(ping_mailbox.send_message(Ping).await.is_ok());
     }
-    assert!(ping_mailbox.send_command(Command::Pause).await.is_ok());
+    assert!(ping_mailbox
+        .send_message_with_high_priority(Command::Pause)
+        .is_ok());
     let first_state = ping_handle.observe().await.state;
     assert!(first_state < 1000);
     let second_state = ping_handle.observe().await.state;
     assert_eq!(first_state, second_state);
-    assert!(ping_mailbox.send_command(Command::Resume).await.is_ok());
+    assert!(ping_mailbox
+        .send_message_with_high_priority(Command::Resume)
+        .is_ok());
     let end_state = ping_handle.process_pending_and_observe().await.state;
     assert_eq!(end_state, 1000);
 }
@@ -299,15 +305,8 @@ async fn test_actor_running_states() {
     for _ in 0u32..10u32 {
         assert!(ping_mailbox.send_message(Ping).await.is_ok());
     }
-    // Actor is still in processing state and will go idle after message timeout.
-    assert!(ping_handle.state() == ActorState::Processing);
-    tokio::time::sleep(message_timeout().mul_f32(1.1)).await;
-    assert_eq!(ping_handle.state(), ActorState::Idle);
-    assert!(ping_mailbox.send_command(Command::Resume).await.is_ok());
-    // Return into processing on sending a command and go back to idle after message timeout.
-    tokio::time::sleep(message_timeout()).await;
-    assert_eq!(ping_handle.state(), ActorState::Processing);
-    tokio::time::sleep(message_timeout()).await;
+    let obs = ping_handle.process_pending_and_observe().await;
+    assert_eq!(*obs, 10);
     assert_eq!(ping_handle.state(), ActorState::Idle);
 }
 
@@ -579,7 +578,7 @@ async fn test_actor_sleep_and_resume() -> anyhow::Result<()> {
     mailbox.send_message(Sleep(Duration::from_secs(3))).await?;
     handle.process_pending_and_observe().await;
     mailbox.send_message(AddOperand(3)).await?;
-    mailbox.send_command(Command::Resume).await?;
+    mailbox.send_message(Command::Resume).await?;
     let total = *handle.process_pending_and_observe().await;
     assert_eq!(total, 5);
     Ok(())
@@ -593,7 +592,7 @@ async fn test_actor_sleep_resume_sleep() -> anyhow::Result<()> {
     let (mailbox, handle) = universe.spawn_actor(adder).spawn();
     mailbox.ask(Sleep(Duration::from_secs(3))).await?;
     mailbox.send_message(AddOperand(3)).await?;
-    mailbox.send_command(Command::Resume).await?;
+    mailbox.send_message_with_high_priority(Command::Resume)?;
     let total = handle.process_pending_and_observe().await;
     assert_eq!(total.obs_type, ObservationType::Alive);
     assert_eq!(*total, 3);

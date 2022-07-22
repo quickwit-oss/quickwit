@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 #[repr(u32)]
 #[derive(Clone, Debug, Copy, Eq, PartialEq)]
 pub enum ActorState {
-    /// Processing implies that the actor has some message(s) to process.
+    /// Processing implies that the actor has some message(s) (this includes commands) to process.
     Processing = 0,
     /// Idle means that the actor is currently waiting for messages.
     Idle = 1,

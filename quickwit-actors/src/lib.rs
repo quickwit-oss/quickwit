@@ -31,7 +31,6 @@ use tokio::time::Duration;
 mod actor;
 mod actor_handle;
 mod actor_state;
-mod actor_with_state_tx;
 mod channel_with_priority;
 mod command;
 mod envelope;
@@ -67,10 +66,6 @@ pub use self::mailbox::{create_mailbox, create_test_mailbox, Mailbox};
 /// its supervisor will consider it as blocked and will proceed to kill it, as well
 /// as all of the actors all the actors that share the killswitch.
 pub const HEARTBEAT: Duration = Duration::from_secs(3);
-
-pub fn message_timeout() -> Duration {
-    HEARTBEAT.mul_f32(0.2f32)
-}
 
 /// Error that occured while calling `ActorContext::ask(..)` or `Universe::ask`
 #[derive(Error, Debug)]

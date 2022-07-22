@@ -19,8 +19,6 @@
 
 use std::time::Duration;
 
-use crate::channel_with_priority::Priority;
-use crate::mailbox::CommandOrMessage;
 use crate::scheduler::{SimulateAdvanceTime, TimeShift};
 use crate::spawn_builder::SpawnBuilder;
 use crate::{Actor, Command, KillSwitch, Mailbox, QueueCapacity, Scheduler};
@@ -90,12 +88,8 @@ impl Universe {
         &self,
         mailbox: &Mailbox<A>,
     ) -> Result<(), crate::SendError> {
-        mailbox
-            .send_with_priority(
-                CommandOrMessage::Command(Command::ExitWithSuccess),
-                Priority::Low,
-            )
-            .await
+        mailbox.send_message(Command::ExitWithSuccess).await?;
+        Ok(())
     }
 }
 
