@@ -6,9 +6,9 @@ use std::os::unix::fs::FileExt;
 use std::path::Path;
 use std::time::Duration;
 
-use crossbeam::channel::{Sender, Receiver, self};
-use super::file::{FileEntry, FileKey};
+use crossbeam::channel::{self, Receiver, Sender};
 
+use super::file::{FileEntry, FileKey};
 
 pub(crate) type Metadata = HashMap<FileKey, FileEntry>;
 
@@ -61,7 +61,6 @@ pub(crate) struct LoadedData {
     key_mapping: HashMap<FileKey, usize>,
 }
 
-
 fn load_and_verify_file(file: &mut File) -> io::Result<LoadedData> {
     let mut free_slots = vec![];
     let mut entries = vec![];
@@ -72,7 +71,7 @@ fn load_and_verify_file(file: &mut File) -> io::Result<LoadedData> {
 
     for chunk in buffer.chunks(FileEntry::RAW_SIZE) {
         if chunk.len() < FileEntry::RAW_SIZE {
-            continue
+            continue;
         }
 
         match FileEntry::from_bytes(chunk) {
@@ -84,7 +83,7 @@ fn load_and_verify_file(file: &mut File) -> io::Result<LoadedData> {
 
                 key_mapping.insert(entry.key, slot_index);
                 entries.push(entry);
-            },
+            }
             Err(e) => {
                 eprintln!("Warning: Skipping row due to bad write. {:?}", e);
 
@@ -102,19 +101,11 @@ fn load_and_verify_file(file: &mut File) -> io::Result<LoadedData> {
     })
 }
 
-
 #[derive(Copy, Clone)]
 pub enum Event {
-    ReadAccess {
-        file_key: u64,
-        accessed_at: u64,
-    },
-    Write {
-        entry: FileEntry,
-    },
-    Remove {
-        file_key: u64,
-    },
+    ReadAccess { file_key: u64, accessed_at: u64 },
+    Write { entry: FileEntry },
+    Remove { file_key: u64 },
     Shutdown,
 }
 
@@ -128,7 +119,10 @@ impl AccessLogWriter {
     }
 
     pub fn register_read(&self, file_key: u64, accessed_at: Duration) {
-        self.send_event(Event::ReadAccess { file_key, accessed_at: accessed_at.as_secs() })
+        self.send_event(Event::ReadAccess {
+            file_key,
+            accessed_at: accessed_at.as_secs(),
+        })
     }
 
     pub fn register_write(&self, entry: FileEntry) {
@@ -146,7 +140,6 @@ impl Drop for AccessLogWriter {
     }
 }
 
-
 fn start_background_task(changes: Receiver<Event>, data: LoadedData, writer: File) {
     std::thread::Builder::new()
         .name("disk-cache-background-worker".to_string())
@@ -161,7 +154,7 @@ fn start_background_task(changes: Receiver<Event>, data: LoadedData, writer: Fil
 
             instance.start()
         })
-        .expect("spawn background thread");    // TODO: Handle error.
+        .expect("spawn background thread"); // TODO: Handle error.
 }
 
 struct FileAccessTask {
@@ -214,7 +207,7 @@ impl FileAccessTask {
                         // TODO: Add tracing.
                         eprintln!("Failed to handle event: {}", e);
                     }
-                },
+                }
                 Err(_) => return,
             }
         }
@@ -229,7 +222,10 @@ impl FileAccessTask {
 
     fn handle_event(&mut self, event: Event) -> io::Result<()> {
         match event {
-            Event::ReadAccess { file_key, accessed_at } => self.handle_read(file_key, accessed_at),
+            Event::ReadAccess {
+                file_key,
+                accessed_at,
+            } => self.handle_read(file_key, accessed_at),
             Event::Write { entry } => self.handle_write(entry),
             Event::Remove { file_key } => self.handle_remove(file_key),
             _ => Ok(()),
@@ -246,13 +242,13 @@ impl FileAccessTask {
             None => {
                 self.key_mapping.remove(&file_key);
                 return Ok(());
-            },
+            }
             Some(metadata) => {
                 // Update the last access timestamp within the entries.
                 metadata.last_accessed = accessed_at;
 
                 *metadata
-            },
+            }
         };
 
         self.write_at_index(slot_index, metadata)?;
@@ -264,12 +260,12 @@ impl FileAccessTask {
         // Get a valid slot index that is garenteed to be within bound of the entries vector.
         let slot_index = match self.key_mapping.get(&entry.key).copied() {
             Some(slot_index) => {
-                  if slot_index < self.entries.len() {
-                      slot_index
-                  } else {
-                      self.get_next_free_slot()
-                  }
-            },
+                if slot_index < self.entries.len() {
+                    slot_index
+                } else {
+                    self.get_next_free_slot()
+                }
+            }
             None => self.get_next_free_slot(),
         };
 
@@ -297,7 +293,7 @@ impl FileAccessTask {
         // This should never happen, but we really don't want to panic if this
         // ever is out of bounds, nore do we want to be needlessly extending our file.
         if slot_index >= self.entries.len() {
-            return Ok(())
+            return Ok(());
         }
 
         self.entries[slot_index] = FileEntry::EMPTY;
@@ -331,7 +327,7 @@ impl FileAccessTask {
         // not being within range. Although this should never happen.
         while let Some(free_slot) = self.free_slots.pop() {
             if free_slot < self.entries.len() {
-                return free_slot
+                return free_slot;
             }
         }
 
@@ -342,12 +338,12 @@ impl FileAccessTask {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use std::env::temp_dir;
     use std::io::{Seek, SeekFrom};
     use std::os::unix::fs::FileExt;
     use std::path::PathBuf;
+
+    use super::*;
 
     fn random_tmp_dir() -> PathBuf {
         let path = temp_dir().join(rand::random::<u16>().to_string());
@@ -360,8 +356,7 @@ mod tests {
     fn test_create_new_log_file() {
         let dir = random_tmp_dir();
 
-        open_access_log(&dir)
-            .expect("create new access log file.");
+        open_access_log(&dir).expect("create new access log file.");
     }
 
     #[test]
@@ -370,8 +365,7 @@ mod tests {
 
         let dir = random_tmp_dir();
 
-        let log = open_access_log(&dir)
-            .expect("create new access log file.");
+        let log = open_access_log(&dir).expect("create new access log file.");
 
         log.writer.register_write(entry);
 
@@ -389,20 +383,24 @@ mod tests {
         assert_eq!(
             all_data.len(),
             FileEntry::RAW_SIZE,
-            "Expected access log file to have written one file entry. Expected {} bytes, found {} bytes",
+            "Expected access log file to have written one file entry. Expected {} bytes, found {} \
+             bytes",
             FileEntry::RAW_SIZE,
             all_data.len(),
         );
 
-        let stored_entry = FileEntry::from_bytes(&all_data).expect("deserialize file entry from buffer");
-        assert_eq!(stored_entry, entry, "Expected entry stored on disk to be the same as sample entry.");
+        let stored_entry =
+            FileEntry::from_bytes(&all_data).expect("deserialize file entry from buffer");
+        assert_eq!(
+            stored_entry, entry,
+            "Expected entry stored on disk to be the same as sample entry."
+        );
     }
 
     fn write_entries_to_tmp_file(entries: impl Iterator<Item = FileEntry>) -> PathBuf {
         let dir = random_tmp_dir();
 
-        let log = open_access_log(&dir)
-            .expect("create new access log file.");
+        let log = open_access_log(&dir).expect("create new access log file.");
 
         for entry in entries {
             log.writer.register_write(entry);
@@ -431,33 +429,39 @@ mod tests {
         let existing_data = load_and_verify_file(&mut file).expect("successful read");
 
         assert_eq!(
-            existing_data.entries.len(), entries.len(),
+            existing_data.entries.len(),
+            entries.len(),
             "Expected {} entries within the file. Got {}",
-            entries.len(), existing_data.entries.len(),
+            entries.len(),
+            existing_data.entries.len(),
         );
 
         assert!(
             existing_data.free_slots.is_empty(),
-            "Expected no free slots to be present. This indicated corruption of the file data. Slots: {:?}",
+            "Expected no free slots to be present. This indicated corruption of the file data. \
+             Slots: {:?}",
             existing_data.free_slots
         );
-
 
         // We can assume because no file deletions have occurred that the order of the rows
         // are the order that we inserted them.
         // Note: This immediately becomes invalid when any removal operators occur.
-        let iterator = existing_data
-            .entries
-            .into_iter()
-            .zip(entries)
-            .enumerate();
+        let iterator = existing_data.entries.into_iter().zip(entries).enumerate();
 
         for (index, (on_disk, sample)) in iterator {
-            assert_ne!(on_disk, FileEntry::EMPTY, "Expected no empty rows at index {}", index);
-            assert_eq!(on_disk, sample, "Expected on disk entry to match sample entry expected at index {}", index);
+            assert_ne!(
+                on_disk,
+                FileEntry::EMPTY,
+                "Expected no empty rows at index {}",
+                index
+            );
+            assert_eq!(
+                on_disk, sample,
+                "Expected on disk entry to match sample entry expected at index {}",
+                index
+            );
         }
     }
-
 
     #[test]
     fn test_remove_entries_from_file() {
@@ -469,8 +473,7 @@ mod tests {
 
         let dir = random_tmp_dir();
 
-        let log = open_access_log(&dir)
-            .expect("create new access log file.");
+        let log = open_access_log(&dir).expect("create new access log file.");
 
         for entry in entries {
             log.writer.register_write(entry);
@@ -490,17 +493,21 @@ mod tests {
 
         // Our entries length should be the same, as one should be an empty row.
         assert_eq!(
-            existing_data.entries.len(), entries.len(),
+            existing_data.entries.len(),
+            entries.len(),
             "Expected {} entries within the file. Got {}",
-            entries.len(), existing_data.entries.len(),
+            entries.len(),
+            existing_data.entries.len(),
         );
         assert_eq!(
-            existing_data.free_slots.len(), 1,
+            existing_data.free_slots.len(),
+            1,
             "Expected 1 free slots to be present. Got {}",
             existing_data.free_slots.len()
         );
         assert_eq!(
-            existing_data.free_slots.pop(), Some(1),
+            existing_data.free_slots.pop(),
+            Some(1),
             "Expected marked free slot to be located at index position 1."
         );
     }
@@ -514,7 +521,8 @@ mod tests {
 
         // Overwrite the file contents with some arbitrary data. Simulating the state
         // corruption or partial writes would leave the rows in.
-        file.write_all_at(&[0, 12, 234, 3, 3, 5], 0).expect("overwrite file contents");
+        file.write_all_at(&[0, 12, 234, 3, 3, 5], 0)
+            .expect("overwrite file contents");
 
         let mut all_data = vec![];
         file.read_to_end(&mut all_data).expect("read all data");
@@ -523,7 +531,8 @@ mod tests {
         assert_eq!(
             all_data.len(),
             FileEntry::RAW_SIZE,
-            "Expected access log file to have written one file entry. Expected {} file length of file, found {} length of file",
+            "Expected access log file to have written one file entry. Expected {} file length of \
+             file, found {} length of file",
             FileEntry::RAW_SIZE,
             all_data.len(),
         );
@@ -531,10 +540,26 @@ mod tests {
         file.seek(SeekFrom::Start(0)).expect("seek back to start");
         let mut existing_data = load_and_verify_file(&mut file).expect("successful read");
 
-        // We still expect a entry to be present. We just expect it to be marked as free to be overwritten.
-        assert_eq!(existing_data.entries.len(), 1, "Expected 1 entry to be present within the existing data.");
-        assert_eq!(existing_data.free_slots.len(), 1, "Expected the 1 entry to be marked as free.");
-        assert!(existing_data.key_mapping.is_empty(), "Expected no file keys to be mapped to any entries.");
-        assert_eq!(existing_data.entries.pop(), Some(FileEntry::EMPTY), "Expected entry to be marked as empty.");
+        // We still expect a entry to be present. We just expect it to be marked as free to be
+        // overwritten.
+        assert_eq!(
+            existing_data.entries.len(),
+            1,
+            "Expected 1 entry to be present within the existing data."
+        );
+        assert_eq!(
+            existing_data.free_slots.len(),
+            1,
+            "Expected the 1 entry to be marked as free."
+        );
+        assert!(
+            existing_data.key_mapping.is_empty(),
+            "Expected no file keys to be mapped to any entries."
+        );
+        assert_eq!(
+            existing_data.entries.pop(),
+            Some(FileEntry::EMPTY),
+            "Expected entry to be marked as empty."
+        );
     }
 }

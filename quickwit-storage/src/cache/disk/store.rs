@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::hash::{Hash, Hasher};
-use std::{cmp, io};
 use std::io::ErrorKind;
 use std::ops::Range;
 use std::os::unix::fs::FileExt;
@@ -9,20 +8,23 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::vec::IntoIter;
+use std::{cmp, io};
 
 use fasthash::FastHasher;
 use parking_lot::{Mutex, RwLock};
 
-use super::access_log::{AccessLogWriter, Metadata, open_access_log};
+use super::access_log::{open_access_log, AccessLogWriter, Metadata};
 use super::file::{FileEntry, FileKey};
-
 
 /// Opens a given directory as a file backed cache.
 ///
 /// Note:
 ///  This will purge any files not explicitly managed by the
 ///  cache as part of a cleanup process on startup.
-pub(crate) fn open_disk_store(base_path: &Path, max_fd: usize) -> io::Result<Store<FileBackedDirectory>> {
+pub(crate) fn open_disk_store(
+    base_path: &Path,
+    max_fd: usize,
+) -> io::Result<Store<FileBackedDirectory>> {
     let log = open_access_log(base_path)?;
 
     purge_unknown_files(base_path, &log.metadata)?;
@@ -41,7 +43,7 @@ fn purge_unknown_files(base_path: &Path, metadata: &Metadata) -> io::Result<()> 
         };
 
         if !entry.path().is_file() {
-            continue
+            continue;
         }
 
         let valid_file = entry
@@ -60,7 +62,6 @@ fn purge_unknown_files(base_path: &Path, metadata: &Metadata) -> io::Result<()> 
     Ok(())
 }
 
-
 pub(crate) struct Store<D: Directory> {
     directory: D,
     access_log: AccessLogWriter,
@@ -68,7 +69,10 @@ pub(crate) struct Store<D: Directory> {
 
 impl<D: Directory> Store<D> {
     fn new(directory: D, access_log: AccessLogWriter) -> Self {
-        Self { directory, access_log }
+        Self {
+            directory,
+            access_log,
+        }
     }
 
     /// Gets the metadata associated with the given file key.
@@ -79,7 +83,7 @@ impl<D: Directory> Store<D> {
 
         self.directory.get_metadata(computed_key)
     }
-    
+
     pub(crate) fn entries(&self) -> impl Iterator<Item = FileEntry> {
         self.directory.entries()
     }
@@ -91,14 +95,18 @@ impl<D: Directory> Store<D> {
     /// Note:
     ///  It is possible for a empty buffer to be returned if there is no data
     ///  within the given range.
-    pub(crate) fn get_range(&self, path_key: &Path, range: Range<usize>) -> io::Result<Option<Vec<u8>>> {
+    pub(crate) fn get_range(
+        &self,
+        path_key: &Path,
+        range: Range<usize>,
+    ) -> io::Result<Option<Vec<u8>>> {
         let computed_key = Self::compute_key(path_key);
 
         match self.directory.read_range(computed_key, range) {
             Ok(data) => {
                 self.access_log.register_read(computed_key, time_now());
                 Ok(Some(data))
-            },
+            }
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
             Err(other) => Err(other),
         }
@@ -114,7 +122,7 @@ impl<D: Directory> Store<D> {
             Ok(data) => {
                 self.access_log.register_read(computed_key, time_now());
                 Ok(Some(data))
-            },
+            }
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
             Err(other) => Err(other),
         }
@@ -129,18 +137,16 @@ impl<D: Directory> Store<D> {
     ) -> io::Result<()> {
         let computed_key = Self::compute_key(path_key);
 
-        let entry = self.directory.write_range(computed_key, range, bytes.as_ref())?;
+        let entry = self
+            .directory
+            .write_range(computed_key, range, bytes.as_ref())?;
         self.access_log.register_write(entry);
 
         Ok(())
     }
 
     /// Writes a given buffer to an existing or new file.
-    pub(crate) fn put_all(
-        &self,
-        path_key: &Path,
-        bytes: impl AsRef<[u8]>,
-    ) -> io::Result<()> {
+    pub(crate) fn put_all(&self, path_key: &Path, bytes: impl AsRef<[u8]>) -> io::Result<()> {
         let computed_key = Self::compute_key(path_key);
 
         let entry = self.directory.write_all(computed_key, bytes.as_ref())?;
@@ -165,7 +171,6 @@ impl<D: Directory> Store<D> {
         hasher.finish()
     }
 }
-
 
 pub(crate) trait Directory {
     type Entries: Iterator<Item = FileEntry>;
@@ -193,7 +198,8 @@ pub(crate) trait Directory {
     /// Writes a range of bytes to an already existing file.
     ///
     /// Returns the new checksum of the file.
-    fn write_range(&self, key: FileKey, range: Range<usize>, bytes: &[u8]) -> io::Result<FileEntry>;
+    fn write_range(&self, key: FileKey, range: Range<usize>, bytes: &[u8])
+        -> io::Result<FileEntry>;
 
     /// Writes a buffer to a given file, creating a new file if it doesn't already exist.
     ///
@@ -213,7 +219,6 @@ pub(crate) trait Directory {
         crc32fast::hash(bytes)
     }
 }
-
 
 pub struct FileBackedDirectory {
     base_path: PathBuf,
@@ -258,7 +263,9 @@ impl FileBackedDirectory {
 
     fn put_open_file(&self, key: FileKey, file: File) -> Arc<File> {
         let immutable_file = Arc::new(file);
-        self.opened_file_cache.lock().put(key, immutable_file.clone());
+        self.opened_file_cache
+            .lock()
+            .put(key, immutable_file.clone());
         immutable_file
     }
 
@@ -283,7 +290,7 @@ impl FileBackedDirectory {
 
 impl Directory for FileBackedDirectory {
     type Entries = IntoIter<FileEntry>;
-    
+
     fn get_metadata(&self, key: FileKey) -> Option<FileEntry> {
         self.try_get_file_metadata(key).ok()
     }
@@ -302,7 +309,7 @@ impl Directory for FileBackedDirectory {
 
         // Short circuit if the range is beyond bounds.
         if range.start as u64 >= metadata.file_size {
-            return Ok(vec![])
+            return Ok(vec![]);
         }
 
         let start = range.start as u64;
@@ -329,13 +336,18 @@ impl Directory for FileBackedDirectory {
         let checksum = crc32fast::hash(&buffer);
         if metadata.file_checksum != checksum {
             self.remove_file(key)?;
-            return Err(not_found_error())
+            return Err(not_found_error());
         }
 
         Ok(buffer)
     }
 
-    fn write_range(&self, key: FileKey, range: Range<usize>, bytes: &[u8]) -> io::Result<FileEntry> {
+    fn write_range(
+        &self,
+        key: FileKey,
+        range: Range<usize>,
+        bytes: &[u8],
+    ) -> io::Result<FileEntry> {
         // Although unlikely, we don't want to overwrite data we shouldn't be overwriting.
         // this just prevents us from affecting data we dont want to touch.
         let sub_slice = &bytes[0..range.len()];
@@ -383,23 +395,18 @@ impl Directory for FileBackedDirectory {
     }
 }
 
-
 fn time_now() -> Duration {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap()
 }
 
 fn not_found_error() -> io::Error {
     io::Error::new(ErrorKind::NotFound, "file not found")
 }
 
-
 pub struct FileInfo {
     pub checksum: u32,
     pub file_size: u64,
 }
-
 
 fn calculate_file_info(file: &File) -> io::Result<FileInfo> {
     let mut hasher = crc32fast::Hasher::new();
@@ -412,7 +419,7 @@ fn calculate_file_info(file: &File) -> io::Result<FileInfo> {
         let n = file.read_at(&mut buffer, cursor)?;
 
         if n == 0 {
-            break
+            break;
         }
 
         hasher.write(&buffer);
@@ -424,7 +431,6 @@ fn calculate_file_info(file: &File) -> io::Result<FileInfo> {
         file_size,
     })
 }
-
 
 fn read_to_fill_buff(file: &File, mut buf: &mut [u8], mut offset: u64) -> io::Result<()> {
     while !buf.is_empty() {

@@ -1,14 +1,14 @@
 use std::io;
 use std::path::Path;
+
 use parking_lot::Mutex;
 
 use super::file::{FileEntry, FileKey};
-use super::store::{Store, FileBackedDirectory, open_disk_store};
-
+use super::store::{open_disk_store, FileBackedDirectory, Store};
 
 pub struct DiskBackedLRUCache {
     lru: Mutex<lru::LruCache<FileKey, ()>>,
-    store: Store<FileBackedDirectory>
+    store: Store<FileBackedDirectory>,
 }
 
 impl DiskBackedLRUCache {

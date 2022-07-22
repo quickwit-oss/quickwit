@@ -17,12 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod disk;
 mod memory_sized_cache;
 mod quickwit_cache;
 mod slice_address;
 mod storage_with_cache;
 mod stored_item;
-mod disk;
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};

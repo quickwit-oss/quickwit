@@ -21,14 +21,24 @@ pub(crate) struct FileEntry {
 }
 
 impl FileEntry {
-    pub(crate) const EMPTY: Self = Self { key: 0, file_checksum: 0, last_accessed: 0, file_size: 0 };
+    pub(crate) const EMPTY: Self = Self {
+        key: 0,
+        file_checksum: 0,
+        last_accessed: 0,
+        file_size: 0,
+    };
     pub(crate) const RAW_SIZE: usize = std::mem::size_of::<FileKey>()
         + std::mem::size_of::<u32>()
         + std::mem::size_of::<u64>()
         + std::mem::size_of::<u64>()
-        + std::mem::size_of::<u32>();  // Row checksum
+        + std::mem::size_of::<u32>(); // Row checksum
 
-    pub(crate) fn new(key: FileKey, file_checksum: u32, last_accessed: Duration, file_size: u64) -> Self {
+    pub(crate) fn new(
+        key: FileKey,
+        file_checksum: u32,
+        last_accessed: Duration,
+        file_size: u64,
+    ) -> Self {
         Self {
             key,
             file_checksum,
@@ -72,7 +82,7 @@ impl FileEntry {
             key,
             file_checksum: checksum,
             last_accessed,
-            file_size
+            file_size,
         })
     }
 }
