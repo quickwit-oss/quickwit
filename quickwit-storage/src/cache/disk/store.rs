@@ -441,7 +441,7 @@ fn calculate_file_info(file: &File) -> io::Result<FileInfo> {
             break;
         }
 
-        hasher.write(&buffer);
+        hasher.write(&buffer[..n]);
         cursor += n as u64;
     }
 
