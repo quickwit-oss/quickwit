@@ -32,7 +32,7 @@ use quickwit_actors::{ActorHandle, ObservationType, Universe};
 use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::{
-    IndexConfig, IndexerConfig, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
+    IndexConfig, IndexerConfig, QuickwitConfig, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
 };
 use quickwit_core::{clear_cache_directory, remove_indexing_directory, IndexService};
 use quickwit_doc_mapper::tag_pruning::match_tag_field_name;
@@ -40,7 +40,9 @@ use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
 use quickwit_indexing::models::{
     DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
 };
-use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Split, SplitState};
+use quickwit_metastore::{
+    quickwit_metastore_uri_resolver, IndexMetadata, MetastoreUriResolver, Split, SplitState,
+};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
@@ -767,6 +769,23 @@ fn print_descriptive_stats(values: &[usize]) {
     );
 }
 
+/// Resolve storage endpoints to validate.
+async fn validate_storage_uri(
+    metastore_uri_resolver: &MetastoreUriResolver,
+    quickwit_config: &QuickwitConfig,
+    index_config: &IndexConfig,
+) -> anyhow::Result<()> {
+    metastore_uri_resolver
+        .resolve(&quickwit_config.default_index_root_uri())
+        .await?;
+
+    // Optional: check custom index uri
+    if let Some(index_uri) = index_config.index_uri.as_ref() {
+        metastore_uri_resolver.resolve(&index_uri).await?;
+    }
+    Ok(())
+}
+
 pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "create-index");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Create).await;
@@ -780,10 +799,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         .resolve(&quickwit_config.metastore_uri())
         .await?;
 
-    // Check if storage uri is valid
-    metastore_uri_resolver
-        .resolve(&quickwit_config.default_index_root_uri())
-        .await?;
+    validate_storage_uri(metastore_uri_resolver, &quickwit_config, &index_config).await?;
 
     let index_service = IndexService::new(
         metastore,
