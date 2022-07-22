@@ -57,7 +57,7 @@ const QUICKWIT_DEFAULT_REGION: Region = Region::UsEast1;
 #[instrument]
 fn sniff_s3_region() -> anyhow::Result<Region> {
     // Attempt to read region from environment variable and return an error if malformed.
-    if let Some(region) = region_from_env_variable()? {
+    if let Some(region) = region_from_env_variables()? {
         info!(region=?region, from="env-variable", "set-aws-region");
         return Ok(region);
     }
@@ -108,8 +108,14 @@ fn region_from_str(region_str: &str) -> anyhow::Result<Region> {
              http:// endpoint"
         );
     }
+
+    // For some storage provider like Cloudflare R2, the user has to set a custom region's name.
+    // We use `AWS_REGION` env variable for that.
+    let region_name =
+        std::env::var("AWS_REGION").unwrap_or_else(|_| "qw-custom-endpoint".to_string());
+
     Ok(Region::Custom {
-        name: "qw-custom-endpoint".to_string(),
+        name: region_name,
         endpoint: region_str.trim_end_matches('/').to_string(),
     })
 }
@@ -129,7 +135,7 @@ fn s3_region_env_var() -> Option<String> {
 }
 
 #[instrument]
-fn region_from_env_variable() -> anyhow::Result<Option<Region>> {
+fn region_from_env_variables() -> anyhow::Result<Option<Region>> {
     if let Some(region_str) = s3_region_env_var() {
         match region_from_str(&region_str) {
             Ok(region) => Ok(Some(region)),
@@ -846,6 +852,14 @@ mod tests {
             region_from_str("http://localhost:4566/").unwrap(),
             Region::Custom {
                 name: "qw-custom-endpoint".to_string(),
+                endpoint: "http://localhost:4566".to_string()
+            }
+        );
+        std::env::set_var("AWS_REGION", "my-custom-region");
+        assert_eq!(
+            region_from_str("http://localhost:4566/").unwrap(),
+            Region::Custom {
+                name: "my-custom-region".to_string(),
                 endpoint: "http://localhost:4566".to_string()
             }
         );
