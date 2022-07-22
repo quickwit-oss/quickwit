@@ -39,12 +39,12 @@ use crate::{
 ///
 /// The actor holds its `Inbox` counterpart.
 ///
-/// The mailbox can accept:
-/// - Regular messages wrapped in envelopes. Their type depend on the actor and is defined when
-/// implementing the actor trait. (See [`Envelope`])
-/// - Commands (See [`Command`]). Commands have a higher priority than messages:
-/// whenever a command is available, it is guaranteed to be processed
-/// as soon as possible regardless of the presence of pending regular messages.
+/// The mailbox can receive high priority and low priority messages.
+/// Commands are typically sent as high priority messages, whereas regular
+/// actor messages are sent to the low priority channel.
+///
+/// Whenever a high priority message is available, it is processed
+/// before low priority messages.
 ///
 /// If all mailboxes are dropped, the actor will process all of the pending messages
 /// and gracefully exit with [`crate::actor::ActorExitStatus::Success`].
@@ -63,7 +63,7 @@ impl<A: Actor> Drop for Mailbox<A> {
             // This was the last mailbox.
             // `ref_count == 1` means that only the mailbox in the ActorContext
             // is remaining.
-            let _ = self.send_with_high_priority(LastMailbox);
+            let _ = self.send_message_with_high_priority(LastMailbox);
         }
     }
 }
@@ -140,7 +140,10 @@ impl<A: Actor> Mailbox<A> {
     /// From an actor context, use the `ActorContext::send_message` method instead.
     ///
     /// SendError is returned if the actor has already exited.
-    pub async fn send<M>(&self, message: M) -> Result<oneshot::Receiver<A::Reply>, SendError>
+    pub async fn send_message<M>(
+        &self,
+        message: M,
+    ) -> Result<oneshot::Receiver<A::Reply>, SendError>
     where
         A: Handler<M>,
         M: 'static + Send + Sync + fmt::Debug,
@@ -150,7 +153,7 @@ impl<A: Actor> Mailbox<A> {
         Ok(response_rx)
     }
 
-    pub(crate) fn send_with_high_priority<M>(&self, message: M) -> Result<(), SendError>
+    pub(crate) fn send_message_with_high_priority<M>(&self, message: M) -> Result<(), SendError>
     where
         A: Handler<M>,
         M: 'static + Send + Sync + fmt::Debug,
@@ -168,7 +171,7 @@ impl<A: Actor> Mailbox<A> {
         A: Handler<M, Reply = T>,
         M: 'static + Send + Sync + fmt::Debug,
     {
-        self.send(message)
+        self.send_message(message)
             .await
             .map_err(|_send_error| AskError::MessageNotDelivered)?
             .await
@@ -184,7 +187,7 @@ impl<A: Actor> Mailbox<A> {
         A: Handler<M, Reply = Result<T, E>>,
         M: 'static + Send + Sync + fmt::Debug,
     {
-        self.send(message)
+        self.send_message(message)
             .await
             .map_err(|_send_error| AskError::MessageNotDelivered)?
             .await

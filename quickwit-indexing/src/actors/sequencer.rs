@@ -118,11 +118,11 @@ mod tests {
         let (fut_tx_1, fut_rx_1) = oneshot::channel();
         let (fut_tx_2, fut_rx_2) = oneshot::channel();
         let (fut_tx_3, fut_rx_3) = oneshot::channel();
-        sequencer_mailbox.send(fut_rx_1).await.unwrap();
-        sequencer_mailbox.send(fut_rx_2).await.unwrap();
+        sequencer_mailbox.send_message(fut_rx_1).await.unwrap();
+        sequencer_mailbox.send_message(fut_rx_2).await.unwrap();
         fut_tx_3.send(3).unwrap();
         fut_tx_1.send(1).unwrap();
-        sequencer_mailbox.send(fut_rx_3).await.unwrap();
+        sequencer_mailbox.send_message(fut_rx_3).await.unwrap();
         fut_tx_2.send(2).unwrap();
         std::mem::drop(sequencer_mailbox);
         let (exit_status, last_state) = test_handle.join().await;

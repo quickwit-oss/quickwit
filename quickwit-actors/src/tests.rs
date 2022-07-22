@@ -105,7 +105,7 @@ impl Handler<Ping> for PingerSenderActor {
     ) -> Result<(), ActorExitStatus> {
         self.count += 1;
         for peer in self.peers.values() {
-            let _ = peer.send(Ping).await;
+            let _ = peer.send_message(Ping).await;
         }
         Ok(())
     }
@@ -144,9 +144,9 @@ async fn test_ping_actor() {
     );
     // No peers. This one will have no impact.
     let ping_recv_mailbox = ping_recv_mailbox.clone();
-    assert!(ping_sender_mailbox.send(Ping).await.is_ok());
+    assert!(ping_sender_mailbox.send_message(Ping).await.is_ok());
     assert!(ping_sender_mailbox
-        .send(AddPeer(ping_recv_mailbox.clone()))
+        .send_message(AddPeer(ping_recv_mailbox.clone()))
         .await
         .is_ok());
     assert_eq!(
@@ -159,8 +159,8 @@ async fn test_ping_actor() {
             }
         }
     );
-    assert!(ping_sender_mailbox.send(Ping).await.is_ok());
-    assert!(ping_sender_mailbox.send(Ping).await.is_ok());
+    assert!(ping_sender_mailbox.send_message(Ping).await.is_ok());
+    assert!(ping_sender_mailbox.send_message(Ping).await.is_ok());
     assert_eq!(
         ping_sender_handle.process_pending_and_observe().await,
         Observation {
@@ -197,7 +197,7 @@ async fn test_ping_actor() {
         }
     );
     ping_sender_handle.join().await;
-    assert!(ping_sender_mailbox.send(Ping).await.is_err());
+    assert!(ping_sender_mailbox.send_message(Ping).await.is_err());
 }
 
 struct BuggyActor;
@@ -256,12 +256,12 @@ async fn test_timeouting_actor() {
         buggy_handle.observe().await.obs_type,
         ObservationType::Alive
     );
-    assert!(buggy_mailbox.send(DoNothing).await.is_ok());
+    assert!(buggy_mailbox.send_message(DoNothing).await.is_ok());
     assert_eq!(
         buggy_handle.observe().await.obs_type,
         ObservationType::Alive
     );
-    assert!(buggy_mailbox.send(Block).await.is_ok());
+    assert!(buggy_mailbox.send_message(Block).await.is_ok());
 
     assert_eq!(buggy_handle.health(), Health::Healthy);
     assert_eq!(
@@ -280,15 +280,17 @@ async fn test_pause_actor() {
     let universe = Universe::new();
     let (ping_mailbox, ping_handle) = universe.spawn_actor(PingReceiverActor::default()).spawn();
     for _ in 0u32..1000u32 {
-        assert!(ping_mailbox.send(Ping).await.is_ok());
+        assert!(ping_mailbox.send_message(Ping).await.is_ok());
     }
-    assert!(ping_mailbox.send_with_high_priority(Command::Pause).is_ok());
+    assert!(ping_mailbox
+        .send_message_with_high_priority(Command::Pause)
+        .is_ok());
     let first_state = ping_handle.observe().await.state;
     assert!(first_state < 1000);
     let second_state = ping_handle.observe().await.state;
     assert_eq!(first_state, second_state);
     assert!(ping_mailbox
-        .send_with_high_priority(Command::Resume)
+        .send_message_with_high_priority(Command::Resume)
         .is_ok());
     let end_state = ping_handle.process_pending_and_observe().await.state;
     assert_eq!(end_state, 1000);
@@ -301,7 +303,7 @@ async fn test_actor_running_states() {
     let (ping_mailbox, ping_handle) = universe.spawn_actor(PingReceiverActor::default()).spawn();
     assert!(ping_handle.state() == ActorState::Processing);
     for _ in 0u32..10u32 {
-        assert!(ping_mailbox.send(Ping).await.is_ok());
+        assert!(ping_mailbox.send_message(Ping).await.is_ok());
     }
     let obs = ping_handle.process_pending_and_observe().await;
     assert_eq!(*obs, 10);
@@ -366,7 +368,7 @@ async fn test_looping() -> anyhow::Result<()> {
     let universe = Universe::new();
     let looping_actor = LoopingActor::default();
     let (looping_actor_mailbox, looping_actor_handle) = universe.spawn_actor(looping_actor).spawn();
-    assert!(looping_actor_mailbox.send(SingleShot).await.is_ok());
+    assert!(looping_actor_mailbox.send_message(SingleShot).await.is_ok());
     looping_actor_handle.process_pending_and_observe().await;
     let (exit_status, state) = looping_actor_handle.quit().await;
     assert!(matches!(exit_status, ActorExitStatus::Quit));
@@ -446,9 +448,9 @@ impl Handler<u64> for SpawningActor {
 async fn test_actor_spawning_actor() -> anyhow::Result<()> {
     let universe = Universe::new();
     let (mailbox, handle) = universe.spawn_actor(SpawningActor::default()).spawn();
-    mailbox.send(1).await?;
-    mailbox.send(2).await?;
-    mailbox.send(3).await?;
+    mailbox.send_message(1).await?;
+    mailbox.send_message(2).await?;
+    mailbox.send_message(3).await?;
     drop(mailbox);
     let (exit, result) = handle.join().await;
     assert!(matches!(exit, ActorExitStatus::Success));
@@ -524,8 +526,8 @@ async fn test_actor_return_response() -> anyhow::Result<()> {
     let universe = Universe::new();
     let adder = Adder::default();
     let (mailbox, _handle) = universe.spawn_actor(adder).spawn();
-    let plus_two = mailbox.send(AddOperand(2)).await?;
-    let plus_two_plus_four = mailbox.send(AddOperand(4)).await?;
+    let plus_two = mailbox.send_message(AddOperand(2)).await?;
+    let plus_two_plus_four = mailbox.send_message(AddOperand(4)).await?;
     assert_eq!(plus_two.await.unwrap(), 2);
     assert_eq!(plus_two_plus_four.await.unwrap(), 6);
     Ok(())
@@ -551,11 +553,11 @@ async fn test_actor_simple_sleep() -> anyhow::Result<()> {
     let universe = Universe::new();
     let adder = Adder::default();
     let (mailbox, handle) = universe.spawn_actor(adder).spawn();
-    mailbox.send(AddOperand(2)).await?;
+    mailbox.send_message(AddOperand(2)).await?;
     let total = *handle.process_pending_and_observe().await;
     assert_eq!(total, 2);
-    mailbox.send(Sleep(Duration::from_secs(3))).await?;
-    mailbox.send(AddOperand(3)).await?;
+    mailbox.send_message(Sleep(Duration::from_secs(3))).await?;
+    mailbox.send_message(AddOperand(3)).await?;
     let total = *handle.observe().await;
     assert_eq!(total, 2);
     universe.simulate_time_shift(Duration::from_secs(3)).await;
@@ -570,13 +572,13 @@ async fn test_actor_sleep_and_resume() -> anyhow::Result<()> {
     let universe = Universe::new();
     let adder = Adder::default();
     let (mailbox, handle) = universe.spawn_actor(adder).spawn();
-    mailbox.send(AddOperand(2)).await?;
+    mailbox.send_message(AddOperand(2)).await?;
     let total = *handle.process_pending_and_observe().await;
     assert_eq!(total, 2);
-    mailbox.send(Sleep(Duration::from_secs(3))).await?;
+    mailbox.send_message(Sleep(Duration::from_secs(3))).await?;
     handle.process_pending_and_observe().await;
-    mailbox.send(AddOperand(3)).await?;
-    mailbox.send(Command::Resume).await?;
+    mailbox.send_message(AddOperand(3)).await?;
+    mailbox.send_message(Command::Resume).await?;
     let total = *handle.process_pending_and_observe().await;
     assert_eq!(total, 5);
     Ok(())
@@ -589,13 +591,13 @@ async fn test_actor_sleep_resume_sleep() -> anyhow::Result<()> {
     let adder = Adder::default();
     let (mailbox, handle) = universe.spawn_actor(adder).spawn();
     mailbox.ask(Sleep(Duration::from_secs(3))).await?;
-    mailbox.send(AddOperand(3)).await?;
-    mailbox.send_with_high_priority(Command::Resume)?;
+    mailbox.send_message(AddOperand(3)).await?;
+    mailbox.send_message_with_high_priority(Command::Resume)?;
     let total = handle.process_pending_and_observe().await;
     assert_eq!(total.obs_type, ObservationType::Alive);
     assert_eq!(*total, 3);
-    mailbox.send(Sleep(Duration::from_secs(60))).await?;
-    mailbox.send(AddOperand(2)).await?;
+    mailbox.send_message(Sleep(Duration::from_secs(60))).await?;
+    mailbox.send_message(AddOperand(2)).await?;
     universe.simulate_time_shift(Duration::from_secs(10)).await;
     let total = *handle.process_pending_and_observe().await;
     assert_eq!(total, 3);

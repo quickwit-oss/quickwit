@@ -66,7 +66,7 @@ impl Universe {
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
         let _ = self
             .scheduler_mailbox
-            .send(SimulateAdvanceTime {
+            .send_message(SimulateAdvanceTime {
                 time_shift: TimeShift::ByDuration(duration),
                 tx,
             })
@@ -88,7 +88,7 @@ impl Universe {
         &self,
         mailbox: &Mailbox<A>,
     ) -> Result<(), crate::SendError> {
-        mailbox.send(Command::ExitWithSuccess).await?;
+        mailbox.send_message(Command::ExitWithSuccess).await?;
         Ok(())
     }
 }

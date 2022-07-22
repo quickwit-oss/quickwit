@@ -319,7 +319,7 @@ mod tests {
         let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn();
         let split_scratch_directory = ScratchDirectory::for_test()?;
         uploader_mailbox
-            .send(PackagedSplitBatch::new(vec![PackagedSplit {
+            .send_message(PackagedSplitBatch::new(vec![PackagedSplit {
                 split_id: "test-split".to_string(),
                 index_id: "test-index".to_string(),
                 checkpoint_deltas: vec![CheckpointDelta::from(3..15)],
@@ -431,7 +431,7 @@ mod tests {
             hotcache_bytes: vec![],
         };
         uploader_mailbox
-            .send(PackagedSplitBatch::new(vec![
+            .send_message(PackagedSplitBatch::new(vec![
                 packaged_split_1,
                 package_split_2,
             ]))

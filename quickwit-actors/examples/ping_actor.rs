@@ -145,11 +145,11 @@ async fn main() {
         universe.spawn_actor(PingSender::default()).spawn();
 
     ping_sender_mailbox
-        .send(AddPeer(roger_mailbox))
+        .send_message(AddPeer(roger_mailbox))
         .await
         .unwrap();
     ping_sender_mailbox
-        .send(AddPeer(myriam_mailbox))
+        .send_message(AddPeer(myriam_mailbox))
         .await
         .unwrap();
 

@@ -430,7 +430,7 @@ impl<A: Actor> ActorContext<A> {
     {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg);
-        mailbox.send(msg).await
+        mailbox.send_message(msg).await
     }
 
     pub async fn ask<DestActor: Actor, M, T>(
@@ -473,7 +473,7 @@ impl<A: Actor> ActorContext<A> {
     ) -> Result<(), crate::SendError> {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), to=%mailbox.actor_instance_id(), "success");
-        mailbox.send(Command::ExitWithSuccess).await?;
+        mailbox.send_message(Command::ExitWithSuccess).await?;
         Ok(())
     }
 
@@ -487,7 +487,7 @@ impl<A: Actor> ActorContext<A> {
         M: 'static + Sync + Send + fmt::Debug,
     {
         debug!(self=%self.self_mailbox.actor_instance_id(), msg=?msg, "self_send");
-        self.self_mailbox.send(msg).await
+        self.self_mailbox.send_message(msg).await
     }
 
     pub async fn schedule_self_msg<M>(&self, after_duration: Duration, message: M)
@@ -497,7 +497,7 @@ impl<A: Actor> ActorContext<A> {
     {
         let self_mailbox = self.inner.self_mailbox.clone();
         let callback = Callback(Box::pin(async move {
-            let _ = self_mailbox.send_with_high_priority(message);
+            let _ = self_mailbox.send_message_with_high_priority(message);
         }));
         let scheduler_msg = ScheduleEvent {
             timeout: after_duration,

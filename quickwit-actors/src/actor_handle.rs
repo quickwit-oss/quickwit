@@ -119,7 +119,7 @@ impl<A: Actor> ActorHandle<A> {
             && self
                 .actor_context
                 .mailbox()
-                .send(Command::Observe(tx))
+                .send_message(Command::Observe(tx))
                 .await
                 .is_err()
         {
@@ -139,7 +139,7 @@ impl<A: Actor> ActorHandle<A> {
         let _ = self
             .actor_context
             .mailbox()
-            .send_with_high_priority(Command::Pause);
+            .send_message_with_high_priority(Command::Pause);
     }
 
     /// Resumes a paused actor.
@@ -147,7 +147,7 @@ impl<A: Actor> ActorHandle<A> {
         let _ = self
             .actor_context
             .mailbox()
-            .send_with_high_priority(Command::Resume);
+            .send_message_with_high_priority(Command::Resume);
     }
 
     /// Kills the actor. Its finalize function will still be called.
@@ -161,7 +161,7 @@ impl<A: Actor> ActorHandle<A> {
         let _ = self
             .actor_context
             .mailbox()
-            .send_with_high_priority(Command::Kill);
+            .send_message_with_high_priority(Command::Kill);
         self.join().await
     }
 
@@ -176,7 +176,7 @@ impl<A: Actor> ActorHandle<A> {
         let _ = self
             .actor_context
             .mailbox()
-            .send_with_high_priority(Command::Quit);
+            .send_message_with_high_priority(Command::Quit);
         self.join().await
     }
 
@@ -209,7 +209,7 @@ impl<A: Actor> ActorHandle<A> {
         if self
             .actor_context
             .mailbox()
-            .send_with_high_priority(Command::Observe(tx))
+            .send_message_with_high_priority(Command::Observe(tx))
             .is_err()
         {
             error!(
@@ -327,7 +327,7 @@ mod tests {
     async fn test_panic_in_actor() -> anyhow::Result<()> {
         let universe = Universe::new();
         let (mailbox, handle) = universe.spawn_actor(PanickingActor::default()).spawn();
-        mailbox.send(Panic).await?;
+        mailbox.send_message(Panic).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Panicked));
         assert!(matches!(count, 1)); //< Upon panick we cannot get a post mortem state.
@@ -338,7 +338,7 @@ mod tests {
     async fn test_exit() -> anyhow::Result<()> {
         let universe = Universe::new();
         let (mailbox, handle) = universe.spawn_actor(ExitActor::default()).spawn();
-        mailbox.send(Exit).await?;
+        mailbox.send_message(Exit).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::DownstreamClosed));
         assert!(matches!(count, 1)); //< Upon panick we cannot get a post mortem state.
