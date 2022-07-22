@@ -742,6 +742,32 @@ impl Metastore for PostgresqlMetastore {
         })
     }
 
+    #[instrument(skip(self))]
+    async fn reset_index_checkpoint(&self, index_id: &str) -> MetastoreResult<()> {
+        run_with_tx!(self.connection_pool, tx, {
+            mutate_index_metadata(tx, index_id, |index_metadata| {
+                index_metadata.checkpoint.reset();
+                Ok::<_, MetastoreError>(())
+            })
+            .await
+        })
+    }
+
+    #[instrument(skip(self))]
+    async fn reset_source_checkpoint(
+        &self,
+        index_id: &str,
+        source_id: &str,
+    ) -> MetastoreResult<()> {
+        run_with_tx!(self.connection_pool, tx, {
+            mutate_index_metadata(tx, index_id, |index_metadata| {
+                index_metadata.checkpoint.reset_source(source_id);
+                Ok::<_, MetastoreError>(())
+            })
+            .await
+        })
+    }
+
     fn uri(&self) -> &Uri {
         &self.uri
     }

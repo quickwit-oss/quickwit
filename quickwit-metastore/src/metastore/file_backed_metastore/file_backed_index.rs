@@ -393,4 +393,14 @@ impl FileBackedIndex {
         self.metadata.delete_source(source_id)?;
         Ok(true)
     }
+
+    /// Clears the entire checkpoint. Returns whether a mutation occurred.
+    pub(crate) fn reset_index_checkpoint(&mut self) -> MetastoreResult<bool> {
+        Ok(self.metadata.checkpoint.reset())
+    }
+
+    /// Clears the checkpoint of a source. Returns whether a mutation occurred.
+    pub(crate) fn reset_source_checkpoint(&mut self, source_id: &str) -> MetastoreResult<bool> {
+        Ok(self.metadata.checkpoint.reset_source(source_id))
+    }
 }

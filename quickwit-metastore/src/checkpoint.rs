@@ -162,6 +162,22 @@ impl IndexCheckpoint {
         Ok(())
     }
 
+    /// Clears the entire checkpoint. Returns whether a mutation occurred.
+    pub(crate) fn reset(&mut self) -> bool {
+        if self.per_source.is_empty() {
+            false
+        } else {
+            self.per_source.clear();
+            true
+        }
+    }
+
+    /// Clears the checkpoint of the source identified by `source_id`. Returns whether a mutation
+    /// occurred.
+    pub(crate) fn reset_source(&mut self, source_id: &str) -> bool {
+        self.per_source.remove(source_id).is_some()
+    }
+
     /// Returns the checkpoint associated to a given source.
     ///
     /// All registered source have an associated checkpoint (that is possibly empty).
@@ -184,6 +200,11 @@ impl IndexCheckpoint {
     pub fn remove_source(&mut self, source_id: &str) {
         self.per_source.remove(source_id);
     }
+
+    /// Returns [`true`] if the checkpoint is empty.
+    pub fn is_empty(&self) -> bool {
+        self.per_source.is_empty()
+    }
 }
 
 /// A source checkpoint is a map of the last processed position for every partition.
@@ -201,7 +222,7 @@ impl SourceCheckpoint {
         self.per_partition.len()
     }
 
-    /// Returns `true` if the checkpoint is empty.
+    /// Returns [`true`] if the checkpoint is empty.
     pub fn is_empty(&self) -> bool {
         self.per_partition.is_empty()
     }

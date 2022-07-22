@@ -178,6 +178,13 @@ pub fn build_index_command<'a>() -> Command<'a> {
                         .required(false),
                 ])
             )
+        .subcommand(
+            Command::new("reset-checkpoint")
+                .about("Clears an index's checkpoint. This is a destructive operation. Proceed with caution.")
+                .args(&[
+                    arg!(--index <INDEX> "ID of the target index"),
+                ])
+            )
         .arg_required_else_help(true)
 }
 
@@ -261,6 +268,13 @@ pub enum IndexCliCommand {
     GarbageCollect(GarbageCollectIndexArgs),
     Ingest(IngestDocsArgs),
     Search(SearchIndexArgs),
+    ResetCheckpoint(ResetCheckpointArgs),
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct ResetCheckpointArgs {
+    pub config_uri: Uri,
+    pub index_id: String,
 }
 
 impl IndexCliCommand {
@@ -285,6 +299,7 @@ impl IndexCliCommand {
             "describe" => Self::parse_describe_args(submatches),
             "gc" => Self::parse_garbage_collect_args(submatches),
             "ingest" => Self::parse_ingest_args(submatches),
+            "reset-checkpoint" => Self::parse_reset_checkpoint_args(submatches),
             _ => bail!("Index subcommand `{}` is not implemented.", subcommand),
         }
     }
@@ -495,6 +510,21 @@ impl IndexCliCommand {
         }))
     }
 
+    fn parse_reset_checkpoint_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let index_id = matches
+            .value_of("index")
+            .expect("`index` is a required arg.")
+            .to_string();
+        let config_uri = matches
+            .value_of("config")
+            .map(Uri::try_new)
+            .expect("`config` is a required arg.")?;
+        Ok(Self::ResetCheckpoint(ResetCheckpointArgs {
+            config_uri,
+            index_id,
+        }))
+    }
+
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
             Self::List(args) => list_index_cli(args).await,
@@ -506,6 +536,7 @@ impl IndexCliCommand {
             Self::Demux(args) => merge_or_demux_cli(args, false, true).await,
             Self::GarbageCollect(args) => garbage_collect_index_cli(args).await,
             Self::Delete(args) => delete_index_cli(args).await,
+            Self::ResetCheckpoint(args) => reset_checkpoint_cli(args).await,
         }
     }
 }
@@ -1029,6 +1060,20 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
         deleted_bytes / 1_000_000
     );
     println!("Index `{}` successfully garbage collected.", args.index_id);
+    Ok(())
+}
+
+async fn reset_checkpoint_cli(args: ResetCheckpointArgs) -> anyhow::Result<()> {
+    debug!(args = ?args, "reset-index-checkpoint");
+    let config = load_quickwit_config(&args.config_uri, None).await?;
+    let metastore = quickwit_metastore_uri_resolver()
+        .resolve(&config.metastore_uri())
+        .await?;
+    metastore.reset_index_checkpoint(&args.index_id).await?;
+    println!(
+        "Checkpoint successfully deleted for index `{}`.",
+        args.index_id
+    );
     Ok(())
 }
 

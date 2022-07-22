@@ -456,6 +456,20 @@ impl Metastore for FileBackedMetastore {
             .await
     }
 
+    async fn reset_index_checkpoint(&self, index_id: &str) -> MetastoreResult<()> {
+        self.mutate(index_id, |index| index.reset_index_checkpoint())
+            .await
+    }
+
+    async fn reset_source_checkpoint(
+        &self,
+        index_id: &str,
+        source_id: &str,
+    ) -> MetastoreResult<()> {
+        self.mutate(index_id, |index| index.reset_source_checkpoint(source_id))
+            .await
+    }
+
     /// -------------------------------------------------------------------------------
     /// Read-only accessors
 

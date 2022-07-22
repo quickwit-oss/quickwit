@@ -213,7 +213,7 @@ mod tests {
     use quickwit_cli::cli::{build_cli, CliCommand};
     use quickwit_cli::index::{
         CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs, GarbageCollectIndexArgs,
-        IndexCliCommand, IngestDocsArgs, MergeOrDemuxArgs, SearchIndexArgs,
+        IndexCliCommand, IngestDocsArgs, MergeOrDemuxArgs, ResetCheckpointArgs, SearchIndexArgs,
     };
     use quickwit_cli::split::{DescribeSplitArgs, ExtractSplitArgs, SplitCliCommand};
     use quickwit_common::uri::Uri;
@@ -548,6 +548,28 @@ mod tests {
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Describe(DescribeIndexArgs {
+                index_id,
+                ..
+            })) if &index_id == "wikipedia"
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_reset_checkpoint_args() -> anyhow::Result<()> {
+        let app = build_cli().no_binary_name(true);
+        let matches = app.try_get_matches_from(vec![
+            "index",
+            "reset-checkpoint",
+            "--index",
+            "wikipedia",
+            "--config",
+            "quickwit.yaml",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Index(IndexCliCommand::ResetCheckpoint(ResetCheckpointArgs {
                 index_id,
                 ..
             })) if &index_id == "wikipedia"
