@@ -62,15 +62,24 @@ fn purge_unknown_files(base_path: &Path, metadata: &Metadata) -> io::Result<()> 
     Ok(())
 }
 
-pub(crate) struct Store<D: Directory> {
-    directory: D,
+pub(crate) struct Store<D: Directory + Sync + Send + 'static> {
+    directory: Arc<D>,
     access_log: AccessLogWriter,
 }
 
-impl<D: Directory> Store<D> {
+impl<D: Directory + Sync + Send + 'static> Clone for Store<D> {
+    fn clone(&self) -> Self {
+        Self {
+            directory: self.directory.clone(),
+            access_log: self.access_log.clone(),
+        }
+    }
+}
+
+impl<D: Directory + Sync + Send + 'static> Store<D> {
     fn new(directory: D, access_log: AccessLogWriter) -> Self {
         Self {
-            directory,
+            directory: Arc::new(directory),
             access_log,
         }
     }
@@ -78,10 +87,8 @@ impl<D: Directory> Store<D> {
     /// Gets the metadata associated with the given file key.
     ///
     /// If the file does not exist `None` is returned.
-    pub(crate) fn get_metadata(&self, path_key: &Path) -> Option<FileEntry> {
-        let computed_key = Self::compute_key(path_key);
-
-        self.directory.get_metadata(computed_key)
+    pub(crate) fn get_metadata(&self, key: FileKey) -> Option<FileEntry> {
+        self.directory.get_metadata(key)
     }
 
     pub(crate) fn entries(&self) -> impl Iterator<Item = FileEntry> {
@@ -104,7 +111,7 @@ impl<D: Directory> Store<D> {
 
         match self.directory.read_range(computed_key, range) {
             Ok(data) => {
-                self.access_log.register_read(computed_key, time_now());
+                self.access_log.register_read(computed_key, super::time_now());
                 Ok(Some(data))
             }
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
@@ -120,7 +127,7 @@ impl<D: Directory> Store<D> {
 
         match self.directory.read_all(computed_key) {
             Ok(data) => {
-                self.access_log.register_read(computed_key, time_now());
+                self.access_log.register_read(computed_key, super::time_now());
                 Ok(Some(data))
             }
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
@@ -128,7 +135,15 @@ impl<D: Directory> Store<D> {
         }
     }
 
-    /// Writes a given buffer to an existing file between the given range.
+    /// Writes a given buffer to an existing file or creates a new file between the given range.
+    ///
+    /// Note:
+    ///  If a file does not already exist a new file will be created. Padding the file upto
+    ///  the given range start.
+    ///
+    ///  TODO:
+    ///   This seems very implementation dependant on whether this is actually a good idea
+    ///   or not. Probably best to change this after testing with a reasonable big dataset.
     pub(crate) fn put_range(
         &self,
         path_key: &Path,
@@ -161,6 +176,14 @@ impl<D: Directory> Store<D> {
 
         self.directory.remove_file(computed_key)?;
         self.access_log.register_removal(computed_key);
+
+        Ok(())
+    }
+
+    /// Removes a file from the cache with it's given file key.
+    pub(crate) fn remove_with_key(&self, key: FileKey) -> io::Result<()> {
+        self.directory.remove_file(key)?;
+        self.access_log.register_removal(key);
 
         Ok(())
     }
@@ -282,7 +305,7 @@ impl FileBackedDirectory {
     }
 
     fn register_file_write(&self, key: FileKey, checksum: u32, file_size: u64) -> FileEntry {
-        let entry = FileEntry::new(key, checksum, time_now(), file_size);
+        let entry = FileEntry::new(key, checksum, super::time_now(), file_size);
         self.file_metadata.write().insert(entry.key, entry);
         entry
     }
@@ -393,10 +416,6 @@ impl Directory for FileBackedDirectory {
         let file = self.get_open_file(key)?;
         calculate_file_info(&file)
     }
-}
-
-fn time_now() -> Duration {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap()
 }
 
 fn not_found_error() -> io::Error {

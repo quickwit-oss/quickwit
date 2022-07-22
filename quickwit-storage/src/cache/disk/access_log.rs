@@ -10,7 +10,9 @@ use crossbeam::channel::{self, Receiver, Sender};
 
 use super::file::{FileEntry, FileKey};
 
+
 pub(crate) type Metadata = HashMap<FileKey, FileEntry>;
+
 
 /// Opens an existing access log contained within the given directory or creates a new log.
 pub(crate) fn open_access_log(base_path: &Path) -> io::Result<Log> {
@@ -102,7 +104,7 @@ fn load_and_verify_file(file: &mut File) -> io::Result<LoadedData> {
 }
 
 #[derive(Copy, Clone)]
-pub enum Event {
+pub(crate) enum Event {
     ReadAccess { file_key: u64, accessed_at: u64 },
     Write { entry: FileEntry },
     Remove { file_key: u64 },
@@ -110,7 +112,7 @@ pub enum Event {
 }
 
 #[derive(Clone)]
-pub struct AccessLogWriter(Sender<Event>);
+pub(crate) struct AccessLogWriter(Sender<Event>);
 
 impl AccessLogWriter {
     fn send_event(&self, event: Event) {
@@ -118,18 +120,18 @@ impl AccessLogWriter {
         let _ = self.0.send(event);
     }
 
-    pub fn register_read(&self, file_key: u64, accessed_at: Duration) {
+    pub(crate) fn register_read(&self, file_key: u64, accessed_at: Duration) {
         self.send_event(Event::ReadAccess {
             file_key,
             accessed_at: accessed_at.as_secs(),
         })
     }
 
-    pub fn register_write(&self, entry: FileEntry) {
+    pub(crate) fn register_write(&self, entry: FileEntry) {
         self.send_event(Event::Write { entry })
     }
 
-    pub fn register_removal(&self, file_key: u64) {
+    pub(crate) fn register_removal(&self, file_key: u64) {
         self.send_event(Event::Remove { file_key })
     }
 }
