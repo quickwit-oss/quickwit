@@ -47,11 +47,7 @@ pub fn into_u64_range(range: Range<usize>) -> Range<u64> {
 }
 
 pub fn setup_logging_for_tests() {
-    use std::sync::Once;
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        env_logger::builder().format_timestamp(None).init();
-    });
+    let _ = env_logger::builder().format_timestamp(None).try_init();
 }
 
 pub fn split_file(split_id: &str) -> String {

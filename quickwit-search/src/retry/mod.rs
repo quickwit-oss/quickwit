@@ -104,7 +104,7 @@ mod tests {
                 .await?,
         );
         let client_hashmap = client_pool.clients();
-        let first_grpc_addr: SocketAddr = "127.0.0.1:10000".parse()?;
+        let first_grpc_addr: SocketAddr = "127.0.0.1:20000".parse()?;
         let failing_client = client_hashmap.get(&first_grpc_addr).unwrap();
         let split_id_and_footer_offsets = SplitIdAndFooterOffsets {
             split_id: "split_1".to_string(),
@@ -117,7 +117,7 @@ mod tests {
             &split_id_and_footer_offsets.split_id,
         )
         .unwrap();
-        assert_eq!(client_for_retry.grpc_addr().to_string(), "127.0.0.1:10010");
+        assert_eq!(client_for_retry.grpc_addr().to_string(), "127.0.0.1:20010");
         Ok(())
     }
 }

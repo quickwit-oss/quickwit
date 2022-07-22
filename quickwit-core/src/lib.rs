@@ -46,11 +46,8 @@ mod tests {
 
     use crate::IndexService;
 
-    const METASTORE_URI: &str = "ram://quickwit-test-indexes";
-
     #[tokio::test]
     async fn test_file_entry_from_split_and_index_delete() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
         let index_id = "test-index";
         let doc_mapping_yaml = r#"
             field_mappings:
@@ -86,7 +83,7 @@ mod tests {
         let index_service = IndexService::new(
             test_sandbox.metastore(),
             StorageUriResolver::for_test(),
-            Uri::new("file:///quickwit".to_string()),
+            Uri::new("ram:///indexes".to_string()),
         );
         let deleted_file_entries = index_service.delete_index(index_id, false).await?;
         assert_eq!(deleted_file_entries.len(), 1);
@@ -95,8 +92,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_index_without_index_uri() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
-        let index_id = "test-index-no-index-uri";
+        let index_id = "test-index--no-index-uri";
         let doc_mapping_yaml = r#"
             field_mappings:
               - name: title
@@ -111,20 +107,22 @@ mod tests {
             search_settings: SearchSettings::default(),
             sources: Vec::new(),
         };
+        let metastore_uri = Uri::new("ram:///metastore".to_string());
         let metastore = quickwit_metastore_uri_resolver()
-            .resolve(METASTORE_URI)
-            .await?;
+            .resolve(&metastore_uri)
+            .await
+            .unwrap();
         let storage_resolver = StorageUriResolver::for_test();
         let index_service = IndexService::new(
             metastore,
             storage_resolver,
-            Uri::new("ram://test-storage-indexes".to_string()),
+            Uri::new("ram:///indexes".to_string()),
         );
         let index_metadata = index_service.create_index(index_config, false).await?;
         assert_eq!(index_metadata.index_id, index_id);
         assert_eq!(
             index_metadata.index_uri,
-            "ram://test-storage-indexes/test-index-no-index-uri"
+            "ram:///indexes/test-index--no-index-uri"
         );
         Ok(())
     }

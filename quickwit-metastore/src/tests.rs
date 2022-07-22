@@ -23,6 +23,7 @@ pub mod test_suite {
 
     use async_trait::async_trait;
     use itertools::Itertools;
+    use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use time::OffsetDateTime;
@@ -76,8 +77,8 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = "test-metastore-add-source";
-        let index_uri = "ram://indexes/test-metastore-add-source";
-        let index_metadata = IndexMetadata::for_test(index_id, index_uri);
+        let index_uri = format!("ram://indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
         metastore
             .create_index(index_metadata.clone())
@@ -141,7 +142,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = "test-metastore-delete-source";
-        let index_uri = "ram://indexes/test-metastore-delete-source";
+        let index_uri = format!("ram://indexes/{index_id}");
         let source_id = "test-metastore-delete-source--void-source-id";
 
         let source = SourceConfig {
@@ -149,7 +150,7 @@ pub mod test_suite {
             source_params: SourceParams::void(),
         };
 
-        let mut index_metadata = IndexMetadata::for_test(index_id, index_uri);
+        let mut index_metadata = IndexMetadata::for_test(index_id, index_uri.as_str());
         index_metadata.sources.insert(source_id.to_string(), source);
 
         metastore
@@ -183,7 +184,8 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = "create-index-index";
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_uri = format!("ram://indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
         // Create an index
         metastore
@@ -197,8 +199,9 @@ pub mod test_suite {
     pub async fn test_metastore_delete_index<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let index_id = "delte-index-index";
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_id = "delete-index-index";
+        let index_uri = format!("ram://indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
         // Delete a non-existent index
         let result = metastore
@@ -216,12 +219,12 @@ pub mod test_suite {
         metastore.delete_index(index_id).await.unwrap();
     }
 
-    #[allow(unused_variables)]
     pub async fn test_metastore_index_metadata<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = "index-metadata-index";
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_uri = format!("ram://indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
         // Get a non-existent index metadata
         let result = metastore
@@ -236,8 +239,9 @@ pub mod test_suite {
             .unwrap();
 
         // Get an index metadata
-        let result = metastore.index_metadata(index_id).await.unwrap();
-        assert!(matches!(result, index_metadata));
+        let index_metadata = metastore.index_metadata(index_id).await.unwrap();
+        assert_eq!(index_metadata.index_id, index_id);
+        assert_eq!(index_metadata.index_uri, index_uri);
 
         cleanup_index(&metastore, index_id).await;
     }
@@ -248,7 +252,8 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "stage-split-index";
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_uri = format!("ram://indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
         let split_id = "stage-split-my-index-one";
         let split_metadata = SplitMetadata {
@@ -295,6 +300,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = "publish-splits-empty-index";
+        let index_uri = format!("ram://indexes/{index_id}");
         let source_id = "publish-splits-empty-source";
 
         // Publish a split on a non-existent index
@@ -314,7 +320,7 @@ pub mod test_suite {
         // Update the checkpoint, by publishing an empty array of splits with a non-empty
         // checkpoint. This operation is allowed and used in the Indexer.
         {
-            let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+            let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
             metastore
                 .create_index(index_metadata.clone())
                 .await
@@ -347,8 +353,9 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "publish-splits-index";
+        let index_uri = format!("ram://indexes/{index_id}");
         let source_id = "publish-splits-source";
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
         let split_id_1 = "publish-splits-index-one";
         let split_metadata_1 = SplitMetadata {
@@ -735,14 +742,15 @@ pub mod test_suite {
 
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
-        let index_id = "replace_splits-index";
-        let source_id = "replace_splits-source";
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_id = append_random_suffix("test-metastore-replace-splits");
+        let index_uri = format!("ram://indexes/{index_id}");
+        let source_id = format!("{index_id}--source");
+        let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
 
-        let split_id_1 = "replace_splits-index-one";
+        let split_id_1 = format!("{index_id}--split-one");
         let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_id: split_id_1.to_string(),
+            split_id: split_id_1.clone(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: None,
@@ -750,10 +758,10 @@ pub mod test_suite {
             ..Default::default()
         };
 
-        let split_id_2 = "replace_splits-index-two";
+        let split_id_2 = format!("{index_id}--split-two");
         let split_metadata_2 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_id: split_id_2.to_string(),
+            split_id: split_id_2.clone(),
             num_docs: 5,
             uncompressed_docs_size_in_bytes: 6,
             time_range: None,
@@ -761,10 +769,10 @@ pub mod test_suite {
             ..Default::default()
         };
 
-        let split_id_3 = "replace_splits-index-three";
+        let split_id_3 = format!("{index_id}--split-three");
         let split_metadata_3 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_id: split_id_3.to_string(),
+            split_id: split_id_3.clone(),
             num_docs: 5,
             uncompressed_docs_size_in_bytes: 6,
             time_range: None,
@@ -774,7 +782,7 @@ pub mod test_suite {
 
         // Replace splits on a non-existent index
         {
-            let result = metastore
+            let error = metastore
                 .replace_splits(
                     "non-existent-index",
                     &["non-existent-split-one"],
@@ -782,7 +790,7 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
+            assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
         }
 
         // Replace a non-existent split on an index
@@ -794,7 +802,7 @@ pub mod test_suite {
 
             let result = metastore
                 .replace_splits(
-                    index_id,
+                    &index_id,
                     &["non-existent-split"],
                     &["non-existent-split-two"],
                 )
@@ -802,7 +810,7 @@ pub mod test_suite {
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Replace a publish split with a non existing split
@@ -813,27 +821,27 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_split(&index_id, split_metadata_1.clone())
                 .await
                 .unwrap();
 
             metastore
                 .publish_splits(
-                    index_id,
-                    source_id,
-                    &[split_id_1],
+                    &index_id,
+                    &source_id,
+                    &[&split_id_1],
                     CheckpointDelta::default(),
                 )
                 .await
                 .unwrap();
 
             let result = metastore
-                .replace_splits(index_id, &[split_id_2], &[split_id_1])
+                .replace_splits(&index_id, &[&split_id_2], &[&split_id_1])
                 .await
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Replace a publish split with a deleted split
@@ -844,37 +852,37 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_split(&index_id, split_metadata_1.clone())
                 .await
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_2.clone())
+                .stage_split(&index_id, split_metadata_2.clone())
                 .await
                 .unwrap();
 
             metastore
                 .publish_splits(
-                    index_id,
-                    source_id,
-                    &[split_id_1, split_id_2],
+                    &index_id,
+                    &source_id,
+                    &[&split_id_1, &split_id_2],
                     CheckpointDelta::default(),
                 )
                 .await
                 .unwrap();
 
             metastore
-                .mark_splits_for_deletion(index_id, &[split_id_2])
+                .mark_splits_for_deletion(&index_id, &[&split_id_2])
                 .await
                 .unwrap();
 
             let result = metastore
-                .replace_splits(index_id, &[split_id_2], &[split_id_1])
+                .replace_splits(&index_id, &[&split_id_2], &[&split_id_1])
                 .await
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::SplitsNotStaged { .. }));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Replace a publish split with mixed splits
@@ -885,32 +893,75 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_split(&index_id, split_metadata_1.clone())
                 .await
                 .unwrap();
 
             metastore
                 .publish_splits(
-                    index_id,
-                    source_id,
-                    &[split_id_1],
+                    &index_id,
+                    &source_id,
+                    &[&split_id_1],
                     CheckpointDelta::default(),
                 )
                 .await
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_2.clone())
+                .stage_split(&index_id, split_metadata_2.clone())
                 .await
                 .unwrap();
 
             let result = metastore
-                .replace_splits(index_id, &[split_id_2, split_id_3], &[split_id_1])
+                .replace_splits(&index_id, &[&split_id_2, &split_id_3], &[&split_id_1])
                 .await
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
+        }
+
+        // Replace a deleted split with a new split
+        {
+            metastore
+                .create_index(index_metadata.clone())
+                .await
+                .unwrap();
+
+            metastore
+                .stage_split(&index_id, split_metadata_1.clone())
+                .await
+                .unwrap();
+
+            metastore
+                .publish_splits(
+                    &index_id,
+                    &source_id,
+                    &[&split_id_1],
+                    CheckpointDelta::default(),
+                )
+                .await
+                .unwrap();
+
+            metastore
+                .mark_splits_for_deletion(&index_id, &[&split_id_1])
+                .await
+                .unwrap();
+
+            metastore
+                .stage_split(&index_id, split_metadata_2.clone())
+                .await
+                .unwrap();
+
+            let error = metastore
+                .replace_splits(&index_id, &[&split_id_2], &[&split_id_1])
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(error, MetastoreError::SplitsNotDeletable { split_ids } if split_ids == vec![split_id_1.clone()])
+            );
+
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Replace a publish split with staged splits
@@ -921,36 +972,36 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_split(&index_id, split_metadata_1.clone())
                 .await
                 .unwrap();
 
             metastore
                 .publish_splits(
-                    index_id,
-                    source_id,
-                    &[split_id_1],
+                    &index_id,
+                    &source_id,
+                    &[&split_id_1],
                     CheckpointDelta::default(),
                 )
                 .await
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_2.clone())
+                .stage_split(&index_id, split_metadata_2.clone())
                 .await
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_3.clone())
+                .stage_split(&index_id, split_metadata_3.clone())
                 .await
                 .unwrap();
 
             metastore
-                .replace_splits(index_id, &[split_id_2, split_id_3], &[split_id_1])
+                .replace_splits(&index_id, &[&split_id_2, &split_id_3], &[&split_id_1])
                 .await
                 .unwrap();
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
     }
 
@@ -963,7 +1014,8 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "mark-splits-as-deleted-my-index";
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_uri = format!("ram://indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
         let split_id_1 = "mark-splits-as-deleted-my-index-one";
         let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
@@ -1032,8 +1084,9 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "delete-splits-index";
+        let index_uri = format!("ram://indexes/{index_id}");
         let source_id = "delete-splits-source";
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
         let split_id_1 = "delete-splits-index-one";
         let split_metadata_1 = SplitMetadata {
@@ -1158,7 +1211,8 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "list-all-splits-index";
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_uri = format!("ram://indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
         let split_id_1 = "list-all-splits-index-one";
         let split_metadata_1 = SplitMetadata {
@@ -1274,7 +1328,8 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "list-splits-index";
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_uri = format!("ram://indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
         let split_id_1 = "list-splits-one";
         let split_metadata_1 = SplitMetadata {
@@ -1780,8 +1835,9 @@ pub mod test_suite {
         let mut current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "split-update-timestamp-index";
+        let index_uri = format!("ram://indexes/{index_id}");
         let source_id = "split-update-timestamp-source";
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
         let split_id = "split-update-timestamp-one";
         let split_metadata = SplitMetadata {
@@ -1885,9 +1941,11 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id_1 = "index-metadata-list-indexes-1";
+        let index_uri_1 = format!("ram:///indexes/{index_id_1}");
+        let index_metadata_1 = IndexMetadata::for_test(index_id_1, &index_uri_1);
         let index_id_2 = "index-metadata-list-indexes-2";
-        let index_metadata_1 = IndexMetadata::for_test(index_id_1, "ram://indexes/my-index");
-        let index_metadata_2 = IndexMetadata::for_test(index_id_2, "ram://indexes/my-index");
+        let index_uri_2 = format!("ram:///indexes/{index_id_2}");
+        let index_metadata_2 = IndexMetadata::for_test(index_id_2, &index_uri_2);
         let index_ids = vec![index_id_1, index_id_2];
 
         // Get a non-existent index metadata

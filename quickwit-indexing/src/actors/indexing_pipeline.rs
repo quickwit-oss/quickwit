@@ -656,8 +656,6 @@ mod tests {
     async fn test_indexing_pipeline_num_fails_before_success(
         mut num_fails: usize,
     ) -> anyhow::Result<bool> {
-        quickwit_common::setup_logging_for_tests();
-        let index_id = "test-index";
         let mut metastore = MockMetastore::default();
         metastore
             .expect_index_metadata()
@@ -665,7 +663,7 @@ mod tests {
             .returning(move |_| {
                 if num_fails == 0 {
                     let index_metadata =
-                        IndexMetadata::for_test("test-index", "ram://indexes/my-index");
+                        IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
                     return Ok(index_metadata);
                 }
                 num_fails -= 1;
@@ -681,20 +679,18 @@ mod tests {
             .returning(|_, _| Ok(()));
         metastore
             .expect_stage_split()
-            .withf(move |requested_index_id, _metadata| -> bool { requested_index_id == index_id })
+            .withf(|index_id, _metadata| -> bool { index_id == "test-index" })
             .times(1)
             .returning(|_, _| Ok(()));
         metastore
             .expect_publish_splits()
-            .withf(
-                move |requested_index_id, source_id, splits, checkpoint_delta| -> bool {
-                    requested_index_id == index_id
-                        && source_id == "test-source"
-                        && splits.len() == 1
-                        && format!("{:?}", checkpoint_delta)
-                            .ends_with(":(00000000000000000000..00000000000000001030])")
-                },
-            )
+            .withf(|index_id, source_id, splits, checkpoint_delta| -> bool {
+                index_id == "test-index"
+                    && source_id == "test-source"
+                    && splits.len() == 1
+                    && format!("{:?}", checkpoint_delta)
+                        .ends_with(":(00000000000000000000..00000000000000001030])")
+            })
             .times(1)
             .returning(|_, _, _, _| Ok(()));
         let universe = Universe::new();
@@ -703,7 +699,7 @@ mod tests {
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
         };
         let indexing_pipeline_params = IndexingPipelineParams {
-            index_id: index_id.to_string(),
+            index_id: "test-index".to_string(),
             doc_mapper: Arc::new(default_doc_mapper_for_tests()),
             indexing_directory: IndexingDirectory::for_test().await?,
             indexing_settings: IndexingSettings::for_test(),
@@ -741,15 +737,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexing_pipeline() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_index_metadata()
             .withf(|index_id| index_id == "test-index")
-            .returning(move |_| {
+            .returning(|_| {
                 Ok(IndexMetadata::for_test(
                     "test-index",
-                    "ram://indexes/my-index",
+                    "ram:///indexes/test-index",
                 ))
             });
         metastore
@@ -762,20 +757,18 @@ mod tests {
             .returning(|_, _| Ok(()));
         metastore
             .expect_stage_split()
-            .withf(move |index_id, _metadata| -> bool { index_id == "test-index" })
+            .withf(|index_id, _metadata| index_id == "test-index")
             .times(1)
             .returning(|_, _| Ok(()));
         metastore
             .expect_publish_splits()
-            .withf(
-                move |index_id, source_id, splits, checkpoint_delta| -> bool {
-                    index_id == "test-index"
-                        && source_id == "test-source"
-                        && splits.len() == 1
-                        && format!("{:?}", checkpoint_delta)
-                            .ends_with(":(00000000000000000000..00000000000000001030])")
-                },
-            )
+            .withf(|index_id, source_id, splits, checkpoint_delta| -> bool {
+                index_id == "test-index"
+                    && source_id == "test-source"
+                    && splits.len() == 1
+                    && format!("{:?}", checkpoint_delta)
+                        .ends_with(":(00000000000000000000..00000000000000001030])")
+            })
             .times(1)
             .returning(|_, _, _, _| Ok(()));
         let universe = Universe::new();
