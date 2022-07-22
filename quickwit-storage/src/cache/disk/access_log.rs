@@ -6,14 +6,12 @@ use std::os::unix::fs::FileExt;
 use std::path::Path;
 use std::time::Duration;
 
-use tracing::{info, warn, error};
 use crossbeam::channel::{self, Receiver, Sender};
+use tracing::{error, info, warn};
 
 use super::file::{FileEntry, FileKey};
 
-
 pub(crate) type Metadata = HashMap<FileKey, FileEntry>;
-
 
 /// Opens an existing access log contained within the given directory or creates a new log.
 pub(crate) fn open_access_log(base_path: &Path) -> io::Result<Log> {
@@ -90,7 +88,7 @@ fn load_and_verify_file(file: &mut File) -> io::Result<LoadedData> {
             Err(e) => {
                 warn!(
                     "Cache Corruption: Corrupted row detected within the persistent cache log. \
-                    Skipping row, this may affect initial cache performance."
+                     Skipping row, this may affect initial cache performance."
                 );
 
                 // A corrupted row can be overwritten.
@@ -220,7 +218,7 @@ impl FileAccessTask {
     fn try_flush_data(&mut self) {
         if let Err(e) = self.writer.sync_data() {
             error!(
-                error = ?e, 
+                error = ?e,
                 "IO Cache Flush Error: Failed to flush cache entries log, some data \
                 may not be persisted and affect cache performance on fresh start."
             );

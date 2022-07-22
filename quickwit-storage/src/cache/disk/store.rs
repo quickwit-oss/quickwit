@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::format;
 use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::io::ErrorKind;
@@ -8,7 +9,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::vec::IntoIter;
 use std::{cmp, io};
-use std::fmt::format;
 
 use fasthash::FastHasher;
 use parking_lot::{Mutex, RwLock};
@@ -110,7 +110,8 @@ impl<D: Directory + Sync + Send + 'static> Store<D> {
 
         match self.directory.read_range(computed_key, range) {
             Ok(data) => {
-                self.access_log.register_read(computed_key, super::time_now());
+                self.access_log
+                    .register_read(computed_key, super::time_now());
                 Ok(Some(data))
             }
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
@@ -129,7 +130,8 @@ impl<D: Directory + Sync + Send + 'static> Store<D> {
 
         match self.directory.read_all(computed_key) {
             Ok(data) => {
-                self.access_log.register_read(computed_key, super::time_now());
+                self.access_log
+                    .register_read(computed_key, super::time_now());
                 Ok(Some(data))
             }
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
@@ -430,11 +432,11 @@ impl Directory for FileBackedDirectory {
             Ok(info) => info,
             Err(primary_error) => {
                 // We don't want to leave a random file laying around.
-                return if let Err(secondary_error) = self.remove_file(key){
+                return if let Err(secondary_error) = self.remove_file(key) {
                     Err(propagate_errors(primary_error, secondary_error))
                 } else {
                     Err(primary_error)
-                }
+                };
             }
         };
 
@@ -445,11 +447,11 @@ impl Directory for FileBackedDirectory {
 
     fn write_all(&self, key: FileKey, bytes: &[u8]) -> io::Result<FileEntry> {
         if let Err(primary_error) = self.write_all_inner(key, bytes) {
-            return if let Err(secondary_error) = self.remove_file(key){
+            return if let Err(secondary_error) = self.remove_file(key) {
                 Err(propagate_errors(primary_error, secondary_error))
             } else {
                 Err(primary_error)
-            }
+            };
         }
 
         let checksum = self.compute_raw_checksum(bytes);
@@ -479,12 +481,15 @@ fn not_found_error() -> io::Error {
 }
 
 fn propagate_errors(err1: io::Error, err2: io::Error) -> io::Error {
-     io::Error::new(
+    io::Error::new(
         err1.kind(),
-        format!("Failed to complete IO operation: {}, during the handling of this error, another error occurred: {}", err1, err2)
+        format!(
+            "Failed to complete IO operation: {}, during the handling of this error, another \
+             error occurred: {}",
+            err1, err2
+        ),
     )
 }
-
 
 pub struct FileInfo {
     pub checksum: u32,
@@ -537,8 +542,8 @@ mod tests {
     use std::env::temp_dir;
     use std::path::PathBuf;
 
-    use crate::cache::disk::time_now;
     use super::*;
+    use crate::cache::disk::time_now;
 
     fn random_tmp_dir() -> PathBuf {
         let path = temp_dir().join(rand::random::<u16>().to_string());
@@ -550,18 +555,16 @@ mod tests {
     #[test]
     fn test_directory_write_all() {
         let data = b"Hello, world. This is some sample data!";
-        let expected_entry = FileEntry::new(
-            1,
-            crc32fast::hash(data),
-            time_now(),
-            data.len() as u64,
-        );
+        let expected_entry =
+            FileEntry::new(1, crc32fast::hash(data), time_now(), data.len() as u64);
 
         let dir = random_tmp_dir();
 
         let directory = FileBackedDirectory::new(&dir, 2, HashMap::new());
 
-        directory.write_all(expected_entry.key, data.as_ref()).expect("write data to disk.");
+        directory
+            .write_all(expected_entry.key, data.as_ref())
+            .expect("write data to disk.");
 
         {
             let lock = directory.opened_file_cache.lock();
@@ -570,7 +573,11 @@ mod tests {
 
         {
             let lock = directory.file_metadata.read();
-            assert_eq!(lock.get(&1), Some(&expected_entry), "Expected entry stored in metadata to be the same.");
+            assert_eq!(
+                lock.get(&1),
+                Some(&expected_entry),
+                "Expected entry stored in metadata to be the same."
+            );
         }
     }
 
@@ -578,12 +585,7 @@ mod tests {
     fn test_directory_write_range() {
         let data = b"Hello, world. This is some sample data!";
 
-        let expected_entry = FileEntry::new(
-            1,
-            crc32fast::hash(&data[..13]),
-            time_now(),
-            13,
-        );
+        let expected_entry = FileEntry::new(1, crc32fast::hash(&data[..13]), time_now(), 13);
 
         let dir = random_tmp_dir();
 
@@ -591,7 +593,9 @@ mod tests {
 
         // We expect the writer to implicitly crop the input data to only
         // write out the given range.
-        directory.write_range(expected_entry.key, 0..13, data.as_ref()).expect("write data to disk.");
+        directory
+            .write_range(expected_entry.key, 0..13, data.as_ref())
+            .expect("write data to disk.");
 
         {
             let lock = directory.opened_file_cache.lock();
@@ -600,26 +604,38 @@ mod tests {
 
         {
             let lock = directory.file_metadata.read();
-            assert_eq!(lock.get(&1), Some(&expected_entry), "Expected entry stored in metadata to be the same.");
+            assert_eq!(
+                lock.get(&1),
+                Some(&expected_entry),
+                "Expected entry stored in metadata to be the same."
+            );
         }
 
-        let written_buffer = directory.read_all(expected_entry.key).expect("read all data");
-        assert_eq!(&written_buffer, &data[..13], "Expected on the first 13 bytes to be written to disk.");
-        assert_eq!(crc32fast::hash(&written_buffer), expected_entry.file_checksum, "Expected buffer checksums to match.");
+        let written_buffer = directory
+            .read_all(expected_entry.key)
+            .expect("read all data");
+        assert_eq!(
+            &written_buffer,
+            &data[..13],
+            "Expected on the first 13 bytes to be written to disk."
+        );
+        assert_eq!(
+            crc32fast::hash(&written_buffer),
+            expected_entry.file_checksum,
+            "Expected buffer checksums to match."
+        );
     }
 
     fn write_basic_contents(buffer: &[u8]) -> (FileBackedDirectory, FileEntry) {
-        let expected_entry = FileEntry::new(
-            1,
-            crc32fast::hash(buffer),
-            time_now(),
-            buffer.len() as u64,
-        );
+        let expected_entry =
+            FileEntry::new(1, crc32fast::hash(buffer), time_now(), buffer.len() as u64);
 
         let dir = random_tmp_dir();
 
         let directory = FileBackedDirectory::new(&dir, 2, HashMap::new());
-        directory.write_all(expected_entry.key, buffer).expect("write data to disk.");
+        directory
+            .write_all(expected_entry.key, buffer)
+            .expect("write data to disk.");
 
         (directory, expected_entry)
     }
@@ -628,47 +644,70 @@ mod tests {
     fn test_directory_remove_file() {
         let data = b"Hello, world. This is some sample data!";
 
-        let expected_entry = FileEntry::new(
-            1,
-            crc32fast::hash(data),
-            time_now(),
-            data.len() as u64,
-        );
+        let expected_entry =
+            FileEntry::new(1, crc32fast::hash(data), time_now(), data.len() as u64);
 
         let dir = random_tmp_dir();
 
         let directory = FileBackedDirectory::new(&dir, 2, HashMap::new());
-        directory.write_all(expected_entry.key, data.as_ref()).expect("write data to disk.");
+        directory
+            .write_all(expected_entry.key, data.as_ref())
+            .expect("write data to disk.");
 
         let expected_file_path = dir.join("1").with_extension("data");
 
-        assert!(expected_file_path.exists(), "Expected file to exist after writing buffer.");
+        assert!(
+            expected_file_path.exists(),
+            "Expected file to exist after writing buffer."
+        );
 
         directory.remove_file(1).expect("remove file");
-        assert!(!expected_file_path.exists(), "Expected file to not exist after removing file from directory.");
+        assert!(
+            !expected_file_path.exists(),
+            "Expected file to not exist after removing file from directory."
+        );
 
         {
             let lock = directory.file_metadata.read();
-            assert!(lock.is_empty(), "Expected metadata lookup to be empty after deleting file.");
+            assert!(
+                lock.is_empty(),
+                "Expected metadata lookup to be empty after deleting file."
+            );
         }
 
         let result = directory.read_all(expected_entry.key);
-        assert!(result.is_err(), "Expected directory to return error after deleting file.");
+        assert!(
+            result.is_err(),
+            "Expected directory to return error after deleting file."
+        );
 
         let err = result.unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::NotFound, "Expected directory to return NotFound ErrorKind after deleting file.");
+        assert_eq!(
+            err.kind(),
+            ErrorKind::NotFound,
+            "Expected directory to return NotFound ErrorKind after deleting file."
+        );
     }
-
 
     #[test]
     fn test_read_all() {
         let data = b"Hello, world. This is some sample data!";
         let (directory, expected_entry) = write_basic_contents(data);
 
-        let buffer = directory.read_all(expected_entry.key).expect("read all data");
+        let buffer = directory
+            .read_all(expected_entry.key)
+            .expect("read all data");
 
-        assert_eq!(buffer.as_slice(), data.as_ref(), "Expected buffer read to equal buffer written.");
-        assert_eq!(expected_entry.file_checksum, crc32fast::hash(data), "Expected buffer checksums to match.");
+        assert_eq!(
+            buffer.as_slice(),
+            data.as_ref(),
+            "Expected buffer read to equal buffer written."
+        );
+        assert_eq!(
+            expected_entry.file_checksum,
+            crc32fast::hash(data),
+            "Expected buffer checksums to match."
+        );
     }
 
     #[test]
@@ -676,9 +715,15 @@ mod tests {
         let data = b"Hello, world. This is some sample data!";
         let (directory, expected_entry) = write_basic_contents(data);
 
-        let buffer = directory.read_range(expected_entry.key, 0..13).expect("read all data");
+        let buffer = directory
+            .read_range(expected_entry.key, 0..13)
+            .expect("read all data");
 
-        assert_eq!(buffer.as_slice(), b"Hello, world.".as_ref(), "Expected buffer read to equal buffer slice.");
+        assert_eq!(
+            buffer.as_slice(),
+            b"Hello, world.".as_ref(),
+            "Expected buffer read to equal buffer slice."
+        );
     }
 
     #[test]
@@ -693,14 +738,24 @@ mod tests {
         let dir = random_tmp_dir();
 
         let directory = FileBackedDirectory::new(&dir, 2, HashMap::new());
-        directory.write_range(1, 10..49, data.as_ref()).expect("write data to disk.");
+        directory
+            .write_range(1, 10..49, data.as_ref())
+            .expect("write data to disk.");
 
         // Demonstrates the limitation where reading outside of previously written bounds
         // will cause the buffer to be passed with intermediate values.
         let buffer = directory.read_range(1, 0..23).expect("read all data");
 
-        assert_eq!(&buffer[..10], &[0; 10], "Expected start of buffer to be zeroed.");
-        assert_eq!(&buffer[10..], b"Hello, world.".as_ref(), "Expected rest of buffer to equal sample buffer slice.");
+        assert_eq!(
+            &buffer[..10],
+            &[0; 10],
+            "Expected start of buffer to be zeroed."
+        );
+        assert_eq!(
+            &buffer[10..],
+            b"Hello, world.".as_ref(),
+            "Expected rest of buffer to equal sample buffer slice."
+        );
     }
 
     #[test]
@@ -710,24 +765,44 @@ mod tests {
         let dir = random_tmp_dir();
         let directory = FileBackedDirectory::new(&dir, 2, HashMap::new());
 
-        directory.write_all(1, data.as_ref()).expect("write data to disk.");
-        directory.write_all(2, data.as_ref()).expect("write data to disk.");
+        directory
+            .write_all(1, data.as_ref())
+            .expect("write data to disk.");
+        directory
+            .write_all(2, data.as_ref())
+            .expect("write data to disk.");
 
         {
             let lock = directory.opened_file_cache.lock();
             assert_eq!(lock.len(), 2, "Expected 2 files to be cached.");
-            assert_eq!(lock.peek_lru().map(|v| v.0), Some(&1), "File key `1` to be the first to be evicted.");
+            assert_eq!(
+                lock.peek_lru().map(|v| v.0),
+                Some(&1),
+                "File key `1` to be the first to be evicted."
+            );
         }
 
-        directory.write_all(3, data.as_ref()).expect("write data to disk.");
-        directory.write_all(2, data.as_ref()).expect("write data to disk.");
-        directory.write_all(3, data.as_ref()).expect("write data to disk.");
-        directory.write_all(3, data.as_ref()).expect("write data to disk.");
+        directory
+            .write_all(3, data.as_ref())
+            .expect("write data to disk.");
+        directory
+            .write_all(2, data.as_ref())
+            .expect("write data to disk.");
+        directory
+            .write_all(3, data.as_ref())
+            .expect("write data to disk.");
+        directory
+            .write_all(3, data.as_ref())
+            .expect("write data to disk.");
 
         {
             let lock = directory.opened_file_cache.lock();
             assert_eq!(lock.len(), 2, "Expected 2 files to be cached.");
-            assert_eq!(lock.peek_lru().map(|v| v.0), Some(&2), "File key `2` to be the first to be evicted.");
+            assert_eq!(
+                lock.peek_lru().map(|v| v.0),
+                Some(&2),
+                "File key `2` to be the first to be evicted."
+            );
         }
     }
 }

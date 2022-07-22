@@ -4,15 +4,15 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
-use parking_lot::Mutex;
 use async_trait::async_trait;
+use parking_lot::Mutex;
 use tracing::{error, warn};
 
+use super::file::FileKey;
+use super::store::{open_disk_store, FileBackedDirectory, Store};
 use crate::cache::Cache;
 use crate::metrics::CacheMetrics;
 use crate::OwnedBytes;
-use super::file::FileKey;
-use super::store::{open_disk_store, FileBackedDirectory, Store};
 
 /// TODO: Move to shared area for memory and disk cache.
 const MIN_TIME_SINCE_LAST_ACCESS: Duration = Duration::from_secs(60);
@@ -100,11 +100,12 @@ impl DiskBackedLRUCache {
     ) -> anyhow::Result<Option<OwnedBytes>> {
         let path = path.to_path_buf();
         let store = self.store.clone();
-        let range = tokio::task::spawn_blocking(move || store.get_range(&path, byte_range)).await??;
+        let range =
+            tokio::task::spawn_blocking(move || store.get_range(&path, byte_range)).await??;
 
         match range {
             None => Ok(None),
-            Some(range) => Ok(Some(OwnedBytes::new(range)))
+            Some(range) => Ok(Some(OwnedBytes::new(range))),
         }
     }
 
@@ -115,11 +116,16 @@ impl DiskBackedLRUCache {
 
         match range {
             None => Ok(None),
-            Some(range) => Ok(Some(OwnedBytes::new(range)))
+            Some(range) => Ok(Some(OwnedBytes::new(range))),
         }
     }
 
-    async fn try_put(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) -> anyhow::Result<()> {
+    async fn try_put(
+        &self,
+        path: PathBuf,
+        byte_range: Range<usize>,
+        bytes: OwnedBytes,
+    ) -> anyhow::Result<()> {
         let store = self.store.clone();
         tokio::task::spawn_blocking(move || store.put_range(&path, byte_range, &bytes))
             .await?
@@ -136,7 +142,9 @@ impl DiskBackedLRUCache {
     fn handle_cache_stats(&self, data: &Option<OwnedBytes>) {
         if let Some(buffer) = data {
             self.cache_counters.hits_num_items.inc();
-            self.cache_counters.hits_num_bytes.inc_by(buffer.len() as u64);
+            self.cache_counters
+                .hits_num_bytes
+                .inc_by(buffer.len() as u64);
         } else {
             self.cache_counters.misses_num_items.inc();
         }
@@ -226,7 +234,7 @@ impl DiskBackedLRUCache {
             Ok(failed_files) => {
                 let mut lock = self.retry_files.lock();
                 (*lock) = failed_files;
-            },
+            }
             Err(_) => {
                 warn!("Failed to spawn executor task and retrieve result!");
 
@@ -309,9 +317,7 @@ fn reset_lru_state(existing_cache: &mut LruCache, popped_items: Vec<FileKey>) {
 
 fn convert_and_log_error<T>(res: anyhow::Result<T>, op: &str) -> Option<T> {
     match res {
-        Ok(data) => {
-            Some(data)
-        },
+        Ok(data) => Some(data),
         Err(e) => {
             error!(
                 error = ?e,
