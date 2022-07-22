@@ -79,11 +79,7 @@ fn purge_unknown_files(base_path: &Path, metadata: &Metadata) -> io::Result<()> 
             .file_name()
             .to_string_lossy()
             .strip_suffix(".data")
-            .and_then(|name|
-                name.parse::<FileKey>()
-                    .ok()
-                    .and_then(|v| metadata.get(&v)
-            ));
+            .and_then(|name| name.parse::<FileKey>().ok().and_then(|v| metadata.get(&v)));
 
         let file_entry = match file_key {
             Some(entry) => entry,
@@ -101,7 +97,7 @@ fn purge_unknown_files(base_path: &Path, metadata: &Metadata) -> io::Result<()> 
 
         if let Ok(Ok(info)) = maybe_info {
             if info.checksum == file_entry.file_checksum {
-                continue
+                continue;
             }
         }
 
@@ -841,23 +837,27 @@ mod tests {
         drop(directory);
 
         let should_get_removed = dir.join("should-be-removed");
-        File::create(&should_get_removed)
-            .expect("create random file");
+        File::create(&should_get_removed).expect("create random file");
 
         purge_unknown_files(&dir, &metadata).expect("purge files ok.");
 
-        assert!(!should_get_removed.exists(), "Unregister file should be removed in purge step");
+        assert!(
+            !should_get_removed.exists(),
+            "Unregister file should be removed in purge step"
+        );
 
         let valid_file = dir.join("1").with_extension("data");
         assert!(valid_file.exists(), "Valid file should exist.");
 
         let directory = FileBackedDirectory::new(&dir, 2, metadata);
 
-        let buffer = directory
-            .read_all(1)
-            .expect("read existing file");
+        let buffer = directory.read_all(1).expect("read existing file");
 
-        assert_eq!(&buffer, data.as_ref(), "Expected read buffer to match sample buffer.");
+        assert_eq!(
+            &buffer,
+            data.as_ref(),
+            "Expected read buffer to match sample buffer."
+        );
     }
 
     #[test]
