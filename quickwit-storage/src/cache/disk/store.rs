@@ -192,7 +192,8 @@ impl<D: Directory + Sync + Send + 'static> Store<D> {
     }
 
     fn compute_key(path: &Path) -> FileKey {
-        let mut hasher = fasthash::city::Hasher64::new();
+        // This is a hack. TODO: Provide a better hashing system to get a FileKey.
+        let mut hasher = crc32fast::Hasher::new();
         path.hash(&mut hasher);
         hasher.finish()
     }
