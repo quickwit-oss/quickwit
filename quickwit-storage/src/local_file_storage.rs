@@ -133,7 +133,7 @@ fn missing_file_is_ok(io_result: io::Result<()>) -> io::Result<()> {
 
 #[async_trait]
 impl Storage for LocalFileStorage {
-    async fn check(&self) -> anyhow::Result<()> {
+    async fn check_connectivity(&self) -> anyhow::Result<()> {
         if !self.root.exists() {
             // By creating directories, we check if we have the right permissions.
             fs::create_dir_all(self.root.as_path()).await?
