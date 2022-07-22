@@ -527,7 +527,7 @@ mod tests {
             "timestamp": 1586960586000i64,
             "body": "20200415T072306-0700 INFO This is a great log",
             "response_date2": "2021-12-19T16:39:57+00:00",
-            "response_date": 1652866573227i64,
+            "response_date": "2021-12-19T16:39:57Z",
             "response_time": 2.3,
             "response_payload": "YWJj",
             "owner": "foo",
@@ -544,7 +544,7 @@ mod tests {
     const EXPECTED_JSON_PATHS_AND_VALUES: &str = r#"{
             "timestamp": [1586960586000],
             "body": ["20200415T072306-0700 INFO This is a great log"],
-            "response_date": [1652866573227],
+            "response_date": ["2021-12-19T16:39:57Z"],
             "response_time": [2.3],
             "response_payload": [[97,98,99]],
             "owner": ["foo"],
@@ -645,7 +645,7 @@ mod tests {
                 r#"{
                 "timestamp": 1586960586000,
                 "unknown_field": "20200415T072306-0700 INFO This is a great log",
-                "response_date": 1652866573227,
+                "response_date": "2021-12-19T16:39:57+00:00",
                 "response_time": 12,
                 "response_payload": "YWJj"
             }"#
@@ -661,7 +661,7 @@ mod tests {
             r#"{
                 "timestamp": 1586960586000,
                 "unknown_field": "20200415T072306-0700 INFO This is a great log",
-                "response_date": 1652866573227,
+                "response_date": "2021-12-19T16:39:57+00:00",
                 "response_time": 12
             }"#
             .to_string(),

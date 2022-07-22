@@ -19,7 +19,7 @@
 
 use tantivy::schema::{Cardinality, Type};
 
-use super::date_time_type::QuickwitDateTimeOptions;
+use super::date_time_type::QuickwitDateOptions;
 use crate::default_doc_mapper::field_mapping_entry::{
     QuickwitJsonOptions, QuickwitNumericOptions, QuickwitObjectOptions, QuickwitTextOptions,
 };
@@ -35,7 +35,7 @@ pub enum FieldMappingType {
     /// Unsigned 64-bit integer mapping type configuration.
     U64(QuickwitNumericOptions, Cardinality),
     /// DateTime mapping type configuration
-    Date(QuickwitDateTimeOptions, Cardinality),
+    Date(QuickwitDateOptions, Cardinality),
     /// 64-bit float mapping type configuration.
     F64(QuickwitNumericOptions, Cardinality),
     /// Bool mapping type configuration.
