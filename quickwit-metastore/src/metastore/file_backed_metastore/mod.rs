@@ -421,8 +421,17 @@ impl Metastore for FileBackedMetastore {
         index_id: &str,
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
-        self.mutate(index_id, |index| index.mark_splits_for_deletion(split_ids))
-            .await
+        self.mutate(index_id, |index| {
+            index.mark_splits_for_deletion(
+                split_ids,
+                &[
+                    SplitState::Staged,
+                    SplitState::Published,
+                    SplitState::MarkedForDeletion,
+                ],
+            )
+        })
+        .await
     }
 
     async fn delete_splits<'a>(
