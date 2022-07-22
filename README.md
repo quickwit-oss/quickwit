@@ -108,7 +108,7 @@ Take a look at our [Quick Start]([https://quickwit.io/docs/get-started/quickstar
 
 # 🙋 FAQ
 ### How can I switch from Elasticsearch to Quickwit?
-In Quickwit 0.3, we released Elasticsearch compatible Ingest-API, so that you can change the configuration of your current log shipper (vector, fluent bit, syslog) to send data to Quickwit instead of Elasticsearch. You can query the logs using the Quickwit Web UI or [Search API](https://quickwit.io/docs/reference/rest-api). We also support [ES compatible Aggregation-API](https://quickwit.io/docs/reference/aggregation), so you can summarise the data as statistics.
+In Quickwit 0.3, we released Elasticsearch compatible Ingest-API, so that you can change the configuration of your current log shipper (Vector, Fluent Bit, Syslog, ...) to send data to Quickwit. You can query the logs using the Quickwit Web UI or [Search API](https://quickwit.io/docs/reference/rest-api). We also support [ES compatible Aggregation-API](https://quickwit.io/docs/reference/aggregation).
 
 ###  How is Quickwit different from traditional search engines like Elasticsearch or Solr?
 The core difference and advantage of Quickwit is its architecture that is built from the ground up for cloud and log management. Optimized IO paths make search on object storage sub-second and thanks to the true decoupled compute and storage, search instances are stateless, it is possible to add or remove search nodes within seconds. Last but not least, we implemented a highly-reliable distributed search and exactly-once semantics during indexing so that all engineers can sleep at night. All this slashes costs for log management.
@@ -120,8 +120,8 @@ We estimate that Quickwit can be up to 10x cheaper on average than Elastic. To u
 Quickwit is open-source under the GNU Affero General Public License Version 3 - AGPLv3. Fundamentally, this means that you are free to use Quickwit for your project, as long as you don't modify Quickwit. If you do, you have to make the modifications public.
 We also provide a commercial license for enterprises to provide support and a voice on our roadmap.
 
-### Can Quickwit be deployed in a Highly Available / Cluster mode?
-Not the case today, but we have it on the roadmap. However, we have distributed search. 
+### Is is pottible to setup Quickwit for a High Availability (HA)?
+Not today, but HA is on our roadmap. 
 
 ### What is Quickwit's business model?
 Our business model relies on our commercial license. There is no plan to become SaaS in the near future.
@@ -156,12 +156,12 @@ Chat with us in [Discord](https://discord.gg/rpRRTezWhW) | Follow us on [Twitter
 
 # 🤝 Contribute and spread the word
 
-We are always super happy to have contributions: code, documentation, issues, feedback, or even saying hello on [discord]! Here is how you can help us build the future of log management: 
+We are always super happy to have contributions: code, documentation, issues, feedback, or even saying hello on [discord](https://discord.gg/rpRRTezWhW)! Here is how you can help us build the future of log management: 
 - Have a look through GitHub issues labeled "Good first issue".
-- Read our [Contributor Covenant Code of Conduct](https://github.com/quickwit-oss/quickwit/blob/0add0562f08e4edd46f5c5537e8ef457d42a508e/CODE_OF_CONDUCT.md)
+- Read our [Contributor Covenant Code of Conduct](https://github.com/quickwit-oss/quickwit/blob/0add0562f08e4edd46f5c5537e8ef457d42a508e/CODE_OF_CONDUCT.md).
 - Create a fork of Quickwit and submit your pull request!
 
-✨ And to thank you for your contributions, claim your swag by emailing us at hello@quickwit.io.
+✨ And to thank you for your contributions, claim your swag by emailing us at hello at quickwit.io.
 
 
 # 🔗 Reference
