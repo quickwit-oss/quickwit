@@ -26,6 +26,7 @@ use async_trait::async_trait;
 use fnv::FnvHashMap;
 use futures::future::{BoxFuture, WeakShared};
 use futures::{Future, FutureExt};
+use quickwit_common::uri::Uri;
 use tantivy::directory::OwnedBytes;
 
 use crate::{Storage, StorageResult};
@@ -169,7 +170,7 @@ impl<T: Storage> Storage for DebouncedStorage<T> {
             .await
     }
 
-    fn uri(&self) -> String {
+    fn uri(&self) -> &Uri {
         self.underlying.uri()
     }
 

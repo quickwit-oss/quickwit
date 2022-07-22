@@ -50,9 +50,6 @@ mod ram_storage;
 mod split;
 mod storage_resolver;
 
-use std::path::Path;
-
-use anyhow::Context;
 use quickwit_common::uri::Uri;
 pub use tantivy::directory::OwnedBytes;
 
@@ -61,10 +58,11 @@ pub use self::bundle_storage::{BundleStorage, BundleStorageFileOffsets};
 pub use self::cache::MockCache;
 pub use self::cache::{wrap_storage_with_long_term_cache, MemorySizedCache};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
+#[cfg(feature = "azure")]
+pub use self::object_storage::{AzureBlobStorage, AzureBlobStorageFactory};
 pub use self::object_storage::{
     MultiPartPolicy, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
 };
-pub use self::prefix_storage::add_prefix_to_storage;
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};
 pub use self::split::{SplitPayload, SplitPayloadBuilder};
 #[cfg(any(test, feature = "testsuite"))]
@@ -75,23 +73,21 @@ pub use self::storage_resolver::{
     quickwit_storage_uri_resolver, StorageFactory, StorageUriResolver,
 };
 #[cfg(feature = "testsuite")]
-pub use self::test_suite::storage_test_suite;
+pub use self::test_suite::{
+    storage_test_multi_part_upload, storage_test_single_part_upload, storage_test_suite,
+};
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
 
 /// Loads an entire local or remote file into memory.
 pub async fn load_file(uri: &Uri) -> anyhow::Result<OwnedBytes> {
-    let path = Path::new(uri.as_ref());
-    let parent_uri = path
+    let parent = uri
         .parent()
-        .with_context(|| format!("`{}` is not a valid file URI.", uri))?
-        .to_str()
-        .with_context(|| format!("Failed to convert URI `{}` to str.", uri))?;
-
-    let storage = quickwit_storage_uri_resolver().resolve(parent_uri)?;
-    let file_name = path
+        .ok_or_else(|| anyhow::anyhow!("URI `{uri}` is not a valid file URI."))?;
+    let storage = quickwit_storage_uri_resolver().resolve(&parent)?;
+    let file_name = uri
         .file_name()
-        .with_context(|| format!("`{}` is not a valid file URI.", uri))?;
-    let bytes = storage.get_all(Path::new(file_name)).await?;
+        .ok_or_else(|| anyhow::anyhow!("URI `{uri}` is not a valid file URI."))?;
+    let bytes = storage.get_all(file_name).await?;
     Ok(bytes)
 }
 
@@ -253,12 +249,29 @@ pub(crate) mod test_suite {
         test_write_and_delete_with_dir_separator(storage)
             .await
             .with_context(|| "write_and_delete_with_separator")?;
-        test_file_size(storage)
-            .await
-            .with_context(|| "delete_missing_file")?;
+        test_file_size(storage).await.with_context(|| "file_size")?;
         test_delete_missing_file(storage)
             .await
             .with_context(|| "delete_missing_file")?;
+        Ok(())
+    }
+
+    /// Generic single-part upload test.
+    pub async fn storage_test_single_part_upload(storage: &mut dyn Storage) -> anyhow::Result<()> {
+        let test_path = Path::new("hello_small.txt");
+        let data = b"hello, happy tax payer!".to_vec();
+        let data_size = data.len() as u64;
+        storage.put(test_path, Box::new(data)).await?;
+        assert_eq!(storage.file_num_bytes(test_path).await?, data_size);
+        Ok(())
+    }
+
+    /// Generic multi-part upload test.
+    pub async fn storage_test_multi_part_upload(storage: &mut dyn Storage) -> anyhow::Result<()> {
+        let test_path = Path::new("hello_large.txt");
+        let test_buffer = vec![0u8; 15_000_000];
+        storage.put(test_path, Box::new(test_buffer)).await?;
+        assert_eq!(storage.file_num_bytes(test_path).await?, 15_000_000);
         Ok(())
     }
 }

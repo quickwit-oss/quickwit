@@ -22,6 +22,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use quickwit_common::uri::Uri;
 
 use crate::cache::Cache;
 use crate::{OwnedBytes, Storage, StorageResult};
@@ -84,7 +85,7 @@ impl Storage for StorageWithCache {
         self.storage.file_num_bytes(path).await
     }
 
-    fn uri(&self) -> String {
+    fn uri(&self) -> &Uri {
         self.storage.uri()
     }
 }

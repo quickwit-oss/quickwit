@@ -21,8 +21,6 @@ path = "src/generate_markdown.rs"
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
-tikv-jemallocator = "0.5"
-tikv-jemalloc-ctl = "0.5"
 atty = "0.2"
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
 clap = { version = "= 3.1", features = ["yaml", "env"] }
@@ -55,6 +53,8 @@ serde_json = "1.0"
 tabled = "0.7"
 tempfile = "3"
 thousands = "0.2.0"
+tikv-jemalloc-ctl = "0.5"
+tikv-jemallocator = "0.5"
 time = { version = "0.3.5", features = ["macros"] }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["full"] }
@@ -82,12 +82,14 @@ openssl-support = ["openssl-probe"]
 tokio-console = ["console-subscriber"]
 release-feature-set = [
   "quickwit-metastore/postgres",
+  "quickwit-metastore/azure",
   "quickwit-indexing/kafka",
   "quickwit-indexing/kinesis",
   "openssl-support"
 ]
 release-feature-vendored-set = [
   "quickwit-metastore/postgres",
+  "quickwit-metastore/azure",
   "quickwit-indexing/vendored-kafka",
   "quickwit-indexing/kinesis",
   "openssl-support"

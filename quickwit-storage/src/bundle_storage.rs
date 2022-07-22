@@ -29,6 +29,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_common::chunk_range;
+use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
 use tantivy::directory::FileSlice;
 use tantivy::HasLen;
@@ -245,7 +246,7 @@ impl Storage for BundleStorage {
         Ok(file_range.end - file_range.start as u64)
     }
 
-    fn uri(&self) -> String {
+    fn uri(&self) -> &Uri {
         self.storage.uri()
     }
 }

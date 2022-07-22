@@ -17,33 +17,43 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-// This file is an integration test that assumes that the environement
-// makes it possible to connect to Amazon S3's quickwit-integration-test bucket.
+// This file is an integration test that assumes that a connection
+// to Azurite (the emulated azure blob storage environment)
+// with default `loose` config is possible.
 
 use std::path::Path;
 
 use anyhow::Context;
-use quickwit_common::uri::Uri;
-use quickwit_storage::{MultiPartPolicy, S3CompatibleObjectStorage};
+use azure_storage::core::prelude::StorageClient;
+use azure_storage_blobs::prelude::AsContainerClient;
+#[cfg(feature = "azure")]
+use quickwit_storage::AzureBlobStorage;
+use quickwit_storage::MultiPartPolicy;
 
 #[cfg(feature = "testsuite")]
 #[tokio::test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
-// Weirdly this does not work for localstack. The error messages seem off.
-async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
+async fn test_suite_on_azure_storage() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
-    let storage_uri = Uri::new("s3://quickwit-integration-tests".to_string());
-    let mut object_storage = S3CompatibleObjectStorage::from_uri(&storage_uri)?;
+
+    // Setup container.
+    const CONTAINER: &str = "quickwit";
+    let container_client = StorageClient::new_emulator_default().container_client(CONTAINER);
+    container_client.create().into_future().await?;
+
+    let mut object_storage = AzureBlobStorage::new_emulated(CONTAINER);
     quickwit_storage::storage_test_suite(&mut object_storage).await?;
 
-    let mut object_storage = S3CompatibleObjectStorage::from_uri(&storage_uri)?
-        .with_prefix(Path::new("test-s3-compatible-storage"));
+    let mut object_storage = AzureBlobStorage::new_emulated(CONTAINER).with_prefix(Path::new(
+        "/integration-tests/test-azure-compatible-storage",
+    ));
     quickwit_storage::storage_test_single_part_upload(&mut object_storage)
         .await
         .context("test_single_part_upload")?;
 
     object_storage.set_policy(MultiPartPolicy {
-        target_part_num_bytes: 5 * 1_024 * 1_024, //< the minimum on S3 is 5MB.
+        // On azure, block size is limited between 64KB and 100MB.
+        target_part_num_bytes: 5 * 1_024 * 1_024, // 5MB
         max_num_parts: 10_000,
         multipart_threshold_num_bytes: 10_000_000,
         max_object_num_bytes: 5_000_000_000_000,
@@ -52,5 +62,9 @@ async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
     quickwit_storage::storage_test_multi_part_upload(&mut object_storage)
         .await
         .context("test_multi_part_upload")?;
+
+    // Teardown container.
+    container_client.delete().into_future().await?;
+
     Ok(())
 }

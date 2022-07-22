@@ -347,7 +347,7 @@ mod tests {
             SearchClientPool::from_mocks(vec![Arc::new(mock_service_1), Arc::new(mock_service_2)])
                 .await?;
         let client_hashmap = client_pool.clients();
-        let first_grpc_addr: SocketAddr = "127.0.0.1:10000".parse()?;
+        let first_grpc_addr: SocketAddr = "127.0.0.1:20000".parse()?;
         let first_client = client_hashmap.get(&first_grpc_addr).unwrap().clone();
         let cluster_client = ClusterClient::new(client_pool.clone());
         let result = cluster_client.fetch_docs(request, first_client).await;
@@ -366,7 +366,7 @@ mod tests {
             });
         let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_service_1)]).await?;
         let client_hashmap = client_pool.clients();
-        let first_grpc_addr: SocketAddr = "127.0.0.1:10000".parse()?;
+        let first_grpc_addr: SocketAddr = "127.0.0.1:20000".parse()?;
         let first_client = client_hashmap.get(&first_grpc_addr).unwrap().clone();
         let cluster_client = ClusterClient::new(client_pool.clone());
         let result = cluster_client.fetch_docs(request, first_client).await;
@@ -536,7 +536,7 @@ mod tests {
         )))?;
         drop(result_sender);
         let client_hashmap = client_pool.clients();
-        let first_grpc_addr: SocketAddr = "127.0.0.1:10000".parse()?;
+        let first_grpc_addr: SocketAddr = "127.0.0.1:20000".parse()?;
         let first_client = client_hashmap.get(&first_grpc_addr).unwrap().clone();
         let cluster_client = ClusterClient::new(client_pool);
         let result = cluster_client
