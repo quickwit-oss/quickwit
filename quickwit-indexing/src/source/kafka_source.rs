@@ -886,8 +886,9 @@ mod kafka_broker_tests {
         {
             let (sink, inbox) = create_test_mailbox();
             let checkpoint = SourceCheckpoint::default();
+            let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
             let source = source_loader
-                .load_source(source_config.clone(), checkpoint)
+                .load_source(metastore, source_config.clone(), checkpoint)
                 .await?;
             let actor = SourceActor {
                 source,
