@@ -9,7 +9,6 @@ use std::sync::Arc;
 use std::vec::IntoIter;
 use std::{cmp, io};
 
-use fasthash::FastHasher;
 use parking_lot::{Mutex, RwLock};
 
 use super::access_log::{open_access_log, AccessLogWriter, Metadata};
@@ -24,6 +23,8 @@ pub(crate) fn open_disk_store(
     base_path: &Path,
     max_fd: usize,
 ) -> io::Result<Store<FileBackedDirectory>> {
+    check_and_create_lock(base_path)?;
+
     let log = open_access_log(base_path)?;
 
     purge_unknown_files(base_path, &log.metadata)?;
@@ -32,6 +33,35 @@ pub(crate) fn open_disk_store(
     let store = Store::new(directory, log.writer);
 
     Ok(store)
+}
+
+/// Checks if the directory lock file already exists.
+///
+/// If the lock already exists an io error is returned.
+/// Otherwise a lockfile is created.
+///
+/// The implementation is in general, quite naive and doesn't
+/// attempt to re-acquire the lock if it fails the fist time.
+///
+/// TODO: Possibly improve this functionality.
+fn check_and_create_lock(base_path: &Path) -> io::Result<()> {
+    let lock_file = base_path.join(".cache-lock");
+    if lock_file.exists() {
+        return Err(io::Error::new(
+            ErrorKind::Other,
+            "Existing lock file detected, directory already in use!",
+        ));
+    }
+
+    File::options().create(true).open(lock_file)?;
+
+    Ok(())
+}
+
+/// Attempts to delete the directory lock file.
+fn try_remove_lock(base_path: &Path) -> io::Result<()> {
+    let lock_file = base_path.join(".cache-lock");
+    std::fs::remove_file(lock_file)
 }
 
 fn purge_unknown_files(base_path: &Path, metadata: &Metadata) -> io::Result<()> {
@@ -72,6 +102,12 @@ impl<D: Directory + Sync + Send + 'static> Clone for Store<D> {
             directory: self.directory.clone(),
             access_log: self.access_log.clone(),
         }
+    }
+}
+
+impl<D: Directory + Sync + Send + 'static> Drop for Store<D> {
+    fn drop(&mut self) {
+        let _ = try_remove_lock(self.directory.base_path());
     }
 }
 
@@ -209,6 +245,9 @@ pub(crate) trait Directory {
 
     /// Produces an iterator of file metadata.
     fn entries(&self) -> Self::Entries;
+
+    /// Gets the base file path where the cache is located.
+    fn base_path(&self) -> &Path;
 
     /// Attempts to read a slice of data from the given file.
     ///
@@ -358,6 +397,10 @@ impl Directory for FileBackedDirectory {
             .copied()
             .collect::<Vec<FileEntry>>()
             .into_iter()
+    }
+
+    fn base_path(&self) -> &Path {
+        self.base_path.as_path()
     }
 
     /// Reads a range of data from the file with the given key.
