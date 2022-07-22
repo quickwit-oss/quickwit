@@ -6,7 +6,6 @@ use std::ops::Range;
 use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::vec::IntoIter;
 use std::{cmp, io};
 
@@ -374,6 +373,7 @@ impl Directory for FileBackedDirectory {
         // Although unlikely, we don't want to overwrite data we shouldn't be overwriting.
         // this just prevents us from affecting data we dont want to touch.
         let sub_slice = &bytes[0..range.len()];
+        dbg!(sub_slice.len(), range.start, range.end, range.len());
 
         let file = self.get_open_file(key)?;
         file.write_all_at(sub_slice, range.start as u64)?;
@@ -466,4 +466,80 @@ fn read_to_fill_buff(file: &File, mut buf: &mut [u8], mut offset: u64) -> io::Re
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::env::temp_dir;
+    use std::io::{Seek, SeekFrom};
+    use std::os::unix::fs::FileExt;
+    use std::path::PathBuf;
+
+    use crate::cache::disk::time_now;
+    use super::*;
+
+    fn random_tmp_dir() -> PathBuf {
+        let path = temp_dir().join(rand::random::<u16>().to_string());
+        std::fs::create_dir_all(&path).expect("create random path for test");
+
+        path
+    }
+
+    #[test]
+    fn test_directory_write_all() {
+        let data = b"Hello, world. This is some sample data!";
+        let expected_entry = FileEntry::new(
+            1,
+            crc32fast::hash(data),
+            time_now(),
+            data.len() as u64,
+        );
+
+        let dir = random_tmp_dir();
+
+        let directory = FileBackedDirectory::new(&dir, 2, HashMap::new());
+
+        directory.write_all(expected_entry.key, data.as_ref()).expect("write data to disk.");
+
+        {
+            let lock = directory.opened_file_cache.lock();
+            assert_eq!(lock.len(), 1, "Expected file to be cached.");
+        }
+
+        {
+            let lock = directory.file_metadata.read();
+            assert_eq!(lock.get(&1), Some(&expected_entry), "Expected entry stored in metadata to be the same.");
+        }
+    }
+
+    #[test]
+    fn test_directory_write_slice() {
+        let data = b"Hello, world. This is some sample data!";
+
+        let mut expected_file_buffer = [0; 49];
+        expected_file_buffer[10..].copy_from_slice(data.as_ref());
+
+        let expected_entry = FileEntry::new(
+            1,
+            crc32fast::hash(&expected_file_buffer),  // We implicitly pad the file.
+            time_now(),
+            expected_file_buffer.len() as u64,
+        );
+
+        let dir = random_tmp_dir();
+
+        let directory = FileBackedDirectory::new(&dir, 2, HashMap::new());
+
+        directory.write_range(expected_entry.key, 10..49, data.as_ref()).expect("write data to disk.");
+
+        {
+            let lock = directory.opened_file_cache.lock();
+            assert_eq!(lock.len(), 1, "Expected file to be cached.");
+        }
+
+        {
+            let lock = directory.file_metadata.read();
+            assert_eq!(lock.get(&1), Some(&expected_entry), "Expected entry stored in metadata to be the same.");
+        }
+    }
 }
