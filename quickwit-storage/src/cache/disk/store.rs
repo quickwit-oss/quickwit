@@ -75,17 +75,38 @@ fn purge_unknown_files(base_path: &Path, metadata: &Metadata) -> io::Result<()> 
             continue;
         }
 
-        let valid_file = entry
+        let file_key = entry
             .file_name()
             .to_string_lossy()
-            .parse::<FileKey>()
-            .map(|key| metadata.contains_key(&key))
-            .unwrap_or_default();
+            .strip_suffix(".data")
+            .and_then(|name|
+                name.parse::<FileKey>()
+                    .ok()
+                    .and_then(|v| metadata.get(&v)
+            ));
 
-        if !valid_file {
-            // We don't want to prevent cleaning up other files.
-            let _ = std::fs::remove_file(entry.path());
+        let file_entry = match file_key {
+            Some(entry) => entry,
+            None => {
+                // We don't want to prevent cleaning up other files.
+                let _ = std::fs::remove_file(entry.path());
+                continue;
+            }
+        };
+
+        let maybe_info = File::options()
+            .read(true)
+            .open(entry.path())
+            .map(|f| calculate_file_info(&f));
+
+        if let Ok(Ok(info)) = maybe_info {
+            if info.checksum == file_entry.file_checksum {
+                continue
+            }
         }
+
+        // Checksums dont match or the file is in-accessible.
+        let _ = std::fs::remove_file(entry.path());
     }
 
     Ok(())
@@ -534,6 +555,7 @@ fn propagate_errors(err1: io::Error, err2: io::Error) -> io::Error {
     )
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct FileInfo {
     pub checksum: u32,
     pub file_size: u64,
@@ -799,6 +821,43 @@ mod tests {
             b"Hello, world.".as_ref(),
             "Expected rest of buffer to equal sample buffer slice."
         );
+    }
+
+    #[test]
+    fn test_open_file_checksums() {
+        let data = b"Hello, world. This is some sample data!";
+
+        let dir = random_tmp_dir();
+        let directory = FileBackedDirectory::new(&dir, 2, HashMap::new());
+
+        directory
+            .write_all(1, data.as_ref())
+            .expect("write data to disk.");
+        directory
+            .write_all(2, data.as_ref())
+            .expect("write data to disk.");
+
+        let metadata = directory.file_metadata.read().clone();
+        drop(directory);
+
+        let should_get_removed = dir.join("should-be-removed");
+        File::create(&should_get_removed)
+            .expect("create random file");
+
+        purge_unknown_files(&dir, &metadata).expect("purge files ok.");
+
+        assert!(!should_get_removed.exists(), "Unregister file should be removed in purge step");
+
+        let valid_file = dir.join("1").with_extension("data");
+        assert!(valid_file.exists(), "Valid file should exist.");
+
+        let directory = FileBackedDirectory::new(&dir, 2, metadata);
+
+        let buffer = directory
+            .read_all(1)
+            .expect("read existing file");
+
+        assert_eq!(&buffer, data.as_ref(), "Expected read buffer to match sample buffer.");
     }
 
     #[test]
