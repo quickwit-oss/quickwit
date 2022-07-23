@@ -1,0 +1,16 @@
+# Headless service discovery
+apiVersion: v1
+kind: Service
+metadata:
+  name: discovery
+  labels:
+    app: discovery
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - port: 7282
+      protocol: UDP
+      name: discovery
+  selector:
+    app: quickwit

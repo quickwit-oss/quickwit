@@ -36,8 +36,8 @@ struct PrefixStorage {
 
 #[async_trait]
 impl Storage for PrefixStorage {
-    async fn check(&self) -> anyhow::Result<()> {
-        self.storage.check().await
+    async fn check_connectivity(&self) -> anyhow::Result<()> {
+        self.storage.check_connectivity().await
     }
 
     async fn put(

@@ -1,0 +1,17 @@
+# Headless service for searcher stateful set
+apiVersion: v1
+kind: Service
+metadata:
+  name: searchers
+  labels:
+    app: searchers
+spec:
+  clusterIP: None
+  ports:
+    - port: 7280
+      name: rest
+    - port: 7281
+      name: grpc
+  selector:
+    app: quickwit
+    service: searcher

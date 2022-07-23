@@ -129,8 +129,8 @@ impl<T: Storage> DebouncedStorage<T> {
 
 #[async_trait]
 impl<T: Storage> Storage for DebouncedStorage<T> {
-    async fn check(&self) -> anyhow::Result<()> {
-        self.underlying.check().await
+    async fn check_connectivity(&self) -> anyhow::Result<()> {
+        self.underlying.check_connectivity().await
     }
 
     async fn put(

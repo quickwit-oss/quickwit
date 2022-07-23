@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: quickwit-config
+  labels:
+    app: quickwit
+data:
+  postgres.host: metastore-postgresql.quickwit.svc.cluster.local
+  postgres.port: "5432"
+  postgres.username: quickwit
+  postgres.database: metastore
+
+  node.yaml: |
+    version: 0
+    cluster_id: demo-cluster
+    listen_address: 0.0.0.0
+    gossip_listen_port: 7282
+    data_dir: /quickwit/qwdata
+    default_index_root_uri: /quickwit/indexes
