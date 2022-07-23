@@ -129,7 +129,6 @@ pub async fn fetch_docs(
 const NUM_CONCURRENT_REQUESTS: usize = 10;
 
 async fn get_searcher_for_split_without_cache(
-    num_searchers: usize,
     index_storage: Arc<dyn Storage>,
     split: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<IndexReader> {
@@ -138,7 +137,6 @@ async fn get_searcher_for_split_without_cache(
         .with_context(|| "open-index-for-split")?;
     let reader = index
         .reader_builder()
-        .num_searchers(num_searchers)
         // the docs are presorted so a cache size of NUM_CONCURRENT_REQUESTS is fine
         .doc_store_cache_size(NUM_CONCURRENT_REQUESTS)
         .reload_policy(ReloadPolicy::Manual)
@@ -156,7 +154,7 @@ async fn fetch_docs_in_split(
 ) -> anyhow::Result<Vec<(GlobalDocAddress, String)>> {
     global_doc_addrs.sort_by_key(|doc| doc.doc_addr);
 
-    let index_reader = get_searcher_for_split_without_cache(1, index_storage, split).await?;
+    let index_reader = get_searcher_for_split_without_cache(index_storage, split).await?;
     let searcher = Arc::new(index_reader.searcher());
     let doc_futures = global_doc_addrs.into_iter().map(|global_doc_addr| {
         let searcher = searcher.clone();

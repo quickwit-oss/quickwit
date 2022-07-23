@@ -34,7 +34,7 @@ use quickwit_storage::Storage;
 use tantivy::fastfield::FastValue;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema, Type};
-use tantivy::{LeasedItem, ReloadPolicy, Searcher};
+use tantivy::{ReloadPolicy, Searcher};
 use tokio::sync::{Semaphore, SemaphorePermit};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::*;
@@ -152,7 +152,6 @@ async fn leaf_search_stream_single_split(
     let query = doc_mapper.query(split_schema.clone(), &search_request)?;
     let reader = index
         .reader_builder()
-        .num_searchers(1)
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = reader.searcher();
@@ -167,7 +166,7 @@ async fn leaf_search_stream_single_split(
     );
 
     warmup(
-        &*searcher,
+        &searcher,
         query.as_ref(),
         &request_fields.fast_fields_for_request(timestamp_filter_builder_opt.as_ref()),
         &Default::default(),
@@ -189,7 +188,7 @@ async fn leaf_search_stream_single_split(
                 let collected_values = collect_values::<i64>(
                     &m_request_fields,
                     timestamp_filter_builder_opt,
-                    searcher,
+                    &searcher,
                     query.as_ref(),
                 )?;
                 super::serialize::<i64>(&collected_values, &mut buffer, output_format).map_err(
@@ -204,7 +203,7 @@ async fn leaf_search_stream_single_split(
                 let collected_values = collect_values::<u64>(
                     &m_request_fields,
                     timestamp_filter_builder_opt,
-                    searcher,
+                    &searcher,
                     query.as_ref(),
                 )?;
                 super::serialize::<u64>(&collected_values, &mut buffer, output_format).map_err(
@@ -219,7 +218,7 @@ async fn leaf_search_stream_single_split(
                 let collected_values = collect_partitioned_values::<i64, i64>(
                     &m_request_fields,
                     timestamp_filter_builder_opt,
-                    searcher,
+                    &searcher,
                     query.as_ref(),
                 )?;
                 super::serialize_partitions::<i64, i64>(collected_values.as_slice(), &mut buffer)
@@ -233,7 +232,7 @@ async fn leaf_search_stream_single_split(
                 let collected_values = collect_partitioned_values::<u64, u64>(
                     &m_request_fields,
                     timestamp_filter_builder_opt,
-                    searcher,
+                    &searcher,
                     query.as_ref(),
                 )?;
                 super::serialize_partitions::<u64, u64>(collected_values.as_slice(), &mut buffer)
@@ -272,7 +271,7 @@ async fn leaf_search_stream_single_split(
 fn collect_values<TFastValue: FastValue>(
     request_fields: &SearchStreamRequestFields,
     timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
-    searcher: LeasedItem<Searcher>,
+    searcher: &Searcher,
     query: &dyn Query,
 ) -> crate::Result<Vec<TFastValue>> {
     let collector = FastFieldCollector::<TFastValue> {
@@ -287,7 +286,7 @@ fn collect_values<TFastValue: FastValue>(
 fn collect_partitioned_values<TFastValue: FastValue, TPartitionValue: FastValue + Eq + Hash>(
     request_fields: &SearchStreamRequestFields,
     timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
-    searcher: LeasedItem<Searcher>,
+    searcher: &Searcher,
     query: &dyn Query,
 ) -> crate::Result<Vec<PartitionValues<TFastValue, TPartitionValue>>> {
     let collector = PartionnedFastFieldCollector::<TFastValue, TPartitionValue> {

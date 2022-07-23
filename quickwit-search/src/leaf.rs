@@ -132,7 +132,7 @@ pub(crate) async fn open_index_with_cache(
     let (hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data(
         index_storage,
         split_file,
-        FileSlice::new(Box::new(footer_data)),
+        FileSlice::new(Arc::new(footer_data)),
     )?;
     let bundle_storage_with_cache = wrap_storage_with_long_term_cache(Arc::new(bundle_storage));
     let directory = StorageDirectory::new(bundle_storage_with_cache);
@@ -335,12 +335,11 @@ async fn leaf_search_single_split(
     let query = doc_mapper.query(split_schema, search_request)?;
     let reader = index
         .reader_builder()
-        .num_searchers(1)
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = reader.searcher();
     warmup(
-        &*searcher,
+        &searcher,
         &query,
         &quickwit_collector.fast_field_names(),
         &quickwit_collector.term_dict_field_names(),

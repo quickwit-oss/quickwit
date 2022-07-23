@@ -86,7 +86,7 @@ fn split_footer(file_slice: FileSlice) -> io::Result<(FileSlice, FileSlice)> {
 
 /// Return two slices for given split: `[body and bundle meta data] [hotcache]`
 pub fn get_hotcache_from_split(data: OwnedBytes) -> io::Result<OwnedBytes> {
-    let split_file = FileSlice::new(Box::new(data));
+    let split_file = FileSlice::new(Arc::new(data));
     let (_, hotcache) = split_footer(split_file)?;
     hotcache.read_bytes()
 }
@@ -94,7 +94,7 @@ pub fn get_hotcache_from_split(data: OwnedBytes) -> io::Result<OwnedBytes> {
 impl BundleDirectory {
     /// Get files and their sizes in a split.
     pub fn get_stats_split(data: OwnedBytes) -> io::Result<Vec<(PathBuf, u64)>> {
-        let split_file = FileSlice::new(Box::new(data));
+        let split_file = FileSlice::new(Arc::new(data));
         let (body_and_bundle_metadata, hot_cache) = split_footer(split_file)?;
         let file_offsets = BundleStorageFileOffsets::open(body_and_bundle_metadata)?;
 
@@ -128,9 +128,9 @@ impl BundleDirectory {
 }
 
 impl Directory for BundleDirectory {
-    fn get_file_handle(&self, path: &Path) -> Result<Box<dyn FileHandle>, OpenReadError> {
+    fn get_file_handle(&self, path: &Path) -> Result<Arc<dyn FileHandle>, OpenReadError> {
         let file_slice = self.open_read(path)?;
-        Ok(Box::new(file_slice))
+        Ok(Arc::new(file_slice))
     }
 
     fn open_read(&self, path: &Path) -> Result<FileSlice, OpenReadError> {
