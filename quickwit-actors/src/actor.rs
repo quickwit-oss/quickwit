@@ -166,7 +166,7 @@ pub trait Actor: Send + Sync + Sized + 'static {
         Ok(())
     }
 
-    /// This function is called after a series of one or message have been processed and
+    /// This function is called after a series of one, or several messages have been processed and
     /// no more message is available.
     ///
     /// It is a great place to have the actor "sleep".
