@@ -185,6 +185,7 @@ impl<A: Actor> ActorExecutionEnv<A> {
         while let Some(envelope) = try_get_envelope(&mut self.inbox, &self.ctx) {
             self.process_one_message(envelope).await?;
         }
+        self.actor.on_drained_messages(&self.ctx).await?;
         self.ctx.idle();
 
         if self.ctx.mailbox().is_last_mailbox() {

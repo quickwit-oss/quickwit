@@ -606,3 +606,80 @@ async fn test_actor_sleep_resume_sleep() -> anyhow::Result<()> {
     assert_eq!(total, 5);
     Ok(())
 }
+
+#[derive(Default)]
+struct TestActorWithDrain {
+    counts: ProcessAndDrainCounts,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct ProcessAndDrainCounts {
+    process_calls_count: usize,
+    drain_calls_count: usize,
+}
+
+#[async_trait]
+impl Actor for TestActorWithDrain {
+    type ObservableState = ProcessAndDrainCounts;
+
+    fn observable_state(&self) -> ProcessAndDrainCounts {
+        self.counts
+    }
+
+    async fn on_drained_messages(
+        &mut self,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        self.counts.drain_calls_count += 1;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<()> for TestActorWithDrain {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _message: (),
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        self.counts.process_calls_count += 1;
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn test_drain_is_called() {
+    quickwit_common::setup_logging_for_tests();
+    let universe = Universe::new();
+    let test_actor_with_drain = TestActorWithDrain::default();
+    let (mailbox, handle) = universe.spawn_actor(test_actor_with_drain).spawn();
+    assert_eq!(
+        *handle.process_pending_and_observe().await,
+        ProcessAndDrainCounts {
+            process_calls_count: 0,
+            drain_calls_count: 0
+        }
+    );
+    handle.pause();
+    mailbox.send_message(()).await.unwrap();
+    mailbox.send_message(()).await.unwrap();
+    mailbox.send_message(()).await.unwrap();
+    handle.resume();
+    assert_eq!(
+        *handle.process_pending_and_observe().await,
+        ProcessAndDrainCounts {
+            process_calls_count: 3,
+            drain_calls_count: 1
+        }
+    );
+    mailbox.send_message(()).await.unwrap();
+    assert_eq!(
+        *handle.process_pending_and_observe().await,
+        ProcessAndDrainCounts {
+            process_calls_count: 4,
+            drain_calls_count: 2
+        }
+    );
+}
