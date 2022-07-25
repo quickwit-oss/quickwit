@@ -17,9 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::cmp::Ordering;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use chrono::TimeZone;
+use chrono_tz::Tz;
 use derivative::Derivative;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -203,9 +206,15 @@ fn iso8601_parser(value: &str) -> Result<OffsetDateTime, String> {
 /// using strftime formatting.
 fn make_strftime_parser(format: String) -> StringDateTimeParser {
     Arc::new(move |value: &str| {
-        let date_time = chrono::DateTime::parse_from_str(value, &format)
-            .map_err(|error| error.to_string())
-            .map(|date_time| date_time.naive_utc())?;
+        let date_time = if format.contains("%z") {
+            chrono::DateTime::parse_from_str(value, &format)
+                .map_err(|error| error.to_string())
+                .map(|date_time| date_time.naive_utc())?
+        } else {
+            chrono::NaiveDateTime::parse_from_str(value, &format)
+                .map_err(|error| error.to_string())
+                .map(|date_time| Tz::UTC.from_local_datetime(&date_time).unwrap().naive_utc())?
+        };
 
         OffsetDateTime::from_unix_timestamp_nanos(date_time.timestamp_nanos() as i128)
             .map_err(|error| error.to_string())
@@ -230,7 +239,7 @@ fn make_unix_timestamp_parser(precision: DatePrecision) -> NumberDateTimeParser 
 }
 
 // An enum specifying all supported datetime parsing format.
-#[derive(Clone, Debug, Eq, Ord, PartialOrd, Derivative)]
+#[derive(Clone, Debug, Eq, Derivative)]
 #[derivative(Hash, PartialEq)]
 pub enum DateTimeFormat {
     RCF3339,
@@ -242,6 +251,36 @@ pub enum DateTimeFormat {
         #[derivative(Hash = "ignore")]
         DatePrecision,
     ),
+}
+
+// Need custom Ordering implementation to avoid duplicating
+// `DateTimeFormat::Timestamp` variant in BTreeSet.
+impl PartialOrd for DateTimeFormat {
+    fn partial_cmp(&self, other: &DateTimeFormat) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for DateTimeFormat {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (Self::Strftime(left), Self::Strftime(right)) => left.cmp(right),
+            (Self::Timestamp(_), Self::Timestamp(_)) => Ordering::Equal,
+            _ => self.variant_ordering().cmp(&other.variant_ordering()),
+        }
+    }
+}
+
+impl DateTimeFormat {
+    fn variant_ordering(&self) -> u8 {
+        match self {
+            DateTimeFormat::RCF3339 => 1,
+            DateTimeFormat::RFC2822 => 2,
+            DateTimeFormat::ISO8601 => 3,
+            DateTimeFormat::Strftime(_) => 4,
+            DateTimeFormat::Timestamp(_) => 5,
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for DateTimeFormat {
@@ -337,7 +376,7 @@ fn default_input_formats() -> BTreeSet<DateTimeFormat> {
     input_formats
 }
 
-/// Converts a timestamp to displayable date_time in available formats.
+/// Converts a timestamp to displayable date time in available formats.
 pub fn timestamp_to_datetime_str(
     timestamp: i64,
     precision: &DatePrecision,
@@ -360,11 +399,38 @@ mod tests {
 
     use tantivy::schema::Cardinality;
     use tantivy::DatePrecision;
+    use time::macros::{date, time};
 
     use super::DateTimeFormat;
-    use crate::default_doc_mapper::date_time_type::{DateTimeParsersHolder, QuickwitDateOptions};
+    use crate::default_doc_mapper::date_time_type::{
+        make_strftime_parser, make_unix_timestamp_parser, DateTimeParsersHolder,
+        QuickwitDateOptions,
+    };
     use crate::default_doc_mapper::FieldMappingType;
     use crate::FieldMappingEntry;
+
+    #[test]
+    fn test_strftime_format_cannot_be_duplicated() {
+        let mut formats = BTreeSet::new();
+        formats.insert(DateTimeFormat::Strftime(
+            "%a %b %d %H:%M:%S %z %Y".to_string(),
+        ));
+        formats.insert(DateTimeFormat::Strftime("%Y %m %d".to_string()));
+        formats.insert(DateTimeFormat::Strftime(
+            "%a %b %d %H:%M:%S %z %Y".to_string(),
+        ));
+        formats.insert(DateTimeFormat::Timestamp(DatePrecision::Microseconds));
+        assert_eq!(formats.len(), 3);
+    }
+
+    #[test]
+    fn test_only_one_unix_ts_format_can_be_added() {
+        let mut formats = BTreeSet::new();
+        formats.insert(DateTimeFormat::Timestamp(DatePrecision::Seconds));
+        formats.insert(DateTimeFormat::Timestamp(DatePrecision::Microseconds));
+        formats.insert(DateTimeFormat::Timestamp(DatePrecision::Milliseconds));
+        assert_eq!(formats.len(), 1)
+    }
 
     #[test]
     fn test_quickwit_date_time_options_default_consistent_with_default() {
@@ -498,5 +564,67 @@ mod tests {
             "Error while parsing field `updated_at`: unknown variant `hours`, expected one of \
              `seconds`, `milliseconds`, `microseconds`"
         );
+    }
+
+    #[test]
+    fn test_default_timestamp_parser_is_added_when_not_specified() {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "updated_at",
+                "type": "date",
+                "input_formats": ["iso8601"]
+            }"#,
+        )
+        .unwrap();
+
+        match entry.mapping_type {
+            FieldMappingType::Date(date_options, _) => {
+                let now = time::OffsetDateTime::now_utc();
+                let expected = date_options
+                    .parsers
+                    .parse_number(now.unix_timestamp())
+                    .unwrap();
+                assert_eq!(now.to_calendar_date(), expected.to_calendar_date());
+                assert_eq!(now.to_hms(), expected.to_hms());
+            }
+            _ => panic!("Expected `FieldMappingType::Date` variant."),
+        }
+    }
+
+    #[test]
+    fn test_strftime_parser() {
+        let parse_without_timezone = make_strftime_parser("%Y-%m-%d %H:%M:%S".to_string());
+
+        let date_time = parse_without_timezone("2012-05-21 12:09:14").unwrap();
+        assert_eq!(date_time.date(), date!(2012 - 05 - 21));
+        assert_eq!(date_time.time(), time!(12:09:14));
+
+        let parse_with_timezone = make_strftime_parser("%Y-%m-%d %H:%M:%S %z".to_string());
+        let date_time = parse_with_timezone("2012-05-21 12:09:14 -02:00").unwrap();
+        assert_eq!(date_time.date(), date!(2012 - 05 - 21));
+        assert_eq!(date_time.time(), time!(14:09:14));
+    }
+
+    #[test]
+    fn test_unix_timestamp_parser() {
+        let now = time::OffsetDateTime::now_utc();
+
+        let parse_with_secs = make_unix_timestamp_parser(DatePrecision::Seconds);
+        let date_time = parse_with_secs(now.unix_timestamp()).unwrap();
+        assert_eq!(date_time.date(), now.date());
+        assert_eq!(date_time.time().as_hms(), now.time().as_hms());
+
+        let parse_with_millis = make_unix_timestamp_parser(DatePrecision::Milliseconds);
+        let ts_millis = now.unix_timestamp_nanos() / 1_000_000;
+        let date_time = parse_with_millis(ts_millis as i64).unwrap();
+        assert_eq!(date_time.date(), now.date());
+        assert_eq!(date_time.time().as_hms_milli(), now.time().as_hms_milli());
+
+        let parse_with_micros = make_unix_timestamp_parser(DatePrecision::Microseconds);
+        let ts_micros = now.unix_timestamp_nanos() / 1000;
+        let date_time = parse_with_micros(ts_micros as i64).unwrap();
+        assert_eq!(date_time.date(), now.date());
+        assert_eq!(date_time.time().as_hms_micro(), now.time().as_hms_micro());
     }
 }
