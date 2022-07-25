@@ -20,14 +20,17 @@
 use std::any::Any;
 use std::convert::Infallible;
 use std::fmt;
-use std::hash::Hash;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use tokio::sync::oneshot;
 
-use crate::channel_with_priority::{Priority, Receiver, Sender};
+use crate::channel_with_priority::{Receiver, Sender};
 use crate::envelope::{wrap_in_envelope, Envelope};
-use crate::{Actor, AskError, Command, Handler, QueueCapacity, RecvError, SendError};
+use crate::{
+    Actor, ActorContext, ActorExitStatus, AskError, Handler, QueueCapacity, RecvError, SendError,
+};
 
 /// A mailbox is the object that makes it possible to send a message
 /// to an actor.
@@ -36,30 +39,77 @@ use crate::{Actor, AskError, Command, Handler, QueueCapacity, RecvError, SendErr
 ///
 /// The actor holds its `Inbox` counterpart.
 ///
-/// The mailbox can accept:
-/// - Regular messages wrapped in envelopes. Their type depend on the actor and is defined when
-/// implementing the actor trait. (See [`Envelope`])
-/// - Commands (See [`Command`]). Commands have a higher priority than messages:
-/// whenever a command is available, it is guaranteed to be processed
-/// as soon as possible regardless of the presence of pending regular messages.
+/// The mailbox can receive high priority and low priority messages.
+/// Commands are typically sent as high priority messages, whereas regular
+/// actor messages are sent to the low priority channel.
+///
+/// Whenever a high priority message is available, it is processed
+/// before low priority messages.
 ///
 /// If all mailboxes are dropped, the actor will process all of the pending messages
 /// and gracefully exit with [`crate::actor::ActorExitStatus::Success`].
 pub struct Mailbox<A: Actor> {
-    pub(crate) inner: Arc<Inner<A>>,
+    inner: Arc<Inner<A>>,
+    // We do not rely on the `Arc:strong_count` here to avoid an intricate
+    // race condition. We want to make sure the processing of the `Nudge`
+    // message happens AFTER we decrement the refcount.
+    ref_count: Arc<AtomicUsize>,
+}
+
+impl<A: Actor> Drop for Mailbox<A> {
+    fn drop(&mut self) {
+        let old_val = self.ref_count.fetch_sub(1, Ordering::SeqCst);
+        if old_val == 2 {
+            // This was the last mailbox.
+            // `ref_count == 1` means that only the mailbox in the ActorContext
+            // is remaining.
+            let _ = self.send_message_with_high_priority(LastMailbox);
+        }
+    }
+}
+
+#[derive(Debug)]
+struct LastMailbox;
+
+#[async_trait]
+impl<A: Actor> Handler<LastMailbox> for A {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _: LastMailbox,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        // Being the last mailbox does not necessarily mean that we
+        // want to stop the processing.
+        //
+        // There could be pending message in the queue that will
+        // spawn actors which will get a new copy of the mailbox
+        // etc.
+        //
+        // For that reason, the logic that really detects
+        // the last mailbox happens when all message have been drained.
+        //
+        // The `LastMailbox` message is just here to make sure the actor
+        // loop does not get stuck waiting for a message that does
+        // will never come.
+        Ok(())
+    }
 }
 
 impl<A: Actor> Clone for Mailbox<A> {
     fn clone(&self) -> Self {
+        self.ref_count.fetch_add(1, Ordering::SeqCst);
         Mailbox {
             inner: self.inner.clone(),
+            ref_count: self.ref_count.clone(),
         }
     }
 }
 
 impl<A: Actor> Mailbox<A> {
     pub(crate) fn is_last_mailbox(&self) -> bool {
-        Arc::strong_count(&self.inner) == 1
+        self.ref_count.load(Ordering::SeqCst) == 1
     }
 
     pub fn id(&self) -> &str {
@@ -67,53 +117,22 @@ impl<A: Actor> Mailbox<A> {
     }
 }
 
-pub(crate) enum CommandOrMessage<A: Actor> {
-    Message(Box<dyn Envelope<A>>),
-    Command(Command),
-}
-
-impl<A: Actor> From<Command> for CommandOrMessage<A> {
-    fn from(cmd: Command) -> Self {
-        CommandOrMessage::Command(cmd)
-    }
-}
-
 pub(crate) struct Inner<A: Actor> {
-    pub(crate) tx: Sender<CommandOrMessage<A>>,
+    pub(crate) tx: Sender<Envelope<A>>,
     instance_id: String,
 }
 
 impl<A: Actor> fmt::Debug for Mailbox<A> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Mailbox({})", self.actor_instance_id())
+        f.debug_tuple("Mailbox")
+            .field(&self.actor_instance_id())
+            .finish()
     }
 }
-
-impl<A: Actor> Hash for Mailbox<A> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.inner.instance_id.hash(state)
-    }
-}
-
-impl<A: Actor> PartialEq for Mailbox<A> {
-    fn eq(&self, other: &Self) -> bool {
-        self.inner.instance_id.eq(&other.inner.instance_id)
-    }
-}
-
-impl<A: Actor> Eq for Mailbox<A> {}
 
 impl<A: Actor> Mailbox<A> {
     pub fn actor_instance_id(&self) -> &str {
         &self.inner.instance_id
-    }
-
-    pub(crate) async fn send_with_priority(
-        &self,
-        cmd_or_msg: CommandOrMessage<A>,
-        priority: Priority,
-    ) -> Result<(), SendError> {
-        self.inner.tx.send(cmd_or_msg, priority).await
     }
 
     /// Sends a message to the actor owning the associated inbox.
@@ -130,14 +149,17 @@ impl<A: Actor> Mailbox<A> {
         M: 'static + Send + Sync + fmt::Debug,
     {
         let (envelope, response_rx) = wrap_in_envelope(message);
-        self.send_with_priority(CommandOrMessage::Message(envelope), Priority::Low)
-            .await?;
+        self.inner.tx.send_low_priority(envelope).await?;
         Ok(response_rx)
     }
 
-    pub(crate) async fn send_command(&self, command: Command) -> Result<(), SendError> {
-        self.send_with_priority(command.into(), Priority::High)
-            .await
+    pub(crate) fn send_message_with_high_priority<M>(&self, message: M) -> Result<(), SendError>
+    where
+        A: Handler<M>,
+        M: 'static + Send + Sync + fmt::Debug,
+    {
+        let (envelope, _response_rx) = wrap_in_envelope(message);
+        self.inner.tx.send_high_priority(envelope)
     }
 
     /// Similar to `send_message`, except this method
@@ -175,31 +197,25 @@ impl<A: Actor> Mailbox<A> {
 }
 
 pub struct Inbox<A: Actor> {
-    rx: Receiver<CommandOrMessage<A>>,
+    rx: Receiver<Envelope<A>>,
 }
 
 impl<A: Actor> Inbox<A> {
-    pub(crate) async fn recv_timeout(&mut self) -> Result<CommandOrMessage<A>, RecvError> {
-        self.rx.recv_timeout(crate::message_timeout()).await
+    pub(crate) async fn recv(&mut self) -> Result<Envelope<A>, RecvError> {
+        self.rx.recv().await
     }
 
-    pub(crate) async fn recv_timeout_cmd_and_scheduled_msg_only(
-        &mut self,
-    ) -> Result<CommandOrMessage<A>, RecvError> {
-        self.rx
-            .recv_high_priority_timeout(crate::message_timeout())
-            .await
+    pub(crate) async fn recv_cmd_and_scheduled_msg_only(&mut self) -> Envelope<A> {
+        self.rx.recv_high_priority().await
     }
 
     #[allow(dead_code)] // temporary
-    pub(crate) fn try_recv(&mut self) -> Result<CommandOrMessage<A>, RecvError> {
+    pub(crate) fn try_recv(&mut self) -> Result<Envelope<A>, RecvError> {
         self.rx.try_recv()
     }
 
     #[allow(dead_code)] // temporary
-    pub(crate) fn try_recv_cmd_and_scheduled_msg_only(
-        &mut self,
-    ) -> Result<CommandOrMessage<A>, RecvError> {
+    pub(crate) fn try_recv_cmd_and_scheduled_msg_only(&mut self) -> Result<Envelope<A>, RecvError> {
         self.rx.try_recv_high_priority_message()
     }
 
@@ -212,10 +228,7 @@ impl<A: Actor> Inbox<A> {
         self.rx
             .drain_low_priority()
             .into_iter()
-            .map(|command_or_message| match command_or_message {
-                CommandOrMessage::Message(mut msg) => msg.message(),
-                CommandOrMessage::Command(cmd) => Box::new(cmd),
-            })
+            .map(|mut msg| msg.message())
             .collect()
     }
 
@@ -228,10 +241,7 @@ impl<A: Actor> Inbox<A> {
         self.rx
             .drain_low_priority()
             .into_iter()
-            .flat_map(|command_or_message| match command_or_message {
-                CommandOrMessage::Message(mut msg) => Some(msg.message()),
-                CommandOrMessage::Command(_) => None,
-            })
+            .map(|mut msg| msg.message())
             .flat_map(|any_msg| {
                 if let Ok(boxed_m) = any_msg.downcast::<M>() {
                     Some(*boxed_m)
@@ -248,11 +258,13 @@ pub fn create_mailbox<A: Actor>(
     queue_capacity: QueueCapacity,
 ) -> (Mailbox<A>, Inbox<A>) {
     let (tx, rx) = crate::channel_with_priority::channel(queue_capacity);
+    let ref_count = Arc::new(AtomicUsize::new(1));
     let mailbox = Mailbox {
         inner: Arc::new(Inner {
             tx,
             instance_id: quickwit_common::new_coolid(&actor_name),
         }),
+        ref_count,
     };
     let inbox = Inbox { rx };
     (mailbox, inbox)
