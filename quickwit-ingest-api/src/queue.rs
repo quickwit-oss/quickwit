@@ -39,6 +39,8 @@ fn default_rocks_db_options() -> rocksdb::Options {
     // TODO tweak
     let mut options = rocksdb::Options::default();
     options.create_if_missing(true);
+    options.set_max_open_files(512);
+    options.set_max_total_wal_size(100_000_000);
     options
 }
 
@@ -153,6 +155,8 @@ impl Queues {
             last_position
         };
 
+        self.db
+            .delete_file_in_range_cf(&cf_ref, Position::default(), truncation_end_offset)?;
         self.db
             .delete_range_cf(&cf_ref, Position::default(), truncation_end_offset)?;
         Ok(())
