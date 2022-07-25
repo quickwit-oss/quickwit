@@ -151,7 +151,7 @@ impl<A: Actor> ActorExecutionEnv<A> {
 
     async fn process_messages(&mut self) -> ActorExitStatus {
         loop {
-            if let Err(exit_status) = self.process_all_available_message().await {
+            if let Err(exit_status) = self.process_all_available_messages().await {
                 return exit_status;
             }
         }
@@ -161,7 +161,7 @@ impl<A: Actor> ActorExecutionEnv<A> {
         &mut self,
         mut envelope: Envelope<A>,
     ) -> Result<(), ActorExitStatus> {
-        self.check_if_killed_and_yield().await?;
+        self.yield_and_check_if_killed().await?;
         envelope
             .handle_message(self.msg_id, &mut self.actor, &self.ctx)
             .await?;
@@ -169,7 +169,7 @@ impl<A: Actor> ActorExecutionEnv<A> {
         Ok(())
     }
 
-    async fn check_if_killed_and_yield(&self) -> Result<(), ActorExitStatus> {
+    async fn yield_and_check_if_killed(&self) -> Result<(), ActorExitStatus> {
         self.ctx.protect_future(tokio::task::yield_now()).await;
         if self.ctx.kill_switch().is_dead() {
             return Err(ActorExitStatus::Killed);
@@ -177,8 +177,8 @@ impl<A: Actor> ActorExecutionEnv<A> {
         Ok(())
     }
 
-    async fn process_all_available_message(&mut self) -> Result<(), ActorExitStatus> {
-        self.check_if_killed_and_yield().await?;
+    async fn process_all_available_messages(&mut self) -> Result<(), ActorExitStatus> {
+        self.yield_and_check_if_killed().await?;
         let envelope = get_envelope(&mut self.inbox, &self.ctx).await;
         self.ctx.process();
         self.process_one_message(envelope).await?;
@@ -247,8 +247,8 @@ async fn actor_loop<A: Actor>(actor: A, inbox: Inbox<A>, ctx: ActorContext<A>) -
 
     let after_process_exit_status = if let Err(initialize_exit_status) = initialize_exit_status_res
     {
-        // We do not go through process message
-        // if initialize yield an error.
+        // We do not process messages if initialize yield an error.
+        // We still call finalize however!
         initialize_exit_status
     } else {
         actor_env.process_messages().await
