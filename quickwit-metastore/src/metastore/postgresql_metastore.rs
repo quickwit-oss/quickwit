@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::borrow::BorrowMut;
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::sync::Arc;
@@ -26,7 +25,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
-use quickwit_config::{SourceConfig, SourceParams};
+use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgDatabaseError, PgPoolOptions};
@@ -41,7 +40,6 @@ use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
     MetastoreResult, Split, SplitMetadata, SplitState,
 };
-use crate::checkpoint::{IndexCheckpoint, PartitionId, Position, SourceCheckpoint};
 
 static MIGRATOR: Migrator = sqlx::migrate!("migrations/postgresql");
 
@@ -418,129 +416,6 @@ async fn mutate_index_metadata<E, M: FnOnce(&mut IndexMetadata) -> Result<(), E>
     Ok(())
 }
 
-#[instrument(skip(tx))]
-async fn commit_checkpoint(
-    tx: &mut Transaction<'_, Postgres>,
-    index_id: &str,
-    source_id: &str,
-    checkpoint_delta: &CheckpointDelta,
-) -> MetastoreResult<()>
-{
-    let metadata = index_metadata(tx, index_id).await?;
-    let source = metadata.sources.get(source_id)
-        .ok_or_else(|| {
-            MetastoreError::SourceDoesNotExist {
-                source_id: source_id.to_string()
-            }
-        })?;
-
-    // Determine the name of the resource based on the configuration of the Source
-    let resource = match &source.source_params {
-        SourceParams::Kafka(params) => params.topic.clone(),
-        SourceParams::Kinesis(params) => params.stream_name.clone(),
-        SourceParams::File(params) => {
-            let filepath = params.filepath.clone().unwrap();
-
-            filepath.into_os_string().into_string().unwrap()
-        }
-        _ => String::from("")
-    };
-
-    println!("CHECKPOINT: Topic name: {:?}", resource);
-
-    // let positions: Vec<_> = checkpoint_delta
-    //     .get_source_checkpoint()
-    //     .iter()
-    //     .map(|(partition, position)| {
-    //         println!("CHECKPOINT: partition {:?}", partition);
-    //         println!("CHECKPOINT: partition {:?}", position);
-    //         partition.
-    //     })
-    //     .collect();
-
-    for (partition, position) in checkpoint_delta.get_source_checkpoint().iter() {
-        let result = sqlx::query(
-            r#"
-                    INSERT INTO checkpoints
-                    values ($1, $2, $3, $4, $5, $6)
-                    ON CONFLICT (index_id, source_id, resource, group_id, partition) DO
-                    UPDATE SET position = $6
-                "#,
-        )
-            .bind(index_id)
-            .bind(source_id)
-            .bind(&resource)
-            // This is the group-id. For now it just defaults to the name of the source.
-            // This should probably be configurable at the source level.
-            .bind(source_id)
-            .bind(String::from(partition.0.as_str()))
-            .bind(String::from(position.as_str()))
-            .execute(tx.borrow_mut())
-            .await?;
-
-        // TODO: this should be a unique error as a failure to save a checkpoint is bad
-        if result.rows_affected() == 0 {
-            return Err(MetastoreError::IndexDoesNotExist {
-                index_id: index_id.to_string(),
-            });
-        }
-    }
-
-    Ok(())
-}
-
-async fn index_checkpoint_helper(
-    tx: &mut Transaction<'_, Postgres>,
-    index_id: &str,
-    source_id: Option<String>,
-    resource: Option<String>,
-    group_id: Option<String>,
-) -> MetastoreResult<IndexCheckpoint> {
-    let mut sql = r#"
-        SELECT *
-        FROM checkpoints
-        WHERE index_id = $1
-    "#
-        .to_string();
-
-    if let Some(source_id) = source_id {
-        sql.push_str(&format!(" AND source_id = '{}'", source_id));
-    }
-
-    if let Some(resource) = resource {
-        sql.push_str(&format!(" AND resource = '{}'", resource));
-    }
-
-    if let Some(group_id) = group_id {
-        sql.push_str(&format!(" AND group_id = '{}'", group_id));
-    }
-
-    let checkpoints = sqlx::query_as::<_, postgresql_model::Checkpoint>(&sql)
-        .bind(index_id)
-        .fetch_all(&mut *tx)
-        .await?;
-
-    let mut index_checkpoint = IndexCheckpoint::default();
-
-    for checkpoint in checkpoints.into_iter() {
-        index_checkpoint.add_source(&checkpoint.source_id);
-
-        let partition = match checkpoint.partition {
-            Some(partition) => partition,
-            None => "".to_string()
-        };
-
-        index_checkpoint.try_apply_delta(&checkpoint.source_id,
-                                         CheckpointDelta::from_partition_delta(
-                                             PartitionId::from(partition),
-                                             Position::from(checkpoint.position.as_str()),
-                                             Position::from(checkpoint.position.as_str())
-                                         ))?;
-    }
-
-    Ok(index_checkpoint)
-}
-
 #[async_trait]
 impl Metastore for PostgresqlMetastore {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
@@ -648,10 +523,6 @@ impl Metastore for PostgresqlMetastore {
         checkpoint_delta: CheckpointDelta,
     ) -> MetastoreResult<()> {
         run_with_tx!(self.connection_pool, tx, {
-
-            // todo: replace the commit logic here.
-            //commit_checkpoint(tx, index_id, source_id, &checkpoint_delta).await?;
-
             // Update the index checkpoint.
             mutate_index_metadata(tx, index_id, |index_metadata| {
                 index_metadata
@@ -841,54 +712,6 @@ impl Metastore for PostgresqlMetastore {
                 index_metadata.delete_source(source_id)
             })
             .await
-        })
-    }
-
-    #[instrument(skip(self))]
-    async fn index_checkpoint(
-        &self,
-        index_id: &str,
-        source_id: Option<String>,
-        resource: Option<String>,
-        group_id: Option<String>,
-    ) -> MetastoreResult<IndexCheckpoint> {
-        run_with_tx!(self.connection_pool, tx, {
-            index_checkpoint_helper(tx, index_id, source_id, resource, group_id).await
-        })
-    }
-
-    async fn delete_index_checkpoint(
-        &self,
-        index_id: &str,
-        source_id: Option<String>,
-        resource: Option<String>,
-        group_id: Option<String>,
-    ) -> MetastoreResult<()> {
-        run_with_tx!(self.connection_pool, tx, {
-            let mut sql = r#"
-                DELETE FROM checkpoints
-                WHERE index_id = $1
-            "#
-                .to_string();
-
-            if let Some(source_id) = source_id {
-                sql.push_str(&format!(" AND source_id = '{}'", source_id));
-            }
-
-            if let Some(resource) = resource {
-                sql.push_str(&format!(" AND resource = '{}'", resource));
-            }
-
-            if let Some(group_id) = group_id {
-                sql.push_str(&format!(" AND group_id = '{}'", group_id));
-            }
-
-            sqlx::query_as::<_, postgresql_model::Checkpoint>(&sql)
-                .bind(index_id)
-                .fetch_all(&mut *tx)
-                .await?;
-
-            Ok(())
         })
     }
 

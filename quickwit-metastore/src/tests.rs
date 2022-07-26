@@ -69,11 +69,6 @@ pub mod test_suite {
                 .unwrap();
         }
 
-        // Cleanup all checkpoints for the index
-        metastore.delete_index_checkpoint(index_id, None, None, None)
-            .await
-            .unwrap();
-
         // Delete index.
         metastore.delete_index(index_id).await.unwrap();
     }
@@ -104,107 +99,6 @@ pub mod test_suite {
         metastore
             .add_source(index_id, source.clone())
             .await
-    }
-
-    async fn add_checkpoint(
-        metastore: &dyn Metastore,
-        index_id: &str,
-        source_id: &str,
-        partition: &str,
-        position: &str
-    ) -> MetastoreResult<()>{
-        // Verify stored commits for a single source
-        let checkpoint_delta = CheckpointDelta::from_partition_delta(
-            PartitionId::from(partition),
-            Position::from(0u64),
-            Position::from(position)
-        );
-
-        metastore
-            .publish_splits(index_id, source_id, &[], checkpoint_delta)
-            .await
-    }
-
-    async fn verify_checkpoint(
-        metastore: &dyn Metastore,
-        index_id: &str,
-        source_id: &str,
-        resource: &str,
-        partition: &str,
-        position: &str,
-        partition_count: usize
-    ) {
-        let index_checkpoint = metastore.index_checkpoint(
-            index_id,
-            Some(source_id.to_string()),
-            Some(resource.to_string()),
-            None
-        )
-            .await
-            .unwrap();
-
-        let source_checkpoint = index_checkpoint.source_checkpoint(source_id)
-            .unwrap();
-
-        assert_eq!(source_checkpoint.num_partitions(), partition_count);
-        assert_eq!(
-            source_checkpoint
-                .position_for_partition(&PartitionId::from(partition))
-                .unwrap(),
-            &Position::from(position)
-        );
-    }
-
-    pub async fn test_metastore_index_checkpoint<MetastoreToTest: Metastore + DefaultForTest>() {
-        let metastore = MetastoreToTest::default_for_test().await;
-
-        let index_id = "test-metastore-index-checkpoint";
-        let source_id = "test-metastore-index-checkpoint";
-        let topic = "test-metastore-index-checkpoint-topic";
-
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
-        metastore
-            .create_index(index_metadata.clone())
-            .await
-            .unwrap();
-
-        // Verify stored commits for a single kafka source
-        add_source(&metastore, "kafka", index_id, source_id, topic).await.unwrap();
-
-        add_checkpoint(&metastore, index_id, source_id, "0", "100").await.unwrap();
-
-        verify_checkpoint(&metastore, index_id, source_id, topic, "0", "100", 1)
-            .await;
-
-        // Add a second source to test stored commits for multiple sources
-        let source_id = "test-metastore-index-checkpoint-kafka2";
-        let topic = "test-metastore-index-checkpoint-topic-kafka2";
-
-        add_source(&metastore, "kafka", index_id, source_id, topic).await.unwrap();
-
-        add_checkpoint(&metastore, index_id, source_id, "0", "200").await.unwrap();
-        add_checkpoint(&metastore, index_id, source_id, "1", "300").await.unwrap();
-        add_checkpoint(&metastore, index_id, source_id, "2", "400").await.unwrap();
-
-        verify_checkpoint(&metastore, index_id, source_id, topic, "0", "200", 3)
-            .await;
-        verify_checkpoint(&metastore, index_id, source_id, topic, "1", "300", 3)
-            .await;
-        verify_checkpoint(&metastore, index_id, source_id, topic, "2", "400", 3)
-            .await;
-
-        // Verify different types of sources are isolated correctly
-        let source_id = "test-metastore-index-checkpoint-kinesis";
-        let topic = "test-metastore-index-checkpoint-topic-kinesis";
-
-        add_source(&metastore, "kinesis", index_id, source_id, topic).await.unwrap();
-        add_checkpoint(&metastore, index_id, source_id, "0", "600").await.unwrap();
-        verify_checkpoint(&metastore, index_id, source_id, topic, "0", "600", 1)
-            .await;
-
-        // TODO: tests for parameter variations
-
-        cleanup_index(&metastore, index_id).await;
     }
 
     pub async fn test_metastore_add_source<MetastoreToTest: Metastore + DefaultForTest>() {
@@ -2151,12 +2045,6 @@ macro_rules! metastore_test_suite {
                 crate::tests::test_suite::test_metastore_split_update_timestamp::<$metastore_type>(
                 )
                 .await;
-            }
-
-            #[tokio::test]
-            async fn test_metastore_index_checkpoint() {
-                let _ = tracing_subscriber::fmt::try_init();
-                crate::tests::test_suite::test_metastore_index_checkpoint::<$metastore_type>().await;
             }
 
             #[tokio::test]

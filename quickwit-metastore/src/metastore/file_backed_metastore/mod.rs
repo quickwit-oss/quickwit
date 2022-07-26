@@ -45,7 +45,7 @@ use self::store_operations::{
     delete_index, fetch_and_build_indexes_states, fetch_index, index_exists, put_index,
     put_indexes_states,
 };
-use crate::checkpoint::{CheckpointDelta, IndexCheckpoint};
+use crate::checkpoint::CheckpointDelta;
 use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState,
 };
@@ -483,28 +483,6 @@ impl Metastore for FileBackedMetastore {
                 .map(|index_id| self.index_metadata(index_id)),
         )
         .await
-    }
-
-    async fn index_checkpoint(
-        &self,
-        index_id: &str,
-        source_id: Option<String>,
-        resource: Option<String>,
-        group_id: Option<String>,
-    ) -> MetastoreResult<IndexCheckpoint> {
-        // TODO: implementation from JSON index metadata
-        Ok(IndexCheckpoint::default())
-    }
-
-    async fn delete_index_checkpoint(
-        &self,
-        index_id: &str,
-        source_id: Option<String>,
-        resource: Option<String>,
-        group_id: Option<String>,
-    ) -> MetastoreResult<()> {
-        // TODO: implementation from JSON index metadata
-        Ok(())
     }
 
     fn uri(&self) -> String {

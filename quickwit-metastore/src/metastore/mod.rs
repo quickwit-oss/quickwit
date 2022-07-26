@@ -31,7 +31,7 @@ pub use index_metadata::IndexMetadata;
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 
-use crate::checkpoint::{CheckpointDelta, IndexCheckpoint, SourceCheckpoint};
+use crate::checkpoint::CheckpointDelta;
 use crate::{MetastoreResult, Split, SplitMetadata, SplitState};
 
 /// Metastore meant to manage Quickwit's indexes and their splits.
@@ -192,27 +192,6 @@ pub trait Metastore: Send + Sync + 'static {
     ///
     /// Returns a `IndexCheckpoint` for the provided `index_id` and optionally filtered by
     /// `source_id`, `resource` and `group_id`.
-    /// If no checkpoint has been stored yet the result will be an empty `IndexCheckpoint`.
-    async fn index_checkpoint(
-        &self,
-        index_id: &str,
-        source_id: Option<String>,
-        resource: Option<String>,
-        group_id: Option<String>,
-    ) -> MetastoreResult<IndexCheckpoint>;
-
-    /// Removes the current checkpoints for an index
-    ///
-    /// Removes all checkpoints that match the provided `index_id` and optionally filtered by
-    /// `source_id`, `resource` and `group_id`.
-    /// If no checkpoint has been stored it will not be considered an error.
-    async fn delete_index_checkpoint(
-        &self,
-        index_id: &str,
-        source_id: Option<String>,
-        resource: Option<String>,
-        group_id: Option<String>,
-    ) -> MetastoreResult<()>;
 
     /// Returns the metastore uri.
     fn uri(&self) -> String;
