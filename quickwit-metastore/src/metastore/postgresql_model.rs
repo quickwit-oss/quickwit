@@ -143,34 +143,3 @@ impl TryInto<QuickwitSplit> for Split {
         })
     }
 }
-
-/// A model structure for handling checkpoint metadata in a database.
-#[derive(sqlx::FromRow)]
-pub struct Checkpoint {
-    /// Index ID.
-    pub index_id: String,
-    /// Ingest Source ID.
-    pub source_id: String,
-    /// Resource being tracked. Could be a kafka topic, file or any form of
-    /// stream that can be identified by a string and has a numeric offset
-    /// associated
-    pub resource: String,
-    /// Consumer group_id for resources that support consumer groups based
-    /// consumers
-    pub group_id: Option<String>,
-    /// The partition identifir for partitioned resources
-    pub partition: Option<String>,
-    /// Position of the reader within the resource
-    pub position: String,
-    /// Field that increments to serve as a guard when an event occurs
-    /// that could result in a split being committed with duplicate data.
-    /// Example being a kafka rebalance event where this incremented to
-    /// block consumers from committing in flight splits for partitions
-    /// that may have relocated.
-    pub serial_number: i64,
-    /// Timestamp for tracking when the checkpoint was created.
-    pub create_timestamp: sqlx::types::time::PrimitiveDateTime,
-    /// Timestamp for tracking when the checkpoint was last updated.
-    pub update_timestamp: sqlx::types::time::PrimitiveDateTime,
-
-}

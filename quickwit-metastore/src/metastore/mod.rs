@@ -189,11 +189,6 @@ pub trait Metastore: Send + Sync + 'static {
     /// If the checkpoint is missing, this does not trigger an error.
     async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()>;
 
-    /// Retrieves the current checkpoints for an index
-    ///
-    /// Returns a `IndexCheckpoint` for the provided `index_id` and optionally filtered by
-    /// `source_id`, `resource` and `group_id`.
-
     /// Returns the metastore uri.
     fn uri(&self) -> &Uri;
 }

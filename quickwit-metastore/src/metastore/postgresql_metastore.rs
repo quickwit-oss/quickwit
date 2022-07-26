@@ -119,10 +119,10 @@ async fn index_opt<'a>(
         WHERE index_id = $1
     "#,
     )
-        .bind(index_id)
-        .fetch_optional(tx)
-        .await
-        .map_err(MetastoreError::DbError)?;
+    .bind(index_id)
+    .fetch_optional(tx)
+    .await
+    .map_err(MetastoreError::DbError)?;
     Ok(index_opt)
 }
 
@@ -158,13 +158,13 @@ async fn mark_splits_as_published_helper(
         RETURNING split_id
     "#,
     )
-        .bind(SplitState::Published.as_str())
-        .bind(index_id)
-        .bind(split_ids)
-        .bind(&publishable_states[..])
-        .map(|row| row.get(0))
-        .fetch_all(tx)
-        .await?;
+    .bind(SplitState::Published.as_str())
+    .bind(index_id)
+    .bind(split_ids)
+    .bind(&publishable_states[..])
+    .map(|row| row.get(0))
+    .fetch_all(tx)
+    .await?;
     Ok(published_split_ids)
 }
 
@@ -198,7 +198,6 @@ async fn mark_splits_for_deletion(
     .map(|row| row.get(0))
     .fetch_all(tx)
     .await?;
-
     Ok(marked_split_ids)
 }
 
@@ -214,7 +213,7 @@ async fn list_splits_helper(
         FROM splits
         WHERE index_id = $1
     "#
-        .to_string();
+    .to_string();
     if let Some(state) = state_opt {
         sql.push_str(&format!(" AND split_state = '{}'", state.as_str()));
     }
@@ -391,8 +390,8 @@ async fn mutate_index_metadata<E, M: FnOnce(&mut IndexMetadata) -> Result<(), E>
     index_id: &str,
     mutation: M,
 ) -> MetastoreResult<()>
-    where
-        MetastoreError: From<E>,
+where
+    MetastoreError: From<E>,
 {
     let mut index_metadata = index_metadata(tx, index_id).await?;
     mutation(&mut index_metadata)?;
@@ -408,10 +407,10 @@ async fn mutate_index_metadata<E, M: FnOnce(&mut IndexMetadata) -> Result<(), E>
         WHERE index_id = $2
     "#,
     )
-        .bind(index_metadata_json)
-        .bind(&index_id)
-        .execute(tx)
-        .await?;
+    .bind(index_metadata_json)
+    .bind(&index_id)
+    .execute(tx)
+    .await?;
     if update_index_res.rows_affected() == 0 {
         return Err(MetastoreError::IndexDoesNotExist {
             index_id: index_id.to_string(),
@@ -440,7 +439,7 @@ impl Metastore for PostgresqlMetastore {
         })
     }
 
-    #[instrument(skip(self), fields(index_id = index_metadata.index_id.as_str()))]
+    #[instrument(skip(self),fields(index_id=index_metadata.index_id.as_str()))]
     async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
         run_with_tx!(self.connection_pool, tx, {
             // Serialize the index metadata to fit the database model.
@@ -479,7 +478,7 @@ impl Metastore for PostgresqlMetastore {
         })
     }
 
-    #[instrument(skip(self, metadata), fields(split_id = metadata.split_id.as_str()))]
+    #[instrument(skip(self, metadata),fields(split_id=metadata.split_id.as_str()))]
     async fn stage_split(&self, index_id: &str, metadata: SplitMetadata) -> MetastoreResult<()> {
         run_with_tx!(self.connection_pool, tx, {
             // Fit the time_range to the database model.
@@ -723,7 +722,7 @@ impl Metastore for PostgresqlMetastore {
         })
     }
 
-    #[instrument(skip(self, source), fields(source_id = source.source_id.as_str()))]
+    #[instrument(skip(self, source), fields(source_id=source.source_id.as_str()))]
     async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()> {
         run_with_tx!(self.connection_pool, tx, {
             mutate_index_metadata(tx, index_id, |index_metadata| {
