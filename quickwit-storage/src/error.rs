@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::sync::Arc;
 use std::{fmt, io};
 
 use serde::{Deserialize, Serialize};
@@ -66,7 +67,7 @@ impl StorageErrorKind {
     where anyhow::Error: From<E> {
         StorageError {
             kind: self,
-            source: From::from(source),
+            source: Arc::new(From::from(source)),
         }
     }
 }
@@ -77,18 +78,18 @@ impl From<StorageError> for io::Error {
             StorageErrorKind::DoesNotExist => io::ErrorKind::NotFound,
             _ => io::ErrorKind::Other,
         };
-        io::Error::new(io_error_kind, storage_err.source)
+        io::Error::new(io_error_kind, storage_err.source.to_string())
     }
 }
 
 /// Generic StorageError.
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 #[error("StorageError(kind={kind:?}, source={source})")]
 #[allow(missing_docs)]
 pub struct StorageError {
     pub kind: StorageErrorKind,
     #[source]
-    source: anyhow::Error,
+    source: Arc<anyhow::Error>,
 }
 
 /// Generic Result type for storage operations.
@@ -100,7 +101,7 @@ impl StorageError {
     where C: fmt::Display + Send + Sync + 'static {
         StorageError {
             kind: self.kind,
-            source: self.source.context(ctx),
+            source: Arc::new(anyhow::anyhow!("{} Ctx:{}", self.source.to_string(), ctx)),
         }
     }
 

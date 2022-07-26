@@ -20,7 +20,10 @@
 use std::any::Any;
 use std::fmt;
 
+use async_trait::async_trait;
 use tokio::sync::oneshot;
+
+use crate::{Actor, ActorContext, ActorExitStatus, Handler};
 
 /// Commands are messages that can be send to control the behavior of an actor.
 ///
@@ -97,6 +100,39 @@ impl fmt::Debug for Command {
             Command::ExitWithSuccess => write!(f, "Success"),
             Command::Quit => write!(f, "Quit"),
             Command::Kill => write!(f, "Kill"),
+        }
+    }
+}
+
+#[async_trait]
+impl<A: Actor> Handler<Command> for A {
+    type Reply = ();
+
+    /// and its exit status will be the one defined in the error.
+    async fn handle(
+        &mut self,
+        command: Command,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        match command {
+            Command::Pause => {
+                ctx.pause();
+                Ok(())
+            }
+            Command::ExitWithSuccess => Err(ActorExitStatus::Success),
+            Command::Quit => Err(ActorExitStatus::Quit),
+            Command::Kill => Err(ActorExitStatus::Killed),
+            Command::Resume => {
+                ctx.resume();
+                Ok(())
+            }
+            Command::Observe(cb) => {
+                let obs_state = ctx.observe(self);
+                // We voluntarily ignore the error here. (An error only occurs if the
+                // sender dropped its receiver.)
+                let _ = cb.send(Box::new(obs_state));
+                Ok(())
+            }
         }
     }
 }

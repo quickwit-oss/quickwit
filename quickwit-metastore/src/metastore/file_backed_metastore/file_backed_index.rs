@@ -186,18 +186,20 @@ impl FileBackedIndex {
         self.mark_splits_as_published_helper(new_split_ids)?;
 
         // Mark splits for deletion.
-        self.mark_splits_for_deletion(replaced_split_ids)?;
+        self.mark_splits_for_deletion(replaced_split_ids, &[SplitState::Published])?;
 
         Ok(())
     }
 
-    /// Returns true if modified
+    /// Marks the splits for deletion. Returns whether a mutation occurred.
     pub(crate) fn mark_splits_for_deletion(
         &mut self,
-        split_ids: &[&'_ str],
+        split_ids: &[&str],
+        deletable_states: &[SplitState],
     ) -> MetastoreResult<bool> {
         let mut is_modified = false;
-        let mut split_not_found_ids = vec![];
+        let mut split_not_found_ids = Vec::new();
+        let mut non_deletable_split_ids = Vec::new();
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         for &split_id in split_ids {
@@ -209,7 +211,10 @@ impl FileBackedIndex {
                     continue;
                 }
             };
-
+            if !deletable_states.contains(&metadata.split_state) {
+                non_deletable_split_ids.push(split_id.to_string());
+                continue;
+            };
             if metadata.split_state == SplitState::MarkedForDeletion {
                 // If the split is already marked for deletion, This is fine, we just skip it.
                 continue;
@@ -219,13 +224,16 @@ impl FileBackedIndex {
             metadata.update_timestamp = now_timestamp;
             is_modified = true;
         }
-
         if !split_not_found_ids.is_empty() {
             return Err(MetastoreError::SplitsDoNotExist {
                 split_ids: split_not_found_ids,
             });
         }
-
+        if !non_deletable_split_ids.is_empty() {
+            return Err(MetastoreError::SplitsNotDeletable {
+                split_ids: non_deletable_split_ids,
+            });
+        }
         if is_modified {
             self.metadata.update_timestamp = now_timestamp;
         }
@@ -318,7 +326,6 @@ impl FileBackedIndex {
                 .map(|tags_filter_ast| tags_filter_ast.evaluate(&split.split_metadata.tags))
                 .unwrap_or(true)
         };
-
         let splits = self
             .splits
             .values()
@@ -327,7 +334,6 @@ impl FileBackedIndex {
             .filter(tag_filter)
             .cloned()
             .collect();
-
         Ok(splits)
     }
 
@@ -337,26 +343,22 @@ impl FileBackedIndex {
     }
 
     fn delete_split(&mut self, split_id: &str) -> DeleteSplitOutcome {
-        let metadata = match self.splits.get_mut(split_id) {
-            Some(metadata) => metadata,
-            None => {
-                return DeleteSplitOutcome::SplitNotFound;
-            }
-        };
-        match metadata.split_state {
-            SplitState::MarkedForDeletion | SplitState::Staged => {
-                // Only `ScheduledForDeletion` and `Staged` can be deleted
+        match self.splits.get(split_id).map(|split| split.split_state) {
+            // Only `Staged` and `MarkedForDeletion` splits can be deleted
+            Some(SplitState::Staged | SplitState::MarkedForDeletion) => {
                 self.splits.remove(split_id);
                 DeleteSplitOutcome::Success
             }
-            SplitState::Published => DeleteSplitOutcome::ForbiddenBecausePublished,
+            Some(SplitState::Published) => DeleteSplitOutcome::ForbiddenBecausePublished,
+            None => DeleteSplitOutcome::SplitNotFound,
         }
     }
 
-    // Delete several splits.
-    pub(crate) fn delete_splits(&mut self, split_ids: &[&'_ str]) -> MetastoreResult<()> {
+    /// Deletes multiple splits.
+    pub(crate) fn delete_splits(&mut self, split_ids: &[&str]) -> MetastoreResult<()> {
         let mut split_not_found_ids = Vec::new();
         let mut split_not_deletable_ids = Vec::new();
+
         for &split_id in split_ids {
             match self.delete_split(split_id) {
                 DeleteSplitOutcome::Success => {}
@@ -368,19 +370,16 @@ impl FileBackedIndex {
                 }
             }
         }
-
         if !split_not_found_ids.is_empty() {
             return Err(MetastoreError::SplitsDoNotExist {
                 split_ids: split_not_found_ids,
             });
         }
-
         if !split_not_deletable_ids.is_empty() {
             return Err(MetastoreError::SplitsNotDeletable {
                 split_ids: split_not_deletable_ids,
             });
         }
-
         self.metadata.update_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         Ok(())
     }

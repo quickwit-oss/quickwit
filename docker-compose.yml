@@ -46,6 +46,15 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-k", "https://localhost:4566"]
 
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: azurite
+    ports:
+        - "10000:10000" # Blob store port
+    volumes:
+        - "${TMPDIR:-/tmp}/azurite:/data"
+    command: azurite --blobHost 0.0.0.0 --loose
+
   postgres:
     image: postgres:9.6.20 # Oldest version we support.
     container_name: postgres

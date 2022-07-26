@@ -21,11 +21,11 @@ use anyhow::Context;
 use tokio::sync::watch;
 use tracing::{debug, error, info, Instrument};
 
-use crate::actor_with_state_tx::ActorWithStateTx;
-use crate::mailbox::{CommandOrMessage, Inbox};
+use crate::envelope::Envelope;
+use crate::mailbox::Inbox;
 use crate::scheduler::Scheduler;
 use crate::{
-    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Command, KillSwitch, Mailbox,
+    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, KillSwitch, Mailbox,
 };
 
 /// `SpawnBuilder` makes it possible to configure misc parameters before spawning an actor.
@@ -72,18 +72,28 @@ impl<A: Actor> SpawnBuilder<A> {
         self
     }
 
-    fn create_actor_context_and_inbox(mut self) -> (A, ActorContext<A>, Inbox<A>) {
+    fn create_actor_context_and_inbox(
+        mut self,
+    ) -> (
+        A,
+        ActorContext<A>,
+        Inbox<A>,
+        watch::Receiver<A::ObservableState>,
+    ) {
         let (mailbox, inbox) = self.mailboxes.take().unwrap_or_else(|| {
             let actor_name = self.actor.name();
             let queue_capacity = self.actor.queue_capacity();
             create_mailbox(actor_name, queue_capacity)
         });
+        let obs_state = self.actor.observable_state();
+        let (state_tx, state_rx) = watch::channel(obs_state);
         let ctx = ActorContext::new(
             mailbox,
             self.kill_switch.clone(),
             self.scheduler_mailbox.clone(),
+            state_tx,
         );
-        (self.actor, ctx, inbox)
+        (self.actor, ctx, inbox, state_rx)
     }
 }
 
@@ -91,150 +101,161 @@ impl<A: Actor> SpawnBuilder<A> {
     /// Spawns an async actor.
     pub fn spawn(self) -> (Mailbox<A>, ActorHandle<A>) {
         let runtime_handle = self.actor.runtime_handle();
-        let (actor, ctx, inbox) = self.create_actor_context_and_inbox();
+        let (actor, ctx, inbox, state_rx) = self.create_actor_context_and_inbox();
         debug!(actor_id = %ctx.actor_instance_id(), "spawn-actor");
         let mailbox = ctx.mailbox().clone();
-        let (state_tx, state_rx) = watch::channel(actor.observable_state());
         let ctx_clone = ctx.clone();
         let span = actor.span(&ctx);
         let loop_async_actor_future =
-            async move { actor_loop(actor, inbox, ctx, state_tx).await }.instrument(span);
+            async move { actor_loop(actor, inbox, ctx).await }.instrument(span);
         let join_handle = runtime_handle.spawn(loop_async_actor_future);
         let actor_handle = ActorHandle::new(state_rx, join_handle, ctx_clone);
         (mailbox, actor_handle)
     }
 }
 
-fn process_command<A: Actor>(
-    actor: &mut A,
-    command: Command,
-    ctx: &ActorContext<A>,
-    state_tx: &watch::Sender<A::ObservableState>,
-) -> Option<ActorExitStatus> {
-    match command {
-        Command::Pause => {
-            ctx.pause();
-            None
-        }
-        Command::ExitWithSuccess => Some(ActorExitStatus::Success),
-        Command::Quit => Some(ActorExitStatus::Quit),
-        Command::Kill => Some(ActorExitStatus::Killed),
-        Command::Resume => {
-            ctx.resume();
-            None
-        }
-        Command::Observe(cb) => {
-            let state = actor.observable_state();
-            let _ = state_tx.send(state.clone());
-            // We voluntarily ignore the error here. (An error only occurs if the
-            // sender dropped its receiver.)
-            let _ = cb.send(Box::new(state));
-            None
-        }
+/// Returns `None` if no message is available at the moment.
+async fn get_envelope<A: Actor>(inbox: &mut Inbox<A>, ctx: &ActorContext<A>) -> Envelope<A> {
+    if ctx.state().is_running() {
+        ctx.protect_future(inbox.recv()).await.expect(
+            "Disconnection should be impossible because the ActorContext holds a Mailbox too",
+        )
+    } else {
+        // The actor is paused. We only process command and scheduled message.
+        ctx.protect_future(inbox.recv_cmd_and_scheduled_msg_only())
+            .await
     }
 }
 
-/// Returns `None` if no message is available at the moment.
-async fn get_command_or_message<A: Actor>(
-    inbox: &mut Inbox<A>,
-    ctx: &ActorContext<A>,
-) -> Option<CommandOrMessage<A>> {
+fn try_get_envelope<A: Actor>(inbox: &mut Inbox<A>, ctx: &ActorContext<A>) -> Option<Envelope<A>> {
     if ctx.state().is_running() {
-        ctx.protect_future(inbox.recv_timeout()).await
+        inbox.try_recv()
     } else {
         // The actor is paused. We only process command and scheduled message.
-        ctx.protect_future(inbox.recv_timeout_cmd_and_scheduled_msg_only())
-            .await
+        inbox.try_recv_cmd_and_scheduled_msg_only()
     }
     .ok()
 }
 
-/// Attempts to get a message or a command and process it.
-async fn process_msg<A: Actor>(
-    actor: &mut A,
+struct ActorExecutionEnv<A: Actor> {
+    actor: A,
+    inbox: Inbox<A>,
+    ctx: ActorContext<A>,
     msg_id: u64,
-    msg: CommandOrMessage<A>,
-    ctx: &ActorContext<A>,
-    state_tx: &watch::Sender<A::ObservableState>,
-) -> Option<ActorExitStatus> {
-    ctx.process();
-    match msg {
-        CommandOrMessage::Command(cmd) => process_command(actor, cmd, ctx, state_tx),
-        CommandOrMessage::Message(mut msg) => msg.handle_message(msg_id, actor, ctx).await.err(),
+}
+
+impl<A: Actor> ActorExecutionEnv<A> {
+    async fn initialize(&mut self) -> Result<(), ActorExitStatus> {
+        self.actor.initialize(&self.ctx).await
+    }
+
+    async fn process_messages(&mut self) -> ActorExitStatus {
+        loop {
+            if let Err(exit_status) = self.process_all_available_messages().await {
+                return exit_status;
+            }
+        }
+    }
+
+    async fn process_one_message(
+        &mut self,
+        mut envelope: Envelope<A>,
+    ) -> Result<(), ActorExitStatus> {
+        self.yield_and_check_if_killed().await?;
+        envelope
+            .handle_message(self.msg_id, &mut self.actor, &self.ctx)
+            .await?;
+        self.msg_id += 1u64;
+        Ok(())
+    }
+
+    async fn yield_and_check_if_killed(&self) -> Result<(), ActorExitStatus> {
+        self.ctx.protect_future(tokio::task::yield_now()).await;
+        if self.ctx.kill_switch().is_dead() {
+            return Err(ActorExitStatus::Killed);
+        }
+        Ok(())
+    }
+
+    async fn process_all_available_messages(&mut self) -> Result<(), ActorExitStatus> {
+        self.yield_and_check_if_killed().await?;
+        let envelope = get_envelope(&mut self.inbox, &self.ctx).await;
+        self.ctx.process();
+        self.process_one_message(envelope).await?;
+        while let Some(envelope) = try_get_envelope(&mut self.inbox, &self.ctx) {
+            self.process_one_message(envelope).await?;
+        }
+        self.actor.on_drained_messages(&self.ctx).await?;
+        self.ctx.idle();
+
+        if self.ctx.mailbox().is_last_mailbox() {
+            // No one will be able to send us more messages.
+            // We can exit the actor.
+            return Err(ActorExitStatus::Success);
+        }
+
+        Ok(())
+    }
+
+    async fn finalize(&mut self, exit_status: ActorExitStatus) -> ActorExitStatus {
+        if let Err(finalize_error) = self
+            .actor
+            .finalize(&exit_status, &self.ctx)
+            .await
+            .with_context(|| format!("Finalization of actor {}", self.actor.name()))
+        {
+            error!(error=?finalize_error, "Finalizing failed, set exit status to panicked.");
+            return ActorExitStatus::Panicked;
+        }
+        exit_status
+    }
+
+    fn process_exit_status(&self, exit_status: &ActorExitStatus) {
+        match &exit_status {
+            ActorExitStatus::Success
+            | ActorExitStatus::Quit
+            | ActorExitStatus::DownstreamClosed
+            | ActorExitStatus::Killed => {}
+            ActorExitStatus::Failure(err) => {
+                error!(cause=?err, exit_status=?exit_status, "actor-failure");
+            }
+            ActorExitStatus::Panicked => {
+                error!(exit_status=?exit_status, "actor-failure");
+            }
+        }
+        info!(actor_id = %self.ctx.actor_instance_id(), exit_status = %exit_status, "actor-exit");
+        self.ctx.exit(exit_status);
     }
 }
 
-async fn actor_loop<A: Actor>(
-    actor: A,
-    mut inbox: Inbox<A>,
-    ctx: ActorContext<A>,
-    state_tx: watch::Sender<A::ObservableState>,
-) -> ActorExitStatus {
+impl<A: Actor> Drop for ActorExecutionEnv<A> {
     // We rely on this object internally to fetch a post-mortem state,
     // even in case of a panic.
-    let mut actor_with_state_tx = ActorWithStateTx { actor, state_tx };
+    fn drop(&mut self) {
+        self.ctx.observe(&mut self.actor);
+    }
+}
 
-    let mut exit_status_opt: Option<ActorExitStatus> =
-        actor_with_state_tx.actor.initialize(&ctx).await.err();
-
-    let mut msg_id: u64 = 1;
-    let mut exit_status: ActorExitStatus = loop {
-        tokio::task::yield_now().await;
-        if let Some(exit_status) = exit_status_opt {
-            break exit_status;
-        }
-        if ctx.kill_switch().is_dead() {
-            break ActorExitStatus::Killed;
-        }
-        let command_or_message_opt = get_command_or_message(&mut inbox, &ctx).await;
-        if ctx.kill_switch().is_dead() {
-            break ActorExitStatus::Killed;
-        }
-        if let Some(command_or_message) = command_or_message_opt {
-            exit_status_opt = process_msg(
-                &mut actor_with_state_tx.actor,
-                msg_id,
-                command_or_message,
-                &ctx,
-                &actor_with_state_tx.state_tx,
-            )
-            .await;
-            msg_id += 1;
-        } else {
-            // No message is available.
-            ctx.idle();
-            if ctx.mailbox().is_last_mailbox() {
-                // No one will be able to send us more messages.
-                // We can exit the actor.
-                break ActorExitStatus::Success;
-            }
-            // No message available at the moment,
-            // but maybe later?
-        }
+async fn actor_loop<A: Actor>(actor: A, inbox: Inbox<A>, ctx: ActorContext<A>) -> ActorExitStatus {
+    let mut actor_env = ActorExecutionEnv {
+        actor,
+        inbox,
+        ctx,
+        msg_id: 1u64,
     };
-    ctx.record_progress();
-    if let Err(finalize_error) = actor_with_state_tx
-        .actor
-        .finalize(&exit_status, &ctx)
-        .await
-        .with_context(|| format!("Finalization of actor {}", actor_with_state_tx.actor.name()))
+
+    let initialize_exit_status_res: Result<(), ActorExitStatus> = actor_env.initialize().await;
+
+    let after_process_exit_status = if let Err(initialize_exit_status) = initialize_exit_status_res
     {
-        error!(error=?finalize_error, "Finalizing failed, set exit status to panicked.");
-        exit_status = ActorExitStatus::Panicked;
-    }
-    match &exit_status {
-        ActorExitStatus::Success
-        | ActorExitStatus::Quit
-        | ActorExitStatus::DownstreamClosed
-        | ActorExitStatus::Killed => {}
-        ActorExitStatus::Failure(err) => {
-            error!(cause=?err, exit_status=?exit_status, "actor-failure");
-        }
-        ActorExitStatus::Panicked => {
-            error!(exit_status=?exit_status, "actor-failure");
-        }
-    }
-    info!(actor_id = %ctx.actor_instance_id(), exit_status = %exit_status, "actor-exit");
-    ctx.exit(&exit_status);
-    exit_status
+        // We do not process messages if initialize yield an error.
+        // We still call finalize however!
+        initialize_exit_status
+    } else {
+        actor_env.process_messages().await
+    };
+
+    let final_exit_status = actor_env.finalize(after_process_exit_status).await;
+    actor_env.process_exit_status(&final_exit_status);
+    final_exit_status
 }

@@ -33,6 +33,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::try_join_all;
+use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_storage::Storage;
@@ -420,8 +421,17 @@ impl Metastore for FileBackedMetastore {
         index_id: &str,
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
-        self.mutate(index_id, |index| index.mark_splits_for_deletion(split_ids))
-            .await
+        self.mutate(index_id, |index| {
+            index.mark_splits_for_deletion(
+                split_ids,
+                &[
+                    SplitState::Staged,
+                    SplitState::Published,
+                    SplitState::MarkedForDeletion,
+                ],
+            )
+        })
+        .await
     }
 
     async fn delete_splits<'a>(
@@ -485,7 +495,7 @@ impl Metastore for FileBackedMetastore {
         .await
     }
 
-    fn uri(&self) -> String {
+    fn uri(&self) -> &Uri {
         self.storage.uri()
     }
 
@@ -555,67 +565,46 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_backed_metastore_index_exists() {
+        let index_id = "test-index";
         let metastore = FileBackedMetastore::default_for_test().await;
-        let index_id = "my-index";
+        assert!(!metastore.index_exists(index_id).await.unwrap());
 
-        {
-            // Check for the existence of index.
-            let result = metastore.index_exists(index_id).await.unwrap();
-            let expected = false;
-            assert_eq!(result, expected);
+        let index_metadata = IndexMetadata::for_test(index_id, "ram:///indexes/test-index");
+        metastore.create_index(index_metadata).await.unwrap();
 
-            let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
-
-            // Create index
-            metastore.create_index(index_metadata).await.unwrap();
-
-            // Check for the existence of index.
-            let result = metastore.index_exists(index_id).await.unwrap();
-            let expected = true;
-            assert_eq!(result, expected);
-        }
+        assert!(metastore.index_exists(index_id).await.unwrap());
     }
 
     #[tokio::test]
     async fn test_file_backed_metastore_get_index() {
+        let index_id = "test-index";
         let metastore = FileBackedMetastore::default_for_test().await;
-        let index_id = "my-index";
+        let index_metadata = IndexMetadata::for_test(index_id, "ram:///indexes/test-index");
 
-        {
-            // Check for the existence of index.
-            let result = metastore.index_exists(index_id).await.unwrap();
-            let expected = false;
-            assert_eq!(result, expected);
+        // Create index
+        metastore
+            .create_index(index_metadata.clone())
+            .await
+            .unwrap();
 
-            let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        // Open index and check its metadata
+        let created_index = metastore.get_index(index_id).await.unwrap();
+        assert_eq!(created_index.index_id(), index_metadata.index_id);
+        assert_eq!(created_index.metadata().index_uri, index_metadata.index_uri);
 
-            // Create index
-            metastore
-                .create_index(index_metadata.clone())
-                .await
-                .unwrap();
+        // Check index is returned by list indexes.
+        let indexes = metastore.list_indexes_metadatas().await.unwrap();
+        assert_eq!(indexes.len(), 1);
 
-            // Check for the existence of index.
-            let result = metastore.index_exists(index_id).await.unwrap();
-            let expected = true;
-            assert_eq!(result, expected);
-
-            // Open index and check its metadata
-            let created_index = metastore.get_index(index_id).await.unwrap();
-            assert_eq!(created_index.index_id(), index_metadata.index_id);
-            assert_eq!(created_index.metadata().index_uri, index_metadata.index_uri);
-
-            // Check index is returned by list.
-            let indexes = metastore.list_indexes_metadatas().await.unwrap();
-            assert_eq!(indexes.len(), 1);
-
-            // Open a non-existent index.
-            let metastore_error = metastore.get_index("non-existent-index").await.unwrap_err();
-            assert!(matches!(
-                metastore_error,
-                MetastoreError::IndexDoesNotExist { .. }
-            ));
-        }
+        // Open a non-existent index.
+        let metastore_error = metastore
+            .get_index("index-does-not-exist")
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            metastore_error,
+            MetastoreError::IndexDoesNotExist { .. }
+        ));
     }
 
     #[tokio::test]
@@ -635,7 +624,9 @@ mod tests {
             .expect_put()
             .times(4)
             .returning(move |path, put_payload| {
-                assert!(path == Path::new("indexes_states.json") || path == meta_path("my-index"));
+                assert!(
+                    path == Path::new("indexes_states.json") || path == meta_path("test-index")
+                );
                 block_on(ram_storage_clone.put(path, put_payload))
             });
         mock_storage
@@ -648,8 +639,8 @@ mod tests {
         });
         let metastore = FileBackedMetastore::for_test(Arc::new(mock_storage));
 
-        let index_id = "my-index";
-        let source_id = "my-source";
+        let index_id = "test-index";
+        let source_id = "test-source";
         let split_id = "split-one";
         let split_metadata = SplitMetadata {
             footer_offsets: 1000..2000,
@@ -661,7 +652,7 @@ mod tests {
             ..Default::default()
         };
 
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_metadata = IndexMetadata::for_test(index_id, "ram:///indexes/test-index");
 
         // create index
         metastore.create_index(index_metadata).await.unwrap();
@@ -697,9 +688,9 @@ mod tests {
     async fn test_file_backed_metastore_get_index_checks_for_inconsistent_index_id(
     ) -> crate::MetastoreResult<()> {
         let storage = Arc::new(RamStorage::default());
-        let index_id = "my-index";
+        let index_id = "test-index";
         let index_metadata =
-            IndexMetadata::for_test("my-inconsistent-index", "ram://indexes/my-index");
+            IndexMetadata::for_test("my-inconsistent-index", "ram:///indexes/test-index");
 
         // Put inconsistent index and states into storage.
         let index = FileBackedIndex::from(index_metadata);
@@ -735,9 +726,8 @@ mod tests {
     #[tokio::test]
     async fn test_file_backed_metastore_wrt_directly_visible() -> crate::MetastoreResult<()> {
         let metastore = FileBackedMetastore::default_for_test().await;
-
-        let index_id = "my-index";
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_id = "test-index";
+        let index_metadata = IndexMetadata::for_test(index_id, "ram:///indexes/test-index");
         metastore.create_index(index_metadata).await?;
 
         assert!(metastore.list_all_splits(index_id).await?.is_empty());
@@ -749,7 +739,7 @@ mod tests {
             time_range: Some(0..=99),
             ..Default::default()
         };
-        assert!(metastore.list_all_splits("my-index").await?.is_empty());
+        assert!(metastore.list_all_splits("test-index").await?.is_empty());
         metastore.stage_split(index_id, split_metadata).await?;
         assert_eq!(metastore.list_all_splits(index_id).await?.len(), 1);
         Ok(())
@@ -763,12 +753,12 @@ mod tests {
             .await
             .unwrap();
         let polling_interval = Duration::from_millis(20);
-        let metastore_read = FileBackedMetastore::try_new(storage, Some(polling_interval))
+        let metastore_read = FileBackedMetastore::try_new(storage.clone(), Some(polling_interval))
             .await
             .unwrap();
 
-        let index_id = "my-index";
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_id = "test-index";
+        let index_metadata = IndexMetadata::for_test(index_id, "ram:///indexes/test-index");
         metastore_wrt.create_index(index_metadata).await?;
 
         assert!(metastore_wrt.list_all_splits(index_id).await?.is_empty());
@@ -780,12 +770,22 @@ mod tests {
             time_range: Some(0..=99),
             ..Default::default()
         };
-        assert!(metastore_read.list_all_splits("my-index").await?.is_empty());
+        assert!(metastore_read
+            .list_all_splits("test-index")
+            .await?
+            .is_empty());
         metastore_wrt.stage_split(index_id, split_metadata).await?;
-        assert!(metastore_read.list_all_splits("my-index").await?.is_empty());
+        assert!(metastore_read
+            .list_all_splits("test-index")
+            .await?
+            .is_empty());
         for _ in 0..10 {
             tokio::time::sleep(polling_interval).await;
-            if !metastore_read.list_all_splits("my-index").await?.is_empty() {
+            if !metastore_read
+                .list_all_splits("test-index")
+                .await?
+                .is_empty()
+            {
                 return Ok(());
             }
         }
@@ -795,15 +795,15 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
     async fn test_file_backed_metastore_race_condition() {
         let metastore = Arc::new(FileBackedMetastore::default_for_test().await);
-        let index_id = "my-index";
+        let index_id = "test-index";
         let source_id = "my-source";
 
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_metadata = IndexMetadata::for_test(index_id, "ram:///indexes/test-index");
 
         // Create index
         metastore.create_index(index_metadata).await.unwrap();
 
-        // Stage the split in multiple threads
+        // Stage splits in multiple threads
         let mut handles = Vec::new();
         let mut random_generator = rand::thread_rng();
         for i in 1..=20 {
@@ -850,7 +850,7 @@ mod tests {
             .await
             .unwrap();
 
-        // Make sure that all 20 splits are in `Published`
+        // Make sure that all 20 splits are in `Published` state.
         assert_eq!(splits.len(), 20);
     }
 
@@ -858,7 +858,7 @@ mod tests {
     async fn test_file_backed_metastore_create_index_when_storage_failing_on_indexes_states_put() {
         let mut mock_storage = MockStorage::default();
         let ram_storage = RamStorage::default();
-        let index_id = "my-index";
+        let index_id = "test-index";
 
         mock_storage.expect_exists().returning(|_| Ok(false));
         mock_storage
@@ -874,7 +874,7 @@ mod tests {
             .times(1)
             .returning(move |path| block_on(ram_storage.get_all(path)));
         let metastore = FileBackedMetastore::for_test(Arc::new(mock_storage));
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_metadata = IndexMetadata::for_test(index_id, "ram:///indexes/test-index");
 
         // Create index.
         let metastore_error = metastore.create_index(index_metadata).await.unwrap_err();
@@ -896,7 +896,7 @@ mod tests {
         let ram_storage = RamStorage::default();
         let ram_storage_clone = ram_storage.clone();
         let ram_storage_clone_2 = ram_storage.clone();
-        let index_id = "my-index";
+        let index_id = "test-index";
 
         mock_storage // remove this if we end up changing the semantics of create.
             .expect_exists()
@@ -905,7 +905,9 @@ mod tests {
             .expect_put()
             .times(4)
             .returning(move |path, put_payload| {
-                assert!(path == Path::new("indexes_states.json") || path == meta_path("my-index"));
+                assert!(
+                    path == Path::new("indexes_states.json") || path == meta_path("test-index")
+                );
                 if path == Path::new("indexes_states.json") {
                     return block_on(ram_storage_clone.put(path, put_payload));
                 }
@@ -917,7 +919,7 @@ mod tests {
             .times(1)
             .returning(move |path| block_on(ram_storage.get_all(path)));
         let metastore = FileBackedMetastore::for_test(Arc::new(mock_storage));
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_metadata = IndexMetadata::for_test(index_id, "ram:///indexes/test-index");
 
         // Create index
         let metastore_error = metastore.create_index(index_metadata).await.unwrap_err();
@@ -965,7 +967,7 @@ mod tests {
         let mut mock_storage = MockStorage::default();
         let ram_storage = RamStorage::default();
         let ram_storage_clone = ram_storage.clone();
-        let index_id = "my-index";
+        let index_id = "test-index";
         let mut indexes_json_valid_put = 1;
         mock_storage // remove this if we end up changing the semantics of create.
             .expect_exists()
@@ -974,7 +976,9 @@ mod tests {
             .expect_put()
             .times(3)
             .returning(move |path, put_payload| {
-                assert!(path == Path::new("indexes_states.json") || path == meta_path("my-index"));
+                assert!(
+                    path == Path::new("indexes_states.json") || path == meta_path("test-index")
+                );
                 if path == Path::new("indexes_states.json") {
                     if indexes_json_valid_put == 0 {
                         return Err(StorageErrorKind::Io
@@ -985,7 +989,7 @@ mod tests {
                 return block_on(ram_storage_clone.put(path, put_payload));
             });
         let metastore = FileBackedMetastore::for_test(Arc::new(mock_storage));
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_metadata = IndexMetadata::for_test(index_id, "ram:///indexes/test-index");
 
         // Create index
         let metastore_error = metastore.create_index(index_metadata).await.unwrap_err();
@@ -1007,8 +1011,8 @@ mod tests {
         let mut mock_storage = MockStorage::default();
         let ram_storage = RamStorage::default();
         let ram_storage_clone = ram_storage.clone();
-        let index_id = "my-index";
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_id = "test-index";
+        let index_metadata = IndexMetadata::for_test(index_id, "ram:///indexes/test-index");
         let index = FileBackedIndex::from(index_metadata);
         put_index_given_index_id(&ram_storage, &index, index_id)
             .await
@@ -1052,8 +1056,8 @@ mod tests {
         let mut mock_storage = MockStorage::default();
         let ram_storage = RamStorage::default();
         let ram_storage_clone = ram_storage.clone();
-        let index_id = "my-index";
-        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        let index_id = "test-index";
+        let index_metadata = IndexMetadata::for_test(index_id, "ram:///indexes/test-index");
         let index = FileBackedIndex::from(index_metadata);
         put_index_given_index_id(&ram_storage, &index, index_id)
             .await
@@ -1098,42 +1102,52 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_backed_metastore_get_list_indexes() -> crate::MetastoreResult<()> {
-        let storage = Arc::new(RamStorage::default());
-        let index_id_creating = "my-index-creating";
-        let index_id_alive = "my-index-alive";
-        let index_id_unregistered = "my-index-unregistered";
-        let index_id_deleting = "my-index-deleting";
+        let index_id_creating = "test-index--creating";
+        let index_id_alive = "testing-index--alive";
+        let index_id_unregistered = "test-index--unregistered";
+        let index_id_deleting = "test-index--deleting";
+
         let index_metadata_alive =
-            IndexMetadata::for_test("my-index-alive", "ram://indexes/my-index");
-        let index_metadata_unregistered =
-            IndexMetadata::for_test("my-index-unregistered", "ram://indexes/my-index");
+            IndexMetadata::for_test(index_id_alive, "ram:///indexes/test-index--alive");
+        let index_metadata_unregistered = IndexMetadata::for_test(
+            index_id_unregistered,
+            "ram:///indexes/test-index--unregistered",
+        );
+
         // Put indexes states into storage.
+        let ram_storage = Arc::new(RamStorage::default());
         let mut indexes_states = HashMap::new();
         indexes_states.insert(index_id_creating.to_string(), IndexState::Creating);
         indexes_states.insert(
             index_id_alive.to_string(),
             IndexState::Alive(LazyFileBackedIndex::new(
-                storage.clone(),
+                ram_storage.clone(),
                 index_id_alive.to_string(),
                 None,
                 None,
             )),
         );
         indexes_states.insert(index_id_deleting.to_string(), IndexState::Deleting);
-        put_indexes_states(&*storage, &indexes_states)
+        put_indexes_states(&*ram_storage, &indexes_states)
             .await
             .unwrap();
-        let metastore = FileBackedMetastore::try_new(storage.clone(), None)
-            .await
-            .unwrap();
+
         let index_alive = FileBackedIndex::from(index_metadata_alive);
         let index_alive_unregistered = FileBackedIndex::from(index_metadata_unregistered);
+
         // Put indexes metadatas.
-        put_index_given_index_id(&*storage, &index_alive, index_id_alive).await?;
-        put_index_given_index_id(&*storage, &index_alive_unregistered, index_id_unregistered)
-            .await?;
+        put_index_given_index_id(&*ram_storage, &index_alive, index_id_alive).await?;
+        put_index_given_index_id(
+            &*ram_storage,
+            &index_alive_unregistered,
+            index_id_unregistered,
+        )
+        .await?;
 
         // Fetch alive indexes metadatas.
+        let metastore = FileBackedMetastore::try_new(ram_storage.clone(), None)
+            .await
+            .unwrap();
         let indexes_metadatas = metastore.list_indexes_metadatas().await.unwrap();
         assert_eq!(indexes_metadatas.len(), 1);
 

@@ -21,19 +21,17 @@ use std::any::type_name;
 use std::convert::Infallible;
 use std::fmt;
 use std::ops::Deref;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::Future;
 use thiserror::Error;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, watch};
 use tracing::{debug, error, info_span, Span};
 
 use crate::actor_state::{ActorState, AtomicState};
-use crate::channel_with_priority::Priority;
-use crate::envelope::wrap_in_envelope;
-use crate::mailbox::CommandOrMessage;
 use crate::progress::{Progress, ProtectedZoneGuard};
 use crate::scheduler::{Callback, ScheduleEvent, Scheduler};
 use crate::spawn_builder::SpawnBuilder;
@@ -168,6 +166,21 @@ pub trait Actor: Send + Sync + Sized + 'static {
         Ok(())
     }
 
+    /// This function is called after a series of one, or several messages have been processed and
+    /// no more message is available.
+    ///
+    /// It is a great place to have the actor "sleep".
+    ///
+    /// Quickwit's Indexer actor for instance use `on_drained_messages` to
+    /// schedule indexing in such a way that an indexer drains all of its
+    /// available messages and sleeps for some amount of time.
+    async fn on_drained_messages(
+        &mut self,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        Ok(())
+    }
+
     /// Hook  that can be set up to define what should happen upon actor exit.
     /// This hook is called only once.
     ///
@@ -213,6 +226,37 @@ pub struct ActorContextInner<A: Actor> {
     kill_switch: KillSwitch,
     scheduler_mailbox: Mailbox<Scheduler>,
     actor_state: AtomicState,
+    // Count the number of times the actor has slept.
+    // This counter is useful to unsure that obsolete WakeUp
+    // events do not effect ulterior `sleep`.
+    sleep_count: AtomicUsize,
+    observable_state_tx: Mutex<watch::Sender<A::ObservableState>>,
+}
+
+/// Internal command used to resume an actor that was paused using
+/// `ActorContext::sleep`
+#[derive(Debug)]
+struct WakeUp {
+    sleep_count: usize,
+}
+
+#[async_trait]
+impl<A: Actor> Handler<WakeUp> for A {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        message: WakeUp,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        let current_sleep_count = ctx.sleep_count();
+        if current_sleep_count == message.sleep_count {
+            // We only resume if this wake up
+            // command is targetting this precise "nap".
+            ctx.resume();
+        }
+        Ok(())
+    }
 }
 
 impl<A: Actor> ActorContext<A> {
@@ -220,6 +264,7 @@ impl<A: Actor> ActorContext<A> {
         self_mailbox: Mailbox<A>,
         kill_switch: KillSwitch,
         scheduler_mailbox: Mailbox<Scheduler>,
+        observable_state_tx: watch::Sender<A::ObservableState>,
     ) -> Self {
         ActorContext {
             inner: ActorContextInner {
@@ -228,9 +273,15 @@ impl<A: Actor> ActorContext<A> {
                 kill_switch,
                 scheduler_mailbox,
                 actor_state: AtomicState::default(),
+                sleep_count: AtomicUsize::default(),
+                observable_state_tx: Mutex::new(observable_state_tx),
             }
             .into(),
         }
+    }
+
+    pub(crate) fn sleep_count(&self) -> usize {
+        self.sleep_count.load(Ordering::SeqCst)
     }
 
     pub fn mailbox(&self) -> &Mailbox<A> {
@@ -308,8 +359,33 @@ impl<A: Actor> ActorContext<A> {
         self.actor_state.pause();
     }
 
+    /// Puts the actor to sleep for the given duration.
+    ///
+    /// For the period of the sleep, the actor is like on pause:
+    /// It stops processing message, in a way that does not
+    /// consume CPU, but it still reacts to commands.
+    ///
+    /// The actor will wake up before the `sleep_duration` is elapsed
+    /// if it receives a resume command.
+    pub async fn sleep(&self, sleep_duration: Duration) {
+        let sleep_count = self.sleep_count.fetch_add(1, Ordering::SeqCst) + 1;
+        self.pause();
+        self.schedule_self_msg(sleep_duration, WakeUp { sleep_count })
+            .await;
+    }
+
     pub(crate) fn resume(&self) {
         self.actor_state.resume();
+    }
+
+    pub(crate) fn observe(&self, actor: &mut A) -> A::ObservableState {
+        let obs_state = actor.observable_state();
+        let _ = self
+            .observable_state_tx
+            .lock()
+            .unwrap()
+            .send(obs_state.clone());
+        obs_state
     }
 
     pub(crate) fn exit(&self, exit_status: &ActorExitStatus) {
@@ -412,12 +488,8 @@ impl<A: Actor> ActorContext<A> {
     ) -> Result<(), crate::SendError> {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), to=%mailbox.actor_instance_id(), "success");
-        mailbox
-            .send_with_priority(
-                CommandOrMessage::Command(Command::ExitWithSuccess),
-                Priority::Low,
-            )
-            .await
+        mailbox.send_message(Command::ExitWithSuccess).await?;
+        Ok(())
     }
 
     /// `async` version of `send_self_message`.
@@ -433,17 +505,14 @@ impl<A: Actor> ActorContext<A> {
         self.self_mailbox.send_message(msg).await
     }
 
-    pub async fn schedule_self_msg<M>(&self, after_duration: Duration, msg: M)
+    pub async fn schedule_self_msg<M>(&self, after_duration: Duration, message: M)
     where
         A: Handler<M>,
-        M: 'static + Send + Sync + fmt::Debug,
+        M: Sync + Send + std::fmt::Debug + 'static,
     {
         let self_mailbox = self.inner.self_mailbox.clone();
-        let (envelope, _response_rx) = wrap_in_envelope(msg);
         let callback = Callback(Box::pin(async move {
-            let _ = self_mailbox
-                .send_with_priority(CommandOrMessage::Message(envelope), Priority::High)
-                .await;
+            let _ = self_mailbox.send_message_with_high_priority(message);
         }));
         let scheduler_msg = ScheduleEvent {
             timeout: after_duration,

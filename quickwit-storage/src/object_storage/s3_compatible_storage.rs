@@ -31,6 +31,7 @@ use once_cell::sync::OnceCell;
 use quickwit_aws::error::RusotoErrorWrapper;
 use quickwit_aws::get_http_client;
 use quickwit_aws::retry::{retry, Retry, RetryParams, Retryable};
+use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
 use regex::Regex;
 use rusoto_core::credential::ProfileProvider;
@@ -46,7 +47,9 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::object_storage::MultiPartPolicy;
-use crate::{OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResult};
+use crate::{
+    OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResolverError, StorageResult,
+};
 
 /// Default region to use, if none has been configured.
 const QUICKWIT_DEFAULT_REGION: Region = Region::UsEast1;
@@ -54,7 +57,7 @@ const QUICKWIT_DEFAULT_REGION: Region = Region::UsEast1;
 #[instrument]
 fn sniff_s3_region() -> anyhow::Result<Region> {
     // Attempt to read region from environment variable and return an error if malformed.
-    if let Some(region) = region_from_env_variable()? {
+    if let Some(region) = region_from_env_variables()? {
         info!(region=?region, from="env-variable", "set-aws-region");
         return Ok(region);
     }
@@ -105,8 +108,14 @@ fn region_from_str(region_str: &str) -> anyhow::Result<Region> {
              http:// endpoint"
         );
     }
+
+    // For some storage provider like Cloudflare R2, the user has to set a custom region's name.
+    // We use `AWS_REGION` env variable for that.
+    let region_name =
+        std::env::var("AWS_REGION").unwrap_or_else(|_| "qw-custom-endpoint".to_string());
+
     Ok(Region::Custom {
-        name: "qw-custom-endpoint".to_string(),
+        name: region_name,
         endpoint: region_str.trim_end_matches('/').to_string(),
     })
 }
@@ -126,7 +135,7 @@ fn s3_region_env_var() -> Option<String> {
 }
 
 #[instrument]
-fn region_from_env_variable() -> anyhow::Result<Option<Region>> {
+fn region_from_env_variables() -> anyhow::Result<Option<Region>> {
     if let Some(region_str) = s3_region_env_var() {
         match region_from_str(&region_str) {
             Ok(region) => Ok(Some(region)),
@@ -179,6 +188,7 @@ fn region_from_ec2_instance() -> anyhow::Result<Option<Region>> {
 /// S3 Compatible object storage implementation.
 pub struct S3CompatibleObjectStorage {
     s3_client: S3Client,
+    uri: Uri,
     bucket: String,
     prefix: PathBuf,
     multipart_policy: MultiPartPolicy,
@@ -186,12 +196,12 @@ pub struct S3CompatibleObjectStorage {
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "S3CompatibleObjectStorage(bucket={},prefix={:?})",
-            &self.bucket, &self.prefix
-        )
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter
+            .debug_struct("S3CompatibleObjectStorage")
+            .field("bucket", &self.bucket)
+            .field("prefix", &self.prefix)
+            .finish()
     }
 }
 
@@ -207,7 +217,11 @@ fn create_s3_client(region: Region) -> anyhow::Result<S3Client> {
 
 impl S3CompatibleObjectStorage {
     /// Creates an object storage given a region and a bucket name.
-    pub fn new(region: Region, bucket: &str) -> anyhow::Result<S3CompatibleObjectStorage> {
+    pub fn new(
+        region: Region,
+        uri: Uri,
+        bucket: String,
+    ) -> anyhow::Result<S3CompatibleObjectStorage> {
         let s3_client = create_s3_client(region)?;
         let retry_params = RetryParams {
             max_attempts: 3,
@@ -215,7 +229,8 @@ impl S3CompatibleObjectStorage {
         };
         Ok(S3CompatibleObjectStorage {
             s3_client,
-            bucket: bucket.to_string(),
+            uri,
+            bucket,
             prefix: PathBuf::new(),
             multipart_policy: MultiPartPolicy::default(),
             retry_params,
@@ -223,22 +238,29 @@ impl S3CompatibleObjectStorage {
     }
 
     /// Creates an object storage given a region and an uri.
-    pub fn from_uri(uri: &str) -> crate::StorageResult<S3CompatibleObjectStorage> {
-        let region =
-            sniff_s3_region_and_cache().map_err(|err| StorageErrorKind::Service.with_error(err))?;
-        Self::from_uri_and_region(region, uri)
+    pub fn from_uri(uri: &Uri) -> Result<S3CompatibleObjectStorage, StorageResolverError> {
+        let region = sniff_s3_region_and_cache().map_err(|err| {
+            StorageResolverError::FailedToOpenStorage {
+                kind: StorageErrorKind::Service,
+                message: err.to_string(),
+            }
+        })?;
+        Self::from_region_and_uri(region, uri)
     }
 
     /// Creates an object storage given a region and an uri.
-    pub fn from_uri_and_region(
+    pub fn from_region_and_uri(
         region: Region,
-        uri: &str,
-    ) -> crate::StorageResult<S3CompatibleObjectStorage> {
-        let (bucket, path) = parse_uri(uri).ok_or_else(|| {
-            crate::StorageErrorKind::Io.with_error(anyhow::anyhow!("Invalid uri: {}", uri))
+        uri: &Uri,
+    ) -> Result<S3CompatibleObjectStorage, StorageResolverError> {
+        let (bucket, path) = parse_s3_uri(uri).ok_or_else(|| StorageResolverError::InvalidUri {
+            message: format!("URI `{uri}` is not a valid AWS S3 URI."),
         })?;
-        let s3_compatible_storage = S3CompatibleObjectStorage::new(region, &bucket)
-            .map_err(|err| crate::StorageErrorKind::Service.with_error(anyhow::anyhow!(err)))?;
+        let s3_compatible_storage = S3CompatibleObjectStorage::new(region, uri.clone(), bucket)
+            .map_err(|err| StorageResolverError::FailedToOpenStorage {
+                kind: StorageErrorKind::Service,
+                message: err.to_string(),
+            })?;
         Ok(s3_compatible_storage.with_prefix(&path))
     }
 
@@ -247,15 +269,13 @@ impl S3CompatibleObjectStorage {
     /// This method overrides any existing prefix. (It does NOT
     /// append the argument to any existing prefix.)
     pub fn with_prefix(self, prefix: &Path) -> Self {
-        S3CompatibleObjectStorage {
+        Self {
             s3_client: self.s3_client,
+            uri: self.uri,
             bucket: self.bucket,
             prefix: prefix.to_path_buf(),
             multipart_policy: self.multipart_policy,
-            retry_params: RetryParams {
-                max_attempts: 3,
-                ..Default::default()
-            },
+            retry_params: self.retry_params,
         }
     }
 
@@ -267,14 +287,14 @@ impl S3CompatibleObjectStorage {
     }
 }
 
-pub fn parse_uri(uri: &str) -> Option<(String, PathBuf)> {
-    static URI_PTN: OnceCell<Regex> = OnceCell::new();
-    URI_PTN
+pub fn parse_s3_uri(uri: &Uri) -> Option<(String, PathBuf)> {
+    static S3_URI_PTN: OnceCell<Regex> = OnceCell::new();
+    S3_URI_PTN
         .get_or_init(|| {
             // s3://bucket/path/to/object
             Regex::new(r"s3(\+[^:]+)?://(?P<bucket>[^/]+)(/(?P<path>.+))?").unwrap()
         })
-        .captures(uri)
+        .captures(uri.as_str())
         .and_then(|cap| {
             cap.name("bucket").map(|bucket_match| {
                 (
@@ -305,6 +325,7 @@ impl Part {
 }
 
 const MD5_CHUNK_SIZE: usize = 1_000_000;
+
 async fn compute_md5<T: AsyncRead + std::marker::Unpin>(mut read: T) -> io::Result<md5::Digest> {
     let mut checksum = md5::Context::new();
     let mut buf = vec![0; MD5_CHUNK_SIZE];
@@ -318,10 +339,6 @@ async fn compute_md5<T: AsyncRead + std::marker::Unpin>(mut read: T) -> io::Resu
 }
 
 impl S3CompatibleObjectStorage {
-    fn uri(&self, relative_path: &Path) -> String {
-        format!("s3://{}/{}", &self.bucket, self.key(relative_path))
-    }
-
     fn key(&self, relative_path: &Path) -> String {
         let key_path = self.prefix.join(relative_path);
         key_path.to_string_lossy().to_string()
@@ -352,8 +369,9 @@ impl S3CompatibleObjectStorage {
         payload: Box<dyn crate::PutPayload>,
         len: u64,
     ) -> StorageResult<()> {
-        retry(&self.retry_params, || {
+        retry(&self.retry_params, || async {
             self.put_single_part_single_try(key, payload.clone(), len)
+                .await
         })
         .await?;
         Ok(())
@@ -675,24 +693,29 @@ impl Storage for S3CompatibleObjectStorage {
             .map(OwnedBytes::new)
             .map_err(|err| {
                 err.add_context(format!(
-                    "Failed to fetch slice {:?} for object: {}",
+                    "Failed to fetch slice {:?} for object: {}/{}",
                     range,
-                    self.uri(path)
+                    self.uri,
+                    path.display(),
                 ))
             })
     }
 
-    #[instrument(level = "debug", skip(self), fields(fetched_bytes_len))]
+    #[instrument(level = "debug", skip(self), fields(num_bytes_fetched))]
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
-        let payload = self
+        let bytes = self
             .get_to_vec(path, None)
             .await
             .map(OwnedBytes::new)
             .map_err(|err| {
-                err.add_context(format!("Failed to fetch object: {}", self.uri(path)))
+                err.add_context(format!(
+                    "Failed to fetch object: {}/{}",
+                    self.uri,
+                    path.display()
+                ))
             })?;
-        tracing::Span::current().record("fetched_bytes_len", &payload.len());
-        Ok(payload)
+        tracing::Span::current().record("num_bytes_fetched", &bytes.len());
+        Ok(bytes)
     }
 
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
@@ -742,8 +765,9 @@ impl Storage for S3CompatibleObjectStorage {
             Err(err) => Err(err.into()),
         }
     }
-    fn uri(&self) -> String {
-        format!("s3://{}/{}", self.bucket, self.prefix.to_string_lossy())
+
+    fn uri(&self) -> &Uri {
+        &self.uri
     }
 }
 
@@ -781,33 +805,37 @@ mod tests {
     }
 
     use quickwit_common::chunk_range;
+    use quickwit_common::uri::Uri;
     use rusoto_core::Region;
 
-    use super::{compute_md5, parse_uri, region_from_str};
+    use super::{compute_md5, parse_s3_uri, region_from_str};
 
     #[test]
     fn test_parse_uri() {
         assert_eq!(
-            parse_uri("s3://bucket/path/to/object"),
+            parse_s3_uri(&Uri::new("s3://bucket/path/to/object".to_string())),
             Some(("bucket".to_string(), PathBuf::from("path/to/object")))
         );
         assert_eq!(
-            parse_uri("s3://bucket/path"),
+            parse_s3_uri(&Uri::new("s3://bucket/path".to_string())),
             Some(("bucket".to_string(), PathBuf::from("path")))
         );
         assert_eq!(
-            parse_uri("s3://bucket/path/to/object"),
+            parse_s3_uri(&Uri::new("s3://bucket/path/to/object".to_string())),
             Some(("bucket".to_string(), PathBuf::from("path/to/object")))
         );
         assert_eq!(
-            parse_uri("s3://bucket/"),
+            parse_s3_uri(&Uri::new("s3://bucket/".to_string())),
             Some(("bucket".to_string(), PathBuf::from("")))
         );
         assert_eq!(
-            parse_uri("s3://bucket"),
+            parse_s3_uri(&Uri::new("s3://bucket".to_string())),
             Some(("bucket".to_string(), PathBuf::from("")))
         );
-        assert_eq!(parse_uri("mem://bucket/path/to"), None);
+        assert_eq!(
+            parse_s3_uri(&Uri::new("ram://path/to/file".to_string())),
+            None
+        );
     }
 
     #[test]
@@ -824,6 +852,14 @@ mod tests {
             region_from_str("http://localhost:4566/").unwrap(),
             Region::Custom {
                 name: "qw-custom-endpoint".to_string(),
+                endpoint: "http://localhost:4566".to_string()
+            }
+        );
+        std::env::set_var("AWS_REGION", "my-custom-region");
+        assert_eq!(
+            region_from_str("http://localhost:4566/").unwrap(),
+            Region::Custom {
+                name: "my-custom-region".to_string(),
                 endpoint: "http://localhost:4566".to_string()
             }
         );

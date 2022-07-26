@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use quickwit_common::uri::Uri;
 
 use crate::{OwnedBytes, Storage};
 
@@ -30,6 +31,7 @@ use crate::{OwnedBytes, Storage};
 struct PrefixStorage {
     pub storage: Arc<dyn Storage>,
     pub prefix: PathBuf,
+    uri: Uri,
 }
 
 #[async_trait]
@@ -72,11 +74,8 @@ impl Storage for PrefixStorage {
         self.storage.exists(&self.prefix.join(path)).await
     }
 
-    fn uri(&self) -> String {
-        Path::new(&self.storage.uri())
-            .join(&self.prefix)
-            .to_string_lossy()
-            .to_string()
+    fn uri(&self) -> &Uri {
+        &self.uri
     }
 
     async fn file_num_bytes(&self, path: &Path) -> crate::StorageResult<u64> {
@@ -85,12 +84,14 @@ impl Storage for PrefixStorage {
 }
 
 /// Creates a [`PrefixStorage`] using an underlying storage and a prefix.
-pub fn add_prefix_to_storage<P: Into<PathBuf>>(
+pub(crate) fn add_prefix_to_storage(
     storage: Arc<dyn Storage>,
-    prefix: P,
+    prefix: PathBuf,
+    uri: Uri,
 ) -> Arc<dyn Storage> {
     Arc::new(PrefixStorage {
         storage,
-        prefix: prefix.into(),
+        prefix,
+        uri,
     })
 }

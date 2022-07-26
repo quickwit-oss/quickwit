@@ -53,7 +53,7 @@ impl TypedSourceFactory for VecSourceFactory {
     async fn typed_create_source(
         ctx: Arc<SourceExecutionContext>,
         params: VecSourceParams,
-        checkpoint: SourceCheckpoint
+        checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
         let partition = PartitionId::from(params.partition.as_str());
         let next_item_idx = match checkpoint.position_for_partition(&partition) {
@@ -154,7 +154,7 @@ mod tests {
                 }
             }),
             params,
-            SourceCheckpoint::default()
+            SourceCheckpoint::default(),
         )
         .await?;
         let vec_source_actor = SourceActor {
@@ -209,7 +209,7 @@ mod tests {
                 }
             }),
             params,
-            SourceCheckpoint::default()
+            checkpoint,
         )
             .await?;
         let vec_source_actor = SourceActor {

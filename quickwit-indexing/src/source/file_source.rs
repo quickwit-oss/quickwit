@@ -345,7 +345,7 @@ mod tests {
                 }
             }),
             params,
-            SourceCheckpoint::default()
+            checkpoint,
         )
         .await?;
         let file_source_actor = SourceActor {
