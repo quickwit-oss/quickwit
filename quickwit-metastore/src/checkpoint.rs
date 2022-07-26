@@ -46,6 +46,20 @@ impl From<&str> for PartitionId {
     }
 }
 
+impl From<u32> for PartitionId {
+    fn from(partition_id: u32) -> Self {
+        let partition_id_str = format!("{:0>20}", partition_id);
+        PartitionId(Arc::new(partition_id_str))
+    }
+}
+
+impl From<i32> for PartitionId {
+    fn from(partition_id: i32) -> Self {
+        let partition_id_str = format!("{:0>20}", partition_id);
+        PartitionId(Arc::new(partition_id_str))
+    }
+}
+
 impl From<u64> for PartitionId {
     fn from(partition_id: u64) -> Self {
         let partition_id_str = format!("{:0>20}", partition_id);

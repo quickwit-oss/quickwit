@@ -26,11 +26,10 @@ use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::VecSourceParams;
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use tracing::info;
-use quickwit_metastore::Metastore;
 
 use crate::actors::Indexer;
 use crate::models::RawDocBatch;
-use crate::source::{Source, SourceContext, TypedSourceFactory};
+use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
 
 pub struct VecSource {
     source_id: String,
@@ -52,10 +51,9 @@ impl TypedSourceFactory for VecSourceFactory {
     type Source = VecSource;
     type Params = VecSourceParams;
     async fn typed_create_source(
-        _metastore: Arc<dyn Metastore>,
-        source_id: String,
+        ctx: Arc<SourceExecutionContext>,
         params: VecSourceParams,
-        checkpoint: SourceCheckpoint,
+        checkpoint: SourceCheckpoint
     ) -> anyhow::Result<Self::Source> {
         let partition = PartitionId::from(params.partition.as_str());
         let next_item_idx = match checkpoint.position_for_partition(&partition) {
@@ -63,7 +61,7 @@ impl TypedSourceFactory for VecSourceFactory {
             Some(Position::Beginning) | None => 0,
         };
         Ok(VecSource {
-            source_id,
+            source_id: ctx.config.source_id.clone(),
             next_item_idx,
             params,
             partition,
@@ -124,8 +122,10 @@ impl Source for VecSource {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use quickwit_actors::{create_test_mailbox, Actor, Command, Universe};
     use serde_json::json;
+    use quickwit_config::{SourceConfig, SourceParams};
 
     use super::*;
     use crate::source::{source_factory, SourceActor};
@@ -145,10 +145,16 @@ mod tests {
         };
         let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
         let vec_source = VecSourceFactory::typed_create_source(
-            metastore,
-            "my-vec-source".to_string(),
+            Arc::new(SourceExecutionContext {
+                metastore,
+                index_id: "test-index".to_string(),
+                config: SourceConfig {
+                    source_id: "my-vec-source".to_string(),
+                    source_params: SourceParams::Vec(params.clone())
+                }
+            }),
             params,
-            SourceCheckpoint::default(),
+            SourceCheckpoint::default()
         )
         .await?;
         let vec_source_actor = SourceActor {
@@ -193,9 +199,19 @@ mod tests {
         checkpoint.try_apply_delta(CheckpointDelta::from(0u64..2u64))?;
 
         let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
-        let vec_source =
-            VecSourceFactory::typed_create_source(metastore,"my-vec-source".to_string(), params, checkpoint)
-                .await?;
+        let vec_source = VecSourceFactory::typed_create_source(
+            Arc::new(SourceExecutionContext {
+                metastore,
+                index_id: "test-index".to_string(),
+                config: SourceConfig {
+                    source_id: "my-vec-source".to_string(),
+                    source_params: SourceParams::Vec(params.clone())
+                }
+            }),
+            params,
+            SourceCheckpoint::default()
+        )
+            .await?;
         let vec_source_actor = SourceActor {
             source: Box::new(vec_source),
             batch_sink: mailbox,

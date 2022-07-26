@@ -24,19 +24,16 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use thiserror::Error;
-use quickwit_metastore::Metastore;
 
 use super::Source;
-use crate::source::SourceConfig;
+use crate::source::{SourceExecutionContext};
 
 #[async_trait]
 pub trait SourceFactory: 'static + Send + Sync {
     async fn create_source(
         &self,
-        metastore: Arc<dyn Metastore>,
-        source_id: String,
-        params: serde_json::Value,
-        checkpoint: SourceCheckpoint,
+        ctx: Arc<SourceExecutionContext>,
+        checkpoint: SourceCheckpoint
     ) -> anyhow::Result<Box<dyn Source>>;
 }
 
@@ -45,10 +42,9 @@ pub trait TypedSourceFactory: Send + Sync + 'static {
     type Source: Source;
     type Params: serde::de::DeserializeOwned + Send + Sync + 'static;
     async fn typed_create_source(
-        metastore: Arc<dyn Metastore>,
-        source_id: String,
+        ctx: Arc<SourceExecutionContext>,
         params: Self::Params,
-        checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
+        checkpoint: SourceCheckpoint
     ) -> anyhow::Result<Self::Source>;
 }
 
@@ -56,13 +52,12 @@ pub trait TypedSourceFactory: Send + Sync + 'static {
 impl<T: TypedSourceFactory> SourceFactory for T {
     async fn create_source(
         &self,
-        metastore: Arc<dyn Metastore>,
-        source_id: String,
-        params: serde_json::Value,
-        checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
+        ctx: Arc<SourceExecutionContext>,
+        checkpoint: SourceCheckpoint
     ) -> anyhow::Result<Box<dyn Source>> {
-        let typed_params: T::Params = serde_json::from_value(params)?;
-        let file_source = Self::typed_create_source(metastore, source_id, typed_params, checkpoint).await?;
+        let typed_params: T::Params = serde_json::from_value(ctx.config.params())?;
+        let file_source = Self::typed_create_source(ctx, typed_params,
+                                                    checkpoint).await?;
         Ok(Box::new(file_source))
     }
 }
@@ -99,28 +94,25 @@ impl SourceLoader {
 
     pub async fn load_source(
         &self,
-        metastore: Arc<dyn Metastore>,
-        source_config: SourceConfig,
-        checkpoint: SourceCheckpoint,
+        ctx: Arc<SourceExecutionContext>,
+        checkpoint: SourceCheckpoint
     ) -> Result<Box<dyn Source>, SourceLoaderError> {
+        let source_type = ctx.config.source_type().to_string();
+        let source_id = ctx.config.source_id.clone();
+
         let source_factory = self
             .type_to_factory
-            .get(source_config.source_type())
+            .get(ctx.config.source_type())
             .ok_or_else(|| SourceLoaderError::UnknownSourceType {
-                requested_source_type: source_config.source_type().to_string(),
+                requested_source_type: ctx.config.source_type().to_string(),
                 available_source_types: self.type_to_factory.keys().join(", "),
             })?;
         source_factory
-            .create_source(
-                metastore,
-                source_config.source_id.clone(),
-                source_config.params(),
-                checkpoint,
-            )
+            .create_source(ctx, checkpoint)
             .await
             .map_err(|error| SourceLoaderError::FailedToCreateSource {
-                source_type: source_config.source_type().to_string(),
-                source_id: source_config.source_id,
+                source_type,
+                source_id,
                 error,
             })
     }
@@ -141,7 +133,9 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_config::SourceParams;
+    use std::sync::Arc;
+    use quickwit_config::{SourceConfig, SourceParams};
+    use quickwit_metastore::Metastore;
 
     use super::*;
     use crate::source::quickwit_supported_sources;
@@ -155,7 +149,11 @@ mod tests {
             source_params: SourceParams::void(),
         };
         source_loader
-            .load_source(metastore.clone(), source_config, SourceCheckpoint::default())
+            .load_source( Arc::new(SourceExecutionContext {
+                metastore: metastore.clone(),
+                index_id: "test-index".to_string(),
+                config: source_config,
+            }), SourceCheckpoint::default())
             .await?;
         Ok(())
     }

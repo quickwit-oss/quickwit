@@ -650,15 +650,15 @@ impl Metastore for PostgresqlMetastore {
         run_with_tx!(self.connection_pool, tx, {
 
             // todo: replace the commit logic here.
-            commit_checkpoint(tx, index_id, source_id, &checkpoint_delta).await?;
+            //commit_checkpoint(tx, index_id, source_id, &checkpoint_delta).await?;
 
             // Update the index checkpoint.
-            // mutate_index_metadata(tx, index_id, |index_metadata| {
-            //     index_metadata
-            //         .checkpoint
-            //         .try_apply_delta(source_id, checkpoint_delta)
-            // })
-            // .await?;
+            mutate_index_metadata(tx, index_id, |index_metadata| {
+                index_metadata
+                    .checkpoint
+                    .try_apply_delta(source_id, checkpoint_delta)
+            })
+            .await?;
 
             if split_ids.is_empty() {
                 return Ok(());

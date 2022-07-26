@@ -22,11 +22,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox, HEARTBEAT};
-use quickwit_config::VoidSourceParams;
-use quickwit_metastore::Metastore;
+use quickwit_config::{VoidSourceParams};
+use quickwit_metastore::checkpoint::SourceCheckpoint;
 
 use crate::actors::Indexer;
-use crate::source::{Source, SourceContext, TypedSourceFactory};
+use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
 
 pub struct VoidSource;
 
@@ -59,10 +59,9 @@ impl TypedSourceFactory for VoidSourceFactory {
     type Params = VoidSourceParams;
 
     async fn typed_create_source(
-        _metastore: Arc<dyn Metastore>,
-        _source_id: String,
+        _ctx: Arc<SourceExecutionContext>,
         _params: VoidSourceParams,
-        _checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
+        _checkpoint: SourceCheckpoint
     ) -> anyhow::Result<VoidSource> {
         Ok(VoidSource)
     }
@@ -70,25 +69,37 @@ impl TypedSourceFactory for VoidSourceFactory {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use quickwit_actors::{create_test_mailbox, Health, Supervisable, Universe};
     use quickwit_config::SourceParams;
     use quickwit_metastore::checkpoint::SourceCheckpoint;
     use serde_json::json;
 
     use super::*;
-    use crate::source::{quickwit_supported_sources, source_factory, SourceActor, SourceConfig};
+    use crate::source::{source_factory, SourceActor, SourceConfig};
 
     #[tokio::test]
     async fn test_void_source_loading() -> anyhow::Result<()> {
-        let source_config = SourceConfig {
-            source_id: "void-test-source".to_string(),
-            source_params: SourceParams::void(),
-        };
-        let source_loader = quickwit_supported_sources();
+        // let source_config = SourceConfig {
+        //     source_id: "void-test-source".to_string(),
+        //     source_params: SourceParams::void(),
+        // };
+        // let source_loader = quickwit_supported_sources();
         let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
-        let _ = source_loader
-            .load_source(metastore,source_config.clone(), SourceCheckpoint::default())
+        let _ = VoidSourceFactory::typed_create_source(
+            Arc::new(SourceExecutionContext {
+                metastore,
+                index_id: "test-index".to_string(),
+                config: SourceConfig {
+                    source_id: "void-test-source".to_string(),
+                    source_params: SourceParams::void()
+                }
+            }),
+            VoidSourceParams,
+            SourceCheckpoint::default()
+        )
             .await?;
+
         Ok(())
     }
 
@@ -99,10 +110,16 @@ mod tests {
         let (mailbox, _) = create_test_mailbox();
         let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
         let void_source = VoidSourceFactory::typed_create_source(
-            metastore,
-            "my-void-source".to_string(),
-            VoidSourceParams {},
-            SourceCheckpoint::default(),
+            Arc::new(SourceExecutionContext {
+                metastore,
+                index_id: "test-index".to_string(),
+                config: SourceConfig {
+                    source_id: "void-test-source".to_string(),
+                    source_params: SourceParams::void()
+                }
+            }),
+            VoidSourceParams,
+            SourceCheckpoint::default()
         )
         .await?;
         let void_source_actor = SourceActor {

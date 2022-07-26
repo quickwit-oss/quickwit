@@ -43,7 +43,7 @@ use crate::actors::{
     Uploader,
 };
 use crate::models::{IndexingDirectory, IndexingStatistics, Observe};
-use crate::source::{quickwit_supported_sources, SourceActor};
+use crate::source::{quickwit_supported_sources, SourceActor, SourceExecutionContext};
 use crate::split_store::{IndexingSplitStore, IndexingSplitStoreParams};
 use crate::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 
@@ -405,7 +405,11 @@ impl IndexingPipeline {
             .cloned()
             .unwrap_or_default(); // TODO Have a stricter check.
         let source = quickwit_supported_sources()
-            .load_source(self.params.metastore.clone(), self.params.source.clone(), source_checkpoint)
+            .load_source(Arc::new(SourceExecutionContext {
+                metastore: self.params.metastore.clone(),
+                index_id: self.params.index_id.clone(),
+                config: self.params.source.clone()
+            }), source_checkpoint)
             .await?;
         let actor_source = SourceActor {
             source,

@@ -28,12 +28,12 @@ use quickwit_ingest_api::{get_ingest_api_service, iter_doc_payloads, IngestApiSe
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use quickwit_proto::ingest_api::{FetchRequest, FetchResponse, SuggestTruncateRequest};
 use serde::Serialize;
-use quickwit_metastore::Metastore;
 
 use super::file_source::BATCH_NUM_BYTES_THRESHOLD;
 use super::{Source, SourceActor, SourceContext, TypedSourceFactory};
 use crate::actors::Indexer;
 use crate::models::RawDocBatch;
+use crate::source::SourceExecutionContext;
 
 /// Wait time for SourceActor before pooling for new documents.
 /// TODO: Think of better way, maybe increment this (i.e wait longer) as time
@@ -198,18 +198,17 @@ impl TypedSourceFactory for IngestApiSourceFactory {
     type Params = IngestApiSourceParams;
 
     async fn typed_create_source(
-        _metastore: Arc<dyn Metastore>,
-        source_id: String,
+        ctx: Arc<SourceExecutionContext>,
         params: IngestApiSourceParams,
-        checkpoint: SourceCheckpoint,
+        checkpoint: SourceCheckpoint
     ) -> anyhow::Result<Self::Source> {
         let ingest_api_mailbox = get_ingest_api_service().ok_or_else(|| {
             anyhow::anyhow!(
                 "Could not get the `IngestApiSource {{ source_id: {} }}` instance.",
-                source_id
+                ctx.config.source_id
             )
         })?;
-        IngestApiSource::make(source_id, params, ingest_api_mailbox, checkpoint).await
+        IngestApiSource::make(ctx.config.source_id.clone(), params, ingest_api_mailbox, checkpoint).await
     }
 }
 

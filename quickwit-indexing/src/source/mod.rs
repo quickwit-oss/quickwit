@@ -68,6 +68,7 @@ mod vec_source;
 mod void_source;
 
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::bail;
@@ -81,15 +82,23 @@ use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceConfig, SourceParams};
-use quickwit_metastore::checkpoint::SourceCheckpoint;
+use quickwit_metastore::checkpoint::{SourceCheckpoint};
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 use tokio::runtime::Handle;
 use tracing::error;
+use quickwit_metastore::Metastore;
 pub use vec_source::{VecSource, VecSourceFactory};
 pub use void_source::{VoidSource, VoidSourceFactory};
 
 use crate::actors::Indexer;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
+
+/// Runtime configuration used during execution of a source actor.
+pub struct SourceExecutionContext {
+    pub metastore: Arc<dyn Metastore>,
+    pub index_id: String,
+    pub config: SourceConfig
+}
 
 pub type SourceContext = ActorContext<SourceActor>;
 

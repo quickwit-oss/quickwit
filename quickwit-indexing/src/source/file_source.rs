@@ -26,16 +26,15 @@ use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::FileSourceParams;
-use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position};
+use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use serde::Serialize;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncSeekExt, BufReader};
 use tracing::info;
-use quickwit_metastore::Metastore;
 
 use crate::actors::Indexer;
 use crate::models::RawDocBatch;
-use crate::source::{Source, SourceContext, TypedSourceFactory};
+use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
 
 /// Cut a new batch as soon as we have read BATCH_NUM_BYTES_THRESHOLD.
 pub(crate) const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
@@ -135,10 +134,9 @@ impl TypedSourceFactory for FileSourceFactory {
 
     // TODO handle checkpoint for files.
     async fn typed_create_source(
-        _metastore: Arc<dyn Metastore>,
-        source_id: String,
+        ctx: Arc<SourceExecutionContext>,
         params: FileSourceParams,
-        checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
+        checkpoint: SourceCheckpoint
     ) -> anyhow::Result<FileSource> {
         let mut offset = 0;
         let reader: Box<dyn AsyncRead + Send + Sync + Unpin> =
@@ -159,7 +157,7 @@ impl TypedSourceFactory for FileSourceFactory {
                 Box::new(tokio::io::stdin())
             };
         let file_source = FileSource {
-            source_id,
+            source_id: ctx.config.source_id.clone(),
             counters: FileSourceCounters {
                 previous_offset: offset,
                 current_offset: offset,
@@ -175,8 +173,10 @@ impl TypedSourceFactory for FileSourceFactory {
 #[cfg(test)]
 mod tests {
     use std::io::Write;
+    use std::sync::Arc;
 
     use quickwit_actors::{create_test_mailbox, Command, Universe};
+    use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::checkpoint::SourceCheckpoint;
 
     use super::*;
@@ -192,10 +192,16 @@ mod tests {
         let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
 
         let file_source = FileSourceFactory::typed_create_source(
-            metastore,
-            "my-file-source".to_string(),
+            Arc::new(SourceExecutionContext {
+                metastore,
+                index_id: "test-index".to_string(),
+                config: SourceConfig {
+                    source_id: "my-file-source".to_string(),
+                    source_params: SourceParams::File(params.clone())
+                }
+            }),
             params,
-            SourceCheckpoint::default(),
+            SourceCheckpoint::default()
         )
         .await?;
         let file_source_actor = SourceActor {
@@ -245,11 +251,18 @@ mod tests {
             .to_string();
 
         let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
+
         let source = FileSourceFactory::typed_create_source(
-            metastore,
-            "my-file-source".to_string(),
+            Arc::new(SourceExecutionContext {
+                metastore,
+                index_id: "test-index".to_string(),
+                config: SourceConfig {
+                    source_id: "my-file-source".to_string(),
+                    source_params: SourceParams::File(params.clone())
+                }
+            }),
             params,
-            SourceCheckpoint::default(),
+            SourceCheckpoint::default()
         )
         .await?;
         let file_source_actor = SourceActor {
@@ -323,10 +336,16 @@ mod tests {
 
         let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
         let source = FileSourceFactory::typed_create_source(
-            metastore,
-            "my-file-source".to_string(),
+            Arc::new(SourceExecutionContext {
+                metastore,
+                index_id: "test-index".to_string(),
+                config: SourceConfig {
+                    source_id: "my-file-source".to_string(),
+                    source_params: SourceParams::File(params.clone())
+                }
+            }),
             params,
-            checkpoint,
+            SourceCheckpoint::default()
         )
         .await?;
         let file_source_actor = SourceActor {
