@@ -27,19 +27,21 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::{DocMapper, DocParsingError, SortBy, QUICKWIT_TOKENIZER_MANAGER};
+use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
 use quickwit_metastore::Metastore;
 use tantivy::schema::{Field, Value};
 use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
 use tokio::runtime::Handle;
 use tracing::{info, warn};
+use ulid::Ulid;
 
 use crate::actors::Packager;
 use crate::models::{IndexedSplit, IndexedSplitBatch, IndexingDirectory, RawDocBatch};
 
 #[derive(Debug)]
 struct CommitTimeout {
-    split_id: String,
+    workbench_id: Ulid,
 }
 
 #[derive(Clone, Default, Debug, Eq, PartialEq)]
@@ -84,6 +86,7 @@ impl IndexerCounters {
 
 struct IndexerState {
     index_id: String,
+    source_id: String,
     doc_mapper: Arc<dyn DocMapper>,
     indexing_directory: IndexingDirectory,
     indexing_settings: IndexingSettings,
@@ -101,7 +104,10 @@ enum PrepareDocumentOutcome {
 }
 
 impl IndexerState {
-    fn create_indexed_split(&self, ctx: &ActorContext<Indexer>) -> anyhow::Result<IndexedSplit> {
+    fn create_indexed_split(
+        &self,
+        ctx: &ActorContext<Indexer>,
+    ) -> anyhow::Result<IndexingWorkbench> {
         let schema = self.doc_mapper.schema();
         let index_settings = IndexSettings {
             sort_by_field: self.sort_by_field_opt.clone(),
@@ -123,7 +129,15 @@ impl IndexerState {
             ctx.kill_switch().clone(),
         )?;
         info!(split_id = %indexed_split.split_id, "new-split");
-        Ok(indexed_split)
+        let workbench = IndexingWorkbench {
+            checkpoint_delta: IndexCheckpointDelta {
+                source_id: self.source_id.clone(),
+                source_delta: SourceCheckpointDelta::default(),
+            },
+            indexed_split,
+            workbench_id: Ulid::new(),
+        };
+        Ok(workbench)
     }
 
     /// Returns the current_indexed_split. If this is the first message, then
@@ -131,26 +145,26 @@ impl IndexerState {
     ///
     /// This function will then create it, and can hence return an Error.
     async fn get_or_create_current_indexed_split<'a>(
-        &self,
-        current_split_opt: &'a mut Option<IndexedSplit>,
+        &'a self,
+        indexing_workbench_opt: &'a mut Option<IndexingWorkbench>,
         ctx: &ActorContext<Indexer>,
-    ) -> anyhow::Result<&'a mut IndexedSplit> {
-        if current_split_opt.is_none() {
-            let new_indexed_split = self.create_indexed_split(ctx)?;
+    ) -> anyhow::Result<&'a mut IndexingWorkbench> {
+        if indexing_workbench_opt.is_none() {
+            let indexing_workbench = self.create_indexed_split(ctx)?;
             let commit_timeout_message = CommitTimeout {
-                split_id: new_indexed_split.split_id.clone(),
+                workbench_id: indexing_workbench.workbench_id,
             };
             ctx.schedule_self_msg(
                 self.indexing_settings.commit_timeout(),
                 commit_timeout_message,
             )
             .await;
-            *current_split_opt = Some(new_indexed_split);
+            *indexing_workbench_opt = Some(indexing_workbench);
         }
-        let current_index_split = current_split_opt.as_mut().with_context(|| {
+        let current_indexing_workbench = indexing_workbench_opt.as_mut().context(
             "No index writer available. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."
-        })?;
-        Ok(current_index_split)
+        )?;
+        Ok(current_indexing_workbench)
     }
 
     fn prepare_document(&self, doc_json: String) -> PrepareDocumentOutcome {
@@ -191,17 +205,21 @@ impl IndexerState {
     async fn process_batch(
         &self,
         batch: RawDocBatch,
-        current_split_opt: &mut Option<IndexedSplit>,
+        indexing_workbench_opt: &mut Option<IndexingWorkbench>,
         counters: &mut IndexerCounters,
         ctx: &ActorContext<Indexer>,
     ) -> Result<(), ActorExitStatus> {
-        let indexed_split = self
-            .get_or_create_current_indexed_split(current_split_opt, ctx)
+        let IndexingWorkbench {
+            checkpoint_delta,
+            indexed_split,
+            ..
+        } = self
+            .get_or_create_current_indexed_split(indexing_workbench_opt, ctx)
             .await?;
-        indexed_split
-            .checkpoint_delta
+        checkpoint_delta
+            .source_delta
             .extend(batch.checkpoint_delta)
-            .with_context(|| "Batch delta does not follow indexer checkpoint")?;
+            .context("Batch delta does not follow indexer checkpoint")?;
         for doc_json in batch.docs {
             counters.overall_num_bytes += doc_json.len() as u64;
             indexed_split.docs_size_in_bytes += doc_json.len() as u64;
@@ -230,7 +248,7 @@ impl IndexerState {
                     indexed_split
                         .index_writer
                         .add_document(document)
-                        .with_context(|| "Failed to add document.")?;
+                        .context("Failed to add document.")?;
                 }
             }
             ctx.record_progress();
@@ -239,11 +257,16 @@ impl IndexerState {
     }
 }
 
+struct IndexingWorkbench {
+    checkpoint_delta: IndexCheckpointDelta,
+    indexed_split: IndexedSplit,
+    workbench_id: Ulid,
+}
+
 pub struct Indexer {
     indexer_state: IndexerState,
     packager_mailbox: Mailbox<Packager>,
-    current_split_opt: Option<IndexedSplit>,
-    source_id: String,
+    indexing_workbench_opt: Option<IndexingWorkbench>,
     metastore: Arc<dyn Metastore>,
     counters: IndexerCounters,
 }
@@ -306,8 +329,14 @@ impl Handler<CommitTimeout> for Indexer {
         commit_timeout: CommitTimeout,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        self.process_commit_timeout(&commit_timeout.split_id, ctx)
-            .await?;
+        if let Some(indexing_workbench) = self.indexing_workbench_opt.as_ref() {
+            // This is a timeout for a different split.
+            // We can ignore it.
+            if indexing_workbench.workbench_id != commit_timeout.workbench_id {
+                return Ok(());
+            }
+        }
+        self.send_to_packager(CommitTrigger::Timeout, ctx).await?;
         Ok(())
     }
 }
@@ -354,6 +383,7 @@ impl Indexer {
         Self {
             indexer_state: IndexerState {
                 index_id,
+                source_id,
                 doc_mapper,
                 indexing_directory,
                 indexing_settings,
@@ -361,8 +391,7 @@ impl Indexer {
                 sort_by_field_opt,
             },
             packager_mailbox,
-            current_split_opt: None,
-            source_id,
+            indexing_workbench_opt: None,
             metastore,
             counters: IndexerCounters::default(),
         }
@@ -375,7 +404,12 @@ impl Indexer {
     ) -> Result<(), ActorExitStatus> {
         fail_point!("indexer:batch:before");
         self.indexer_state
-            .process_batch(batch, &mut self.current_split_opt, &mut self.counters, ctx)
+            .process_batch(
+                batch,
+                &mut self.indexing_workbench_opt,
+                &mut self.counters,
+                ctx,
+            )
             .await?;
         if self.counters.num_docs_in_split
             >= self.indexer_state.indexing_settings.split_num_docs_target as u64
@@ -387,30 +421,18 @@ impl Indexer {
         Ok(())
     }
 
-    async fn process_commit_timeout(
-        &mut self,
-        split_id: &str,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
-        if let Some(split) = self.current_split_opt.as_ref() {
-            // This is a timeout for a different split.
-            // We can ignore it.
-            if split.split_id != split_id {
-                return Ok(());
-            }
-        }
-        self.send_to_packager(CommitTrigger::Timeout, ctx).await?;
-        Ok(())
-    }
-
     /// Extract the indexed split and send it to the Packager.
     async fn send_to_packager(
         &mut self,
         commit_trigger: CommitTrigger,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
-        let indexed_split = if let Some(indexed_split) = self.current_split_opt.take() {
-            indexed_split
+        let IndexingWorkbench {
+            checkpoint_delta,
+            indexed_split,
+            ..
+        } = if let Some(indexing_workbench) = self.indexing_workbench_opt.take() {
+            indexing_workbench
         } else {
             return Ok(());
         };
@@ -419,18 +441,13 @@ impl Indexer {
         // reprocessing the same faulty documents.
         if indexed_split.num_docs == 0 {
             self.metastore
-                .publish_splits(
-                    &indexed_split.index_id,
-                    &self.source_id,
-                    &[],
-                    indexed_split.checkpoint_delta,
-                )
+                .publish_splits(&indexed_split.index_id, &[], &[], Some(checkpoint_delta))
                 .await
                 .with_context(|| {
                     format!(
                         "Failed to update the checkpoint for {}, {} after a split containing only \
                          errors.",
-                        &indexed_split.index_id, &self.source_id
+                        &self.indexer_state.index_id, &self.indexer_state.source_id
                     )
                 })?;
             return Ok(());
@@ -441,6 +458,7 @@ impl Indexer {
             &self.packager_mailbox,
             IndexedSplitBatch {
                 splits: vec![indexed_split],
+                checkpoint_delta: Some(checkpoint_delta),
             },
         )
         .await?;
@@ -457,7 +475,7 @@ mod tests {
 
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_doc_mapper::SortOrder;
-    use quickwit_metastore::checkpoint::CheckpointDelta;
+    use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_metastore::MockMetastore;
 
     use super::*;
@@ -489,7 +507,7 @@ mod tests {
         let mut metastore = MockMetastore::default();
         metastore
             .expect_publish_splits()
-            .returning(move |_, _, splits, _| {
+            .returning(move |_, splits, _, _| {
                 assert!(splits.is_empty());
                 Ok(())
             });
@@ -513,7 +531,7 @@ mod tests {
                         r#"{"body": "happy2", "timestamp": 1628837062, "response_date": 1652866573232, "response_time": 13, "response_payload": "YWJj"}"#.to_string(), // ok
                         "{".to_string(),                    // invalid json
                     ],
-                checkpoint_delta: CheckpointDelta::from(0..4),
+                checkpoint_delta: SourceCheckpointDelta::from(0..4),
             })
             .await?;
         let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
@@ -532,7 +550,7 @@ mod tests {
             .send_message(
                 RawDocBatch {
                     docs: vec![r#"{"body": "happy3", "timestamp": 1628837062, "response_date": 1652866573227, "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
-                    checkpoint_delta: CheckpointDelta::from(4..5),
+                    checkpoint_delta: SourceCheckpointDelta::from(4..5),
                 }
             )
             .await?;
@@ -571,7 +589,7 @@ mod tests {
         let mut metastore = MockMetastore::default();
         metastore
             .expect_publish_splits()
-            .returning(move |_, _, splits, _| {
+            .returning(move |_, splits, _, _| {
                 assert!(splits.is_empty());
                 Ok(())
             });
@@ -591,7 +609,7 @@ mod tests {
             .send_message(
                 RawDocBatch {
                     docs: vec![r#"{"body": "happy", "timestamp": 1628837062, "response_date": 1652866573228, "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
-                    checkpoint_delta: CheckpointDelta::from(0..1),
+                    checkpoint_delta: SourceCheckpointDelta::from(0..1),
                 }
             )
             .await?;
@@ -639,7 +657,7 @@ mod tests {
         let mut metastore = MockMetastore::default();
         metastore
             .expect_publish_splits()
-            .returning(move |_, _, splits, _| {
+            .returning(move |_, splits, _, _| {
                 assert!(splits.is_empty());
                 Ok(())
             });
@@ -658,7 +676,7 @@ mod tests {
             .send_message(
                 RawDocBatch {
                     docs: vec![r#"{"body": "happy", "timestamp": 1628837062, "response_date": 1652866573227, "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
-                    checkpoint_delta: CheckpointDelta::from(0..1),
+                    checkpoint_delta: SourceCheckpointDelta::from(0..1),
                 }
             )
             .await?;

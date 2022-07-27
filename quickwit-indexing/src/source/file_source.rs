@@ -25,7 +25,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::FileSourceParams;
-use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position};
+use quickwit_metastore::checkpoint::{PartitionId, Position};
 use serde::Serialize;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncSeekExt, BufReader};
@@ -68,7 +68,7 @@ impl Source for FileSource {
         // We collect batches of documents before sending them to the indexer.
         let limit_num_bytes = self.counters.previous_offset + BATCH_NUM_BYTES_THRESHOLD;
         let mut reached_eof = false;
-        let mut docs = Vec::new();
+        let mut doc_batch = RawDocBatch::default();
         while self.counters.current_offset < limit_num_bytes {
             let mut doc_line = String::new();
             let num_bytes = self
@@ -80,19 +80,19 @@ impl Source for FileSource {
                 reached_eof = true;
                 break;
             }
-            docs.push(doc_line);
+            doc_batch.docs.push(doc_line);
             self.counters.current_offset += num_bytes as u64;
             self.counters.num_lines_processed += 1;
         }
-        if !docs.is_empty() {
-            let mut checkpoint_delta = CheckpointDelta::default();
+        if !doc_batch.docs.is_empty() {
             if let Some(filepath) = &self.params.filepath {
                 let filepath_str = filepath
                     .to_str()
                     .context("Path is invalid utf-8")?
                     .to_string();
                 let partition_id = PartitionId::from(filepath_str);
-                checkpoint_delta
+                doc_batch
+                    .checkpoint_delta
                     .record_partition_delta(
                         partition_id,
                         Position::from(self.counters.previous_offset),
@@ -100,12 +100,8 @@ impl Source for FileSource {
                     )
                     .unwrap();
             }
-            let raw_doc_batch = RawDocBatch {
-                docs,
-                checkpoint_delta,
-            };
             self.counters.previous_offset = self.counters.current_offset;
-            ctx.send_message(batch_sink, raw_doc_batch).await?;
+            ctx.send_message(batch_sink, doc_batch).await?;
         }
         if reached_eof {
             info!("EOF");
@@ -174,7 +170,7 @@ mod tests {
     use std::io::Write;
 
     use quickwit_actors::{create_test_mailbox, Command, Universe};
-    use quickwit_metastore::checkpoint::SourceCheckpoint;
+    use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
 
     use super::*;
     use crate::source::SourceActor;
@@ -282,7 +278,7 @@ mod tests {
         Ok(())
     }
 
-    fn extract_position_delta(checkpoint_delta: &CheckpointDelta) -> Option<String> {
+    fn extract_position_delta(checkpoint_delta: &SourceCheckpointDelta) -> Option<String> {
         let checkpoint_delta_str = format!("{:?}", checkpoint_delta);
         let (_left, right) =
             &checkpoint_delta_str[..checkpoint_delta_str.len() - 2].rsplit_once('(')?;
@@ -304,7 +300,7 @@ mod tests {
         let params = FileSourceParams::file(&temp_file_path);
         let mut checkpoint = SourceCheckpoint::default();
         let partition_id = PartitionId::from(temp_file_path.to_string_lossy().to_string());
-        let checkpoint_delta = CheckpointDelta::from_partition_delta(
+        let checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
             partition_id,
             Position::from(0u64),
             Position::from(4u64),

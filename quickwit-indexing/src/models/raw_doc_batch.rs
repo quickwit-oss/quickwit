@@ -19,12 +19,27 @@
 
 use std::fmt;
 
-use quickwit_metastore::checkpoint::CheckpointDelta;
+use quickwit_metastore::checkpoint::SourceCheckpointDelta;
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct RawDocBatch {
     pub docs: Vec<String>,
-    pub checkpoint_delta: CheckpointDelta,
+    pub checkpoint_delta: SourceCheckpointDelta,
+}
+
+impl RawDocBatch {
+    pub fn new(docs: Vec<String>, checkpoint_delta: SourceCheckpointDelta) -> Self {
+        RawDocBatch {
+            docs,
+            checkpoint_delta,
+        }
+    }
+}
+
+impl Default for RawDocBatch {
+    fn default() -> Self {
+        RawDocBatch::new(Vec::new(), SourceCheckpointDelta::default())
+    }
 }
 
 impl fmt::Debug for RawDocBatch {

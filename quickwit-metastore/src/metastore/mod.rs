@@ -32,7 +32,7 @@ use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 
-use crate::checkpoint::CheckpointDelta;
+use crate::checkpoint::IndexCheckpointDelta;
 use crate::{MetastoreResult, Split, SplitMetadata, SplitState};
 
 /// Metastore meant to manage Quickwit's indexes and their splits.
@@ -120,20 +120,9 @@ pub trait Metastore: Send + Sync + 'static {
     async fn publish_splits<'a>(
         &self,
         index_id: &str,
-        source_id: &str,
         split_ids: &[&'a str],
-        checkpoint_delta: CheckpointDelta,
-    ) -> MetastoreResult<()>;
-
-    /// Replaces a list of splits with another list.
-    ///
-    /// This API is useful during merge and demux operations.
-    /// The new splits should be staged, and the replaced splits should exist.
-    async fn replace_splits<'a>(
-        &self,
-        index_id: &str,
-        new_split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
+        checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     ) -> MetastoreResult<()>;
 
     /// Lists the splits.

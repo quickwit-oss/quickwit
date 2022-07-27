@@ -22,7 +22,7 @@ use std::fmt;
 use std::ops::RangeInclusive;
 use std::time::Instant;
 
-use quickwit_metastore::checkpoint::CheckpointDelta;
+use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 
 use crate::models::ScratchDirectory;
 
@@ -30,7 +30,6 @@ pub struct PackagedSplit {
     pub split_id: String,
     pub replaced_split_ids: Vec<String>,
     pub index_id: String,
-    pub checkpoint_deltas: Vec<CheckpointDelta>,
     pub time_range: Option<RangeInclusive<i64>>,
     pub size_in_bytes: u64,
     pub split_scratch_directory: ScratchDirectory,
@@ -48,7 +47,6 @@ impl fmt::Debug for PackagedSplit {
             .field("split_id", &self.split_id)
             .field("replaced_split_ids", &self.replaced_split_ids)
             .field("index_id", &self.index_id)
-            .field("checkpoint_deltas", &self.checkpoint_deltas)
             .field("time_range", &self.time_range)
             .field("size_in_bytes", &self.size_in_bytes)
             .field("split_scratch_directory", &self.split_scratch_directory)
@@ -64,6 +62,7 @@ impl fmt::Debug for PackagedSplit {
 #[derive(Debug)]
 pub struct PackagedSplitBatch {
     pub splits: Vec<PackagedSplit>,
+    pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
 }
 
 impl PackagedSplitBatch {
@@ -71,7 +70,10 @@ impl PackagedSplitBatch {
     /// satisfies two constraints:
     /// - a batch must have at least one split
     /// - all splits must be on the same `index_id`.
-    pub fn new(splits: Vec<PackagedSplit>) -> Self {
+    pub fn new(
+        splits: Vec<PackagedSplit>,
+        checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+    ) -> Self {
         assert!(!splits.is_empty());
         assert_eq!(
             splits
@@ -82,7 +84,10 @@ impl PackagedSplitBatch {
             1,
             "All splits must be on the same `index_id`."
         );
-        Self { splits }
+        Self {
+            splits,
+            checkpoint_delta_opt,
+        }
     }
 
     pub fn index_id(&self) -> String {

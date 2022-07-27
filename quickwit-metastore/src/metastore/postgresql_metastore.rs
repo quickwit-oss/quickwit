@@ -35,7 +35,7 @@ use tracing::log::LevelFilter;
 use tracing::{debug, error, instrument, warn};
 
 use crate::metastore::postgresql_model::{Index, IndexIdSplitIdRow};
-use crate::metastore::{postgresql_model, CheckpointDelta};
+use crate::metastore::{postgresql_model, SourceCheckpointDelta};
 use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
     MetastoreResult, Split, SplitMetadata, SplitState,
@@ -146,6 +146,9 @@ async fn mark_splits_as_published_helper(
     index_id: &str,
     split_ids: &[&str],
 ) -> MetastoreResult<Vec<String>> {
+    if split_ids.is_empty() {
+        return Ok(Vec::new());
+    }
     let publishable_states = [SplitState::Staged.as_str(), SplitState::Published.as_str()];
     let published_split_ids: Vec<String> = sqlx::query(
         r#"
@@ -517,16 +520,16 @@ impl Metastore for PostgresqlMetastore {
         })
     }
 
-    #[instrument(skip(self, checkpoint_delta))]
+    #[instrument(skip(self))]
     async fn publish_splits<'a>(
         &self,
         index_id: &str,
         source_id: &str,
-        split_ids: &[&'a str],
-        checkpoint_delta: CheckpointDelta,
+        new_split_ids: &[&'a str],
+        replaced_split_ids: &[&'a str],
+        checkpoint_delta: SourceCheckpointDelta,
     ) -> MetastoreResult<()> {
         run_with_tx!(self.connection_pool, tx, {
-            // Update the index checkpoint.
             mutate_index_metadata(tx, index_id, |index_metadata| {
                 index_metadata
                     .checkpoint
@@ -534,44 +537,7 @@ impl Metastore for PostgresqlMetastore {
             })
             .await?;
 
-            if split_ids.is_empty() {
-                return Ok(());
-            }
-
-            let published_split_ids =
-                mark_splits_as_published_helper(tx, index_id, split_ids).await?;
-
-            if published_split_ids.len() == split_ids.len() {
-                return Ok(());
-            }
-
-            error!(
-                num_split_ids = split_ids.len(),
-                published = published_split_ids.len(),
-                "published_splits_ids_not_match"
-            );
-
-            // Investigate and report the error.
-            let not_staged_ids =
-                get_splits_with_invalid_state(tx, index_id, split_ids, &published_split_ids)
-                    .await?;
-
-            Err(MetastoreError::SplitsNotStaged {
-                split_ids: not_staged_ids,
-            })
-        })
-    }
-
-    #[instrument(skip(self))]
-    async fn replace_splits<'a>(
-        &self,
-        index_id: &str,
-        new_split_ids: &[&'a str],
-        replaced_split_ids: &[&'a str],
-    ) -> MetastoreResult<()> {
-        run_with_tx!(self.connection_pool, tx, {
-            // Publish splits.
-            let published_split_ids =
+            let published_split_ids: Vec<String> =
                 mark_splits_as_published_helper(tx, index_id, new_split_ids).await?;
 
             // Mark splits for deletion

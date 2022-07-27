@@ -24,7 +24,7 @@ use std::time::Instant;
 
 use quickwit_actors::{KillSwitch, Progress};
 use quickwit_config::IndexingResources;
-use quickwit_metastore::checkpoint::CheckpointDelta;
+use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use tantivy::directory::MmapDirectory;
 use tantivy::merge_policy::NoMergePolicy;
 use tantivy::IndexBuilder;
@@ -57,8 +57,6 @@ pub struct IndexedSplit {
 
     /// Number of demux operations this split has undergone.
     pub demux_num_ops: usize,
-
-    pub checkpoint_delta: CheckpointDelta,
 
     pub index: tantivy::Index,
     pub index_writer: tantivy::IndexWriter,
@@ -117,7 +115,6 @@ impl IndexedSplit {
             index,
             index_writer,
             split_scratch_directory,
-            checkpoint_delta: CheckpointDelta::default(),
             controlled_directory_opt: Some(controlled_directory),
         })
     }
@@ -130,4 +127,5 @@ impl IndexedSplit {
 #[derive(Debug)]
 pub struct IndexedSplitBatch {
     pub splits: Vec<IndexedSplit>,
+    pub checkpoint_delta: Option<IndexCheckpointDelta>,
 }
