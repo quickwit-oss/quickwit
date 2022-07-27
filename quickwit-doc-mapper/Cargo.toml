@@ -30,15 +30,13 @@ thiserror = "1.0"
 tracing = "0.1.29"
 typetag = "0.2"
 quickwit-proto = { version = "0.3", path = "../quickwit-proto" }
-mockall = { version = "0.11", optional = true }
 
 [dev-dependencies]
 criterion = "0.3"
 matches = "0.1.8"
-mockall = "0.11"
 
 [features]
-testsuite = ["mockall"]
+testsuite = []
 
 [[bench]]
 name = "doc_to_json_bench"

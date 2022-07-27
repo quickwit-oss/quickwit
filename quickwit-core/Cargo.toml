@@ -38,7 +38,6 @@ tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
 tokio-util = { version = "0.7", features = ["full"] }
 tracing = "0.1.29"
-uuid = { version = "1.1", features = ["v4", "serde"] }
 
 [dev-dependencies]
 mockall = "0.11"
