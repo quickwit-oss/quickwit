@@ -31,13 +31,15 @@ use quickwit_config::{KafkaSourceParams};
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::stream_consumer::StreamConsumer;
-use rdkafka::consumer::{Consumer, ConsumerContext, Rebalance};
+use rdkafka::consumer::{BaseConsumer, Consumer, ConsumerContext, DefaultConsumerContext, Rebalance};
 use rdkafka::error::{KafkaError};
 use rdkafka::message::BorrowedMessage;
 use rdkafka::{ClientContext, Message, Offset};
+use rdkafka::util::Timeout;
 use serde_json::json;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc;
+use tokio::task::spawn_blocking;
 use tracing::{debug, info, warn};
 
 use crate::actors::Indexer;
@@ -136,7 +138,7 @@ impl ConsumerContext for RdKafkaContext {
                 let mut partition = tpl.find_partition(entry.topic(), entry.partition())
                     .expect("Consumer rebalance unknown partition");
 
-                let partition_id = PartitionId::from(entry.partition());
+                let partition_id = PartitionId::from(entry.partition() as i64);
 
                 assignments.insert(entry.partition(), partition_id.clone());
 
@@ -417,17 +419,35 @@ fn previous_position_for_offset(offset: i64) -> Position {
 }
 
 /// Checks whether we can establish a connection to the Kafka broker.
-pub(super) async fn check_connectivity(_params: KafkaSourceParams) -> anyhow::Result<()> {
-    // let source_id = "quickwit-connectivity-check";
-    // TODO: this will need to use a lightweight consumer with no rebalance callbacks in order
-    // to call a simple operation to see if the broker is up. A lighter operation than
-    // fetch_partition_ids should be used.
+pub(super) async fn check_connectivity(params: KafkaSourceParams) -> anyhow::Result<()> {
+    let mut client_config = parse_client_params(params.client_params)?;
 
-    // let consumer = create_consumer(source_id, params.client_log_level, params.client_params)?;
-    // fetch_partition_ids(consumer, &params.topic).await?;
-    // let client_config = parse_client_params(params.client_params)?;
-    // let client = create_admin_client(client_config.get("bootstrap.servers").unwrap())?;
-    // client.
+    let consumer: BaseConsumer<DefaultConsumerContext> =
+        client_config
+            .set("group.id", "quickwit-connectivity-check".to_string())
+            .set_log_level(RDKafkaLogLevel::Error)
+            .create()?;
+
+    let topic = params.topic.clone();
+    let timeout = Timeout::After(Duration::from_secs(5));
+    let cluster_metadata = spawn_blocking(move || {
+        consumer
+            .fetch_metadata(Some(&topic), timeout)
+            .with_context(|| format!("Failed to fetch metadata for topic `{}`.", topic))
+    })
+        .await??;
+
+    if cluster_metadata.topics().is_empty() {
+        bail!("Topic `{}` does not exist.", params.topic);
+    }
+
+    let topic_metadata = &cluster_metadata.topics()[0];
+    assert_eq!(topic_metadata.name(), params.topic); // Belt and suspenders.
+
+    if topic_metadata.partitions().is_empty() {
+        bail!("Topic `{}` has no partitions.", params.topic);
+    }
+
     Ok(())
 }
 
@@ -594,34 +614,6 @@ mod kafka_broker_tests {
         Ok(())
     }
 
-    // async fn create_consumer_for_test(bootstrap_servers: &str) -> anyhow::Result<Arc<RdKafkaConsumer>> {
-    //     let client_params = json!({
-    //         "bootstrap.servers": bootstrap_servers,
-    //         "enable.partition.eof": true,
-    //     });
-    //
-    //     let source_params = KafkaSourceParams {
-    //         topic: "".to_string(),
-    //         client_log_level: None,
-    //         client_params
-    //     };
-    //
-    //     let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
-    //
-    //     Ok(KafkaSource::try_new(Arc::new(
-    //         SourceExecutionContext {
-    //             metastore,
-    //             config: SourceConfig {
-    //                 source_id: "test-kafka-source".to_string(),
-    //                 source_params: SourceParams::Kafka(source_params.clone()),
-    //             },
-    //             index_id: "test-index".to_string(),
-    //         }), source_params, SourceCheckpoint::default()
-    //     ).await.unwrap().consumer)
-    //
-    //     // create_consumer("my-kinesis-source", Some("info".to_string()), client_params)
-    // }
-
     async fn populate_topic<K, M, J, Q>(
         bootstrap_servers: &str,
         topic: &str,
@@ -674,10 +666,6 @@ mod kafka_broker_tests {
     fn key_fn(id: i32) -> String {
         format!("Key {}", id)
     }
-
-    // fn message_fn(id: i32) -> String {
-    //     format!("Message #{}", id)
-    // }
 
     fn merge_doc_batches(batches: Vec<RawDocBatch>) -> anyhow::Result<RawDocBatch> {
         let mut merged_batch = RawDocBatch::default();
@@ -864,13 +852,13 @@ mod kafka_broker_tests {
         {
             let (sink, inbox) = create_test_mailbox();
             let mut delta = CheckpointDelta::from_partition_delta(
-                PartitionId::from(0),
+                PartitionId::from(0u64),
                 Position::from(0u64),
                 Position::from(0u64)
             );
 
             let _result = delta.record_partition_delta(
-                PartitionId::from(1),
+                PartitionId::from(1u64),
                 Position::from(0u64),
                 Position::from(2u64)
             );
@@ -938,4 +926,52 @@ mod kafka_broker_tests {
         }
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_kafka_connectivity() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+
+        let bootstrap_servers = "localhost:9092".to_string();
+        let topic = append_random_suffix("test-kafka-connectivity-topic");
+
+        let admin_client = create_admin_client(&bootstrap_servers)?;
+        create_topic(&admin_client, &topic, 1).await?;
+
+        // Check valid connectivity
+        let result = check_connectivity(KafkaSourceParams {
+            topic: topic.clone(),
+            client_log_level: None,
+            client_params: json!({
+                "bootstrap.servers": bootstrap_servers
+            }),
+        }).await?;
+
+        assert_eq!(result, ());
+
+        // TODO: these tests should be checking the specific errors.
+        // Non existent topic should throw an error.
+        let result = check_connectivity(KafkaSourceParams {
+            topic: "non-existent-topic".to_string(),
+            client_log_level: None,
+            client_params: json!({
+                "bootstrap.servers": bootstrap_servers
+            }),
+        }).await;
+
+        assert!(result.is_err());
+
+        // Invalid brokers should throw an error
+        let result = check_connectivity(KafkaSourceParams {
+            topic: topic.clone(),
+            client_log_level: None,
+            client_params: json!({
+                "bootstrap.servers": "192.0.2.10:9092"
+            }),
+        }).await;
+
+        assert!(result.is_err());
+
+        Ok(())
+    }
+
 }
