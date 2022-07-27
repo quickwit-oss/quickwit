@@ -958,10 +958,10 @@ mod tests {
     #[test]
     fn test_parse_date_number_should_error() {
         let typ = LeafType::Date(QuickwitDateOptions::default());
-        let err = typ.value_from_json(json!("foo-date")).err().unwrap();
+        let err = typ.value_from_json(json!("foo-date")).unwrap_err();
         assert_eq!(
             err,
-            "Could not parse datetime `foo-date` using all specified formats."
+            "Could not parse date `foo-date` using the specified formats `rfc3339, unix_ts_secs`."
         );
     }
 

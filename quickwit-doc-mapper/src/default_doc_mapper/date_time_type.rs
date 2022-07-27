@@ -17,13 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::cmp::Ordering;
-use std::collections::BTreeSet;
-use std::sync::Arc;
-
 use chrono::TimeZone;
 use chrono_tz::Tz;
 use derivative::Derivative;
+use indexmap::IndexSet;
+use itertools::Itertools;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tantivy::{DatePrecision, DateTime};
@@ -36,7 +34,6 @@ use super::default_as_true;
 #[derive(Clone, Serialize, Deserialize, Derivative)]
 #[derivative(Debug, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
-#[serde(from = "QuickwitDateOptionsDeser")]
 pub struct QuickwitDateOptions {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -46,7 +43,7 @@ pub struct QuickwitDateOptions {
     #[serde(default = "default_input_formats")]
     #[serde(serialize_with = "serialize_input_formats")]
     #[serde(deserialize_with = "deserialize_input_formats")]
-    pub input_formats: BTreeSet<DateTimeFormat>,
+    pub input_formats: IndexSet<DateTimeFormat>,
 
     /// Internal storage precision.
     #[serde(default)]
@@ -60,13 +57,6 @@ pub struct QuickwitDateOptions {
 
     #[serde(default)]
     pub fast: bool,
-
-    /// A handle on DateTime parsing functions.
-    #[serde(skip)]
-    #[serde(default)]
-    #[derivative(PartialEq = "ignore")]
-    #[derivative(Debug = "ignore")]
-    parsers: DateTimeParsersHolder,
 }
 
 impl Default for QuickwitDateOptions {
@@ -78,164 +68,96 @@ impl Default for QuickwitDateOptions {
             indexed: true,
             stored: true,
             fast: false,
-            parsers: DateTimeParsersHolder::default(),
         }
     }
 }
 
 impl QuickwitDateOptions {
     pub fn parse_string(&self, value: String) -> Result<OffsetDateTime, String> {
-        self.parsers.parse_string(value)
-    }
-
-    pub fn parse_number(&self, value: i64) -> Result<OffsetDateTime, String> {
-        self.parsers.parse_number(value)
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct QuickwitDateOptionsDeser {
-    #[serde(default)]
-    pub description: Option<String>,
-    #[serde(default = "default_input_formats")]
-    #[serde(deserialize_with = "deserialize_input_formats")]
-    pub input_formats: BTreeSet<DateTimeFormat>,
-    #[serde(default)]
-    pub precision: DatePrecision,
-    #[serde(default = "default_as_true")]
-    pub indexed: bool,
-    #[serde(default = "default_as_true")]
-    pub stored: bool,
-    #[serde(default)]
-    pub fast: bool,
-}
-
-impl From<QuickwitDateOptionsDeser> for QuickwitDateOptions {
-    fn from(options: QuickwitDateOptionsDeser) -> Self {
-        let parsers = DateTimeParsersHolder::new(&options.input_formats);
-        QuickwitDateOptions {
-            description: options.description,
-            input_formats: options.input_formats,
-            precision: options.precision,
-            indexed: options.indexed,
-            stored: options.stored,
-            fast: options.fast,
-            parsers,
-        }
-    }
-}
-
-// Parser function types
-type StringDateTimeParser = Arc<dyn Fn(&str) -> Result<OffsetDateTime, String> + Sync + Send>;
-type NumberDateTimeParser = Arc<dyn Fn(i64) -> Result<OffsetDateTime, String> + Sync + Send>;
-
-/// A struct for holding DateTime parsing functions.
-#[derive(Clone)]
-pub struct DateTimeParsersHolder {
-    /// Functions for parsing string input.
-    string_parsers: Vec<StringDateTimeParser>,
-    /// Function for parsing number input as timestamp.
-    number_parser: NumberDateTimeParser,
-}
-
-impl Default for DateTimeParsersHolder {
-    fn default() -> Self {
-        Self::new(&default_input_formats())
-    }
-}
-
-impl DateTimeParsersHolder {
-    fn new(input_formats: &BTreeSet<DateTimeFormat>) -> Self {
-        let mut parser = Self {
-            string_parsers: Vec::new(),
-            number_parser: make_unix_timestamp_parser(DatePrecision::default()),
-        };
-        for input_format in input_formats {
-            match input_format {
-                DateTimeFormat::RCF3339 => parser.string_parsers.push(Arc::new(rfc3339_parser)),
-                DateTimeFormat::RFC2822 => parser.string_parsers.push(Arc::new(rfc2822_parser)),
-                DateTimeFormat::ISO8601 => parser.string_parsers.push(Arc::new(iso8601_parser)),
-                DateTimeFormat::Strftime(str_format) => parser
-                    .string_parsers
-                    .push(make_strftime_parser(str_format.clone())),
-                DateTimeFormat::Timestamp(precision) => {
-                    parser.number_parser = make_unix_timestamp_parser(*precision)
+        for format in self.input_formats.iter() {
+            let result = match format {
+                DateTimeFormat::RCF3339 => rfc3339_parse(&value),
+                DateTimeFormat::RFC2822 => rfc2822_parse(&value),
+                DateTimeFormat::ISO8601 => iso8601_parse(&value),
+                DateTimeFormat::Strftime(strftime_format) => {
+                    strftime_parse(strftime_format, &value)
                 }
+                _ => continue,
+            };
+            if result.is_ok() {
+                return result;
             }
         }
-        parser
-    }
 
-    /// Parses string input.
-    pub fn parse_string(&self, value: String) -> Result<OffsetDateTime, String> {
-        for parser in self.string_parsers.iter() {
-            if let Ok(date_time) = parser(&value) {
-                return Ok(date_time);
-            }
-        }
         Err(format!(
-            "Could not parse datetime `{}` using all specified formats.",
-            value
+            "Could not parse date `{}` using the specified formats `{}`.",
+            value,
+            self.input_formats
+                .iter()
+                .map(date_time_format_to_string)
+                .join(", ")
         ))
     }
 
-    /// Parses number input.
     pub fn parse_number(&self, value: i64) -> Result<OffsetDateTime, String> {
-        (self.number_parser)(value)
+        for format in self.input_formats.iter() {
+            match format {
+                DateTimeFormat::Timestamp(precision) => {
+                    return unix_timestamp_parse(value, precision)
+                }
+                _ => continue,
+            }
+        }
+
+        // Use default number parser.
+        unix_timestamp_parse(value, &DatePrecision::Seconds)
     }
 }
 
 /// Parses datetime strings using RFC3339 formatting.
-fn rfc3339_parser(value: &str) -> Result<OffsetDateTime, String> {
+fn rfc3339_parse(value: &str) -> Result<OffsetDateTime, String> {
     OffsetDateTime::parse(value, &Rfc3339).map_err(|error| error.to_string())
 }
 
 /// Parses DateTime strings using RFC2822 formatting.
-fn rfc2822_parser(value: &str) -> Result<OffsetDateTime, String> {
+fn rfc2822_parse(value: &str) -> Result<OffsetDateTime, String> {
     OffsetDateTime::parse(value, &Rfc2822).map_err(|error| error.to_string())
 }
 
 /// Parses DateTime strings using default ISO8601 formatting.
 /// Examples: 2010-11-21T09:55:06.000000000+02:00, 2010-11-12 9:55:06 +2:00
-fn iso8601_parser(value: &str) -> Result<OffsetDateTime, String> {
+fn iso8601_parse(value: &str) -> Result<OffsetDateTime, String> {
     OffsetDateTime::parse(value, &Iso8601::DEFAULT).map_err(|error| error.to_string())
 }
 
-/// Configures and returns a function for parsing datetime strings
-/// using strftime formatting.
-fn make_strftime_parser(format: String) -> StringDateTimeParser {
-    Arc::new(move |value: &str| {
-        let date_time = if format.contains("%z") {
-            chrono::DateTime::parse_from_str(value, &format)
-                .map_err(|error| error.to_string())
-                .map(|date_time| date_time.naive_utc())?
-        } else {
-            chrono::NaiveDateTime::parse_from_str(value, &format)
-                .map_err(|error| error.to_string())
-                .map(|date_time| Tz::UTC.from_local_datetime(&date_time).unwrap().naive_utc())?
-        };
-
-        OffsetDateTime::from_unix_timestamp_nanos(date_time.timestamp_nanos() as i128)
+/// Parses DateTime strings using the unix strftime formatting.
+fn strftime_parse(value: &str, format: &str) -> Result<OffsetDateTime, String> {
+    let date_time = if format.contains("%z") {
+        chrono::DateTime::parse_from_str(value, format)
             .map_err(|error| error.to_string())
-    })
+            .map(|date_time| date_time.naive_utc())?
+    } else {
+        chrono::NaiveDateTime::parse_from_str(value, format)
+            .map_err(|error| error.to_string())
+            .map(|date_time| Tz::UTC.from_local_datetime(&date_time).unwrap().naive_utc())?
+    };
+
+    OffsetDateTime::from_unix_timestamp_nanos(date_time.timestamp_nanos() as i128)
+        .map_err(|error| error.to_string())
 }
 
-/// Configures and returns a function for interpreting numbers
-/// as unix timestamp with a precision.
-fn make_unix_timestamp_parser(precision: DatePrecision) -> NumberDateTimeParser {
-    Arc::new(move |value: i64| {
-        let date_time = match precision {
-            DatePrecision::Seconds => OffsetDateTime::from_unix_timestamp(value),
-            DatePrecision::Milliseconds => {
-                OffsetDateTime::from_unix_timestamp_nanos((value as i128) * 1_000_000)
-            }
-            DatePrecision::Microseconds => {
-                OffsetDateTime::from_unix_timestamp_nanos((value as i128) * 1000)
-            }
-        };
-        date_time.map_err(|error| error.to_string())
-    })
+/// Recognizes numbers as unix timestamp with a precision.
+fn unix_timestamp_parse(value: i64, precision: &DatePrecision) -> Result<OffsetDateTime, String> {
+    let date_time = match precision {
+        DatePrecision::Seconds => OffsetDateTime::from_unix_timestamp(value),
+        DatePrecision::Milliseconds => {
+            OffsetDateTime::from_unix_timestamp_nanos((value as i128) * 1_000_000)
+        }
+        DatePrecision::Microseconds => {
+            OffsetDateTime::from_unix_timestamp_nanos((value as i128) * 1000)
+        }
+    };
+    date_time.map_err(|error| error.to_string())
 }
 
 // An enum specifying all supported datetime parsing format.
@@ -251,36 +173,6 @@ pub enum DateTimeFormat {
         #[derivative(Hash = "ignore")]
         DatePrecision,
     ),
-}
-
-// Need custom Ordering implementation to avoid duplicating
-// `DateTimeFormat::Timestamp` variant in BTreeSet.
-impl PartialOrd for DateTimeFormat {
-    fn partial_cmp(&self, other: &DateTimeFormat) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for DateTimeFormat {
-    fn cmp(&self, other: &Self) -> Ordering {
-        match (self, other) {
-            (Self::Strftime(left), Self::Strftime(right)) => left.cmp(right),
-            (Self::Timestamp(_), Self::Timestamp(_)) => Ordering::Equal,
-            _ => self.variant_ordering().cmp(&other.variant_ordering()),
-        }
-    }
-}
-
-impl DateTimeFormat {
-    fn variant_ordering(&self) -> u8 {
-        match self {
-            DateTimeFormat::RCF3339 => 1,
-            DateTimeFormat::RFC2822 => 2,
-            DateTimeFormat::ISO8601 => 3,
-            DateTimeFormat::Strftime(_) => 4,
-            DateTimeFormat::Timestamp(_) => 5,
-        }
-    }
 }
 
 impl<'de> Deserialize<'de> for DateTimeFormat {
@@ -344,7 +236,7 @@ fn date_time_format_from_string(format_str: String) -> DateTimeFormat {
 }
 
 pub(super) fn serialize_input_formats<S>(
-    input_formats: &BTreeSet<DateTimeFormat>,
+    input_formats: &IndexSet<DateTimeFormat>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
@@ -360,17 +252,17 @@ where
 
 pub(super) fn deserialize_input_formats<'de, D>(
     deserializer: D,
-) -> Result<BTreeSet<DateTimeFormat>, D::Error>
+) -> Result<IndexSet<DateTimeFormat>, D::Error>
 where D: Deserializer<'de> {
-    let date_formats = Vec::<String>::deserialize(deserializer)?
+    let date_formats = IndexSet::<String>::deserialize(deserializer)?
         .into_iter()
         .map(date_time_format_from_string)
         .collect();
     Ok(date_formats)
 }
 
-fn default_input_formats() -> BTreeSet<DateTimeFormat> {
-    let mut input_formats = BTreeSet::new();
+fn default_input_formats() -> IndexSet<DateTimeFormat> {
+    let mut input_formats = IndexSet::new();
     input_formats.insert(DateTimeFormat::RCF3339);
     input_formats.insert(DateTimeFormat::Timestamp(DatePrecision::default()));
     input_formats
@@ -395,23 +287,21 @@ pub fn timestamp_to_datetime_str(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
-
+    use indexmap::IndexSet;
     use tantivy::schema::Cardinality;
     use tantivy::DatePrecision;
     use time::macros::{date, time};
 
     use super::DateTimeFormat;
     use crate::default_doc_mapper::date_time_type::{
-        make_strftime_parser, make_unix_timestamp_parser, DateTimeParsersHolder,
-        QuickwitDateOptions,
+        strftime_parse, unix_timestamp_parse, QuickwitDateOptions,
     };
     use crate::default_doc_mapper::FieldMappingType;
     use crate::FieldMappingEntry;
 
     #[test]
     fn test_strftime_format_cannot_be_duplicated() {
-        let mut formats = BTreeSet::new();
+        let mut formats = IndexSet::new();
         formats.insert(DateTimeFormat::Strftime(
             "%a %b %d %H:%M:%S %z %Y".to_string(),
         ));
@@ -425,7 +315,7 @@ mod tests {
 
     #[test]
     fn test_only_one_unix_ts_format_can_be_added() {
-        let mut formats = BTreeSet::new();
+        let mut formats = IndexSet::new();
         formats.insert(DateTimeFormat::Timestamp(DatePrecision::Seconds));
         formats.insert(DateTimeFormat::Timestamp(DatePrecision::Microseconds));
         formats.insert(DateTimeFormat::Timestamp(DatePrecision::Milliseconds));
@@ -459,7 +349,7 @@ mod tests {
         .unwrap();
         assert_eq!(&field_mapping_entry.name, "updated_at");
 
-        let mut input_formats = BTreeSet::new();
+        let mut input_formats = IndexSet::new();
         input_formats.insert(DateTimeFormat::RCF3339);
         input_formats.insert(DateTimeFormat::RFC2822);
         input_formats.insert(DateTimeFormat::Timestamp(DatePrecision::Milliseconds));
@@ -472,7 +362,6 @@ mod tests {
             indexed: true,
             fast: true,
             stored: false,
-            parsers: DateTimeParsersHolder::default(),
         };
 
         assert!(
@@ -581,10 +470,7 @@ mod tests {
         match entry.mapping_type {
             FieldMappingType::Date(date_options, _) => {
                 let now = time::OffsetDateTime::now_utc();
-                let expected = date_options
-                    .parsers
-                    .parse_number(now.unix_timestamp())
-                    .unwrap();
+                let expected = date_options.parse_number(now.unix_timestamp()).unwrap();
                 assert_eq!(now.to_calendar_date(), expected.to_calendar_date());
                 assert_eq!(now.to_hms(), expected.to_hms());
             }
@@ -593,15 +479,38 @@ mod tests {
     }
 
     #[test]
-    fn test_strftime_parser() {
-        let parse_without_timezone = make_strftime_parser("%Y-%m-%d %H:%M:%S".to_string());
+    fn test_date_parse_error() {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "updated_at",
+                "type": "date",
+                "input_formats": ["iso8601", "rfc3339", "%Y-%m-%d"]
+            }"#,
+        )
+        .unwrap();
 
-        let date_time = parse_without_timezone("2012-05-21 12:09:14").unwrap();
+        match entry.mapping_type {
+            FieldMappingType::Date(date_options, _) => {
+                let error = date_options.parse_string("foo".to_string()).unwrap_err();
+                assert_eq!(
+                    error,
+                    "Could not parse date `foo` using the specified formats `iso8601, rfc3339, \
+                     %Y-%m-%d`.",
+                );
+            }
+            _ => panic!("Expected `FieldMappingType::Date` variant."),
+        }
+    }
+
+    #[test]
+    fn test_strftime_parser() {
+        let date_time = strftime_parse("2012-05-21 12:09:14", "%Y-%m-%d %H:%M:%S").unwrap();
         assert_eq!(date_time.date(), date!(2012 - 05 - 21));
         assert_eq!(date_time.time(), time!(12:09:14));
 
-        let parse_with_timezone = make_strftime_parser("%Y-%m-%d %H:%M:%S %z".to_string());
-        let date_time = parse_with_timezone("2012-05-21 12:09:14 -02:00").unwrap();
+        let date_time =
+            strftime_parse("2012-05-21 12:09:14 -02:00", "%Y-%m-%d %H:%M:%S %z").unwrap();
         assert_eq!(date_time.date(), date!(2012 - 05 - 21));
         assert_eq!(date_time.time(), time!(14:09:14));
     }
@@ -610,20 +519,20 @@ mod tests {
     fn test_unix_timestamp_parser() {
         let now = time::OffsetDateTime::now_utc();
 
-        let parse_with_secs = make_unix_timestamp_parser(DatePrecision::Seconds);
-        let date_time = parse_with_secs(now.unix_timestamp()).unwrap();
+        let date_time =
+            unix_timestamp_parse(now.unix_timestamp(), &DatePrecision::Seconds).unwrap();
         assert_eq!(date_time.date(), now.date());
         assert_eq!(date_time.time().as_hms(), now.time().as_hms());
 
-        let parse_with_millis = make_unix_timestamp_parser(DatePrecision::Milliseconds);
         let ts_millis = now.unix_timestamp_nanos() / 1_000_000;
-        let date_time = parse_with_millis(ts_millis as i64).unwrap();
+        let date_time =
+            unix_timestamp_parse(ts_millis as i64, &DatePrecision::Milliseconds).unwrap();
         assert_eq!(date_time.date(), now.date());
         assert_eq!(date_time.time().as_hms_milli(), now.time().as_hms_milli());
 
-        let parse_with_micros = make_unix_timestamp_parser(DatePrecision::Microseconds);
         let ts_micros = now.unix_timestamp_nanos() / 1000;
-        let date_time = parse_with_micros(ts_micros as i64).unwrap();
+        let date_time =
+            unix_timestamp_parse(ts_micros as i64, &DatePrecision::Microseconds).unwrap();
         assert_eq!(date_time.date(), now.date());
         assert_eq!(date_time.time().as_hms_micro(), now.time().as_hms_micro());
     }
