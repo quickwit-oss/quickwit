@@ -200,7 +200,7 @@ impl TypedSourceFactory for IngestApiSourceFactory {
     async fn typed_create_source(
         ctx: Arc<SourceExecutionContext>,
         params: IngestApiSourceParams,
-        checkpoint: SourceCheckpoint
+        checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
         let ingest_api_mailbox = get_ingest_api_service().ok_or_else(|| {
             anyhow::anyhow!(
@@ -208,7 +208,13 @@ impl TypedSourceFactory for IngestApiSourceFactory {
                 ctx.config.source_id
             )
         })?;
-        IngestApiSource::make(ctx.config.source_id.clone(), params, ingest_api_mailbox, checkpoint).await
+        IngestApiSource::make(
+            ctx.config.source_id.clone(),
+            params,
+            ingest_api_mailbox,
+            checkpoint,
+        )
+        .await
     }
 }
 

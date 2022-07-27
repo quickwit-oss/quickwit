@@ -19,6 +19,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -39,7 +40,7 @@ use super::api::list_shards;
 use super::shard_consumer::{ShardConsumer, ShardConsumerHandle, ShardConsumerMessage};
 use crate::models::RawDocBatch;
 use crate::source::kinesis::helpers::get_kinesis_client;
-use crate::source::{Indexer, Source, SourceContext, TypedSourceFactory};
+use crate::source::{Indexer, Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
 
 const TARGET_BATCH_NUM_BYTES: u64 = 5_000_000;
 
@@ -54,11 +55,11 @@ impl TypedSourceFactory for KinesisSourceFactory {
     type Params = KinesisSourceParams;
 
     async fn typed_create_source(
-        source_id: String,
+        ctx: Arc<SourceExecutionContext>,
         params: KinesisSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
-        KinesisSource::try_new(source_id, params, checkpoint).await
+        KinesisSource::try_new(ctx.config.source_id.clone(), params, checkpoint).await
     }
 }
 

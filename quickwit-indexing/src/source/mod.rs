@@ -82,11 +82,11 @@ use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceConfig, SourceParams};
-use quickwit_metastore::checkpoint::{SourceCheckpoint};
+use quickwit_metastore::checkpoint::SourceCheckpoint;
+use quickwit_metastore::Metastore;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 use tokio::runtime::Handle;
 use tracing::error;
-use quickwit_metastore::Metastore;
 pub use vec_source::{VecSource, VecSourceFactory};
 pub use void_source::{VoidSource, VoidSourceFactory};
 
@@ -97,7 +97,7 @@ use crate::source::ingest_api_source::IngestApiSourceFactory;
 pub struct SourceExecutionContext {
     pub metastore: Arc<dyn Metastore>,
     pub index_id: String,
-    pub config: SourceConfig
+    pub config: SourceConfig,
 }
 
 pub type SourceContext = ActorContext<SourceActor>;

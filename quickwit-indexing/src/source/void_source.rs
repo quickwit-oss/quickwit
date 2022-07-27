@@ -22,7 +22,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox, HEARTBEAT};
-use quickwit_config::{VoidSourceParams};
+use quickwit_config::VoidSourceParams;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 
 use crate::actors::Indexer;
@@ -61,7 +61,7 @@ impl TypedSourceFactory for VoidSourceFactory {
     async fn typed_create_source(
         _ctx: Arc<SourceExecutionContext>,
         _params: VoidSourceParams,
-        _checkpoint: SourceCheckpoint
+        _checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<VoidSource> {
         Ok(VoidSource)
     }
@@ -70,6 +70,7 @@ impl TypedSourceFactory for VoidSourceFactory {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+
     use quickwit_actors::{create_test_mailbox, Health, Supervisable, Universe};
     use quickwit_config::SourceParams;
     use quickwit_metastore::checkpoint::SourceCheckpoint;
@@ -92,13 +93,13 @@ mod tests {
                 index_id: "test-index".to_string(),
                 config: SourceConfig {
                     source_id: "void-test-source".to_string(),
-                    source_params: SourceParams::void()
-                }
+                    source_params: SourceParams::void(),
+                },
             }),
             VoidSourceParams,
-            SourceCheckpoint::default()
+            SourceCheckpoint::default(),
         )
-            .await?;
+        .await?;
 
         Ok(())
     }
@@ -115,11 +116,11 @@ mod tests {
                 index_id: "test-index".to_string(),
                 config: SourceConfig {
                     source_id: "void-test-source".to_string(),
-                    source_params: SourceParams::void()
-                }
+                    source_params: SourceParams::void(),
+                },
             }),
             VoidSourceParams,
-            SourceCheckpoint::default()
+            SourceCheckpoint::default(),
         )
         .await?;
         let void_source_actor = SourceActor {
