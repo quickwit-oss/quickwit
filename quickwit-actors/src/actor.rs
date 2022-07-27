@@ -166,6 +166,21 @@ pub trait Actor: Send + Sync + Sized + 'static {
         Ok(())
     }
 
+    /// This function is called after a series of one, or several messages have been processed and
+    /// no more message is available.
+    ///
+    /// It is a great place to have the actor "sleep".
+    ///
+    /// Quickwit's Indexer actor for instance use `on_drained_messages` to
+    /// schedule indexing in such a way that an indexer drains all of its
+    /// available messages and sleeps for some amount of time.
+    async fn on_drained_messages(
+        &mut self,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        Ok(())
+    }
+
     /// Hook  that can be set up to define what should happen upon actor exit.
     /// This hook is called only once.
     ///
