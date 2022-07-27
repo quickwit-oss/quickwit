@@ -18,9 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::io::SeekFrom;
+use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt, io};
-use std::sync::Arc;
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -136,7 +136,7 @@ impl TypedSourceFactory for FileSourceFactory {
     async fn typed_create_source(
         ctx: Arc<SourceExecutionContext>,
         params: FileSourceParams,
-        checkpoint: SourceCheckpoint
+        checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<FileSource> {
         let mut offset = 0;
         let reader: Box<dyn AsyncRead + Send + Sync + Unpin> =
@@ -197,11 +197,11 @@ mod tests {
                 index_id: "test-index".to_string(),
                 config: SourceConfig {
                     source_id: "my-file-source".to_string(),
-                    source_params: SourceParams::File(params.clone())
-                }
+                    source_params: SourceParams::File(params.clone()),
+                },
             }),
             params,
-            SourceCheckpoint::default()
+            SourceCheckpoint::default(),
         )
         .await?;
         let file_source_actor = SourceActor {
@@ -258,11 +258,11 @@ mod tests {
                 index_id: "test-index".to_string(),
                 config: SourceConfig {
                     source_id: "my-file-source".to_string(),
-                    source_params: SourceParams::File(params.clone())
-                }
+                    source_params: SourceParams::File(params.clone()),
+                },
             }),
             params,
-            SourceCheckpoint::default()
+            SourceCheckpoint::default(),
         )
         .await?;
         let file_source_actor = SourceActor {
@@ -341,8 +341,8 @@ mod tests {
                 index_id: "test-index".to_string(),
                 config: SourceConfig {
                     source_id: "my-file-source".to_string(),
-                    source_params: SourceParams::File(params.clone())
-                }
+                    source_params: SourceParams::File(params.clone()),
+                },
             }),
             params,
             checkpoint,

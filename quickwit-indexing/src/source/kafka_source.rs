@@ -24,18 +24,20 @@ use std::time::Duration;
 
 use anyhow::{bail, Context};
 use async_trait::async_trait;
-use futures::{StreamExt};
+use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
-use quickwit_config::{KafkaSourceParams};
+use quickwit_config::KafkaSourceParams;
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::stream_consumer::StreamConsumer;
-use rdkafka::consumer::{BaseConsumer, Consumer, ConsumerContext, DefaultConsumerContext, Rebalance};
-use rdkafka::error::{KafkaError};
+use rdkafka::consumer::{
+    BaseConsumer, Consumer, ConsumerContext, DefaultConsumerContext, Rebalance,
+};
+use rdkafka::error::KafkaError;
 use rdkafka::message::BorrowedMessage;
-use rdkafka::{ClientContext, Message, Offset};
 use rdkafka::util::Timeout;
+use rdkafka::{ClientContext, Message, Offset};
 use serde_json::json;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc;
@@ -76,11 +78,11 @@ impl TypedSourceFactory for KafkaSourceFactory {
 
 enum RebalanceEvent {
     Starting,
-    Assignments(HashMap<i32, PartitionId>)
+    Assignments(HashMap<i32, PartitionId>),
 }
 struct RdKafkaContext {
     ctx: Arc<SourceExecutionContext>,
-    rebalance_events: mpsc::Sender<RebalanceEvent>
+    rebalance_events: mpsc::Sender<RebalanceEvent>,
 }
 
 impl ClientContext for RdKafkaContext {}
@@ -105,23 +107,21 @@ impl ConsumerContext for RdKafkaContext {
                 // TODO: this can throw an error
                 let _result = self.rebalance_events.send(RebalanceEvent::Starting).await;
 
-                self.ctx
-                    .metastore
-                    .index_metadata(&self.ctx.index_id)
-                    .await
+                self.ctx.metastore.index_metadata(&self.ctx.index_id).await
             });
 
             let index_metadata = match result {
                 Ok(index_metadata) => index_metadata,
                 Err(_err) => {
                     // TODO: a panic here may not be the right thing
-                    panic!("No Index metadata found for {}: this should never happen.", source_id);
+                    panic!(
+                        "No Index metadata found for {}: this should never happen.",
+                        source_id
+                    );
                 }
             };
 
-            let source_checkpoint = index_metadata
-                .checkpoint
-                .source_checkpoint(&source_id);
+            let source_checkpoint = index_metadata.checkpoint.source_checkpoint(&source_id);
 
             let checkpoint = match source_checkpoint {
                 Some(checkpoint) => checkpoint.clone(),
@@ -135,7 +135,8 @@ impl ConsumerContext for RdKafkaContext {
             let partitions = tpl.elements();
             for entry in partitions.iter() {
                 // Need to use find_partition to get a mutable reference.
-                let mut partition = tpl.find_partition(entry.topic(), entry.partition())
+                let mut partition = tpl
+                    .find_partition(entry.topic(), entry.partition())
                     .expect("Consumer rebalance unknown partition");
 
                 let partition_id = PartitionId::from(entry.partition() as i64);
@@ -144,31 +145,35 @@ impl ConsumerContext for RdKafkaContext {
 
                 // Offsets must be tracked per partition
                 let offset = match checkpoint.position_for_partition(&partition_id) {
-                    Some(position) => {
-                        match position {
-                            Position::Offset(offset_string) => {
-                                let numeric_offset = offset_string.parse::<i64>()
-                                    .expect("Invalid stored offset");
+                    Some(position) => match position {
+                        Position::Offset(offset_string) => {
+                            let numeric_offset =
+                                offset_string.parse::<i64>().expect("Invalid stored offset");
 
-                                if numeric_offset < 0 {
-                                    Offset::Beginning
-                                }
-                                else {
-                                    Offset::Offset(numeric_offset + 1)
-                                }
-                            },
-                            Position::Beginning => Offset::Beginning
+                            if numeric_offset < 0 {
+                                Offset::Beginning
+                            } else {
+                                Offset::Offset(numeric_offset + 1)
+                            }
                         }
+                        Position::Beginning => Offset::Beginning,
                     },
-                    None => Offset::Beginning
+                    None => Offset::Beginning,
                 };
 
-                debug!("Setting offsets for {} {}, {}, {:?}", source_id, entry.topic(), entry.partition(), offset);
+                debug!(
+                    "Setting offsets for {} {}, {}, {:?}",
+                    source_id,
+                    entry.topic(),
+                    entry.partition(),
+                    offset
+                );
 
                 // set_offset will move the in memory offset on the client
                 // If the offset is invalid at this point the standard consumer group offset reset
                 // mechanism will apply to handle it.
-                partition.set_offset(offset)
+                partition
+                    .set_offset(offset)
                     .expect("Failure setting offset");
             }
         }
@@ -176,7 +181,9 @@ impl ConsumerContext for RdKafkaContext {
         let handle = Handle::current();
         let _guard = handle.enter();
         let _result = futures::executor::block_on(
-            self.rebalance_events.send(RebalanceEvent::Assignments(assignments)));
+            self.rebalance_events
+                .send(RebalanceEvent::Assignments(assignments)),
+        );
         // TODO: handle the sending error.
     }
 }
@@ -205,7 +212,7 @@ pub struct KafkaSource {
     topic: String,
     consumer: Arc<RdKafkaConsumer>,
     state: KafkaSourceState,
-    rebalance_events: mpsc::Receiver<RebalanceEvent>
+    rebalance_events: mpsc::Receiver<RebalanceEvent>,
 }
 
 impl fmt::Debug for KafkaSource {
@@ -229,11 +236,7 @@ impl KafkaSource {
 
         let (rebalance_sender, rebalance_receiver) = mpsc::channel(32);
 
-        let consumer = create_consumer(
-            ctx.clone(),
-            params,
-            rebalance_sender
-        )?;
+        let consumer = create_consumer(ctx.clone(), params, rebalance_sender)?;
 
         info!(
             topic = %topic,
@@ -253,7 +256,7 @@ impl KafkaSource {
             topic,
             consumer,
             state,
-            rebalance_events: rebalance_receiver
+            rebalance_events: rebalance_receiver,
         })
     }
 }
@@ -366,7 +369,7 @@ impl Source for KafkaSource {
             ctx.send_message(batch_sink, batch).await?;
         }
 
-        //TODO: not entirely sure why this is here. Seems like this would prevent stream processing
+        // TODO: not entirely sure why this is here. Seems like this would prevent stream processing
         if self.state.num_active_partitions == 0 {
             info!(topic = %self.topic, "Reached end of topic.");
             ctx.send_exit_with_success(batch_sink).await?;
@@ -422,11 +425,10 @@ fn previous_position_for_offset(offset: i64) -> Position {
 pub(super) async fn check_connectivity(params: KafkaSourceParams) -> anyhow::Result<()> {
     let mut client_config = parse_client_params(params.client_params)?;
 
-    let consumer: BaseConsumer<DefaultConsumerContext> =
-        client_config
-            .set("group.id", "quickwit-connectivity-check".to_string())
-            .set_log_level(RDKafkaLogLevel::Error)
-            .create()?;
+    let consumer: BaseConsumer<DefaultConsumerContext> = client_config
+        .set("group.id", "quickwit-connectivity-check".to_string())
+        .set_log_level(RDKafkaLogLevel::Error)
+        .create()?;
 
     let topic = params.topic.clone();
     let timeout = Timeout::After(Duration::from_secs(5));
@@ -435,7 +437,7 @@ pub(super) async fn check_connectivity(params: KafkaSourceParams) -> anyhow::Res
             .fetch_metadata(Some(&topic), timeout)
             .with_context(|| format!("Failed to fetch metadata for topic `{}`.", topic))
     })
-        .await??;
+    .await??;
 
     if cluster_metadata.topics().is_empty() {
         bail!("Topic `{}` does not exist.", params.topic);
@@ -455,7 +457,7 @@ pub(super) async fn check_connectivity(params: KafkaSourceParams) -> anyhow::Res
 fn create_consumer(
     ctx: Arc<SourceExecutionContext>,
     params: KafkaSourceParams,
-    rebalance_sender: mpsc::Sender<RebalanceEvent>
+    rebalance_sender: mpsc::Sender<RebalanceEvent>,
 ) -> anyhow::Result<Arc<RdKafkaConsumer>> {
     let mut client_config = parse_client_params(params.client_params)?;
 
@@ -470,7 +472,7 @@ fn create_consumer(
         .set_log_level(log_level)
         .create_with_context(RdKafkaContext {
             ctx,
-            rebalance_events: rebalance_sender
+            rebalance_events: rebalance_sender,
         })
         .context("Failed to create Kafka consumer.")?;
 
@@ -566,14 +568,14 @@ fn parse_message_payload(message: &BorrowedMessage) -> Option<String> {
 mod kafka_broker_tests {
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_common::rand::append_random_suffix;
+    use quickwit_common::uri::Uri;
     use quickwit_config::{DocMapping, SourceConfig, SourceParams};
+    use quickwit_metastore::checkpoint::IndexCheckpoint;
+    use quickwit_metastore::{FileBackedMetastore, IndexMetadata, Metastore, MetastoreResult};
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
     use rdkafka::message::ToBytes;
     use rdkafka::producer::{FutureProducer, FutureRecord};
-    use quickwit_common::uri::Uri;
-    use quickwit_metastore::{FileBackedMetastore, IndexMetadata, Metastore, MetastoreResult};
-    use quickwit_metastore::checkpoint::IndexCheckpoint;
 
     use super::*;
     use crate::source::{quickwit_supported_sources, source_factory, SourceActor};
@@ -680,23 +682,25 @@ mod kafka_broker_tests {
     }
 
     async fn create_test_index(metastore: Arc<FileBackedMetastore>) -> MetastoreResult<()> {
-        metastore.create_index(IndexMetadata {
-            index_id: "test-index".to_string(),
-            index_uri: Uri::new("s3://localhost/test-index".to_string()),
-            checkpoint: IndexCheckpoint::default(),
-            doc_mapping: DocMapping {
-                field_mappings: vec![],
-                tag_fields: Default::default(),
-                store_source: false,
-                mode: Default::default(),
-                dynamic_mapping: None
-            },
-            indexing_settings: Default::default(),
-            search_settings: Default::default(),
-            sources: Default::default(),
-            create_timestamp: 0,
-            update_timestamp: 0
-        }).await
+        metastore
+            .create_index(IndexMetadata {
+                index_id: "test-index".to_string(),
+                index_uri: Uri::new("s3://localhost/test-index".to_string()),
+                checkpoint: IndexCheckpoint::default(),
+                doc_mapping: DocMapping {
+                    field_mappings: vec![],
+                    tag_fields: Default::default(),
+                    store_source: false,
+                    mode: Default::default(),
+                    dynamic_mapping: None,
+                },
+                indexing_settings: Default::default(),
+                search_settings: Default::default(),
+                sources: Default::default(),
+                create_timestamp: 0,
+                update_timestamp: 0,
+            })
+            .await
     }
 
     #[tokio::test]
@@ -732,12 +736,14 @@ mod kafka_broker_tests {
             create_test_index(metastore.clone()).await?;
 
             let source = source_loader
-                .load_source(Arc::new(
-                    SourceExecutionContext {
+                .load_source(
+                    Arc::new(SourceExecutionContext {
                         metastore,
                         config: source_config.clone(),
                         index_id: "test-index".to_string(),
-                    }), checkpoint)
+                    }),
+                    checkpoint,
+                )
                 .await?;
             let actor = SourceActor {
                 source,
@@ -794,12 +800,14 @@ mod kafka_broker_tests {
             create_test_index(metastore.clone()).await?;
 
             let source = source_loader
-                .load_source(Arc::new(
-                    SourceExecutionContext {
+                .load_source(
+                    Arc::new(SourceExecutionContext {
                         metastore,
                         config: source_config.clone(),
                         index_id: "test-index".to_string(),
-                    }), checkpoint)
+                    }),
+                    checkpoint,
+                )
                 .await?;
             let actor = SourceActor {
                 source,
@@ -854,13 +862,13 @@ mod kafka_broker_tests {
             let mut delta = CheckpointDelta::from_partition_delta(
                 PartitionId::from(0u64),
                 Position::from(0u64),
-                Position::from(0u64)
+                Position::from(0u64),
             );
 
             let _result = delta.record_partition_delta(
                 PartitionId::from(1u64),
                 Position::from(0u64),
-                Position::from(2u64)
+                Position::from(2u64),
             );
 
             let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
@@ -873,12 +881,14 @@ mod kafka_broker_tests {
             assert!(result.is_ok());
 
             let source = source_loader
-                .load_source(Arc::new(
-                    SourceExecutionContext {
+                .load_source(
+                    Arc::new(SourceExecutionContext {
                         metastore,
                         config: source_config.clone(),
                         index_id: "test-index".to_string(),
-                    }), SourceCheckpoint::default())
+                    }),
+                    SourceCheckpoint::default(),
+                )
                 .await?;
             let actor = SourceActor {
                 source,
@@ -941,10 +951,9 @@ mod kafka_broker_tests {
         let result = check_connectivity(KafkaSourceParams {
             topic: topic.clone(),
             client_log_level: None,
-            client_params: json!({
-                "bootstrap.servers": bootstrap_servers
-            }),
-        }).await?;
+            client_params: json!({ "bootstrap.servers": bootstrap_servers }),
+        })
+        .await?;
 
         assert_eq!(result, ());
 
@@ -953,10 +962,9 @@ mod kafka_broker_tests {
         let result = check_connectivity(KafkaSourceParams {
             topic: "non-existent-topic".to_string(),
             client_log_level: None,
-            client_params: json!({
-                "bootstrap.servers": bootstrap_servers
-            }),
-        }).await;
+            client_params: json!({ "bootstrap.servers": bootstrap_servers }),
+        })
+        .await;
 
         assert!(result.is_err());
 
@@ -967,11 +975,11 @@ mod kafka_broker_tests {
             client_params: json!({
                 "bootstrap.servers": "192.0.2.10:9092"
             }),
-        }).await;
+        })
+        .await;
 
         assert!(result.is_err());
 
         Ok(())
     }
-
 }

@@ -26,14 +26,14 @@ use quickwit_metastore::checkpoint::SourceCheckpoint;
 use thiserror::Error;
 
 use super::Source;
-use crate::source::{SourceExecutionContext};
+use crate::source::SourceExecutionContext;
 
 #[async_trait]
 pub trait SourceFactory: 'static + Send + Sync {
     async fn create_source(
         &self,
         ctx: Arc<SourceExecutionContext>,
-        checkpoint: SourceCheckpoint
+        checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Box<dyn Source>>;
 }
 
@@ -44,7 +44,7 @@ pub trait TypedSourceFactory: Send + Sync + 'static {
     async fn typed_create_source(
         ctx: Arc<SourceExecutionContext>,
         params: Self::Params,
-        checkpoint: SourceCheckpoint
+        checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source>;
 }
 
@@ -53,11 +53,10 @@ impl<T: TypedSourceFactory> SourceFactory for T {
     async fn create_source(
         &self,
         ctx: Arc<SourceExecutionContext>,
-        checkpoint: SourceCheckpoint
+        checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Box<dyn Source>> {
         let typed_params: T::Params = serde_json::from_value(ctx.config.params())?;
-        let file_source = Self::typed_create_source(ctx, typed_params,
-                                                    checkpoint).await?;
+        let file_source = Self::typed_create_source(ctx, typed_params, checkpoint).await?;
         Ok(Box::new(file_source))
     }
 }
@@ -95,7 +94,7 @@ impl SourceLoader {
     pub async fn load_source(
         &self,
         ctx: Arc<SourceExecutionContext>,
-        checkpoint: SourceCheckpoint
+        checkpoint: SourceCheckpoint,
     ) -> Result<Box<dyn Source>, SourceLoaderError> {
         let source_type = ctx.config.source_type().to_string();
         let source_id = ctx.config.source_id.clone();
@@ -121,6 +120,7 @@ impl SourceLoader {
 #[cfg(test)]
 pub mod test_helpers {
     use std::sync::Arc;
+
     use quickwit_metastore::FileBackedMetastore;
 
     pub async fn metastore_for_test() -> FileBackedMetastore {
@@ -134,6 +134,7 @@ pub mod test_helpers {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::Metastore;
 
@@ -149,11 +150,14 @@ mod tests {
             source_params: SourceParams::void(),
         };
         source_loader
-            .load_source( Arc::new(SourceExecutionContext {
-                metastore: metastore.clone(),
-                index_id: "test-index".to_string(),
-                config: source_config,
-            }), SourceCheckpoint::default())
+            .load_source(
+                Arc::new(SourceExecutionContext {
+                    metastore: metastore.clone(),
+                    index_id: "test-index".to_string(),
+                    config: source_config,
+                }),
+                SourceCheckpoint::default(),
+            )
             .await?;
         Ok(())
     }

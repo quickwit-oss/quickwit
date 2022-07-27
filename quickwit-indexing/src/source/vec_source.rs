@@ -123,9 +123,10 @@ impl Source for VecSource {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+
     use quickwit_actors::{create_test_mailbox, Actor, Command, Universe};
-    use serde_json::json;
     use quickwit_config::{SourceConfig, SourceParams};
+    use serde_json::json;
 
     use super::*;
     use crate::source::{source_factory, SourceActor};
@@ -150,8 +151,8 @@ mod tests {
                 index_id: "test-index".to_string(),
                 config: SourceConfig {
                     source_id: "my-vec-source".to_string(),
-                    source_params: SourceParams::Vec(params.clone())
-                }
+                    source_params: SourceParams::Vec(params.clone()),
+                },
             }),
             params,
             SourceCheckpoint::default(),
@@ -205,13 +206,13 @@ mod tests {
                 index_id: "test-index".to_string(),
                 config: SourceConfig {
                     source_id: "my-vec-source".to_string(),
-                    source_params: SourceParams::Vec(params.clone())
-                }
+                    source_params: SourceParams::Vec(params.clone()),
+                },
             }),
             params,
             checkpoint,
         )
-            .await?;
+        .await?;
         let vec_source_actor = SourceActor {
             source: Box::new(vec_source),
             batch_sink: mailbox,
