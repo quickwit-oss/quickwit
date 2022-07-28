@@ -180,7 +180,7 @@ The `datetime` type can accepts multiple formats and a storage precision. The fo
 - `unix_ts_secs`, `unix_ts_millis`, `unix_ts_micros`: Parsing dates from numbers (timestamp). Only one can be used in configuration. `unix_ts_secs` is added to the list by default if none is specified. 
 
 :::info
-When accepting multiple formats, the corresponding parsers are tried in order they are declared. 
+When specifying multiple input formats, the corresponding parsers are tried in the order they are declared.
 :::
 
 Example of a mapping for a datetime field:

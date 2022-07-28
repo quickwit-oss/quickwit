@@ -76,11 +76,11 @@ impl QuickwitDateTimeOptions {
     pub(crate) fn parse_string(&self, value: String) -> Result<OffsetDateTime, String> {
         for format in self.input_formats.iter() {
             let result = match format {
-                DateTimeFormat::RCF3339 => rfc3339_parse(&value),
-                DateTimeFormat::RFC2822 => rfc2822_parse(&value),
-                DateTimeFormat::ISO8601 => iso8601_parse(&value),
+                DateTimeFormat::RCF3339 => parse_rfc3339(&value),
+                DateTimeFormat::RFC2822 => parse_rfc2822(&value),
+                DateTimeFormat::ISO8601 => parse_iso8601(&value),
                 DateTimeFormat::Strftime(strftime_format) => {
-                    strftime_parse(strftime_format, &value)
+                    parse_strftime(strftime_format, &value)
                 }
                 _ => continue,
             };
@@ -101,37 +101,34 @@ impl QuickwitDateTimeOptions {
 
     pub(crate) fn parse_number(&self, value: i64) -> Result<OffsetDateTime, String> {
         for format in self.input_formats.iter() {
-            match format {
-                DateTimeFormat::Timestamp(precision) => {
-                    return unix_timestamp_parse(value, precision)
-                }
-                _ => continue,
+            if let DateTimeFormat::Timestamp(precision) = format {
+                return parse_unix_timestamp(value, precision);
             }
         }
 
         // Use default number parser.
-        unix_timestamp_parse(value, &DateTimePrecision::Seconds)
+        parse_unix_timestamp(value, &DateTimePrecision::Seconds)
     }
 }
 
 /// Parses datetime strings using RFC3339 formatting.
-fn rfc3339_parse(value: &str) -> Result<OffsetDateTime, String> {
+fn parse_rfc3339(value: &str) -> Result<OffsetDateTime, String> {
     OffsetDateTime::parse(value, &Rfc3339).map_err(|error| error.to_string())
 }
 
 /// Parses DateTime strings using RFC2822 formatting.
-fn rfc2822_parse(value: &str) -> Result<OffsetDateTime, String> {
+fn parse_rfc2822(value: &str) -> Result<OffsetDateTime, String> {
     OffsetDateTime::parse(value, &Rfc2822).map_err(|error| error.to_string())
 }
 
 /// Parses DateTime strings using default ISO8601 formatting.
 /// Examples: 2010-11-21T09:55:06.000000000+02:00, 2010-11-12 9:55:06 +2:00
-fn iso8601_parse(value: &str) -> Result<OffsetDateTime, String> {
+fn parse_iso8601(value: &str) -> Result<OffsetDateTime, String> {
     OffsetDateTime::parse(value, &Iso8601::DEFAULT).map_err(|error| error.to_string())
 }
 
 /// Parses DateTime strings using the unix strftime formatting.
-fn strftime_parse(value: &str, format: &str) -> Result<OffsetDateTime, String> {
+fn parse_strftime(value: &str, format: &str) -> Result<OffsetDateTime, String> {
     let date_time = if format.contains("%z") {
         chrono::DateTime::parse_from_str(value, format)
             .map_err(|error| error.to_string())
@@ -145,7 +142,7 @@ fn strftime_parse(value: &str, format: &str) -> Result<OffsetDateTime, String> {
 }
 
 /// Recognizes numbers as unix timestamp with a precision.
-fn unix_timestamp_parse(
+fn parse_unix_timestamp(
     value: i64,
     precision: &DateTimePrecision,
 ) -> Result<OffsetDateTime, String> {
@@ -183,17 +180,15 @@ impl DateTimeFormat {
             DateTimeFormat::RFC2822 => "rfc2822",
             DateTimeFormat::ISO8601 => "iso8601",
             DateTimeFormat::Strftime(format) => format,
-            DateTimeFormat::Timestamp(precision) => match precision {
-                DateTimePrecision::Seconds => "unix_ts_secs",
-                DateTimePrecision::Milliseconds => "unix_ts_millis",
-                DateTimePrecision::Microseconds => "unix_ts_micros",
-            },
+            DateTimeFormat::Timestamp(DateTimePrecision::Seconds) => "unix_ts_secs",
+            DateTimeFormat::Timestamp(DateTimePrecision::Milliseconds) => "unix_ts_millis",
+            DateTimeFormat::Timestamp(DateTimePrecision::Microseconds) => "unix_ts_micros",
         }
     }
 }
 
 impl Display for DateTimeFormat {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
 }
@@ -263,7 +258,7 @@ mod tests {
 
     use super::DateTimeFormat;
     use crate::default_doc_mapper::date_time_type::{
-        strftime_parse, unix_timestamp_parse, QuickwitDateTimeOptions,
+        parse_strftime, parse_unix_timestamp, QuickwitDateTimeOptions,
     };
     use crate::default_doc_mapper::FieldMappingType;
     use crate::FieldMappingEntry;
@@ -477,35 +472,35 @@ mod tests {
     }
 
     #[test]
-    fn test_strftime_parser() {
-        let date_time = strftime_parse("2012-05-21 12:09:14", "%Y-%m-%d %H:%M:%S").unwrap();
+    fn test_parse_strftime() {
+        let date_time = parse_strftime("2012-05-21 12:09:14", "%Y-%m-%d %H:%M:%S").unwrap();
         assert_eq!(date_time.date(), date!(2012 - 05 - 21));
         assert_eq!(date_time.time(), time!(12:09:14));
 
         let date_time =
-            strftime_parse("2012-05-21 12:09:14 -02:00", "%Y-%m-%d %H:%M:%S %z").unwrap();
+            parse_strftime("2012-05-21 12:09:14 -02:00", "%Y-%m-%d %H:%M:%S %z").unwrap();
         assert_eq!(date_time.date(), date!(2012 - 05 - 21));
         assert_eq!(date_time.time(), time!(14:09:14));
     }
 
     #[test]
-    fn test_unix_timestamp_parser() {
+    fn test_parse_unix_timestamp() {
         let now = time::OffsetDateTime::now_utc();
 
         let date_time =
-            unix_timestamp_parse(now.unix_timestamp(), &DateTimePrecision::Seconds).unwrap();
+            parse_unix_timestamp(now.unix_timestamp(), &DateTimePrecision::Seconds).unwrap();
         assert_eq!(date_time.date(), now.date());
         assert_eq!(date_time.time().as_hms(), now.time().as_hms());
 
         let ts_millis = now.unix_timestamp_nanos() / 1_000_000;
         let date_time =
-            unix_timestamp_parse(ts_millis as i64, &DateTimePrecision::Milliseconds).unwrap();
+            parse_unix_timestamp(ts_millis as i64, &DateTimePrecision::Milliseconds).unwrap();
         assert_eq!(date_time.date(), now.date());
         assert_eq!(date_time.time().as_hms_milli(), now.time().as_hms_milli());
 
         let ts_micros = now.unix_timestamp_nanos() / 1000;
         let date_time =
-            unix_timestamp_parse(ts_micros as i64, &DateTimePrecision::Microseconds).unwrap();
+            parse_unix_timestamp(ts_micros as i64, &DateTimePrecision::Microseconds).unwrap();
         assert_eq!(date_time.date(), now.date());
         assert_eq!(date_time.time().as_hms_micro(), now.time().as_hms_micro());
     }

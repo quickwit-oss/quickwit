@@ -197,8 +197,8 @@ impl MappingLeaf {
             if let (LeafType::DateTime(options), Some(timestamp)) =
                 (self.get_type(), json_val.as_i64())
             {
-                let date_time_str =
-                    timestamp_to_datetime_str(timestamp, &options.precision).unwrap();
+                let date_time_str = timestamp_to_datetime_str(timestamp, &options.precision)
+                    .expect("Invalid timestamp is not allowed.");
                 return insert_json_val(field_path, JsonValue::String(date_time_str), doc_json);
             }
 
