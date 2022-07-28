@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
 use quickwit_config::IngestApiSourceParams;
 use quickwit_ingest_api::{get_ingest_api_service, iter_doc_payloads, IngestApiService};
-use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
+use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
 use quickwit_proto::ingest_api::{FetchRequest, FetchResponse, SuggestTruncateRequest};
 use serde::Serialize;
 
@@ -134,23 +134,21 @@ impl Source for IngestApiSource {
             return Ok(INGEST_API_POLLING_COOL_DOWN);
         };
 
-        let docs = iter_doc_payloads(&doc_batch)
-            .map(|buff| String::from_utf8_lossy(buff).to_string())
-            .collect::<Vec<_>>();
-        let current_offset = first_position + docs.len() as u64 - 1;
-        let mut checkpoint_delta = CheckpointDelta::default();
+        // TODO use a timestamp (in the raw doc batch) given by at ingest time to be more accurate.
+        let mut raw_doc_batch = RawDocBatch::default();
+        raw_doc_batch.docs.extend(
+            iter_doc_payloads(&doc_batch).map(|buff| String::from_utf8_lossy(buff).to_string()),
+        );
+        let current_offset = first_position + raw_doc_batch.docs.len() as u64 - 1;
         let partition_id = PartitionId::from(self.params.index_id.as_str());
-        checkpoint_delta
+        raw_doc_batch
+            .checkpoint_delta
             .record_partition_delta(
                 partition_id,
                 Position::from(self.counters.previous_offset.unwrap_or(0)),
                 Position::from(current_offset),
             )
             .unwrap();
-        let raw_doc_batch = RawDocBatch {
-            docs,
-            checkpoint_delta,
-        };
 
         self.update_counters(current_offset, raw_doc_batch.docs.len() as u64);
         ctx.send_message(batch_sink, raw_doc_batch).await?;
@@ -216,7 +214,7 @@ mod tests {
 
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_ingest_api::{add_doc, spawn_ingest_api_actor, Queues};
-    use quickwit_metastore::checkpoint::SourceCheckpoint;
+    use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
     use quickwit_proto::ingest_api::{DocBatch, IngestRequest};
 
     use super::*;
@@ -360,7 +358,7 @@ mod tests {
         };
         let mut checkpoint = SourceCheckpoint::default();
         let partition_id = PartitionId::from(params.index_id.clone());
-        let checkpoint_delta = CheckpointDelta::from_partition_delta(
+        let checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
             partition_id,
             Position::from(0u64),
             Position::from(1200u64),

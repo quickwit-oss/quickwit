@@ -22,7 +22,7 @@ use std::fmt;
 use std::ops::RangeInclusive;
 use std::time::Instant;
 
-use quickwit_metastore::checkpoint::CheckpointDelta;
+use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 
 use crate::models::ScratchDirectory;
 
@@ -30,14 +30,12 @@ pub struct PackagedSplit {
     pub split_id: String,
     pub replaced_split_ids: Vec<String>,
     pub index_id: String,
-    pub checkpoint_deltas: Vec<CheckpointDelta>,
     pub time_range: Option<RangeInclusive<i64>>,
     pub size_in_bytes: u64,
     pub split_scratch_directory: ScratchDirectory,
     pub num_docs: u64,
     pub demux_num_ops: usize,
     pub tags: BTreeSet<String>,
-    pub split_date_of_birth: Instant,
     pub split_files: Vec<std::path::PathBuf>,
     pub hotcache_bytes: Vec<u8>,
 }
@@ -48,14 +46,12 @@ impl fmt::Debug for PackagedSplit {
             .field("split_id", &self.split_id)
             .field("replaced_split_ids", &self.replaced_split_ids)
             .field("index_id", &self.index_id)
-            .field("checkpoint_deltas", &self.checkpoint_deltas)
             .field("time_range", &self.time_range)
             .field("size_in_bytes", &self.size_in_bytes)
             .field("split_scratch_directory", &self.split_scratch_directory)
             .field("num_docs", &self.num_docs)
             .field("demux_num_ops", &self.demux_num_ops)
             .field("tags", &self.tags)
-            .field("split_date_of_birth", &self.split_date_of_birth)
             .field("split_files", &self.split_files)
             .finish()
     }
@@ -64,6 +60,8 @@ impl fmt::Debug for PackagedSplit {
 #[derive(Debug)]
 pub struct PackagedSplitBatch {
     pub splits: Vec<PackagedSplit>,
+    pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+    pub date_of_birth: Instant,
 }
 
 impl PackagedSplitBatch {
@@ -71,7 +69,11 @@ impl PackagedSplitBatch {
     /// satisfies two constraints:
     /// - a batch must have at least one split
     /// - all splits must be on the same `index_id`.
-    pub fn new(splits: Vec<PackagedSplit>) -> Self {
+    pub fn new(
+        splits: Vec<PackagedSplit>,
+        checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+        date_of_birth: Instant,
+    ) -> Self {
         assert!(!splits.is_empty());
         assert_eq!(
             splits
@@ -82,7 +84,11 @@ impl PackagedSplitBatch {
             1,
             "All splits must be on the same `index_id`."
         );
-        Self { splits }
+        Self {
+            splits,
+            checkpoint_delta_opt,
+            date_of_birth,
+        }
     }
 
     pub fn index_id(&self) -> String {

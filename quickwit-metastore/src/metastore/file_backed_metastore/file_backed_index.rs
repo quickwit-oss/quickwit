@@ -30,7 +30,7 @@ use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::checkpoint::CheckpointDelta;
+use crate::checkpoint::IndexCheckpointDelta;
 use crate::{IndexMetadata, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
@@ -175,22 +175,6 @@ impl FileBackedIndex {
         Ok(())
     }
 
-    pub(crate) fn replace_splits<'a>(
-        &mut self,
-        new_split_ids: &[&'a str],
-        replaced_split_ids: &[&'a str],
-    ) -> MetastoreResult<()> {
-        // Try to publish the new splits.
-        // We do not want to update the delta, which is why we use an empty
-        // checkpoint delta.
-        self.mark_splits_as_published_helper(new_split_ids)?;
-
-        // Mark splits for deletion.
-        self.mark_splits_for_deletion(replaced_split_ids, &[SplitState::Published])?;
-
-        Ok(())
-    }
-
     /// Marks the splits for deletion. Returns whether a mutation occurred.
     pub(crate) fn mark_splits_for_deletion(
         &mut self,
@@ -293,14 +277,15 @@ impl FileBackedIndex {
 
     pub(crate) fn publish_splits<'a>(
         &mut self,
-        source_id: &str,
         split_ids: &[&'a str],
-        checkpoint_delta: CheckpointDelta,
+        replaced_split_ids: &[&'a str],
+        checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     ) -> MetastoreResult<()> {
-        self.metadata
-            .checkpoint
-            .try_apply_delta(source_id, checkpoint_delta)?;
+        if let Some(checkpoint_delta) = checkpoint_delta_opt {
+            self.metadata.checkpoint.try_apply_delta(checkpoint_delta)?;
+        }
         self.mark_splits_as_published_helper(split_ids)?;
+        self.mark_splits_for_deletion(replaced_split_ids, &[SplitState::Published])?;
         Ok(())
     }
 

@@ -152,13 +152,12 @@ impl IndexCheckpoint {
     /// See [`SourceCheckpoint::try_apply_delta`] for more details.
     pub fn try_apply_delta(
         &mut self,
-        source_id: &str,
-        delta: CheckpointDelta,
+        delta: IndexCheckpointDelta,
     ) -> Result<(), IncompatibleCheckpointDelta> {
         self.per_source
-            .entry(source_id.to_string())
+            .entry(delta.source_id)
             .or_default()
-            .try_apply_delta(delta)?;
+            .try_apply_delta(delta.source_delta)?;
         Ok(())
     }
 
@@ -175,8 +174,11 @@ impl IndexCheckpoint {
     /// Adds a new source. If the source was already here, this
     /// method returns successfully and does not override the existing checkpoint.
     pub fn add_source(&mut self, source_id: &str) {
-        self.try_apply_delta(source_id, CheckpointDelta::default())
-            .expect("Applying an empty checkpoint delta should never fail");
+        self.try_apply_delta(IndexCheckpointDelta {
+            source_id: source_id.to_string(),
+            source_delta: SourceCheckpointDelta::default(),
+        })
+        .expect("Applying an empty checkpoint delta should never fail");
     }
 
     /// Removes an source.
@@ -283,7 +285,7 @@ impl SourceCheckpoint {
 
     fn check_compatibility(
         &self,
-        delta: &CheckpointDelta,
+        delta: &SourceCheckpointDelta,
     ) -> Result<(), IncompatibleCheckpointDelta> {
         info!(delta=?delta, checkpoint=?self);
         for (delta_partition, delta_position) in &delta.per_partition {
@@ -327,7 +329,7 @@ impl SourceCheckpoint {
     /// If the delta is incompatible, returns an error without modifying the original checkpoint.
     pub fn try_apply_delta(
         &mut self,
-        delta: CheckpointDelta,
+        delta: SourceCheckpointDelta,
     ) -> Result<(), IncompatibleCheckpointDelta> {
         self.check_compatibility(&delta)?;
         for (partition_id, partition_position) in delta.per_partition {
@@ -373,11 +375,38 @@ struct PartitionDelta {
 /// `from` position. This makes it possible to defensively check that
 /// we are not trying to add documents to the index that were already indexed.
 #[derive(Default, Clone, Eq, PartialEq)]
-pub struct CheckpointDelta {
+pub struct SourceCheckpointDelta {
     per_partition: BTreeMap<PartitionId, PartitionDelta>,
 }
 
-impl fmt::Debug for CheckpointDelta {
+#[derive(Clone)]
+pub struct IndexCheckpointDelta {
+    pub source_id: String,
+    pub source_delta: SourceCheckpointDelta,
+}
+
+impl IndexCheckpointDelta {
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test(source_id: &str, pos_range: Range<u64>) -> Self {
+        IndexCheckpointDelta {
+            source_id: source_id.to_string(),
+            source_delta: SourceCheckpointDelta::from(pos_range),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.source_delta.is_empty()
+    }
+}
+
+impl fmt::Debug for IndexCheckpointDelta {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}:{:?}", &self.source_id, self.source_delta)?;
+        Ok(())
+    }
+}
+
+impl fmt::Debug for SourceCheckpointDelta {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("∆(")?;
         for (i, (partition_id, partition_delta)) in self.per_partition.iter().enumerate() {
@@ -397,7 +426,7 @@ impl fmt::Debug for CheckpointDelta {
     }
 }
 
-impl From<Range<u64>> for CheckpointDelta {
+impl From<Range<u64>> for SourceCheckpointDelta {
     fn from(range: Range<u64>) -> Self {
         // Checkpoint delta are expressed as (from, to] intervals while ranges
         // are [start, end) intervals
@@ -411,18 +440,22 @@ impl From<Range<u64>> for CheckpointDelta {
         } else {
             Position::from(range.end as u64 - 1)
         };
-        CheckpointDelta::from_partition_delta(PartitionId::default(), from_position, to_position)
+        SourceCheckpointDelta::from_partition_delta(
+            PartitionId::default(),
+            from_position,
+            to_position,
+        )
     }
 }
 
-impl CheckpointDelta {
+impl SourceCheckpointDelta {
     /// Creates a new checkpoint delta initialized with a single partition delta.
     pub fn from_partition_delta(
         partition_id: PartitionId,
         from_position: Position,
         to_position: Position,
     ) -> Self {
-        let mut delta = CheckpointDelta::default();
+        let mut delta = SourceCheckpointDelta::default();
         let _ = delta.record_partition_delta(partition_id, from_position, to_position);
         delta
     }
@@ -469,7 +502,10 @@ impl CheckpointDelta {
     /// Extends the current checkpoint delta in-place with the provided checkpoint delta.
     ///
     /// Contrary to checkpoint update, the two deltas here need to chain perfectly.
-    pub fn extend(&mut self, delta: CheckpointDelta) -> Result<(), IncompatibleCheckpointDelta> {
+    pub fn extend(
+        &mut self,
+        delta: SourceCheckpointDelta,
+    ) -> Result<(), IncompatibleCheckpointDelta> {
         for (partition_id, partition_delta) in delta.per_partition {
             self.record_partition_delta(partition_id, partition_delta.from, partition_delta.to)?;
         }
@@ -493,12 +529,12 @@ mod tests {
 
     #[test]
     fn test_delta_from_range() {
-        let checkpoint_delta = CheckpointDelta::from(0..3);
+        let checkpoint_delta = SourceCheckpointDelta::from(0..3);
         assert_eq!(
             format!("{:?}", checkpoint_delta),
             "∆(:(..00000000000000000002])"
         );
-        let checkpoint_delta = CheckpointDelta::from(1..4);
+        let checkpoint_delta = SourceCheckpointDelta::from(1..4);
         assert_eq!(
             format!("{:?}", checkpoint_delta),
             "∆(:(00000000000000000000..00000000000000000003])"
@@ -510,7 +546,7 @@ mod tests {
         let mut checkpoint = SourceCheckpoint::default();
         assert_eq!(format!("{:?}", checkpoint), "Ckpt()");
         let delta1 = {
-            let mut delta = CheckpointDelta::from_partition_delta(
+            let mut delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
                 Position::from(123u64),
                 Position::from(128u64),
@@ -534,7 +570,7 @@ mod tests {
     fn test_partially_incompatible_does_not_update() -> anyhow::Result<()> {
         let mut checkpoint = SourceCheckpoint::default();
         let delta1 = {
-            let mut delta = CheckpointDelta::from_partition_delta(
+            let mut delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
                 Position::from("00123"),
                 Position::from("00128"),
@@ -548,7 +584,7 @@ mod tests {
         };
         assert!(checkpoint.try_apply_delta(delta1).is_ok());
         let delta2 = {
-            let mut delta = CheckpointDelta::from_partition_delta(
+            let mut delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
                 Position::from("00128"),
                 Position::from("00128"),
@@ -573,7 +609,7 @@ mod tests {
     fn test_adding_new_partition() -> anyhow::Result<()> {
         let mut checkpoint = SourceCheckpoint::default();
         let delta1 = {
-            let mut delta = CheckpointDelta::from_partition_delta(
+            let mut delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
                 Position::from("00123"),
                 Position::from("00128"),
@@ -587,7 +623,7 @@ mod tests {
         };
         assert!(checkpoint.try_apply_delta(delta1).is_ok());
         let delta3 = {
-            let mut delta = CheckpointDelta::from_partition_delta(
+            let mut delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("b"),
                 Position::from("60187"),
                 Position::from("60190"),
@@ -607,7 +643,7 @@ mod tests {
     #[test]
     fn test_extend_checkpoint_delta() -> anyhow::Result<()> {
         let mut delta1 = {
-            let mut delta = CheckpointDelta::from_partition_delta(
+            let mut delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
                 Position::from("00123"),
                 Position::from("00128"),
@@ -620,7 +656,7 @@ mod tests {
             delta
         };
         let delta2 = {
-            let mut delta = CheckpointDelta::from_partition_delta(
+            let mut delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("b"),
                 Position::from("60187"),
                 Position::from("60348"),
@@ -633,7 +669,7 @@ mod tests {
             delta
         };
         let delta3 = {
-            let mut delta = CheckpointDelta::from_partition_delta(
+            let mut delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
                 Position::from("00123"),
                 Position::from("00128"),
@@ -653,7 +689,7 @@ mod tests {
         delta1.extend(delta2)?;
         assert_eq!(delta1, delta3);
 
-        let delta4 = CheckpointDelta::from_partition_delta(
+        let delta4 = SourceCheckpointDelta::from_partition_delta(
             PartitionId::from("a"),
             Position::from("00130"),
             Position::from("00142"),
@@ -702,7 +738,7 @@ mod tests {
     #[test]
     fn test_get_source_checkpoint() {
         let partition = PartitionId::from("a");
-        let delta = CheckpointDelta::from_partition_delta(
+        let delta = SourceCheckpointDelta::from_partition_delta(
             partition.clone(),
             Position::from(42u64),
             Position::from(43u64),

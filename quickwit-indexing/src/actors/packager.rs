@@ -144,7 +144,7 @@ impl Handler<IndexedSplitBatch> for Packager {
         }
         ctx.send_message(
             &self.uploader_mailbox,
-            PackagedSplitBatch::new(packaged_splits),
+            PackagedSplitBatch::new(packaged_splits, batch.checkpoint_delta, batch.date_of_birth),
         )
         .await?;
         fail_point!("packager:after");
@@ -344,14 +344,12 @@ fn create_packaged_split(
         split_id: split.split_id.to_string(),
         replaced_split_ids: split.replaced_split_ids,
         index_id: split.index_id,
-        checkpoint_deltas: vec![split.checkpoint_delta],
         split_scratch_directory: split.split_scratch_directory,
         num_docs,
         demux_num_ops: split.demux_num_ops,
         time_range: split.time_range,
         size_in_bytes: split.docs_size_in_bytes,
         tags,
-        split_date_of_birth: split.split_date_of_birth,
         split_files,
         hotcache_bytes,
     };
@@ -373,7 +371,7 @@ mod tests {
 
     use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
     use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
-    use quickwit_metastore::checkpoint::CheckpointDelta;
+    use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};
     use tantivy::{doc, Index};
 
@@ -442,11 +440,9 @@ mod tests {
             demux_num_ops: 0,
             num_docs,
             docs_size_in_bytes: num_docs * 15, //< bogus number
-            split_date_of_birth: Instant::now(),
             index,
             index_writer,
             split_scratch_directory,
-            checkpoint_delta: CheckpointDelta::from(10..20),
             replaced_split_ids: Vec::new(),
             controlled_directory_opt: None,
         };
@@ -485,6 +481,8 @@ mod tests {
         packager_mailbox
             .send_message(IndexedSplitBatch {
                 splits: vec![indexed_split],
+                checkpoint_delta: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
+                date_of_birth: Instant::now(),
             })
             .await?;
         assert_eq!(
@@ -527,6 +525,8 @@ mod tests {
         packager_mailbox
             .send_message(IndexedSplitBatch {
                 splits: vec![indexed_split],
+                checkpoint_delta: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
+                date_of_birth: Instant::now(),
             })
             .await?;
         assert_eq!(
@@ -551,6 +551,8 @@ mod tests {
         packager_mailbox
             .send_message(IndexedSplitBatch {
                 splits: vec![indexed_split_1, indexed_split_2],
+                checkpoint_delta: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
+                date_of_birth: Instant::now(),
             })
             .await?;
         assert_eq!(

@@ -38,7 +38,7 @@ pub use indexing_statistics::IndexingStatistics;
 pub use merge_planner_message::NewSplits;
 pub use merge_scratch::MergeScratch;
 pub use packaged_split::{PackagedSplit, PackagedSplitBatch};
-pub use publisher_message::{PublishNewSplit, PublisherMessage, ReplaceSplits};
+pub use publisher_message::SplitUpdate;
 pub use raw_doc_batch::RawDocBatch;
 pub use scratch_directory::ScratchDirectory;
 
