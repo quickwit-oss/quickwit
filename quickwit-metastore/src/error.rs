@@ -17,15 +17,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::io;
-
+use serde::{Deserialize, Serialize};
+#[cfg(feature = "postgres")]
+use sqlx;
 use thiserror::Error;
 
 use crate::checkpoint::IncompatibleCheckpointDelta;
 
 /// Metastore error kinds.
 #[allow(missing_docs)]
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Serialize, Deserialize)]
 pub enum MetastoreError {
     #[error("Connection error: `{message}`.")]
     ConnectionError { message: String },
@@ -42,17 +43,14 @@ pub enum MetastoreError {
     /// Any generic internal error.
     /// The message can be helpful to users, but the detail of the error
     /// are judged uncoverable and not useful for error handling.
-    #[error("Internal error: `{message}` Cause: `{cause:?}`.")]
-    InternalError {
-        message: String,
-        cause: anyhow::Error,
-    },
+    #[error("Internal error: `{message}` Cause: `{cause}`.")]
+    InternalError { message: String, cause: String },
 
-    #[error("Failed to deserialize index metadata: `{cause:?}`")]
-    InvalidManifest { cause: serde_json::Error },
+    #[error("Failed to deserialize index metadata: `{message}`")]
+    InvalidManifest { message: String },
 
-    #[error("IOError `{0:?}`")]
-    Io(io::Error),
+    #[error("IOError `{message}`")]
+    Io { message: String },
 
     #[error("Splits `{split_ids:?}` do not exist.")]
     SplitsDoNotExist { split_ids: Vec<String> },
@@ -76,8 +74,17 @@ pub enum MetastoreError {
     SourceDoesNotExist { source_id: String },
 
     #[cfg(feature = "postgres")]
-    #[error("Database error: {0:?}.")]
-    DbError(#[from] sqlx::Error),
+    #[error("Database error: `{message}`.")]
+    DbError { message: String },
+}
+
+#[cfg(feature = "postgres")]
+impl From<sqlx::Error> for MetastoreError {
+    fn from(error: sqlx::Error) -> Self {
+        MetastoreError::DbError {
+            message: error.to_string(),
+        }
+    }
 }
 
 /// Generic Result type for metastore operations.

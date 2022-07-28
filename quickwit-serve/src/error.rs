@@ -21,9 +21,9 @@ use std::convert::Infallible;
 use std::fmt;
 
 use quickwit_actors::AskError;
-use quickwit_core::IndexServiceError;
 use quickwit_indexing::IndexingServiceError;
 use quickwit_ingest_api::IngestApiError;
+use quickwit_metastore::MetastoreError;
 use quickwit_proto::tonic;
 use quickwit_search::SearchError;
 use warp::http;
@@ -58,6 +58,29 @@ impl ServiceErrorCode {
             ServiceErrorCode::BadRequest => http::StatusCode::BAD_REQUEST,
             ServiceErrorCode::MethodNotAllowed => http::StatusCode::METHOD_NOT_ALLOWED,
             ServiceErrorCode::UnsupportedMediaType => http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        }
+    }
+}
+
+// TODO: review the error mapping.
+impl ServiceError for MetastoreError {
+    fn status_code(&self) -> ServiceErrorCode {
+        match self {
+            Self::ConnectionError { .. } => ServiceErrorCode::Internal,
+            Self::Forbidden { .. } => ServiceErrorCode::BadRequest,
+            Self::IncompatibleCheckpointDelta(_) => ServiceErrorCode::BadRequest,
+            Self::IndexAlreadyExists { .. } => ServiceErrorCode::BadRequest,
+            Self::IndexDoesNotExist { .. } => ServiceErrorCode::BadRequest,
+            Self::InternalError { .. } => ServiceErrorCode::Internal,
+            Self::InvalidManifest { .. } => ServiceErrorCode::Internal,
+            Self::Io { .. } => ServiceErrorCode::Internal,
+            Self::SourceAlreadyExists { .. } => ServiceErrorCode::BadRequest,
+            Self::SourceDoesNotExist { .. } => ServiceErrorCode::BadRequest,
+            Self::SplitsDoNotExist { .. } => ServiceErrorCode::BadRequest,
+            Self::SplitsNotDeletable { .. } => ServiceErrorCode::BadRequest,
+            Self::SplitsNotStaged { .. } => ServiceErrorCode::BadRequest,
+            #[cfg(feature = "postgres")]
+            Self::DbError(_) => ServiceErrorCode::Internal,
         }
     }
 }
@@ -104,17 +127,6 @@ impl<E: fmt::Debug + ServiceError> ServiceError for AskError<E> {
             AskError::MessageNotDelivered => ServiceErrorCode::Internal,
             AskError::ProcessMessageError => ServiceErrorCode::Internal,
             AskError::ErrorReply(err) => err.status_code(),
-        }
-    }
-}
-
-impl ServiceError for IndexServiceError {
-    fn status_code(&self) -> ServiceErrorCode {
-        match self {
-            Self::StorageError(_) => ServiceErrorCode::Internal,
-            Self::MetastoreError(_) => ServiceErrorCode::Internal,
-            Self::SplitDeletionError(_) => ServiceErrorCode::Internal,
-            Self::InvalidIndexConfig(_) => ServiceErrorCode::BadRequest,
         }
     }
 }

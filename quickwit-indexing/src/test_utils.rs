@@ -25,6 +25,7 @@ use quickwit_common::uri::Uri;
 use quickwit_config::{
     build_doc_mapper, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
 };
+use quickwit_control_plane::MetastoreService;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{
     quickwit_metastore_uri_resolver, IndexMetadata, Metastore, Split, SplitMetadata, SplitState,
@@ -87,14 +88,15 @@ impl TestSandbox {
         metastore.create_index(index_meta.clone()).await?;
         let storage_resolver = StorageUriResolver::for_test();
         let storage = storage_resolver.resolve(&index_uri)?;
+        let universe = Universe::new();
+        let metastore_service = MetastoreService::from_metastore(metastore.clone());
         let indexing_server = IndexingService::new(
             temp_dir.path().to_path_buf(),
             indexer_config,
-            metastore.clone(),
+            metastore_service,
             storage_resolver.clone(),
             None,
         );
-        let universe = Universe::new();
         let (indexing_server_mailbox, _indexing_server_handle) =
             universe.spawn_actor(indexing_server).spawn();
         Ok(TestSandbox {

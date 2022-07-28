@@ -30,8 +30,10 @@ use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_control_plane::MetastoreService;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_metastore::{Metastore, SplitMetadata};
+use quickwit_metastore::SplitMetadata;
+use quickwit_proto::metastore_api::StageSplitRequest;
 use quickwit_storage::SplitPayloadBuilder;
 use time::OffsetDateTime;
 use tokio::sync::{oneshot, Semaphore, SemaphorePermit};
@@ -54,7 +56,7 @@ static CONCURRENT_UPLOAD_PERMITS: Semaphore = Semaphore::const_new(MAX_CONCURREN
 
 pub struct Uploader {
     actor_name: &'static str,
-    metastore: Arc<dyn Metastore>,
+    metastore_service: MetastoreService,
     index_storage: IndexingSplitStore,
     sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
     counters: UploaderCounters,
@@ -63,13 +65,13 @@ pub struct Uploader {
 impl Uploader {
     pub fn new(
         actor_name: &'static str,
-        metastore: Arc<dyn Metastore>,
+        metastore_service: MetastoreService,
         index_storage: IndexingSplitStore,
         sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
     ) -> Uploader {
         Uploader {
             actor_name,
-            metastore,
+            metastore_service,
             index_storage,
             sequencer_mailbox,
             counters: Default::default(),
@@ -156,7 +158,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
             warn!(split_ids=?split_ids,"Kill switch was activated. Cancelling upload.");
             return Err(ActorExitStatus::Killed);
         }
-        let metastore = self.metastore.clone();
+        let metastore_service = self.metastore_service.clone();
         let index_storage = self.index_storage.clone();
         let counters = self.counters.clone();
         let index_id = batch.index_id();
@@ -170,7 +172,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     let upload_result = stage_and_upload_split(
                         &split,
                         &index_storage,
-                        &*metastore,
+                        metastore_service.clone(),
                         counters.clone(),
                     )
                     .await;
@@ -240,7 +242,7 @@ fn make_publish_operation(
 async fn stage_and_upload_split(
     packaged_split: &PackagedSplit,
     split_store: &IndexingSplitStore,
-    metastore: &dyn Metastore,
+    mut metastore_service: MetastoreService,
     counters: UploaderCounters,
 ) -> anyhow::Result<SplitMetadata> {
     let split_streamer = SplitPayloadBuilder::get_split_payload(
@@ -253,9 +255,13 @@ async fn stage_and_upload_split(
     );
     let index_id = packaged_split.index_id.clone();
     info!(split_id = packaged_split.split_id.as_str(), "staging-split");
-    metastore
-        .stage_split(&index_id, split_metadata.clone())
-        .await?;
+    let split_metadata_serialized_json =
+        serde_json::to_string(&split_metadata).map_err(|error| anyhow::anyhow!(error))?;
+    let stage_split_request = StageSplitRequest {
+        index_id,
+        split_metadata_serialized_json,
+    };
+    metastore_service.stage_split(stage_split_request).await?;
     counters.num_staged_splits.fetch_add(1, Ordering::SeqCst);
 
     info!(split_id = packaged_split.split_id.as_str(), "storing-split");
@@ -273,9 +279,11 @@ async fn stage_and_upload_split(
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::sync::Arc;
     use std::time::Instant;
 
     use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
+    use quickwit_control_plane::MetastoreService;
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::RamStorage;
@@ -302,12 +310,8 @@ mod tests {
         let ram_storage = RamStorage::default();
         let index_storage: IndexingSplitStore =
             IndexingSplitStore::create_with_no_local_store(Arc::new(ram_storage.clone()));
-        let uploader = Uploader::new(
-            "TestUploader",
-            Arc::new(mock_metastore),
-            index_storage,
-            mailbox,
-        );
+        let metastore_service = MetastoreService::from_metastore(Arc::new(mock_metastore));
+        let uploader = Uploader::new("TestUploader", metastore_service, index_storage, mailbox);
         let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn();
         let split_scratch_directory = ScratchDirectory::for_test()?;
         let checkpoint_delta_opt: Option<IndexCheckpointDelta> = Some(IndexCheckpointDelta {
@@ -387,12 +391,8 @@ mod tests {
         let ram_storage = RamStorage::default();
         let index_storage: IndexingSplitStore =
             IndexingSplitStore::create_with_no_local_store(Arc::new(ram_storage.clone()));
-        let uploader = Uploader::new(
-            "TestUploader",
-            Arc::new(mock_metastore),
-            index_storage,
-            mailbox,
-        );
+        let metastore_service = MetastoreService::from_metastore(Arc::new(mock_metastore));
+        let uploader = Uploader::new("TestUploader", metastore_service, index_storage, mailbox);
         let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn();
         let split_scratch_directory_1 = ScratchDirectory::for_test()?;
         let split_scratch_directory_2 = ScratchDirectory::for_test()?;

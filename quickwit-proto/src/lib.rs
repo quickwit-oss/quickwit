@@ -19,9 +19,14 @@
 
 mod quickwit;
 mod quickwit_ingest_api;
+mod quickwit_metastore_api;
 
 pub mod ingest_api {
     pub use crate::quickwit_ingest_api::*;
+}
+
+pub mod metastore_api {
+    pub use crate::quickwit_metastore_api::*;
 }
 
 #[macro_use]

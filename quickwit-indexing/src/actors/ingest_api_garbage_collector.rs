@@ -18,15 +18,16 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashSet;
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
+use quickwit_control_plane::MetastoreService;
 use quickwit_ingest_api::IngestApiService;
-use quickwit_metastore::Metastore;
+use quickwit_metastore::IndexMetadata;
 use quickwit_proto::ingest_api::{DropQueueRequest, ListQueuesRequest};
+use quickwit_proto::metastore_api::ListIndexesMetadatasRequest;
 use tracing::{debug, error, info, instrument};
 
 use super::IndexingService;
@@ -57,7 +58,7 @@ struct Loop;
 ///
 /// This actor is meant to be removed in the future.
 pub struct IngestApiGarbageCollector {
-    metastore: Arc<dyn Metastore>,
+    metastore_service: MetastoreService,
     ingest_api_service: Mailbox<IngestApiService>,
     indexing_service: Mailbox<IndexingService>,
     counters: IngestApiGarbageCollectorCounters,
@@ -65,12 +66,12 @@ pub struct IngestApiGarbageCollector {
 
 impl IngestApiGarbageCollector {
     pub fn new(
-        metastore: Arc<dyn Metastore>,
+        metastore_service: MetastoreService,
         ingest_api_service: Mailbox<IngestApiService>,
         indexing_service: Mailbox<IndexingService>,
     ) -> Self {
         Self {
-            metastore,
+            metastore_service,
             ingest_api_service,
             indexing_service,
             counters: IngestApiGarbageCollectorCounters::default(),
@@ -108,11 +109,14 @@ impl IngestApiGarbageCollector {
             .collect();
         debug!(queues=?queues, "list-queues");
 
-        let index_ids: HashSet<String> = self
-            .metastore
-            .list_indexes_metadatas()
+        let indexes_metadatas_response = self
+            .metastore_service
+            .list_indexes_metadatas(ListIndexesMetadatasRequest {})
             .await
-            .context("Failed to list queues")?
+            .context("Failed to list queues")?;
+        let indexes_metadatas: Vec<IndexMetadata> =
+            serde_json::from_str(&indexes_metadatas_response.indexes_metadatas_serialized_json)?;
+        let index_ids: HashSet<String> = indexes_metadatas
             .into_iter()
             .map(|index_metadata| index_metadata.index_id)
             .collect();
@@ -178,6 +182,7 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_common::uri::Uri;
     use quickwit_config::IndexerConfig;
+    use quickwit_control_plane::MetastoreService;
     use quickwit_ingest_api::spawn_ingest_api_actor;
     use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
     use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
@@ -215,10 +220,11 @@ mod tests {
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
         let storage_resolver = StorageUriResolver::for_test();
+        let metastore_service = MetastoreService::from_metastore(metastore.clone());
         let indexing_server = IndexingService::new(
             data_dir_path,
             indexer_config,
-            metastore.clone(),
+            metastore_service.clone(),
             storage_resolver.clone(),
             Some(ingest_api_mailbox.clone()),
         );
@@ -226,7 +232,7 @@ mod tests {
             universe.spawn_actor(indexing_server).spawn();
 
         let ingest_api_garbage_collector = IngestApiGarbageCollector::new(
-            metastore.clone(),
+            metastore_service.clone(),
             ingest_api_mailbox,
             indexing_server_mailbox,
         );

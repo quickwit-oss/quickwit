@@ -10,7 +10,7 @@ homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
-anyhow = "1"
+anyhow = "1.0"
 colored = "2"
 env_logger = "0.9"
 home = "0.5.3"

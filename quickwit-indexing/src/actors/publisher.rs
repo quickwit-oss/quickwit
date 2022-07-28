@@ -17,13 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::Arc;
-
 use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
 use quickwit_actors::{Actor, ActorContext, Handler, Mailbox};
-use quickwit_metastore::Metastore;
+use quickwit_control_plane::MetastoreService;
+use quickwit_proto::metastore_api::PublishSplitsRequest;
 use tracing::info;
 
 use crate::actors::{GarbageCollector, MergePlanner};
@@ -53,7 +52,7 @@ impl PublisherType {
 
 pub struct Publisher {
     publisher_type: PublisherType,
-    metastore: Arc<dyn Metastore>,
+    metastore_service: MetastoreService,
     merge_planner_mailbox: Mailbox<MergePlanner>,
     garbage_collector_mailbox: Mailbox<GarbageCollector>,
     source_mailbox_opt: Option<Mailbox<SourceActor>>,
@@ -63,14 +62,14 @@ pub struct Publisher {
 impl Publisher {
     pub fn new(
         publisher_type: PublisherType,
-        metastore: Arc<dyn Metastore>,
+        metastore_service: MetastoreService,
         merge_planner_mailbox: Mailbox<MergePlanner>,
         garbage_collector_mailbox: Mailbox<GarbageCollector>,
         source_mailbox_opt: Option<Mailbox<SourceActor>>,
     ) -> Publisher {
         Publisher {
             publisher_type,
-            metastore,
+            metastore_service,
             merge_planner_mailbox,
             garbage_collector_mailbox,
             source_mailbox_opt,
@@ -132,18 +131,23 @@ impl Handler<SplitUpdate> for Publisher {
             checkpoint_delta_opt,
         } = split_update;
 
-        let split_ids: Vec<&str> = new_splits.iter().map(|split| split.split_id()).collect();
-
-        let replaced_split_ids_ref_vec: Vec<&str> =
-            replaced_split_ids.iter().map(String::as_str).collect();
-
-        self.metastore
-            .publish_splits(
-                &index_id,
-                &split_ids[..],
-                &replaced_split_ids_ref_vec,
-                checkpoint_delta_opt.clone(),
-            )
+        let split_ids: Vec<String> = new_splits
+            .iter()
+            .map(|split| split.split_id().to_string())
+            .collect();
+        let index_checkpoint_delta_serialized_json = checkpoint_delta_opt
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|error| anyhow::anyhow!(error))?;
+        let publish_splits_request = PublishSplitsRequest {
+            index_id,
+            split_ids: split_ids.clone(),
+            replaced_split_ids,
+            index_checkpoint_delta_serialized_json,
+        };
+        self.metastore_service
+            .publish_splits(publish_splits_request)
             .await
             .context("Failed to publish splits.")?;
 
@@ -172,11 +176,7 @@ impl Handler<SplitUpdate> for Publisher {
         let _ = ctx
             .send_message(&self.merge_planner_mailbox, NewSplits { new_splits })
             .await;
-        if replaced_split_ids.is_empty() {
-            self.counters.num_published_splits += 1;
-        } else {
-            self.counters.num_replace_operations += 1;
-        }
+        self.counters.num_published_splits += 1;
         fail_point!("publisher:after");
         Ok(())
     }
@@ -184,9 +184,11 @@ impl Handler<SplitUpdate> for Publisher {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use std::time::Instant;
 
     use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_control_plane::MetastoreService;
     use quickwit_metastore::checkpoint::{
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
     };
@@ -216,15 +218,15 @@ mod tests {
         let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
 
         let (source_mailbox, source_inbox) = create_test_mailbox();
-
+        let universe = Universe::new();
+        let metastore_service = MetastoreService::from_metastore(Arc::new(mock_metastore));
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
-            Arc::new(mock_metastore),
+            metastore_service,
             merge_planner_mailbox,
             garbage_collector_mailbox,
             Some(source_mailbox),
         );
-        let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
 
         assert!(publisher_mailbox
@@ -284,14 +286,15 @@ mod tests {
             .returning(|_, _, _, _| Ok(()));
         let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
         let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
+        let universe = Universe::new();
+        let metastore_service = MetastoreService::from_metastore(Arc::new(mock_metastore));
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
-            Arc::new(mock_metastore),
+            metastore_service,
             merge_planner_mailbox,
             garbage_collector_mailbox,
             None,
         );
-        let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
         let publisher_message = SplitUpdate {
             index_id: "index".to_string(),

@@ -29,8 +29,10 @@ use quickwit_actors::{
     QueueCapacity, Supervisable,
 };
 use quickwit_config::{build_doc_mapper, IndexingSettings, SourceConfig};
+use quickwit_control_plane::MetastoreService;
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError, SplitState};
+use quickwit_metastore::{IndexMetadata, MetastoreError, Split, SplitState};
+use quickwit_proto::metastore_api::{IndexMetadataRequest, ListSplitsRequest};
 use quickwit_storage::Storage;
 use tokio::join;
 use tracing::{debug, error, info, info_span, instrument, Span};
@@ -218,14 +220,21 @@ impl IndexingPipeline {
             },
             merge_policy.clone(),
         )?;
-        let published_splits = self
+        let get_published_splits_request = ListSplitsRequest {
+            index_id: self.params.index_id.to_string(),
+            split_state: SplitState::Published.to_string(),
+            ..Default::default()
+        };
+        let published_splits_response = self
             .params
-            .metastore
-            .list_splits(&self.params.index_id, SplitState::Published, None, None)
-            .await?
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect::<Vec<_>>();
+            .metastore_service
+            .list_splits(get_published_splits_request)
+            .await?;
+        let published_splits =
+            serde_json::from_str::<Vec<Split>>(&published_splits_response.splits_serialized_json)?
+                .into_iter()
+                .map(|split| split.split_metadata)
+                .collect::<Vec<_>>();
         split_store
             .remove_dangling_splits(&published_splits)
             .await?;
@@ -237,7 +246,7 @@ impl IndexingPipeline {
         let garbage_collector = GarbageCollector::new(
             self.params.index_id.clone(),
             split_store.clone(),
-            self.params.metastore.clone(),
+            self.params.metastore_service.clone(),
         );
         let (garbage_collector_mailbox, garbage_collector_handler) = ctx
             .spawn_actor(garbage_collector)
@@ -247,7 +256,7 @@ impl IndexingPipeline {
         // Merge publisher
         let merge_publisher = Publisher::new(
             PublisherType::MergePublisher,
-            self.params.metastore.clone(),
+            self.params.metastore_service.clone(),
             merge_planner_mailbox.clone(),
             garbage_collector_mailbox.clone(),
             None,
@@ -266,7 +275,7 @@ impl IndexingPipeline {
         // Merge uploader
         let merge_uploader = Uploader::new(
             "MergeUploader",
-            self.params.metastore.clone(),
+            self.params.metastore_service.clone(),
             split_store.clone(),
             merge_sequencer_mailbox,
         );
@@ -342,7 +351,7 @@ impl IndexingPipeline {
         // Publisher
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
-            self.params.metastore.clone(),
+            self.params.metastore_service.clone(),
             merge_planner_mailbox,
             garbage_collector_mailbox,
             Some(source_mailbox.clone()),
@@ -361,7 +370,7 @@ impl IndexingPipeline {
         // Uploader
         let uploader = Uploader::new(
             "Uploader",
-            self.params.metastore.clone(),
+            self.params.metastore_service.clone(),
             split_store.clone(),
             sequencer_mailbox,
         );
@@ -381,7 +390,7 @@ impl IndexingPipeline {
             self.params.index_id.clone(),
             self.params.doc_mapper.clone(),
             self.params.source.source_id.clone(),
-            self.params.metastore.clone(),
+            self.params.metastore_service.clone(),
             self.params.indexing_directory.clone(),
             self.params.indexing_settings.clone(),
             packager_mailbox,
@@ -392,11 +401,15 @@ impl IndexingPipeline {
             .spawn();
 
         // Fetch index_metadata to be sure to have the last updated checkpoint.
-        let index_metadata = self
+        let index_metadata_response = self
             .params
-            .metastore
-            .index_metadata(&self.params.index_id)
+            .metastore_service
+            .index_metadata(IndexMetadataRequest {
+                index_id: self.params.index_id.to_string(),
+            })
             .await?;
+        let index_metadata: IndexMetadata =
+            serde_json::from_str(&index_metadata_response.index_metadata_serialized_json)?;
         let source_checkpoint = index_metadata
             .checkpoint
             .source_checkpoint(&self.params.source.source_id)
@@ -572,7 +585,7 @@ pub struct IndexingPipelineParams {
     pub source: SourceConfig,
     pub split_store_max_num_bytes: usize,
     pub split_store_max_num_splits: usize,
-    pub metastore: Arc<dyn Metastore>,
+    pub metastore_service: MetastoreService,
     pub storage: Arc<dyn Storage>,
 }
 
@@ -583,7 +596,7 @@ impl IndexingPipelineParams {
         indexing_dir_path: PathBuf,
         split_store_max_num_bytes: usize,
         split_store_max_num_splits: usize,
-        metastore: Arc<dyn Metastore>,
+        metastore_service: MetastoreService,
         storage: Arc<dyn Storage>,
     ) -> anyhow::Result<Self> {
         let doc_mapper = build_doc_mapper(
@@ -603,7 +616,7 @@ impl IndexingPipelineParams {
             source,
             split_store_max_num_bytes,
             split_store_max_num_splits,
-            metastore,
+            metastore_service,
             storage,
         })
     }
@@ -616,6 +629,7 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_config::{IndexingSettings, SourceParams};
+    use quickwit_control_plane::MetastoreService;
     use quickwit_doc_mapper::default_doc_mapper_for_tests;
     use quickwit_metastore::{IndexMetadata, MetastoreError, MockMetastore};
     use quickwit_storage::RamStorage;
@@ -700,6 +714,7 @@ mod tests {
             source_id: "test-source".to_string(),
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
         };
+        let metastore_service = MetastoreService::from_metastore(Arc::new(metastore));
         let indexing_pipeline_params = IndexingPipelineParams {
             index_id: "test-index".to_string(),
             doc_mapper: Arc::new(default_doc_mapper_for_tests()),
@@ -708,7 +723,7 @@ mod tests {
             split_store_max_num_bytes: 10_000_000,
             split_store_max_num_splits: 100,
             source: source_config,
-            metastore: Arc::new(metastore),
+            metastore_service,
             storage: Arc::new(RamStorage::default()),
         };
         let pipeline = IndexingPipeline::new(indexing_pipeline_params);
@@ -782,6 +797,7 @@ mod tests {
             source_id: "test-source".to_string(),
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
         };
+        let metastore_service = MetastoreService::from_metastore(Arc::new(metastore));
         let pipeline_params = IndexingPipelineParams {
             index_id: "test-index".to_string(),
             doc_mapper: Arc::new(default_doc_mapper_for_tests()),
@@ -790,7 +806,7 @@ mod tests {
             split_store_max_num_bytes: 10_000_000,
             split_store_max_num_splits: 100,
             source,
-            metastore: Arc::new(metastore),
+            metastore_service,
             storage: Arc::new(RamStorage::default()),
         };
         let pipeline = IndexingPipeline::new(pipeline_params);

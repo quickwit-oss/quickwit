@@ -31,7 +31,7 @@ use thiserror::Error;
 use tracing::{info, warn};
 
 /// PartitionId identifies a partition for a given source.
-#[derive(Debug, Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Default, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct PartitionId(pub Arc<String>);
 
 impl From<String> for PartitionId {
@@ -73,7 +73,7 @@ impl From<i64> for PartitionId {
 ///
 /// The empty string can be used to represent the beginning of the source,
 /// if no position makes sense. It can be built via `Position::default()`.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum Position {
     Beginning,
     Offset(Arc<String>),
@@ -256,7 +256,7 @@ impl<'de> Deserialize<'de> for SourceCheckpoint {
 /// Error returned when trying to apply a checkpoint delta to a checkpoint that is not
 /// compatible. ie: the checkpoint delta starts from a point anterior to
 /// the checkpoint.
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug, PartialEq, Serialize, Deserialize)]
 #[error(
     "IncompatibleChkptDelta at partition: {partition_id:?} cur_pos:{current_position:?} \
      delta_pos:{delta_position_from:?}"
@@ -358,7 +358,7 @@ impl fmt::Debug for SourceCheckpoint {
 }
 
 /// A partition delta represents an interval (from, to] over a partition of a source.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 struct PartitionDelta {
     pub from: Position,
     pub to: Position,
@@ -374,12 +374,12 @@ struct PartitionDelta {
 /// partition not only a new position, but also an expected
 /// `from` position. This makes it possible to defensively check that
 /// we are not trying to add documents to the index that were already indexed.
-#[derive(Default, Clone, Eq, PartialEq)]
+#[derive(Default, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceCheckpointDelta {
     per_partition: BTreeMap<PartitionId, PartitionDelta>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct IndexCheckpointDelta {
     pub source_id: String,
     pub source_delta: SourceCheckpointDelta,
