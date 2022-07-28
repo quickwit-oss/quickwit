@@ -51,7 +51,6 @@ tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
 tokio-util = { version = "0.7", features = ["full"] }
 tracing = "0.1.29"
-tracing-futures = "0.2.5"
 tracing-opentelemetry = "0.17"
 
 [dev-dependencies]

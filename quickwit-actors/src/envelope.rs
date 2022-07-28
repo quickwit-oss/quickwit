@@ -33,8 +33,37 @@ use crate::{Actor, ActorContext, ActorExitStatus, Handler};
 /// queue with a single type.
 /// Before appending, we capture the right handler implementation
 /// in the form of a `Box<dyn Envelope>`, and append that to the queue.
+
+pub struct Envelope<A>(Box<dyn EnvelopeT<A>>);
+
+impl<A: Actor> Envelope<A> {
+    /// Returns the message as a boxed any.
+    ///
+    /// This method is only useful in unit tests.
+    pub fn message(&mut self) -> Box<dyn Any> {
+        self.0.message()
+    }
+
+    /// Execute the captured handle function.
+    pub async fn handle_message(
+        &mut self,
+        msg_id: u64,
+        actor: &mut A,
+        ctx: &ActorContext<A>,
+    ) -> Result<(), ActorExitStatus> {
+        self.0.handle_message(msg_id, actor, ctx).await
+    }
+}
+
+impl<A: Actor> fmt::Debug for Envelope<A> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let msg_str = self.0.debug_msg();
+        f.debug_tuple("Envelope").field(&msg_str).finish()
+    }
+}
+
 #[async_trait]
-pub(crate) trait Envelope<A: Actor>: Send + Sync {
+trait EnvelopeT<A: Actor>: Send + Sync {
     fn debug_msg(&self) -> String;
 
     /// Returns the message as a boxed any.
@@ -52,7 +81,7 @@ pub(crate) trait Envelope<A: Actor>: Send + Sync {
 }
 
 #[async_trait]
-impl<A, M> Envelope<A> for Option<(oneshot::Sender<A::Reply>, M)>
+impl<A, M> EnvelopeT<A> for Option<(oneshot::Sender<A::Reply>, M)>
 where
     A: Handler<M>,
     M: 'static + Send + Sync + fmt::Debug,
@@ -92,12 +121,12 @@ where
     }
 }
 
-pub(crate) fn wrap_in_envelope<A, M>(msg: M) -> (Box<dyn Envelope<A>>, oneshot::Receiver<A::Reply>)
+pub(crate) fn wrap_in_envelope<A, M>(msg: M) -> (Envelope<A>, oneshot::Receiver<A::Reply>)
 where
     A: Handler<M>,
     M: 'static + Send + Sync + fmt::Debug,
 {
     let (response_tx, response_rx) = oneshot::channel();
     let envelope = Some((response_tx, msg));
-    (Box::new(envelope) as Box<dyn Envelope<A>>, response_rx)
+    (Envelope(Box::new(envelope)), response_rx)
 }

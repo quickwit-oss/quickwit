@@ -30,7 +30,9 @@ use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_common::new_coolid;
 use quickwit_config::KafkaSourceParams;
-use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
+use quickwit_metastore::checkpoint::{
+    PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
+};
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::stream_consumer::StreamConsumer;
 use rdkafka::consumer::{Consumer, ConsumerContext, Rebalance};
@@ -182,7 +184,7 @@ impl Source for KafkaSource {
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let mut docs = Vec::new();
-        let mut checkpoint_delta = CheckpointDelta::default();
+        let mut checkpoint_delta = SourceCheckpointDelta::default();
 
         let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT / 2);
         let mut message_stream = Box::pin(self.consumer.stream().take_until(deadline));
@@ -913,7 +915,7 @@ mod kafka_broker_tests {
             ];
             assert_eq!(batch.docs, expected_docs);
 
-            let mut expected_checkpoint_delta = CheckpointDelta::default();
+            let mut expected_checkpoint_delta = SourceCheckpointDelta::default();
             for partition in 0u64..3u64 {
                 expected_checkpoint_delta.record_partition_delta(
                     PartitionId::from(partition),
@@ -965,7 +967,7 @@ mod kafka_broker_tests {
             let expected_docs = vec!["Message #002", "Message #200", "Message #202"];
             assert_eq!(batch.docs, expected_docs);
 
-            let mut expected_checkpoint_delta = CheckpointDelta::default();
+            let mut expected_checkpoint_delta = SourceCheckpointDelta::default();
             expected_checkpoint_delta.record_partition_delta(
                 PartitionId::from(0u64),
                 Position::from(0u64),

@@ -50,7 +50,7 @@ quickwit-storage = { version = "0.3.1", path = "../quickwit-storage" }
 quickwit-telemetry = { version = "0.3.1", path = "../quickwit-telemetry" }
 regex = "1.6.0"
 serde_json = "1.0"
-tabled = "0.7"
+tabled = "0.8"
 tempfile = "3"
 thousands = "0.2.0"
 tikv-jemalloc-ctl = "0.5"

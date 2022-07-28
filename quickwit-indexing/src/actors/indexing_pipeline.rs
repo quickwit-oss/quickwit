@@ -247,7 +247,6 @@ impl IndexingPipeline {
         // Merge publisher
         let merge_publisher = Publisher::new(
             PublisherType::MergePublisher,
-            self.params.source.source_id.clone(),
             self.params.metastore.clone(),
             merge_planner_mailbox.clone(),
             garbage_collector_mailbox.clone(),
@@ -343,7 +342,6 @@ impl IndexingPipeline {
         // Publisher
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
-            self.params.source.source_id.clone(),
             self.params.metastore.clone(),
             merge_planner_mailbox,
             garbage_collector_mailbox,
@@ -684,13 +682,17 @@ mod tests {
             .returning(|_, _| Ok(()));
         metastore
             .expect_publish_splits()
-            .withf(|index_id, source_id, splits, checkpoint_delta| -> bool {
-                index_id == "test-index"
-                    && source_id == "test-source"
-                    && splits.len() == 1
-                    && format!("{:?}", checkpoint_delta)
-                        .ends_with(":(00000000000000000000..00000000000000001030])")
-            })
+            .withf(
+                |index_id, splits, replaced_splits, checkpoint_delta_opt| -> bool {
+                    let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
+                    index_id == "test-index"
+                        && checkpoint_delta.source_id == "test-source"
+                        && splits.len() == 1
+                        && replaced_splits.is_empty()
+                        && format!("{:?}", checkpoint_delta.source_delta)
+                            .ends_with(":(00000000000000000000..00000000000000001030])")
+                },
+            )
             .times(1)
             .returning(|_, _, _, _| Ok(()));
         let universe = Universe::new();
@@ -736,7 +738,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_indexing_pipeline() -> anyhow::Result<()> {
+    async fn test_indexing_pipeline_simple() -> anyhow::Result<()> {
         let mut metastore = MockMetastore::default();
         metastore
             .expect_index_metadata()
@@ -762,13 +764,17 @@ mod tests {
             .returning(|_, _| Ok(()));
         metastore
             .expect_publish_splits()
-            .withf(|index_id, source_id, splits, checkpoint_delta| -> bool {
-                index_id == "test-index"
-                    && source_id == "test-source"
-                    && splits.len() == 1
-                    && format!("{:?}", checkpoint_delta)
-                        .ends_with(":(00000000000000000000..00000000000000001030])")
-            })
+            .withf(
+                |index_id, splits, replaced_split_ids, checkpoint_delta_opt| -> bool {
+                    let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
+                    index_id == "test-index"
+                        && splits.len() == 1
+                        && replaced_split_ids.is_empty()
+                        && checkpoint_delta.source_id == "test-source"
+                        && format!("{:?}", checkpoint_delta.source_delta)
+                            .ends_with(":(00000000000000000000..00000000000000001030])")
+                },
+            )
             .times(1)
             .returning(|_, _, _, _| Ok(()));
         let universe = Universe::new();

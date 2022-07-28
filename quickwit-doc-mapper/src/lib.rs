@@ -77,7 +77,7 @@ pub fn default_doc_mapper_for_tests() -> DefaultDocMapper {
                 },
                 {
                     "name": "response_date",
-                    "type": "date",
+                    "type": "datetime",
                     "fast": true
                 },
                 {

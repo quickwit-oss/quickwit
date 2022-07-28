@@ -30,12 +30,9 @@ pub(crate) fn build_query(
     schema: Schema,
     request: &SearchRequest,
     default_field_names: &[String],
-    // date_time_parsers: HashSet<String, DateTimeParsersHolder>,
 ) -> Result<Box<dyn Query>, QueryParserError> {
     let user_input_ast = tantivy_query_grammar::parse_query(&request.query)
         .map_err(|_| TantivyQueryParserError::SyntaxError(request.query.to_string()))?;
-
-    // TODO: change ast to support event_date:2012-03-12
 
     if let Some(sort_by_field) = request.sort_by_field.as_ref() {
         validate_sort_by_field_name(sort_by_field, &schema)?;

@@ -84,11 +84,11 @@ Today, only the s3 storage is available when running several searcher nodes.
 
 ## Doc mapping
 
-The doc mapping defines how a document and the fields it contains are stored and indexed for a given index. A document is a collection of named fields, each having its own data type (text, binary, date, i64, u64, f64).
+The doc mapping defines how a document and the fields it contains are stored and indexed for a given index. A document is a collection of named fields, each having its own data type (text, binary, datetime, i64, u64, f64).
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `field_mappings` | Collection of field mapping, each having its own data type (text, binary, date, i64, u64, f64).   | [] |
+| `field_mappings` | Collection of field mapping, each having its own data type (text, binary, datetime, i64, u64, f64).   | [] |
 | `mode`        | Defines how quickwit should handle document fields that are not present in the `field_mappings`. In particular, the "dynamic" mode makes it possible to use quickwit in a schemaless manner. (See [mode](#mode)) | `lenient`
 | `dynamic_mapping` | This parameter is only allowed when `mode` is set to `dynamic`. It then defines whether dynamically mapped fields should be indexed, stored, etc.  | (See [mode](#mode))
 | `tag_fields` | Collection of fields already defined in `field_mappings` whose values will be stored in a dedicated `tags` (1) | [] |
@@ -99,7 +99,7 @@ The doc mapping defines how a document and the fields it contains are stored and
 ### Field types
 
 Each field has a type that indicates the kind of data it contains, such as integer on 64 bits or text.
-Quickwit supports the following raw types `text`, `i64`, `u64`, `f64`, `date`, and `bytes`, and also supports composite types such as array and object. Behind the scenes, Quickwit is using tantivy field types, don't hesitate to look at [tantivy documentation](https://github.com/tantivy-search/tantivy) if you want to go into the details.
+Quickwit supports the following raw types `text`, `i64`, `u64`, `f64`, `datetime`, and `bytes`, and also supports composite types such as array and object. Behind the scenes, Quickwit is using tantivy field types, don't hesitate to look at [tantivy documentation](https://github.com/tantivy-search/tantivy) if you want to go into the details.
 
 ### Raw types
 
@@ -172,22 +172,22 @@ fast: true
 | `indexed`   | Whether value is indexed | `true` |
 | `fast`      | Whether value is stored in a fast field | `false` |
 
-#### `date` type
+#### `datetime` type
 
-The `date` type can accepts multiple formats and a storage precision. The following formats are supported but need to be explicitly requested via configuration.
+The `datetime` type can accepts multiple formats and a storage precision. The following formats are supported but need to be explicitly requested via configuration.
 - `rfc3339`, `rfc2822`, `iso8601`: Parsing dates using standard specified formats.
-- `Strftime`: Parsing dates using the unix [strftime](https://man7.org/linux/man-pages/man3/strftime.3.html) format.
+- `strftime`: Parsing dates using the Unix [strftime](https://man7.org/linux/man-pages/man3/strftime.3.html) format.
 - `unix_ts_secs`, `unix_ts_millis`, `unix_ts_micros`: Parsing dates from numbers (timestamp). Only one can be used in configuration. `unix_ts_secs` is added to the list by default if none is specified. 
 
 :::info
 When accepting multiple formats, the corresponding parsers are tried in order they are declared. 
 :::
 
-Example of a mapping for a date field:
+Example of a mapping for a datetime field:
 
 ```yaml
 name: timestamp
-type: date
+type: datetime
 input_formats:
   - "rfc3339"
   - "unix_ts_millis"
@@ -198,11 +198,11 @@ indexed: true
 fast: true
 ```
 
-**Parameters for date field**
+**Parameters for datetime field**
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `input_formats` | Formats used to parse input document date fields | [`rfc3339`, `unix_ts_secs`] |
+| `input_formats` | Formats used to parse input document datetime fields | [`rfc3339`, `unix_ts_secs`] |
 | `precision`     | The precision used to store the underlying fast value | `seconds` |
 | `stored`        | Whether value is stored in the document store | `true` |
 | `indexed`       | Whether value is indexed | `true` |

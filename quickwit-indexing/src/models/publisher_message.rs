@@ -20,55 +20,30 @@
 use std::fmt;
 use std::time::Instant;
 
-use quickwit_metastore::checkpoint::CheckpointDelta;
+use itertools::Itertools;
+use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::SplitMetadata;
 
-/// Publish a new split, coming from the indexer.
-pub struct PublishNewSplit {
-    pub index_id: String,
-    pub new_split: SplitMetadata,
-    pub checkpoint_delta: CheckpointDelta,
-    pub split_date_of_birth: Instant, // for logging
-}
-
-impl fmt::Debug for PublishNewSplit {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("PublishNewSplit")
-            .field("index_id", &self.index_id)
-            .field("new_split_id", &self.new_split.split_id())
-            .field("checkpoint_delta", &self.checkpoint_delta)
-            .field(
-                "tts_in_secs",
-                &self.split_date_of_birth.elapsed().as_secs_f32(),
-            )
-            .finish()
-    }
-}
-
-/// Publish a merge, replacing several splits (typically 10)
-/// by a single larger split.
-pub struct ReplaceSplits {
+pub struct SplitUpdate {
     pub index_id: String,
     pub new_splits: Vec<SplitMetadata>,
     pub replaced_split_ids: Vec<String>,
+    pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+    pub date_of_birth: Instant, // for logging
 }
 
-impl fmt::Debug for ReplaceSplits {
+impl fmt::Debug for SplitUpdate {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let new_split_ids: Vec<String> = self
+        let new_split_ids: String = self
             .new_splits
             .iter()
-            .map(|split| split.split_id().to_string())
-            .collect();
-        f.debug_struct("ReplaceSplits")
-            .field("new_split_ids", &new_split_ids)
-            .field("replaced_split_ids", &self.replaced_split_ids)
+            .map(|split| split.split_id())
+            .join(",");
+        f.debug_struct("SplitUpdate")
+            .field("index_id", &self.index_id)
+            .field("new_splits", &new_split_ids)
+            .field("checkpoint_delta", &self.checkpoint_delta_opt)
+            .field("tts_in_secs", &self.date_of_birth.elapsed().as_secs_f32())
             .finish()
     }
-}
-
-#[derive(Debug)]
-pub enum PublisherMessage {
-    NewSplit(PublishNewSplit),
-    ReplaceSplits(ReplaceSplits),
 }

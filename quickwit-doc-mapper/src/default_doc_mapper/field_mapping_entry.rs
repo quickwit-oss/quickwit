@@ -25,7 +25,7 @@ use tantivy::schema::{
     Cardinality, IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type,
 };
 
-use super::date_time_type::QuickwitDateOptions;
+use super::date_time_type::QuickwitDateTimeOptions;
 use super::{default_as_true, FieldMappingType};
 use crate::default_doc_mapper::field_mapping_type::QuickwitFieldType;
 use crate::default_doc_mapper::validate_field_mapping_name;
@@ -281,8 +281,8 @@ fn deserialize_mapping_type(
             Ok(FieldMappingType::Bool(numeric_options, cardinality))
         }
         Type::Date => {
-            let date_time_options = serde_json::from_value::<QuickwitDateOptions>(json)?;
-            Ok(FieldMappingType::Date(date_time_options, cardinality))
+            let date_time_options = serde_json::from_value::<QuickwitDateTimeOptions>(json)?;
+            Ok(FieldMappingType::DateTime(date_time_options, cardinality))
         }
         Type::Facet => unimplemented!("Facet are not supported in quickwit yet."),
         Type::Bytes => {
@@ -343,7 +343,7 @@ fn typed_mapping_to_json_params(
         | FieldMappingType::Bytes(options, _)
         | FieldMappingType::F64(options, _)
         | FieldMappingType::Bool(options, _) => serialize_to_map(&options),
-        FieldMappingType::Date(date_time_options, _) => serialize_to_map(&date_time_options),
+        FieldMappingType::DateTime(date_time_options, _) => serialize_to_map(&date_time_options),
         FieldMappingType::Json(json_options, _) => serialize_to_map(&json_options),
         FieldMappingType::Object(object_options) => serialize_to_map(&object_options),
     }
@@ -878,7 +878,7 @@ mod tests {
             r#"
             {
                 "name": "my_field_name",
-                "type": "date"
+                "type": "datetime"
             }
             "#,
         )
@@ -888,7 +888,7 @@ mod tests {
             entry_deserser,
             json!({
                 "name": "my_field_name",
-                "type": "date",
+                "type": "datetime",
                 "input_formats": ["rfc3339", "unix_ts_secs"],
                 "precision": "seconds",
                 "stored": true,
@@ -904,7 +904,7 @@ mod tests {
             r#"
             {
                 "name": "my_field_name",
-                "type": "array<date>",
+                "type": "array<datetime>",
                 "precision": "milliseconds"
             }
             "#,
@@ -915,7 +915,7 @@ mod tests {
             entry_deserser,
             json!({
                 "name": "my_field_name",
-                "type": "array<date>",
+                "type": "array<datetime>",
                 "input_formats": ["rfc3339", "unix_ts_secs"],
                 "precision": "milliseconds",
                 "stored": true,
