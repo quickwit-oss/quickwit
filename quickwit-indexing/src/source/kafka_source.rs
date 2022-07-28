@@ -24,7 +24,6 @@ use std::time::Duration;
 
 use anyhow::{bail, Context};
 use async_trait::async_trait;
-use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::KafkaSourceParams;
@@ -34,14 +33,15 @@ use rdkafka::consumer::stream_consumer::StreamConsumer;
 use rdkafka::consumer::{
     BaseConsumer, Consumer, ConsumerContext, DefaultConsumerContext, Rebalance,
 };
-use rdkafka::error::KafkaError;
+use rdkafka::error::{KafkaError, KafkaResult};
 use rdkafka::message::BorrowedMessage;
 use rdkafka::util::Timeout;
-use rdkafka::{ClientContext, Message, Offset};
+use rdkafka::{ClientContext, Message, Offset, TopicPartitionList};
 use serde_json::json;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 use tokio::task::spawn_blocking;
+use tokio::time;
 use tracing::{debug, info, warn};
 
 use crate::actors::Indexer;
@@ -89,6 +89,7 @@ impl ClientContext for RdKafkaContext {}
 
 impl ConsumerContext for RdKafkaContext {
     fn pre_rebalance(&self, rebalance: &Rebalance) {
+        info!("Pre rebalance {:?}", rebalance);
         let source_id = self.ctx.config.source_id.clone();
 
         let mut assignments = HashMap::new();
@@ -186,6 +187,46 @@ impl ConsumerContext for RdKafkaContext {
         );
         // TODO: handle the sending error.
     }
+
+    fn post_rebalance(&self, rebalance: &Rebalance) {
+        info!("Post rebalance {:?}", rebalance);
+    }
+
+    fn commit_callback(&self, result: KafkaResult<()>, _offsets: &TopicPartitionList) {
+        info!("Committing offsets: {:?}", result);
+    }
+}
+
+#[derive(Debug)]
+pub enum NumActivePartitions {
+    Initializing,
+    Some(usize),
+}
+
+impl NumActivePartitions {
+    fn dec(&mut self) {
+        match self {
+            Self::Initializing => panic!("We should not decrement the number of active partitions while initializing the source. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."),
+            Self::Some(ref mut counter) => *counter -= 1,
+        }
+    }
+
+    fn is_zero(&self) -> bool {
+        matches!(self, Self::Some(0))
+    }
+
+    fn json(&self) -> serde_json::Value {
+        match self {
+            Self::Initializing => json!(null),
+            Self::Some(ref counter) => json!(counter),
+        }
+    }
+}
+
+impl Default for NumActivePartitions {
+    fn default() -> Self {
+        Self::Initializing
+    }
 }
 
 type RdKafkaConsumer = StreamConsumer<RdKafkaContext>;
@@ -197,7 +238,7 @@ pub struct KafkaSourceState {
     /// Offset for each partition of the last message received.
     pub current_positions: HashMap<i32, Position>,
     /// Number of active partitions, i.e., that have not reached EOF.
-    pub num_active_partitions: usize,
+    pub num_active_partitions: NumActivePartitions,
     /// Number of bytes processed by the source.
     pub num_bytes_processed: u64,
     /// Number of messages processed by the source (including invalid messages).
@@ -213,6 +254,7 @@ pub struct KafkaSource {
     consumer: Arc<RdKafkaConsumer>,
     state: KafkaSourceState,
     rebalance_events: mpsc::Receiver<RebalanceEvent>,
+    backfill_mode_enabled: bool,
 }
 
 impl fmt::Debug for KafkaSource {
@@ -233,6 +275,7 @@ impl KafkaSource {
         _checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
         let topic = params.topic.clone();
+        let backfill_mode_enabled = params.enable_backfill_mode;
 
         let (rebalance_sender, rebalance_receiver) = mpsc::channel(32);
 
@@ -247,8 +290,6 @@ impl KafkaSource {
             .context("Failed to resume from checkpoint.")?;
 
         let state = KafkaSourceState {
-            assigned_partition_ids: HashMap::new(),
-            num_active_partitions: 0,
             ..Default::default()
         };
         Ok(KafkaSource {
@@ -257,6 +298,7 @@ impl KafkaSource {
             consumer,
             state,
             rebalance_events: rebalance_receiver,
+            backfill_mode_enabled,
         })
     }
 }
@@ -268,13 +310,12 @@ impl Source for KafkaSource {
         batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
+        let mut batch_num_bytes = 0;
         let mut docs = Vec::new();
         let mut checkpoint_delta = CheckpointDelta::default();
 
-        let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT / 2);
-        let mut message_stream = Box::pin(self.consumer.stream().take_until(deadline));
-
-        let mut batch_num_bytes = 0;
+        let deadline = time::sleep(quickwit_actors::HEARTBEAT / 2);
+        tokio::pin!(deadline);
 
         loop {
             tokio::select! {
@@ -288,7 +329,7 @@ impl Source for KafkaSource {
                                 },
                                 RebalanceEvent::Assignments(assignments) => {
                                     debug!("Received partition assignments {:?}", assignments);
-                                    self.state.num_active_partitions = assignments.len();
+                                    self.state.num_active_partitions = NumActivePartitions::Some(assignments.len());
                                     self.state.assigned_partition_ids = assignments;
                                 }
                             }
@@ -296,71 +337,65 @@ impl Source for KafkaSource {
                         None => {}
                     }
                 },
-                kafka_res = message_stream.next() => {
-                    if let Some(message_res) = kafka_res {
-                        let message = match message_res {
-                            Ok(message) => message,
-                            Err(KafkaError::PartitionEOF(partition_id)) => {
-                                self.state.num_active_partitions -= 1;
-                                info!(
-                                    topic = %self.topic,
-                                    partition_id = ?partition_id,
-                                    num_active_partitions = ?self.state.num_active_partitions,
-                                    "Reached end of partition."
-                                );
-                                continue;
-                            }
-                            // FIXME: This is assuming that Kafka errors are not recoverable, it may not be the
-                            // case.
-                            Err(err) => return Err(ActorExitStatus::from(anyhow::anyhow!(err))),
-                        };
-                        if let Some(doc) = parse_message_payload(&message) {
-                            docs.push(doc);
-                        } else {
-                            self.state.num_invalid_messages += 1;
+                message_res = self.consumer.recv() => {
+                    let message = match message_res {
+                        Ok(message) => message,
+                        Err(KafkaError::PartitionEOF(partition_id)) => {
+                            self.state.num_active_partitions.dec();
+                            info!(
+                                topic = %self.topic,
+                                partition_id = ?partition_id,
+                                num_active_partitions = ?self.state.num_active_partitions,
+                                "Reached end of partition."
+                            );
+                            continue;
                         }
-                        batch_num_bytes += message.payload_len() as u64;
-                        self.state.num_bytes_processed += message.payload_len() as u64;
-                        self.state.num_messages_processed += 1;
-
-                        let partition_id = self
-                            .state
-                            .assigned_partition_ids
-                            .get(&message.partition())
-                            .ok_or_else(|| {
-                                anyhow::anyhow!(
-                                    "Received message from unassigned partition `{}`. Assigned partitions: \
-                                     `{{{}}}`.",
-                                    message.partition(),
-                                    self.state.assigned_partition_ids.keys().join(", "),
-                                )
-                            })?
-                            .clone();
-                        let current_position = Position::from(message.offset());
-                        let previous_position = self
-                            .state
-                            .current_positions
-                            .insert(message.partition(), current_position.clone())
-                            .unwrap_or_else(|| previous_position_for_offset(message.offset()));
-                        checkpoint_delta
-                            .record_partition_delta(partition_id, previous_position, current_position)
-                            .context("Failed to record partition delta.")?;
-
-                        if batch_num_bytes >= TARGET_BATCH_NUM_BYTES {
-                            break;
-                        }
-                        ctx.record_progress();
+                        // FIXME: This is assuming that Kafka errors are not recoverable, it may not be the
+                        // case.
+                        Err(err) => return Err(ActorExitStatus::from(anyhow::anyhow!(err))),
+                    };
+                    if let Some(doc) = parse_message_payload(&message) {
+                        docs.push(doc);
                     } else {
-                        // TODO: this is probably not what should happen here.
-                        // In this case there is no current data in the topic but on a live stream
-                        // more data may come. This should ideally wait for a period of time for new
-                        // data to arrive before returning.
+                        self.state.num_invalid_messages += 1;
+                    }
+                    batch_num_bytes += message.payload_len() as u64;
+                    self.state.num_bytes_processed += message.payload_len() as u64;
+                    self.state.num_messages_processed += 1;
+
+                    let partition_id = self
+                        .state
+                        .assigned_partition_ids
+                        .get(&message.partition())
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Received message from unassigned partition `{}`. Assigned partitions: \
+                                 `{{{}}}`.",
+                                message.partition(),
+                                self.state.assigned_partition_ids.keys().join(", "),
+                            )
+                        })?
+                        .clone();
+                    let current_position = Position::from(message.offset());
+                    let previous_position = self
+                        .state
+                        .current_positions
+                        .insert(message.partition(), current_position.clone())
+                        .unwrap_or_else(|| previous_position_for_offset(message.offset()));
+                    checkpoint_delta
+                        .record_partition_delta(partition_id, previous_position, current_position)
+                        .context("Failed to record partition delta.")?;
+
+                    if batch_num_bytes >= TARGET_BATCH_NUM_BYTES {
                         break;
                     }
+                    ctx.record_progress();
+                }
+                _ = &mut deadline => {
+                    break;
                 }
             }
         }
-
         if !checkpoint_delta.is_empty() {
             let batch = RawDocBatch {
                 docs,
@@ -368,14 +403,11 @@ impl Source for KafkaSource {
             };
             ctx.send_message(batch_sink, batch).await?;
         }
-
-        // TODO: not entirely sure why this is here. Seems like this would prevent stream processing
-        if self.state.num_active_partitions == 0 {
+        if self.backfill_mode_enabled && self.state.num_active_partitions.is_zero() {
             info!(topic = %self.topic, "Reached end of topic.");
             ctx.send_exit_with_success(batch_sink).await?;
             return Err(ActorExitStatus::Success);
         }
-
         debug!("batch complete, waiting for next iteration");
         Ok(Duration::default())
     }
@@ -404,7 +436,7 @@ impl Source for KafkaSource {
             "topic": self.topic,
             "assigned_partition_ids": assigned_partition_ids,
             "current_positions": current_positions,
-            "num_active_partitions": self.state.num_active_partitions,
+            "num_active_partitions": self.state.num_active_partitions.json(),
             "num_bytes_processed": self.state.num_bytes_processed,
             "num_messages_processed": self.state.num_messages_processed,
             "num_invalid_messages": self.state.num_invalid_messages,
@@ -724,6 +756,7 @@ mod kafka_broker_tests {
                     "bootstrap.servers": bootstrap_servers,
                     "enable.partition.eof": true,
                 }),
+                enable_backfill_mode: true,
             }),
         };
 
@@ -952,6 +985,7 @@ mod kafka_broker_tests {
             topic: topic.clone(),
             client_log_level: None,
             client_params: json!({ "bootstrap.servers": bootstrap_servers }),
+            enable_backfill_mode: true,
         })
         .await?;
 
@@ -963,6 +997,7 @@ mod kafka_broker_tests {
             topic: "non-existent-topic".to_string(),
             client_log_level: None,
             client_params: json!({ "bootstrap.servers": bootstrap_servers }),
+            enable_backfill_mode: true,
         })
         .await;
 
@@ -975,6 +1010,7 @@ mod kafka_broker_tests {
             client_params: json!({
                 "bootstrap.servers": "192.0.2.10:9092"
             }),
+            enable_backfill_mode: true,
         })
         .await;
 
