@@ -31,7 +31,7 @@ use thiserror::Error;
 use tracing::{info, warn};
 
 /// PartitionId identifies a partition for a given source.
-#[derive(Debug, Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Default, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct PartitionId(pub Arc<String>);
 
 impl From<String> for PartitionId {
@@ -73,7 +73,7 @@ impl From<i64> for PartitionId {
 ///
 /// The empty string can be used to represent the beginning of the source,
 /// if no position makes sense. It can be built via `Position::default()`.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum Position {
     Beginning,
     Offset(Arc<String>),
@@ -356,7 +356,7 @@ impl fmt::Debug for SourceCheckpoint {
 }
 
 /// A partition delta represents an interval (from, to] over a partition of a source.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 struct PartitionDelta {
     pub from: Position,
     pub to: Position,
@@ -372,7 +372,7 @@ struct PartitionDelta {
 /// partition not only a new position, but also an expected
 /// `from` position. This makes it possible to defensively check that
 /// we are not trying to add documents to the index that were already indexed.
-#[derive(Default, Clone, Eq, PartialEq)]
+#[derive(Default, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CheckpointDelta {
     per_partition: BTreeMap<PartitionId, PartitionDelta>,
 }

@@ -1,0 +1,144 @@
+// Copyright (C) 2022 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+
+syntax = "proto3";
+
+package index_management_api;
+
+service IndexManagementService {
+  // Create an index
+  rpc create_index(CreateIndexRequest) returns (CreateIndexResponse);
+
+  // Get an index metadata.
+  rpc index_metadata(IndexMetadataRequest) returns (IndexMetadataResponse);
+
+  // Get an indexes metadatas.
+  rpc list_indexes_metadatas(ListIndexesMetadatasRequest) returns (ListIndexesMetadatasResponse);
+
+  // Delete an index
+  rpc delete_index(DeleteIndexRequest) returns (DeleteIndexResponse);
+
+  // Get all splits from index.
+  rpc list_all_splits(ListAllSplitsRequest) returns (ListSplitsResponse);
+
+  // Get splits from index.
+  rpc list_splits(ListSplitsRequest) returns (ListSplitsResponse);
+
+  // Stage split.
+  rpc stage_split(StageSplitRequest) returns (SplitResponse);
+
+  // Publish split.
+  rpc publish_splits(PublishSplitsRequest) returns (SplitResponse);
+
+  // Replace split.
+  rpc replace_splits(ReplaceSplitsRequest) returns (SplitResponse);
+
+  // Mark splits for deletion.
+  rpc mark_splits_for_deletion(MarkSplitsForDeletionRequest) returns (SplitResponse);
+
+  // TODO: add add_source and remove_source.
+}
+
+message CreateIndexRequest {
+  string index_config_serialized_json = 1;
+}
+
+message CreateIndexResponse {
+  string index_metadata_serialized_json = 1;
+}
+
+message ListIndexesMetadatasRequest {}
+
+message ListIndexesMetadatasResponse {
+  string indexes_metadatas_serialized_json = 1;
+}
+
+message DeleteIndexRequest {
+  string index_id = 1;
+}
+
+message DeleteIndexResponse {
+  repeated FileEntry file_entries = 1;
+}
+
+message FileEntry {
+  string file_name = 1;
+  uint64 file_size_in_bytes = 2;
+}
+
+message IndexMetadataRequest {
+  string index_id = 1;
+}
+
+message IndexMetadataResponse {
+  string index_metadata_serialized_json = 1;
+}
+
+message ListAllSplitsRequest {
+  string index_id = 1;
+}
+
+message ListSplitsRequest {
+  string index_id = 1;
+  string split_state = 2;
+  optional uint64 time_range_start = 3;
+  optional uint64 time_range_end = 4;
+  optional string tags_serialized_json = 5;
+}
+
+message ListSplitsResponse {
+  string splits_serialized_json = 1;
+}
+
+message StageSplitRequest {
+  string index_id = 1;
+  string split_metadata_serialized_json = 2;
+}
+
+message PublishSplitsRequest {
+  string index_id = 1;
+  string source_id = 2;
+  repeated string split_ids = 3;
+  string checkpoint_delta_serialized_json = 4;
+}
+
+message ReplaceSplitsRequest {
+  string index_id = 2;
+  repeated string new_split_ids = 3;
+  repeated string replaced_split_ids = 4;
+}
+
+message MarkSplitsForDeletionRequest {
+  string index_id = 2;
+  repeated string split_ids = 3;
+}
+
+message SplitResponse {}
+
+message AddSourceRequest {
+  string index_id = 1;
+  string source_config_serialized_json = 2;
+}
+
+message DeleteSourceRequest {
+  string index_id = 1;
+}
+
+message SourceResponse {}

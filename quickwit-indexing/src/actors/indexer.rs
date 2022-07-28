@@ -27,7 +27,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::{DocMapper, DocParsingError, SortBy, QUICKWIT_TOKENIZER_MANAGER};
-use quickwit_metastore::Metastore;
+use quickwit_index_management::IndexManagementClient;
 use tantivy::schema::{Field, Value};
 use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
@@ -130,10 +130,10 @@ impl IndexerState {
     /// the indexed_split does not exist yet.
     ///
     /// This function will then create it, and can hence return an Error.
-    async fn get_or_create_current_indexed_split<'a>(
-        &self,
+    async fn get_or_create_current_indexed_split<'a, 'b>(
+        &'a self,
         current_split_opt: &'a mut Option<IndexedSplit>,
-        ctx: &ActorContext<Indexer>,
+        ctx: &'b ActorContext<Indexer>,
     ) -> anyhow::Result<&'a mut IndexedSplit> {
         if current_split_opt.is_none() {
             let new_indexed_split = self.create_indexed_split(ctx)?;
@@ -244,7 +244,7 @@ pub struct Indexer {
     packager_mailbox: Mailbox<Packager>,
     current_split_opt: Option<IndexedSplit>,
     source_id: String,
-    metastore: Arc<dyn Metastore>,
+    index_management_client: IndexManagementClient,
     counters: IndexerCounters,
 }
 
@@ -337,7 +337,7 @@ impl Indexer {
         index_id: String,
         doc_mapper: Arc<dyn DocMapper>,
         source_id: String,
-        metastore: Arc<dyn Metastore>,
+        index_management_client: IndexManagementClient,
         indexing_directory: IndexingDirectory,
         indexing_settings: IndexingSettings,
         packager_mailbox: Mailbox<Packager>,
@@ -363,7 +363,7 @@ impl Indexer {
             packager_mailbox,
             current_split_opt: None,
             source_id,
-            metastore,
+            index_management_client,
             counters: IndexerCounters::default(),
         }
     }
@@ -418,11 +418,11 @@ impl Indexer {
         // Avoid producing empty split, but still update the checkpoint to avoid
         // reprocessing the same faulty documents.
         if indexed_split.num_docs == 0 {
-            self.metastore
+            self.index_management_client
                 .publish_splits(
-                    &indexed_split.index_id,
-                    &self.source_id,
-                    &[],
+                    indexed_split.index_id.to_string(),
+                    self.source_id.to_string(),
+                    Vec::new(),
                     indexed_split.checkpoint_delta,
                 )
                 .await
@@ -457,6 +457,7 @@ mod tests {
 
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_doc_mapper::SortOrder;
+    use quickwit_index_management::create_index_management_client_for_test;
     use quickwit_metastore::checkpoint::CheckpointDelta;
     use quickwit_metastore::MockMetastore;
 
@@ -493,17 +494,19 @@ mod tests {
                 assert!(splits.is_empty());
                 Ok(())
             });
-
+        let universe = Universe::new();
+        let index_management_client = create_index_management_client_for_test(Arc::new(metastore), &universe)
+                .await
+                .unwrap();
         let indexer = Indexer::new(
             "test-index".to_string(),
             doc_mapper,
             "source-id".to_string(),
-            Arc::new(metastore),
+            index_management_client,
             indexing_directory,
             indexing_settings,
             mailbox,
         );
-        let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
         indexer_mailbox
             .send_message(RawDocBatch {
@@ -575,17 +578,19 @@ mod tests {
                 assert!(splits.is_empty());
                 Ok(())
             });
-
+        let universe = Universe::new();
+        let index_management_client = create_index_management_client_for_test(Arc::new(metastore), &universe)
+                .await
+                .unwrap();
         let indexer = Indexer::new(
             "test-index".to_string(),
             doc_mapper,
             "source-id".to_string(),
-            Arc::new(metastore),
+            index_management_client,
             indexing_directory,
             indexing_settings,
             mailbox,
         );
-        let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
         indexer_mailbox
             .send_message(
@@ -643,16 +648,19 @@ mod tests {
                 assert!(splits.is_empty());
                 Ok(())
             });
+        let universe = Universe::new();
+        let index_management_client = create_index_management_client_for_test(Arc::new(metastore), &universe)
+                .await
+                .unwrap();
         let indexer = Indexer::new(
             "test-index".to_string(),
             doc_mapper,
             "source-id".to_string(),
-            Arc::new(metastore),
+            index_management_client,
             indexing_directory,
             indexing_settings,
             mailbox,
         );
-        let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
         indexer_mailbox
             .send_message(

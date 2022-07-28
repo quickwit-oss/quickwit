@@ -17,11 +17,17 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::io;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use actors::INDEXING_DIR_NAME;
 use itertools::Itertools;
+use models::CACHE;
 use quickwit_actors::{Mailbox, Universe};
+use quickwit_common::fs::empty_dir;
 use quickwit_config::QuickwitConfig;
+use quickwit_index_management::IndexManagementClient;
 use quickwit_ingest_api::IngestApiService;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
@@ -62,6 +68,7 @@ pub async fn start_indexer_service(
     universe: &Universe,
     config: &QuickwitConfig,
     metastore: Arc<dyn Metastore>,
+    index_management_client: IndexManagementClient,
     storage_uri_resolver: StorageUriResolver,
     ingest_api_service: Option<Mailbox<IngestApiService>>,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
@@ -69,7 +76,7 @@ pub async fn start_indexer_service(
     let indexing_server = IndexingService::new(
         config.data_dir_path.to_path_buf(),
         config.indexer_config.clone(),
-        metastore.clone(),
+        index_management_client.clone(),
         storage_uri_resolver,
         ingest_api_service.clone(),
     );
@@ -97,4 +104,45 @@ pub async fn start_indexer_service(
     }
 
     Ok(indexer_service_mailbox)
+}
+
+/// Helper function to get the cache path.
+pub fn get_cache_directory_path(data_dir_path: &Path, index_id: &str, source_id: &str) -> PathBuf {
+    data_dir_path
+        .join(INDEXING_DIR_NAME)
+        .join(index_id)
+        .join(source_id)
+        .join(CACHE)
+}
+
+/// Clears the cache directory of a given source.
+///
+/// * `data_dir_path` - Path to directory where data (tmp data, splits kept for caching purpose) is
+///   persisted.
+/// * `index_id` - The target index Id.
+/// * `source_id` -  The source Id.
+pub async fn clear_cache_directory(
+    data_dir_path: &Path,
+    index_id: String,
+    source_id: String,
+) -> anyhow::Result<()> {
+    let cache_directory_path = get_cache_directory_path(data_dir_path, &index_id, &source_id);
+    info!(path = %cache_directory_path.display(), "Clearing cache directory.");
+    empty_dir(&cache_directory_path).await?;
+    Ok(())
+}
+
+/// Removes the indexing directory of a given index.
+///
+/// * `data_dir_path` - Path to directory where data (tmp data, splits kept for caching purpose) is
+///   persisted.
+/// * `index_id` - The target index ID.
+pub async fn remove_indexing_directory(data_dir_path: &Path, index_id: String) -> io::Result<()> {
+    let indexing_directory_path = data_dir_path.join(INDEXING_DIR_NAME).join(index_id);
+    info!(path = %indexing_directory_path.display(), "Clearing indexing directory.");
+    match tokio::fs::remove_dir_all(indexing_directory_path.as_path()).await {
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
 }

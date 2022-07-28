@@ -27,7 +27,7 @@ mod rest;
 
 mod cluster_api;
 mod health_check_api;
-mod index_api;
+mod index_management_api;
 mod indexing_api;
 mod ingest_api;
 mod node_info_handler;
@@ -43,7 +43,9 @@ use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::{Cluster, QuickwitService};
 use quickwit_common::uri::Uri;
 use quickwit_config::QuickwitConfig;
-use quickwit_core::IndexService;
+use quickwit_index_management::{
+    start_control_plane_service, IndexManagementClient, IndexManagementService,
+};
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexer_service;
 use quickwit_ingest_api::{init_ingest_api, IngestApiService};
@@ -87,7 +89,7 @@ struct QuickwitServices {
     pub search_service: Arc<dyn SearchService>,
     pub indexer_service: Option<Mailbox<IndexingService>>,
     pub ingest_api_service: Option<Mailbox<IngestApiService>>,
-    pub index_service: Arc<IndexService>,
+    pub index_management_service: Option<Mailbox<IndexManagementService>>,
     pub services: HashSet<QuickwitService>,
 }
 
@@ -110,6 +112,8 @@ pub async fn serve_quickwit(
 
     let cluster = quickwit_cluster::start_cluster_service(&config, services).await?;
 
+    // Check
+
     let universe = Universe::new();
 
     let ingest_api_service: Option<Mailbox<IngestApiService>> = if services
@@ -121,12 +125,53 @@ pub async fn serve_quickwit(
         None
     };
 
+    let search_service: Arc<dyn SearchService> = start_searcher_service(
+        &config,
+        metastore.clone(),
+        storage_resolver.clone(),
+        cluster.clone(),
+    )
+    .await?;
+
+    // Start IndexManagementService (future ControlPlane).
+    let index_management_service: Option<Mailbox<IndexManagementService>> =
+        if services.contains(&QuickwitService::ControlPlane) {
+            // start_control_plane_service that returns index service mailbox is confusing.
+            let index_management_service_mailbox = start_control_plane_service(
+                &universe,
+                metastore.clone(),
+                storage_resolver.clone(),
+                config.default_index_root_uri(),
+            )
+            .await?;
+            Some(index_management_service_mailbox)
+        } else {
+            None
+        };
+
+    // Starts gRPC server now as the index management client will make gRPC calls.
+    // The indexer will need that to start.;
+    let grpc_listen_addr = config.grpc_listen_addr().await?;
+    let grpc_server = grpc::start_grpc_server(
+        grpc_listen_addr,
+        Some(search_service.clone()),
+        index_management_service.clone(),
+    );
+
+    let grpc_server_handle = tokio::task::spawn(async move {
+        let _ = grpc_server.await;
+    });
+
+    let index_management_client =
+        IndexManagementClient::create_and_update_from_cluster(cluster.clone()).await?;
+
     let indexer_service: Option<Mailbox<IndexingService>> =
         if services.contains(&QuickwitService::Indexer) {
             let indexer_service = start_indexer_service(
                 &universe,
                 &config,
                 metastore.clone(),
+                index_management_client,
                 storage_resolver.clone(),
                 ingest_api_service.clone(),
             )
@@ -136,21 +181,6 @@ pub async fn serve_quickwit(
             None
         };
 
-    let search_service: Arc<dyn SearchService> = start_searcher_service(
-        &config,
-        metastore.clone(),
-        storage_resolver.clone(),
-        cluster.clone(),
-    )
-    .await?;
-
-    // Always instanciate index management service.
-    let index_service = Arc::new(IndexService::new(
-        metastore,
-        storage_resolver,
-        config.default_index_root_uri(),
-    ));
-    let grpc_listen_addr = config.grpc_listen_addr().await?;
     let rest_listen_addr = config.rest_listen_addr().await?;
 
     let quickwit_services = QuickwitServices {
@@ -160,13 +190,12 @@ pub async fn serve_quickwit(
         ingest_api_service,
         search_service,
         indexer_service,
-        index_service,
+        index_management_service,
         services: services.clone(),
     };
-    let grpc_server = grpc::start_grpc_server(grpc_listen_addr, &quickwit_services);
     let rest_server = rest::start_rest_server(rest_listen_addr, &quickwit_services);
 
-    tokio::try_join!(grpc_server, rest_server)?;
+    tokio::try_join!(rest_server)?;
     Ok(())
 }
 

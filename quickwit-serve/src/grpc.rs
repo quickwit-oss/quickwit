@@ -18,38 +18,48 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
+use quickwit_actors::Mailbox;
+use quickwit_index_management::{GrpcIndexManagementServiceAdapter, IndexManagementService};
 use quickwit_cluster::QuickwitService;
 use quickwit_proto::search_service_server::SearchServiceServer;
+use quickwit_proto::index_management_service_server::IndexManagementServiceServer;
 use quickwit_proto::tonic;
+use quickwit_search::SearchService;
 use tonic::transport::Server;
 use tracing::*;
 
 use crate::search_api::GrpcSearchAdapter;
-use crate::QuickwitServices;
 
 /// Starts gRPC service given a gRPC address and a search service and cluster service.
 pub(crate) async fn start_grpc_server(
     grpc_listen_addr: SocketAddr,
-    quickwit_services: &QuickwitServices,
+    search_service_opt: Option<Arc<dyn SearchService>>,
+    index_management_service_opt: Option<Mailbox<IndexManagementService>>,
 ) -> anyhow::Result<()> {
     info!(grpc_listen_addr = ?grpc_listen_addr, "Starting gRPC server.");
 
     let mut server = Server::builder();
 
     // We only mount the gRPC service if the searcher is enabled on this node.
-    let search_grpc_service = if quickwit_services
-        .services
-        .contains(&QuickwitService::Searcher)
-    {
-        let search_service = quickwit_services.search_service.clone();
-        let grpc_search_service = GrpcSearchAdapter::from(search_service);
-        Some(SearchServiceServer::new(grpc_search_service))
+    let search_grpc_service = if let Some(search_service) = search_service_opt {
+        let search_service_adpater = GrpcSearchAdapter::from(search_service);
+        Some(SearchServiceServer::new(search_service_adpater))
     } else {
         None
     };
 
-    let server_router = server.add_optional_service(search_grpc_service);
+    let index_management_grpc_service = if let Some(index_management_service) = index_management_service_opt {
+        let index_management_service_adapter = GrpcIndexManagementServiceAdapter::from(index_management_service);
+        Some(IndexManagementServiceServer::new(index_management_service_adapter))
+    } else {
+        None
+    };
+
+    let server_router = server
+        .add_optional_service(search_grpc_service)
+        .add_optional_service(index_management_grpc_service);
     server_router.serve(grpc_listen_addr).await?;
 
     Ok(())

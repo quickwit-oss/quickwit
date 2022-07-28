@@ -17,14 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::Arc;
-
 use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
 use quickwit_actors::{Actor, ActorContext, Handler, Mailbox};
+use quickwit_index_management::IndexManagementClient;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
-use quickwit_metastore::Metastore;
 use tracing::info;
 
 use crate::actors::{GarbageCollector, MergePlanner};
@@ -55,7 +53,7 @@ impl PublisherType {
 pub struct Publisher {
     publisher_type: PublisherType,
     source_id: String,
-    metastore: Arc<dyn Metastore>,
+    index_management_client: IndexManagementClient,
     merge_planner_mailbox: Mailbox<MergePlanner>,
     garbage_collector_mailbox: Mailbox<GarbageCollector>,
     source_mailbox_opt: Option<Mailbox<SourceActor>>,
@@ -66,7 +64,7 @@ impl Publisher {
     pub fn new(
         publisher_type: PublisherType,
         source_id: String,
-        metastore: Arc<dyn Metastore>,
+        index_management_client: IndexManagementClient,
         merge_planner_mailbox: Mailbox<MergePlanner>,
         garbage_collector_mailbox: Mailbox<GarbageCollector>,
         source_mailbox_opt: Option<Mailbox<SourceActor>>,
@@ -74,7 +72,7 @@ impl Publisher {
         Publisher {
             publisher_type,
             source_id,
-            metastore,
+            index_management_client,
             merge_planner_mailbox,
             garbage_collector_mailbox,
             source_mailbox_opt,
@@ -135,11 +133,11 @@ impl Handler<PublishNewSplit> for Publisher {
             checkpoint_delta,
         } = publish_new_split;
 
-        self.metastore
+        self.index_management_client
             .publish_splits(
-                &index_id,
-                &self.source_id,
-                &[new_split.split_id()],
+                index_id,
+                self.source_id.to_string(),
+                [new_split.split_id().to_string()].to_vec(),
                 checkpoint_delta.clone(),
             )
             .await
@@ -192,14 +190,12 @@ impl Handler<ReplaceSplits> for Publisher {
             replaced_split_ids,
         } = replace_splits;
 
-        let new_split_ids: Vec<&str> = new_splits
+        let new_split_ids: Vec<String> = new_splits
             .iter()
-            .map(|new_split| new_split.split_id())
+            .map(|new_split| new_split.split_id().to_string())
             .collect();
-        let replaced_split_ids_ref_vec: Vec<&str> =
-            replaced_split_ids.iter().map(String::as_str).collect();
-        self.metastore
-            .replace_splits(&index_id, &new_split_ids, &replaced_split_ids_ref_vec[..])
+        self.index_management_client
+            .replace_splits(index_id, new_split_ids.clone(), replaced_split_ids.clone())
             .await
             .context("Failed to replace splits.")?;
 
@@ -240,8 +236,10 @@ impl Handler<PublisherMessage> for Publisher {
 #[cfg(test)]
 mod tests {
     use std::time::Instant;
+    use std::sync::Arc;
 
     use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_index_management::create_index_management_client_for_test;
     use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position};
     use quickwit_metastore::{MockMetastore, SplitMetadata};
 
@@ -265,16 +263,18 @@ mod tests {
         let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
 
         let (source_mailbox, source_inbox) = create_test_mailbox();
-
+        let universe = Universe::new();
+        let index_management_client = create_index_management_client_for_test(Arc::new(mock_metastore), &universe)
+                .await
+                .unwrap();
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
             "source".to_string(),
-            Arc::new(mock_metastore),
+            index_management_client,
             merge_planner_mailbox,
             garbage_collector_mailbox,
             Some(source_mailbox),
         );
-        let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
 
         assert!(publisher_mailbox
@@ -327,15 +327,18 @@ mod tests {
             .returning(|_, _, _| Ok(()));
         let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
         let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
+        let universe = Universe::new();
+        let index_management_client = create_index_management_client_for_test(Arc::new(mock_metastore), &universe)
+                .await
+                .unwrap();
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
             "source".to_string(),
-            Arc::new(mock_metastore),
+            index_management_client,
             merge_planner_mailbox,
             garbage_collector_mailbox,
             None,
         );
-        let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
         let publisher_message = ReplaceSplits {
             index_id: "index".to_string(),

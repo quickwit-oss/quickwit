@@ -30,6 +30,7 @@ quickwit-directories = { version = "0.3.1", path = "../quickwit-directories" }
 quickwit-doc-mapper = { version = "0.3.1", path = "../quickwit-doc-mapper", features = [
   "testsuite"
 ] }
+quickwit-index-management = { version = "0.3.1", path = "../quickwit-index-management" }
 quickwit-ingest-api = { path = "../quickwit-ingest-api", version = "0.3.0" }
 quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore" }
 quickwit-proto = { path = "../quickwit-proto", version = "0.3.0" }

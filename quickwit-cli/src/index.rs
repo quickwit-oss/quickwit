@@ -34,12 +34,15 @@ use quickwit_common::GREEN_COLOR;
 use quickwit_config::{
     IndexConfig, IndexerConfig, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
 };
-use quickwit_core::{clear_cache_directory, remove_indexing_directory, IndexService};
 use quickwit_doc_mapper::tag_pruning::match_tag_field_name;
+use quickwit_index_management::{
+    create_index_management_client, IndexManagementService,
+};
 use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
 use quickwit_indexing::models::{
     DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
 };
+use quickwit_indexing::{clear_cache_directory, remove_indexing_directory};
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
@@ -779,7 +782,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri())
         .await?;
-    let index_service = IndexService::new(
+    let index_service = IndexManagementService::new(
         metastore,
         quickwit_storage_uri_resolver().clone(),
         quickwit_config.default_index_root_uri(),
@@ -814,21 +817,25 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         .await?;
 
     if args.overwrite {
-        let index_service = IndexService::new(
+        let index_service = IndexManagementService::new(
             metastore.clone(),
             quickwit_storage_uri_resolver().clone(),
             config.default_index_root_uri(),
         );
-        index_service.reset_index(&args.index_id).await?;
+        index_service.delete_index(&args.index_id, false).await?;
     }
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
+    // TODO: tmp fix to compile but this does not work.
+    // It would be nice to just pass a metastore.
+    let socket = "127.0.0.1:8080".parse()?;
+    let index_management_client = create_index_management_client(socket).await?;
     let universe = Universe::new();
     let indexing_server = IndexingService::new(
         config.clone().data_dir_path,
         indexer_config,
-        metastore,
+        index_management_client,
         quickwit_storage_uri_resolver().clone(),
         None,
     );
@@ -910,6 +917,7 @@ pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+// TODO: what do we do with this command?
 pub async fn merge_or_demux_cli(
     args: MergeOrDemuxArgs,
     merge_enabled: bool,
@@ -921,15 +929,17 @@ pub async fn merge_or_demux_cli(
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
-    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-    let metastore = metastore_uri_resolver
-        .resolve(&config.metastore_uri())
-        .await?;
+    // let metastore_uri_resolver = quickwit_metastore_uri_resolver();
+    //     .resolve(&config.metastore_uri())
+    //     .await?;
+    // TODO: tmp fix to compile, remove this once we know if we want to keep this CLI command.
     let storage_resolver = quickwit_storage_uri_resolver().clone();
+    let socket = "127.0.0.1:8080".parse()?;
+    let index_management_client = create_index_management_client(socket).await?;
     let indexing_server = IndexingService::new(
         config.data_dir_path,
         indexer_config,
-        metastore,
+        index_management_client,
         storage_resolver,
         None,
     );
@@ -960,12 +970,12 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&quickwit_config.metastore_uri())
         .await?;
-    let index_service = IndexService::new(
+    let index_mangement_service = IndexManagementService::new(
         metastore,
         quickwit_storage_uri_resolver().clone(),
         quickwit_config.default_index_root_uri(),
     );
-    let affected_files = index_service
+    let affected_files = index_mangement_service
         .delete_index(&args.index_id, args.dry_run)
         .await?;
     if args.dry_run {
@@ -999,36 +1009,37 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&quickwit_config.metastore_uri())
         .await?;
-    let index_service = IndexService::new(
+    let index_mangement_service = IndexManagementService::new(
         metastore,
         quickwit_storage_uri_resolver().clone(),
         quickwit_config.default_index_root_uri(),
     );
-    let deleted_files = index_service
-        .garbage_collect_index(&args.index_id, args.grace_period, args.dry_run)
-        .await?;
-    if deleted_files.is_empty() {
-        println!("No dangling files to garbage collect.");
-        return Ok(());
-    }
+    // TODO: this is broken. I think we can drop this.
+    // let deleted_files = index_mangement_service
+    //     .garbage_collect_index(&args.index_id, args.grace_period, args.dry_run)
+    //     .await?;
+    // if deleted_files.is_empty() {
+    //     println!("No dangling files to garbage collect.");
+    //     return Ok(());
+    // }
 
-    if args.dry_run {
-        println!("The following files will be garbage collected.");
-        for file_entry in deleted_files {
-            println!(" - {}", file_entry.file_name);
-        }
-        return Ok(());
-    }
+    // if args.dry_run {
+    //     println!("The following files will be garbage collected.");
+    //     for file_entry in deleted_files {
+    //         println!(" - {}", file_entry.file_name);
+    //     }
+    //     return Ok(());
+    // }
 
-    let deleted_bytes: u64 = deleted_files
-        .iter()
-        .map(|entry| entry.file_size_in_bytes)
-        .sum();
-    println!(
-        "{}MB of storage garbage collected.",
-        deleted_bytes / 1_000_000
-    );
-    println!("Index `{}` successfully garbage collected.", args.index_id);
+    // let deleted_bytes: u64 = deleted_files
+    //     .iter()
+    //     .map(|entry| entry.file_size_in_bytes)
+    //     .sum();
+    // println!(
+    //     "{}MB of storage garbage collected.",
+    //     deleted_bytes / 1_000_000
+    // );
+    // println!("Index `{}` successfully garbage collected.", args.index_id);
     Ok(())
 }
 

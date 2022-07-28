@@ -19,7 +19,6 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{
@@ -29,8 +28,9 @@ use quickwit_actors::{
 use quickwit_config::{
     IndexerConfig, IngestApiSourceParams, SourceConfig, SourceParams, VecSourceParams,
 };
+use quickwit_index_management::{IndexManagementClient, IndexManagementError};
 use quickwit_ingest_api::IngestApiService;
-use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
+use quickwit_metastore::{IndexMetadata, MetastoreError};
 use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
 use quickwit_storage::{StorageResolverError, StorageUriResolver};
 use serde::Serialize;
@@ -58,6 +58,8 @@ pub enum IndexingServiceError {
     StorageError(#[from] StorageResolverError),
     #[error("Metastore error `{0}`.")]
     MetastoreError(#[from] MetastoreError),
+    #[error("IndexManagementError error `{0}`.")]
+    IndexManagementError(#[from] IndexManagementError),
     #[error("Invalid params `{0}`.")]
     InvalidParams(anyhow::Error),
 }
@@ -73,7 +75,7 @@ pub struct IndexingService {
     indexing_dir_path: PathBuf,
     split_store_max_num_bytes: usize,
     split_store_max_num_splits: usize,
-    metastore: Arc<dyn Metastore>,
+    index_management_client: IndexManagementClient,
     storage_resolver: StorageUriResolver,
     pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     state: IndexingServiceState,
@@ -89,7 +91,7 @@ impl IndexingService {
     pub fn new(
         data_dir_path: PathBuf,
         indexer_config: IndexerConfig,
-        metastore: Arc<dyn Metastore>,
+        index_management_client: IndexManagementClient,
         storage_resolver: StorageUriResolver,
         ingest_api_service: Option<Mailbox<IngestApiService>>,
     ) -> IndexingService {
@@ -98,7 +100,7 @@ impl IndexingService {
             split_store_max_num_bytes: indexer_config.split_store_max_num_bytes.get_bytes()
                 as usize,
             split_store_max_num_splits: indexer_config.split_store_max_num_splits,
-            metastore,
+            index_management_client,
             storage_resolver,
             pipeline_handles: Default::default(),
             state: Default::default(),
@@ -217,7 +219,7 @@ impl IndexingService {
             self.indexing_dir_path.clone(),
             self.split_store_max_num_bytes,
             self.split_store_max_num_splits,
-            self.metastore.clone(),
+            self.index_management_client.clone(),
             storage,
         )
         .await
@@ -285,12 +287,15 @@ impl IndexingService {
     }
 
     async fn index_metadata(
-        &self,
+        &mut self,
         index_id: &str,
         ctx: &ActorContext<Self>,
     ) -> Result<IndexMetadata, IndexingServiceError> {
         let _protect_guard = ctx.protect_zone();
-        let index_metadata = self.metastore.index_metadata(index_id).await?;
+        let index_metadata = self
+            .index_management_client
+            .index_metadata(index_id)
+            .await?;
         Ok(index_metadata)
     }
 }
@@ -457,6 +462,7 @@ mod tests {
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
     use quickwit_config::VecSourceParams;
+    use quickwit_index_management::create_index_management_client_for_test;
     use quickwit_metastore::quickwit_metastore_uri_resolver;
 
     use super::*;
@@ -480,14 +486,18 @@ mod tests {
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
         let storage_resolver = StorageUriResolver::for_test();
+        let universe = Universe::new();
+        let index_management_client =
+        create_index_management_client_for_test(metastore.clone(), &universe)
+                .await
+                .unwrap();
         let indexing_server = IndexingService::new(
             data_dir_path,
             indexer_config,
-            metastore.clone(),
+            index_management_client,
             storage_resolver.clone(),
             None,
         );
-        let universe = Universe::new();
         let (indexing_server_mailbox, indexing_server_handle) =
             universe.spawn_actor(indexing_server).spawn();
         let observation = indexing_server_handle.observe().await;

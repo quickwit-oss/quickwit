@@ -18,12 +18,11 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashSet;
-use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, Handler};
-use quickwit_metastore::Metastore;
+use quickwit_index_management::IndexManagementClient;
 use tracing::info;
 
 use crate::garbage_collection::run_garbage_collect;
@@ -59,7 +58,7 @@ struct Loop;
 pub struct GarbageCollector {
     index_id: String,
     split_store: IndexingSplitStore,
-    metastore: Arc<dyn Metastore>,
+    index_management_client: IndexManagementClient,
     counters: GarbageCollectorCounters,
 }
 
@@ -67,12 +66,12 @@ impl GarbageCollector {
     pub fn new(
         index_id: String,
         split_store: IndexingSplitStore,
-        metastore: Arc<dyn Metastore>,
+        index_management_client: IndexManagementClient,
     ) -> Self {
         Self {
             index_id,
             split_store,
-            metastore,
+            index_management_client,
             counters: GarbageCollectorCounters::default(),
         }
     }
@@ -113,7 +112,7 @@ impl Handler<Loop> for GarbageCollector {
         let deleted_file_entries = run_garbage_collect(
             &self.index_id,
             self.split_store.clone(),
-            self.metastore.clone(),
+            self.index_management_client.clone(),
             STAGED_GRACE_PERIOD,
             DELETION_GRACE_PERIOD,
             false,
@@ -143,8 +142,10 @@ impl Handler<Loop> for GarbageCollector {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+    use std::sync::Arc;
 
     use quickwit_actors::Universe;
+    use quickwit_index_management::create_index_management_client_for_test;
     use quickwit_metastore::{MockMetastore, Split, SplitMetadata, SplitState};
     use quickwit_storage::MockStorage;
 
@@ -212,10 +213,13 @@ mod tests {
             });
 
         let universe = Universe::new();
+        let index_management_client = create_index_management_client_for_test(Arc::new(mock_metastore), &universe)
+                .await
+                .unwrap();
         let garbage_collect_actor = GarbageCollector::new(
             foo_index.to_string(),
             IndexingSplitStore::create_with_no_local_store(Arc::new(mock_storage)),
-            Arc::new(mock_metastore),
+            index_management_client,
         );
         let (_maibox, handler) = universe.spawn_actor(garbage_collect_actor).spawn();
 
@@ -268,10 +272,13 @@ mod tests {
             });
 
         let universe = Universe::new();
+        let index_management_client = create_index_management_client_for_test(Arc::new(mock_metastore), &universe)
+                .await
+                .unwrap();
         let garbage_collect_actor = GarbageCollector::new(
             foo_index.to_string(),
             IndexingSplitStore::create_with_no_local_store(Arc::new(mock_storage)),
-            Arc::new(mock_metastore),
+            index_management_client,
         );
         let (_maibox, handler) = universe.spawn_actor(garbage_collect_actor).spawn();
 

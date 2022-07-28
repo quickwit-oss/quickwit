@@ -178,6 +178,7 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_common::uri::Uri;
     use quickwit_config::IndexerConfig;
+    use quickwit_index_management::create_index_management_client_for_test;
     use quickwit_ingest_api::spawn_ingest_api_actor;
     use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
     use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
@@ -215,10 +216,14 @@ mod tests {
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
         let storage_resolver = StorageUriResolver::for_test();
+        let index_management_client =
+            create_index_management_client_for_test(metastore.clone(), &universe)
+                .await
+                .unwrap();
         let indexing_server = IndexingService::new(
             data_dir_path,
             indexer_config,
-            metastore.clone(),
+            index_management_client,
             storage_resolver.clone(),
             Some(ingest_api_mailbox.clone()),
         );

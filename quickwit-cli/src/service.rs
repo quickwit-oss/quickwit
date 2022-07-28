@@ -75,7 +75,7 @@ impl RunCliCommand {
                 let service = QuickwitService::try_from(service_str)?;
                 iter::once(service).collect()
             } else {
-                [QuickwitService::Indexer, QuickwitService::Searcher]
+                [QuickwitService::Indexer, QuickwitService::Searcher, QuickwitService::ControlPlane]
                     .into_iter()
                     .collect()
             };

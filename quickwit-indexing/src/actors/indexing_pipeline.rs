@@ -30,7 +30,8 @@ use quickwit_actors::{
 };
 use quickwit_config::{build_doc_mapper, IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError, SplitState};
+use quickwit_index_management::IndexManagementClient;
+use quickwit_metastore::{IndexMetadata, MetastoreError, SplitState};
 use quickwit_storage::Storage;
 use tokio::join;
 use tracing::{debug, error, info, info_span, instrument, Span};
@@ -220,8 +221,8 @@ impl IndexingPipeline {
         )?;
         let published_splits = self
             .params
-            .metastore
-            .list_splits(&self.params.index_id, SplitState::Published, None, None)
+            .index_management_client
+            .list_splits(&self.params.index_id, SplitState::Published, None)
             .await?
             .into_iter()
             .map(|split| split.split_metadata)
@@ -237,7 +238,7 @@ impl IndexingPipeline {
         let garbage_collector = GarbageCollector::new(
             self.params.index_id.clone(),
             split_store.clone(),
-            self.params.metastore.clone(),
+            self.params.index_management_client.clone(),
         );
         let (garbage_collector_mailbox, garbage_collector_handler) = ctx
             .spawn_actor(garbage_collector)
@@ -248,7 +249,7 @@ impl IndexingPipeline {
         let merge_publisher = Publisher::new(
             PublisherType::MergePublisher,
             self.params.source.source_id.clone(),
-            self.params.metastore.clone(),
+            self.params.index_management_client.clone(),
             merge_planner_mailbox.clone(),
             garbage_collector_mailbox.clone(),
             None,
@@ -267,7 +268,7 @@ impl IndexingPipeline {
         // Merge uploader
         let merge_uploader = Uploader::new(
             "MergeUploader",
-            self.params.metastore.clone(),
+            self.params.index_management_client.clone(),
             split_store.clone(),
             merge_sequencer_mailbox,
         );
@@ -344,7 +345,7 @@ impl IndexingPipeline {
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
             self.params.source.source_id.clone(),
-            self.params.metastore.clone(),
+            self.params.index_management_client.clone(),
             merge_planner_mailbox,
             garbage_collector_mailbox,
             Some(source_mailbox.clone()),
@@ -363,7 +364,7 @@ impl IndexingPipeline {
         // Uploader
         let uploader = Uploader::new(
             "Uploader",
-            self.params.metastore.clone(),
+            self.params.index_management_client.clone(),
             split_store.clone(),
             sequencer_mailbox,
         );
@@ -383,7 +384,7 @@ impl IndexingPipeline {
             self.params.index_id.clone(),
             self.params.doc_mapper.clone(),
             self.params.source.source_id.clone(),
-            self.params.metastore.clone(),
+            self.params.index_management_client.clone(),
             self.params.indexing_directory.clone(),
             self.params.indexing_settings.clone(),
             packager_mailbox,
@@ -396,7 +397,7 @@ impl IndexingPipeline {
         // Fetch index_metadata to be sure to have the last updated checkpoint.
         let index_metadata = self
             .params
-            .metastore
+            .index_management_client
             .index_metadata(&self.params.index_id)
             .await?;
         let source_checkpoint = index_metadata
@@ -574,7 +575,7 @@ pub struct IndexingPipelineParams {
     pub source: SourceConfig,
     pub split_store_max_num_bytes: usize,
     pub split_store_max_num_splits: usize,
-    pub metastore: Arc<dyn Metastore>,
+    pub index_management_client: IndexManagementClient,
     pub storage: Arc<dyn Storage>,
 }
 
@@ -585,7 +586,7 @@ impl IndexingPipelineParams {
         indexing_dir_path: PathBuf,
         split_store_max_num_bytes: usize,
         split_store_max_num_splits: usize,
-        metastore: Arc<dyn Metastore>,
+        index_management_client: IndexManagementClient,
         storage: Arc<dyn Storage>,
     ) -> anyhow::Result<Self> {
         let doc_mapper = build_doc_mapper(
@@ -605,7 +606,7 @@ impl IndexingPipelineParams {
             source,
             split_store_max_num_bytes,
             split_store_max_num_splits,
-            metastore,
+            index_management_client,
             storage,
         })
     }
@@ -619,6 +620,7 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_config::{IndexingSettings, SourceParams};
     use quickwit_doc_mapper::default_doc_mapper_for_tests;
+    use quickwit_index_management::create_index_management_client_for_test;
     use quickwit_metastore::{IndexMetadata, MetastoreError, MockMetastore};
     use quickwit_storage::RamStorage;
 
@@ -706,7 +708,9 @@ mod tests {
             split_store_max_num_bytes: 10_000_000,
             split_store_max_num_splits: 100,
             source: source_config,
-            metastore: Arc::new(metastore),
+            index_management_client: create_index_management_client_for_test(Arc::new(metastore), &universe)
+                .await
+                .unwrap(),
             storage: Arc::new(RamStorage::default()),
         };
         let pipeline = IndexingPipeline::new(indexing_pipeline_params);
@@ -784,7 +788,9 @@ mod tests {
             split_store_max_num_bytes: 10_000_000,
             split_store_max_num_splits: 100,
             source,
-            metastore: Arc::new(metastore),
+            index_management_client: create_index_management_client_for_test(Arc::new(metastore), &universe)
+                .await
+                .unwrap(),
             storage: Arc::new(RamStorage::default()),
         };
         let pipeline = IndexingPipeline::new(pipeline_params);

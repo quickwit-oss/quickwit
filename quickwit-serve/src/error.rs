@@ -21,7 +21,7 @@ use std::convert::Infallible;
 use std::fmt;
 
 use quickwit_actors::AskError;
-use quickwit_core::IndexServiceError;
+use quickwit_index_management::IndexManagementError;
 use quickwit_indexing::IndexingServiceError;
 use quickwit_ingest_api::IngestApiError;
 use quickwit_proto::tonic;
@@ -83,6 +83,7 @@ impl ServiceError for IndexingServiceError {
             Self::StorageError(_) => ServiceErrorCode::Internal,
             Self::MetastoreError(_) => ServiceErrorCode::Internal,
             Self::InvalidParams(_) => ServiceErrorCode::BadRequest,
+            Self::IndexManagementError(_) => ServiceErrorCode::Internal,
         }
     }
 }
@@ -108,13 +109,14 @@ impl<E: fmt::Debug + ServiceError> ServiceError for AskError<E> {
     }
 }
 
-impl ServiceError for IndexServiceError {
+impl ServiceError for IndexManagementError {
     fn status_code(&self) -> ServiceErrorCode {
         match self {
             Self::StorageError(_) => ServiceErrorCode::Internal,
             Self::MetastoreError(_) => ServiceErrorCode::Internal,
-            Self::SplitDeletionError(_) => ServiceErrorCode::Internal,
+            Self::InternalError(_) => ServiceErrorCode::Internal,
             Self::InvalidIndexConfig(_) => ServiceErrorCode::BadRequest,
+            Self::StorageResolverError(_) => ServiceErrorCode::Internal,
         }
     }
 }

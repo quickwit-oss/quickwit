@@ -2010,9 +2010,9 @@ dependencies = [
 
 [[package]]
 name = "mockall"
-version = "0.11.1"
+version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5641e476bbaf592a3939a7485fa079f427b4db21407d5ebfd5bba4e07a1f6f4c"
+checksum = "e2be9a9090bc1cac2930688fa9478092a64c6a92ddc6ae0692d46b37d9cab709"
 dependencies = [
  "cfg-if",
  "downcast",
@@ -2025,9 +2025,9 @@ dependencies = [
 
 [[package]]
 name = "mockall_derive"
-version = "0.11.1"
+version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "262d56735932ee0240d515656e5a7667af3af2a5b0af4da558c4cff2b2aeb0c7"
+checksum = "86d702a0530a0141cf4ed147cf5ec7be6f2c187d4e37fcbefc39cf34116bfe8f"
 dependencies = [
  "cfg-if",
  "proc-macro2",
@@ -2891,9 +2891,9 @@ dependencies = [
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
- "quickwit-core",
  "quickwit-directories",
  "quickwit-doc-mapper",
+ "quickwit-index-management",
  "quickwit-indexing",
  "quickwit-metastore",
  "quickwit-proto",
@@ -2985,38 +2985,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "quickwit-core"
-version = "0.3.1"
-dependencies = [
- "anyhow",
- "async-trait",
- "byte-unit",
- "futures",
- "futures-util",
- "mockall",
- "quickwit-actors",
- "quickwit-common",
- "quickwit-config",
- "quickwit-directories",
- "quickwit-doc-mapper",
- "quickwit-indexing",
- "quickwit-metastore",
- "quickwit-storage",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "serde_yaml",
- "tantivy",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-stream",
- "tokio-util 0.7.3",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "quickwit-directories"
 version = "0.3.1"
 dependencies = [
@@ -3064,6 +3032,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-index-management"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chitchat",
+ "flume",
+ "futures",
+ "http",
+ "itertools",
+ "mockall",
+ "once_cell",
+ "quickwit-actors",
+ "quickwit-cluster",
+ "quickwit-common",
+ "quickwit-config",
+ "quickwit-doc-mapper",
+ "quickwit-metastore",
+ "quickwit-proto",
+ "quickwit-storage",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror",
+ "time 0.3.11",
+ "tokio",
+ "tokio-stream",
+ "tower",
+ "tracing",
+]
+
+[[package]]
 name = "quickwit-indexing"
 version = "0.3.1"
 dependencies = [
@@ -3088,6 +3088,7 @@ dependencies = [
  "quickwit-config",
  "quickwit-directories",
  "quickwit-doc-mapper",
+ "quickwit-index-management",
  "quickwit-ingest-api",
  "quickwit-metastore",
  "quickwit-proto",
@@ -3234,9 +3235,9 @@ dependencies = [
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
- "quickwit-core",
  "quickwit-directories",
  "quickwit-doc-mapper",
+ "quickwit-index-management",
  "quickwit-indexing",
  "quickwit-ingest-api",
  "quickwit-metastore",
@@ -3254,6 +3255,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
+ "tower",
  "tracing",
  "tracing-opentelemetry",
  "warp",

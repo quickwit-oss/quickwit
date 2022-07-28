@@ -29,7 +29,8 @@ use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
-use quickwit_metastore::{Metastore, SplitMetadata};
+use quickwit_index_management::IndexManagementClient;
+use quickwit_metastore::SplitMetadata;
 use quickwit_storage::SplitPayloadBuilder;
 use time::OffsetDateTime;
 use tokio::sync::{oneshot, Semaphore, SemaphorePermit};
@@ -54,7 +55,7 @@ static CONCURRENT_UPLOAD_PERMITS: Semaphore = Semaphore::const_new(MAX_CONCURREN
 
 pub struct Uploader {
     actor_name: &'static str,
-    metastore: Arc<dyn Metastore>,
+    index_management_client: IndexManagementClient,
     index_storage: IndexingSplitStore,
     sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
     counters: UploaderCounters,
@@ -63,13 +64,13 @@ pub struct Uploader {
 impl Uploader {
     pub fn new(
         actor_name: &'static str,
-        metastore: Arc<dyn Metastore>,
+        index_management_client: IndexManagementClient,
         index_storage: IndexingSplitStore,
         sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
     ) -> Uploader {
         Uploader {
             actor_name,
-            metastore,
+            index_management_client,
             index_storage,
             sequencer_mailbox,
             counters: Default::default(),
@@ -156,7 +157,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
             warn!(split_ids=?split_ids,"Kill switch was activated. Cancelling upload.");
             return Err(ActorExitStatus::Killed);
         }
-        let metastore = self.metastore.clone();
+        let index_management_client = self.index_management_client.clone();
         let index_storage = self.index_storage.clone();
         let counters = self.counters.clone();
         let index_id = batch.index_id();
@@ -170,7 +171,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     let upload_result = stage_and_upload_split(
                         &split,
                         &index_storage,
-                        &*metastore,
+                        index_management_client.clone(),
                         counters.clone(),
                     )
                     .await;
@@ -248,7 +249,7 @@ fn make_publish_operation(
 async fn stage_and_upload_split(
     packaged_split: &PackagedSplit,
     split_store: &IndexingSplitStore,
-    metastore: &dyn Metastore,
+    mut index_management_client: IndexManagementClient,
     counters: UploaderCounters,
 ) -> anyhow::Result<SplitMetadata> {
     let split_streamer = SplitPayloadBuilder::get_split_payload(
@@ -261,8 +262,8 @@ async fn stage_and_upload_split(
     );
     let index_id = packaged_split.index_id.clone();
     info!(split_id = packaged_split.split_id.as_str(), "staging-split");
-    metastore
-        .stage_split(&index_id, split_metadata.clone())
+    index_management_client
+        .stage_split(&index_id, &split_metadata)
         .await?;
     counters.num_staged_splits.fetch_add(1, Ordering::SeqCst);
 
@@ -284,6 +285,7 @@ mod tests {
     use std::time::Instant;
 
     use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
+    use quickwit_index_management::create_index_management_client_for_test;
     use quickwit_metastore::checkpoint::CheckpointDelta;
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::RamStorage;
@@ -310,9 +312,12 @@ mod tests {
         let ram_storage = RamStorage::default();
         let index_storage: IndexingSplitStore =
             IndexingSplitStore::create_with_no_local_store(Arc::new(ram_storage.clone()));
+        let index_management_client = create_index_management_client_for_test(Arc::new(mock_metastore), &universe)
+                .await
+                .unwrap();
         let uploader = Uploader::new(
             "TestUploader",
-            Arc::new(mock_metastore),
+            index_management_client,
             index_storage,
             mailbox,
         );
@@ -385,9 +390,12 @@ mod tests {
         let ram_storage = RamStorage::default();
         let index_storage: IndexingSplitStore =
             IndexingSplitStore::create_with_no_local_store(Arc::new(ram_storage.clone()));
+        let index_management_client = create_index_management_client_for_test(Arc::new(mock_metastore), &universe)
+                .await
+                .unwrap();
         let uploader = Uploader::new(
             "TestUploader",
-            Arc::new(mock_metastore),
+            index_management_client,
             index_storage,
             mailbox,
         );
