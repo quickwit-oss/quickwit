@@ -3045,7 +3045,6 @@ dependencies = [
  "indexmap",
  "itertools",
  "matches",
- "mockall",
  "once_cell",
  "quickwit-proto",
  "regex",
