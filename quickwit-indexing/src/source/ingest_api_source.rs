@@ -136,10 +136,9 @@ impl Source for IngestApiSource {
 
         // TODO use a timestamp (in the raw doc batch) given by at ingest time to be more accurate.
         let mut raw_doc_batch = RawDocBatch::default();
-
-        raw_doc_batch.docs = iter_doc_payloads(&doc_batch)
-            .map(|buff| String::from_utf8_lossy(buff).to_string())
-            .collect::<Vec<_>>();
+        raw_doc_batch.docs.extend(
+            iter_doc_payloads(&doc_batch).map(|buff| String::from_utf8_lossy(buff).to_string()),
+        );
         let current_offset = first_position + raw_doc_batch.docs.len() as u64 - 1;
         let partition_id = PartitionId::from(self.params.index_id.as_str());
         raw_doc_batch

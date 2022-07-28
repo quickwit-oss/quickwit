@@ -128,7 +128,7 @@ impl Handler<SplitUpdate> for Publisher {
             index_id,
             new_splits,
             replaced_split_ids,
-            split_date_of_birth,
+            date_of_birth,
             checkpoint_delta_opt,
         } = split_update;
 
@@ -147,7 +147,7 @@ impl Handler<SplitUpdate> for Publisher {
             .await
             .context("Failed to publish splits.")?;
 
-        info!(new_splits=?split_ids, tts=%split_date_of_birth.elapsed().as_secs_f32(), checkpoint_delta=?checkpoint_delta_opt, "publish-new-splits");
+        info!(new_splits=?split_ids, tts=%date_of_birth.elapsed().as_secs_f32(), checkpoint_delta=?checkpoint_delta_opt, "publish-new-splits");
         if let Some(source_mailbox) = self.source_mailbox_opt.as_ref() {
             if let Some(checkpoint) = checkpoint_delta_opt {
                 // We voluntarily do not log anything here.

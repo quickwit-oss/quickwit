@@ -48,13 +48,6 @@ pub struct IndexedSplit {
     // invalid.
     pub docs_size_in_bytes: u64,
 
-    /// Instant of reception of the first document in the indexer.
-    ///
-    /// This is mostly useful to understand part of the time to search.
-    /// However, note that the document may have been waiting for a long time in the source
-    /// before actually reaching the indexer.
-    pub split_date_of_birth: Instant,
-
     /// Number of demux operations this split has undergone.
     pub demux_num_ops: usize,
 
@@ -111,7 +104,6 @@ impl IndexedSplit {
             demux_num_ops: 0,
             docs_size_in_bytes: 0,
             num_docs: 0,
-            split_date_of_birth: Instant::now(),
             index,
             index_writer,
             split_scratch_directory,
@@ -128,4 +120,5 @@ impl IndexedSplit {
 pub struct IndexedSplitBatch {
     pub splits: Vec<IndexedSplit>,
     pub checkpoint_delta: Option<IndexCheckpointDelta>,
+    pub date_of_birth: Instant,
 }

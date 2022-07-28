@@ -328,8 +328,6 @@ impl MergeExecutor {
             demux_num_ops: 0,
             num_docs,
             docs_size_in_bytes,
-            // start_time is not very interesting here.
-            split_date_of_birth: Instant::now(),
             index: merged_index,
             index_writer,
             split_scratch_directory: merge_scratch_directory,
@@ -341,6 +339,7 @@ impl MergeExecutor {
             IndexedSplitBatch {
                 splits: vec![indexed_split],
                 checkpoint_delta: Default::default(),
+                date_of_birth: start,
             },
         )
         .await?;
@@ -473,7 +472,6 @@ impl MergeExecutor {
                 demux_num_ops: initial_demux_num_ops + 1,
                 num_docs: num_docs as u64,
                 docs_size_in_bytes,
-                split_date_of_birth: Instant::now(),
                 index,
                 index_writer,
                 split_scratch_directory: scratched_directory,
@@ -494,6 +492,7 @@ impl MergeExecutor {
             IndexedSplitBatch {
                 splits: indexed_splits,
                 checkpoint_delta: None,
+                date_of_birth: start,
             },
         )
         .await?;

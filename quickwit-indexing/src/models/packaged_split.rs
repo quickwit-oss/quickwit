@@ -36,7 +36,6 @@ pub struct PackagedSplit {
     pub num_docs: u64,
     pub demux_num_ops: usize,
     pub tags: BTreeSet<String>,
-    pub split_date_of_birth: Instant,
     pub split_files: Vec<std::path::PathBuf>,
     pub hotcache_bytes: Vec<u8>,
 }
@@ -53,7 +52,6 @@ impl fmt::Debug for PackagedSplit {
             .field("num_docs", &self.num_docs)
             .field("demux_num_ops", &self.demux_num_ops)
             .field("tags", &self.tags)
-            .field("split_date_of_birth", &self.split_date_of_birth)
             .field("split_files", &self.split_files)
             .finish()
     }
@@ -63,6 +61,7 @@ impl fmt::Debug for PackagedSplit {
 pub struct PackagedSplitBatch {
     pub splits: Vec<PackagedSplit>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+    pub date_of_birth: Instant,
 }
 
 impl PackagedSplitBatch {
@@ -73,6 +72,7 @@ impl PackagedSplitBatch {
     pub fn new(
         splits: Vec<PackagedSplit>,
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+        date_of_birth: Instant,
     ) -> Self {
         assert!(!splits.is_empty());
         assert_eq!(
@@ -87,6 +87,7 @@ impl PackagedSplitBatch {
         Self {
             splits,
             checkpoint_delta_opt,
+            date_of_birth,
         }
     }
 

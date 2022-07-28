@@ -19,6 +19,7 @@
 
 use std::ops::RangeInclusive;
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -104,10 +105,7 @@ enum PrepareDocumentOutcome {
 }
 
 impl IndexerState {
-    fn create_indexed_split(
-        &self,
-        ctx: &ActorContext<Indexer>,
-    ) -> anyhow::Result<IndexingWorkbench> {
+    fn create_workbench(&self, ctx: &ActorContext<Indexer>) -> anyhow::Result<IndexingWorkbench> {
         let schema = self.doc_mapper.schema();
         let index_settings = IndexSettings {
             sort_by_field: self.sort_by_field_opt.clone(),
@@ -136,6 +134,7 @@ impl IndexerState {
             },
             indexed_split,
             workbench_id: Ulid::new(),
+            date_of_birth: Instant::now(),
         };
         Ok(workbench)
     }
@@ -144,13 +143,13 @@ impl IndexerState {
     /// the indexed_split does not exist yet.
     ///
     /// This function will then create it, and can hence return an Error.
-    async fn get_or_create_current_indexed_split<'a>(
-        &'a self,
+    async fn get_or_create_workbench<'a>(
+        &self,
         indexing_workbench_opt: &'a mut Option<IndexingWorkbench>,
         ctx: &ActorContext<Indexer>,
     ) -> anyhow::Result<&'a mut IndexingWorkbench> {
         if indexing_workbench_opt.is_none() {
-            let indexing_workbench = self.create_indexed_split(ctx)?;
+            let indexing_workbench = self.create_workbench(ctx)?;
             let commit_timeout_message = CommitTimeout {
                 workbench_id: indexing_workbench.workbench_id,
             };
@@ -214,7 +213,7 @@ impl IndexerState {
             indexed_split,
             ..
         } = self
-            .get_or_create_current_indexed_split(indexing_workbench_opt, ctx)
+            .get_or_create_workbench(indexing_workbench_opt, ctx)
             .await?;
         checkpoint_delta
             .source_delta
@@ -257,10 +256,18 @@ impl IndexerState {
     }
 }
 
+/// A workbench will host the set of `IndexedSplit` that will are being built.
+///
+/// TODO(fulmicoton) Right now it only holds a single split but this will change in my next PR.
 struct IndexingWorkbench {
     checkpoint_delta: IndexCheckpointDelta,
     indexed_split: IndexedSplit,
     workbench_id: Ulid,
+    // TODO create this Instant on the source side to be more accurate.
+    // Right now this instant is used to compute time-to-search, but this
+    // does not include the amount of time a document could have been
+    // staying in the indexer queue or in the push api queue.
+    date_of_birth: Instant,
 }
 
 pub struct Indexer {
@@ -430,6 +437,7 @@ impl Indexer {
         let IndexingWorkbench {
             checkpoint_delta,
             indexed_split,
+            date_of_birth,
             ..
         } = if let Some(indexing_workbench) = self.indexing_workbench_opt.take() {
             indexing_workbench
@@ -459,6 +467,7 @@ impl Indexer {
             IndexedSplitBatch {
                 splits: vec![indexed_split],
                 checkpoint_delta: Some(checkpoint_delta),
+                date_of_birth,
             },
         )
         .await?;

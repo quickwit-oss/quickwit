@@ -181,7 +181,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     }
                     packaged_splits_and_metadatas.push((split, upload_result.unwrap()));
                 }
-                let publisher_message = make_publish_operation(index_id, packaged_splits_and_metadatas, batch.checkpoint_delta_opt);
+                let publisher_message = make_publish_operation(index_id, packaged_splits_and_metadatas, batch.checkpoint_delta_opt, batch.date_of_birth);
                 if let Err(publisher_message) = split_uploaded_tx.send(publisher_message) {
                     bail!(
                         "Failed to send upload split `{:?}`. The publisher is probably dead.",
@@ -218,6 +218,7 @@ fn make_publish_operation(
     index_id: String,
     packaged_splits_and_metadatas: Vec<(PackagedSplit, SplitMetadata)>,
     checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+    date_of_birth: Instant,
 ) -> SplitUpdate {
     assert!(!packaged_splits_and_metadatas.is_empty());
     let replaced_split_ids = packaged_splits_and_metadatas
@@ -232,8 +233,7 @@ fn make_publish_operation(
             .collect_vec(),
         replaced_split_ids: Vec::from_iter(replaced_split_ids),
         checkpoint_delta_opt,
-        //         split_date_of_birth: packaged_split.split_date_of_birth,
-        split_date_of_birth: Instant::now(), // FIXME
+        date_of_birth,
     }
 }
 
@@ -350,7 +350,7 @@ mod tests {
             new_splits,
             checkpoint_delta_opt,
             replaced_split_ids,
-            split_date_of_birth: _,
+            split_update_date_of_birth: _,
         } = publisher_message;
         assert_eq!(new_splits.len(), 1);
         assert_eq!(index_id, "test-index");
@@ -454,7 +454,7 @@ mod tests {
             new_splits,
             mut replaced_split_ids,
             checkpoint_delta_opt,
-            split_date_of_birth: _,
+            split_update_date_of_birth: _,
         } = publisher_message;
         assert_eq!(&index_id, "test-index");
         // Sort first to avoid test failing.

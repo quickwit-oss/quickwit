@@ -144,7 +144,7 @@ impl Handler<IndexedSplitBatch> for Packager {
         }
         ctx.send_message(
             &self.uploader_mailbox,
-            PackagedSplitBatch::new(packaged_splits, batch.checkpoint_delta),
+            PackagedSplitBatch::new(packaged_splits, batch.checkpoint_delta, batch.date_of_birth),
         )
         .await?;
         fail_point!("packager:after");
@@ -350,7 +350,6 @@ fn create_packaged_split(
         time_range: split.time_range,
         size_in_bytes: split.docs_size_in_bytes,
         tags,
-        split_date_of_birth: split.split_date_of_birth,
         split_files,
         hotcache_bytes,
     };
