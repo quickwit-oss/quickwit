@@ -326,11 +326,11 @@ mod tests {
                     demux_num_ops: 0,
                     tags: Default::default(),
                     replaced_split_ids: Vec::new(),
-                    split_date_of_birth: Instant::now(),
                     hotcache_bytes: vec![],
                     split_files: vec![],
                 }],
                 checkpoint_delta_opt,
+                Instant::now(),
             ))
             .await?;
         assert_eq!(
@@ -350,7 +350,7 @@ mod tests {
             new_splits,
             checkpoint_delta_opt,
             replaced_split_ids,
-            split_update_date_of_birth: _,
+            date_of_birth: _,
         } = publisher_message;
         assert_eq!(new_splits.len(), 1);
         assert_eq!(index_id, "test-index");
@@ -409,7 +409,6 @@ mod tests {
                 "replaced-split-1".to_string(),
                 "replaced-split-2".to_string(),
             ],
-            split_date_of_birth: Instant::now(), // FIXE ME
             split_files: vec![],
             hotcache_bytes: vec![],
         };
@@ -426,7 +425,6 @@ mod tests {
                 "replaced-split-1".to_string(),
                 "replaced-split-2".to_string(),
             ],
-            split_date_of_birth: Instant::now(),
             split_files: vec![],
             hotcache_bytes: vec![],
         };
@@ -434,6 +432,7 @@ mod tests {
             .send_message(PackagedSplitBatch::new(
                 vec![packaged_split_1, package_split_2],
                 None,
+                Instant::now(),
             ))
             .await?;
         assert_eq!(
@@ -454,7 +453,7 @@ mod tests {
             new_splits,
             mut replaced_split_ids,
             checkpoint_delta_opt,
-            split_update_date_of_birth: _,
+            date_of_birth: _,
         } = publisher_message;
         assert_eq!(&index_id, "test-index");
         // Sort first to avoid test failing.

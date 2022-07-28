@@ -34,8 +34,8 @@ use tokio::sync::Mutex;
 use tracing::log::LevelFilter;
 use tracing::{debug, error, instrument, warn};
 
-use crate::metastore::postgresql_model::{Index, IndexIdSplitIdRow};
-use crate::metastore::{postgresql_model, SourceCheckpointDelta};
+use crate::checkpoint::IndexCheckpointDelta;
+use crate::metastore::postgresql_model::{self, Index, IndexIdSplitIdRow};
 use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
     MetastoreResult, Split, SplitMetadata, SplitState,
@@ -524,19 +524,17 @@ impl Metastore for PostgresqlMetastore {
     async fn publish_splits<'a>(
         &self,
         index_id: &str,
-        source_id: &str,
         new_split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
-        checkpoint_delta: SourceCheckpointDelta,
+        checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     ) -> MetastoreResult<()> {
         run_with_tx!(self.connection_pool, tx, {
-            mutate_index_metadata(tx, index_id, |index_metadata| {
-                index_metadata
-                    .checkpoint
-                    .try_apply_delta(source_id, checkpoint_delta)
-            })
-            .await?;
-
+            if let Some(checkpoint_delta) = checkpoint_delta_opt {
+                mutate_index_metadata(tx, index_id, |index_metadata| {
+                    index_metadata.checkpoint.try_apply_delta(checkpoint_delta)
+                })
+                .await?;
+            }
             let published_split_ids: Vec<String> =
                 mark_splits_as_published_helper(tx, index_id, new_split_ids).await?;
 

@@ -207,7 +207,7 @@ mod tests {
                         && checkpoint_delta.source_id == "source"
                         && split_ids[..] == ["split"]
                         && replaced_split_ids.is_empty()
-                        && &checkpoint_delta.source_delta == &SourceCheckpointDelta::from(1..3)
+                        && checkpoint_delta.source_delta == SourceCheckpointDelta::from(1..3)
                 },
             )
             .times(1)
@@ -239,7 +239,7 @@ mod tests {
                     source_id: "source".to_string(),
                     source_delta: SourceCheckpointDelta::from(1..3),
                 }),
-                split_date_of_birth: Instant::now(),
+                date_of_birth: Instant::now(),
             })
             .await
             .is_ok());
@@ -301,7 +301,7 @@ mod tests {
             }],
             replaced_split_ids: vec!["split1".to_string(), "split2".to_string()],
             checkpoint_delta_opt: None,
-            split_date_of_birth: Instant::now(),
+            date_of_birth: Instant::now(),
         };
         assert!(publisher_mailbox
             .send_message(publisher_message)

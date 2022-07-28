@@ -440,7 +440,6 @@ mod tests {
             demux_num_ops: 0,
             num_docs,
             docs_size_in_bytes: num_docs * 15, //< bogus number
-            split_date_of_birth: Instant::now(),
             index,
             index_writer,
             split_scratch_directory,
@@ -483,6 +482,7 @@ mod tests {
             .send_message(IndexedSplitBatch {
                 splits: vec![indexed_split],
                 checkpoint_delta: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
+                date_of_birth: Instant::now(),
             })
             .await?;
         assert_eq!(
@@ -526,6 +526,7 @@ mod tests {
             .send_message(IndexedSplitBatch {
                 splits: vec![indexed_split],
                 checkpoint_delta: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
+                date_of_birth: Instant::now(),
             })
             .await?;
         assert_eq!(
@@ -551,6 +552,7 @@ mod tests {
             .send_message(IndexedSplitBatch {
                 splits: vec![indexed_split_1, indexed_split_2],
                 checkpoint_delta: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
+                date_of_birth: Instant::now(),
             })
             .await?;
         assert_eq!(
