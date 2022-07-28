@@ -254,6 +254,7 @@ pub struct KafkaSource {
     consumer: Arc<RdKafkaConsumer>,
     state: KafkaSourceState,
     rebalance_events: mpsc::Receiver<RebalanceEvent>,
+    backfill_mode_enabled: bool,
 }
 
 impl fmt::Debug for KafkaSource {
@@ -274,6 +275,7 @@ impl KafkaSource {
         _checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
         let topic = params.topic.clone();
+        let backfill_mode_enabled = params.enable_backfill_mode;
 
         let (rebalance_sender, rebalance_receiver) = mpsc::channel(32);
 
@@ -296,6 +298,7 @@ impl KafkaSource {
             consumer,
             state,
             rebalance_events: rebalance_receiver,
+            backfill_mode_enabled,
         })
     }
 }
@@ -400,7 +403,7 @@ impl Source for KafkaSource {
             };
             ctx.send_message(batch_sink, batch).await?;
         }
-        if self.state.num_active_partitions.is_zero() {
+        if self.backfill_mode_enabled && self.state.num_active_partitions.is_zero() {
             info!(topic = %self.topic, "Reached end of topic.");
             ctx.send_exit_with_success(batch_sink).await?;
             return Err(ActorExitStatus::Success);
@@ -753,6 +756,7 @@ mod kafka_broker_tests {
                     "bootstrap.servers": bootstrap_servers,
                     "enable.partition.eof": true,
                 }),
+                enable_backfill_mode: true,
             }),
         };
 
@@ -981,6 +985,7 @@ mod kafka_broker_tests {
             topic: topic.clone(),
             client_log_level: None,
             client_params: json!({ "bootstrap.servers": bootstrap_servers }),
+            enable_backfill_mode: true,
         })
         .await?;
 
@@ -992,6 +997,7 @@ mod kafka_broker_tests {
             topic: "non-existent-topic".to_string(),
             client_log_level: None,
             client_params: json!({ "bootstrap.servers": bootstrap_servers }),
+            enable_backfill_mode: true,
         })
         .await;
 
@@ -1004,6 +1010,7 @@ mod kafka_broker_tests {
             client_params: json!({
                 "bootstrap.servers": "192.0.2.10:9092"
             }),
+            enable_backfill_mode: true,
         })
         .await;
 

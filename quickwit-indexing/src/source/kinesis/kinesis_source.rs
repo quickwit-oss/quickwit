@@ -97,7 +97,7 @@ pub struct KinesisSource {
     // Receiver for the communication channel between the source and the shard consumers.
     shard_consumers_rx: mpsc::Receiver<ShardConsumerMessage>,
     state: KinesisSourceState,
-    shutdown_at_stream_eof: bool,
+    backfill_mode_enabled: bool,
 }
 
 impl fmt::Debug for KinesisSource {
@@ -118,7 +118,7 @@ impl KinesisSource {
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
         let stream_name = params.stream_name;
-        let shutdown_at_stream_eof = params.shutdown_at_stream_eof;
+        let backfill_mode_enabled = params.enable_backfill_mode;
         let region = get_region(params.region_or_endpoint)?;
         let kinesis_client = get_kinesis_client(region)?;
         let (shard_consumers_tx, shard_consumers_rx) = mpsc::channel(1_000);
@@ -132,7 +132,7 @@ impl KinesisSource {
             shard_consumers_tx,
             shard_consumers_rx,
             state,
-            shutdown_at_stream_eof,
+            backfill_mode_enabled,
             retry_params,
         })
     }
@@ -154,7 +154,7 @@ impl KinesisSource {
             self.stream_name.clone(),
             shard_id.clone(),
             from_sequence_number_exclusive,
-            self.shutdown_at_stream_eof,
+            self.backfill_mode_enabled,
             self.kinesis_client.clone(),
             self.shard_consumers_tx.clone(),
             self.retry_params.clone(),
@@ -386,7 +386,7 @@ mod tests {
             region_or_endpoint: Some(RegionOrEndpoint::Endpoint(
                 "http://localhost:4566".to_string(),
             )),
-            shutdown_at_stream_eof: true,
+            enable_backfill_mode: true,
         };
         {
             let checkpoint = SourceCheckpoint::default();
