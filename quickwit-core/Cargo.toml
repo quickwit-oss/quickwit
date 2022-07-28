@@ -41,4 +41,4 @@ tracing = "0.1.29"
 
 [dev-dependencies]
 mockall = "0.11"
-serde_yaml = "0.8"
+serde_yaml = "0.9"
