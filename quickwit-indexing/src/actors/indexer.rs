@@ -535,9 +535,9 @@ mod tests {
         indexer_mailbox
             .send_message(RawDocBatch {
                 docs: vec![
-                        r#"{"body": "happy", "response_date": 1652866573228, "response_time": 12, "response_payload": "YWJj"}"#.to_string(), // missing timestamp
-                        r#"{"body": "happy", "timestamp": 1628837062, "response_date": 1652866573229, "response_time": 2, "response_payload": "YWJj"}"#.to_string(), // ok
-                        r#"{"body": "happy2", "timestamp": 1628837062, "response_date": 1652866573232, "response_time": 13, "response_payload": "YWJj"}"#.to_string(), // ok
+                        r#"{"body": "happy", "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string(), // missing timestamp
+                        r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#.to_string(), // ok
+                        r#"{"body": "happy2", "timestamp": 1628837062, "response_date": "2021-12-19T16:40:57+00:00", "response_time": 13, "response_payload": "YWJj"}"#.to_string(), // ok
                         "{".to_string(),                    // invalid json
                     ],
                 checkpoint_delta: SourceCheckpointDelta::from(0..4),
@@ -552,13 +552,13 @@ mod tests {
                 num_valid_docs: 2,
                 num_splits_emitted: 0,
                 num_docs_in_split: 2, //< we have not reached the commit limit yet.
-                overall_num_bytes: 345
+                overall_num_bytes: 387
             }
         );
         indexer_mailbox
             .send_message(
                 RawDocBatch {
-                    docs: vec![r#"{"body": "happy3", "timestamp": 1628837062, "response_date": 1652866573227, "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
+                    docs: vec![r#"{"body": "happy3", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
                     checkpoint_delta: SourceCheckpointDelta::from(4..5),
                 }
             )
@@ -572,7 +572,7 @@ mod tests {
                 num_valid_docs: 3,
                 num_splits_emitted: 1,
                 num_docs_in_split: 0, //< the num docs in split counter has been reset.
-                overall_num_bytes: 469
+                overall_num_bytes: 525
             }
         );
         let output_messages = inbox.drain_for_test();
@@ -617,7 +617,7 @@ mod tests {
         indexer_mailbox
             .send_message(
                 RawDocBatch {
-                    docs: vec![r#"{"body": "happy", "timestamp": 1628837062, "response_date": 1652866573228, "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
+                    docs: vec![r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
                     checkpoint_delta: SourceCheckpointDelta::from(0..1),
                 }
             )
@@ -631,7 +631,7 @@ mod tests {
                 num_valid_docs: 1,
                 num_splits_emitted: 0,
                 num_docs_in_split: 1,
-                overall_num_bytes: 123
+                overall_num_bytes: 137
             }
         );
         universe.simulate_time_shift(Duration::from_secs(61)).await;
@@ -644,7 +644,7 @@ mod tests {
                 num_valid_docs: 1,
                 num_splits_emitted: 1,
                 num_docs_in_split: 0,
-                overall_num_bytes: 123
+                overall_num_bytes: 137
             }
         );
         let output_messages = inbox.drain_for_test();
@@ -684,7 +684,7 @@ mod tests {
         indexer_mailbox
             .send_message(
                 RawDocBatch {
-                    docs: vec![r#"{"body": "happy", "timestamp": 1628837062, "response_date": 1652866573227, "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
+                    docs: vec![r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
                     checkpoint_delta: SourceCheckpointDelta::from(0..1),
                 }
             )
@@ -700,7 +700,7 @@ mod tests {
                 num_valid_docs: 1,
                 num_splits_emitted: 1,
                 num_docs_in_split: 0,
-                overall_num_bytes: 123
+                overall_num_bytes: 137
             }
         );
         let output_messages = inbox.drain_for_test();

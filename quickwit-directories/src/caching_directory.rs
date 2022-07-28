@@ -85,7 +85,7 @@ impl fmt::Debug for CachingDirectory {
 struct CachingFileHandle {
     path: PathBuf,
     cache: Arc<MemorySizedCache>,
-    underlying_filehandle: Box<dyn FileHandle>,
+    underlying_filehandle: Arc<dyn FileHandle>,
 }
 
 impl fmt::Debug for CachingFileHandle {
@@ -139,14 +139,14 @@ impl Directory for CachingDirectory {
     fn get_file_handle(
         &self,
         path: &Path,
-    ) -> std::result::Result<Box<dyn FileHandle>, OpenReadError> {
+    ) -> std::result::Result<Arc<dyn FileHandle>, OpenReadError> {
         let underlying_filehandle = self.underlying.get_file_handle(path)?;
         let caching_file_handle = CachingFileHandle {
             path: path.to_path_buf(),
             cache: self.cache.clone(),
             underlying_filehandle,
         };
-        Ok(Box::new(caching_file_handle))
+        Ok(Arc::new(caching_file_handle))
     }
 
     fn atomic_read(&self, path: &Path) -> std::result::Result<Vec<u8>, OpenReadError> {
