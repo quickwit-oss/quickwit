@@ -3072,6 +3072,7 @@ dependencies = [
  "bytes",
  "fail",
  "flume",
+ "fnv",
  "futures",
  "itertools",
  "libz-sys",

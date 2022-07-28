@@ -142,6 +142,7 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
         store_source: true,
         mode: ModeType::Dynamic,
         dynamic_mapping: None,
+        partition_key: "".to_string(),
     };
     let merge_policy = MergePolicy {
         demux_factor: 7,

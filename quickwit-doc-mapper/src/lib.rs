@@ -28,6 +28,7 @@ mod default_doc_mapper;
 mod doc_mapper;
 mod error;
 mod query_builder;
+mod routing_expression;
 mod sort_by;
 mod tokenizers;
 

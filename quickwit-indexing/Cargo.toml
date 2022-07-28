@@ -17,6 +17,7 @@ backoff = { version = "0.4", features = ["tokio"], optional = true }
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
 fail = "0.5"
 flume = "0.10"
+fnv = "1"
 futures = "0.3"
 itertools = "0.10.3"
 libz-sys = { version = "1.1.3", optional = true }

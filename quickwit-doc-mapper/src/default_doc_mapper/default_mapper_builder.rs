@@ -54,6 +54,10 @@ pub struct DefaultDocMapperBuilder {
     /// Name of the fields that are tagged.
     #[serde(default)]
     pub tag_fields: Vec<String>,
+    /// The partition key is a DSL used to route documents
+    /// into specific splits.
+    #[serde(default)]
+    pub partition_key: String,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     /// Name of the field to demux by.
