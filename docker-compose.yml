@@ -23,6 +23,13 @@ services:
       - "14250:14250"
       - "14268:14268"
       - "16686:16686"
+    # This dependency is to insure that localstack is fully initialized and the test bucket
+    # created before docker-compose considers the stack fully up. Without this the localstack
+    # image will be labeled ok with indeterminate latency in bucket creation because the
+    # init script to create the bucket runs in the background.
+    depends_on:
+      localstack:
+        condition: service_healthy
 
   localstack:
     image: localstack/localstack:latest
@@ -42,9 +49,12 @@ services:
       SERVICES: kinesis,s3
     volumes:
       - ".localstack:/docker-entrypoint-initaws.d"
-      - "${TMPDIR:-/tmp}/quickwit/services/localstack:/tmp/localstack"
+      - "${TMPDIR:-/tmp}/quickwit/services/localstack:/var/lib/localstack"
     healthcheck:
-      test: ["CMD", "curl", "-k", "https://localhost:4566"]
+      test: ["CMD", "curl", "-k", "-f", "https://localhost:4566/quickwit-integration-tests"]
+      interval: 1s
+      timeout: 5s
+      retries: 100
 
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite:latest
