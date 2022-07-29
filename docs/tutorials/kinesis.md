@@ -20,7 +20,7 @@ You will need the following to complete this tutorial:
 - [GNU parallel](https://www.gnu.org/software/parallel/)
 
 :::note
-`jq` is required to build the input source partition files.
+`jq` is required to reshape the events into records ingestable by the Amazon Kinesis API.
 :::
 
 ### Create index
