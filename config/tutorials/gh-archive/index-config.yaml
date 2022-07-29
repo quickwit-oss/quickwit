@@ -15,7 +15,7 @@ doc_mapping:
       fast: true
       tokenizer: raw
     - name: public
-      type: u64
+      type: bool
       fast: true
     - name: payload
       type: json
@@ -33,7 +33,10 @@ doc_mapping:
       type: json
       tokenizer: default
     - name: created_at
-      type: i64
+      type: datetime
+      input_formats:
+        - "rfc3339"
+      precision: "seconds"
       fast: true
 
 indexing_settings:
