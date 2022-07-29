@@ -53,6 +53,9 @@ version: 0
 
 doc_mapping:
   field_mappings:
+    - name: timestamp
+      type: i64
+      fast: true
     - name: severity_text
       type: text
       tokenizer: raw
