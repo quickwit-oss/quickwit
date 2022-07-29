@@ -20,7 +20,7 @@ You will need the following to complete this tutorial:
 - [GNU parallel](https://www.gnu.org/software/parallel/)
 
 :::note
-`jq` is required to transform on the fly some fields of the GH Archive events whose types are not (yet) supported by Quickwit. The [boolean](https://github.com/quickwit-oss/quickwit/issues/1483) and [datetime](https://github.com/quickwit-oss/quickwit/issues/1328) fields are expected to land in [Quickwit 0.4](https://github.com/quickwit-oss/quickwit/projects/5).
+`jq` is required to build the input source partition files.
 :::
 
 ### Create index
@@ -45,7 +45,7 @@ doc_mapping:
       fast: true
       tokenizer: raw
     - name: public
-      type: u64
+      type: bool
       fast: true
     - name: payload
       type: json
@@ -63,7 +63,10 @@ doc_mapping:
       type: json
       tokenizer: default
     - name: created_at
-      type: i64
+      type: datetime
+      input_formats:
+        - "rfc3339"
+      precision: "seconds"
       fast: true
 
 indexing_settings:
@@ -101,7 +104,6 @@ wget https://data.gharchive.org/2022-05-12-{10..12}.json.gz
 
 # Load the events into Kinesis stream
 gunzip -c 2022-05-12*.json.gz | \
-jq -c '.created_at = (.created_at | fromdate) | .public = if .public then 1 else 0 end' | \
 parallel --gnu -j8 -N 500 --pipe \
 'jq --slurp -c "{\"Records\": [.[] | {\"Data\": (. | tostring), \"PartitionKey\": .id }], \"StreamName\": \"gh-archive\"}" > records-{%}.json && \
 aws kinesis put-records --cli-input-json file://records-{%}.json --cli-binary-format raw-in-base64-out >> out.log'

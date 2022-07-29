@@ -202,6 +202,15 @@ fn resolve_timestamp_field(
                     )
                 }
             }
+            FieldType::Date(options) => {
+                if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
+                    bail!(
+                        "Timestamp field cannot be an array, please change your field `{}` from \
+                         an array to a single value.",
+                        timestamp_field_name
+                    )
+                }
+            }
             _ => {
                 bail!(
                     "Timestamp field must be of type i64, please change your field type `{}` to \
