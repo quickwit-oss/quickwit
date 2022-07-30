@@ -54,6 +54,8 @@ pub struct DocMapping {
     pub mode: ModeType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dynamic_mapping: Option<QuickwitJsonOptions>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub partition_key: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -341,6 +343,7 @@ pub fn build_doc_mapper(
         demux_field: indexing_settings.demux_field.clone(),
         mode: doc_mapping.mode,
         dynamic_mapping: doc_mapping.dynamic_mapping.clone(),
+        partition_key: doc_mapping.partition_key.clone(),
     };
     Ok(Arc::new(builder.try_build()?))
 }

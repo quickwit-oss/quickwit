@@ -27,6 +27,8 @@ use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
 use tantivy::Document;
 
+pub type Partition = u64;
+
 use crate::{DocParsingError, QueryParserError, SortBy};
 
 /// The `DocMapper` trait defines the way of defining how a (json) document,
@@ -42,7 +44,7 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// Returns the document built from an owned JSON string.
     ///
     /// (we pass by value here, as the value can be used as is in the _source field.)
-    fn doc_from_json(&self, doc_json: String) -> Result<Document, DocParsingError>;
+    fn doc_from_json(&self, doc_json: String) -> Result<(Partition, Document), DocParsingError>;
 
     /// Converts a tantivy named Document to the json format.
     ///
