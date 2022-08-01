@@ -309,7 +309,7 @@ impl KafkaSource {
 impl Source for KafkaSource {
     async fn emit_batches(
         &mut self,
-        batch_sink: &Mailbox<Indexer>,
+        indexer_mailbox: &Mailbox<Indexer>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_num_bytes = 0;
@@ -403,11 +403,11 @@ impl Source for KafkaSource {
                 docs,
                 checkpoint_delta,
             };
-            ctx.send_message(batch_sink, batch).await?;
+            ctx.send_message(indexer_mailbox, batch).await?;
         }
         if self.backfill_mode_enabled && self.state.num_active_partitions.is_zero() {
             info!(topic = %self.topic, "Reached end of topic.");
-            ctx.send_exit_with_success(batch_sink).await?;
+            ctx.send_exit_with_success(indexer_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
         debug!("batch complete, waiting for next iteration");
@@ -785,7 +785,7 @@ mod kafka_broker_tests {
                 .await?;
             let actor = SourceActor {
                 source,
-                batch_sink: sink.clone(),
+                indexer_mailbox: sink.clone(),
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;
@@ -849,7 +849,7 @@ mod kafka_broker_tests {
                 .await?;
             let actor = SourceActor {
                 source,
-                batch_sink: sink.clone(),
+                indexer_mailbox: sink.clone(),
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, state) = handle.join().await;
@@ -939,7 +939,7 @@ mod kafka_broker_tests {
                 .await?;
             let actor = SourceActor {
                 source,
-                batch_sink: sink.clone(),
+                indexer_mailbox: sink.clone(),
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;

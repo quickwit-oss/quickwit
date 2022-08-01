@@ -280,7 +280,7 @@ mod tests {
         .await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
-            batch_sink: mailbox,
+            indexer_mailbox: mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_actor(ingest_api_source_actor).spawn();
@@ -330,7 +330,7 @@ mod tests {
         .await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
-            batch_sink: mailbox,
+            indexer_mailbox: mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_actor(ingest_api_source_actor).spawn();
@@ -382,7 +382,7 @@ mod tests {
         .await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
-            batch_sink: mailbox,
+            indexer_mailbox: mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_actor(ingest_api_source_actor).spawn();
@@ -442,7 +442,7 @@ mod tests {
         .await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
-            batch_sink: mailbox,
+            indexer_mailbox: mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_actor(ingest_api_source_actor).spawn();

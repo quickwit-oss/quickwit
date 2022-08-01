@@ -414,7 +414,7 @@ impl IndexingPipeline {
             .await?;
         let actor_source = SourceActor {
             source,
-            batch_sink: indexer_mailbox,
+            indexer_mailbox,
         };
         let (_source_mailbox, source_handler) = ctx
             .spawn_actor(actor_source)
