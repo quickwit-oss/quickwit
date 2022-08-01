@@ -70,7 +70,6 @@ async fn get_config(config: Arc<QuickwitConfig>) -> Result<impl warp::Reply, Rej
 #[cfg(test)]
 mod tests {
     use assert_json_diff::assert_json_include;
-    use quickwit_config::QuickwitConfigBuilder;
 
     use super::*;
     use crate::recover_fn;
@@ -85,8 +84,8 @@ mod tests {
             commit_date: "commit_date",
             version: "version",
         };
-        let mut config = QuickwitConfigBuilder::default().resolve().await?;
-        config.metastore_uri = Uri::new("postgresql://username:password@db".to_string());
+        let mut config = QuickwitConfig::for_test();
+        config.metastore_uri = Uri::for_test("postgresql://username:password@db");
         let handler =
             super::node_info_handler(Arc::new(build_info.clone()), Arc::new(config.clone()))
                 .recover(recover_fn);

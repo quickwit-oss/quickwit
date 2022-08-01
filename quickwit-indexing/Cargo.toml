@@ -26,7 +26,9 @@ openssl = { version = "0.10.36", default-features = false, optional = true }
 quickwit-actors = { version = "0.3.1", path = "../quickwit-actors" }
 quickwit-aws = { version = "0.3.1", path = "../quickwit-aws" }
 quickwit-common = { version = "0.3.1", path = "../quickwit-common" }
-quickwit-config = { version = "0.3.1", path = "../quickwit-config" }
+quickwit-config = { version = "0.3.1", path = "../quickwit-config", features = [
+  "testsuite"
+] }
 quickwit-directories = { version = "0.3.1", path = "../quickwit-directories" }
 quickwit-doc-mapper = { version = "0.3.1", path = "../quickwit-doc-mapper", features = [
     "testsuite",

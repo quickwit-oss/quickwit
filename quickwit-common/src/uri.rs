@@ -32,11 +32,11 @@ use serde::{Serialize, Serializer};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum Protocol {
+    Azure,
     File,
     PostgreSQL,
     Ram,
     S3,
-    Azure,
 }
 
 impl Protocol {
@@ -75,7 +75,7 @@ impl Protocol {
     }
 
     pub fn is_object_storage(&self) -> bool {
-        matches!(&self, Protocol::S3 | Protocol::Azure)
+        matches!(&self, Protocol::Azure | Protocol::S3)
     }
 
     pub fn is_database(&self) -> bool {
@@ -192,8 +192,8 @@ impl Uri {
         Self { uri, protocol_idx }
     }
 
-    #[cfg(test)]
-    fn for_test(uri: &str) -> Self {
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test(uri: &str) -> Self {
         Uri::new(uri.to_string())
     }
 
