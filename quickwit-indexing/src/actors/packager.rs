@@ -342,6 +342,7 @@ fn create_packaged_split(
 
     let packaged_split = PackagedSplit {
         split_id: split.split_id.to_string(),
+        partition_id: split.partition_id,
         replaced_split_ids: split.replaced_split_ids,
         index_id: split.index_id,
         split_scratch_directory: split.split_scratch_directory,
@@ -436,6 +437,7 @@ mod tests {
         let indexed_split = IndexedSplit {
             split_id: "test-split".to_string(),
             index_id: "test-index".to_string(),
+            partition_id: 17u64,
             time_range: timerange_opt,
             demux_num_ops: 0,
             num_docs,

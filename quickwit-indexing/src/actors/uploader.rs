@@ -204,6 +204,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
 fn create_split_metadata(split: &PackagedSplit, footer_offsets: Range<u64>) -> SplitMetadata {
     SplitMetadata {
         split_id: split.split_id.clone(),
+        partition_id: split.partition_id,
         num_docs: split.num_docs as usize,
         time_range: split.time_range.clone(),
         uncompressed_docs_size_in_bytes: split.size_in_bytes,
@@ -318,6 +319,7 @@ mod tests {
             .send_message(PackagedSplitBatch::new(
                 vec![PackagedSplit {
                     split_id: "test-split".to_string(),
+                    partition_id: 3u64,
                     index_id: "test-index".to_string(),
                     time_range: Some(1_628_203_589i64..=1_628_203_640i64),
                     size_in_bytes: 1_000,
@@ -398,6 +400,11 @@ mod tests {
         let split_scratch_directory_2 = ScratchDirectory::for_test()?;
         let packaged_split_1 = PackagedSplit {
             split_id: "test-split-1".to_string(),
+            partition_id: 3u64,
+            replaced_split_ids: vec![
+                "replaced-split-1".to_string(),
+                "replaced-split-2".to_string(),
+            ],
             index_id: "test-index".to_string(),
             time_range: Some(1_628_203_589i64..=1_628_203_640i64),
             size_in_bytes: 1_000,
@@ -405,15 +412,16 @@ mod tests {
             num_docs: 10,
             demux_num_ops: 1,
             tags: Default::default(),
-            replaced_split_ids: vec![
-                "replaced-split-1".to_string(),
-                "replaced-split-2".to_string(),
-            ],
             split_files: vec![],
             hotcache_bytes: vec![],
         };
         let package_split_2 = PackagedSplit {
             split_id: "test-split-2".to_string(),
+            partition_id: 3u64,
+            replaced_split_ids: vec![
+                "replaced-split-1".to_string(),
+                "replaced-split-2".to_string(),
+            ],
             index_id: "test-index".to_string(),
             time_range: Some(1_628_203_589i64..=1_628_203_640i64),
             size_in_bytes: 1_000,
@@ -421,10 +429,6 @@ mod tests {
             num_docs: 10,
             demux_num_ops: 1,
             tags: Default::default(),
-            replaced_split_ids: vec![
-                "replaced-split-1".to_string(),
-                "replaced-split-2".to_string(),
-            ],
             split_files: vec![],
             hotcache_bytes: vec![],
         };
