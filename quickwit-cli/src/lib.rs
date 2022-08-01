@@ -24,7 +24,7 @@ use anyhow::bail;
 use once_cell::sync::Lazy;
 use quickwit_common::run_checklist;
 use quickwit_common::uri::Uri;
-use quickwit_config::{QuickwitConfig, QuickwitConfigBuilder, SourceConfig};
+use quickwit_config::{QuickwitConfig, SourceConfig};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
@@ -33,15 +33,12 @@ use tabled::object::Rows;
 use tabled::{Alignment, Header, Modify, Rotate, Style, Table, Tabled};
 use tracing::info;
 
-use crate::template::render_config_file;
-
 pub mod cli;
 pub mod index;
 pub mod service;
 pub mod source;
 pub mod split;
 pub mod stats;
-pub mod template;
 
 /// Throughput calculation window size.
 const THROUGHPUT_WINDOW_SIZE: usize = 5;
@@ -74,14 +71,13 @@ pub fn parse_duration_with_unit(duration_with_unit_str: &str) -> anyhow::Result<
 }
 
 async fn load_quickwit_config(
-    uri: &Uri,
-    data_dir: Option<PathBuf>,
+    config_uri: &Uri,
+    data_dir_path_opt: Option<PathBuf>,
 ) -> anyhow::Result<QuickwitConfig> {
-    let config_content = load_file(uri).await?;
-    let rendered_config = render_config_file(config_content.as_slice(), uri)?;
-    let config = QuickwitConfigBuilder::load(uri, rendered_config.as_bytes(), data_dir).await?;
-    let config = config.resolve().await?;
-    info!(config_uri = %uri, config = ?config, "Loaded Quickwit config.");
+    let config_content = load_file(config_uri).await?;
+    let config =
+        QuickwitConfig::load(config_uri, config_content.as_slice(), data_dir_path_opt).await?;
+    info!(config_uri=%config_uri, config=?config, "Loaded Quickwit config.");
     Ok(config)
 }
 

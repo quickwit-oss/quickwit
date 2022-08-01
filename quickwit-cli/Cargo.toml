@@ -48,7 +48,6 @@ quickwit-search = { version = "0.3.1", path = "../quickwit-search" }
 quickwit-serve = { version = "0.3.1", path = "../quickwit-serve" }
 quickwit-storage = { version = "0.3.1", path = "../quickwit-storage" }
 quickwit-telemetry = { version = "0.3.1", path = "../quickwit-telemetry" }
-new_string_template = "1.3.1"
 regex = "1.6.0"
 serde_json = "1.0"
 tabled = "0.8"
