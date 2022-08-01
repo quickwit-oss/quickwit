@@ -160,7 +160,7 @@ mod tests {
         .await?;
         let vec_source_actor = SourceActor {
             source: Box::new(vec_source),
-            batch_sink: mailbox,
+            indexer_mailbox: mailbox,
         };
         assert_eq!(
             vec_source_actor.name(),
@@ -215,7 +215,7 @@ mod tests {
         .await?;
         let vec_source_actor = SourceActor {
             source: Box::new(vec_source),
-            batch_sink: mailbox,
+            indexer_mailbox: mailbox,
         };
         let (_vec_source_mailbox, vec_source_handle) =
             universe.spawn_actor(vec_source_actor).spawn();

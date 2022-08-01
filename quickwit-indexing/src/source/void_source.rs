@@ -125,7 +125,7 @@ mod tests {
         .await?;
         let void_source_actor = SourceActor {
             source: Box::new(void_source),
-            batch_sink: mailbox,
+            indexer_mailbox: mailbox,
         };
         let (_, void_source_handle) = universe.spawn_actor(void_source_actor).spawn();
         matches!(void_source_handle.health(), Health::Healthy);

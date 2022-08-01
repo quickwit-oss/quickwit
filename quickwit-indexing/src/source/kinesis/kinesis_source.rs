@@ -198,7 +198,7 @@ impl Source for KinesisSource {
 
     async fn emit_batches(
         &mut self,
-        batch_sink: &Mailbox<Indexer>,
+        indexer_mailbox: &Mailbox<Indexer>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_num_bytes = 0;
@@ -306,11 +306,11 @@ impl Source for KinesisSource {
                 docs,
                 checkpoint_delta,
             };
-            ctx.send_message(batch_sink, batch).await?;
+            ctx.send_message(indexer_mailbox, batch).await?;
         }
         if self.state.shard_consumers.is_empty() {
             info!(stream_name = %self.stream_name, "Reached end of stream.");
-            ctx.send_exit_with_success(batch_sink).await?;
+            ctx.send_exit_with_success(indexer_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
         Ok(Duration::default())
@@ -398,7 +398,7 @@ mod tests {
                     .unwrap();
             let actor = SourceActor {
                 source: Box::new(kinesis_source),
-                batch_sink: mailbox.clone(),
+                indexer_mailbox: mailbox.clone(),
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;
@@ -452,7 +452,7 @@ mod tests {
                     .unwrap();
             let actor = SourceActor {
                 source: Box::new(kinesis_source),
-                batch_sink: mailbox.clone(),
+                indexer_mailbox: mailbox.clone(),
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;
@@ -523,7 +523,7 @@ mod tests {
                     .unwrap();
             let actor = SourceActor {
                 source: Box::new(kinesis_source),
-                batch_sink: mailbox,
+                indexer_mailbox: mailbox,
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;
