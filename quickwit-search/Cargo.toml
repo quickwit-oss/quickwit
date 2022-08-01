@@ -40,7 +40,7 @@ quickwit-storage = { version = "0.3.1", path = "../quickwit-storage" }
 rayon = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "2406d92", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "d24f31f", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",
@@ -51,7 +51,6 @@ tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
 tokio-util = { version = "0.7", features = ["full"] }
 tracing = "0.1.29"
-tracing-futures = "0.2.5"
 tracing-opentelemetry = "0.17"
 
 [dev-dependencies]

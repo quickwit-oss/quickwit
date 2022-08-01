@@ -24,7 +24,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::VecSourceParams;
-use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
+use quickwit_metastore::checkpoint::{
+    PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
+};
 use tracing::info;
 
 use crate::actors::Indexer;
@@ -83,29 +85,27 @@ impl Source for VecSource {
         batch_sink: &Mailbox<Indexer>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
-        let line_docs: Vec<String> = self.params.items[self.next_item_idx..]
-            .iter()
-            .take(self.params.batch_num_docs)
-            .cloned()
-            .collect();
-        if line_docs.is_empty() {
+        let mut doc_batch = RawDocBatch::default();
+        doc_batch.docs.extend(
+            self.params.items[self.next_item_idx..]
+                .iter()
+                .take(self.params.batch_num_docs)
+                .cloned(),
+        );
+        if doc_batch.docs.is_empty() {
             info!("Reached end of source.");
             ctx.send_exit_with_success(batch_sink).await?;
             return Err(ActorExitStatus::Success);
         }
         let from_item_idx = self.next_item_idx;
-        self.next_item_idx += line_docs.len();
+        self.next_item_idx += doc_batch.docs.len();
         let to_item_idx = self.next_item_idx;
-        let checkpoint_delta = CheckpointDelta::from_partition_delta(
+        doc_batch.checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
             self.partition.clone(),
             position_from_offset(from_item_idx),
             position_from_offset(to_item_idx),
         );
-        let batch = RawDocBatch {
-            docs: line_docs,
-            checkpoint_delta,
-        };
-        ctx.send_message(batch_sink, batch).await?;
+        ctx.send_message(batch_sink, doc_batch).await?;
         Ok(Duration::default())
     }
 
@@ -197,7 +197,7 @@ mod tests {
             partition: "".to_string(),
         };
         let mut checkpoint = SourceCheckpoint::default();
-        checkpoint.try_apply_delta(CheckpointDelta::from(0u64..2u64))?;
+        checkpoint.try_apply_delta(SourceCheckpointDelta::from(0u64..2u64))?;
 
         let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
         let vec_source = VecSourceFactory::typed_create_source(

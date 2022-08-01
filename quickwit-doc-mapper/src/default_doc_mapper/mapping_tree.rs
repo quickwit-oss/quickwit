@@ -27,8 +27,9 @@ use tantivy::schema::{
     BytesOptions, Cardinality, Field, JsonObjectOptions, NumericOptions, SchemaBuilder,
     TextOptions, Value,
 };
-use tantivy::Document;
+use tantivy::{DateOptions, DateTime, Document};
 
+use super::date_time_type::{timestamp_to_datetime_str, QuickwitDateTimeOptions};
 use crate::default_doc_mapper::field_mapping_entry::{
     QuickwitNumericOptions, QuickwitObjectOptions, QuickwitTextOptions,
 };
@@ -52,6 +53,7 @@ pub enum LeafType {
     U64(QuickwitNumericOptions),
     F64(QuickwitNumericOptions),
     Bool(QuickwitNumericOptions),
+    DateTime(QuickwitDateTimeOptions),
     Bytes(QuickwitNumericOptions),
     Json(QuickwitJsonOptions),
 }
@@ -62,6 +64,7 @@ impl LeafType {
             LeafType::Text(_) => JsonType::String,
             LeafType::I64(_) | LeafType::U64(_) | LeafType::F64(_) => JsonType::Number,
             LeafType::Bool(_) => JsonType::Bool,
+            LeafType::DateTime(_) => JsonType::String,
             LeafType::Bytes(_) => JsonType::String,
             LeafType::Json(_) => JsonType::Object,
         }
@@ -75,6 +78,7 @@ impl LeafType {
             | LeafType::F64(opt)
             | LeafType::Bool(opt)
             | LeafType::Bytes(opt) => opt.fast,
+            LeafType::DateTime(opt) => opt.fast,
             LeafType::Json(_) => false,
         }
     }
@@ -97,6 +101,24 @@ impl LeafType {
                 } else {
                     Err(format!("Expected bool value, got '{}'.", json_val))
                 }
+            }
+            LeafType::DateTime(options) => {
+                let date_time = match json_val {
+                    JsonValue::String(text) => options.parse_string(text)?,
+                    JsonValue::Number(number) => {
+                        let i64_val = number
+                            .as_i64()
+                            .ok_or_else(|| format!("Expected an integer, got '{}'.", number))?;
+                        options.parse_number(i64_val)?
+                    }
+                    _ => {
+                        return Err(format!(
+                            "Expected datetime as string or number, got '{}'.",
+                            json_val
+                        ))
+                    }
+                };
+                Ok(Value::Date(DateTime::from_utc(date_time)))
             }
             LeafType::Bytes(_) => {
                 let base64_str = if let JsonValue::String(base64_str) = json_val {
@@ -172,6 +194,14 @@ impl MappingLeaf {
         let json_type = self.typ.json_type();
         if let Some(json_val) = extract_json_val(json_type, named_doc, field_path, self.cardinality)
         {
+            if let (LeafType::DateTime(options), Some(timestamp)) =
+                (self.get_type(), json_val.as_i64())
+            {
+                let date_time_str = timestamp_to_datetime_str(timestamp, &options.precision)
+                    .expect("Invalid timestamp is not allowed.");
+                return insert_json_val(field_path, JsonValue::String(date_time_str), doc_json);
+            }
+
             insert_json_val(field_path, json_val, doc_json);
         }
     }
@@ -395,6 +425,7 @@ impl From<MappingLeaf> for FieldMappingType {
             LeafType::U64(opt) => FieldMappingType::U64(opt, leaf.cardinality),
             LeafType::F64(opt) => FieldMappingType::F64(opt, leaf.cardinality),
             LeafType::Bool(opt) => FieldMappingType::Bool(opt, leaf.cardinality),
+            LeafType::DateTime(opt) => FieldMappingType::DateTime(opt, leaf.cardinality),
             LeafType::Bytes(opt) => FieldMappingType::Bytes(opt, leaf.cardinality),
             LeafType::Json(opt) => FieldMappingType::Json(opt, leaf.cardinality),
         }
@@ -496,6 +527,23 @@ fn get_numeric_options(
     numeric_options
 }
 
+fn get_date_time_options(
+    quickwit_date_time_options: &QuickwitDateTimeOptions,
+    cardinality: Cardinality,
+) -> DateOptions {
+    let mut date_time_options = DateOptions::default();
+    if quickwit_date_time_options.stored {
+        date_time_options = date_time_options.set_stored();
+    }
+    if quickwit_date_time_options.indexed {
+        date_time_options = date_time_options.set_indexed();
+    }
+    if quickwit_date_time_options.fast {
+        date_time_options = date_time_options.set_fast(cardinality);
+    }
+    date_time_options.set_precision(quickwit_date_time_options.precision)
+}
+
 fn get_bytes_options(quickwit_numeric_options: &QuickwitNumericOptions) -> BytesOptions {
     let mut bytes_options = BytesOptions::default();
     if quickwit_numeric_options.indexed {
@@ -591,6 +639,16 @@ fn build_mapping_from_field_type<'a>(
             };
             Ok(MappingTree::Leaf(mapping_leaf))
         }
+        FieldMappingType::DateTime(options, cardinality) => {
+            let date_time_options = get_date_time_options(options, *cardinality);
+            let field = schema_builder.add_date_field(&field_name, date_time_options);
+            let mapping_leaf = MappingLeaf {
+                field,
+                typ: LeafType::DateTime(options.clone()),
+                cardinality: *cardinality,
+            };
+            Ok(MappingTree::Leaf(mapping_leaf))
+        }
         FieldMappingType::Bytes(options, cardinality) => {
             let bytes_options = get_bytes_options(options);
             let field = schema_builder.add_bytes_field(&field_name, bytes_options);
@@ -625,9 +683,11 @@ fn build_mapping_from_field_type<'a>(
 mod tests {
     use serde_json::json;
     use tantivy::schema::{Cardinality, Field, Value};
-    use tantivy::Document;
+    use tantivy::{DateTime, Document};
+    use time::macros::datetime;
 
     use super::{LeafType, MappingLeaf};
+    use crate::default_doc_mapper::date_time_type::QuickwitDateTimeOptions;
     use crate::default_doc_mapper::field_mapping_entry::{
         QuickwitNumericOptions, QuickwitTextOptions,
     };
@@ -889,6 +949,37 @@ mod tests {
         let typ = LeafType::Text(QuickwitTextOptions::default());
         let err = typ.value_from_json(json!(2u64)).err().unwrap();
         assert_eq!(err, "Expected JSON string, got '2'.");
+    }
+
+    #[test]
+    fn test_parse_date() {
+        let typ = LeafType::DateTime(QuickwitDateTimeOptions::default());
+        let value = typ
+            .value_from_json(json!("2021-12-19T16:39:57-01:00"))
+            .unwrap();
+        let date_time = datetime!(2021-12-19 17:39:57 UTC);
+        assert_eq!(value, Value::Date(DateTime::from_utc(date_time)));
+    }
+
+    #[test]
+    fn test_parse_date_number_should_error() {
+        let typ = LeafType::DateTime(QuickwitDateTimeOptions::default());
+        let err = typ.value_from_json(json!("foo-datetime")).unwrap_err();
+        assert_eq!(
+            err,
+            "Could not parse datetime `foo-datetime` using the specified formats `rfc3339, \
+             unix_ts_secs`."
+        );
+    }
+
+    #[test]
+    fn test_parse_date_array_should_error() {
+        let typ = LeafType::DateTime(QuickwitDateTimeOptions::default());
+        let err = typ.value_from_json(json!(["foo", "bar"])).err().unwrap();
+        assert_eq!(
+            err,
+            "Expected datetime as string or number, got '[\"foo\",\"bar\"]'."
+        );
     }
 
     #[test]

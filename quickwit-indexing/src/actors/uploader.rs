@@ -23,12 +23,14 @@ use std::mem;
 use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::{bail, Context};
 use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_storage::SplitPayloadBuilder;
 use time::OffsetDateTime;
@@ -37,9 +39,7 @@ use tracing::{info, info_span, warn, Instrument, Span};
 
 use crate::actors::sequencer::Sequencer;
 use crate::actors::Publisher;
-use crate::models::{
-    PackagedSplit, PackagedSplitBatch, PublishNewSplit, PublisherMessage, ReplaceSplits,
-};
+use crate::models::{PackagedSplit, PackagedSplitBatch, SplitUpdate};
 use crate::split_store::IndexingSplitStore;
 
 pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 4;
@@ -132,7 +132,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         fail_point!("uploader:before");
-        let (split_uploaded_tx, split_uploaded_rx) = oneshot::channel::<PublisherMessage>();
+        let (split_uploaded_tx, split_uploaded_rx) = oneshot::channel::<SplitUpdate>();
 
         // We send the future to the sequencer right away.
 
@@ -181,7 +181,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     }
                     packaged_splits_and_metadatas.push((split, upload_result.unwrap()));
                 }
-                let publisher_message = make_publish_operation(index_id, packaged_splits_and_metadatas);
+                let publisher_message = make_publish_operation(index_id, packaged_splits_and_metadatas, batch.checkpoint_delta_opt, batch.date_of_birth);
                 if let Err(publisher_message) = split_uploaded_tx.send(publisher_message) {
                     bail!(
                         "Failed to send upload split `{:?}`. The publisher is probably dead.",
@@ -216,32 +216,24 @@ fn create_split_metadata(split: &PackagedSplit, footer_offsets: Range<u64>) -> S
 
 fn make_publish_operation(
     index_id: String,
-    mut packaged_splits_and_metadatas: Vec<(PackagedSplit, SplitMetadata)>,
-) -> PublisherMessage {
+    packaged_splits_and_metadatas: Vec<(PackagedSplit, SplitMetadata)>,
+    checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+    date_of_birth: Instant,
+) -> SplitUpdate {
     assert!(!packaged_splits_and_metadatas.is_empty());
     let replaced_split_ids = packaged_splits_and_metadatas
         .iter()
         .flat_map(|(split, _)| split.replaced_split_ids.clone())
         .collect::<HashSet<_>>();
-    if packaged_splits_and_metadatas.len() == 1 && replaced_split_ids.is_empty() {
-        let (mut packaged_split, split_metadata) = packaged_splits_and_metadatas.pop().unwrap();
-        assert_eq!(packaged_split.checkpoint_deltas.len(), 1);
-        let checkpoint_delta = packaged_split.checkpoint_deltas.pop().unwrap();
-        PublisherMessage::NewSplit(PublishNewSplit {
-            index_id,
-            new_split: split_metadata,
-            checkpoint_delta,
-            split_date_of_birth: packaged_split.split_date_of_birth,
-        })
-    } else {
-        PublisherMessage::ReplaceSplits(ReplaceSplits {
-            index_id,
-            new_splits: packaged_splits_and_metadatas
-                .into_iter()
-                .map(|split_and_meta| split_and_meta.1)
-                .collect_vec(),
-            replaced_split_ids: Vec::from_iter(replaced_split_ids),
-        })
+    SplitUpdate {
+        index_id,
+        new_splits: packaged_splits_and_metadatas
+            .into_iter()
+            .map(|split_and_meta| split_and_meta.1)
+            .collect_vec(),
+        replaced_split_ids: Vec::from_iter(replaced_split_ids),
+        checkpoint_delta_opt,
+        date_of_birth,
     }
 }
 
@@ -284,7 +276,7 @@ mod tests {
     use std::time::Instant;
 
     use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
-    use quickwit_metastore::checkpoint::CheckpointDelta;
+    use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::RamStorage;
     use tokio::sync::oneshot;
@@ -318,22 +310,28 @@ mod tests {
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn();
         let split_scratch_directory = ScratchDirectory::for_test()?;
+        let checkpoint_delta_opt: Option<IndexCheckpointDelta> = Some(IndexCheckpointDelta {
+            source_id: "source".to_string(),
+            source_delta: SourceCheckpointDelta::from(3..15),
+        });
         uploader_mailbox
-            .send_message(PackagedSplitBatch::new(vec![PackagedSplit {
-                split_id: "test-split".to_string(),
-                index_id: "test-index".to_string(),
-                checkpoint_deltas: vec![CheckpointDelta::from(3..15)],
-                time_range: Some(1_628_203_589i64..=1_628_203_640i64),
-                size_in_bytes: 1_000,
-                split_scratch_directory,
-                num_docs: 10,
-                demux_num_ops: 0,
-                tags: Default::default(),
-                replaced_split_ids: Vec::new(),
-                split_date_of_birth: Instant::now(),
-                hotcache_bytes: vec![],
-                split_files: vec![],
-            }]))
+            .send_message(PackagedSplitBatch::new(
+                vec![PackagedSplit {
+                    split_id: "test-split".to_string(),
+                    index_id: "test-index".to_string(),
+                    time_range: Some(1_628_203_589i64..=1_628_203_640i64),
+                    size_in_bytes: 1_000,
+                    split_scratch_directory,
+                    num_docs: 10,
+                    demux_num_ops: 0,
+                    tags: Default::default(),
+                    replaced_split_ids: Vec::new(),
+                    hotcache_bytes: vec![],
+                    split_files: vec![],
+                }],
+                checkpoint_delta_opt,
+                Instant::now(),
+            ))
             .await?;
         assert_eq!(
             uploader_handle.process_pending_and_observe().await.obs_type,
@@ -344,22 +342,26 @@ mod tests {
         let publish_future = *publish_futures
             .pop()
             .unwrap()
-            .downcast::<oneshot::Receiver<PublisherMessage>>()
+            .downcast::<oneshot::Receiver<SplitUpdate>>()
             .unwrap();
         let publisher_message = publish_future.await?;
-        if let PublisherMessage::NewSplit(PublishNewSplit {
+        let SplitUpdate {
             index_id,
-            new_split,
-            checkpoint_delta,
-            ..
-        }) = publisher_message
-        {
-            assert_eq!(index_id, "test-index");
-            assert_eq!(new_split.split_id(), "test-split");
-            assert_eq!(checkpoint_delta, CheckpointDelta::from(3..15));
-        } else {
-            panic!("Expected publish new split operation");
-        }
+            new_splits,
+            checkpoint_delta_opt,
+            replaced_split_ids,
+            date_of_birth: _,
+        } = publisher_message;
+        assert_eq!(new_splits.len(), 1);
+        assert_eq!(index_id, "test-index");
+        assert_eq!(new_splits[0].split_id(), "test-split");
+        let checkpoint_delta = checkpoint_delta_opt.unwrap();
+        assert_eq!(checkpoint_delta.source_id, "source");
+        assert_eq!(
+            checkpoint_delta.source_delta,
+            SourceCheckpointDelta::from(3..15)
+        );
+        assert!(replaced_split_ids.is_empty());
         let mut files = ram_storage.list_files().await;
         files.sort();
         assert_eq!(&files, &[PathBuf::from("test-split.split")]);
@@ -397,7 +399,6 @@ mod tests {
         let packaged_split_1 = PackagedSplit {
             split_id: "test-split-1".to_string(),
             index_id: "test-index".to_string(),
-            checkpoint_deltas: vec![CheckpointDelta::from(3..15), CheckpointDelta::from(16..18)],
             time_range: Some(1_628_203_589i64..=1_628_203_640i64),
             size_in_bytes: 1_000,
             split_scratch_directory: split_scratch_directory_1,
@@ -408,14 +409,12 @@ mod tests {
                 "replaced-split-1".to_string(),
                 "replaced-split-2".to_string(),
             ],
-            split_date_of_birth: Instant::now(),
             split_files: vec![],
             hotcache_bytes: vec![],
         };
         let package_split_2 = PackagedSplit {
             split_id: "test-split-2".to_string(),
             index_id: "test-index".to_string(),
-            checkpoint_deltas: vec![CheckpointDelta::from(3..15), CheckpointDelta::from(16..18)],
             time_range: Some(1_628_203_589i64..=1_628_203_640i64),
             size_in_bytes: 1_000,
             split_scratch_directory: split_scratch_directory_2,
@@ -426,15 +425,15 @@ mod tests {
                 "replaced-split-1".to_string(),
                 "replaced-split-2".to_string(),
             ],
-            split_date_of_birth: Instant::now(),
             split_files: vec![],
             hotcache_bytes: vec![],
         };
         uploader_mailbox
-            .send_message(PackagedSplitBatch::new(vec![
-                packaged_split_1,
-                package_split_2,
-            ]))
+            .send_message(PackagedSplitBatch::new(
+                vec![packaged_split_1, package_split_2],
+                None,
+                Instant::now(),
+            ))
             .await?;
         assert_eq!(
             uploader_handle.process_pending_and_observe().await.obs_type,
@@ -446,33 +445,33 @@ mod tests {
             .into_iter()
             .next()
             .unwrap()
-            .downcast::<oneshot::Receiver<PublisherMessage>>()
+            .downcast::<oneshot::Receiver<SplitUpdate>>()
             .unwrap();
         let publisher_message = publish_future.await?;
-        if let PublisherMessage::ReplaceSplits(ReplaceSplits {
+        let SplitUpdate {
             index_id,
             new_splits,
             mut replaced_split_ids,
-        }) = publisher_message
-        {
-            assert_eq!(&index_id, "test-index");
-            // Sort first to avoid test failing.
-            replaced_split_ids.sort();
-            assert_eq!(new_splits.len(), 2);
-            assert_eq!(new_splits[0].split_id(), "test-split-1");
-            assert_eq!(new_splits[1].split_id(), "test-split-2");
-            assert_eq!(
-                &replaced_split_ids,
-                &[
-                    "replaced-split-1".to_string(),
-                    "replaced-split-2".to_string()
-                ]
-            );
-            assert_eq!(new_splits[0].demux_num_ops, 1);
-            assert_eq!(new_splits[1].demux_num_ops, 1);
-        } else {
-            panic!("Expected publish new split operation");
-        }
+            checkpoint_delta_opt,
+            date_of_birth: _,
+        } = publisher_message;
+        assert_eq!(&index_id, "test-index");
+        // Sort first to avoid test failing.
+        replaced_split_ids.sort();
+        assert_eq!(new_splits.len(), 2);
+        assert_eq!(new_splits[0].split_id(), "test-split-1");
+        assert_eq!(new_splits[1].split_id(), "test-split-2");
+        assert_eq!(
+            &replaced_split_ids,
+            &[
+                "replaced-split-1".to_string(),
+                "replaced-split-2".to_string()
+            ]
+        );
+        assert!(checkpoint_delta_opt.is_none());
+        assert_eq!(new_splits[0].demux_num_ops, 1);
+        assert_eq!(new_splits[1].demux_num_ops, 1);
+
         let mut files = ram_storage.list_files().await;
         files.sort();
         assert_eq!(

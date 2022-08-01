@@ -23,12 +23,11 @@ use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
 use quickwit_actors::{Actor, ActorContext, Handler, Mailbox};
-use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::Metastore;
 use tracing::info;
 
 use crate::actors::{GarbageCollector, MergePlanner};
-use crate::models::{NewSplits, PublishNewSplit, PublisherMessage, ReplaceSplits};
+use crate::models::{NewSplits, SplitUpdate};
 use crate::source::{SourceActor, SuggestTruncate};
 
 #[derive(Debug, Clone, Default)]
@@ -54,7 +53,6 @@ impl PublisherType {
 
 pub struct Publisher {
     publisher_type: PublisherType,
-    source_id: String,
     metastore: Arc<dyn Metastore>,
     merge_planner_mailbox: Mailbox<MergePlanner>,
     garbage_collector_mailbox: Mailbox<GarbageCollector>,
@@ -65,7 +63,6 @@ pub struct Publisher {
 impl Publisher {
     pub fn new(
         publisher_type: PublisherType,
-        source_id: String,
         metastore: Arc<dyn Metastore>,
         merge_planner_mailbox: Mailbox<MergePlanner>,
         garbage_collector_mailbox: Mailbox<GarbageCollector>,
@@ -73,7 +70,6 @@ impl Publisher {
     ) -> Publisher {
         Publisher {
             publisher_type,
-            source_id,
             metastore,
             merge_planner_mailbox,
             garbage_collector_mailbox,
@@ -118,92 +114,56 @@ impl Actor for Publisher {
 }
 
 #[async_trait]
-impl Handler<PublishNewSplit> for Publisher {
+impl Handler<SplitUpdate> for Publisher {
     type Reply = ();
 
     async fn handle(
         &mut self,
-        publish_new_split: PublishNewSplit,
+        split_update: SplitUpdate,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         fail_point!("publisher:before");
 
-        let PublishNewSplit {
+        let SplitUpdate {
             index_id,
-            new_split,
-            split_date_of_birth,
-            checkpoint_delta,
-        } = publish_new_split;
+            new_splits,
+            replaced_split_ids,
+            date_of_birth,
+            checkpoint_delta_opt,
+        } = split_update;
+
+        let split_ids: Vec<&str> = new_splits.iter().map(|split| split.split_id()).collect();
+
+        let replaced_split_ids_ref_vec: Vec<&str> =
+            replaced_split_ids.iter().map(String::as_str).collect();
 
         self.metastore
             .publish_splits(
                 &index_id,
-                &self.source_id,
-                &[new_split.split_id()],
-                checkpoint_delta.clone(),
+                &split_ids[..],
+                &replaced_split_ids_ref_vec,
+                checkpoint_delta_opt.clone(),
             )
             .await
             .context("Failed to publish splits.")?;
 
-        info!(new_split=new_split.split_id(), tts=%split_date_of_birth.elapsed().as_secs_f32(), checkpoint_delta=?checkpoint_delta, "publish-new-splits");
-        let checkpoint: SourceCheckpoint = checkpoint_delta.get_source_checkpoint();
+        info!(new_splits=?split_ids, tts=%date_of_birth.elapsed().as_secs_f32(), checkpoint_delta=?checkpoint_delta_opt, "publish-new-splits");
         if let Some(source_mailbox) = self.source_mailbox_opt.as_ref() {
-            // We voluntarily do not log anything here.
-            //
-            // Not being to send the truncation message is a common event and should not be
-            // considered an error. For instance, if the source is a
-            // FileSource, it will terminate upon EOF and drop its
-            // mailbox.
-            let _ = ctx
-                .send_message(source_mailbox, SuggestTruncate(checkpoint))
-                .await;
+            if let Some(checkpoint) = checkpoint_delta_opt {
+                // We voluntarily do not log anything here.
+                //
+                // Not being to send the truncation message is a common event and should not be
+                // considered an error. For instance, if the source is a
+                // FileSource, it will terminate upon EOF and drop its
+                // mailbox.
+                let _ = ctx
+                    .send_message(
+                        source_mailbox,
+                        SuggestTruncate(checkpoint.source_delta.get_source_checkpoint()),
+                    )
+                    .await;
+            }
         }
-
-        // The merge planner is not necessarily awake and this is not an error.
-        // For instance, when a source reaches its end, and the last "new" split
-        // has been packaged, the packager finalizer sends a message to the merge
-        // planner in order to stop it.
-        let _ = ctx
-            .send_message(
-                &self.merge_planner_mailbox,
-                NewSplits {
-                    new_splits: vec![new_split],
-                },
-            )
-            .await;
-        self.counters.num_published_splits += 1;
-        fail_point!("publisher:after");
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Handler<ReplaceSplits> for Publisher {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        replace_splits: ReplaceSplits,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), quickwit_actors::ActorExitStatus> {
-        let ReplaceSplits {
-            index_id,
-            new_splits,
-            replaced_split_ids,
-        } = replace_splits;
-
-        let new_split_ids: Vec<&str> = new_splits
-            .iter()
-            .map(|new_split| new_split.split_id())
-            .collect();
-        let replaced_split_ids_ref_vec: Vec<&str> =
-            replaced_split_ids.iter().map(String::as_str).collect();
-        self.metastore
-            .replace_splits(&index_id, &new_split_ids, &replaced_split_ids_ref_vec[..])
-            .await
-            .context("Failed to replace splits.")?;
-
-        info!(new_splits=?new_split_ids, replaced_splits=?replaced_split_ids, "replace-splits");
 
         // The merge planner is not necessarily awake and this is not an error.
         // For instance, when a source reaches its end, and the last "new" split
@@ -212,28 +172,13 @@ impl Handler<ReplaceSplits> for Publisher {
         let _ = ctx
             .send_message(&self.merge_planner_mailbox, NewSplits { new_splits })
             .await;
-
-        self.counters.num_replace_operations += 1;
-
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Handler<PublisherMessage> for Publisher {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        publisher_message: PublisherMessage,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), quickwit_actors::ActorExitStatus> {
-        match publisher_message {
-            PublisherMessage::NewSplit(new_split) => self.handle(new_split, ctx).await,
-            PublisherMessage::ReplaceSplits(replace_splits) => {
-                self.handle(replace_splits, ctx).await
-            }
+        if replaced_split_ids.is_empty() {
+            self.counters.num_published_splits += 1;
+        } else {
+            self.counters.num_replace_operations += 1;
         }
+        fail_point!("publisher:after");
+        Ok(())
     }
 }
 
@@ -242,7 +187,9 @@ mod tests {
     use std::time::Instant;
 
     use quickwit_actors::{create_test_mailbox, Universe};
-    use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position};
+    use quickwit_metastore::checkpoint::{
+        IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
+    };
     use quickwit_metastore::{MockMetastore, SplitMetadata};
 
     use super::*;
@@ -253,12 +200,16 @@ mod tests {
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_publish_splits()
-            .withf(|index_id, source_id, split_ids, checkpoint_delta| {
-                index_id == "index"
-                    && source_id == "source"
-                    && split_ids[..] == ["split"]
-                    && checkpoint_delta == &CheckpointDelta::from(1..3)
-            })
+            .withf(
+                |index_id, split_ids, replaced_split_ids, checkpoint_delta_opt| {
+                    let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
+                    index_id == "index"
+                        && checkpoint_delta.source_id == "source"
+                        && split_ids[..] == ["split"]
+                        && replaced_split_ids.is_empty()
+                        && checkpoint_delta.source_delta == SourceCheckpointDelta::from(1..3)
+                },
+            )
             .times(1)
             .returning(|_, _, _, _| Ok(()));
         let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
@@ -268,7 +219,6 @@ mod tests {
 
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
-            "source".to_string(),
             Arc::new(mock_metastore),
             merge_planner_mailbox,
             garbage_collector_mailbox,
@@ -278,14 +228,18 @@ mod tests {
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
 
         assert!(publisher_mailbox
-            .send_message(PublishNewSplit {
+            .send_message(SplitUpdate {
                 index_id: "index".to_string(),
-                new_split: SplitMetadata {
+                new_splits: vec![SplitMetadata {
                     split_id: "split".to_string(),
                     ..Default::default()
-                },
-                checkpoint_delta: CheckpointDelta::from(1..3),
-                split_date_of_birth: Instant::now(),
+                }],
+                replaced_split_ids: Vec::new(),
+                checkpoint_delta_opt: Some(IndexCheckpointDelta {
+                    source_id: "source".to_string(),
+                    source_delta: SourceCheckpointDelta::from(1..3),
+                }),
+                date_of_birth: Instant::now(),
             })
             .await
             .is_ok());
@@ -317,19 +271,21 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
-            .expect_replace_splits()
-            .withf(|index_id, new_split_ids, replaced_split_ids| {
-                index_id == "index"
-                    && new_split_ids[..] == ["split3"]
-                    && replaced_split_ids[..] == ["split1", "split2"]
-            })
+            .expect_publish_splits()
+            .withf(
+                |index_id, new_split_ids, replaced_split_ids, checkpoint_delta_opt| {
+                    index_id == "index"
+                        && new_split_ids[..] == ["split3"]
+                        && replaced_split_ids[..] == ["split1", "split2"]
+                        && checkpoint_delta_opt.is_none()
+                },
+            )
             .times(1)
-            .returning(|_, _, _| Ok(()));
+            .returning(|_, _, _, _| Ok(()));
         let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
         let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
-            "source".to_string(),
             Arc::new(mock_metastore),
             merge_planner_mailbox,
             garbage_collector_mailbox,
@@ -337,13 +293,15 @@ mod tests {
         );
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
-        let publisher_message = ReplaceSplits {
+        let publisher_message = SplitUpdate {
             index_id: "index".to_string(),
             new_splits: vec![SplitMetadata {
                 split_id: "split3".to_string(),
                 ..Default::default()
             }],
             replaced_split_ids: vec!["split1".to_string(), "split2".to_string()],
+            checkpoint_delta_opt: None,
+            date_of_birth: Instant::now(),
         };
         assert!(publisher_mailbox
             .send_message(publisher_message)

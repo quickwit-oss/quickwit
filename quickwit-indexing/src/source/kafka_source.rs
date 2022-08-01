@@ -27,7 +27,9 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::KafkaSourceParams;
-use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
+use quickwit_metastore::checkpoint::{
+    PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
+};
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::stream_consumer::StreamConsumer;
 use rdkafka::consumer::{
@@ -312,7 +314,7 @@ impl Source for KafkaSource {
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_num_bytes = 0;
         let mut docs = Vec::new();
-        let mut checkpoint_delta = CheckpointDelta::default();
+        let mut checkpoint_delta = SourceCheckpointDelta::default();
 
         let deadline = time::sleep(quickwit_actors::HEARTBEAT / 2);
         tokio::pin!(deadline);
@@ -602,7 +604,9 @@ mod kafka_broker_tests {
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
     use quickwit_config::{DocMapping, SourceConfig, SourceParams};
-    use quickwit_metastore::checkpoint::IndexCheckpoint;
+    use quickwit_metastore::checkpoint::{
+        IndexCheckpoint, IndexCheckpointDelta, SourceCheckpointDelta,
+    };
     use quickwit_metastore::{FileBackedMetastore, IndexMetadata, Metastore, MetastoreResult};
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
@@ -725,6 +729,7 @@ mod kafka_broker_tests {
                     store_source: false,
                     mode: Default::default(),
                     dynamic_mapping: None,
+                    partition_key: "".to_string(),
                 },
                 indexing_settings: Default::default(),
                 search_settings: Default::default(),
@@ -869,7 +874,7 @@ mod kafka_broker_tests {
             ];
             assert_eq!(batch.docs, expected_docs);
 
-            let mut expected_checkpoint_delta = CheckpointDelta::default();
+            let mut expected_checkpoint_delta = SourceCheckpointDelta::default();
             for partition in 0u64..3u64 {
                 expected_checkpoint_delta.record_partition_delta(
                     PartitionId::from(partition),
@@ -892,26 +897,35 @@ mod kafka_broker_tests {
         }
         {
             let (sink, inbox) = create_test_mailbox();
-            let mut delta = CheckpointDelta::from_partition_delta(
+            let mut source_delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from(0u64),
                 Position::from(0u64),
                 Position::from(0u64),
             );
+            source_delta
+                .record_partition_delta(
+                    PartitionId::from(1u64),
+                    Position::from(0u64),
+                    Position::from(2u64),
+                )
+                .unwrap();
 
-            let _result = delta.record_partition_delta(
-                PartitionId::from(1u64),
-                Position::from(0u64),
-                Position::from(2u64),
-            );
-
+            let index_delta = IndexCheckpointDelta {
+                source_id: source_config.source_id.clone(),
+                source_delta,
+            };
             let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
-
             create_test_index(metastore.clone()).await?;
 
-            let result = metastore
-                .publish_splits("test-index", &source_config.source_id.clone(), &[], delta)
-                .await;
-            assert!(result.is_ok());
+            metastore
+                .publish_splits(
+                    "test-index",
+                    &[&source_config.source_id.clone()],
+                    &[],
+                    Some(index_delta),
+                )
+                .await
+                .unwrap();
 
             let source = source_loader
                 .load_source(
@@ -943,7 +957,7 @@ mod kafka_broker_tests {
             let expected_docs = vec!["Message #002", "Message #200", "Message #202"];
             assert_eq!(batch.docs, expected_docs);
 
-            let mut expected_checkpoint_delta = CheckpointDelta::default();
+            let mut expected_checkpoint_delta = SourceCheckpointDelta::default();
             expected_checkpoint_delta.record_partition_delta(
                 PartitionId::from(0u64),
                 Position::from(0u64),

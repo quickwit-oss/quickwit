@@ -39,7 +39,6 @@ quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore" }
 quickwit-proto = { version = "0.3.1", path = "../quickwit-proto" }
 quickwit-search = { version = "0.3.1", path = "../quickwit-search" }
 quickwit-storage = { version = "0.3.1", path = "../quickwit-storage" }
-quickwit-telemetry = { version = "0.3.1", path = "../quickwit-telemetry" }
 regex = "1"
 rust-embed = "6.4.0"
 serde = { version = "1.0", features = ["derive"] }

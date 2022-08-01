@@ -28,7 +28,9 @@ use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_aws::retry::RetryParams;
 use quickwit_config::{KinesisSourceParams, RegionOrEndpoint};
-use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
+use quickwit_metastore::checkpoint::{
+    PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
+};
 use rusoto_core::Region;
 use rusoto_kinesis::KinesisClient;
 use serde_json::json;
@@ -201,7 +203,7 @@ impl Source for KinesisSource {
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_num_bytes = 0;
         let mut docs = Vec::new();
-        let mut checkpoint_delta = CheckpointDelta::default();
+        let mut checkpoint_delta = SourceCheckpointDelta::default();
 
         let deadline = time::sleep(quickwit_actors::HEARTBEAT / 2);
         tokio::pin!(deadline);
@@ -475,7 +477,7 @@ mod tests {
             ];
             assert_eq!(batch.docs, expected_docs);
 
-            let mut expected_checkpoint_delta = CheckpointDelta::default();
+            let mut expected_checkpoint_delta = SourceCheckpointDelta::default();
             for shard_id in 0..3 {
                 expected_checkpoint_delta
                     .record_partition_delta(
@@ -539,7 +541,7 @@ mod tests {
             let expected_docs = vec!["Record #00", "Record #01", "Record #11"];
             assert_eq!(batch.docs, expected_docs);
 
-            let mut expected_checkpoint_delta = CheckpointDelta::default();
+            let mut expected_checkpoint_delta = SourceCheckpointDelta::default();
             for (shard_id, from_position) in [
                 Position::Beginning,
                 Position::from(from_sequence_number_exclusive_shard_1),

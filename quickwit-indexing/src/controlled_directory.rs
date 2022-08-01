@@ -149,7 +149,7 @@ impl io::Write for ControlledWrite {
 }
 
 impl Directory for ControlledDirectory {
-    fn get_file_handle(&self, path: &Path) -> Result<Box<dyn FileHandle>, OpenReadError> {
+    fn get_file_handle(&self, path: &Path) -> Result<Arc<dyn FileHandle>, OpenReadError> {
         self.check_if_alive()
             .map_err(|io_err| OpenReadError::wrap_io_error(io_err, path.to_path_buf()))?;
         self.inner.underlying.get_file_handle(path)

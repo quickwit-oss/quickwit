@@ -34,7 +34,7 @@ rusoto_s3 = { version = "0.48", default-features = false, features = [
 ] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "2406d92", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "d24f31f", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",
@@ -56,13 +56,12 @@ azure_storage_blobs = { git = "https://github.com/Azure/azure-sdk-for-rust", rev
 mockall = "0.11"
 tracing-subscriber = "0.3"
 tokio = { version = "1", features = ["full", "test-util"] }
-uuid = { version = "1.1", features = ["v4", "serde"] }
 
 [features]
 testsuite = [
   "mockall",
   "azure",
-  "azure_core/azurite_workaround", 
+  "azure_core/azurite_workaround",
   "azure_storage/azurite_workaround",
   "azure_storage_blobs/azurite_workaround"
 ]
