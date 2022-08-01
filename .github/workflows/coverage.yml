@@ -108,6 +108,9 @@ jobs:
       - name: Install awslocal
         run: pip install awscli-local
 
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v1
+
       - name: Prepare LocalStack S3
         run: ./quickwit-cli/tests/prepare_tests.sh
 
