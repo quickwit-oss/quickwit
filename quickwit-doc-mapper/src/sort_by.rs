@@ -90,6 +90,9 @@ pub enum SortBy {
         /// Order to sort by. A usual top-k search implies a descending order.
         order: SortOrder,
     },
+    Score {
+        order: SortOrder,
+    }
 }
 
 pub(crate) fn validate_sort_by_field_name(field_name: &str, schema: &Schema) -> anyhow::Result<()> {

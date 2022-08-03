@@ -45,11 +45,14 @@ enum SortingFieldComputer {
     },
     /// If undefined, we simply sort by DocIds.
     SortByDocId,
+    SortByScore {
+        order: SortOrder,
+    },
 }
 
 impl SortingFieldComputer {
     /// Returns the ranking key for the given element
-    fn compute_sorting_field(&self, doc_id: DocId) -> u64 {
+    fn compute_sorting_field(&self, doc_id: DocId, score: Score) -> u64 {
         match self {
             SortingFieldComputer::SortByFastField {
                 fast_field_reader,
@@ -65,6 +68,10 @@ impl SortingFieldComputer {
                 }
             }
             SortingFieldComputer::SortByDocId => 0u64,
+            SortingFieldComputer::SortByScore { order } => match order {
+                SortOrder::Desc => score,
+                SortOrder::Asc => u64::MAX - score,
+            },
         }
     }
 }
@@ -88,6 +95,7 @@ fn resolve_sort_by(
             }
         }
         SortBy::DocId => Ok(SortingFieldComputer::SortByDocId),
+        SortBy::Score { order } => Ok(SortingFieldComputer::SortByScore { order }),
     }
 }
 
@@ -149,8 +157,8 @@ impl QuickwitSegmentCollector {
         self.hits.len() >= self.max_hits
     }
 
-    fn collect_top_k(&mut self, doc_id: DocId) {
-        let sorting_field_value: u64 = self.sort_by.compute_sorting_field(doc_id);
+    fn collect_top_k(&mut self, doc_id: DocId, score: Score) {
+        let sorting_field_value: u64 = self.sort_by.compute_sorting_field(doc_id, score);
         if self.at_capacity() {
             if let Some(limit_sorting_field) = self.hits.peek().map(|head| head.sorting_field_value)
             {
@@ -183,13 +191,13 @@ impl QuickwitSegmentCollector {
 impl SegmentCollector for QuickwitSegmentCollector {
     type Fruit = tantivy::Result<LeafSearchResponse>;
 
-    fn collect(&mut self, doc_id: DocId, _score: Score) {
+    fn collect(&mut self, doc_id: DocId, score: Score) {
         if !self.accept_document(doc_id) {
             return;
         }
 
         self.num_hits += 1;
-        self.collect_top_k(doc_id);
+        self.collect_top_k(doc_id, score);
         if let Some(aggregation_collector) = self.aggregation.as_mut() {
             aggregation_collector.collect(doc_id, _score);
         }
@@ -248,7 +256,7 @@ impl QuickwitCollector {
     pub fn fast_field_names(&self) -> HashSet<String> {
         let mut fast_field_names = HashSet::default();
         match &self.sort_by {
-            SortBy::DocId => {}
+            SortBy::DocId | SortBy::Score => {}
             SortBy::FastField { field_name, .. } => {
                 fast_field_names.insert(field_name.clone());
             }
@@ -319,7 +327,10 @@ impl Collector for QuickwitCollector {
         // We do not need BM25 scoring in Quickwit.
         // By returning false, we inform tantivy that it does not need to decompress
         // term frequencies.
-        false
+        match self.sort_by {
+            SortBy::DocId | SortBy::FastField => false,
+            SortBy::Score => true,
+        }
     }
 
     fn merge_fruits(
