@@ -53,9 +53,9 @@ impl ClusterClient {
         request: FetchDocsRequest,
         mut client: SearchServiceClient,
     ) -> crate::Result<FetchDocsResponse> {
-        let mut result = client.fetch_docs(request.clone()).await;
+        let mut response_res = client.fetch_docs(request.clone()).await;
         let retry_policy = DefaultRetryPolicy {};
-        if let Some(retry_request) = retry_policy.retry_request(request, result.as_ref()) {
+        if let Some(retry_request) = retry_policy.retry_request(request, &response_res) {
             assert!(!retry_request.split_offsets.is_empty());
             client = retry_client(
                 &self.client_pool,
@@ -64,22 +64,22 @@ impl ClusterClient {
             )?;
             debug!(
                 "Fetch docs response error: `{:?}`. Retry once to execute {:?} with {:?}",
-                result, retry_request, client
+                response_res, retry_request, client
             );
-            result = client.fetch_docs(retry_request).await;
+            response_res = client.fetch_docs(retry_request).await;
         }
-        result
+        response_res
     }
 
     /// Leaf search with retry on another node client.
     pub async fn leaf_search(
         &self,
-        req: LeafSearchRequest,
+        request: LeafSearchRequest,
         mut client: SearchServiceClient,
     ) -> crate::Result<LeafSearchResponse> {
-        let mut result = client.leaf_search(req.clone()).await;
+        let mut response_res = client.leaf_search(request.clone()).await;
         let retry_policy = LeafSearchRetryPolicy {};
-        if let Some(retry_request) = retry_policy.retry_request(req, result.as_ref()) {
+        if let Some(retry_request) = retry_policy.retry_request(request, &response_res) {
             assert!(!retry_request.split_offsets.is_empty());
             client = retry_client(
                 &self.client_pool,
@@ -88,18 +88,18 @@ impl ClusterClient {
             )?;
             debug!(
                 "Leaf search response error: `{:?}`. Retry once to execute {:?} with {:?}",
-                result, retry_request, client
+                response_res, retry_request, client
             );
             let retry_result = client.leaf_search(retry_request).await;
-            result = merge_leaf_search_results(result, retry_result);
+            response_res = merge_leaf_search_results(response_res, retry_result);
         }
-        result
+        response_res
     }
 
     /// Leaf search stream with retry on another node client.
     pub async fn leaf_search_stream(
         &self,
-        req: LeafSearchStreamRequest,
+        request: LeafSearchStreamRequest,
         mut client: SearchServiceClient,
     ) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>> {
         // We need a dedicated channel to send results with retry. First we send only the successful
@@ -109,12 +109,12 @@ impl ClusterClient {
         let client_pool = self.client_pool.clone();
         let retry_policy = LeafSearchStreamRetryPolicy {};
         tokio::spawn(async move {
-            let result_stream = client.leaf_search_stream(req.clone()).await;
+            let result_stream = client.leaf_search_stream(request.clone()).await;
             // Forward only responses and not errors to the sender as we will make one retry on
             // errors.
             let forward_result =
                 forward_leaf_search_stream(result_stream, result_sender.clone(), false).await;
-            if let Some(retry_request) = retry_policy.retry_request(req, forward_result.as_ref()) {
+            if let Some(retry_request) = retry_policy.retry_request(request, &forward_result) {
                 assert!(!retry_request.split_offsets.is_empty());
                 let retry_client_res = retry_client(
                     &client_pool,
