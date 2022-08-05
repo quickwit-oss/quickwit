@@ -715,10 +715,22 @@ mod tests {
                 })
             },
         );
-        let client_pool = SearchClientPool::from_mocks(vec![
-            Arc::new(mock_search_service1),
-            Arc::new(mock_search_service2),
-        ])
+        let client_pool = SearchClientPool::from_mocks(
+            // TODO: Remove when this feature lands in stable channel. Don't forget to remove the
+            // build script and build dependency on `build-data`.
+            // https://github.com/rust-lang/rust/issues/96762
+            if env!("RUST_CHANNEL") == "nightly" {
+                vec![
+                    Arc::new(mock_search_service2),
+                    Arc::new(mock_search_service1),
+                ]
+            } else {
+                vec![
+                    Arc::new(mock_search_service1),
+                    Arc::new(mock_search_service2),
+                ]
+            },
+        )
         .await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let search_response =
@@ -727,6 +739,7 @@ mod tests {
         assert_eq!(search_response.hits.len(), 3);
         Ok(())
     }
+
     #[tokio::test]
     async fn test_root_search_multiple_splits_retry_on_all_nodes() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
