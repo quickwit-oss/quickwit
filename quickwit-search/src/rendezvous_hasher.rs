@@ -63,17 +63,8 @@ mod tests {
         let mut socket_set3 = vec![socket1, socket4];
         sort_by_rendez_vous_hash(&mut socket_set3, "key");
 
-        // TODO: Remove when this feature lands in stable channel. Don't forget to remove the build
-        // script and build dependency on `build-data`.
-        // https://github.com/rust-lang/rust/issues/96762
-        if env!("RUST_CHANNEL") == "nightly" {
-            assert_eq!(socket_set1, &[socket1, socket3, socket2, socket4]);
-            assert_eq!(socket_set2, &[socket1, socket2, socket4]);
-            assert_eq!(socket_set3, &[socket1, socket4]);
-        } else {
-            assert_eq!(socket_set1, &[socket2, socket3, socket1, socket4]);
-            assert_eq!(socket_set2, &[socket2, socket1, socket4]);
-            assert_eq!(socket_set3, &[socket1, socket4]);
-        }
+        assert_eq!(socket_set1, &[socket2, socket3, socket1, socket4]);
+        assert_eq!(socket_set2, &[socket2, socket1, socket4]);
+        assert_eq!(socket_set3, &[socket1, socket4]);
     }
 }

@@ -9,21 +9,6 @@ networks:
         gateway: 172.16.7.1
 
 services:
-  jaeger:
-    image: jaegertracing/all-in-one:latest
-    container_name: jaeger
-    profiles:
-      - all
-      - jaeger
-    ports:
-      - "5775:5775/udp"
-      - "5778:5778"
-      - "6831:6831/udp"
-      - "6832:6832/udp"
-      - "14250:14250"
-      - "14268:14268"
-      - "16686:16686"
-
   localstack:
     image: localstack/localstack:latest
     container_name: localstack
@@ -48,15 +33,6 @@ services:
       interval: 1s
       timeout: 5s
       retries: 100
-
-  azurite:
-    image: mcr.microsoft.com/azure-storage/azurite:latest
-    container_name: azurite
-    ports:
-        - "10000:10000" # Blob store port
-    volumes:
-        - "${TMPDIR:-/tmp}/azurite:/data"
-    command: azurite --blobHost 0.0.0.0 --loose
 
   postgres:
     image: postgres:9.6.20 # Oldest version we support.
@@ -115,9 +91,34 @@ services:
     healthcheck:
       test: ["CMD", "cub", "zk-ready", "localhost:2181", "30"]
 
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: azurite
+    ports:
+        - "10000:10000" # Blob store port
+    volumes:
+        - "${TMPDIR:-/tmp}/azurite:/data"
+    command: azurite --blobHost 0.0.0.0 --loose
+
+
   prometheus:
     image: prom/prometheus
     container_name: prometheus
     volumes:
       - ${PWD}/scripts/prometheus.yml:/etc/prometheus/prometheus.yml
     network_mode: host
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger
+    profiles:
+      - all
+      - jaeger
+    ports:
+      - "5775:5775/udp"
+      - "5778:5778"
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "14250:14250"
+      - "14268:14268"
+      - "16686:16686"
