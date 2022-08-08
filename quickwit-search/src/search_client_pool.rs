@@ -26,8 +26,10 @@ use std::sync::{Arc, RwLock};
 
 use anyhow::bail;
 use http::Uri;
-use quickwit_cluster::{Cluster, QuickwitService};
+use itertools::Itertools;
+use quickwit_cluster::{Member, QuickwitService};
 use quickwit_proto::tonic;
+use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt;
 use tonic::transport::Endpoint;
 use tracing::*;
@@ -162,25 +164,39 @@ impl SearchClientPool {
     /// Create a search client pool given a cluster.
     /// When a client pool is created, the thread that monitors cluster members
     /// will be started at the same time.
-    pub async fn create_and_keep_updated(cluster: Arc<Cluster>) -> anyhow::Result<Self> {
+    pub async fn create_and_keep_updated(
+        current_members: &[Member],
+        mut members_watch_channel: WatchStream<Vec<Member>>,
+    ) -> anyhow::Result<Self> {
         let search_client_pool = SearchClientPool::default();
-        let members_grpc_addresses = cluster
-            .members_grpc_addresses_for_service(QuickwitService::Searcher)
-            .await?;
+        let members_grpc_addresses = current_members
+            .iter()
+            .filter(|member| {
+                member
+                    .available_services
+                    .contains(&QuickwitService::Searcher)
+            })
+            .map(|member| member.grpc_address)
+            .collect_vec();
         search_client_pool
             .update_members(&members_grpc_addresses)
             .await;
 
         // Prepare to start a thread that will monitor cluster members.
         let search_clients_pool_clone = search_client_pool.clone();
-        let mut members_watch_channel = cluster.member_change_watcher();
 
         // Start to monitor the cluster members.
         tokio::spawn(async move {
-            while (members_watch_channel.next().await).is_some() {
-                let members_grpc_addresses = cluster
-                    .members_grpc_addresses_for_service(QuickwitService::Searcher)
-                    .await?;
+            while let Some(new_members) = members_watch_channel.next().await {
+                let members_grpc_addresses = new_members
+                    .iter()
+                    .filter(|member| {
+                        member
+                            .available_services
+                            .contains(&QuickwitService::Searcher)
+                    })
+                    .map(|member| member.grpc_address)
+                    .collect_vec();
                 search_clients_pool_clone
                     .update_members(&members_grpc_addresses)
                     .await;
@@ -342,7 +358,11 @@ mod tests {
     async fn test_search_client_pool_single_node() -> anyhow::Result<()> {
         let transport = ChannelTransport::default();
         let cluster = create_cluster_simple_for_test(&transport).await?;
-        let client_pool = SearchClientPool::create_and_keep_updated(cluster.clone()).await?;
+        let client_pool = SearchClientPool::create_and_keep_updated(
+            &cluster.members(),
+            cluster.member_change_watcher(),
+        )
+        .await?;
         let clients = client_pool.clients();
         let addrs: Vec<SocketAddr> = clients.into_keys().collect();
         let expected_addrs = vec![grpc_addr_from_listen_addr_for_test(
@@ -363,7 +383,11 @@ mod tests {
             .wait_for_members(|members| members.len() == 2, Duration::from_secs(5))
             .await?;
 
-        let client_pool = SearchClientPool::create_and_keep_updated(cluster1.clone()).await?;
+        let client_pool = SearchClientPool::create_and_keep_updated(
+            &cluster1.members(),
+            cluster1.member_change_watcher(),
+        )
+        .await?;
         let clients = client_pool.clients();
 
         let addrs: Vec<SocketAddr> = clients.into_keys().sorted().collect();
@@ -380,7 +404,11 @@ mod tests {
     async fn test_search_client_pool_single_node_assign_jobs() -> anyhow::Result<()> {
         let transport = ChannelTransport::default();
         let cluster = create_cluster_simple_for_test(&transport).await?;
-        let client_pool = SearchClientPool::create_and_keep_updated(cluster.clone()).await?;
+        let client_pool = SearchClientPool::create_and_keep_updated(
+            &cluster.members(),
+            cluster.member_change_watcher(),
+        )
+        .await?;
         let jobs = vec![
             SearchJob::for_test("split1", 1),
             SearchJob::for_test("split2", 2),

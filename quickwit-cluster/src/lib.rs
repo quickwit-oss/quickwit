@@ -76,15 +76,15 @@ pub async fn start_cluster_service(
     let member = Member::new(
         quickwit_config.node_id.clone(),
         unix_timestamp(),
-        quickwit_config.gossip_advertise_addr,
+        quickwit_config.grpc_advertise_addr,
+        services.clone(),
+        quickwit_config.grpc_listen_addr,
     );
 
     let cluster = Cluster::join(
         member,
-        services,
         quickwit_config.gossip_listen_addr,
         quickwit_config.cluster_id.clone(),
-        quickwit_config.grpc_advertise_addr,
         quickwit_config.peer_seed_addrs().await?,
         FailureDetectorConfig::default(),
         &UdpTransport,
