@@ -189,7 +189,7 @@ async fn leaf_search_stream_single_split(
                     &m_request_fields,
                     timestamp_filter_builder_opt,
                     &searcher,
-                    query.as_ref(),
+                    &query,
                 )?;
                 super::serialize::<i64>(&collected_values, &mut buffer, output_format).map_err(
                     |_| {
@@ -204,7 +204,7 @@ async fn leaf_search_stream_single_split(
                     &m_request_fields,
                     timestamp_filter_builder_opt,
                     &searcher,
-                    query.as_ref(),
+                    &query,
                 )?;
                 super::serialize::<u64>(&collected_values, &mut buffer, output_format).map_err(
                     |_| {
@@ -234,7 +234,7 @@ async fn leaf_search_stream_single_split(
                     &m_request_fields,
                     timestamp_filter_builder_opt,
                     &searcher,
-                    query.as_ref(),
+                    &query,
                 )?;
                 super::serialize_partitions::<i64, i64>(collected_values.as_slice(), &mut buffer)
                     .map_err(|_| {
@@ -248,7 +248,7 @@ async fn leaf_search_stream_single_split(
                     &m_request_fields,
                     timestamp_filter_builder_opt,
                     &searcher,
-                    query.as_ref(),
+                    &query,
                 )?;
                 super::serialize_partitions::<u64, u64>(collected_values.as_slice(), &mut buffer)
                     .map_err(|_| {
