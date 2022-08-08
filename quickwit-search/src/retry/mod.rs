@@ -29,7 +29,11 @@ use crate::{SearchClientPool, SearchServiceClient};
 /// A retry can be made either on an error or on a partial success.
 pub trait RetryPolicy<Request, Response, Error>: Sized {
     /// Returns a retry request in case of retry.
-    fn retry_request(&self, req: Request, _result: Result<&Response, &Error>) -> Option<Request>;
+    fn retry_request(
+        &self,
+        request: Request,
+        response_res: &Result<Response, Error>,
+    ) -> Option<Request>;
 }
 
 /// Default retry policy:
@@ -38,10 +42,14 @@ pub trait RetryPolicy<Request, Response, Error>: Sized {
 pub struct DefaultRetryPolicy {}
 
 impl<Request, Response, Error> RetryPolicy<Request, Response, Error> for DefaultRetryPolicy {
-    fn retry_request(&self, req: Request, result: Result<&Response, &Error>) -> Option<Request> {
-        match result {
+    fn retry_request(
+        &self,
+        request: Request,
+        response_res: &Result<Response, Error>,
+    ) -> Option<Request> {
+        match response_res {
             Ok(_) => None,
-            Err(_) => Some(req),
+            Err(_) => Some(request),
         }
     }
 }
@@ -80,19 +88,18 @@ mod tests {
     use crate::{MockSearchService, SearchClientPool, SearchError};
 
     #[test]
-    fn test_should_retry_on_error() -> anyhow::Result<()> {
+    fn test_should_retry_on_error() {
         let retry_policy = DefaultRetryPolicy {};
-        let result = crate::Result::<()>::Err(SearchError::InternalError("test".to_string()));
-        assert!(retry_policy.retry_request((), result.as_ref()).is_some());
-        Ok(())
+        let response_res = crate::Result::<()>::Err(SearchError::InternalError("test".to_string()));
+        retry_policy.retry_request((), &response_res).unwrap()
     }
 
     #[test]
-    fn test_should_not_retry_if_result_is_ok() -> anyhow::Result<()> {
+    fn test_should_not_retry_if_result_is_ok() {
         let retry_policy = DefaultRetryPolicy {};
-        let result = crate::Result::<FetchDocsResponse>::Ok(FetchDocsResponse { hits: vec![] });
-        assert!(retry_policy.retry_request((), result.as_ref()).is_none());
-        Ok(())
+        let response_res =
+            crate::Result::<FetchDocsResponse>::Ok(FetchDocsResponse { hits: vec![] });
+        assert!(retry_policy.retry_request((), &response_res).is_none());
     }
 
     #[tokio::test]

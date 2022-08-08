@@ -62,19 +62,19 @@ pub struct DocBatch {
     #[prost(uint64, repeated, tag="3")]
     pub doc_lens: ::prost::alloc::vec::Vec<u64>,
 }
-//// Suggest to truncate the queue.
-////
-//// This function allows the queue to remove all records up to and
-//// including `up_to_offset_included`.
-////
-//// The role of this truncation is to release memory and disk space.
-////
-//// There are no guarantees that the record will effectively be removed.
-//// Nothing might happen, or the truncation might be partial.
-////
-//// In other words, truncating from a position, and fetching records starting
-//// earlier than this position can yield undefined result:
-//// the truncated records may or may not be returned.
+/// / Suggest to truncate the queue.
+/// /
+/// / This function allows the queue to remove all records up to and
+/// / including `up_to_offset_included`.
+/// /
+/// / The role of this truncation is to release memory and disk space.
+/// /
+/// / There are no guarantees that the record will effectively be removed.
+/// / Nothing might happen, or the truncation might be partial.
+/// /
+/// / In other words, truncating from a position, and fetching records starting
+/// / earlier than this position can yield undefined result:
+/// / the truncated records may or may not be returned.
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SuggestTruncateRequest {
@@ -103,6 +103,7 @@ pub struct ListQueuesResponse {
 pub mod ingest_api_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct IngestApiServiceClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -129,6 +130,10 @@ pub mod ingest_api_service_client {
             let inner = tonic::client::Grpc::new(inner);
             Self { inner }
         }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
@@ -148,19 +153,19 @@ pub mod ingest_api_service_client {
         {
             IngestApiServiceClient::new(InterceptedService::new(inner, interceptor))
         }
-        /// Compress requests with `gzip`.
+        /// Compress requests with the given encoding.
         ///
         /// This requires the server to support it otherwise it might respond with an
         /// error.
         #[must_use]
-        pub fn send_gzip(mut self) -> Self {
-            self.inner = self.inner.send_gzip();
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
             self
         }
-        /// Enable decompressing responses with `gzip`.
+        /// Enable decompressing responses.
         #[must_use]
-        pub fn accept_gzip(mut self) -> Self {
-            self.inner = self.inner.accept_gzip();
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
             self
         }
         //// Ingests document in a given queue.
@@ -289,8 +294,8 @@ pub mod ingest_api_service_server {
     #[derive(Debug)]
     pub struct IngestApiServiceServer<T: IngestApiService> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: IngestApiService> IngestApiServiceServer<T> {
@@ -313,6 +318,18 @@ pub mod ingest_api_service_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for IngestApiServiceServer<T>
@@ -480,8 +497,7 @@ pub mod ingest_api_service_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: IngestApiService> tonic::transport::NamedService
-    for IngestApiServiceServer<T> {
+    impl<T: IngestApiService> tonic::server::NamedService for IngestApiServiceServer<T> {
         const NAME: &'static str = "quickwit_ingest_api.IngestAPIService";
     }
 }

@@ -71,7 +71,7 @@ impl SliceCacheIndex {
             Err(0) => {
                 return None;
             }
-            Err(idx_after) => (idx_after - 1),
+            Err(idx_after) => idx_after - 1,
         };
         let entry = &self.slices[entry_idx];
         if entry.range().start > byte_range.start || entry.range().end < byte_range.end {

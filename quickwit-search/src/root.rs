@@ -727,6 +727,7 @@ mod tests {
         assert_eq!(search_response.hits.len(), 3);
         Ok(())
     }
+
     #[tokio::test]
     async fn test_root_search_multiple_splits_retry_on_all_nodes() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
