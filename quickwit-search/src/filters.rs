@@ -120,7 +120,8 @@ impl TimestampFilterBuilder {
             ),
             _ => {
                 return Err(TantivyError::SchemaError(format!(
-                    "Field {:?} is of type {:?}, expected I64 or Date type.",
+                    "Failed to build timestamp filter for field `{:?}`: expected I64 or Date \
+                     type, got `{:?}`.",
                     field_entry.name(),
                     field_schema_type
                 )))
