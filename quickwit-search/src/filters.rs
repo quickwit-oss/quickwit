@@ -41,7 +41,7 @@ impl GenericFastFieldReader {
 
     fn max_value(&self) -> i64 {
         match self {
-            GenericFastFieldReader::I64(fast_reader) => fast_reader.min_value(),
+            GenericFastFieldReader::I64(fast_reader) => fast_reader.max_value(),
             GenericFastFieldReader::Date(fast_reader) => {
                 fast_reader.max_value().into_timestamp_secs()
             }
@@ -74,7 +74,7 @@ impl TimestampFilter {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TimestampFilterBuilder {
     pub timestamp_field_name: String,
     timestamp_field: Field,
