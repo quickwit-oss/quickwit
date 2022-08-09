@@ -40,13 +40,13 @@ use crate::partial_hit_sorting_key;
 /// The `SortingFieldComputer` can be seen as the specialization of `SortBy` applied to a specific
 /// `SegmentReader`. Its role is to compute the sorting field given a `DocId`.
 enum SortingFieldComputer {
-    SortByFastField {
+    FastField {
         fast_field_reader: DynamicFastFieldReader<u64>,
         order: SortOrder,
     },
     /// If undefined, we simply sort by DocIds.
-    SortByDocId,
-    SortByScore {
+    DocId,
+    Score {
         order: SortOrder,
     },
 }
@@ -55,7 +55,7 @@ impl SortingFieldComputer {
     /// Returns the ranking key for the given element
     fn compute_sorting_field(&self, doc_id: DocId, score: Score) -> u64 {
         match self {
-            SortingFieldComputer::SortByFastField {
+            SortingFieldComputer::FastField {
                 fast_field_reader,
                 order,
             } => {
@@ -68,8 +68,8 @@ impl SortingFieldComputer {
                     SortOrder::Asc => u64::MAX - field_val,
                 }
             }
-            SortingFieldComputer::SortByDocId => 0u64,
-            SortingFieldComputer::SortByScore { order } => match order {
+            SortingFieldComputer::DocId => 0u64,
+            SortingFieldComputer::Score { order } => match order {
                 // We lose some precision in order to properly cast the f32 to u64
                 SortOrder::Desc => score.mul(1000.0) as u64,
                 SortOrder::Asc => u64::MAX - score.mul(1000.0) as u64,
@@ -88,16 +88,16 @@ fn resolve_sort_by(
         SortBy::FastField { field_name, order } => {
             if let Some(field) = segment_reader.schema().get_field(field_name) {
                 let fast_field_reader = segment_reader.fast_fields().u64_lenient(field)?;
-                Ok(SortingFieldComputer::SortByFastField {
+                Ok(SortingFieldComputer::FastField {
                     fast_field_reader,
                     order: *order,
                 })
             } else {
-                Ok(SortingFieldComputer::SortByDocId)
+                Ok(SortingFieldComputer::DocId)
             }
         }
-        SortBy::DocId => Ok(SortingFieldComputer::SortByDocId),
-        SortBy::Score { order } => Ok(SortingFieldComputer::SortByScore { order: *order }),
+        SortBy::DocId => Ok(SortingFieldComputer::DocId),
+        SortBy::Score { order } => Ok(SortingFieldComputer::Score { order: *order }),
     }
 }
 
