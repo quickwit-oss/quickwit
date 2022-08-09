@@ -227,6 +227,7 @@ quickwit index search
     [--search-fields <search-fields>]
     [--start-timestamp <start-timestamp>]
     [--end-timestamp <end-timestamp>]
+    [--sort-by-score]
 ```
 
 *Options*
@@ -239,6 +240,7 @@ quickwit index search
 `--search-fields` List of fields that Quickwit will search into if the user query does not explicitly target a field in the query. It overrides the default search fields defined in the index config. Space-separated list, e.g. "field1 field2". \
 `--start-timestamp` Filters out documents before that timestamp (time-series indexes only). \
 `--end-timestamp` Filters out documents after that timestamp (time-series indexes only). \
+`--sort-by-score` Setting this flag calculates and sorts documents by their BM25 score.
 
 *Examples*
 
@@ -247,6 +249,12 @@ quickwit index search
 quickwit index search --index wikipedia --query "Barack Obama" --config ./config/quickwit.yaml
 # If you have jq installed.
 quickwit index search --index wikipedia --query "Barack Obama" --config ./config/quickwit.yaml | jq '.hits[].title'
+
+```
+
+*Sorting documents by their BM25 score*
+```bash
+quickwit index search --index wikipedia --query "Barack Obama" --sort-by-score --config ./config/quickwit.yaml
 
 ```
 

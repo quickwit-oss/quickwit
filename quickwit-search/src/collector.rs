@@ -19,6 +19,7 @@
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet};
+use std::ops::Mul;
 
 use itertools::Itertools;
 use quickwit_doc_mapper::{DocMapper, SortBy, SortOrder};
@@ -69,8 +70,9 @@ impl SortingFieldComputer {
             }
             SortingFieldComputer::SortByDocId => 0u64,
             SortingFieldComputer::SortByScore { order } => match order {
-                SortOrder::Desc => score,
-                SortOrder::Asc => u64::MAX - score,
+                // We lose some precision in order to properly cast the f32 to u64
+                SortOrder::Desc => score.mul(1000.0) as u64,
+                SortOrder::Asc => u64::MAX - score.mul(1000.0) as u64,
             },
         }
     }
@@ -95,7 +97,7 @@ fn resolve_sort_by(
             }
         }
         SortBy::DocId => Ok(SortingFieldComputer::SortByDocId),
-        SortBy::Score { order } => Ok(SortingFieldComputer::SortByScore { order }),
+        SortBy::Score { order } => Ok(SortingFieldComputer::SortByScore { order: *order }),
     }
 }
 
@@ -199,7 +201,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
         self.num_hits += 1;
         self.collect_top_k(doc_id, score);
         if let Some(aggregation_collector) = self.aggregation.as_mut() {
-            aggregation_collector.collect(doc_id, _score);
+            aggregation_collector.collect(doc_id, score);
         }
     }
 
@@ -256,7 +258,7 @@ impl QuickwitCollector {
     pub fn fast_field_names(&self) -> HashSet<String> {
         let mut fast_field_names = HashSet::default();
         match &self.sort_by {
-            SortBy::DocId | SortBy::Score => {}
+            SortBy::DocId | SortBy::Score { .. } => {}
             SortBy::FastField { field_name, .. } => {
                 fast_field_names.insert(field_name.clone());
             }
@@ -328,8 +330,8 @@ impl Collector for QuickwitCollector {
         // By returning false, we inform tantivy that it does not need to decompress
         // term frequencies.
         match self.sort_by {
-            SortBy::DocId | SortBy::FastField => false,
-            SortBy::Score => true,
+            SortBy::DocId | SortBy::FastField { .. } => false,
+            SortBy::Score { .. } => true,
         }
     }
 

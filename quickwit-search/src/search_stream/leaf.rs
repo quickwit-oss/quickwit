@@ -165,11 +165,17 @@ async fn leaf_search_stream_single_split(
         search_request.end_timestamp,
     );
 
+    let requires_scoring = match &search_request.sort_by_field {
+        Some(field_name) if field_name == "_score" => true,
+        _ => false,
+    };
+
     warmup(
         &searcher,
         query.as_ref(),
         &request_fields.fast_fields_for_request(timestamp_filter_builder_opt.as_ref()),
         &Default::default(),
+        requires_scoring,
     )
     .await?;
 

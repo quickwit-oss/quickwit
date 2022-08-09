@@ -381,7 +381,7 @@ impl Indexer {
         let schema = doc_mapper.schema();
         let timestamp_field_opt = doc_mapper.timestamp_field(&schema);
         let sort_by_field_opt = match indexing_settings.sort_by() {
-            SortBy::DocId => None,
+            SortBy::DocId | SortBy::Score { .. } => None,
             SortBy::FastField { field_name, order } => Some(IndexSortByField {
                 field: field_name,
                 order: order.into(),

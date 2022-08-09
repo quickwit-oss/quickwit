@@ -129,6 +129,8 @@ pub fn build_index_command<'a>() -> Command<'a> {
                         .required(false),
                     arg!(--"end-timestamp" <TIMESTAMP> "Filters out documents after that timestamp (time-series indexes only).")
                         .required(false),
+                    arg!(--"sort-by-score" "Setting this flag calculates and sorts documents by their BM25 score.")
+                        .required(false),
                 ])
             )
         .subcommand(
@@ -218,6 +220,7 @@ pub struct SearchIndexArgs {
     pub end_timestamp: Option<i64>,
     pub config_uri: Uri,
     pub data_dir: Option<PathBuf>,
+    pub sort_by_score: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -389,6 +392,7 @@ impl IndexCliCommand {
         let search_fields = matches
             .values_of("search-fields")
             .map(|values| values.map(|value| value.to_string()).collect());
+        let sort_by_score = matches.is_present("sort-by-score");
         let start_timestamp = if matches.is_present("start-timestamp") {
             Some(matches.value_of_t::<i64>("start-timestamp")?)
         } else {
@@ -415,6 +419,7 @@ impl IndexCliCommand {
             end_timestamp,
             config_uri,
             data_dir,
+            sort_by_score,
         }))
     }
 
@@ -894,7 +899,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
         max_hits: args.max_hits as u64,
         start_offset: args.start_offset as u64,
         sort_order: None,
-        sort_by_field: None,
+        sort_by_field: args.sort_by_score.then_some("_score".to_string()),
         aggregation_request: args.aggregation,
     };
     let search_response: SearchResponse =

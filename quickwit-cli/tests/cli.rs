@@ -310,6 +310,7 @@ async fn test_cmd_search_aggregation() -> Result<()> {
         end_timestamp: None,
         config_uri: Uri::try_new(&test_env.resource_files["config"].display().to_string()).unwrap(),
         data_dir: None,
+        sort_by_score: false,
     };
     let search_response = search_index(args).await?;
 

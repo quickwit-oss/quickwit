@@ -49,6 +49,11 @@ pub struct SortByConfig {
 
 impl From<SortByConfig> for SortBy {
     fn from(sort_by_config: SortByConfig) -> Self {
+        if sort_by_config.field_name == "_score" {
+            return SortBy::Score {
+                order: sort_by_config.order,
+            };
+        }
         SortBy::FastField {
             field_name: sort_by_config.field_name,
             order: sort_by_config.order,
@@ -355,6 +360,10 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
             SortBy::DocId => None,
             SortBy::FastField { field_name, order } => Some(SortByConfig {
                 field_name: field_name.clone(),
+                order: *order,
+            }),
+            SortBy::Score { order } => Some(SortByConfig {
+                field_name: "_score".to_string(),
                 order: *order,
             }),
         };

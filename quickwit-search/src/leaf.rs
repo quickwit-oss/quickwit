@@ -168,6 +168,7 @@ pub(crate) async fn warmup(
     query: &dyn Query,
     fast_field_names: &HashSet<String>,
     term_dict_field_names: &HashSet<String>,
+    requires_scoring: bool,
 ) -> anyhow::Result<()> {
     let warm_up_terms_future =
         warm_up_terms(searcher, query).instrument(debug_span!("warm_up_terms"));
@@ -175,14 +176,18 @@ pub(crate) async fn warmup(
         .instrument(debug_span!("warm_up_term_dicts"));
     let warm_up_fastfields_future = warm_up_fastfields(searcher, fast_field_names)
         .instrument(debug_span!("warm_up_fastfields"));
-    let (warm_up_terms_res, warm_up_fastfields_res, warm_up_term_dict_res) = tokio::join!(
+    let warm_up_fieldnorms_future = warm_up_fieldnorms(searcher, requires_scoring)
+        .instrument(debug_span!("warm_up_fieldnorms"));
+    let (warm_up_terms_res, warm_up_fastfields_res, warm_up_term_dict_res, warm_up_fieldnorms_res) = tokio::join!(
         warm_up_terms_future,
         warm_up_fastfields_future,
-        warm_up_term_dict_future
+        warm_up_term_dict_future,
+        warm_up_fieldnorms_future,
     );
     warm_up_terms_res?;
     warm_up_fastfields_res?;
     warm_up_term_dict_res?;
+    warm_up_fieldnorms_res?;
     Ok(())
 }
 
@@ -314,6 +319,27 @@ async fn warm_up_terms(searcher: &Searcher, query: &dyn Query) -> anyhow::Result
     Ok(())
 }
 
+async fn warm_up_fieldnorms(searcher: &Searcher, requires_scoring: bool) -> anyhow::Result<()> {
+    if !requires_scoring {
+        return Ok(());
+    }
+    let mut warm_up_futures = Vec::new();
+    for field in searcher.schema().fields() {
+        for segment_reader in searcher.segment_readers() {
+            let fieldnorm_readers = segment_reader.fieldnorms_readers();
+            let file_handle = fieldnorm_readers.get_inner_file().open_read(field.0);
+            let file_handle = if let Some(val) = file_handle {
+                val
+            } else {
+                continue;
+            };
+            warm_up_futures.push(async move { file_handle.read_bytes_async().await })
+        }
+    }
+    try_join_all(warm_up_futures).await?;
+    Ok(())
+}
+
 /// Apply a leaf search on a single split.
 #[instrument(skip(search_request, storage, split, doc_mapper))]
 async fn leaf_search_single_split(
@@ -343,6 +369,7 @@ async fn leaf_search_single_split(
         &query,
         &quickwit_collector.fast_field_names(),
         &quickwit_collector.term_dict_field_names(),
+        quickwit_collector.requires_scoring(),
     )
     .await?;
     let leaf_search_response = crate::run_cpu_intensive(move || {
