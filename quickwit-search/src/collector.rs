@@ -326,7 +326,7 @@ impl Collector for QuickwitCollector {
     }
 
     fn requires_scoring(&self) -> bool {
-        // We do not need BM25 scoring in Quickwit.
+        // We do not need BM25 scoring in Quickwit if it is not opted-in.
         // By returning false, we inform tantivy that it does not need to decompress
         // term frequencies.
         match self.sort_by {
