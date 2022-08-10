@@ -874,7 +874,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
 
     match statistics.num_invalid_docs {
         0 => Ok(()),
-        _ => bail!("Failed to ingest all of the documents."),
+        _ => bail!("Failed to ingest all the documents."),
     }
 }
 
