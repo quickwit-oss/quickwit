@@ -1088,7 +1088,7 @@ pub async fn start_statistics_reporting_loop(
     let secs = Duration::from_secs(start_time.elapsed().as_secs());
     if pipeline_statistics.num_invalid_docs == 0 {
         println!(
-            "Indexed {} documents in {}",
+            "Indexed {} documents in {}.",
             pipeline_statistics.num_docs.separate_with_commas(),
             format_duration(secs)
         );
