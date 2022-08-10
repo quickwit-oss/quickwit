@@ -1088,6 +1088,15 @@ pub async fn start_statistics_reporting_loop(
         pipeline_statistics.num_docs.separate_with_commas(),
         format_duration(secs)
     );
+    if pipeline_statistics.num_invalid_docs > 0 {
+        println!(
+            "Failed to index {} documents. ({:.1}% success rate)",
+            pipeline_statistics.num_invalid_docs.separate_with_commas(),
+            1.0 - (pipeline_statistics.num_invalid_docs as f64
+                / pipeline_statistics.num_docs as f64)
+                * 100.0
+        );
+    }
 
     Ok(pipeline_statistics)
 }
