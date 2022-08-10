@@ -25,7 +25,6 @@ A commented example is accessible here: [quickwit.yaml](https://github.com/quick
 | metastore_uri | Metastore URI. Can be a local directory or `s3://my-bucket/indexes` or `postgres://username:password@localhost:5432/metastore`. [Learn more about the metastore configuration](metastore-config.md). | `{data_dir}/indexes` |
 | default_index_root_uri | Default index root URI that defines the location where index data (splits) is stored. The index uri is build following the the scheme: `{default_index_root_uri}/{index-id}` | `{data_dir}/indexes` |
 
-
 ## Indexer configuration
 
 This section contains the configuration options for an indexer. The split store is documented in the  [indexing document](../concepts/indexing.md#split-store).
@@ -45,20 +44,32 @@ This section contains the configuration options for a Searcher.
 | split_footer_cache_capacity | Split footer cache (it is essentially the hotcache) capacity on a Searcher. | 1G |
 | max_num_concurrent_split_streams | Maximum number of concurrent split stream requests running on a Searcher. | 100 |
 
-## Templating
+## Using environment variables in the configuration
 
-It is possible to pass environment variables to config:
+You can use environment variable references in the config file to set values that need to be configurable during deployment. To do this, use:
+
+${VAR_NAME}
+
+Where `VAR_NAME` is the name of the environment variable.
+
+Each variable reference is replaced at startup by the value of the environment variable. The replacement is case-sensitive and occurs before the configuration file is parsed. References to undefined variables throw an error unless you specify a default value or custom error text.
+
+To specify a default value, use:
+
+${VAR_NAME:-default_value}
+
+Where `default_value` is the value to use if the environment variable is not set.
+
 ```
-<config_field>: ${<ENV_VAR_NAME>}
+<config_field>: ${VAR_NAME}
 or
-<config_field>: ${<ENV_VAR_NAME>:-<default value>}
+<config_field>: ${VAR_NAME:-default value}
 ```
 
 For example:
 
 ```bash
 export QW_LISTEN_ADDRESS=0.0.0.0
-export QW_LISTEN_PORT=4444
 ```
 
 ```yaml
@@ -70,12 +81,12 @@ listen_address: ${QW_LISTEN_ADDRESS}
 rest_listen_port: ${QW_LISTEN_PORT:-1111}
 ```
 
-Will get interpreted by Quickwit as:
+Will be interpreted by Quickwit as:
 
 ```yaml
 version: 0
 cluster_id: quickwit-cluster
 node_id: my-unique-node-id
 listen_address: 0.0.0.0
-rest_listen_port: 4444 #< 1111 if QW_LISTEN_PORT is not set
+rest_listen_port: 1111
 ```
