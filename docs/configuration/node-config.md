@@ -44,3 +44,38 @@ This section contains the configuration options for a Searcher.
 | fast_field_cache_capacity | Fast field cache capacity on a Searcher. | 10G |
 | split_footer_cache_capacity | Split footer cache (it is essentially the hotcache) capacity on a Searcher. | 1G |
 | max_num_concurrent_split_streams | Maximum number of concurrent split stream requests running on a Searcher. | 100 |
+
+## Templating
+
+It is possible to pass environment variables to config:
+```
+<config_field>: ${<ENV_VAR_NAME>}
+or
+<config_field>: ${<ENV_VAR_NAME>:-<default value>}
+```
+
+For example:
+
+```bash
+export QW_LISTEN_ADDRESS=0.0.0.0
+export QW_LISTEN_PORT=4444
+```
+
+```yaml
+# config.yaml
+version: 0
+cluster_id: quickwit-cluster
+node_id: my-unique-node-id
+listen_address: ${QW_LISTEN_ADDRESS}
+rest_listen_port: ${QW_LISTEN_PORT:-1111}
+```
+
+Will get interpreted by Quickwit as:
+
+```yaml
+version: 0
+cluster_id: quickwit-cluster
+node_id: my-unique-node-id
+listen_address: 0.0.0.0
+rest_listen_port: 4444 #< 1111 if QW_LISTEN_PORT is not set
+```
