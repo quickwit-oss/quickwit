@@ -120,7 +120,7 @@ We estimate that Quickwit can be up to 10x cheaper on average than Elastic. To u
 Quickwit is open-source under the GNU Affero General Public License Version 3 - AGPLv3. Fundamentally, this means that you are free to use Quickwit for your project, as long as you don't modify Quickwit. If you do, you have to make the modifications public.
 We also provide a commercial license for enterprises to provide support and a voice on our roadmap.
 
-### Is is pottible to setup Quickwit for a High Availability (HA)?
+### Is it possible to setup Quickwit for a High Availability (HA)?
 Not today, but HA is on our roadmap. 
 
 ### What is Quickwit's business model?
