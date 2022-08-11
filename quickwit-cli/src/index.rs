@@ -872,7 +872,10 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         .await?;
     }
 
-    Ok(())
+    match statistics.num_invalid_docs {
+        0 => Ok(()),
+        _ => bail!("Failed to ingest all the documents."),
+    }
 }
 
 pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResponse> {
@@ -1083,11 +1086,28 @@ pub async fn start_statistics_reporting_loop(
     // display end of task report
     println!();
     let secs = Duration::from_secs(start_time.elapsed().as_secs());
-    println!(
-        "Indexed {} documents in {}",
-        pipeline_statistics.num_docs.separate_with_commas(),
-        format_duration(secs)
-    );
+    if pipeline_statistics.num_invalid_docs == 0 {
+        println!(
+            "Indexed {} documents in {}.",
+            pipeline_statistics.num_docs.separate_with_commas(),
+            format_duration(secs)
+        );
+    } else {
+        let num_indexed_docs = (pipeline_statistics.num_docs
+            - pipeline_statistics.num_invalid_docs)
+            .separate_with_commas();
+
+        let success_rate = 1.0
+            - (pipeline_statistics.num_invalid_docs as f64 / pipeline_statistics.num_docs as f64)
+                * 100.0;
+        println!(
+            "Indexed {}/{} documents in {} ({:.1}% success rate).",
+            num_indexed_docs,
+            pipeline_statistics.num_invalid_docs.separate_with_commas(),
+            format_duration(secs),
+            success_rate
+        );
+    }
 
     Ok(pipeline_statistics)
 }
