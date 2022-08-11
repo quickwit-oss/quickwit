@@ -27,7 +27,7 @@ use std::sync::{Arc, RwLock};
 use anyhow::bail;
 use http::Uri;
 use itertools::Itertools;
-use quickwit_cluster::{Member, QuickwitService};
+use quickwit_cluster::{ClusterMember, QuickwitService};
 use quickwit_proto::tonic;
 use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt;
@@ -165,8 +165,8 @@ impl SearchClientPool {
     /// When a client pool is created, the thread that monitors cluster members
     /// will be started at the same time.
     pub async fn create_and_keep_updated(
-        current_members: &[Member],
-        mut members_watch_channel: WatchStream<Vec<Member>>,
+        current_members: &[ClusterMember],
+        mut members_watch_channel: WatchStream<Vec<ClusterMember>>,
     ) -> anyhow::Result<Self> {
         let search_client_pool = SearchClientPool::default();
         let members_grpc_addresses = current_members
@@ -176,7 +176,7 @@ impl SearchClientPool {
                     .available_services
                     .contains(&QuickwitService::Searcher)
             })
-            .map(|member| member.grpc_address)
+            .map(|member| member.grpc_advertise_addr)
             .collect_vec();
         search_client_pool
             .update_members(&members_grpc_addresses)
@@ -195,7 +195,7 @@ impl SearchClientPool {
                             .available_services
                             .contains(&QuickwitService::Searcher)
                     })
-                    .map(|member| member.grpc_address)
+                    .map(|member| member.grpc_advertise_addr)
                     .collect_vec();
                 search_clients_pool_clone
                     .update_members(&members_grpc_addresses)
