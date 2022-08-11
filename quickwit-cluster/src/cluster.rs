@@ -102,7 +102,7 @@ fn build_member_from_chichat<'a>(
 ) -> anyhow::Result<Member> {
     let (node_unique_id_str, generation_str) = node_id.id.split_once('/').ok_or_else(|| {
         anyhow::anyhow!(
-            "Could not create a Member instance from NodeId `{}`",
+            "Failed to create Member instance from NodeId `{}`.",
             node_id.id
         )
     })?;
