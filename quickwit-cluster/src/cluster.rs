@@ -119,7 +119,7 @@ fn build_member_from_chichat<'a>(
         .get(AVAILABLE_SERVICES_KEY)
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "Could not find `{}` key on node `{}` state.",
+                "Could not find `{}` key in node `{}` state.",
                 AVAILABLE_SERVICES_KEY,
                 node_unique_id_str
             )
