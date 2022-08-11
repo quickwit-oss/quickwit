@@ -43,9 +43,12 @@ impl
     fn retry_request(
         &self,
         mut request: LeafSearchStreamRequest,
-        result: Result<&SuccessfullSplitIds, &SendError<crate::Result<LeafSearchStreamResponse>>>,
+        response_res: &Result<
+            SuccessfullSplitIds,
+            SendError<crate::Result<LeafSearchStreamResponse>>,
+        >,
     ) -> Option<LeafSearchStreamRequest> {
-        match result {
+        match response_res {
             Ok(SuccessfullSplitIds(successful_split_ids)) => {
                 if successful_split_ids.len() == request.split_offsets.len() {
                     // All splits were successful!
@@ -83,57 +86,42 @@ mod tests {
     #[tokio::test]
     async fn test_retry_policy_search_stream_should_not_retry_on_send_error() {
         let retry_policy = LeafSearchStreamRetryPolicy {};
-        let leaf_search_stream_req = LeafSearchStreamRequest::default();
-        let leaf_search_stream_res = LeafSearchStreamResponse::default();
-        let leaf_search_stream_send_error = Err(SendError(Ok(leaf_search_stream_res)));
-        let retry_req_opt = retry_policy.retry_request(
-            leaf_search_stream_req,
-            leaf_search_stream_send_error.as_ref(),
-        );
+        let request = LeafSearchStreamRequest::default();
+        let response = LeafSearchStreamResponse::default();
+        let response_res = Err(SendError(Ok(response)));
+        let retry_req_opt = retry_policy.retry_request(request, &response_res);
         assert!(retry_req_opt.is_none());
     }
 
     #[tokio::test]
     async fn test_retry_policy_search_stream_should_not_retry_on_successful_response() {
         let retry_policy = LeafSearchStreamRetryPolicy {};
-        let leaf_search_stream_req = LeafSearchStreamRequest::default();
-        let successful_split_ids: Vec<String> = Vec::new();
-        let retry_req_opt = retry_policy.retry_request(
-            leaf_search_stream_req,
-            Ok(SuccessfullSplitIds(successful_split_ids)).as_ref(),
-        );
+        let request = LeafSearchStreamRequest::default();
+        let response_res = Ok(SuccessfullSplitIds(Vec::new()));
+        let retry_req_opt = retry_policy.retry_request(request, &response_res);
         assert!(retry_req_opt.is_none());
     }
 
     #[tokio::test]
     async fn test_retry_policy_search_stream_should_retry_on_failed_splits() {
-        let splits = vec![
-            SplitIdAndFooterOffsets {
-                split_id: "split_1".to_string(),
-                split_footer_end: 100,
-                split_footer_start: 0,
-            },
-            SplitIdAndFooterOffsets {
-                split_id: "split_2".to_string(),
-                split_footer_end: 100,
-                split_footer_start: 0,
-            },
-        ];
-
+        let split_1 = SplitIdAndFooterOffsets {
+            split_id: "split_1".to_string(),
+            split_footer_end: 100,
+            split_footer_start: 0,
+        };
+        let split_2 = SplitIdAndFooterOffsets {
+            split_id: "split_2".to_string(),
+            split_footer_end: 100,
+            split_footer_start: 0,
+        };
         let retry_policy = LeafSearchStreamRetryPolicy {};
-        let mut leaf_search_stream_req = LeafSearchStreamRequest::default();
-        leaf_search_stream_req.split_offsets.push(splits[0].clone());
-        leaf_search_stream_req.split_offsets.push(splits[1].clone());
-        let successful_split_ids: Vec<String> = vec![splits[0].split_id.clone()];
-        let retry_req_opt = retry_policy.retry_request(
-            leaf_search_stream_req,
-            Ok(SuccessfullSplitIds(successful_split_ids)).as_ref(),
-        );
-        assert!(retry_req_opt.is_some());
-        assert_eq!(retry_req_opt.as_ref().unwrap().split_offsets.len(), 1);
-        assert_eq!(
-            &retry_req_opt.as_ref().unwrap().split_offsets[0].split_id,
-            "split_2"
-        );
+        let request = LeafSearchStreamRequest {
+            split_offsets: vec![split_1, split_2],
+            ..Default::default()
+        };
+        let response_res = Ok(SuccessfullSplitIds(vec!["split_1".to_string()]));
+        let retry_req = retry_policy.retry_request(request, &response_res).unwrap();
+        assert_eq!(retry_req.split_offsets.len(), 1);
+        assert_eq!(retry_req.split_offsets[0].split_id, "split_2");
     }
 }

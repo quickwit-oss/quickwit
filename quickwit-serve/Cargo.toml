@@ -55,6 +55,9 @@ warp = "0.3"
 [dev-dependencies]
 assert-json-diff = "2.0.1"
 mockall = "0.11"
+quickwit-common = { version = "0.3.1", path = "../quickwit-common", features = [
+  "testsuite"
+] }
 quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore", features = [
   "testsuite"
 ] }

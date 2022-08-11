@@ -1,105 +1,105 @@
-//  -- Search -------------------
+// -- Search -------------------
 
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchRequest {
-    ///  Index ID
+    /// Index ID
     #[prost(string, tag="1")]
     pub index_id: ::prost::alloc::string::String,
-    ///  Query
+    /// Query
     #[prost(string, tag="2")]
     pub query: ::prost::alloc::string::String,
-    ///  Fields to search on
+    /// Fields to search on
     #[prost(string, repeated, tag="3")]
     pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    ///  Time filter
+    /// Time filter
     #[prost(int64, optional, tag="4")]
     pub start_timestamp: ::core::option::Option<i64>,
     #[prost(int64, optional, tag="5")]
     pub end_timestamp: ::core::option::Option<i64>,
-    ///  Maximum number of hits to return.
+    /// Maximum number of hits to return.
     #[prost(uint64, tag="6")]
     pub max_hits: u64,
-    ///  First hit to return. Together with max_hits, this parameter
-    ///  can be used for pagination.
+    /// First hit to return. Together with max_hits, this parameter
+    /// can be used for pagination.
     ///
-    ///  E.g.
-    ///  The results with rank [start_offset..start_offset + max_hits) are returned.
+    /// E.g.
+    /// The results with rank [start_offset..start_offset + max_hits) are returned.
     #[prost(uint64, tag="7")]
     pub start_offset: u64,
-    ///  Sort order
+    /// Sort order
     #[prost(enumeration="SortOrder", optional, tag="9")]
     pub sort_order: ::core::option::Option<i32>,
-    ///  Sort by fast field. If unset sort by docid
+    /// Sort by fast field. If unset sort by docid
     #[prost(string, optional, tag="10")]
     pub sort_by_field: ::core::option::Option<::prost::alloc::string::String>,
-    ///  json serialized aggregation_request
+    /// json serialized aggregation_request
     #[prost(string, optional, tag="11")]
     pub aggregation_request: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchResponse {
-    ///  Number of hits matching the query.
+    /// Number of hits matching the query.
     #[prost(uint64, tag="1")]
     pub num_hits: u64,
-    ///  Matched hits
+    /// Matched hits
     #[prost(message, repeated, tag="2")]
     pub hits: ::prost::alloc::vec::Vec<Hit>,
-    ///  Elapsed time to perform the request. This time is measured
-    ///  server-side and expressed in microseconds.
+    /// Elapsed time to perform the request. This time is measured
+    /// server-side and expressed in microseconds.
     #[prost(uint64, tag="3")]
     pub elapsed_time_micros: u64,
-    ///  The searcherrors that occured formatted as string.
+    /// The searcherrors that occured formatted as string.
     #[prost(string, repeated, tag="4")]
     pub errors: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    ///  Serialized aggregation response
+    /// Serialized aggregation response
     #[prost(string, optional, tag="5")]
     pub aggregation: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SplitSearchError {
-    ///  The searcherror that occured formatted as string.
+    /// The searcherror that occured formatted as string.
     #[prost(string, tag="1")]
     pub error: ::prost::alloc::string::String,
-    ///  Split id that failed.
+    /// Split id that failed.
     #[prost(string, tag="2")]
     pub split_id: ::prost::alloc::string::String,
-    ///  Flag to indicate if the error can be considered a retryable error
+    /// Flag to indicate if the error can be considered a retryable error
     #[prost(bool, tag="3")]
     pub retryable_error: bool,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchRequest {
-    ///  Search request. This is a perfect copy of the original search request,
-    ///  that was sent to root apart from the start_offset & max_hits params.
+    /// Search request. This is a perfect copy of the original search request,
+    /// that was sent to root apart from the start_offset & max_hits params.
     #[prost(message, optional, tag="1")]
     pub search_request: ::core::option::Option<SearchRequest>,
-    ///  Index split ids to apply the query on.
-    ///  This ids are resolved from the index_uri defined in the search_request.
+    /// Index split ids to apply the query on.
+    /// This ids are resolved from the index_uri defined in the search_request.
     #[prost(message, repeated, tag="4")]
     pub split_offsets: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
-    ///  `DocMapper` as json serialized trait.
+    /// `DocMapper` as json serialized trait.
     #[prost(string, tag="5")]
     pub doc_mapper: ::prost::alloc::string::String,
-    ///  Index URI. The index URI defines the location of the storage that contains the
-    ///  split files.
+    /// Index URI. The index URI defines the location of the storage that contains the
+    /// split files.
     #[prost(string, tag="6")]
     pub index_uri: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SplitIdAndFooterOffsets {
-    ///  Index split id to apply the query on.
-    ///  This id is resolved from the index_uri defined in the search_request.
+    /// Index split id to apply the query on.
+    /// This id is resolved from the index_uri defined in the search_request.
     #[prost(string, tag="1")]
     pub split_id: ::prost::alloc::string::String,
-    ///  The offset of the start of footer in the split bundle. The footer contains the file bundle metadata and the hotcache.
+    /// The offset of the start of footer in the split bundle. The footer contains the file bundle metadata and the hotcache.
     #[prost(uint64, tag="2")]
     pub split_footer_start: u64,
-    ///  The offset of the end of the footer in split bundle. The footer contains the file bundle metada and the hotcache.
+    /// The offset of the end of the footer in split bundle. The footer contains the file bundle metada and the hotcache.
     #[prost(uint64, tag="3")]
     pub split_footer_end: u64,
 }
@@ -119,151 +119,151 @@ pub struct SplitIdAndFooterOffsets {
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafHit {
-    ///  The actual content of the hit/
+    /// The actual content of the hit/
     #[prost(string, tag="1")]
     pub leaf_json: ::prost::alloc::string::String,
-    ///  The partial hit (ie: the sorting field + the document address)
+    /// The partial hit (ie: the sorting field + the document address)
     #[prost(message, optional, tag="2")]
     pub partial_hit: ::core::option::Option<PartialHit>,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Hit {
-    ///  The actual content of the hit/
+    /// The actual content of the hit/
     #[prost(string, tag="1")]
     pub json: ::prost::alloc::string::String,
-    ///  The partial hit (ie: the sorting field + the document address)
+    /// The partial hit (ie: the sorting field + the document address)
     #[prost(message, optional, tag="2")]
     pub partial_hit: ::core::option::Option<PartialHit>,
 }
-///  A partial hit, is a hit for which we have not fetch the content yet.
-///  Instead, it holds a document_uri which is enough information to
-///  go and fetch the actual document data, by performing a `get_doc(...)`
-///  request.
+/// A partial hit, is a hit for which we have not fetch the content yet.
+/// Instead, it holds a document_uri which is enough information to
+/// go and fetch the actual document data, by performing a `get_doc(...)`
+/// request.
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PartialHit {
-    ///  Sorting field value. (e.g. timestamp)
+    /// Sorting field value. (e.g. timestamp)
     ///
-    ///  Quickwit only computes top-K of this sorting field.
-    ///  If the user requested for a bottom-K of a given fast field, then quickwit simply
-    ///  emits an decreasing mapping of this fast field.
+    /// Quickwit only computes top-K of this sorting field.
+    /// If the user requested for a bottom-K of a given fast field, then quickwit simply
+    /// emits an decreasing mapping of this fast field.
     ///
-    ///  In case of a tie, quickwit uses the increasing order of
-    ///  - the split_id,
-    ///  - the segment_ord,
-    ///  - the doc id.
+    /// In case of a tie, quickwit uses the increasing order of
+    /// - the split_id,
+    /// - the segment_ord,
+    /// - the doc id.
     #[prost(uint64, tag="1")]
     pub sorting_field_value: u64,
     #[prost(string, tag="2")]
     pub split_id: ::prost::alloc::string::String,
-    ///  (segment_ord, doc) form a tantivy DocAddress, which is sufficient to identify a document
-    ///  within a split
+    /// (segment_ord, doc) form a tantivy DocAddress, which is sufficient to identify a document
+    /// within a split
     #[prost(uint32, tag="3")]
     pub segment_ord: u32,
-    ///  The DocId identifies a unique document at the scale of a tantivy segment.
+    /// The DocId identifies a unique document at the scale of a tantivy segment.
     #[prost(uint32, tag="4")]
     pub doc_id: u32,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchResponse {
-    ///  Total number of documents matched by the query.
+    /// Total number of documents matched by the query.
     #[prost(uint64, tag="1")]
     pub num_hits: u64,
-    ///  List of the best top-K candidates for the given leaf query.
+    /// List of the best top-K candidates for the given leaf query.
     #[prost(message, repeated, tag="2")]
     pub partial_hits: ::prost::alloc::vec::Vec<PartialHit>,
-    ///  The list of splits that failed. LeafSearchResponse can be an aggregation of results, so there may be multiple.
+    /// The list of splits that failed. LeafSearchResponse can be an aggregation of results, so there may be multiple.
     #[prost(message, repeated, tag="3")]
     pub failed_splits: ::prost::alloc::vec::Vec<SplitSearchError>,
-    ///  Total number of splits the leaf(s) were in charge of.
-    ///  num_attempted_splits = num_successful_splits + num_failed_splits.
+    /// Total number of splits the leaf(s) were in charge of.
+    /// num_attempted_splits = num_successful_splits + num_failed_splits.
     #[prost(uint64, tag="4")]
     pub num_attempted_splits: u64,
-    ///  json serialized intermediate aggregation_result.
+    /// json serialized intermediate aggregation_result.
     #[prost(string, optional, tag="5")]
     pub intermediate_aggregation_result: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchDocsRequest {
-    ///  Request fetching the content of a given list of partial_hits.
+    /// Request fetching the content of a given list of partial_hits.
     #[prost(message, repeated, tag="1")]
     pub partial_hits: ::prost::alloc::vec::Vec<PartialHit>,
-    ///  Index ID
+    /// Index ID
     #[prost(string, tag="2")]
     pub index_id: ::prost::alloc::string::String,
-    ///  Split footer offsets. They are required for fetch docs to
-    ///  fetch the document content in two reads, when the footer is not
-    ///  cached.
+    /// Split footer offsets. They are required for fetch docs to
+    /// fetch the document content in two reads, when the footer is not
+    /// cached.
     #[prost(message, repeated, tag="3")]
     pub split_offsets: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
-    ///  Index URI. The index URI defines the location of the storage that contains the
-    ///  split files.
+    /// Index URI. The index URI defines the location of the storage that contains the
+    /// split files.
     #[prost(string, tag="4")]
     pub index_uri: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchDocsResponse {
-    ///  List of complete hits.
+    /// List of complete hits.
     #[prost(message, repeated, tag="1")]
     pub hits: ::prost::alloc::vec::Vec<LeafHit>,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchStreamRequest {
-    ///  Index ID
+    /// Index ID
     #[prost(string, tag="1")]
     pub index_id: ::prost::alloc::string::String,
-    ///  Query
+    /// Query
     #[prost(string, tag="2")]
     pub query: ::prost::alloc::string::String,
-    ///  Fields to search on
+    /// Fields to search on
     #[prost(string, repeated, tag="3")]
     pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    ///  The time filter is interpreted as a semi-open interval. [start, end)
+    /// The time filter is interpreted as a semi-open interval. [start, end)
     #[prost(int64, optional, tag="4")]
     pub start_timestamp: ::core::option::Option<i64>,
     #[prost(int64, optional, tag="5")]
     pub end_timestamp: ::core::option::Option<i64>,
-    ///  Name of the fast field to extract
+    /// Name of the fast field to extract
     #[prost(string, tag="6")]
     pub fast_field: ::prost::alloc::string::String,
-    ///  The output format
+    /// The output format
     #[prost(enumeration="OutputFormat", tag="7")]
     pub output_format: i32,
-    ///  The field by which we want to partition
+    /// The field by which we want to partition
     #[prost(string, optional, tag="9")]
     pub partition_by_field: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchStreamRequest {
-    ///  Stream request. This is a perfect copy of the original stream request,
-    ///  that was sent to root.
+    /// Stream request. This is a perfect copy of the original stream request,
+    /// that was sent to root.
     #[prost(message, optional, tag="1")]
     pub request: ::core::option::Option<SearchStreamRequest>,
-    ///  Index split ids to apply the query on.
-    ///  This ids are resolved from the index_uri defined in the stream request.
+    /// Index split ids to apply the query on.
+    /// This ids are resolved from the index_uri defined in the stream request.
     #[prost(message, repeated, tag="2")]
     pub split_offsets: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
-    ///  `DocMapper` as json serialized trait.
+    /// `DocMapper` as json serialized trait.
     #[prost(string, tag="5")]
     pub doc_mapper: ::prost::alloc::string::String,
-    ///  Index URI. The index URI defines the location of the storage that contains the
-    ///  split files.
+    /// Index URI. The index URI defines the location of the storage that contains the
+    /// split files.
     #[prost(string, tag="6")]
     pub index_uri: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchStreamResponse {
-    ///  Row of data serialized in bytes.
+    /// Row of data serialized in bytes.
     #[prost(bytes="vec", tag="1")]
     pub data: ::prost::alloc::vec::Vec<u8>,
-    ///  Split id.
+    /// Split id.
     #[prost(string, tag="2")]
     pub split_id: ::prost::alloc::string::String,
 }
@@ -290,7 +290,7 @@ impl SortOrder {
         }
     }
 }
-//  -- Stream -------------------
+// -- Stream -------------------
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
