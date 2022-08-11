@@ -19,7 +19,6 @@
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet};
-use std::ops::Mul;
 
 use itertools::Itertools;
 use quickwit_doc_mapper::{DocMapper, SortBy, SortOrder};
@@ -69,13 +68,27 @@ impl SortingFieldComputer {
                 }
             }
             SortingFieldComputer::DocId => 0u64,
-            SortingFieldComputer::Score { order } => match order {
-                // We lose some precision in order to properly cast the f32 to u64
-                SortOrder::Desc => score.mul(1000.0) as u64,
-                SortOrder::Asc => u64::MAX - score.mul(1000.0) as u64,
-            },
+            SortingFieldComputer::Score { order } => {
+                // Since we need a u64 value to return, we *transform* the BM25 score into u64.
+                // The transformation preserves the order.
+                // (https://lemire.me/blog/2020/12/14/converting-floating-point-numbers-to-integers-while-preserving-order/)
+                let u32_score = u32::from_le_bytes(score.to_le_bytes());
+                let u64_score = sign_flip(u32_score);
+                match order {
+                    SortOrder::Desc => u64_score,
+                    SortOrder::Asc => u64::MAX - u64_score,
+                }
+            }
         }
     }
+}
+
+/// Takes a u32 representation of a f32 and negates all bits if the most
+/// significant bit is set.
+fn sign_flip(value: u32) -> u64 {
+    let mut mask = (value as i64 >> 63) as u64;
+    mask |= 0x8000000000000000;
+    value as u64 ^ mask
 }
 
 /// Takes a user-defined sorting criteria and resolves it to a

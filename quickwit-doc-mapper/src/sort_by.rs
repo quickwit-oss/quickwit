@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use anyhow::{bail, ensure, Context, Ok};
+use anyhow::{bail, Context, Ok};
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use tantivy::schema::{FieldType, Schema};
@@ -98,7 +98,7 @@ pub enum SortBy {
 }
 
 pub(crate) fn validate_sort_by_field_name(field_name: &str, schema: &Schema) -> anyhow::Result<()> {
-    if check_reserved_field_names(field_name).is_ok() {
+    if field_name == "_score" {
         return Ok(());
     }
     let sort_by_field = schema
@@ -119,12 +119,6 @@ pub(crate) fn validate_sort_by_field_name(field_name: &str, schema: &Schema) -> 
         )
     }
 
-    Ok(())
-}
-
-fn check_reserved_field_names(field_name: &str) -> anyhow::Result<()> {
-    let reserved_names = vec!["_score"];
-    ensure!(reserved_names.contains(&field_name));
     Ok(())
 }
 
