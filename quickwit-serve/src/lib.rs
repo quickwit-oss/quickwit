@@ -96,7 +96,7 @@ pub async fn serve_quickwit(
     services: &HashSet<QuickwitService>,
 ) -> anyhow::Result<()> {
     let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&config.metastore_uri())
+        .resolve(&config.metastore_uri)
         .await?;
     let indexes = metastore
         .list_indexes_metadatas()
@@ -148,10 +148,10 @@ pub async fn serve_quickwit(
     let index_service = Arc::new(IndexService::new(
         metastore,
         storage_resolver,
-        config.default_index_root_uri(),
+        config.default_index_root_uri.clone(),
     ));
-    let grpc_listen_addr = config.grpc_listen_addr().await?;
-    let rest_listen_addr = config.rest_listen_addr().await?;
+    let grpc_listen_addr = config.grpc_listen_addr;
+    let rest_listen_addr = config.rest_listen_addr;
 
     let quickwit_services = QuickwitServices {
         config: Arc::new(config),
@@ -324,7 +324,7 @@ mod tests {
         // The test will hang on indefinitely if we don't drop the sender.
         drop(result_sender);
 
-        let grpc_addr: SocketAddr = "127.0.0.1:10000".parse()?;
+        let grpc_addr: SocketAddr = "127.0.0.1:20000".parse()?;
         start_test_server(grpc_addr, Arc::new(mock_search_service)).await?;
         let client_pool = SearchClientPool::for_addrs(&[grpc_addr]).await?;
         let cluster_client = ClusterClient::new(client_pool.clone());

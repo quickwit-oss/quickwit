@@ -71,7 +71,7 @@ impl SliceCacheIndex {
             Err(0) => {
                 return None;
             }
-            Err(idx_after) => (idx_after - 1),
+            Err(idx_after) => idx_after - 1,
         };
         let entry = &self.slices[entry_idx];
         if entry.range().start > byte_range.start || entry.range().end < byte_range.end {
@@ -414,7 +414,7 @@ impl fmt::Debug for HotDirectory {
 }
 
 impl Directory for HotDirectory {
-    fn get_file_handle(&self, path: &Path) -> Result<Box<dyn FileHandle>, OpenReadError> {
+    fn get_file_handle(&self, path: &Path) -> Result<Arc<dyn FileHandle>, OpenReadError> {
         let file_length = self
             .inner
             .cache
@@ -427,7 +427,7 @@ impl Directory for HotDirectory {
             static_cache: self.inner.cache.get_slice(path),
             file_length,
         };
-        Ok(Box::new(file_slice_with_cache))
+        Ok(Arc::new(file_slice_with_cache))
     }
 
     fn exists(&self, path: &std::path::Path) -> Result<bool, OpenReadError> {
@@ -474,7 +474,6 @@ pub fn write_hotcache<D: Directory>(
     let schema = index.schema();
     let reader: IndexReader = index
         .reader_builder()
-        .num_searchers(1)
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = reader.searcher();

@@ -31,7 +31,6 @@ use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::split_file;
 use quickwit_directories::{BundleDirectory, UnionDirectory};
 use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
-use quickwit_metastore::checkpoint::CheckpointDelta;
 use quickwit_metastore::SplitMetadata;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
 use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader};
@@ -329,9 +328,6 @@ impl MergeExecutor {
             demux_num_ops: 0,
             num_docs,
             docs_size_in_bytes,
-            // start_time is not very interesting here.
-            split_date_of_birth: Instant::now(),
-            checkpoint_delta: CheckpointDelta::default(), //< TODO fixme
             index: merged_index,
             index_writer,
             split_scratch_directory: merge_scratch_directory,
@@ -342,6 +338,8 @@ impl MergeExecutor {
             &self.merge_packager_mailbox,
             IndexedSplitBatch {
                 splits: vec![indexed_split],
+                checkpoint_delta: Default::default(),
+                date_of_birth: start,
             },
         )
         .await?;
@@ -474,8 +472,6 @@ impl MergeExecutor {
                 demux_num_ops: initial_demux_num_ops + 1,
                 num_docs: num_docs as u64,
                 docs_size_in_bytes,
-                split_date_of_birth: Instant::now(),
-                checkpoint_delta: CheckpointDelta::default(), //< TODO fixme
                 index,
                 index_writer,
                 split_scratch_directory: scratched_directory,
@@ -495,6 +491,8 @@ impl MergeExecutor {
             &self.merge_packager_mailbox,
             IndexedSplitBatch {
                 splits: indexed_splits,
+                checkpoint_delta: None,
+                date_of_birth: start,
             },
         )
         .await?;

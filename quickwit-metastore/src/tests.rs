@@ -23,13 +23,14 @@ pub mod test_suite {
 
     use async_trait::async_trait;
     use itertools::Itertools;
+    use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use time::OffsetDateTime;
     use tokio::time::{sleep, Duration};
     use tracing::{error, info};
 
-    use crate::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
+    use crate::checkpoint::{IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint};
     use crate::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
 
     #[async_trait]
@@ -307,9 +308,13 @@ pub mod test_suite {
             let result = metastore
                 .publish_splits(
                     "non-existent-index",
-                    source_id,
                     &[],
-                    CheckpointDelta::from(1..10),
+                    &[],
+                    {
+                        let offsets = 1..10;
+                        IndexCheckpointDelta::for_test(source_id, offsets)
+                    }
+                    .into(),
                 )
                 .await
                 .unwrap_err();
@@ -326,7 +331,16 @@ pub mod test_suite {
                 .unwrap();
 
             let result = metastore
-                .publish_splits(index_id, source_id, &[], CheckpointDelta::from(0..100))
+                .publish_splits(
+                    index_id,
+                    &[],
+                    &[],
+                    {
+                        let offsets = 0..100;
+                        IndexCheckpointDelta::for_test(source_id, offsets)
+                    }
+                    .into(),
+                )
                 .await;
             assert!(result.is_ok());
 
@@ -383,9 +397,13 @@ pub mod test_suite {
             let result = metastore
                 .publish_splits(
                     "non-existent-index",
-                    source_id,
                     &["non-existent-split"],
-                    CheckpointDelta::from(1..10),
+                    &[],
+                    {
+                        let offsets = 1..10;
+                        IndexCheckpointDelta::for_test(source_id, offsets)
+                    }
+                    .into(),
                 )
                 .await
                 .unwrap_err();
@@ -400,12 +418,7 @@ pub mod test_suite {
                 .unwrap();
 
             let result = metastore
-                .publish_splits(
-                    index_id,
-                    source_id,
-                    &["non-existent-split"],
-                    CheckpointDelta::default(),
-                )
+                .publish_splits(index_id, &["non-existent-split"], &[], None)
                 .await
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
@@ -426,12 +439,7 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .publish_splits(
-                    index_id,
-                    source_id,
-                    &[split_id_1],
-                    CheckpointDelta::default(),
-                )
+                .publish_splits(index_id, &[split_id_1], &[], None)
                 .await
                 .unwrap();
 
@@ -453,9 +461,13 @@ pub mod test_suite {
             metastore
                 .publish_splits(
                     index_id,
-                    source_id,
                     &[split_id_1],
-                    CheckpointDelta::from(1..12),
+                    &[],
+                    {
+                        let offsets = 1..12;
+                        IndexCheckpointDelta::for_test(source_id, offsets)
+                    }
+                    .into(),
                 )
                 .await
                 .unwrap();
@@ -463,9 +475,13 @@ pub mod test_suite {
             let publish_error = metastore
                 .publish_splits(
                     index_id,
-                    source_id,
                     &[split_id_1],
-                    CheckpointDelta::from(1..12),
+                    &[],
+                    {
+                        let offsets = 1..12;
+                        IndexCheckpointDelta::for_test(source_id, offsets)
+                    }
+                    .into(),
                 )
                 .await
                 .unwrap_err();
@@ -492,9 +508,13 @@ pub mod test_suite {
             metastore
                 .publish_splits(
                     index_id,
-                    source_id,
                     &[split_id_1],
-                    CheckpointDelta::from(12..15),
+                    &[],
+                    {
+                        let offsets = 12..15;
+                        IndexCheckpointDelta::for_test(source_id, offsets)
+                    }
+                    .into(),
                 )
                 .await
                 .unwrap();
@@ -507,9 +527,13 @@ pub mod test_suite {
             let result = metastore
                 .publish_splits(
                     index_id,
-                    source_id,
                     &[split_id_1],
-                    CheckpointDelta::from(15..18),
+                    &[],
+                    {
+                        let offsets = 15..18;
+                        IndexCheckpointDelta::for_test(source_id, offsets)
+                    }
+                    .into(),
                 )
                 .await
                 .unwrap_err();
@@ -533,9 +557,13 @@ pub mod test_suite {
             let result = metastore
                 .publish_splits(
                     index_id,
-                    source_id,
                     &[split_id_1, "non-existent-split"],
-                    CheckpointDelta::from(15..18),
+                    &[],
+                    {
+                        let offsets = 15..18;
+                        IndexCheckpointDelta::for_test(source_id, offsets)
+                    }
+                    .into(),
                 )
                 .await
                 .unwrap_err();
@@ -559,9 +587,13 @@ pub mod test_suite {
             metastore
                 .publish_splits(
                     index_id,
-                    source_id,
                     &[split_id_1],
-                    CheckpointDelta::from(15..18),
+                    &[],
+                    {
+                        let offsets = 15..18;
+                        IndexCheckpointDelta::for_test(source_id, offsets)
+                    }
+                    .into(),
                 )
                 .await
                 .unwrap();
@@ -569,9 +601,13 @@ pub mod test_suite {
             let result = metastore
                 .publish_splits(
                     index_id,
-                    source_id,
                     &[split_id_1, "non-existent-split"],
-                    CheckpointDelta::from(18..24),
+                    &[],
+                    {
+                        let offsets = 18..24;
+                        IndexCheckpointDelta::for_test(source_id, offsets)
+                    }
+                    .into(),
                 )
                 .await
                 .unwrap_err();
@@ -595,9 +631,13 @@ pub mod test_suite {
             metastore
                 .publish_splits(
                     index_id,
-                    source_id,
                     &[split_id_1],
-                    CheckpointDelta::from(18..24),
+                    &[],
+                    {
+                        let offsets = 18..24;
+                        IndexCheckpointDelta::for_test(source_id, offsets)
+                    }
+                    .into(),
                 )
                 .await
                 .unwrap();
@@ -610,9 +650,13 @@ pub mod test_suite {
             let result = metastore
                 .publish_splits(
                     index_id,
-                    source_id,
                     &[split_id_1, "non-existent-split"],
-                    CheckpointDelta::from(24..26),
+                    &[],
+                    {
+                        let offsets = 24..26;
+                        IndexCheckpointDelta::for_test(source_id, offsets)
+                    }
+                    .into(),
                 )
                 .await
                 .unwrap_err();
@@ -641,9 +685,13 @@ pub mod test_suite {
             metastore
                 .publish_splits(
                     index_id,
-                    source_id,
                     &[split_id_1, split_id_2],
-                    CheckpointDelta::from(24..26),
+                    &[],
+                    {
+                        let offsets = 24..26;
+                        IndexCheckpointDelta::for_test(source_id, offsets)
+                    }
+                    .into(),
                 )
                 .await
                 .unwrap();
@@ -671,9 +719,13 @@ pub mod test_suite {
             metastore
                 .publish_splits(
                     index_id,
-                    source_id,
                     &[split_id_2],
-                    CheckpointDelta::from(26..28),
+                    &[],
+                    {
+                        let offsets = 26..28;
+                        IndexCheckpointDelta::for_test(source_id, offsets)
+                    }
+                    .into(),
                 )
                 .await
                 .unwrap();
@@ -681,9 +733,13 @@ pub mod test_suite {
             metastore
                 .publish_splits(
                     index_id,
-                    source_id,
                     &[split_id_1, split_id_2],
-                    CheckpointDelta::from(28..30),
+                    &[],
+                    {
+                        let offsets = 28..30;
+                        IndexCheckpointDelta::for_test(source_id, offsets)
+                    }
+                    .into(),
                 )
                 .await
                 .unwrap();
@@ -711,9 +767,13 @@ pub mod test_suite {
             metastore
                 .publish_splits(
                     index_id,
-                    source_id,
                     &[split_id_1, split_id_2],
-                    CheckpointDelta::from(30..31),
+                    &[],
+                    {
+                        let offsets = 30..31;
+                        IndexCheckpointDelta::for_test(source_id, offsets)
+                    }
+                    .into(),
                 )
                 .await
                 .unwrap();
@@ -721,9 +781,13 @@ pub mod test_suite {
             let publish_error = metastore
                 .publish_splits(
                     index_id,
-                    source_id,
                     &[split_id_1, split_id_2],
-                    CheckpointDelta::from(30..31),
+                    &[],
+                    {
+                        let offsets = 30..31;
+                        IndexCheckpointDelta::for_test(source_id, offsets)
+                    }
+                    .into(),
                 )
                 .await
                 .unwrap_err();
@@ -741,15 +805,14 @@ pub mod test_suite {
 
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
-        let index_id = "replace_splits-index";
+        let index_id = append_random_suffix("test-metastore-replace-splits");
         let index_uri = format!("ram://indexes/{index_id}");
-        let source_id = "replace_splits-source";
-        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
+        let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
 
-        let split_id_1 = "replace_splits-index-one";
+        let split_id_1 = format!("{index_id}--split-one");
         let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_id: split_id_1.to_string(),
+            split_id: split_id_1.clone(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: None,
@@ -757,10 +820,10 @@ pub mod test_suite {
             ..Default::default()
         };
 
-        let split_id_2 = "replace_splits-index-two";
+        let split_id_2 = format!("{index_id}--split-two");
         let split_metadata_2 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_id: split_id_2.to_string(),
+            split_id: split_id_2.clone(),
             num_docs: 5,
             uncompressed_docs_size_in_bytes: 6,
             time_range: None,
@@ -768,10 +831,10 @@ pub mod test_suite {
             ..Default::default()
         };
 
-        let split_id_3 = "replace_splits-index-three";
+        let split_id_3 = format!("{index_id}--split-three");
         let split_metadata_3 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_id: split_id_3.to_string(),
+            split_id: split_id_3.clone(),
             num_docs: 5,
             uncompressed_docs_size_in_bytes: 6,
             time_range: None,
@@ -781,15 +844,16 @@ pub mod test_suite {
 
         // Replace splits on a non-existent index
         {
-            let result = metastore
-                .replace_splits(
+            let error = metastore
+                .publish_splits(
                     "non-existent-index",
                     &["non-existent-split-one"],
                     &["non-existent-split-two"],
+                    None,
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
+            assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
         }
 
         // Replace a non-existent split on an index
@@ -799,17 +863,19 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
+            // TODO source id
             let result = metastore
-                .replace_splits(
-                    index_id,
+                .publish_splits(
+                    &index_id,
                     &["non-existent-split"],
                     &["non-existent-split-two"],
+                    None,
                 )
                 .await
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Replace a publish split with a non existing split
@@ -820,27 +886,23 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_split(&index_id, split_metadata_1.clone())
                 .await
                 .unwrap();
 
             metastore
-                .publish_splits(
-                    index_id,
-                    source_id,
-                    &[split_id_1],
-                    CheckpointDelta::default(),
-                )
+                .publish_splits(&index_id, &[&split_id_1], &[], None)
                 .await
                 .unwrap();
 
+            // TODO Source id
             let result = metastore
-                .replace_splits(index_id, &[split_id_2], &[split_id_1])
+                .publish_splits(&index_id, &[&split_id_2], &[&split_id_1], None)
                 .await
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Replace a publish split with a deleted split
@@ -851,37 +913,33 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_split(&index_id, split_metadata_1.clone())
                 .await
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_2.clone())
+                .stage_split(&index_id, split_metadata_2.clone())
                 .await
                 .unwrap();
 
             metastore
-                .publish_splits(
-                    index_id,
-                    source_id,
-                    &[split_id_1, split_id_2],
-                    CheckpointDelta::default(),
-                )
+                .publish_splits(&index_id, &[&split_id_1, &split_id_2], &[], None)
                 .await
                 .unwrap();
 
             metastore
-                .mark_splits_for_deletion(index_id, &[split_id_2])
+                .mark_splits_for_deletion(&index_id, &[&split_id_2])
                 .await
                 .unwrap();
 
+            // TODO source_id
             let result = metastore
-                .replace_splits(index_id, &[split_id_2], &[split_id_1])
+                .publish_splits(&index_id, &[&split_id_2], &[&split_id_1], None)
                 .await
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::SplitsNotStaged { .. }));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Replace a publish split with mixed splits
@@ -892,32 +950,65 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_split(&index_id, split_metadata_1.clone())
                 .await
                 .unwrap();
 
             metastore
-                .publish_splits(
-                    index_id,
-                    source_id,
-                    &[split_id_1],
-                    CheckpointDelta::default(),
-                )
+                .publish_splits(&index_id, &[&split_id_1], &[], None)
                 .await
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_2.clone())
+                .stage_split(&index_id, split_metadata_2.clone())
                 .await
                 .unwrap();
 
             let result = metastore
-                .replace_splits(index_id, &[split_id_2, split_id_3], &[split_id_1])
+                .publish_splits(&index_id, &[&split_id_2, &split_id_3], &[&split_id_1], None) // TODO source id
                 .await
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
+        }
+
+        // Replace a deleted split with a new split
+        {
+            metastore
+                .create_index(index_metadata.clone())
+                .await
+                .unwrap();
+
+            metastore
+                .stage_split(&index_id, split_metadata_1.clone())
+                .await
+                .unwrap();
+
+            metastore
+                .publish_splits(&index_id, &[&split_id_1], &[], None)
+                .await
+                .unwrap();
+
+            metastore
+                .mark_splits_for_deletion(&index_id, &[&split_id_1])
+                .await
+                .unwrap();
+
+            metastore
+                .stage_split(&index_id, split_metadata_2.clone())
+                .await
+                .unwrap();
+
+            let error = metastore
+                .publish_splits(&index_id, &[&split_id_2], &[&split_id_1], None)
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(error, MetastoreError::SplitsNotDeletable { split_ids } if split_ids == vec![split_id_1.clone()])
+            );
+
+            cleanup_index(&metastore, &index_id).await;
         }
 
         // Replace a publish split with staged splits
@@ -928,36 +1019,32 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_1.clone())
+                .stage_split(&index_id, split_metadata_1.clone())
                 .await
                 .unwrap();
 
             metastore
-                .publish_splits(
-                    index_id,
-                    source_id,
-                    &[split_id_1],
-                    CheckpointDelta::default(),
-                )
+                .publish_splits(&index_id, &[&split_id_1], &[], None)
                 .await
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_2.clone())
+                .stage_split(&index_id, split_metadata_2.clone())
                 .await
                 .unwrap();
 
             metastore
-                .stage_split(index_id, split_metadata_3.clone())
+                .stage_split(&index_id, split_metadata_3.clone())
                 .await
                 .unwrap();
 
+            // TODO Source id
             metastore
-                .replace_splits(index_id, &[split_id_2, split_id_3], &[split_id_1])
+                .publish_splits(&index_id, &[&split_id_2, &split_id_3], &[&split_id_1], None)
                 .await
                 .unwrap();
 
-            cleanup_index(&metastore, index_id).await;
+            cleanup_index(&metastore, &index_id).await;
         }
     }
 
@@ -1141,9 +1228,13 @@ pub mod test_suite {
             metastore
                 .publish_splits(
                     index_id,
-                    source_id,
                     &[split_id_1],
-                    CheckpointDelta::from(0..5),
+                    &[],
+                    {
+                        let offsets = 0..5;
+                        IndexCheckpointDelta::for_test(source_id, offsets)
+                    }
+                    .into(),
                 )
                 .await
                 .unwrap();
@@ -1836,9 +1927,13 @@ pub mod test_suite {
         metastore
             .publish_splits(
                 index_id,
-                source_id,
                 &[split_id],
-                CheckpointDelta::from(0..5),
+                &[],
+                {
+                    let offsets = 0..5;
+                    IndexCheckpointDelta::for_test(source_id, offsets)
+                }
+                .into(),
             )
             .await
             .unwrap();

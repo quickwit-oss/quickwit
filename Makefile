@@ -8,13 +8,13 @@ help:
 # `make docker-compose-up DOCKER_SERVICES='jaeger,localstack'` starts the subset of services matching the profiles.
 docker-compose-up:
 	@echo "Launching ${DOCKER_SERVICES} Docker service(s)"
-	COMPOSE_PROFILES=$(DOCKER_SERVICES) docker-compose -f docker-compose.yml up -d --remove-orphans
+	COMPOSE_PROFILES=$(DOCKER_SERVICES) docker compose -f docker-compose.yml up -d --remove-orphans --wait
 
 docker-compose-down:
-	docker-compose -f docker-compose.yml down --remove-orphans
+	docker compose -f docker-compose.yml down --remove-orphans
 
 docker-compose-logs:
-	docker-compose logs -f -t
+	docker compose logs -f -t
 
 fmt:
 	@echo "Formatting Rust files"

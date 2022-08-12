@@ -39,6 +39,8 @@ fn default_rocks_db_options() -> rocksdb::Options {
     // TODO tweak
     let mut options = rocksdb::Options::default();
     options.create_if_missing(true);
+    options.set_max_open_files(512);
+    options.set_max_total_wal_size(100_000_000);
     options
 }
 
@@ -57,11 +59,13 @@ fn next_position(db: &DB, queue_id: &str) -> crate::Result<Option<Position>> {
         })?;
     // That's iterating backward
     let mut full_it = db.full_iterator_cf(&cf, IteratorMode::End);
-    if let Some((key, _)) = full_it.next() {
-        let position = Position::try_from(&*key)?;
-        Ok(Some(position))
-    } else {
-        Ok(None)
+    match full_it.next() {
+        Some(Ok((key, _))) => {
+            let position = Position::try_from(&*key)?;
+            Ok(Some(position))
+        }
+        Some(Err(error)) => Err(error.into()),
+        None => Ok(None),
     }
 }
 
@@ -154,6 +158,8 @@ impl Queues {
         };
 
         self.db
+            .delete_file_in_range_cf(&cf_ref, Position::default(), truncation_end_offset)?;
+        self.db
             .delete_range_cf(&cf_ref, Position::default(), truncation_end_offset)?;
         Ok(())
     }
@@ -231,7 +237,8 @@ impl Queues {
         let mut num_bytes = 0;
         let mut first_key_opt: Option<u64> = None;
         let size_limit = num_bytes_limit.unwrap_or(FETCH_PAYLOAD_LIMIT);
-        for (key, payload) in full_it {
+        for kp_res in full_it {
+            let (key, payload) = kp_res?;
             let position = Position::try_from(&*key)?;
             if first_key_opt.is_none() {
                 first_key_opt = Some(position.into());
@@ -259,7 +266,8 @@ impl Queues {
         let mut doc_batch = DocBatch::default();
         let mut num_bytes = 0;
         let mut first_key_opt: Option<u64> = None;
-        for (key, payload) in full_it {
+        for kp_res in full_it {
+            let (key, payload) = kp_res?;
             let position = Position::try_from(&*key)?;
             if first_key_opt.is_none() {
                 first_key_opt = Some(position.into());

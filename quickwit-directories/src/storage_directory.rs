@@ -123,8 +123,8 @@ fn unsupported_operation(path: &Path) -> io::Error {
 }
 
 impl Directory for StorageDirectory {
-    fn get_file_handle(&self, path: &Path) -> Result<Box<dyn FileHandle>, OpenReadError> {
-        Ok(Box::new(StorageDirectoryFileHandle {
+    fn get_file_handle(&self, path: &Path) -> Result<Arc<dyn FileHandle>, OpenReadError> {
+        Ok(Arc::new(StorageDirectoryFileHandle {
             storage_directory: self.clone(),
             path: path.to_path_buf(),
         }))

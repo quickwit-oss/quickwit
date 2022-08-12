@@ -516,9 +516,7 @@ pub async fn list_index_cli(args: ListIndexesArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "list");
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
-    let metastore_uri = args
-        .metastore_uri
-        .unwrap_or_else(|| quickwit_config.metastore_uri());
+    let metastore_uri = args.metastore_uri.unwrap_or(quickwit_config.metastore_uri);
     let metastore = metastore_uri_resolver.resolve(&metastore_uri).await?;
     let indexes = metastore.list_indexes_metadatas().await?;
     let index_table = make_list_indexes_table(indexes);
@@ -554,7 +552,7 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri())
+        .resolve(&quickwit_config.metastore_uri)
         .await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let splits = metastore
@@ -796,7 +794,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     let index_id = index_config.index_id.clone();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri())
+        .resolve(&quickwit_config.metastore_uri)
         .await?;
 
     validate_storage_uri(metastore_uri_resolver, &quickwit_config, &index_config).await?;
@@ -804,7 +802,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     let index_service = IndexService::new(
         metastore,
         quickwit_storage_uri_resolver().clone(),
-        quickwit_config.default_index_root_uri(),
+        quickwit_config.default_index_root_uri,
     );
     index_service
         .create_index(index_config, args.overwrite)
@@ -829,17 +827,17 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         source_id: CLI_INGEST_SOURCE_ID.to_string(),
         source_params,
     };
-    run_index_checklist(&config.metastore_uri(), &args.index_id, Some(&source)).await?;
+    run_index_checklist(&config.metastore_uri, &args.index_id, Some(&source)).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&config.metastore_uri())
+        .resolve(&config.metastore_uri)
         .await?;
 
     if args.overwrite {
         let index_service = IndexService::new(
             metastore.clone(),
             quickwit_storage_uri_resolver().clone(),
-            config.default_index_root_uri(),
+            config.default_index_root_uri.clone(),
         );
         index_service.reset_index(&args.index_id).await?;
     }
@@ -896,7 +894,10 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         .await?;
     }
 
-    Ok(())
+    match statistics.num_invalid_docs {
+        0 => Ok(()),
+        _ => bail!("Failed to ingest all the documents."),
+    }
 }
 
 pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResponse> {
@@ -905,7 +906,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri())
+        .resolve(&quickwit_config.metastore_uri)
         .await?;
     let search_request = SearchRequest {
         index_id: args.index_id,
@@ -939,13 +940,13 @@ pub async fn merge_or_demux_cli(
 ) -> anyhow::Result<()> {
     debug!(args = ?args, merge_enabled = merge_enabled, demux_enabled = demux_enabled, "run-merge-operations");
     let config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
-    run_index_checklist(&config.metastore_uri(), &args.index_id, None).await?;
+    run_index_checklist(&config.metastore_uri, &args.index_id, None).await?;
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&config.metastore_uri())
+        .resolve(&config.metastore_uri)
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
     let indexing_server = IndexingService::new(
@@ -980,12 +981,12 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
 
     let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&quickwit_config.metastore_uri())
+        .resolve(&quickwit_config.metastore_uri)
         .await?;
     let index_service = IndexService::new(
         metastore,
         quickwit_storage_uri_resolver().clone(),
-        quickwit_config.default_index_root_uri(),
+        quickwit_config.default_index_root_uri,
     );
     let affected_files = index_service
         .delete_index(&args.index_id, args.dry_run)
@@ -1019,12 +1020,12 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
 
     let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&quickwit_config.metastore_uri())
+        .resolve(&quickwit_config.metastore_uri)
         .await?;
     let index_service = IndexService::new(
         metastore,
         quickwit_storage_uri_resolver().clone(),
-        quickwit_config.default_index_root_uri(),
+        quickwit_config.default_index_root_uri,
     );
     let deleted_files = index_service
         .garbage_collect_index(&args.index_id, args.grace_period, args.dry_run)
@@ -1107,11 +1108,28 @@ pub async fn start_statistics_reporting_loop(
     // display end of task report
     println!();
     let secs = Duration::from_secs(start_time.elapsed().as_secs());
-    println!(
-        "Indexed {} documents in {}",
-        pipeline_statistics.num_docs.separate_with_commas(),
-        format_duration(secs)
-    );
+    if pipeline_statistics.num_invalid_docs == 0 {
+        println!(
+            "Indexed {} documents in {}.",
+            pipeline_statistics.num_docs.separate_with_commas(),
+            format_duration(secs)
+        );
+    } else {
+        let num_indexed_docs = (pipeline_statistics.num_docs
+            - pipeline_statistics.num_invalid_docs)
+            .separate_with_commas();
+
+        let success_rate = 1.0
+            - (pipeline_statistics.num_invalid_docs as f64 / pipeline_statistics.num_docs as f64)
+                * 100.0;
+        println!(
+            "Indexed {}/{} documents in {} ({:.1}% success rate).",
+            num_indexed_docs,
+            pipeline_statistics.num_invalid_docs.separate_with_commas(),
+            format_duration(secs),
+            success_rate
+        );
+    }
 
     Ok(pipeline_statistics)
 }

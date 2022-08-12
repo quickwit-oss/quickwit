@@ -13,6 +13,7 @@ RUN apt-get -y update \
                           libssl-dev \
                           llvm \
                           nodejs \
+                          protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
 # Required by tonic

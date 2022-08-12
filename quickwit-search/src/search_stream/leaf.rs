@@ -34,7 +34,7 @@ use quickwit_storage::Storage;
 use tantivy::fastfield::FastValue;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema, Type};
-use tantivy::{LeasedItem, ReloadPolicy, Searcher};
+use tantivy::{ReloadPolicy, Searcher};
 use tokio::sync::{Semaphore, SemaphorePermit};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::*;
@@ -152,7 +152,6 @@ async fn leaf_search_stream_single_split(
     let query = doc_mapper.query(split_schema.clone(), &search_request)?;
     let reader = index
         .reader_builder()
-        .num_searchers(1)
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = reader.searcher();
@@ -167,7 +166,7 @@ async fn leaf_search_stream_single_split(
     );
 
     warmup(
-        &*searcher,
+        &searcher,
         query.as_ref(),
         &request_fields.fast_fields_for_request(timestamp_filter_builder_opt.as_ref()),
         &Default::default(),
@@ -189,8 +188,8 @@ async fn leaf_search_stream_single_split(
                 let collected_values = collect_values::<i64>(
                     &m_request_fields,
                     timestamp_filter_builder_opt,
-                    searcher,
-                    query.as_ref(),
+                    &searcher,
+                    &query,
                 )?;
                 super::serialize::<i64>(&collected_values, &mut buffer, output_format).map_err(
                     |_| {
@@ -204,8 +203,8 @@ async fn leaf_search_stream_single_split(
                 let collected_values = collect_values::<u64>(
                     &m_request_fields,
                     timestamp_filter_builder_opt,
-                    searcher,
-                    query.as_ref(),
+                    &searcher,
+                    &query,
                 )?;
                 super::serialize::<u64>(&collected_values, &mut buffer, output_format).map_err(
                     |_| {
@@ -215,12 +214,27 @@ async fn leaf_search_stream_single_split(
                     },
                 )?;
             }
+            (Type::Date, None) => {
+                let collected_values = collect_values::<i64>(
+                    &m_request_fields,
+                    timestamp_filter_builder_opt,
+                    &searcher,
+                    query.as_ref(),
+                )?;
+                super::serialize::<i64>(&collected_values, &mut buffer, output_format).map_err(
+                    |_| {
+                        SearchError::InternalError(
+                            "Error when serializing i64 during export".to_owned(),
+                        )
+                    },
+                )?;
+            }
             (Type::I64, Some(Type::I64)) => {
                 let collected_values = collect_partitioned_values::<i64, i64>(
                     &m_request_fields,
                     timestamp_filter_builder_opt,
-                    searcher,
-                    query.as_ref(),
+                    &searcher,
+                    &query,
                 )?;
                 super::serialize_partitions::<i64, i64>(collected_values.as_slice(), &mut buffer)
                     .map_err(|_| {
@@ -233,8 +247,8 @@ async fn leaf_search_stream_single_split(
                 let collected_values = collect_partitioned_values::<u64, u64>(
                     &m_request_fields,
                     timestamp_filter_builder_opt,
-                    searcher,
-                    query.as_ref(),
+                    &searcher,
+                    &query,
                 )?;
                 super::serialize_partitions::<u64, u64>(collected_values.as_slice(), &mut buffer)
                     .map_err(|_| {
@@ -272,7 +286,7 @@ async fn leaf_search_stream_single_split(
 fn collect_values<TFastValue: FastValue>(
     request_fields: &SearchStreamRequestFields,
     timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
-    searcher: LeasedItem<Searcher>,
+    searcher: &Searcher,
     query: &dyn Query,
 ) -> crate::Result<Vec<TFastValue>> {
     let collector = FastFieldCollector::<TFastValue> {
@@ -287,7 +301,7 @@ fn collect_values<TFastValue: FastValue>(
 fn collect_partitioned_values<TFastValue: FastValue, TPartitionValue: FastValue + Eq + Hash>(
     request_fields: &SearchStreamRequestFields,
     timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
-    searcher: LeasedItem<Searcher>,
+    searcher: &Searcher,
     query: &dyn Query,
 ) -> crate::Result<Vec<PartitionValues<TFastValue, TPartitionValue>>> {
     let collector = PartionnedFastFieldCollector::<TFastValue, TPartitionValue> {
@@ -426,6 +440,7 @@ mod tests {
 
     use quickwit_indexing::TestSandbox;
     use serde_json::json;
+    use tantivy::time::{Duration, OffsetDateTime};
 
     use super::*;
 
@@ -463,6 +478,82 @@ mod tests {
         }
         test_sandbox.add_documents(docs).await?;
 
+        let request = SearchStreamRequest {
+            index_id: index_id.to_string(),
+            query: "info".to_string(),
+            search_fields: vec![],
+            start_timestamp: None,
+            end_timestamp: Some(end_timestamp),
+            fast_field: "ts".to_string(),
+            output_format: 0,
+            partition_by_field: None,
+        };
+        let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
+        let splits_offsets = splits
+            .into_iter()
+            .map(|split_meta| SplitIdAndFooterOffsets {
+                split_id: split_meta.split_id().to_string(),
+                split_footer_start: split_meta.split_metadata.footer_offsets.start,
+                split_footer_end: split_meta.split_metadata.footer_offsets.end,
+            })
+            .collect();
+        let mut single_node_stream = leaf_search_stream(
+            request,
+            test_sandbox.storage(),
+            splits_offsets,
+            test_sandbox.doc_mapper(),
+        )
+        .await;
+        let res = single_node_stream.next().await.expect("no leaf result")?;
+        assert_eq!(
+            from_utf8(&res.data)?,
+            format!("{}\n", filtered_timestamp_values.join("\n"))
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_leaf_search_stream_filtering_with_datetime() -> anyhow::Result<()> {
+        let index_id = "single-node-simple-datetime";
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+              - name: ts
+                type: datetime
+                input_formats:
+                  - "unix_ts_secs"
+                fast: true
+        "#;
+        let indexing_settings_yaml = r#"
+            timestamp_field: ts
+        "#;
+        let test_sandbox = TestSandbox::create(
+            index_id,
+            doc_mapping_yaml,
+            indexing_settings_yaml,
+            &["body"],
+        )
+        .await?;
+        let mut docs = vec![];
+        let mut filtered_timestamp_values = vec![];
+        let start_date = OffsetDateTime::from_unix_timestamp(0)?;
+        let num_days = 20;
+        for i in 0..30 {
+            let dt = start_date.checked_add(Duration::days(i + 1)).unwrap();
+            let body = format!("info @ t:{}", i + 1);
+            docs.push(json!({"body": body, "ts": dt.unix_timestamp()}));
+            if i + 1 < num_days {
+                let ts_micros = dt.unix_timestamp() * 1_000_000;
+                filtered_timestamp_values.push(ts_micros.to_string());
+            }
+        }
+        test_sandbox.add_documents(docs).await?;
+
+        let end_timestamp = start_date
+            .checked_add(Duration::days(num_days))
+            .unwrap()
+            .unix_timestamp();
         let request = SearchStreamRequest {
             index_id: index_id.to_string(),
             query: "info".to_string(),

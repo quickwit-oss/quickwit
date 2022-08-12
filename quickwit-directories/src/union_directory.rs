@@ -71,7 +71,7 @@ fn convert_open_to_delete_error(open_err: OpenReadError) -> DeleteError {
 }
 
 impl Directory for UnionDirectory {
-    fn get_file_handle(&self, path: &Path) -> Result<Box<dyn FileHandle>, OpenReadError> {
+    fn get_file_handle(&self, path: &Path) -> Result<Arc<dyn FileHandle>, OpenReadError> {
         let directory = self.find_directory_for_path(path)?;
         directory.get_file_handle(path)
     }

@@ -34,8 +34,8 @@ use tokio::sync::Mutex;
 use tracing::log::LevelFilter;
 use tracing::{debug, error, instrument, warn};
 
-use crate::metastore::postgresql_model::{Index, IndexIdSplitIdRow};
-use crate::metastore::{postgresql_model, CheckpointDelta};
+use crate::checkpoint::IndexCheckpointDelta;
+use crate::metastore::postgresql_model::{self, Index, IndexIdSplitIdRow};
 use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
     MetastoreResult, Split, SplitMetadata, SplitState,
@@ -138,14 +138,17 @@ async fn index_metadata(
         .index_metadata()
 }
 
-/// Publish splits.
-/// Returns the successful split IDs.
+/// Publishes mutiple splits.
+/// Returns the IDs of the splits successfully published.
 #[instrument(skip(tx))]
 async fn mark_splits_as_published_helper(
     tx: &mut Transaction<'_, Postgres>,
     index_id: &str,
     split_ids: &[&str],
 ) -> MetastoreResult<Vec<String>> {
+    if split_ids.is_empty() {
+        return Ok(Vec::new());
+    }
     let publishable_states = [SplitState::Staged.as_str(), SplitState::Published.as_str()];
     let published_split_ids: Vec<String> = sqlx::query(
         r#"
@@ -168,13 +171,14 @@ async fn mark_splits_as_published_helper(
     Ok(published_split_ids)
 }
 
-/// Mark splits for deletion.
-/// Returns the IDs of the splits that were successfully marked for deletion.
+/// Marks mutiple splits for deletion.
+/// Returns the IDs of the splits successfully marked for deletion.
 #[instrument(skip(tx))]
 async fn mark_splits_for_deletion(
     tx: &mut Transaction<'_, Postgres>,
     index_id: &str,
     split_ids: &[&str],
+    deletable_states: &[&str],
 ) -> MetastoreResult<Vec<String>> {
     if split_ids.is_empty() {
         return Ok(Vec::new());
@@ -186,12 +190,14 @@ async fn mark_splits_for_deletion(
         WHERE
                 index_id = $2
             AND split_id = ANY($3)
+            AND split_state = ANY($4)
         RETURNING split_id
     "#,
     )
     .bind(SplitState::MarkedForDeletion.as_str())
     .bind(index_id)
     .bind(split_ids)
+    .bind(deletable_states)
     .map(|row| row.get(0))
     .fetch_all(tx)
     .await?;
@@ -514,91 +520,67 @@ impl Metastore for PostgresqlMetastore {
         })
     }
 
-    #[instrument(skip(self, checkpoint_delta))]
-    async fn publish_splits<'a>(
-        &self,
-        index_id: &str,
-        source_id: &str,
-        split_ids: &[&'a str],
-        checkpoint_delta: CheckpointDelta,
-    ) -> MetastoreResult<()> {
-        run_with_tx!(self.connection_pool, tx, {
-            // Update the index checkpoint.
-            mutate_index_metadata(tx, index_id, |index_metadata| {
-                index_metadata
-                    .checkpoint
-                    .try_apply_delta(source_id, checkpoint_delta)
-            })
-            .await?;
-
-            if split_ids.is_empty() {
-                return Ok(());
-            }
-
-            let published_split_ids =
-                mark_splits_as_published_helper(tx, index_id, split_ids).await?;
-
-            if published_split_ids.len() == split_ids.len() {
-                return Ok(());
-            }
-
-            error!(
-                num_split_ids = split_ids.len(),
-                published = published_split_ids.len(),
-                "published_splits_ids_not_match"
-            );
-
-            // Investigate and report the error.
-            let not_staged_ids =
-                get_splits_with_invalid_state(tx, index_id, split_ids, &published_split_ids)
-                    .await?;
-
-            Err(MetastoreError::SplitsNotStaged {
-                split_ids: not_staged_ids,
-            })
-        })
-    }
-
     #[instrument(skip(self))]
-    async fn replace_splits<'a>(
+    async fn publish_splits<'a>(
         &self,
         index_id: &str,
         new_split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
+        checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     ) -> MetastoreResult<()> {
         run_with_tx!(self.connection_pool, tx, {
-            // Publish splits.
-            let published_split_ids =
+            if let Some(checkpoint_delta) = checkpoint_delta_opt {
+                mutate_index_metadata(tx, index_id, |index_metadata| {
+                    index_metadata.checkpoint.try_apply_delta(checkpoint_delta)
+                })
+                .await?;
+            }
+            let published_split_ids: Vec<String> =
                 mark_splits_as_published_helper(tx, index_id, new_split_ids).await?;
 
             // Mark splits for deletion
-            let marked_split_ids =
-                mark_splits_for_deletion(tx, index_id, replaced_split_ids).await?;
+            let marked_split_ids = mark_splits_for_deletion(
+                tx,
+                index_id,
+                replaced_split_ids,
+                &[SplitState::Published.as_str()],
+            )
+            .await?;
 
-            // returning `Ok` means `commit` the transaction.
-            if published_split_ids.len() == new_split_ids.len()
-                && marked_split_ids.len() == replaced_split_ids.len()
-            {
-                return Ok(());
+            if published_split_ids.len() != new_split_ids.len() {
+                let affected_split_ids: Vec<String> = published_split_ids
+                    .into_iter()
+                    .chain(marked_split_ids.into_iter())
+                    .collect();
+                let split_ids: Vec<&str> = new_split_ids
+                    .iter()
+                    .chain(replaced_split_ids.iter())
+                    .copied()
+                    .collect();
+
+                let not_staged_ids =
+                    get_splits_with_invalid_state(tx, index_id, &split_ids, &affected_split_ids)
+                        .await?;
+
+                return Err(MetastoreError::SplitsNotStaged {
+                    split_ids: not_staged_ids,
+                });
             }
-
-            let affected_split_ids: Vec<String> = published_split_ids
-                .into_iter()
-                .chain(marked_split_ids.into_iter())
-                .collect();
-            let split_ids: Vec<&str> = new_split_ids
-                .iter()
-                .chain(replaced_split_ids.iter())
-                .copied()
-                .collect();
-
-            let not_staged_ids =
-                get_splits_with_invalid_state(tx, index_id, &split_ids, &affected_split_ids)
-                    .await?;
-
-            Err(MetastoreError::SplitsNotStaged {
-                split_ids: not_staged_ids,
-            })
+            if marked_split_ids.len() != replaced_split_ids.len() {
+                let non_deletable_split_ids = replaced_split_ids
+                    .iter()
+                    .filter(|replaced_split_id| {
+                        marked_split_ids
+                            .iter()
+                            .all(|marked_split_id| &marked_split_id != replaced_split_id)
+                    })
+                    .map(|split_id| split_id.to_string())
+                    .collect();
+                return Err(MetastoreError::SplitsNotDeletable {
+                    split_ids: non_deletable_split_ids,
+                });
+            }
+            Ok(())
         })
     }
 
@@ -629,8 +611,17 @@ impl Metastore for PostgresqlMetastore {
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
         run_with_tx!(self.connection_pool, tx, {
-            let marked_split_ids: Vec<String> =
-                mark_splits_for_deletion(tx, index_id, split_ids).await?;
+            let marked_split_ids: Vec<String> = mark_splits_for_deletion(
+                tx,
+                index_id,
+                split_ids,
+                &[
+                    SplitState::Staged.as_str(),
+                    SplitState::Published.as_str(),
+                    SplitState::MarkedForDeletion.as_str(),
+                ],
+            )
+            .await?;
 
             if marked_split_ids.len() == split_ids.len() {
                 return Ok(());

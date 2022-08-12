@@ -158,7 +158,7 @@ impl<D: Directory> DebugProxyDirectory<D> {
 
 struct DebugProxyFileHandle<D: Directory> {
     directory: DebugProxyDirectory<D>,
-    underlying: Box<dyn FileHandle>,
+    underlying: Arc<dyn FileHandle>,
     path: PathBuf,
 }
 
@@ -199,9 +199,9 @@ impl<D: Directory> HasLen for DebugProxyFileHandle<D> {
 }
 
 impl<D: Directory> Directory for DebugProxyDirectory<D> {
-    fn get_file_handle(&self, path: &Path) -> Result<Box<dyn FileHandle>, OpenReadError> {
+    fn get_file_handle(&self, path: &Path) -> Result<Arc<dyn FileHandle>, OpenReadError> {
         let underlying = self.underlying.get_file_handle(path)?;
-        Ok(Box::new(DebugProxyFileHandle {
+        Ok(Arc::new(DebugProxyFileHandle {
             underlying,
             directory: self.clone(),
             path: path.to_owned(),

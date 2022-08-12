@@ -17,19 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use tokio::sync::watch::Sender;
-
-use crate::Actor;
-
-pub struct ActorWithStateTx<A: Actor> {
-    pub actor: A,
-    pub state_tx: Sender<A::ObservableState>,
-}
-
-impl<A: Actor> Drop for ActorWithStateTx<A> {
-    fn drop(&mut self) {
-        let final_state = self.actor.observable_state();
-        // We ignore the result here. An error only marks the absence of an observer.
-        let _ = self.state_tx.send(final_state);
-    }
+fn main() {
+    build_data::set_RUST_CHANNEL();
 }

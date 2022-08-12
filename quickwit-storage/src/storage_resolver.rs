@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::error::Error;
 use std::sync::Arc;
 
 use once_cell::sync::OnceCell;
@@ -26,17 +25,33 @@ use quickwit_common::uri::{Protocol, Uri};
 
 use crate::local_file_storage::LocalFileStorageFactory;
 use crate::ram_storage::RamStorageFactory;
+#[cfg(feature = "azure")]
+use crate::AzureBlobStorageFactory;
 use crate::{S3CompatibleObjectStorageFactory, Storage, StorageResolverError};
 
 /// Quickwit supported storage resolvers.
 pub fn quickwit_storage_uri_resolver() -> &'static StorageUriResolver {
     static STORAGE_URI_RESOLVER: OnceCell<StorageUriResolver> = OnceCell::new();
     STORAGE_URI_RESOLVER.get_or_init(|| {
-        StorageUriResolver::builder()
+        #[allow(unused_mut)]
+        let mut builder = StorageUriResolver::builder()
             .register(RamStorageFactory::default())
             .register(LocalFileStorageFactory::default())
-            .register(S3CompatibleObjectStorageFactory::default())
-            .build()
+            .register(S3CompatibleObjectStorageFactory::default());
+
+        #[cfg(feature = "azure")]
+        {
+            builder = builder.register(AzureBlobStorageFactory::default());
+        }
+
+        #[cfg(not(feature = "azure"))]
+        {
+            builder = builder.register(UnsupportedStorage {
+                protocol: Protocol::Azure,
+            })
+        }
+
+        builder.build()
     })
 }
 
@@ -47,7 +62,25 @@ pub trait StorageFactory: Send + Sync + 'static {
     fn protocol(&self) -> Protocol;
 
     /// Returns the appropriate [`Storage`] object for the URI.
-    fn resolve(&self, uri: &Uri) -> crate::StorageResult<Arc<dyn Storage>>;
+    fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError>;
+}
+
+/// A storage factory implementation for handling not supported features.
+#[derive(Clone, Copy, Debug)]
+pub struct UnsupportedStorage {
+    protocol: Protocol,
+}
+
+impl StorageFactory for UnsupportedStorage {
+    fn protocol(&self) -> Protocol {
+        self.protocol
+    }
+
+    fn resolve(&self, _: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+        Err(StorageResolverError::ProtocolUnsupported {
+            protocol: self.protocol.to_string(),
+        })
+    }
 }
 
 /// Resolves an URI by dispatching it to the right [`StorageFactory`]
@@ -90,11 +123,18 @@ impl StorageUriResolver {
     /// Creates `StorageUriResolver` for testing.
     #[doc(hidden)]
     pub fn for_test() -> Self {
-        StorageUriResolver::builder()
+        #[allow(unused_mut)]
+        let mut builder = StorageUriResolver::builder()
             .register(RamStorageFactory::default())
             .register(LocalFileStorageFactory::default())
-            .register(S3CompatibleObjectStorageFactory::default())
-            .build()
+            .register(S3CompatibleObjectStorageFactory::default());
+
+        #[cfg(feature = "azure")]
+        {
+            builder = builder.register(AzureBlobStorageFactory::default());
+        }
+
+        builder.build()
     }
 
     /// Resolves the given URI.
@@ -105,15 +145,7 @@ impl StorageUriResolver {
             .ok_or_else(|| StorageResolverError::ProtocolUnsupported {
                 protocol: uri.protocol().to_string(),
             })?;
-        let storage = resolver.resolve(uri).map_err(|storage_error| {
-            StorageResolverError::FailedToOpenStorage {
-                kind: storage_error.kind(),
-                message: storage_error
-                    .source()
-                    .map(|err| format!("{err:?}"))
-                    .unwrap_or_else(String::new),
-            }
-        })?;
+        let storage = resolver.resolve(uri)?;
         Ok(storage)
     }
 }

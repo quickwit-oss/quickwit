@@ -77,17 +77,8 @@ install_from_archive() {
         x86_64-*linux*-gnu)
             _binary_arch="x86_64-unknown-linux-gnu"
             ;;
-        x86_64-*linux*-musl)
-            _binary_arch="x86_64-unknown-linux-musl"
-            ;;
-        aarch64-*linux*)
-            _binary_arch="aarch64-unknown-linux-musl"
-            ;;
-	armv7-*linux*-gnu)
-            _binary_arch="armv7-unknown-linux-gnueabihf"
-            ;;
-	armv7-*linux*-musl)
-            _binary_arch="armv7-unknown-linux-musleabihf"
+        aarch64-*linux*-gnu)
+            _binary_arch="aarch64-unknown-linux-gnu"
             ;;
         *)
             printf "%s A pre-built package is not available for your OS architecture: %s" "$_prompt" "$_arch"

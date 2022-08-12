@@ -47,7 +47,9 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::object_storage::MultiPartPolicy;
-use crate::{OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResult};
+use crate::{
+    OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResolverError, StorageResult,
+};
 
 /// Default region to use, if none has been configured.
 const QUICKWIT_DEFAULT_REGION: Region = Region::UsEast1;
@@ -55,7 +57,7 @@ const QUICKWIT_DEFAULT_REGION: Region = Region::UsEast1;
 #[instrument]
 fn sniff_s3_region() -> anyhow::Result<Region> {
     // Attempt to read region from environment variable and return an error if malformed.
-    if let Some(region) = region_from_env_variable()? {
+    if let Some(region) = region_from_env_variables()? {
         info!(region=?region, from="env-variable", "set-aws-region");
         return Ok(region);
     }
@@ -106,8 +108,14 @@ fn region_from_str(region_str: &str) -> anyhow::Result<Region> {
              http:// endpoint"
         );
     }
+
+    // For some storage provider like Cloudflare R2, the user has to set a custom region's name.
+    // We use `AWS_REGION` env variable for that.
+    let region_name =
+        std::env::var("AWS_REGION").unwrap_or_else(|_| "qw-custom-endpoint".to_string());
+
     Ok(Region::Custom {
-        name: "qw-custom-endpoint".to_string(),
+        name: region_name,
         endpoint: region_str.trim_end_matches('/').to_string(),
     })
 }
@@ -127,7 +135,7 @@ fn s3_region_env_var() -> Option<String> {
 }
 
 #[instrument]
-fn region_from_env_variable() -> anyhow::Result<Option<Region>> {
+fn region_from_env_variables() -> anyhow::Result<Option<Region>> {
     if let Some(region_str) = s3_region_env_var() {
         match region_from_str(&region_str) {
             Ok(region) => Ok(Some(region)),
@@ -230,9 +238,13 @@ impl S3CompatibleObjectStorage {
     }
 
     /// Creates an object storage given a region and an uri.
-    pub fn from_uri(uri: &Uri) -> crate::StorageResult<S3CompatibleObjectStorage> {
-        let region = sniff_s3_region_and_cache()
-            .map_err(|error| StorageErrorKind::Service.with_error(error))?;
+    pub fn from_uri(uri: &Uri) -> Result<S3CompatibleObjectStorage, StorageResolverError> {
+        let region = sniff_s3_region_and_cache().map_err(|err| {
+            StorageResolverError::FailedToOpenStorage {
+                kind: StorageErrorKind::Service,
+                message: err.to_string(),
+            }
+        })?;
         Self::from_region_and_uri(region, uri)
     }
 
@@ -240,13 +252,15 @@ impl S3CompatibleObjectStorage {
     pub fn from_region_and_uri(
         region: Region,
         uri: &Uri,
-    ) -> crate::StorageResult<S3CompatibleObjectStorage> {
-        let (bucket, path) = parse_s3_uri(uri).ok_or_else(|| {
-            crate::StorageErrorKind::Io
-                .with_error(anyhow::anyhow!("URI `{uri}` is not a valid AWS S3 URI."))
+    ) -> Result<S3CompatibleObjectStorage, StorageResolverError> {
+        let (bucket, path) = parse_s3_uri(uri).ok_or_else(|| StorageResolverError::InvalidUri {
+            message: format!("URI `{uri}` is not a valid AWS S3 URI."),
         })?;
         let s3_compatible_storage = S3CompatibleObjectStorage::new(region, uri.clone(), bucket)
-            .map_err(|err| crate::StorageErrorKind::Service.with_error(anyhow::anyhow!(err)))?;
+            .map_err(|err| StorageResolverError::FailedToOpenStorage {
+                kind: StorageErrorKind::Service,
+                message: err.to_string(),
+            })?;
         Ok(s3_compatible_storage.with_prefix(&path))
     }
 
@@ -261,10 +275,7 @@ impl S3CompatibleObjectStorage {
             bucket: self.bucket,
             prefix: prefix.to_path_buf(),
             multipart_policy: self.multipart_policy,
-            retry_params: RetryParams {
-                max_attempts: 3,
-                ..Default::default()
-            },
+            retry_params: self.retry_params,
         }
     }
 
@@ -358,8 +369,9 @@ impl S3CompatibleObjectStorage {
         payload: Box<dyn crate::PutPayload>,
         len: u64,
     ) -> StorageResult<()> {
-        retry(&self.retry_params, || {
+        retry(&self.retry_params, || async {
             self.put_single_part_single_try(key, payload.clone(), len)
+                .await
         })
         .await?;
         Ok(())
@@ -840,6 +852,14 @@ mod tests {
             region_from_str("http://localhost:4566/").unwrap(),
             Region::Custom {
                 name: "qw-custom-endpoint".to_string(),
+                endpoint: "http://localhost:4566".to_string()
+            }
+        );
+        std::env::set_var("AWS_REGION", "my-custom-region");
+        assert_eq!(
+            region_from_str("http://localhost:4566/").unwrap(),
+            Region::Custom {
+                name: "my-custom-region".to_string(),
                 endpoint: "http://localhost:4566".to_string()
             }
         );

@@ -84,11 +84,11 @@ Today, only the s3 storage is available when running several searcher nodes.
 
 ## Doc mapping
 
-The doc mapping defines how a document and the fields it contains are stored and indexed for a given index. A document is a collection of named fields, each having its own data type (text, binary, i64, u64, f64).
+The doc mapping defines how a document and the fields it contains are stored and indexed for a given index. A document is a collection of named fields, each having its own data type (text, binary, datetime, bool, i64, u64, f64).
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `field_mappings` | Collection of field mapping, each having its own data type (text, binary, i64, u64, f64).   | [] |
+| `field_mappings` | Collection of field mapping, each having its own data type (text, binary, datetime, bool, i64, u64, f64).   | [] |
 | `mode`        | Defines how quickwit should handle document fields that are not present in the `field_mappings`. In particular, the "dynamic" mode makes it possible to use quickwit in a schemaless manner. (See [mode](#mode)) | `lenient`
 | `dynamic_mapping` | This parameter is only allowed when `mode` is set to `dynamic`. It then defines whether dynamically mapped fields should be indexed, stored, etc.  | (See [mode](#mode))
 | `tag_fields` | Collection of fields already defined in `field_mappings` whose values will be stored in a dedicated `tags` (1) | [] |
@@ -99,7 +99,7 @@ The doc mapping defines how a document and the fields it contains are stored and
 ### Field types
 
 Each field has a type that indicates the kind of data it contains, such as integer on 64 bits or text.
-Quickwit supports the following raw types `text`, `i64`, `u64`, `f64`, and `bytes`, and also supports composite types such as array and object. Behind the scenes, Quickwit is using tantivy field types, don't hesitate to look at [tantivy documentation](https://github.com/tantivy-search/tantivy) if you want to go into the details.
+Quickwit supports the following raw types `text`, `i64`, `u64`, `f64`, `datetime`, `bool`, and `bytes`, and also supports composite types such as array and object. Behind the scenes, Quickwit is using tantivy field types, don't hesitate to look at [tantivy documentation](https://github.com/tantivy-search/tantivy) if you want to go into the details.
 
 ### Raw types
 
@@ -164,6 +164,66 @@ fast: true
 ```
 
 **Parameters for i64, u64 and f64 field**
+
+| Variable      | Description   | Default value |
+| ------------- | ------------- | ------------- |
+| `description` | Optional description for the field. | `None` |
+| `stored`    | Whether value is stored in the document store | `true` |
+| `indexed`   | Whether value is indexed | `true` |
+| `fast`      | Whether value is stored in a fast field | `false` |
+
+#### `datetime` type
+
+The `datetime` type can accepts multiple formats and a storage precision. The following formats are supported but need to be explicitly requested via configuration.
+- `rfc3339`, `rfc2822`, `iso8601`: Parsing dates using standard specified formats.
+- `strftime`: Parsing dates using the Unix [strftime](https://man7.org/linux/man-pages/man3/strftime.3.html) format.
+- `unix_ts_secs`, `unix_ts_millis`, `unix_ts_micros`: Parsing dates from numbers (timestamp). Only one can be used in configuration. `unix_ts_secs` is added to the list by default if none is specified. 
+
+:::info
+When specifying multiple input formats, the corresponding parsers are tried in the order they are declared.
+:::
+
+Example of a mapping for a datetime field:
+
+```yaml
+name: timestamp
+type: datetime
+input_formats:
+  - "rfc3339"
+  - "unix_ts_millis"
+  - "%Y %m %d %H:%M:%S %z"
+precision: "milliseconds"
+stored: true
+indexed: true
+fast: true
+```
+
+**Parameters for datetime field**
+
+| Variable      | Description   | Default value |
+| ------------- | ------------- | ------------- |
+| `input_formats` | Formats used to parse input document datetime fields | [`rfc3339`, `unix_ts_secs`] |
+| `precision`     | The precision used to store the underlying fast value | `seconds` |
+| `stored`        | Whether value is stored in the document store | `true` |
+| `indexed`       | Whether value is indexed | `true` |
+| `fast`          | Whether value is stored in a fast field | `false` |
+
+#### `bool` type
+
+The `bool` type accepts boolean values.
+
+Example of a mapping for a boolean field:
+
+```yaml
+name: is_active
+description: Activation status
+type: bool
+stored: true
+indexed: true
+fast: true
+```
+
+**Parameters for bool field**
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
@@ -366,7 +426,7 @@ This section describes indexing settings for a given index.
 | `merge_policy.max_merge_factor`      | Maximum number of splits to merge.   | 12 |
 | `resources.heap_size`      | Indexer heap size per source per index.   | 2_000_000_000 |
 
-(1) [Learn more on time sharding](./../concepts/architecture.md)
+(1) Both `datetime` and `i64` can be referenced. `i64` fields are interpreted as Unix timestamp (seconds). You can learn more about time sharding [here](./../concepts/architecture.md).
 
 
 ### Indexer memory usage

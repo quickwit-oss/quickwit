@@ -28,9 +28,10 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 1. Install Docker (https://docs.docker.com/engine/install/) and Docker Compose (https://docs.docker.com/compose/install/)
 2. Install node@16 and `npm install -g yarn`
 3. Install awslocal https://github.com/localstack/awscli-local
-4. Start the external services with `make docker-compose-up`
-5. Run `QW_S3_ENDPOINT=http://localhost:4566 cargo test --all-features`
-6. Run UI tests `yarn --cwd quickwit-ui install` and `yarn --cwd quickwit-ui test`
+4. Install protoc https://grpc.io/docs/protoc-installation/ (you may need to install the latest binaries rather than your distro's flavor)
+5. Start the external services with `make docker-compose-up`
+6. Run `QW_S3_ENDPOINT=http://localhost:4566 cargo test --all-features`
+7. Run UI tests `yarn --cwd quickwit-ui install` and `yarn --cwd quickwit-ui test`
 
 ## Start the UI
 1. Start a server `cargo r run`

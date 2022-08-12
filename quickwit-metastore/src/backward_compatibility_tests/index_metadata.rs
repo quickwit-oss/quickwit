@@ -28,7 +28,7 @@ use quickwit_config::{
 use quickwit_doc_mapper::{ModeType, SortOrder};
 
 use crate::checkpoint::{
-    CheckpointDelta, IndexCheckpoint, PartitionId, Position, SourceCheckpoint,
+    IndexCheckpoint, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
 };
 use crate::IndexMetadata;
 
@@ -86,7 +86,7 @@ pub(crate) fn test_index_metadata_eq(
 /// Creates a new [`IndexMetadata`] object against which backward compatibility tests will be run.
 pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
     let mut source_checkpoint = SourceCheckpoint::default();
-    let delta = CheckpointDelta::from_partition_delta(
+    let delta = SourceCheckpointDelta::from_partition_delta(
         PartitionId::from(0i64),
         Position::Beginning,
         Position::from(42u64),
@@ -142,6 +142,7 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
         store_source: true,
         mode: ModeType::Dynamic,
         dynamic_mapping: None,
+        partition_key: "".to_string(),
     };
     let merge_policy = MergePolicy {
         demux_factor: 7,

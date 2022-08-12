@@ -17,29 +17,35 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::hash_map::Entry;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
+use fnv::FnvHashMap;
+use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::{DocMapper, DocParsingError, SortBy, QUICKWIT_TOKENIZER_MANAGER};
+use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
 use quickwit_metastore::Metastore;
-use tantivy::schema::{Field, Value};
+use tantivy::schema::{Field, Schema, Value};
 use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
 use tokio::runtime::Handle;
 use tracing::{info, warn};
+use ulid::Ulid;
 
 use crate::actors::Packager;
 use crate::models::{IndexedSplit, IndexedSplitBatch, IndexingDirectory, RawDocBatch};
 
 #[derive(Debug)]
 struct CommitTimeout {
-    split_id: String,
+    workbench_id: Ulid,
 }
 
 #[derive(Clone, Default, Debug, Eq, PartialEq)]
@@ -57,15 +63,18 @@ pub struct IndexerCounters {
     /// Number of splits that were emitted by the indexer.
     pub num_splits_emitted: u64,
 
+    /// Number of split batches that were emitted by the indexer.
+    pub num_split_batches_emitted: u64,
+
     /// Number of bytes that went through the indexer
     /// during its entire lifetime.
     ///
     /// Includes both valid and invalid documents.
     pub overall_num_bytes: u64,
 
-    /// Number of (valid) documents in the current split.
+    /// Number of (valid) documents in the current workbench.
     /// This value is used to trigger commit and for observation.
-    pub num_docs_in_split: u64,
+    pub num_docs_in_workbench: u64,
 }
 
 impl IndexerCounters {
@@ -84,11 +93,13 @@ impl IndexerCounters {
 
 struct IndexerState {
     index_id: String,
+    source_id: String,
     doc_mapper: Arc<dyn DocMapper>,
     indexing_directory: IndexingDirectory,
     indexing_settings: IndexingSettings,
     timestamp_field_opt: Option<Field>,
-    sort_by_field_opt: Option<IndexSortByField>,
+    schema: Schema,
+    index_settings: IndexSettings,
 }
 
 enum PrepareDocumentOutcome {
@@ -97,22 +108,15 @@ enum PrepareDocumentOutcome {
     Document {
         document: Document,
         timestamp_opt: Option<i64>,
+        partition: u64,
     },
 }
 
 impl IndexerState {
     fn create_indexed_split(&self, ctx: &ActorContext<Indexer>) -> anyhow::Result<IndexedSplit> {
-        let schema = self.doc_mapper.schema();
-        let index_settings = IndexSettings {
-            sort_by_field: self.sort_by_field_opt.clone(),
-            docstore_blocksize: self.indexing_settings.docstore_blocksize,
-            docstore_compression: Compressor::Zstd(ZstdCompressor {
-                compression_level: Some(self.indexing_settings.docstore_compression_level),
-            }),
-        };
         let index_builder = IndexBuilder::new()
-            .settings(index_settings)
-            .schema(schema)
+            .settings(self.index_settings.clone())
+            .schema(self.schema.clone())
             .tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
         let indexed_split = IndexedSplit::new_in_dir(
             self.index_id.clone(),
@@ -126,37 +130,65 @@ impl IndexerState {
         Ok(indexed_split)
     }
 
+    fn get_or_create_indexed_split<'a>(
+        &self,
+        partition: u64,
+        splits: &'a mut FnvHashMap<u64, IndexedSplit>,
+        ctx: &ActorContext<Indexer>,
+    ) -> anyhow::Result<&'a mut IndexedSplit> {
+        match splits.entry(partition) {
+            Entry::Occupied(indexed_split) => Ok(indexed_split.into_mut()),
+            Entry::Vacant(vacant_entry) => {
+                let indexed_split = self.create_indexed_split(ctx)?;
+                Ok(vacant_entry.insert(indexed_split))
+            }
+        }
+    }
+
+    fn create_workbench(&self) -> anyhow::Result<IndexingWorkbench> {
+        let workbench = IndexingWorkbench {
+            checkpoint_delta: IndexCheckpointDelta {
+                source_id: self.source_id.clone(),
+                source_delta: SourceCheckpointDelta::default(),
+            },
+            indexed_splits: FnvHashMap::with_capacity_and_hasher(250, Default::default()),
+            workbench_id: Ulid::new(),
+            date_of_birth: Instant::now(),
+        };
+        Ok(workbench)
+    }
+
     /// Returns the current_indexed_split. If this is the first message, then
     /// the indexed_split does not exist yet.
     ///
     /// This function will then create it, and can hence return an Error.
-    async fn get_or_create_current_indexed_split<'a>(
+    async fn get_or_create_workbench<'a>(
         &self,
-        current_split_opt: &'a mut Option<IndexedSplit>,
+        indexing_workbench_opt: &'a mut Option<IndexingWorkbench>,
         ctx: &ActorContext<Indexer>,
-    ) -> anyhow::Result<&'a mut IndexedSplit> {
-        if current_split_opt.is_none() {
-            let new_indexed_split = self.create_indexed_split(ctx)?;
+    ) -> anyhow::Result<&'a mut IndexingWorkbench> {
+        if indexing_workbench_opt.is_none() {
+            let indexing_workbench = self.create_workbench()?;
             let commit_timeout_message = CommitTimeout {
-                split_id: new_indexed_split.split_id.clone(),
+                workbench_id: indexing_workbench.workbench_id,
             };
             ctx.schedule_self_msg(
                 self.indexing_settings.commit_timeout(),
                 commit_timeout_message,
             )
             .await;
-            *current_split_opt = Some(new_indexed_split);
+            *indexing_workbench_opt = Some(indexing_workbench);
         }
-        let current_index_split = current_split_opt.as_mut().with_context(|| {
+        let current_indexing_workbench: &'a mut IndexingWorkbench = indexing_workbench_opt.as_mut().context(
             "No index writer available. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."
-        })?;
-        Ok(current_index_split)
+        )?;
+        Ok(current_indexing_workbench)
     }
 
     fn prepare_document(&self, doc_json: String) -> PrepareDocumentOutcome {
         // Parse the document
         let doc_parsing_result = self.doc_mapper.doc_from_json(doc_json);
-        let document = match doc_parsing_result {
+        let (partition, document) = match doc_parsing_result {
             Ok(doc) => doc,
             Err(doc_parsing_error) => {
                 warn!(err=?doc_parsing_error);
@@ -174,9 +206,15 @@ impl IndexerState {
             return PrepareDocumentOutcome::Document {
                 document,
                 timestamp_opt: None,
+                partition,
             };
         };
-        let timestamp_opt = document.get_first(timestamp_field).and_then(Value::as_i64);
+        let timestamp_opt = document
+            .get_first(timestamp_field)
+            .and_then(|value| match value {
+                Value::Date(date_time) => Some(date_time.into_timestamp_secs()),
+                value => value.as_i64(),
+            });
         assert!(
             timestamp_opt.is_some(),
             "We should always have a timestamp here as doc parsing returns a `RequiredFastField` \
@@ -185,26 +223,31 @@ impl IndexerState {
         PrepareDocumentOutcome::Document {
             document,
             timestamp_opt,
+            partition,
         }
     }
 
     async fn process_batch(
         &self,
         batch: RawDocBatch,
-        current_split_opt: &mut Option<IndexedSplit>,
+        indexing_workbench_opt: &mut Option<IndexingWorkbench>,
         counters: &mut IndexerCounters,
         ctx: &ActorContext<Indexer>,
     ) -> Result<(), ActorExitStatus> {
-        let indexed_split = self
-            .get_or_create_current_indexed_split(current_split_opt, ctx)
+        let IndexingWorkbench {
+            checkpoint_delta,
+            indexed_splits,
+            ..
+        } = self
+            .get_or_create_workbench(indexing_workbench_opt, ctx)
             .await?;
-        indexed_split
-            .checkpoint_delta
+        checkpoint_delta
+            .source_delta
             .extend(batch.checkpoint_delta)
-            .with_context(|| "Batch delta does not follow indexer checkpoint")?;
+            .context("Batch delta does not follow indexer checkpoint")?;
         for doc_json in batch.docs {
-            counters.overall_num_bytes += doc_json.len() as u64;
-            indexed_split.docs_size_in_bytes += doc_json.len() as u64;
+            let doc_json_num_bytes = doc_json.len() as u64;
+            counters.overall_num_bytes += doc_json_num_bytes;
             let prepared_doc = {
                 let _protect_zone = ctx.protect_zone();
                 self.prepare_document(doc_json)
@@ -219,8 +262,12 @@ impl IndexerState {
                 PrepareDocumentOutcome::Document {
                     document,
                     timestamp_opt,
+                    partition,
                 } => {
-                    counters.num_docs_in_split += 1;
+                    let indexed_split =
+                        self.get_or_create_indexed_split(partition, indexed_splits, ctx)?;
+                    indexed_split.docs_size_in_bytes += doc_json_num_bytes;
+                    counters.num_docs_in_workbench += 1;
                     counters.num_valid_docs += 1;
                     indexed_split.num_docs += 1;
                     if let Some(timestamp) = timestamp_opt {
@@ -230,7 +277,7 @@ impl IndexerState {
                     indexed_split
                         .index_writer
                         .add_document(document)
-                        .with_context(|| "Failed to add document.")?;
+                        .context("Failed to add document.")?;
                 }
             }
             ctx.record_progress();
@@ -239,11 +286,22 @@ impl IndexerState {
     }
 }
 
+/// A workbench hosts the set of `IndexedSplit` that will are being built.
+struct IndexingWorkbench {
+    checkpoint_delta: IndexCheckpointDelta,
+    indexed_splits: FnvHashMap<u64, IndexedSplit>,
+    workbench_id: Ulid,
+    // TODO create this Instant on the source side to be more accurate.
+    // Right now this instant is used to compute time-to-search, but this
+    // does not include the amount of time a document could have been
+    // staying in the indexer queue or in the push api queue.
+    date_of_birth: Instant,
+}
+
 pub struct Indexer {
     indexer_state: IndexerState,
     packager_mailbox: Mailbox<Packager>,
-    current_split_opt: Option<IndexedSplit>,
-    source_id: String,
+    indexing_workbench_opt: Option<IndexingWorkbench>,
     metastore: Arc<dyn Metastore>,
     counters: IndexerCounters,
 }
@@ -306,8 +364,14 @@ impl Handler<CommitTimeout> for Indexer {
         commit_timeout: CommitTimeout,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        self.process_commit_timeout(&commit_timeout.split_id, ctx)
-            .await?;
+        if let Some(indexing_workbench) = self.indexing_workbench_opt.as_ref() {
+            // This is a timeout for a different split.
+            // We can ignore it.
+            if indexing_workbench.workbench_id != commit_timeout.workbench_id {
+                return Ok(());
+            }
+        }
+        self.send_to_packager(CommitTrigger::Timeout, ctx).await?;
         Ok(())
     }
 }
@@ -351,18 +415,27 @@ impl Indexer {
                 order: order.into(),
             }),
         };
+        let schema = doc_mapper.schema();
+        let index_settings = IndexSettings {
+            sort_by_field: sort_by_field_opt,
+            docstore_blocksize: indexing_settings.docstore_blocksize,
+            docstore_compression: Compressor::Zstd(ZstdCompressor {
+                compression_level: Some(indexing_settings.docstore_compression_level),
+            }),
+        };
         Self {
             indexer_state: IndexerState {
                 index_id,
+                source_id,
                 doc_mapper,
                 indexing_directory,
                 indexing_settings,
                 timestamp_field_opt,
-                sort_by_field_opt,
+                schema,
+                index_settings,
             },
             packager_mailbox,
-            current_split_opt: None,
-            source_id,
+            indexing_workbench_opt: None,
             metastore,
             counters: IndexerCounters::default(),
         }
@@ -375,9 +448,14 @@ impl Indexer {
     ) -> Result<(), ActorExitStatus> {
         fail_point!("indexer:batch:before");
         self.indexer_state
-            .process_batch(batch, &mut self.current_split_opt, &mut self.counters, ctx)
+            .process_batch(
+                batch,
+                &mut self.indexing_workbench_opt,
+                &mut self.counters,
+                ctx,
+            )
             .await?;
-        if self.counters.num_docs_in_split
+        if self.counters.num_docs_in_workbench
             >= self.indexer_state.indexing_settings.split_num_docs_target as u64
         {
             self.send_to_packager(CommitTrigger::NumDocsLimit, ctx)
@@ -387,65 +465,61 @@ impl Indexer {
         Ok(())
     }
 
-    async fn process_commit_timeout(
-        &mut self,
-        split_id: &str,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
-        if let Some(split) = self.current_split_opt.as_ref() {
-            // This is a timeout for a different split.
-            // We can ignore it.
-            if split.split_id != split_id {
-                return Ok(());
-            }
-        }
-        self.send_to_packager(CommitTrigger::Timeout, ctx).await?;
-        Ok(())
-    }
-
     /// Extract the indexed split and send it to the Packager.
     async fn send_to_packager(
         &mut self,
         commit_trigger: CommitTrigger,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
-        let indexed_split = if let Some(indexed_split) = self.current_split_opt.take() {
-            indexed_split
+        let IndexingWorkbench {
+            checkpoint_delta,
+            indexed_splits,
+            date_of_birth,
+            ..
+        } = if let Some(indexing_workbench) = self.indexing_workbench_opt.take() {
+            indexing_workbench
         } else {
             return Ok(());
         };
 
+        let splits: Vec<IndexedSplit> = indexed_splits.into_values().collect();
+
         // Avoid producing empty split, but still update the checkpoint to avoid
         // reprocessing the same faulty documents.
-        if indexed_split.num_docs == 0 {
+        if splits.is_empty() {
             self.metastore
                 .publish_splits(
-                    &indexed_split.index_id,
-                    &self.source_id,
+                    &self.indexer_state.index_id,
                     &[],
-                    indexed_split.checkpoint_delta,
+                    &[],
+                    Some(checkpoint_delta),
                 )
                 .await
                 .with_context(|| {
                     format!(
                         "Failed to update the checkpoint for {}, {} after a split containing only \
                          errors.",
-                        &indexed_split.index_id, &self.source_id
+                        &self.indexer_state.index_id, &self.indexer_state.source_id
                     )
                 })?;
             return Ok(());
         }
 
-        info!(commit_trigger=?commit_trigger, split=?indexed_split.split_id, num_docs=self.counters.num_docs_in_split, "send-to-packager");
+        let num_splits = splits.len() as u64;
+        let split_ids = splits.iter().map(|split| &split.split_id).join(",");
+        info!(commit_trigger=?commit_trigger, split_ids=%split_ids, num_docs=self.counters.num_docs_in_workbench, "send-to-packager");
         ctx.send_message(
             &self.packager_mailbox,
             IndexedSplitBatch {
-                splits: vec![indexed_split],
+                splits,
+                checkpoint_delta: Some(checkpoint_delta),
+                date_of_birth,
             },
         )
         .await?;
-        self.counters.num_docs_in_split = 0;
-        self.counters.num_splits_emitted += 1;
+        self.counters.num_docs_in_workbench = 0;
+        self.counters.num_splits_emitted += num_splits;
+        self.counters.num_split_batches_emitted += 1;
         Ok(())
     }
 }
@@ -456,8 +530,8 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::{create_test_mailbox, Universe};
-    use quickwit_doc_mapper::SortOrder;
-    use quickwit_metastore::checkpoint::CheckpointDelta;
+    use quickwit_doc_mapper::{DefaultDocMapper, SortOrder};
+    use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_metastore::MockMetastore;
 
     use super::*;
@@ -489,7 +563,7 @@ mod tests {
         let mut metastore = MockMetastore::default();
         metastore
             .expect_publish_splits()
-            .returning(move |_, _, splits, _| {
+            .returning(move |_, splits, _, _| {
                 assert!(splits.is_empty());
                 Ok(())
             });
@@ -508,12 +582,12 @@ mod tests {
         indexer_mailbox
             .send_message(RawDocBatch {
                 docs: vec![
-                        r#"{"body": "happy", "response_date": 1652866573228, "response_time": 12, "response_payload": "YWJj"}"#.to_string(), // missing timestamp
-                        r#"{"body": "happy", "timestamp": 1628837062, "response_date": 1652866573229, "response_time": 2, "response_payload": "YWJj"}"#.to_string(), // ok
-                        r#"{"body": "happy2", "timestamp": 1628837062, "response_date": 1652866573232, "response_time": 13, "response_payload": "YWJj"}"#.to_string(), // ok
+                        r#"{"body": "happy", "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string(), // missing timestamp
+                        r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#.to_string(), // ok
+                        r#"{"body": "happy2", "timestamp": 1628837062, "response_date": "2021-12-19T16:40:57+00:00", "response_time": 13, "response_payload": "YWJj"}"#.to_string(), // ok
                         "{".to_string(),                    // invalid json
                     ],
-                checkpoint_delta: CheckpointDelta::from(0..4),
+                checkpoint_delta: SourceCheckpointDelta::from(0..4),
             })
             .await?;
         let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
@@ -524,15 +598,16 @@ mod tests {
                 num_missing_fields: 1,
                 num_valid_docs: 2,
                 num_splits_emitted: 0,
-                num_docs_in_split: 2, //< we have not reached the commit limit yet.
-                overall_num_bytes: 345
+                num_split_batches_emitted: 0,
+                num_docs_in_workbench: 2, //< we have not reached the commit limit yet.
+                overall_num_bytes: 387
             }
         );
         indexer_mailbox
             .send_message(
                 RawDocBatch {
-                    docs: vec![r#"{"body": "happy3", "timestamp": 1628837062, "response_date": 1652866573227, "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
-                    checkpoint_delta: CheckpointDelta::from(4..5),
+                    docs: vec![r#"{"body": "happy3", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
+                    checkpoint_delta: SourceCheckpointDelta::from(4..5),
                 }
             )
             .await?;
@@ -544,8 +619,9 @@ mod tests {
                 num_missing_fields: 1,
                 num_valid_docs: 3,
                 num_splits_emitted: 1,
-                num_docs_in_split: 0, //< the num docs in split counter has been reset.
-                overall_num_bytes: 469
+                num_split_batches_emitted: 1,
+                num_docs_in_workbench: 0, //< the num docs in split counter has been reset.
+                overall_num_bytes: 525
             }
         );
         let output_messages = inbox.drain_for_test();
@@ -571,7 +647,7 @@ mod tests {
         let mut metastore = MockMetastore::default();
         metastore
             .expect_publish_splits()
-            .returning(move |_, _, splits, _| {
+            .returning(move |_, splits, _, _| {
                 assert!(splits.is_empty());
                 Ok(())
             });
@@ -590,8 +666,8 @@ mod tests {
         indexer_mailbox
             .send_message(
                 RawDocBatch {
-                    docs: vec![r#"{"body": "happy", "timestamp": 1628837062, "response_date": 1652866573228, "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
-                    checkpoint_delta: CheckpointDelta::from(0..1),
+                    docs: vec![r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
+                    checkpoint_delta: SourceCheckpointDelta::from(0..1),
                 }
             )
             .await?;
@@ -603,8 +679,9 @@ mod tests {
                 num_missing_fields: 0,
                 num_valid_docs: 1,
                 num_splits_emitted: 0,
-                num_docs_in_split: 1,
-                overall_num_bytes: 123
+                num_split_batches_emitted: 0,
+                num_docs_in_workbench: 1,
+                overall_num_bytes: 137
             }
         );
         universe.simulate_time_shift(Duration::from_secs(61)).await;
@@ -616,8 +693,9 @@ mod tests {
                 num_missing_fields: 0,
                 num_valid_docs: 1,
                 num_splits_emitted: 1,
-                num_docs_in_split: 0,
-                overall_num_bytes: 123
+                num_split_batches_emitted: 1,
+                num_docs_in_workbench: 0,
+                overall_num_bytes: 137
             }
         );
         let output_messages = inbox.drain_for_test();
@@ -639,7 +717,7 @@ mod tests {
         let mut metastore = MockMetastore::default();
         metastore
             .expect_publish_splits()
-            .returning(move |_, _, splits, _| {
+            .returning(move |_, splits, _, _| {
                 assert!(splits.is_empty());
                 Ok(())
             });
@@ -657,8 +735,8 @@ mod tests {
         indexer_mailbox
             .send_message(
                 RawDocBatch {
-                    docs: vec![r#"{"body": "happy", "timestamp": 1628837062, "response_date": 1652866573227, "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
-                    checkpoint_delta: CheckpointDelta::from(0..1),
+                    docs: vec![r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
+                    checkpoint_delta: SourceCheckpointDelta::from(0..1),
                 }
             )
             .await?;
@@ -672,8 +750,9 @@ mod tests {
                 num_missing_fields: 0,
                 num_valid_docs: 1,
                 num_splits_emitted: 1,
-                num_docs_in_split: 0,
-                overall_num_bytes: 123
+                num_split_batches_emitted: 1,
+                num_docs_in_workbench: 0,
+                overall_num_bytes: 137
             }
         );
         let output_messages = inbox.drain_for_test();
@@ -686,6 +765,95 @@ mod tests {
                 .num_docs,
             1
         );
+        Ok(())
+    }
+
+    const DOCMAPPER_WITH_PARTITION_JSON: &str = r#"
+        {
+            "tag_fields": ["tenant"],
+            "partition_key": "tenant",
+            "field_mappings": [
+                { "name": "tenant", "type": "text", "tokenizer": "raw", "indexed": true },
+                { "name": "body", "type": "text" }
+            ]
+        }"#;
+
+    #[tokio::test]
+    async fn test_indexer_partitioning() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let doc_mapper: Arc<dyn DocMapper> = Arc::new(
+            serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_WITH_PARTITION_JSON).unwrap(),
+        );
+        let indexing_directory = IndexingDirectory::for_test().await?;
+        let indexing_settings = IndexingSettings::for_test();
+        let (mailbox, inbox) = create_test_mailbox();
+        let mut metastore = MockMetastore::default();
+        metastore
+            .expect_publish_splits()
+            .returning(move |_, splits, _, _| {
+                assert!(splits.is_empty());
+                Ok(())
+            });
+
+        let indexer = Indexer::new(
+            "test-index".to_string(),
+            doc_mapper,
+            "source-id".to_string(),
+            Arc::new(metastore),
+            indexing_directory,
+            indexing_settings,
+            mailbox,
+        );
+        let universe = Universe::new();
+        let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
+        indexer_mailbox
+            .send_message(RawDocBatch {
+                docs: vec![
+                    r#"{"tenant": "tenant_1", "body": "first doc for tenant 1"}"#.to_string(),
+                    r#"{"tenant": "tenant_2", "body": "first doc for tenant 2"}"#.to_string(),
+                    r#"{"tenant": "tenant_1", "body": "second doc for tenant 1"}"#.to_string(),
+                ],
+                checkpoint_delta: SourceCheckpointDelta::from(0..2),
+            })
+            .await?;
+
+        let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
+        assert_eq!(
+            indexer_counters,
+            IndexerCounters {
+                num_parse_errors: 0,
+                num_missing_fields: 0,
+                num_valid_docs: 3,
+                num_docs_in_workbench: 3,
+                num_splits_emitted: 0,
+                num_split_batches_emitted: 0,
+                overall_num_bytes: 169
+            }
+        );
+        universe.send_exit_with_success(&indexer_mailbox).await?;
+        let (exit_status, indexer_counters) = indexer_handle.join().await;
+        assert!(matches!(exit_status, ActorExitStatus::Success));
+        assert_eq!(
+            indexer_counters,
+            IndexerCounters {
+                num_parse_errors: 0,
+                num_missing_fields: 0,
+                num_valid_docs: 3,
+                num_docs_in_workbench: 0,
+                num_splits_emitted: 2,
+                num_split_batches_emitted: 1,
+                overall_num_bytes: 169
+            }
+        );
+
+        let output_messages = inbox.drain_for_test();
+        assert_eq!(output_messages.len(), 1);
+
+        let indexed_split_batch = output_messages[0]
+            .downcast_ref::<IndexedSplitBatch>()
+            .unwrap();
+        assert_eq!(indexed_split_batch.splits.len(), 2);
+
         Ok(())
     }
 }

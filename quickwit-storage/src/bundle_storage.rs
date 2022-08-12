@@ -61,7 +61,7 @@ impl BundleStorage {
         Self::open_from_split_data(
             storage,
             bundle_filepath,
-            FileSlice::new(Box::new(split_data)),
+            FileSlice::new(Arc::new(split_data)),
         )
     }
     /// Opens a BundleStorage.
@@ -300,7 +300,7 @@ mod tests {
         .await?;
 
         let bundle_filepath = Path::new("bundle");
-        let bundle_file_slice = FileSlice::new(Box::new(buffer.clone()));
+        let bundle_file_slice = FileSlice::new(Arc::new(buffer.clone()));
         let (hotcache, metadata) =
             BundleStorageFileOffsets::open_from_split_data(bundle_file_slice)?;
         assert_eq!(hotcache.read_bytes().unwrap().as_ref(), &[5, 5, 5]);
