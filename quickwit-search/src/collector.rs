@@ -560,7 +560,7 @@ mod tests {
     }
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100000))]
+        #![proptest_config(ProptestConfig::with_cases(10000))]
         #[test]
         fn test_proptest_f32_to_u64_compare_positive(a in 0.0..f32::MAX, b in 0.0..f32::MAX) {
             prop_assert_eq!(a < b, f32_to_u64(a) < f32_to_u64(b))
