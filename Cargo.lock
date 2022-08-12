@@ -3144,6 +3144,7 @@ dependencies = [
  "libz-sys",
  "mockall",
  "once_cell",
+ "oneshot",
  "openssl",
  "proptest",
  "quickwit-actors",

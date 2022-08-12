@@ -20,29 +20,28 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use anyhow::{bail, Context};
+use anyhow::{anyhow, bail, Context};
 use async_trait::async_trait;
 use itertools::Itertools;
+use oneshot;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::KafkaSourceParams;
 use quickwit_metastore::checkpoint::{
     PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
 };
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
-use rdkafka::consumer::stream_consumer::StreamConsumer;
 use rdkafka::consumer::{
     BaseConsumer, Consumer, ConsumerContext, DefaultConsumerContext, Rebalance,
 };
-use rdkafka::error::{KafkaError, KafkaResult};
+use rdkafka::error::KafkaError;
 use rdkafka::message::BorrowedMessage;
 use rdkafka::util::Timeout;
-use rdkafka::{ClientContext, Message, Offset, TopicPartitionList};
+use rdkafka::{ClientContext, Message, Offset};
 use serde_json::json;
-use tokio::runtime::Handle;
 use tokio::sync::mpsc;
-use tokio::task::spawn_blocking;
+use tokio::task::{spawn_blocking, JoinHandle};
 use tokio::time;
 use tracing::{debug, info, warn};
 
@@ -78,185 +77,114 @@ impl TypedSourceFactory for KafkaSourceFactory {
     }
 }
 
-enum RebalanceEvent {
-    Starting,
-    Assignments(HashMap<i32, PartitionId>),
+#[derive(Debug)]
+enum KafkaEvent {
+    Message(KafkaMessage),
+    AssignPartitions {
+        partitions: Vec<i32>,
+        assignment_tx: oneshot::Sender<Vec<(i32, Offset)>>,
+    },
+    RevokePartitions,
+    PartitionEOF(i32),
+    Error(anyhow::Error),
 }
+
+#[derive(Debug)]
+struct KafkaMessage {
+    doc_opt: Option<String>,
+    payload_len: u64,
+    partition: i32,
+    offset: i64,
+}
+
+impl From<BorrowedMessage<'_>> for KafkaMessage {
+    fn from(message: BorrowedMessage<'_>) -> Self {
+        Self {
+            doc_opt: parse_message_payload(&message),
+            payload_len: message.payload_len() as u64,
+            partition: message.partition(),
+            offset: message.offset() as i64,
+        }
+    }
+}
+
 struct RdKafkaContext {
-    ctx: Arc<SourceExecutionContext>,
-    rebalance_events: mpsc::Sender<RebalanceEvent>,
+    topic: String,
+    events_tx: mpsc::Sender<KafkaEvent>,
 }
 
 impl ClientContext for RdKafkaContext {}
 
 impl ConsumerContext for RdKafkaContext {
     fn pre_rebalance(&self, rebalance: &Rebalance) {
-        info!("Pre rebalance {:?}", rebalance);
-        let source_id = self.ctx.config.source_id.clone();
+        if let Rebalance::Assign(tpl) = rebalance {
+            let partitions = tpl
+                .elements()
+                .iter()
+                .map(|tple| {
+                    assert_eq!(tple.topic(), self.topic);
+                    tple.partition()
+                })
+                .collect();
+            let (assignment_tx, assignment_rx) = oneshot::channel();
+            self.events_tx
+                .blocking_send(KafkaEvent::AssignPartitions {
+                    partitions,
+                    assignment_tx,
+                })
+                .expect("Failed to send assign message to consumer.");
+            let assignment = assignment_rx
+                .recv()
+                .expect("Failed to receive assignment from consumer.");
 
-        let mut assignments = HashMap::new();
+            info!(
+                topic=%self.topic,
+                partitions=%assignment.iter().map(|(partition, _)| partition).join(","),
+                "New partition assignment"
+            );
 
-        // TODO: need to also handle Rebalance::Revoke
-        if let &Rebalance::Assign(tpl) = rebalance {
-            // The rebalance API is not defined to be async so this attempts a work around
-            // by explicitly blocking the thread handling the rebalance callback until the
-            // database action is complete
-            let handle = Handle::current();
-            let _guard = handle.enter();
-            let result = futures::executor::block_on(async {
-                // This is intended to invalidate the in progress split. Since partitions may be
-                // moving away, any in progress state will be invalid and a new split would need
-                // to be started from the most recently committed offsets.
-                // TODO: this can throw an error
-                let _result = self.rebalance_events.send(RebalanceEvent::Starting).await;
-
-                self.ctx.metastore.index_metadata(&self.ctx.index_id).await
-            });
-
-            let index_metadata = match result {
-                Ok(index_metadata) => index_metadata,
-                Err(_err) => {
-                    // TODO: a panic here may not be the right thing
-                    panic!(
-                        "No Index metadata found for {}: this should never happen.",
-                        source_id
-                    );
-                }
-            };
-
-            let source_checkpoint = index_metadata.checkpoint.source_checkpoint(&source_id);
-
-            let checkpoint = match source_checkpoint {
-                Some(checkpoint) => checkpoint.clone(),
-                None => {
-                    warn!("Source checkpoint doesn't exist for {}", source_id);
-                    SourceCheckpoint::default()
-                }
-            };
-
-            // elements() will give you the list of partitions being assigned
-            let partitions = tpl.elements();
-            for entry in partitions.iter() {
-                // Need to use find_partition to get a mutable reference.
-                let mut partition = tpl
-                    .find_partition(entry.topic(), entry.partition())
-                    .expect("Consumer rebalance unknown partition");
-
-                let partition_id = PartitionId::from(entry.partition() as i64);
-
-                assignments.insert(entry.partition(), partition_id.clone());
-
-                // Offsets must be tracked per partition
-                let offset = match checkpoint.position_for_partition(&partition_id) {
-                    Some(position) => match position {
-                        Position::Offset(offset_string) => {
-                            let numeric_offset =
-                                offset_string.parse::<i64>().expect("Invalid stored offset");
-
-                            if numeric_offset < 0 {
-                                Offset::Beginning
-                            } else {
-                                Offset::Offset(numeric_offset + 1)
-                            }
-                        }
-                        Position::Beginning => Offset::Beginning,
-                    },
-                    None => Offset::Beginning,
-                };
-
-                debug!(
-                    "Setting offsets for {} {}, {}, {:?}",
-                    source_id,
-                    entry.topic(),
-                    entry.partition(),
-                    offset
-                );
-
-                // set_offset will move the in memory offset on the client
-                // If the offset is invalid at this point the standard consumer group offset reset
-                // mechanism will apply to handle it.
-                partition
-                    .set_offset(offset)
-                    .expect("Failure setting offset");
+            for (partition, offset) in assignment {
+                let mut partition = tpl.find_partition(&self.topic, partition).expect("");
+                partition.set_offset(offset).expect("");
             }
         }
-
-        let handle = Handle::current();
-        let _guard = handle.enter();
-        let _result = futures::executor::block_on(
-            self.rebalance_events
-                .send(RebalanceEvent::Assignments(assignments)),
-        );
-        // TODO: handle the sending error.
-    }
-
-    fn post_rebalance(&self, rebalance: &Rebalance) {
-        info!("Post rebalance {:?}", rebalance);
-    }
-
-    fn commit_callback(&self, result: KafkaResult<()>, _offsets: &TopicPartitionList) {
-        info!("Committing offsets: {:?}", result);
-    }
-}
-
-#[derive(Debug)]
-pub enum NumActivePartitions {
-    Initializing,
-    Some(usize),
-}
-
-impl NumActivePartitions {
-    fn dec(&mut self) {
-        match self {
-            Self::Initializing => panic!("We should not decrement the number of active partitions while initializing the source. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."),
-            Self::Some(ref mut counter) => *counter -= 1,
-        }
-    }
-
-    fn is_zero(&self) -> bool {
-        matches!(self, Self::Some(0))
-    }
-
-    fn json(&self) -> serde_json::Value {
-        match self {
-            Self::Initializing => json!(null),
-            Self::Some(ref counter) => json!(counter),
+        if let Rebalance::Revoke(_) = rebalance {
+            self.events_tx
+                .blocking_send(KafkaEvent::RevokePartitions)
+                .expect("Failed to send revoke message to consumer.");
         }
     }
 }
 
-impl Default for NumActivePartitions {
-    fn default() -> Self {
-        Self::Initializing
-    }
-}
-
-type RdKafkaConsumer = StreamConsumer<RdKafkaContext>;
+type RdKafkaConsumer = BaseConsumer<RdKafkaContext>;
 
 #[derive(Default)]
 pub struct KafkaSourceState {
     /// Partitions IDs assigned to the source.
-    pub assigned_partition_ids: HashMap<i32, PartitionId>,
+    pub assigned_partitions: HashMap<i32, PartitionId>,
     /// Offset for each partition of the last message received.
     pub current_positions: HashMap<i32, Position>,
-    /// Number of active partitions, i.e., that have not reached EOF.
-    pub num_active_partitions: NumActivePartitions,
+    /// Number of inactive partitions, i.e., that have reached EOF.
+    pub num_inactive_partitions: usize,
     /// Number of bytes processed by the source.
     pub num_bytes_processed: u64,
     /// Number of messages processed by the source (including invalid messages).
     pub num_messages_processed: u64,
     // Number of invalid messages, i.e., that were empty or could not be parsed.
     pub num_invalid_messages: u64,
+    // Number of Kafka errors emitted by the consumer.
+    pub num_kafka_errors: usize,
 }
 
 /// A `KafkaSource` consumes a topic and forwards its messages to an `Indexer`.
 pub struct KafkaSource {
     ctx: Arc<SourceExecutionContext>,
     topic: String,
-    consumer: Arc<RdKafkaConsumer>,
     state: KafkaSourceState,
-    rebalance_events: mpsc::Receiver<RebalanceEvent>,
     backfill_mode_enabled: bool,
+    events_rx: mpsc::Receiver<KafkaEvent>,
+    consumer: Arc<RdKafkaConsumer>,
+    poll_loop_jh: JoinHandle<()>,
 }
 
 impl fmt::Debug for KafkaSource {
@@ -279,29 +207,159 @@ impl KafkaSource {
         let topic = params.topic.clone();
         let backfill_mode_enabled = params.enable_backfill_mode;
 
-        let (rebalance_sender, rebalance_receiver) = mpsc::channel(32);
-
-        let consumer = create_consumer(ctx.clone(), params, rebalance_sender)?;
-
         info!(
-            topic = %topic,
+            index_id=%ctx.index_id,
+            source_id=%ctx.config.source_id,
+            topic=%topic,
             "Starting Kafka source."
         );
+
+        let (events_tx, events_rx) = mpsc::channel(100);
+        let consumer = create_consumer(&ctx.config.source_id, params, events_tx.clone())?;
         consumer
-            .subscribe(&[topic.as_str()])
-            .context("Failed to resume from checkpoint.")?;
+            .subscribe(&[&topic])
+            .with_context(|| format!("Failed to subscribe to topic `{topic}`."))?;
+        let poll_loop_jh = spawn_consumer_poll_loop(consumer.clone(), events_tx);
 
         let state = KafkaSourceState {
             ..Default::default()
         };
         Ok(KafkaSource {
-            ctx: ctx.clone(),
+            ctx,
             topic,
-            consumer,
             state,
-            rebalance_events: rebalance_receiver,
             backfill_mode_enabled,
+            events_rx,
+            consumer,
+            poll_loop_jh,
         })
+    }
+
+    async fn process_message(
+        &mut self,
+        message: KafkaMessage,
+        batch: &mut BatchBuilder,
+    ) -> anyhow::Result<()> {
+        let KafkaMessage {
+            doc_opt,
+            payload_len,
+            partition,
+            offset,
+            ..
+        } = message;
+
+        if let Some(doc) = doc_opt {
+            batch.push(doc, payload_len);
+        } else {
+            self.state.num_invalid_messages += 1;
+        }
+        self.state.num_bytes_processed += payload_len;
+        self.state.num_messages_processed += 1;
+
+        let partition_id = self
+            .state
+            .assigned_partitions
+            .get(&partition)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Received message from unassigned partition `{}`. Assigned partitions: \
+                     `{{{}}}`.",
+                    partition,
+                    self.state.assigned_partitions.keys().join(", "),
+                )
+            })?
+            .clone();
+        let current_position = Position::from(offset);
+        let previous_position = self
+            .state
+            .current_positions
+            .insert(partition, current_position.clone())
+            .unwrap_or_else(|| previous_position_for_offset(offset));
+        batch
+            .checkpoint_delta
+            .record_partition_delta(partition_id, previous_position, current_position)
+            .context("Failed to record partition delta.")?;
+        Ok(())
+    }
+
+    async fn process_assign_partitions(
+        &mut self,
+        ctx: &SourceContext,
+        partitions: &[i32],
+        assignment_tx: oneshot::Sender<Vec<(i32, Offset)>>,
+    ) -> anyhow::Result<()> {
+        let index_metadata = ctx
+            .protect_future(self.ctx.metastore.index_metadata(&self.ctx.index_id))
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to fetch index metadata for index `{}`.",
+                    self.ctx.index_id
+                )
+            })?;
+        let checkpoint = index_metadata
+            .checkpoint
+            .source_checkpoint(&self.ctx.config.source_id)
+            .cloned()
+            .unwrap_or_default();
+
+        let next_offsets: Vec<(i32, Offset)> = partitions
+            .iter()
+            .map(|partition| (*partition, compute_next_offset(*partition, &checkpoint)))
+            .collect();
+
+        assignment_tx
+            .send(next_offsets)
+            .map_err(|_| anyhow!("Consumer context was dropped."))?;
+
+        self.state.num_inactive_partitions = 0;
+        self.state.assigned_partitions = partitions
+            .iter()
+            .map(|partition| (*partition, PartitionId::from(*partition as i64)))
+            .collect();
+        Ok(())
+    }
+
+    async fn process_revoke_partitions(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn process_partition_eof(&mut self, partition: i32) {
+        self.state.num_inactive_partitions += 1;
+
+        info!(
+            topic=%self.topic,
+            partition=%partition,
+            num_inactive_partitions=?self.state.num_inactive_partitions,
+            "Reached end of partition."
+        );
+    }
+
+    fn should_exit(&self) -> bool {
+        self.backfill_mode_enabled
+            && self.state.num_inactive_partitions > 0
+            && self.state.num_inactive_partitions == self.state.assigned_partitions.len()
+    }
+}
+
+#[derive(Debug, Default)]
+struct BatchBuilder {
+    docs: Vec<String>,
+    num_bytes: u64,
+    checkpoint_delta: SourceCheckpointDelta,
+}
+
+impl BatchBuilder {
+    fn push(&mut self, doc: String, num_bytes: u64) {
+        self.docs.push(doc);
+        self.num_bytes += num_bytes;
+    }
+
+    fn build(self) -> RawDocBatch {
+        RawDocBatch {
+            docs: self.docs,
+            checkpoint_delta: self.checkpoint_delta,
+        }
     }
 }
 
@@ -312,106 +370,62 @@ impl Source for KafkaSource {
         indexer_mailbox: &Mailbox<Indexer>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
-        let mut batch_num_bytes = 0;
-        let mut docs = Vec::new();
-        let mut checkpoint_delta = SourceCheckpointDelta::default();
-
+        let now = Instant::now();
+        let mut batch = BatchBuilder::default();
         let deadline = time::sleep(quickwit_actors::HEARTBEAT / 2);
         tokio::pin!(deadline);
 
         loop {
             tokio::select! {
-                message = self.rebalance_events.recv() => {
-                    match message {
-                        Some(event) => {
-                            match event {
-                                RebalanceEvent::Starting => {
-                                    // TODO: on a rebalance we need to stop processing and invalidate
-                                    // the in progress split.
-                                },
-                                RebalanceEvent::Assignments(assignments) => {
-                                    debug!("Received partition assignments {:?}", assignments);
-                                    self.state.num_active_partitions = NumActivePartitions::Some(assignments.len());
-                                    self.state.assigned_partition_ids = assignments;
-                                }
-                            }
-                        },
-                        None => {}
+                event_opt = self.events_rx.recv() => {
+                    let event = event_opt.ok_or_else(|| ActorExitStatus::from(anyhow!("Consumer was dropped.")))?;
+                    match event {
+                        KafkaEvent::Message(message) => self.process_message(message, &mut batch).await?,
+                        KafkaEvent::AssignPartitions { partitions, assignment_tx} => self.process_assign_partitions(ctx, &partitions, assignment_tx).await?,
+                        KafkaEvent::RevokePartitions => self.process_revoke_partitions().await?,
+                        KafkaEvent::PartitionEOF(partition) => self.process_partition_eof(partition),
+                        KafkaEvent::Error(error) => Err(ActorExitStatus::from(error))?,
                     }
-                },
-                message_res = self.consumer.recv() => {
-                    let message = match message_res {
-                        Ok(message) => message,
-                        Err(KafkaError::PartitionEOF(partition_id)) => {
-                            self.state.num_active_partitions.dec();
-                            info!(
-                                topic = %self.topic,
-                                partition_id = ?partition_id,
-                                num_active_partitions = ?self.state.num_active_partitions,
-                                "Reached end of partition."
-                            );
-                            continue;
-                        }
-                        // FIXME: This is assuming that Kafka errors are not recoverable, it may not be the
-                        // case.
-                        Err(err) => return Err(ActorExitStatus::from(anyhow::anyhow!(err))),
-                    };
-                    if let Some(doc) = parse_message_payload(&message) {
-                        docs.push(doc);
-                    } else {
-                        self.state.num_invalid_messages += 1;
-                    }
-                    batch_num_bytes += message.payload_len() as u64;
-                    self.state.num_bytes_processed += message.payload_len() as u64;
-                    self.state.num_messages_processed += 1;
-
-                    let partition_id = self
-                        .state
-                        .assigned_partition_ids
-                        .get(&message.partition())
-                        .ok_or_else(|| {
-                            anyhow::anyhow!(
-                                "Received message from unassigned partition `{}`. Assigned partitions: \
-                                 `{{{}}}`.",
-                                message.partition(),
-                                self.state.assigned_partition_ids.keys().join(", "),
-                            )
-                        })?
-                        .clone();
-                    let current_position = Position::from(message.offset());
-                    let previous_position = self
-                        .state
-                        .current_positions
-                        .insert(message.partition(), current_position.clone())
-                        .unwrap_or_else(|| previous_position_for_offset(message.offset()));
-                    checkpoint_delta
-                        .record_partition_delta(partition_id, previous_position, current_position)
-                        .context("Failed to record partition delta.")?;
-
-                    if batch_num_bytes >= TARGET_BATCH_NUM_BYTES {
+                    if batch.num_bytes >= TARGET_BATCH_NUM_BYTES {
                         break;
                     }
-                    ctx.record_progress();
                 }
                 _ = &mut deadline => {
                     break;
                 }
             }
+            ctx.record_progress();
         }
-        if !checkpoint_delta.is_empty() {
-            let batch = RawDocBatch {
-                docs,
-                checkpoint_delta,
-            };
-            ctx.send_message(indexer_mailbox, batch).await?;
+        if !batch.checkpoint_delta.is_empty() {
+            debug!(
+                num_docs=%batch.docs.len(),
+                num_bytes=%batch.num_bytes,
+                num_millis=%now.elapsed().as_millis(),
+                "Sending doc batch to indexer.");
+            let message = batch.build();
+            ctx.send_message(indexer_mailbox, message).await?;
         }
-        if self.backfill_mode_enabled && self.state.num_active_partitions.is_zero() {
+        if self.should_exit() {
             info!(topic = %self.topic, "Reached end of topic.");
             ctx.send_exit_with_success(indexer_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
-        debug!("batch complete, waiting for next iteration");
         Ok(Duration::default())
+    }
+
+    async fn finalize(
+        &mut self,
+        _exit_status: &ActorExitStatus,
+        _ctx: &SourceContext,
+    ) -> anyhow::Result<()> {
+        self.poll_loop_jh.abort();
+
+        let consumer = self.consumer.clone();
+        spawn_blocking(move || {
+            consumer.unsubscribe();
+        })
+        .await?;
+        Ok(())
     }
 
     fn name(&self) -> String {
@@ -419,31 +433,54 @@ impl Source for KafkaSource {
     }
 
     fn observable_state(&self) -> serde_json::Value {
-        let assigned_partition_ids: Vec<&i32> =
-            self.state.assigned_partition_ids.keys().sorted().collect();
+        let assigned_partitions: Vec<&i32> =
+            self.state.assigned_partitions.keys().sorted().collect();
         let current_positions: Vec<(&i32, i64)> = self
             .state
             .current_positions
             .iter()
-            .filter_map(|(partition_id, position)| match position {
-                Position::Offset(offset_str) => offset_str
-                    .parse::<i64>()
-                    .ok()
-                    .map(|offset| (partition_id, offset)),
-                Position::Beginning => None,
+            .map(|(partition_id, position)| {
+                let offset = match position {
+                    Position::Beginning => -1,
+                    Position::Offset(offset_str) => offset_str
+                        .parse::<i64>()
+                        .expect("Failed to parse offset to i64. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."),
+                    };
+                (partition_id, offset)
             })
             .sorted()
             .collect();
         json!({
+            "index_id": self.ctx.index_id,
+            "source_id": self.ctx.config.source_id,
             "topic": self.topic,
-            "assigned_partition_ids": assigned_partition_ids,
+            "assigned_partitions": assigned_partitions,
             "current_positions": current_positions,
-            "num_active_partitions": self.state.num_active_partitions.json(),
+            "num_inactive_partitions": self.state.num_inactive_partitions,
             "num_bytes_processed": self.state.num_bytes_processed,
             "num_messages_processed": self.state.num_messages_processed,
             "num_invalid_messages": self.state.num_invalid_messages,
         })
     }
+}
+
+fn spawn_consumer_poll_loop(
+    consumer: Arc<RdKafkaConsumer>,
+    events_tx: mpsc::Sender<KafkaEvent>,
+) -> JoinHandle<()> {
+    spawn_blocking(move || {
+        while let Some(message_res) = consumer.poll(None) {
+            let event = match message_res {
+                Ok(message) => KafkaEvent::Message(message.into()),
+                Err(KafkaError::PartitionEOF(partition)) => KafkaEvent::PartitionEOF(partition),
+                Err(error) => KafkaEvent::Error(anyhow!(error)),
+            };
+            if let Err(_) = events_tx.blocking_send(event) {
+                consumer.unsubscribe();
+                break;
+            }
+        }
+    })
 }
 
 /// Returns the preceding `Position` for the offset.
@@ -476,37 +513,55 @@ pub(super) async fn check_connectivity(params: KafkaSourceParams) -> anyhow::Res
     if cluster_metadata.topics().is_empty() {
         bail!("Topic `{}` does not exist.", params.topic);
     }
-
     let topic_metadata = &cluster_metadata.topics()[0];
     assert_eq!(topic_metadata.name(), params.topic); // Belt and suspenders.
 
     if topic_metadata.partitions().is_empty() {
         bail!("Topic `{}` has no partitions.", params.topic);
     }
-
     Ok(())
+}
+
+fn compute_next_offset(partition: i32, checkpoint: &SourceCheckpoint) -> Offset {
+    let partition_id = PartitionId::from(partition as i64);
+    match checkpoint.position_for_partition(&partition_id) {
+        Some(Position::Offset(offset_str)) => {
+            let offset_i64 = offset_str.parse::<i64>().expect("Failed to parse offset to i64. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
+            if offset_i64 < 0 {
+                Offset::Beginning
+            } else {
+                Offset::Offset(offset_i64 + 1)
+            }
+        }
+        Some(Position::Beginning) | None => Offset::Beginning,
+    }
 }
 
 /// Creates a new `KafkaSourceConsumer`.
 fn create_consumer(
-    ctx: Arc<SourceExecutionContext>,
+    source_id: &str,
     params: KafkaSourceParams,
-    rebalance_sender: mpsc::Sender<RebalanceEvent>,
+    events_tx: mpsc::Sender<KafkaEvent>,
 ) -> anyhow::Result<Arc<RdKafkaConsumer>> {
     let mut client_config = parse_client_params(params.client_params)?;
 
     // Group ID is limited to 255 characters.
-    let mut group_id = format!("quickwit-{}", ctx.config.source_id);
+    let mut group_id = format!("quickwit-{}", source_id);
     group_id.truncate(255);
     debug!("Initializing consumer for group_id {}", group_id);
 
     let log_level = parse_client_log_level(params.client_log_level)?;
     let consumer: RdKafkaConsumer = client_config
+        .set("enable.auto.commit", "false") // We manage offsets ourselves: we always want to set this value to `false`.
+        .set(
+            "enable.partition.eof",
+            params.enable_backfill_mode.to_string(),
+        )
         .set("group.id", group_id)
         .set_log_level(log_level)
         .create_with_context(RdKafkaContext {
-            ctx,
-            rebalance_events: rebalance_sender,
+            topic: params.topic,
+            events_tx,
         })
         .context("Failed to create Kafka consumer.")?;
 
@@ -551,8 +606,6 @@ fn parse_client_params(client_params: serde_json::Value) -> anyhow::Result<Clien
         };
         client_config.set(key, value);
     }
-    // We manage offsets ourselves: we always want this value to be `false`.
-    client_config.set("enable.auto.commit", "false");
     Ok(client_config)
 }
 
@@ -717,10 +770,11 @@ mod kafka_broker_tests {
         Ok(merged_batch)
     }
 
-    async fn create_test_index(metastore: Arc<FileBackedMetastore>) -> MetastoreResult<()> {
+    async fn create_test_index(metastore: Arc<FileBackedMetastore>) -> MetastoreResult<String> {
+        let index_id = append_random_suffix("kafka-source-test-index");
         metastore
             .create_index(IndexMetadata {
-                index_id: "test-index".to_string(),
+                index_id: index_id.clone(),
                 index_uri: Uri::new("s3://localhost/test-index".to_string()),
                 checkpoint: IndexCheckpoint::default(),
                 doc_mapping: DocMapping {
@@ -737,13 +791,12 @@ mod kafka_broker_tests {
                 create_timestamp: 0,
                 update_timestamp: 0,
             })
-            .await
+            .await?;
+        Ok(index_id)
     }
 
     #[tokio::test]
     async fn test_kafka_source() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
-
         let universe = Universe::new();
 
         let bootstrap_servers = "localhost:9092".to_string();
@@ -752,14 +805,14 @@ mod kafka_broker_tests {
         let admin_client = create_admin_client(&bootstrap_servers)?;
         create_topic(&admin_client, &topic, 3).await?;
 
+        let source_id = append_random_suffix("test-kafka-source");
         let source_config = SourceConfig {
-            source_id: "test-kafka-source".to_string(),
+            source_id: source_id.clone(),
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: topic.clone(),
                 client_log_level: None,
                 client_params: json!({
                     "bootstrap.servers": bootstrap_servers,
-                    "enable.partition.eof": true,
                 }),
                 enable_backfill_mode: true,
             }),
@@ -768,17 +821,17 @@ mod kafka_broker_tests {
         let source_loader = quickwit_supported_sources();
         {
             let (sink, inbox) = create_test_mailbox();
-            let checkpoint = SourceCheckpoint::default();
             let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
+            let index_id = create_test_index(metastore.clone()).await?;
 
-            create_test_index(metastore.clone()).await?;
+            let checkpoint = SourceCheckpoint::default();
 
             let source = source_loader
                 .load_source(
                     Arc::new(SourceExecutionContext {
                         metastore,
                         config: source_config.clone(),
-                        index_id: "test-index".to_string(),
+                        index_id: index_id.clone(),
                     }),
                     checkpoint,
                 )
@@ -802,10 +855,12 @@ mod kafka_broker_tests {
 
             let expected_current_positions: Vec<(i32, i64)> = vec![];
             let expected_state = json!({
+                "index_id": index_id,
+                "source_id": source_id,
                 "topic":  topic,
-                "assigned_partition_ids": vec![0u64, 1u64, 2u64],
+                "assigned_partitions": vec![0u64, 1u64, 2u64],
                 "current_positions":  expected_current_positions,
-                "num_active_partitions": 0u64,
+                "num_inactive_partitions": 3u64,
                 "num_bytes_processed": 0u64,
                 "num_messages_processed": 0u64,
                 "num_invalid_messages": 0u64,
@@ -832,17 +887,17 @@ mod kafka_broker_tests {
         }
         {
             let (sink, inbox) = create_test_mailbox();
-            let checkpoint = SourceCheckpoint::default();
             let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
+            let index_id = create_test_index(metastore.clone()).await?;
 
-            create_test_index(metastore.clone()).await?;
+            let checkpoint = SourceCheckpoint::default();
 
             let source = source_loader
                 .load_source(
                     Arc::new(SourceExecutionContext {
                         metastore,
                         config: source_config.clone(),
-                        index_id: "test-index".to_string(),
+                        index_id: index_id.clone(),
                     }),
                     checkpoint,
                 )
@@ -885,10 +940,12 @@ mod kafka_broker_tests {
             assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);
 
             let expected_state = json!({
+                "index_id": index_id,
+                "source_id": source_id,
                 "topic":  topic,
-                "assigned_partition_ids": vec![0u64, 1u64, 2u64],
+                "assigned_partitions": vec![0u64, 1u64, 2u64],
                 "current_positions":  vec![(0u32, 2u64), (1u32, 2u64), (2u32, 2u64)],
-                "num_active_partitions": 0usize,
+                "num_inactive_partitions": 3usize,
                 "num_bytes_processed": 72u64,
                 "num_messages_processed": 9u64,
                 "num_invalid_messages": 3u64,
@@ -915,11 +972,11 @@ mod kafka_broker_tests {
                 source_delta,
             };
             let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
-            create_test_index(metastore.clone()).await?;
+            let index_id = create_test_index(metastore.clone()).await?;
 
             metastore
                 .publish_splits(
-                    "test-index",
+                    &index_id,
                     &[&source_config.source_id.clone()],
                     &[],
                     Some(index_delta),
@@ -932,7 +989,7 @@ mod kafka_broker_tests {
                     Arc::new(SourceExecutionContext {
                         metastore,
                         config: source_config.clone(),
-                        index_id: "test-index".to_string(),
+                        index_id: index_id.clone(),
                     }),
                     SourceCheckpoint::default(),
                 )
@@ -971,8 +1028,10 @@ mod kafka_broker_tests {
             assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta,);
 
             let expected_exit_state = json!({
+                "index_id": index_id,
+                "source_id": source_id,
                 "topic":  topic,
-                "assigned_partition_ids": vec![0u64, 1u64, 2u64],
+                "assigned_partitions": vec![0u64, 1u64, 2u64],
                 "current_positions":  vec![(0u64, 2u64), (2u64, 2u64)],
                 "num_active_partitions": 0usize,
                 "num_bytes_processed": 36u64,
@@ -986,8 +1045,6 @@ mod kafka_broker_tests {
 
     #[tokio::test]
     async fn test_kafka_connectivity() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
-
         let bootstrap_servers = "localhost:9092".to_string();
         let topic = append_random_suffix("test-kafka-connectivity-topic");
 

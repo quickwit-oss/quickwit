@@ -178,7 +178,7 @@ impl IndexCheckpoint {
             source_id: source_id.to_string(),
             source_delta: SourceCheckpointDelta::default(),
         })
-        .expect("Applying an empty checkpoint delta should never fail");
+        .expect("Applying an empty checkpoint delta should never fail.");
     }
 
     /// Removes an source.
