@@ -372,7 +372,7 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
-    // search with aggregation
+    // search with snippets
     let args = SearchIndexArgs {
         index_id: test_env.index_id,
         query: "event:baz".to_string(),

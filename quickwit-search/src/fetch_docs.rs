@@ -163,7 +163,7 @@ async fn get_searcher_for_split_without_cache(
     Ok(reader)
 }
 
-/// A struct for holding a fetch document's content and highlights.
+/// A struct for holding a fetched document's content and highlights.
 struct DocBundle {
     doc_json: String,
     highlights_json: Option<String>,
