@@ -249,6 +249,8 @@ pub async fn root_search(
                     index_id: search_request.index_id.to_string(),
                     split_offsets,
                     index_uri: index_metadata.index_uri.to_string(),
+                    search_request: Some(search_request.clone()),
+                    doc_mapper: doc_mapper_str.clone(),
                 };
                 cluster_client.fetch_docs(fetch_docs_req, client)
             });
@@ -394,6 +396,7 @@ mod tests {
                 }))
                 .expect("Json serialization should not fail"),
                 partial_hit: Some(req),
+                leaf_highlight_json: None,
             })
             .collect()
     }

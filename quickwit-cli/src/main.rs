@@ -346,6 +346,7 @@ mod tests {
                 max_hits: 20,
                 start_offset: 0,
                 search_fields: None,
+                snippet_fields: None,
                 start_timestamp: None,
                 end_timestamp: None,
                 aggregation: None,
@@ -372,6 +373,8 @@ mod tests {
             "--search-fields",
             "title",
             "url",
+            "--snippet-fields",
+            "body",
             "--config",
             "/config.yaml",
         ])?;
@@ -385,14 +388,16 @@ mod tests {
                 aggregation: None,
                 max_hits: 50,
                 start_offset: 100,
-                search_fields: Some(field_names),
+                search_fields: Some(search_field_names),
+                snippet_fields: Some(snippet_field_names),
                 start_timestamp: Some(0),
                 end_timestamp: Some(1),
                 config_uri: _config_uri,
                 data_dir: None,
             })) if &index_id == "wikipedia"
                   && query == "Barack Obama"
-                  && field_names == vec!["title".to_string(), "url".to_string()]
+                  && search_field_names == vec!["title".to_string(), "url".to_string()]
+                  && snippet_field_names == vec!["body".to_string()]
         ));
         Ok(())
     }

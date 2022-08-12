@@ -1088,7 +1088,7 @@ checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 [[package]]
 name = "fastfield_codecs"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d24f31f#d24f31f965543e7ad300b4ce9965b27aef8f3be1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=fad3fae#fad3faefe2ca2aed968aefa1b2f154abc51050ae"
 dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
@@ -1307,6 +1307,15 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
+]
+
+[[package]]
+name = "gcd"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f37978dab2ca789938a83b2f8bc1ef32db6633af9051a6cd409eff72cbaaa79a"
+dependencies = [
+ "paste",
 ]
 
 [[package]]
@@ -2372,7 +2381,7 @@ dependencies = [
 [[package]]
 name = "ownedbytes"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d24f31f#d24f31f965543e7ad300b4ce9965b27aef8f3be1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=fad3fae#fad3faefe2ca2aed968aefa1b2f154abc51050ae"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -4548,7 +4557,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.18.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d24f31f#d24f31f965543e7ad300b4ce9965b27aef8f3be1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=fad3fae#fad3faefe2ca2aed968aefa1b2f154abc51050ae"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -4564,6 +4573,7 @@ dependencies = [
  "fastfield_codecs",
  "fnv",
  "fs2",
+ "gcd",
  "htmlescape",
  "itertools",
  "levenshtein_automata",
@@ -4601,12 +4611,12 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d24f31f#d24f31f965543e7ad300b4ce9965b27aef8f3be1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=fad3fae#fad3faefe2ca2aed968aefa1b2f154abc51050ae"
 
 [[package]]
 name = "tantivy-common"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d24f31f#d24f31f965543e7ad300b4ce9965b27aef8f3be1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=fad3fae#fad3faefe2ca2aed968aefa1b2f154abc51050ae"
 dependencies = [
  "byteorder",
  "ownedbytes",
@@ -4626,7 +4636,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.18.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d24f31f#d24f31f965543e7ad300b4ce9965b27aef8f3be1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=fad3fae#fad3faefe2ca2aed968aefa1b2f154abc51050ae"
 dependencies = [
  "combine",
  "once_cell",

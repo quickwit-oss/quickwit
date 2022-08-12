@@ -247,6 +247,7 @@ mod tests {
                 split_footer_end: 100,
                 split_footer_start: 0,
             }],
+            ..Default::default()
         }
     }
 
@@ -285,6 +286,7 @@ mod tests {
             index_id: "test-idx".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
+            snippet_fields: vec![],
             start_timestamp: None,
             end_timestamp: None,
             fast_field: "fast".to_string(),

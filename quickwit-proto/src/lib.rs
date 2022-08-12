@@ -38,6 +38,7 @@ impl From<SearchStreamRequest> for SearchRequest {
             index_id: item.index_id,
             query: item.query,
             search_fields: item.search_fields,
+            snippet_fields: item.snippet_fields,
             start_timestamp: item.start_timestamp,
             end_timestamp: item.end_timestamp,
             max_hits: 0,

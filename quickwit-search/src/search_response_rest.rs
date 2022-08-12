@@ -20,6 +20,7 @@
 use std::convert::TryFrom;
 
 use serde::Serialize;
+use serde_json::{Map, Value};
 
 use crate::error::SearchError;
 
@@ -48,12 +49,26 @@ impl TryFrom<quickwit_proto::SearchResponse> for SearchResponseRest {
             .hits
             .into_iter()
             .map(|hit| {
-                serde_json::from_str(&hit.json).map_err(|err| {
-                    SearchError::InternalError(format!(
-                        "Failed to serialize document `{}` to JSON: `{}`.",
-                        hit.json, err
-                    ))
-                })
+                let mut hit_value = Map::with_capacity(2);
+                let document: serde_json::Value =
+                    serde_json::from_str(&hit.json).map_err(|err| {
+                        SearchError::InternalError(format!(
+                            "Failed to serialize document `{}` to JSON: `{}`.",
+                            hit.json, err
+                        ))
+                    })?;
+                hit_value.insert("document".to_string(), document);
+
+                if let Some(highlight_json) = &hit.highlight {
+                    let highlight: Value = serde_json::from_str(highlight_json).map_err(|err| {
+                        SearchError::InternalError(format!(
+                            "Failed to serialize highlight `{}` to JSON: `{}`.",
+                            highlight_json, err
+                        ))
+                    })?;
+                    hit_value.insert("highlight".to_string(), highlight);
+                }
+                Ok(Value::Object(hit_value))
             })
             .collect::<crate::Result<Vec<serde_json::Value>>>()?;
         Ok(SearchResponseRest {
