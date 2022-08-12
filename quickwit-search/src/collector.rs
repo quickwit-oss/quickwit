@@ -80,7 +80,7 @@ impl SortingFieldComputer {
 }
 
 /// Converts a float to an unsigned integer while preserving order.
-/// See https://lemire.me/blog/2020/12/14/converting-floating-point-numbers-to-integers-while-preserving-order/
+/// See `<https://lemire.me/blog/2020/12/14/converting-floating-point-numbers-to-integers-while-preserving-order/>`
 fn f32_to_u64(value: f32) -> u64 {
     let value_u32 = u32::from_le_bytes(value.to_le_bytes());
     let mut mask = (value_u32 as i32 >> 31) as u32;
