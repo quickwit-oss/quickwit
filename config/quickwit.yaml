@@ -13,7 +13,7 @@ version: 0
 #
 # Node ID. Must be unique within a cluster. If not set, a random node ID is generated on each startup.
 #
-# node_id: node-1
+node_id: ${QW_NODE_ID:-node-1}
 #
 # Quickwit opens three sockets.
 # - for its HTTP server, hosting the UI and the REST API (TCP)
@@ -32,12 +32,13 @@ version: 0
 #   2. pass `0.0.0.0` and let Quickwit do its best to discover the node's IP (see `advertise_address`)
 #
 # listen_address: 127.0.0.1
-# rest_listen_port: 7280
+rest_listen_port: ${QW_REST_LISTEN_PORT:-7280}
 #
 # IP address advertised by the node, i.e. the IP address that peer nodes should use to connect to the node for RPCs.
 # The environment variable `QW_ADVERTISE_ADDRESS` can also be used to override this value.
 # The default advertise address is `listen_address`. If `listen_address` is unspecified (`0.0.0.0`),
 # Quickwit attempts to sniff the node's IP by scanning the available network interfaces.
+#
 # advertise_address: 192.168.0.42
 #
 # In order to join a cluster, one needs to specify a list of
@@ -52,13 +53,13 @@ version: 0
 # Path to directory where temporary data (caches, intermediate indexing data structures)
 # is stored. Defaults to `./qwdata`.
 #
-# data_dir: /path/to/data/dir
+data_dir: ${QW_DATA_DIR:-./qwdata}
 #
 # Metastore URI. Defaults to `data_dir/indexes#polling_interval=30s`,
 # which is a file-backed metastore and mostly convenient for testing. A cluster would
 # require a metastore backed by Amzon S3 or PostgreSQL.
 #
-# metastore_uri: s3://your-bucket/indexes
+metastore_uri: ${QW_METASTORE_URI:-./qwdata/indexes#polling_interval=5s}
 # metastore_uri: postgres://username:password@host:port/db
 #
 # When using a file-backed metastore, the state of the metastore will be cached forever.
