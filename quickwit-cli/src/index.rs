@@ -34,7 +34,9 @@ use quickwit_common::GREEN_COLOR;
 use quickwit_config::{
     IndexConfig, IndexerConfig, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
 };
-use quickwit_core::{clear_cache_directory, remove_indexing_directory, IndexService};
+use quickwit_core::{
+    clear_cache_directory, remove_indexing_directory, validate_storage_uri, IndexService,
+};
 use quickwit_doc_mapper::tag_pruning::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
 use quickwit_indexing::models::{
@@ -777,6 +779,9 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri)
         .await?;
+
+    validate_storage_uri(metastore_uri_resolver, &quickwit_config, &index_config).await?;
+
     let index_service = IndexService::new(
         metastore,
         quickwit_storage_uri_resolver().clone(),

@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use quickwit_common::fs::empty_dir;
 use quickwit_common::uri::Uri;
-use quickwit_config::IndexConfig;
+use quickwit_config::{IndexConfig, QuickwitConfig};
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_indexing::models::CACHE;
 use quickwit_indexing::{
@@ -32,7 +32,8 @@ use quickwit_indexing::{
     SplitDeletionError,
 };
 use quickwit_metastore::{
-    IndexMetadata, Metastore, MetastoreError, Split, SplitMetadata, SplitState,
+    IndexMetadata, Metastore, MetastoreError, MetastoreUriResolver, Split, SplitMetadata,
+    SplitState,
 };
 use quickwit_storage::{StorageResolverError, StorageUriResolver};
 use tantivy::time::OffsetDateTime;
@@ -320,4 +321,21 @@ pub async fn remove_indexing_directory(data_dir_path: &Path, index_id: String) -
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error),
     }
+}
+
+/// Resolve storage endpoints to validate.
+pub async fn validate_storage_uri(
+    metastore_uri_resolver: &MetastoreUriResolver,
+    quickwit_config: &QuickwitConfig,
+    index_config: &IndexConfig,
+) -> anyhow::Result<()> {
+    metastore_uri_resolver
+        .resolve(&quickwit_config.default_index_root_uri)
+        .await?;
+
+    // Optional: check custom index uri
+    if let Some(index_uri) = index_config.index_uri.as_ref() {
+        metastore_uri_resolver.resolve(index_uri).await?;
+    }
+    Ok(())
 }
