@@ -327,13 +327,10 @@ async fn warm_up_fieldnorms(searcher: &Searcher, requires_scoring: bool) -> anyh
     for field in searcher.schema().fields() {
         for segment_reader in searcher.segment_readers() {
             let fieldnorm_readers = segment_reader.fieldnorms_readers();
-            let file_handle = fieldnorm_readers.get_inner_file().open_read(field.0);
-            let file_handle = if let Some(val) = file_handle {
-                val
-            } else {
-                continue;
-            };
-            warm_up_futures.push(async move { file_handle.read_bytes_async().await })
+            let file_handle_opt = fieldnorm_readers.get_inner_file().open_read(field.0);
+            if let Some(file_handle) = file_handle_opt {
+                warm_up_futures.push(async move { file_handle.read_bytes_async().await })
+            }
         }
     }
     try_join_all(warm_up_futures).await?;
