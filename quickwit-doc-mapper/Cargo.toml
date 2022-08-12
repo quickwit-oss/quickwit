@@ -24,13 +24,13 @@ quickwit-proto = { version = "0.3.1", path = "../quickwit-proto" }
 regex = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "fad3fae", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "8e773ad", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",
   "quickwit",
 ] }
-tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "fad3fae" }
+tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "8e773ad" }
 thiserror = "1.0"
 time = { version = "0.3.10", features = ["std", "macros"] }
 tracing = "0.1.29"
