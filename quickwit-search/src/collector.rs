@@ -85,7 +85,7 @@ fn f32_to_u64(value: f32) -> u64 {
     let value_u32 = u32::from_le_bytes(value.to_le_bytes());
     let mut mask = (value_u32 as i32 >> 31) as u32;
     mask |= 0x80000000;
-    (value_u32 ^ mask).into()
+    (value_u32 ^ mask) as u64
 }
 
 /// Takes a user-defined sorting criteria and resolves it to a
@@ -561,16 +561,6 @@ mod tests {
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(10000))]
-        #[test]
-        fn test_proptest_f32_to_u64_compare_positive(a in 0.0..f32::MAX, b in 0.0..f32::MAX) {
-            prop_assert_eq!(a < b, f32_to_u64(a) < f32_to_u64(b))
-        }
-
-        #[test]
-        fn test_proptest_f32_to_u64_compare_negative(a in f32::MIN..0.0, b in f32::MIN..0.0) {
-            prop_assert_eq!(a < b, f32_to_u64(a) < f32_to_u64(b))
-        }
-
         #[test]
         fn test_proptest_f32_to_u64_compare_arbitrary(a in any_f32_without_negative_zero(), b in any_f32_without_negative_zero()) {
             prop_assert_eq!(a < b, f32_to_u64(a) < f32_to_u64(b))
