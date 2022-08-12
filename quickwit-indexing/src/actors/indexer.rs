@@ -168,9 +168,9 @@ impl IndexerState {
     ///
     /// This function will then create it, and can hence return an Error.
     async fn get_or_create_workbench<'a>(
-        &self,
+        &'a self,
         indexing_workbench_opt: &'a mut Option<IndexingWorkbench>,
-        ctx: &ActorContext<Indexer>,
+        ctx: &'a ActorContext<Indexer>,
     ) -> anyhow::Result<&'a mut IndexingWorkbench> {
         if indexing_workbench_opt.is_none() {
             let indexing_workbench = self.create_workbench()?;
@@ -184,7 +184,7 @@ impl IndexerState {
             .await;
             *indexing_workbench_opt = Some(indexing_workbench);
         }
-        let current_indexing_workbench: &'a mut IndexingWorkbench = indexing_workbench_opt.as_mut().context(
+        let current_indexing_workbench = indexing_workbench_opt.as_mut().context(
             "No index writer available. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."
         )?;
         Ok(current_indexing_workbench)
