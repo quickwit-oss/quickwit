@@ -69,11 +69,7 @@ impl SortingFieldComputer {
             }
             SortingFieldComputer::DocId => 0u64,
             SortingFieldComputer::Score { order } => {
-                // Since we need a u64 value to return, we *transform* the BM25 score into u64.
-                // The transformation preserves the order.
-                // (https://lemire.me/blog/2020/12/14/converting-floating-point-numbers-to-integers-while-preserving-order/)
-                let u32_score = u32::from_le_bytes(score.to_le_bytes());
-                let u64_score = sign_flip(u32_score);
+                let u64_score = f32_to_u64(score);
                 match order {
                     SortOrder::Desc => u64_score,
                     SortOrder::Asc => u64::MAX - u64_score,
@@ -83,12 +79,13 @@ impl SortingFieldComputer {
     }
 }
 
-/// Takes a u32 representation of a f32 and negates all bits if the most
-/// significant bit is set.
-fn sign_flip(value: u32) -> u64 {
-    let mut mask = (value as i64 >> 63) as u64;
-    mask |= 0x8000000000000000;
-    value as u64 ^ mask
+/// Converts a float to an unsigned integer while preserving order.
+/// See https://lemire.me/blog/2020/12/14/converting-floating-point-numbers-to-integers-while-preserving-order/
+fn f32_to_u64(value: f32) -> u64 {
+    let value_u32 = u32::from_le_bytes(value.to_le_bytes());
+    let mut mask = (value_u32 as i32 >> 31) as u32;
+    mask |= 0x80000000;
+    (value_u32 ^ mask).into()
 }
 
 /// Takes a user-defined sorting criteria and resolves it to a
@@ -499,10 +496,11 @@ pub fn make_merge_collector(search_request: &SearchRequest) -> crate::Result<Qui
 mod tests {
     use std::cmp::Ordering;
 
+    use proptest::prelude::*;
     use quickwit_proto::PartialHit;
 
     use super::PartialHitHeapItem;
-    use crate::collector::top_k_partial_hits;
+    use crate::collector::{f32_to_u64, top_k_partial_hits};
 
     #[test]
     fn test_partial_hit_ordered_by_sorting_field() {
@@ -550,5 +548,32 @@ mod tests {
             ),
             vec![make_hit_given_split_id(1), make_hit_given_split_id(2)]
         );
+    }
+
+    prop_compose! {
+        // Turns out, zero's and negative zero's u64 representation is not same.
+        // It is not relevant for our use case. For simplicity we filter the negative
+        // zero.
+        fn any_f32_without_negative_zero()(val in any::<f32>().prop_filter("Value can't be negative zero", |val| *val != -0.0)) -> f32 {
+            val
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100000))]
+        #[test]
+        fn test_proptest_f32_to_u64_compare_positive(a in 0.0..f32::MAX, b in 0.0..f32::MAX) {
+            prop_assert_eq!(a < b, f32_to_u64(a) < f32_to_u64(b))
+        }
+
+        #[test]
+        fn test_proptest_f32_to_u64_compare_negative(a in f32::MIN..0.0, b in f32::MIN..0.0) {
+            prop_assert_eq!(a < b, f32_to_u64(a) < f32_to_u64(b))
+        }
+
+        #[test]
+        fn test_proptest_f32_to_u64_compare_arbitrary(a in any_f32_without_negative_zero(), b in any_f32_without_negative_zero()) {
+            prop_assert_eq!(a < b, f32_to_u64(a) < f32_to_u64(b))
+        }
     }
 }

@@ -3197,6 +3197,7 @@ dependencies = [
  "mockall",
  "once_cell",
  "opentelemetry",
+ "proptest",
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
