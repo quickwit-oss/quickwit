@@ -390,6 +390,7 @@ mod tests {
                 end_timestamp: Some(1),
                 config_uri: _config_uri,
                 data_dir: None,
+                sort_by_score: false,
             })) if &index_id == "wikipedia"
                   && query == "Barack Obama"
                   && field_names == vec!["title".to_string(), "url".to_string()]

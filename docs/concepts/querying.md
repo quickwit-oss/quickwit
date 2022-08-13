@@ -41,3 +41,7 @@ Quickwit does caching in many places to deliver a highly performing query engine
 
 - Hotcache caching: A static cache that holds information about a split file internal representation. It helps speed up the opening of a split file. Its size can be defined via the `split_footer_cache_capacity` configuration parameter.
 - Fast field caching: Fast fields tend to be accessed very frequently by users especially for stream requests. They are cached in a RAM whose size can be limited by the `fast_field_cache_capacity` configuration value.
+
+### Scoring
+
+Quickwit supports sorting docs by their BM25 scores. By default BM25 scoring is disabled to improve query times but it can be opt-in by setting `sort_by_field` option to `_score` in queries.

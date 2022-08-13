@@ -39,19 +39,22 @@ use crate::partial_hit_sorting_key;
 /// The `SortingFieldComputer` can be seen as the specialization of `SortBy` applied to a specific
 /// `SegmentReader`. Its role is to compute the sorting field given a `DocId`.
 enum SortingFieldComputer {
-    SortByFastField {
+    FastField {
         fast_field_reader: DynamicFastFieldReader<u64>,
         order: SortOrder,
     },
     /// If undefined, we simply sort by DocIds.
-    SortByDocId,
+    DocId,
+    Score {
+        order: SortOrder,
+    },
 }
 
 impl SortingFieldComputer {
     /// Returns the ranking key for the given element
-    fn compute_sorting_field(&self, doc_id: DocId) -> u64 {
+    fn compute_sorting_field(&self, doc_id: DocId, score: Score) -> u64 {
         match self {
-            SortingFieldComputer::SortByFastField {
+            SortingFieldComputer::FastField {
                 fast_field_reader,
                 order,
             } => {
@@ -64,9 +67,25 @@ impl SortingFieldComputer {
                     SortOrder::Asc => u64::MAX - field_val,
                 }
             }
-            SortingFieldComputer::SortByDocId => 0u64,
+            SortingFieldComputer::DocId => 0u64,
+            SortingFieldComputer::Score { order } => {
+                let u64_score = f32_to_u64(score);
+                match order {
+                    SortOrder::Desc => u64_score,
+                    SortOrder::Asc => u64::MAX - u64_score,
+                }
+            }
         }
     }
+}
+
+/// Converts a float to an unsigned integer while preserving order.
+/// See `<https://lemire.me/blog/2020/12/14/converting-floating-point-numbers-to-integers-while-preserving-order/>`
+fn f32_to_u64(value: f32) -> u64 {
+    let value_u32 = u32::from_le_bytes(value.to_le_bytes());
+    let mut mask = (value_u32 as i32 >> 31) as u32;
+    mask |= 0x80000000;
+    (value_u32 ^ mask) as u64
 }
 
 /// Takes a user-defined sorting criteria and resolves it to a
@@ -79,15 +98,16 @@ fn resolve_sort_by(
         SortBy::FastField { field_name, order } => {
             if let Some(field) = segment_reader.schema().get_field(field_name) {
                 let fast_field_reader = segment_reader.fast_fields().u64_lenient(field)?;
-                Ok(SortingFieldComputer::SortByFastField {
+                Ok(SortingFieldComputer::FastField {
                     fast_field_reader,
                     order: *order,
                 })
             } else {
-                Ok(SortingFieldComputer::SortByDocId)
+                Ok(SortingFieldComputer::DocId)
             }
         }
-        SortBy::DocId => Ok(SortingFieldComputer::SortByDocId),
+        SortBy::DocId => Ok(SortingFieldComputer::DocId),
+        SortBy::Score { order } => Ok(SortingFieldComputer::Score { order: *order }),
     }
 }
 
@@ -149,8 +169,8 @@ impl QuickwitSegmentCollector {
         self.hits.len() >= self.max_hits
     }
 
-    fn collect_top_k(&mut self, doc_id: DocId) {
-        let sorting_field_value: u64 = self.sort_by.compute_sorting_field(doc_id);
+    fn collect_top_k(&mut self, doc_id: DocId, score: Score) {
+        let sorting_field_value: u64 = self.sort_by.compute_sorting_field(doc_id, score);
         if self.at_capacity() {
             if let Some(limit_sorting_field) = self.hits.peek().map(|head| head.sorting_field_value)
             {
@@ -183,15 +203,15 @@ impl QuickwitSegmentCollector {
 impl SegmentCollector for QuickwitSegmentCollector {
     type Fruit = tantivy::Result<LeafSearchResponse>;
 
-    fn collect(&mut self, doc_id: DocId, _score: Score) {
+    fn collect(&mut self, doc_id: DocId, score: Score) {
         if !self.accept_document(doc_id) {
             return;
         }
 
         self.num_hits += 1;
-        self.collect_top_k(doc_id);
+        self.collect_top_k(doc_id, score);
         if let Some(aggregation_collector) = self.aggregation.as_mut() {
-            aggregation_collector.collect(doc_id, _score);
+            aggregation_collector.collect(doc_id, score);
         }
     }
 
@@ -248,7 +268,7 @@ impl QuickwitCollector {
     pub fn fast_field_names(&self) -> HashSet<String> {
         let mut fast_field_names = HashSet::default();
         match &self.sort_by {
-            SortBy::DocId => {}
+            SortBy::DocId | SortBy::Score { .. } => {}
             SortBy::FastField { field_name, .. } => {
                 fast_field_names.insert(field_name.clone());
             }
@@ -316,10 +336,13 @@ impl Collector for QuickwitCollector {
     }
 
     fn requires_scoring(&self) -> bool {
-        // We do not need BM25 scoring in Quickwit.
+        // We do not need BM25 scoring in Quickwit if it is not opted-in.
         // By returning false, we inform tantivy that it does not need to decompress
         // term frequencies.
-        false
+        match self.sort_by {
+            SortBy::DocId | SortBy::FastField { .. } => false,
+            SortBy::Score { .. } => true,
+        }
     }
 
     fn merge_fruits(
@@ -473,10 +496,11 @@ pub fn make_merge_collector(search_request: &SearchRequest) -> crate::Result<Qui
 mod tests {
     use std::cmp::Ordering;
 
+    use proptest::prelude::*;
     use quickwit_proto::PartialHit;
 
     use super::PartialHitHeapItem;
-    use crate::collector::top_k_partial_hits;
+    use crate::collector::{f32_to_u64, top_k_partial_hits};
 
     #[test]
     fn test_partial_hit_ordered_by_sorting_field() {
@@ -524,5 +548,22 @@ mod tests {
             ),
             vec![make_hit_given_split_id(1), make_hit_given_split_id(2)]
         );
+    }
+
+    prop_compose! {
+        // Turns out, zero's and negative zero's u64 representation is not same.
+        // It is not relevant for our use case. For simplicity we filter the negative
+        // zero.
+        fn any_f32_without_negative_zero()(val in any::<f32>().prop_filter("Value can't be negative zero", |val| *val != -0.0)) -> f32 {
+            val
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10000))]
+        #[test]
+        fn test_proptest_f32_to_u64_compare_arbitrary(a in any_f32_without_negative_zero(), b in any_f32_without_negative_zero()) {
+            prop_assert_eq!(a < b, f32_to_u64(a) < f32_to_u64(b))
+        }
     }
 }

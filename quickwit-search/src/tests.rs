@@ -317,9 +317,8 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_single_node_sorting_with_query() -> anyhow::Result<()> {
-    let index_id = "single-node-sorting";
+async fn single_node_search_sort_by_field(sort_by_field: &str) -> anyhow::Result<()> {
+    let index_id = "single-node-sorting-sort-by-".to_string() + sort_by_field;
     let doc_mapping_yaml = r#"
             field_mappings:
               - name: description
@@ -337,7 +336,7 @@ async fn test_single_node_sorting_with_query() -> anyhow::Result<()> {
             "sort_order": "desc"
         }"#;
     let test_sandbox = TestSandbox::create(
-        index_id,
+        &index_id,
         doc_mapping_yaml,
         indexing_settings_json,
         &["description"],
@@ -359,7 +358,7 @@ async fn test_single_node_sorting_with_query() -> anyhow::Result<()> {
         end_timestamp: None,
         max_hits: 15,
         start_offset: 0,
-        sort_by_field: Some("temperature".to_string()),
+        sort_by_field: Some(sort_by_field.to_string()),
         sort_order: Some(SortOrder::Desc as i32),
         ..Default::default()
     };
@@ -377,6 +376,13 @@ async fn test_single_node_sorting_with_query() -> anyhow::Result<()> {
         .unwrap()
         .sorting_field_value
         >= hits[1].partial_hit.as_ref().unwrap().sorting_field_value));
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_single_node_sorting_with_query() -> anyhow::Result<()> {
+    single_node_search_sort_by_field("temperature").await?;
+    single_node_search_sort_by_field("_score").await?;
     Ok(())
 }
 

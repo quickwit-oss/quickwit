@@ -90,9 +90,17 @@ pub enum SortBy {
         /// Order to sort by. A usual top-k search implies a descending order.
         order: SortOrder,
     },
+    /// Sort by BM25 score.
+    Score {
+        /// Order to sort by. A usual top-k search implies a descending order.
+        order: SortOrder,
+    },
 }
 
 pub(crate) fn validate_sort_by_field_name(field_name: &str, schema: &Schema) -> anyhow::Result<()> {
+    if field_name == "_score" {
+        return Ok(());
+    }
     let sort_by_field = schema
         .get_field(field_name)
         .with_context(|| format!("Unknown sort by field: `{}`", field_name))?;
@@ -123,6 +131,14 @@ impl Default for SortBy {
 impl From<&SearchRequest> for SortBy {
     fn from(req: &SearchRequest) -> Self {
         if let Some(ref sort_by_field) = req.sort_by_field {
+            if *sort_by_field == "_score" {
+                return SortBy::Score {
+                    order: req
+                        .sort_order
+                        .map(|sort_order| sort_order.into())
+                        .unwrap_or_default(),
+                };
+            }
             SortBy::FastField {
                 field_name: sort_by_field.to_string(),
                 order: req
