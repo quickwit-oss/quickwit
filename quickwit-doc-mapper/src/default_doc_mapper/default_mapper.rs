@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::str::FromStr;
 
 use anyhow::{bail, Context};
 use quickwit_proto::SearchRequest;
@@ -32,7 +33,9 @@ use super::field_mapping_entry::QuickwitTextTokenizer;
 use super::DefaultDocMapperBuilder;
 use crate::default_doc_mapper::mapping_tree::{build_mapping_tree, MappingNode, MappingTree};
 pub use crate::default_doc_mapper::QuickwitJsonOptions;
+use crate::doc_mapper::Partition;
 use crate::query_builder::build_query;
+use crate::routing_expression::RoutingExpr;
 use crate::sort_by::{validate_sort_by_field_name, SortBy, SortOrder};
 use crate::{
     DocMapper, DocParsingError, ModeType, QueryParserError, DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
@@ -114,6 +117,9 @@ pub struct DefaultDocMapper {
     schema: Schema,
     /// List of field names used for tagging.
     tag_field_names: BTreeSet<String>,
+    /// The partition key is a DSL used to route documents
+    /// into specific splits.
+    partition_key: RoutingExpr,
     /// Demux field name.
     demux_field_name: Option<String>,
     /// List of required fields. Right now this is the list of fast fields.
@@ -207,6 +213,15 @@ fn resolve_timestamp_field(
                     )
                 }
             }
+            FieldType::Date(options) => {
+                if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
+                    bail!(
+                        "Timestamp field cannot be an array, please change your field `{}` from \
+                         an array to a single value.",
+                        timestamp_field_name
+                    )
+                }
+            }
             _ => {
                 bail!(
                     "Timestamp field must be of type i64, please change your field type `{}` to \
@@ -279,7 +294,7 @@ fn resolve_demux_field(
 impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
     type Error = anyhow::Error;
 
-    fn try_from(builder: DefaultDocMapperBuilder) -> Result<DefaultDocMapper, Self::Error> {
+    fn try_from(builder: DefaultDocMapperBuilder) -> anyhow::Result<DefaultDocMapper> {
         let mode = builder.mode()?;
         let mut schema_builder = Schema::builder();
         let field_mappings = build_mapping_tree(&builder.field_mappings, &mut schema_builder)?;
@@ -338,6 +353,8 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         }
 
         let required_fields = list_required_fields_for_node(&field_mappings);
+        let partition_key = RoutingExpr::from_str(&builder.partition_key)
+            .context("Failed to interpret the partition key.")?;
         Ok(DefaultDocMapper {
             schema,
             source_field,
@@ -348,6 +365,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             field_mappings,
             tag_field_names,
             required_fields,
+            partition_key,
             demux_field_name: builder.demux_field,
             mode,
         })
@@ -383,6 +401,7 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
             default_search_fields: default_doc_mapper.default_search_field_names,
             mode,
             dynamic_mapping,
+            partition_key: default_doc_mapper.partition_key.to_string(),
         }
     }
 }
@@ -428,12 +447,14 @@ fn extract_single_obj(
 
 #[typetag::serde(name = "default")]
 impl DocMapper for DefaultDocMapper {
-    fn doc_from_json(&self, doc_json: String) -> Result<Document, DocParsingError> {
+    fn doc_from_json(&self, doc_json: String) -> Result<(Partition, Document), DocParsingError> {
         let json_obj: serde_json::Map<String, JsonValue> = serde_json::from_str(&doc_json)
             .map_err(|_| {
                 let doc_json_sample = doc_json.chars().take(20).collect();
                 DocParsingError::NotJsonObject(doc_json_sample)
             })?;
+
+        let partition: Partition = self.partition_key.eval_hash(&json_obj);
 
         let mut dynamic_json_obj = serde_json::Map::default();
         let mut field_path = Vec::new();
@@ -459,7 +480,7 @@ impl DocMapper for DefaultDocMapper {
         }
 
         self.check_missing_required_fields(&document)?;
-        Ok(document)
+        Ok((partition, document))
     }
 
     fn doc_to_json(
@@ -610,7 +631,7 @@ mod tests {
     fn test_parsing_document() {
         let doc_mapper = crate::default_doc_mapper_for_tests();
         let json_doc = example_json_doc_value();
-        let document = doc_mapper.doc_from_json(json_doc.to_string()).unwrap();
+        let (_, document) = doc_mapper.doc_from_json(json_doc.to_string()).unwrap();
         let schema = doc_mapper.schema();
         // 8 property entry + 1 field "_source" + two fields values for "tags" field
         // + 2 values inf "server.status" field + 2 values in "server.payload" field
@@ -846,7 +867,7 @@ mod tests {
             "city": "tokio",
             "image": "YWJj"
         });
-        let document = doc_mapper
+        let (_, document) = doc_mapper
             .doc_from_json(json_doc_value.to_string())
             .unwrap();
 
@@ -1236,7 +1257,7 @@ mod tests {
     fn test_lenient_mode_simple() {
         let default_doc_mapper: DefaultDocMapper =
             serde_json::from_str(r#"{ "mode": "lenient" }"#).unwrap();
-        let doc = default_doc_mapper
+        let (_, doc) = default_doc_mapper
             .doc_from_json(r#"{ "a": { "b": 5, "c": 6 } }"#.to_string())
             .unwrap();
         assert_eq!(doc.len(), 0);
@@ -1248,7 +1269,7 @@ mod tests {
             serde_json::from_str(r#"{ "mode": "dynamic" }"#).unwrap();
         let schema = default_doc_mapper.schema();
         let dynamic_field = schema.get_field(DYNAMIC_FIELD_NAME).unwrap();
-        let doc = default_doc_mapper
+        let (_, doc) = default_doc_mapper
             .doc_from_json(r#"{ "a": { "b": 5, "c": 6 } }"#.to_string())
             .unwrap();
         let vals: Vec<&Value> = doc.get_all(dynamic_field).collect();
@@ -1288,7 +1309,7 @@ mod tests {
         }"#,
         )
         .unwrap();
-        let doc = default_doc_mapper
+        let (_, doc) = default_doc_mapper
             .doc_from_json(
                 r#"{ "some_obj": { "child_a": "", "child_b": {"c": 3} }, "some_obj2": 4 }"#
                     .to_string(),
@@ -1337,7 +1358,7 @@ mod tests {
         }"#,
         )
         .unwrap();
-        let doc = default_doc_mapper
+        let (_, doc) = default_doc_mapper
             .doc_from_json(r#"{ "some_obj": { "json_obj": {"hello": 2} } }"#.to_string())
             .unwrap();
         let json_field = default_doc_mapper

@@ -32,9 +32,9 @@ impl RetryPolicy<LeafSearchRequest, LeafSearchResponse, SearchError> for LeafSea
     fn retry_request(
         &self,
         mut request: LeafSearchRequest,
-        result: Result<&LeafSearchResponse, &SearchError>,
+        response_res: &Result<LeafSearchResponse, SearchError>,
     ) -> Option<LeafSearchRequest> {
-        match result {
+        match response_res {
             Ok(response) => {
                 if response.failed_splits.is_empty() {
                     return None;
@@ -93,36 +93,31 @@ mod tests {
     }
 
     #[test]
-    fn test_should_retry_on_error() -> anyhow::Result<()> {
+    fn test_should_retry_on_error() {
         let retry_policy = LeafSearchRetryPolicy {};
         let request = mock_leaf_search_request();
-        let result = Result::<LeafSearchResponse, SearchError>::Err(SearchError::InternalError(
-            "test".to_string(),
-        ));
-        let retry_request_opt = retry_policy.retry_request(request, result.as_ref());
-        assert!(retry_request_opt.is_some());
-        Ok(())
+        let response_res = Result::<LeafSearchResponse, SearchError>::Err(
+            SearchError::InternalError("test".to_string()),
+        );
+        retry_policy.retry_request(request, &response_res).unwrap();
     }
 
     #[test]
-    fn test_should_not_retry_if_result_is_ok_and_no_failing_splits() -> anyhow::Result<()> {
+    fn test_should_not_retry_if_result_is_ok_and_no_failing_splits() {
         let retry_policy = LeafSearchRetryPolicy {};
         let request = mock_leaf_search_request();
-        let leaf_response = LeafSearchResponse {
+        let response_res = Ok(LeafSearchResponse {
             num_hits: 0,
             partial_hits: vec![],
             failed_splits: vec![],
             num_attempted_splits: 1,
             ..Default::default()
-        };
-        let result = Result::<LeafSearchResponse, SearchError>::Ok(leaf_response);
-        let retry_request_opt = retry_policy.retry_request(request, result.as_ref());
-        assert!(retry_request_opt.is_none());
-        Ok(())
+        });
+        assert!(retry_policy.retry_request(request, &response_res).is_none())
     }
 
     #[test]
-    fn test_should_retry_on_failed_splits() -> anyhow::Result<()> {
+    fn test_should_retry_on_failed_splits() {
         let retry_policy = LeafSearchRetryPolicy {};
         let request = mock_leaf_search_request();
         let mut expected_retry_request = request.clone();
@@ -132,16 +127,14 @@ mod tests {
             split_id: "split_2".to_string(),
             retryable_error: true,
         };
-        let leaf_response = LeafSearchResponse {
+        let response_res = Ok(LeafSearchResponse {
             num_hits: 0,
             partial_hits: vec![],
             failed_splits: vec![split_error],
             num_attempted_splits: 1,
             ..Default::default()
-        };
-        let result = Result::<LeafSearchResponse, SearchError>::Ok(leaf_response);
-        let retry_request_opt = retry_policy.retry_request(request, result.as_ref());
-        assert_eq!(retry_request_opt, Some(expected_retry_request));
-        Ok(())
+        });
+        let retry_request = retry_policy.retry_request(request, &response_res).unwrap();
+        assert_eq!(retry_request, expected_retry_request);
     }
 }

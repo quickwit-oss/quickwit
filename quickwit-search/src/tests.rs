@@ -222,7 +222,10 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
               - name: body
                 type: text
               - name: ts
-                type: i64
+                type: datetime
+                input_formats:
+                    - "rfc3339"
+                    - "unix_ts_secs"
                 fast: true
               - name: owner
                 type: text

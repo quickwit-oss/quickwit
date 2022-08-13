@@ -316,7 +316,7 @@ async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
     let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri())
+        .resolve(&quickwit_config.metastore_uri)
         .await?;
     let splits = metastore.list_all_splits(&args.index_id).await?;
 
@@ -353,7 +353,7 @@ async fn mark_splits_for_deletion_cli(args: MarkForDeletionArgs) -> anyhow::Resu
     let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri())
+        .resolve(&quickwit_config.metastore_uri)
         .await?;
     let split_ids: Vec<&str> = args
         .split_ids
@@ -381,7 +381,7 @@ async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri())
+        .resolve(&quickwit_config.metastore_uri)
         .await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let index_storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
@@ -444,7 +444,7 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri())
+        .resolve(&quickwit_config.metastore_uri)
         .await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let index_storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;

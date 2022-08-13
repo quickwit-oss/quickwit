@@ -53,6 +53,9 @@ version: 0
 
 doc_mapping:
   field_mappings:
+    - name: timestamp
+      type: i64
+      fast: true
     - name: severity_text
       type: text
       tokenizer: raw
@@ -91,6 +94,14 @@ metastore_uri: ${S3_PATH}
 default_index_root_uri: ${S3_PATH}
 " > config.yaml
 ```
+
+> You can also pass environment variables directly:
+> ```yaml
+> # config.yaml
+> version: 0
+> metastore_uri: ${S3_PATH}
+> default_index_root_uri: ${S3_PATH}
+> ```
 
 We can now create the index with the `create` subcommand.
 

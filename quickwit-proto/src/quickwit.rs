@@ -103,19 +103,19 @@ pub struct SplitIdAndFooterOffsets {
     #[prost(uint64, tag="3")]
     pub split_footer_end: u64,
 }
-//// Hits returned by a FetchDocRequest.
-////
-//// The json that is joined is the raw tantivy json doc.
-//// It is very different from a quickwit json doc.
-////
-//// For instance:
-//// - it may contain a _source and a _dynamic field.
-//// - since tantivy has no notion of cardinality,
-//// all fields is  are arrays.
-//// - since tantivy has no notion of object, the object is
-//// flattened by concatenating the path to the root.
-////
-//// See  `quickwit_search::convert_leaf_hit`
+/// / Hits returned by a FetchDocRequest.
+/// /
+/// / The json that is joined is the raw tantivy json doc.
+/// / It is very different from a quickwit json doc.
+/// /
+/// / For instance:
+/// / - it may contain a _source and a _dynamic field.
+/// / - since tantivy has no notion of cardinality,
+/// / all fields is  are arrays.
+/// / - since tantivy has no notion of object, the object is
+/// / flattened by concatenating the path to the root.
+/// /
+/// / See  `quickwit_search::convert_leaf_hit`
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafHit {
@@ -271,12 +271,24 @@ pub struct LeafSearchStreamResponse {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum SortOrder {
-    //// Ascending order.
+    /// / Ascending order.
     Asc = 0,
-    //// Descending order.
+    /// / Descending order.
     ///
-    ///< This will be the default value;
+    /// < This will be the default value;
     Desc = 1,
+}
+impl SortOrder {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            SortOrder::Asc => "ASC",
+            SortOrder::Desc => "DESC",
+        }
+    }
 }
 // -- Stream -------------------
 
@@ -285,19 +297,32 @@ pub enum SortOrder {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum OutputFormat {
-    //// Comma Separated Values format (<https://datatracker.ietf.org/doc/html/rfc4180>).
-    //// The delimiter is `,`.
+    /// / Comma Separated Values format (<https://datatracker.ietf.org/doc/html/rfc4180>).
+    /// / The delimiter is `,`.
     ///
-    ///< This will be the default value
+    /// < This will be the default value
     Csv = 0,
-    //// Format data by row in ClickHouse binary format.
-    //// <https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary>
+    /// / Format data by row in ClickHouse binary format.
+    /// / <https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary>
     ClickHouseRowBinary = 1,
+}
+impl OutputFormat {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            OutputFormat::Csv => "CSV",
+            OutputFormat::ClickHouseRowBinary => "CLICK_HOUSE_ROW_BINARY",
+        }
+    }
 }
 /// Generated client implementations.
 pub mod search_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct SearchServiceClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -324,6 +349,10 @@ pub mod search_service_client {
             let inner = tonic::client::Grpc::new(inner);
             Self { inner }
         }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
@@ -343,19 +372,19 @@ pub mod search_service_client {
         {
             SearchServiceClient::new(InterceptedService::new(inner, interceptor))
         }
-        /// Compress requests with `gzip`.
+        /// Compress requests with the given encoding.
         ///
         /// This requires the server to support it otherwise it might respond with an
         /// error.
         #[must_use]
-        pub fn send_gzip(mut self) -> Self {
-            self.inner = self.inner.send_gzip();
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
             self
         }
-        /// Enable decompressing responses with `gzip`.
+        /// Enable decompressing responses.
         #[must_use]
-        pub fn accept_gzip(mut self) -> Self {
-            self.inner = self.inner.accept_gzip();
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
             self
         }
         /// Root search API.
@@ -502,8 +531,8 @@ pub mod search_service_server {
     #[derive(Debug)]
     pub struct SearchServiceServer<T: SearchService> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: SearchService> SearchServiceServer<T> {
@@ -526,6 +555,18 @@ pub mod search_service_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for SearchServiceServer<T>
@@ -737,7 +778,7 @@ pub mod search_service_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: SearchService> tonic::transport::NamedService for SearchServiceServer<T> {
+    impl<T: SearchService> tonic::server::NamedService for SearchServiceServer<T> {
         const NAME: &'static str = "quickwit.SearchService";
     }
 }

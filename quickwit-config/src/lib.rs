@@ -24,6 +24,7 @@ use regex::Regex;
 mod config;
 mod index_config;
 mod source_config;
+mod templating;
 
 pub use config::{
     get_searcher_config_instance, IndexerConfig, QuickwitConfig, SearcherConfig,
