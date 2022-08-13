@@ -157,12 +157,14 @@ impl From<QuickwitTextOptions> for TextOptions {
             text_options = text_options.set_fast();
         }
         if quickwit_text_options.indexed {
-            let mut text_field_indexing = TextFieldIndexing::default();
+            let mut text_field_indexing = TextFieldIndexing::default()
+                .set_index_option(quickwit_text_options.record)
+                .set_fieldnorms(quickwit_text_options.fieldnorms);
+
             if let Some(tokenizer) = quickwit_text_options.tokenizer {
                 text_field_indexing = text_field_indexing.set_tokenizer(tokenizer.get_name());
             }
-            text_field_indexing =
-                text_field_indexing.set_index_option(quickwit_text_options.record);
+
             text_options = text_options.set_indexing_options(text_field_indexing);
         }
         text_options

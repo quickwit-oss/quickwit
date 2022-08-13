@@ -205,6 +205,10 @@ pub async fn single_node_search(
     .map_err(|err| {
         SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
     })?;
+
+    // Try to build query against current schema
+    let _query = doc_mapper.query(doc_mapper.schema(), search_request)?;
+
     let leaf_search_response = leaf_search(
         search_request,
         index_storage.clone(),
