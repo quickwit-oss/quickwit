@@ -48,7 +48,7 @@ struct CommitTimeout {
     workbench_id: Ulid,
 }
 
-#[derive(Clone, Default, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct IndexerCounters {
     /// Overall number of documents received, partitioned
     /// into 3 categories:
@@ -389,7 +389,7 @@ impl Handler<RawDocBatch> for Indexer {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum CommitTrigger {
     Timeout,
     NoMoreDocs,

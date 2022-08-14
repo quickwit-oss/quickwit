@@ -36,7 +36,7 @@ use crate::default_doc_mapper::field_mapping_entry::{
 use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
 use crate::{DocParsingError, FieldMappingEntry, ModeType};
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 enum JsonType {
     Null,
     Bool,

@@ -28,7 +28,7 @@ use tantivy::Order as TantivyOrder;
 
 /// Sort order, either ascending or descending.
 /// Use `SortOrder::Desc` for top-k queries.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SortOrder {
     /// Ascending order.
@@ -55,7 +55,7 @@ impl From<SortOrder> for TantivyOrder {
 /// Specifies how documents are sorted.
 /// In case of a tie, the documents are ordered according to descending `(split_id, segment_ord,
 /// doc_id)`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SortByField {
     /// Name of the field to sort by.
     pub field_name: String,
@@ -79,7 +79,7 @@ impl From<String> for SortByField {
 /// Specifies how documents are sorted.
 /// In case of a tie, the documents are ordered according to descending `(split_id, segment_ord,
 /// doc_id)`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum SortBy {
     /// Sort by document ID.
     DocId,

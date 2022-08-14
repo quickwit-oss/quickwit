@@ -48,7 +48,7 @@ const GOSSIP_INTERVAL: Duration = if cfg!(test) {
 const AVAILABLE_SERVICES_KEY: &str = "available_services";
 
 /// A member information.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Member {
     /// An ID that makes a member unique.
     pub node_unique_id: String,

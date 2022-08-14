@@ -631,7 +631,7 @@ pub fn build_demux_mapping(
 // split as input and produced demuxed virtual splits. The virtual splits are
 // then used for the real demux that will create real split.
 // Hence the usage of `virtual`.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct VirtualSplit(BTreeMap<u64, usize>);
 
 impl VirtualSplit {

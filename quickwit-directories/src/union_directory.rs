@@ -33,7 +33,7 @@ use tantivy::Directory;
 ///
 /// The first directory of the list will receive all write operations.
 /// Deletes on the other hand will be applied on all directories containing the file.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct UnionDirectory {
     directories: Arc<Vec<Box<dyn Directory>>>,
 }

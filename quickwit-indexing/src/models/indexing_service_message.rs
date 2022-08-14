@@ -19,7 +19,7 @@
 
 use quickwit_config::SourceConfig;
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct IndexingPipelineId {
     pub index_id: String,
     pub source_id: String,
@@ -50,13 +50,13 @@ pub struct SpawnPipelinesForIndex {
     pub index_id: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct SpawnPipeline {
     pub index_id: String,
     pub source: SourceConfig,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct ShutdownPipeline {
     pub index_id: String,
     pub source_id: String,

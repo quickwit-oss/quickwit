@@ -198,7 +198,7 @@ fn job_order_key<J: Job>(job: &J) -> (Reverse<u32>, &str) {
 
 /// Node is a utility struct used to represent a rendez-vous hashing node.
 /// It's used to track the load and the computed hash for a given key
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 struct Node {
     pub peer_grpc_addr: SocketAddr,
     pub load: u64,

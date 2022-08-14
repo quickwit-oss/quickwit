@@ -95,7 +95,7 @@ impl Default for IndexingResources {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MergePolicy {
     #[serde(default = "MergePolicy::default_demux_factor")]
@@ -221,7 +221,7 @@ impl Default for IndexingSettings {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SearchSettings {
     #[serde(default)]

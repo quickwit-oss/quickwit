@@ -42,7 +42,7 @@ const STAGED_GRACE_PERIOD: Duration = Duration::from_secs(60 * 60 * 24); // 24 h
 /// This duration is controlled by `DELETION_GRACE_PERIOD`.
 const DELETION_GRACE_PERIOD: Duration = Duration::from_secs(120); // 2 min
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct GarbageCollectorCounters {
     /// The number of passes the garbage collector has performed.
     pub num_passes: usize,

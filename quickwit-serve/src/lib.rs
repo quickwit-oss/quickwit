@@ -201,7 +201,7 @@ fn check_is_configured_for_cluster(
     Ok(())
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Debug)]
 pub struct QuickwitBuildInfo {
     pub commit_version_tag: &'static str,
     pub cargo_pkg_version: &'static str,

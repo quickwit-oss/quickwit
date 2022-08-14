@@ -37,7 +37,7 @@ pub struct QuickwitObjectOptions {
 
 /// A `FieldMappingEntry` defines how a field is indexed, stored,
 /// and mapped from a JSON document to the related index fields.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(
     try_from = "FieldMappingEntryForSerialization",
     into = "FieldMappingEntryForSerialization"
@@ -92,7 +92,7 @@ impl Default for QuickwitNumericOptions {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum QuickwitTextTokenizer {
     #[serde(rename = "raw")]
     Raw,
@@ -177,7 +177,7 @@ fn default_json_tokenizer() -> QuickwitTextTokenizer {
 ///
 /// `QuickwitJsonOptions` is also used to configure
 /// the dynamic mapping.
-#[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct QuickwitJsonOptions {
     /// Optional description of JSON object.

@@ -40,7 +40,7 @@ fn unix_timestamp() -> u64 {
     duration_since_epoch.as_secs()
 }
 
-#[derive(Debug, PartialEq, Eq, Copy, Hash, Clone)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum QuickwitService {
     Indexer,
     Searcher,

@@ -53,7 +53,7 @@ impl OperationBuffer {
 
 /// A ReadOperation records meta data about a read operation.
 /// It is recorded by the `DebugProxyDirectory`.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReadOperation {
     /// Path that was read
     pub path: PathBuf,

@@ -78,7 +78,7 @@ fn default_rest_listen_port() -> u16 {
     7280
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IndexerConfig {
     #[serde(default = "IndexerConfig::default_split_store_max_num_bytes")]
@@ -121,7 +121,7 @@ pub fn get_searcher_config_instance() -> &'static SearcherConfig {
     SEARCHER_CONFIG_INSTANCE.get_or_init(SearcherConfig::default)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SearcherConfig {
     #[serde(default = "SearcherConfig::default_fast_field_cache_capacity")]
@@ -383,7 +383,7 @@ fn redact_uri(
     Ok(())
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct QuickwitConfig {
     pub version: usize,
     pub cluster_id: String,
@@ -461,8 +461,7 @@ impl QuickwitConfig {
         // finally return the addresses as strings, which is tricky for IPv6. We let the logic baked
         // in `HostAddr` handle this complexity.
         for peer_seed in &self.peer_seeds {
-            let peer_seed_addr =
-                HostAddr::parse_with_default_port(&*peer_seed, default_gossip_port)?;
+            let peer_seed_addr = HostAddr::parse_with_default_port(peer_seed, default_gossip_port)?;
             if let Err(error) = peer_seed_addr.resolve().await {
                 warn!(peer_seed = %peer_seed_addr, error = ?error, "Failed to resolve peer seed address.");
                 continue;
