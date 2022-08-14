@@ -52,7 +52,7 @@ pub fn extract_tags_from_query(user_query: &str) -> Result<Option<TagFilterAst>,
 
 /// Intermediary AST that may contain leaf that are
 /// equivalent to the "Uninformative" predicate.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum UnsimplifiedTagFilterAst {
     And(Vec<UnsimplifiedTagFilterAst>),
     Or(Vec<UnsimplifiedTagFilterAst>),

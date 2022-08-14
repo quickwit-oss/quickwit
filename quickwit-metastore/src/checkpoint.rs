@@ -31,7 +31,7 @@ use thiserror::Error;
 use tracing::{info, warn};
 
 /// PartitionId identifies a partition for a given source.
-#[derive(Debug, Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub struct PartitionId(pub Arc<String>);
 
 impl From<String> for PartitionId {
@@ -73,7 +73,7 @@ impl From<i64> for PartitionId {
 ///
 /// The empty string can be used to represent the beginning of the source,
 /// if no position makes sense. It can be built via `Position::default()`.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize)]
 pub enum Position {
     Beginning,
     Offset(Arc<String>),
@@ -122,7 +122,7 @@ impl<'a> From<&'a str> for Position {
     }
 }
 
-#[derive(Default, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct IndexCheckpoint {
     #[serde(flatten)]
     per_source: BTreeMap<String, SourceCheckpoint>,
@@ -192,7 +192,7 @@ impl IndexCheckpoint {
 ///
 /// If a partition is missing, it implicitely means that none of its message
 /// has been processed.
-#[derive(Default, Clone, PartialEq)]
+#[derive(Default, Clone, Eq, PartialEq)]
 pub struct SourceCheckpoint {
     per_partition: BTreeMap<PartitionId, Position>,
 }
@@ -233,7 +233,7 @@ impl Serialize for SourceCheckpoint {
     where S: serde::Serializer {
         let mut map = serializer.serialize_map(Some(self.per_partition.len()))?;
         for (partition, position) in &self.per_partition {
-            map.serialize_entry(&*partition.0, &*position.as_str())?;
+            map.serialize_entry(&*partition.0, position.as_str())?;
         }
         map.end()
     }
@@ -256,7 +256,7 @@ impl<'de> Deserialize<'de> for SourceCheckpoint {
 /// Error returned when trying to apply a checkpoint delta to a checkpoint that is not
 /// compatible. ie: the checkpoint delta starts from a point anterior to
 /// the checkpoint.
-#[derive(Error, Debug, PartialEq)]
+#[derive(Debug, Error, Eq, PartialEq)]
 #[error(
     "IncompatibleChkptDelta at partition: {partition_id:?} cur_pos:{current_position:?} \
      delta_pos:{delta_position_from:?}"
@@ -358,7 +358,7 @@ impl fmt::Debug for SourceCheckpoint {
 }
 
 /// A partition delta represents an interval (from, to] over a partition of a source.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct PartitionDelta {
     pub from: Position,
     pub to: Position,

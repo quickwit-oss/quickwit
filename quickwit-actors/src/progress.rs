@@ -27,7 +27,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct Progress(Arc<AtomicU32>);
 
-#[derive(Clone, Debug, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ProgressState {
     // No update recorded since the last call to .check_for_update()
     NoUpdate,

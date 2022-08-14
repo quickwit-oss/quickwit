@@ -38,7 +38,7 @@ use crate::{
 };
 
 /// `IndexingSplitStoreParams` encapsulates the various contraints of the cache.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IndexingSplitStoreParams {
     /// Maximum number of files allowed in the cache.
     pub max_num_splits: usize,

@@ -192,7 +192,7 @@ pub struct DescribeIndexArgs {
     pub index_id: String,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct CreateIndexArgs {
     pub index_config_uri: Uri,
     pub config_uri: Uri,
@@ -200,7 +200,7 @@ pub struct CreateIndexArgs {
     pub overwrite: bool,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct IngestDocsArgs {
     pub index_id: String,
     pub input_path_opt: Option<PathBuf>,
@@ -210,7 +210,7 @@ pub struct IngestDocsArgs {
     pub clear_cache: bool,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct SearchIndexArgs {
     pub index_id: String,
     pub query: String,
@@ -225,7 +225,7 @@ pub struct SearchIndexArgs {
     pub sort_by_score: bool,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct DeleteIndexArgs {
     pub index_id: String,
     pub dry_run: bool,
@@ -233,7 +233,7 @@ pub struct DeleteIndexArgs {
     pub data_dir: Option<PathBuf>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct GarbageCollectIndexArgs {
     pub index_id: String,
     pub grace_period: Duration,
@@ -242,20 +242,20 @@ pub struct GarbageCollectIndexArgs {
     pub data_dir: Option<PathBuf>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct MergeOrDemuxArgs {
     pub index_id: String,
     pub config_uri: Uri,
     pub data_dir: Option<PathBuf>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ListIndexesArgs {
     pub config_uri: Uri,
     pub metastore_uri: Option<Uri>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum IndexCliCommand {
     List(ListIndexesArgs),
     Create(CreateIndexArgs),

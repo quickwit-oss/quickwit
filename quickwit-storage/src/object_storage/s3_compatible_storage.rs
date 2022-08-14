@@ -308,10 +308,10 @@ pub fn parse_s3_uri(uri: &Uri) -> Option<(String, PathBuf)> {
         })
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 struct MultipartUploadId(pub String);
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 struct Part {
     pub part_number: usize,
     pub range: Range<u64>,

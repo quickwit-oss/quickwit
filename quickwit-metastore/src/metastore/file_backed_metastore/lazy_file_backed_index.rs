@@ -87,7 +87,7 @@ async fn poll_index_metadata_once(
     index_id: &str,
     metadata_mutex: &Mutex<FileBackedIndex>,
 ) {
-    let index_fetch_res = fetch_index(&*storage, index_id).await;
+    let index_fetch_res = fetch_index(storage, index_id).await;
     match index_fetch_res {
         Ok(index) => {
             *metadata_mutex.lock().await = index;

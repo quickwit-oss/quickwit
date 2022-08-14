@@ -28,7 +28,7 @@ use tracing::warn;
 static RUNTIMES: OnceCell<HashMap<RuntimeType, tokio::runtime::Runtime>> = OnceCell::new();
 
 /// Describes which runtime an actor should run on.
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
 pub enum RuntimeType {
     /// The blocking runtime runs blocking actors.
     /// This runtime is only used as a nice thread pool with

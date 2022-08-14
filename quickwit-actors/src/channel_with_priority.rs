@@ -28,7 +28,7 @@ pub enum SendError {
     Full,
 }
 
-#[derive(Debug, Error, Copy, Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum RecvError {
     #[error("No message are currently available.")]
     NoMessageAvailable,

@@ -46,7 +46,7 @@ pub enum SplitDeletionError {
 }
 
 #[allow(missing_docs)]
-#[derive(Debug, Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct FileEntry {
     /// The file_name is a file name, within an index directory.
     pub file_name: String,
