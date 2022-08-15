@@ -28,9 +28,9 @@ use crate::cluster_api::cluster_handler;
 use crate::error::ServiceErrorCode;
 use crate::format::FormatError;
 use crate::health_check_api::liveness_check_handler;
-use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::{elastic_bulk_handler, ingest_handler, tail_handler};
+use crate::metastore_api::metastore_api_handlers;
 use crate::node_info_handler::node_info_handler;
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
 use crate::ui_handler::ui_handler;
@@ -69,8 +69,8 @@ pub(crate) async fn start_rest_server(
         .or(elastic_bulk_handler(
             quickwit_services.ingest_api_service.clone(),
         ))
-        .or(index_management_handlers(
-            quickwit_services.index_service.clone(),
+        .or(metastore_api_handlers(
+            quickwit_services.metastore_service_local.clone(),
         ));
     let api_v1_root_route = api_v1_root_url.and(api_v1_routes);
     let redirect_root_to_ui_route =

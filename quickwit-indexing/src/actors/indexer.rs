@@ -30,9 +30,10 @@ use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::IndexingSettings;
+use quickwit_control_plane::MetastoreService;
 use quickwit_doc_mapper::{DocMapper, DocParsingError, SortBy, QUICKWIT_TOKENIZER_MANAGER};
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
-use quickwit_metastore::Metastore;
+use quickwit_proto::metastore_api::PublishSplitsRequest;
 use tantivy::schema::{Field, Schema, Value};
 use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
@@ -302,7 +303,7 @@ pub struct Indexer {
     indexer_state: IndexerState,
     packager_mailbox: Mailbox<Packager>,
     indexing_workbench_opt: Option<IndexingWorkbench>,
-    metastore: Arc<dyn Metastore>,
+    metastore_service: MetastoreService,
     counters: IndexerCounters,
 }
 
@@ -401,7 +402,7 @@ impl Indexer {
         index_id: String,
         doc_mapper: Arc<dyn DocMapper>,
         source_id: String,
-        metastore: Arc<dyn Metastore>,
+        metastore_service: MetastoreService,
         indexing_directory: IndexingDirectory,
         indexing_settings: IndexingSettings,
         packager_mailbox: Mailbox<Packager>,
@@ -436,7 +437,7 @@ impl Indexer {
             },
             packager_mailbox,
             indexing_workbench_opt: None,
-            metastore,
+            metastore_service,
             counters: IndexerCounters::default(),
         }
     }
@@ -487,13 +488,16 @@ impl Indexer {
         // Avoid producing empty split, but still update the checkpoint to avoid
         // reprocessing the same faulty documents.
         if splits.is_empty() {
-            self.metastore
-                .publish_splits(
-                    &self.indexer_state.index_id,
-                    &[],
-                    &[],
-                    Some(checkpoint_delta),
-                )
+            let index_checkpoint_delta_serialized_json =
+                Some(serde_json::to_string(&checkpoint_delta)?);
+            let publish_request = PublishSplitsRequest {
+                index_id: self.indexer_state.index_id.clone(),
+                split_ids: Vec::new(),
+                replaced_split_ids: Vec::new(),
+                index_checkpoint_delta_serialized_json,
+            };
+            self.metastore_service
+                .publish_splits(publish_request)
                 .await
                 .with_context(|| {
                     format!(
@@ -530,6 +534,7 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_control_plane::MetastoreService;
     use quickwit_doc_mapper::{DefaultDocMapper, SortOrder};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_metastore::MockMetastore;
@@ -567,17 +572,17 @@ mod tests {
                 assert!(splits.is_empty());
                 Ok(())
             });
-
+        let universe = Universe::new();
+        let metastore_service = MetastoreService::from_metastore(Arc::new(metastore));
         let indexer = Indexer::new(
             "test-index".to_string(),
             doc_mapper,
             "source-id".to_string(),
-            Arc::new(metastore),
+            metastore_service,
             indexing_directory,
             indexing_settings,
             mailbox,
         );
-        let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
         indexer_mailbox
             .send_message(RawDocBatch {
@@ -651,17 +656,17 @@ mod tests {
                 assert!(splits.is_empty());
                 Ok(())
             });
-
+        let universe = Universe::new();
+        let metastore_service = MetastoreService::from_metastore(Arc::new(metastore));
         let indexer = Indexer::new(
             "test-index".to_string(),
             doc_mapper,
             "source-id".to_string(),
-            Arc::new(metastore),
+            metastore_service,
             indexing_directory,
             indexing_settings,
             mailbox,
         );
-        let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
         indexer_mailbox
             .send_message(
@@ -721,16 +726,17 @@ mod tests {
                 assert!(splits.is_empty());
                 Ok(())
             });
+        let universe = Universe::new();
+        let metastore_service = MetastoreService::from_metastore(Arc::new(metastore));
         let indexer = Indexer::new(
             "test-index".to_string(),
             doc_mapper,
             "source-id".to_string(),
-            Arc::new(metastore),
+            metastore_service,
             indexing_directory,
             indexing_settings,
             mailbox,
         );
-        let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
         indexer_mailbox
             .send_message(
@@ -794,17 +800,17 @@ mod tests {
                 assert!(splits.is_empty());
                 Ok(())
             });
-
+        let universe = Universe::new();
+        let metastore_service = MetastoreService::from_metastore(Arc::new(metastore));
         let indexer = Indexer::new(
             "test-index".to_string(),
             doc_mapper,
             "source-id".to_string(),
-            Arc::new(metastore),
+            metastore_service,
             indexing_directory,
             indexing_settings,
             mailbox,
         );
-        let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
         indexer_mailbox
             .send_message(RawDocBatch {

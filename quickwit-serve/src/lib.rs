@@ -27,9 +27,9 @@ mod rest;
 
 mod cluster_api;
 mod health_check_api;
-mod index_api;
 mod indexing_api;
 mod ingest_api;
+mod metastore_api;
 mod node_info_handler;
 mod search_api;
 mod ui_handler;
@@ -43,7 +43,7 @@ use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::{Cluster, QuickwitService};
 use quickwit_common::uri::Uri;
 use quickwit_config::QuickwitConfig;
-use quickwit_core::IndexService;
+use quickwit_control_plane::MetastoreService;
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexer_service;
 use quickwit_ingest_api::{init_ingest_api, IngestApiService};
@@ -87,7 +87,7 @@ struct QuickwitServices {
     pub search_service: Arc<dyn SearchService>,
     pub indexer_service: Option<Mailbox<IndexingService>>,
     pub ingest_api_service: Option<Mailbox<IngestApiService>>,
-    pub index_service: Arc<IndexService>,
+    pub metastore_service_local: Option<MetastoreService>,
     pub services: HashSet<QuickwitService>,
 }
 
@@ -121,12 +121,32 @@ pub async fn serve_quickwit(
         None
     };
 
+    // Start local [`MetastoreService`] only on the Control Plane.
+    let metastore_service_local: Option<MetastoreService> =
+        if services.contains(&QuickwitService::ControlPlane) {
+            Some(MetastoreService::from_metastore(metastore.clone()))
+        } else {
+            None
+        };
+
     let indexer_service: Option<Mailbox<IndexingService>> =
         if services.contains(&QuickwitService::Indexer) {
+            // In a single mode deployement, the indexer is running alongside with the control
+            // plane. In this case, it's better to directly use the available local
+            // metastore service. If not, we use the metastore service client.
+            let metastore_service = if let Some(service) = &metastore_service_local {
+                service.clone()
+            } else {
+                MetastoreService::create_and_update_grpc_service_from_members(
+                    &cluster.members(),
+                    cluster.member_change_watcher(),
+                )
+                .await?
+            };
             let indexer_service = start_indexer_service(
                 &universe,
                 &config,
-                metastore.clone(),
+                metastore_service,
                 storage_resolver.clone(),
                 ingest_api_service.clone(),
             )
@@ -144,12 +164,6 @@ pub async fn serve_quickwit(
     )
     .await?;
 
-    // Always instanciate index management service.
-    let index_service = Arc::new(IndexService::new(
-        metastore,
-        storage_resolver,
-        config.default_index_root_uri.clone(),
-    ));
     let grpc_listen_addr = config.grpc_listen_addr;
     let rest_listen_addr = config.rest_listen_addr;
 
@@ -160,7 +174,7 @@ pub async fn serve_quickwit(
         ingest_api_service,
         search_service,
         indexer_service,
-        index_service,
+        metastore_service_local,
         services: services.clone(),
     };
     let grpc_server = grpc::start_grpc_server(grpc_listen_addr, &quickwit_services);

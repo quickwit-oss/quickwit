@@ -19,7 +19,6 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{
@@ -29,9 +28,11 @@ use quickwit_actors::{
 use quickwit_config::{
     IndexerConfig, IngestApiSourceParams, SourceConfig, SourceParams, VecSourceParams,
 };
+use quickwit_control_plane::MetastoreService;
 use quickwit_ingest_api::IngestApiService;
-use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
+use quickwit_metastore::{IndexMetadata, MetastoreError};
 use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
+use quickwit_proto::metastore_api::IndexMetadataRequest;
 use quickwit_storage::{StorageResolverError, StorageUriResolver};
 use serde::Serialize;
 use thiserror::Error;
@@ -73,7 +74,7 @@ pub struct IndexingService {
     indexing_dir_path: PathBuf,
     split_store_max_num_bytes: usize,
     split_store_max_num_splits: usize,
-    metastore: Arc<dyn Metastore>,
+    metastore_service: MetastoreService,
     storage_resolver: StorageUriResolver,
     pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     state: IndexingServiceState,
@@ -89,7 +90,7 @@ impl IndexingService {
     pub fn new(
         data_dir_path: PathBuf,
         indexer_config: IndexerConfig,
-        metastore: Arc<dyn Metastore>,
+        metastore_service: MetastoreService,
         storage_resolver: StorageUriResolver,
         ingest_api_service: Option<Mailbox<IngestApiService>>,
     ) -> IndexingService {
@@ -98,7 +99,7 @@ impl IndexingService {
             split_store_max_num_bytes: indexer_config.split_store_max_num_bytes.get_bytes()
                 as usize,
             split_store_max_num_splits: indexer_config.split_store_max_num_splits,
-            metastore,
+            metastore_service,
             storage_resolver,
             pipeline_handles: Default::default(),
             state: Default::default(),
@@ -217,7 +218,7 @@ impl IndexingService {
             self.indexing_dir_path.clone(),
             self.split_store_max_num_bytes,
             self.split_store_max_num_splits,
-            self.metastore.clone(),
+            self.metastore_service.clone(),
             storage,
         )
         .await
@@ -285,12 +286,24 @@ impl IndexingService {
     }
 
     async fn index_metadata(
-        &self,
+        &mut self,
         index_id: &str,
         ctx: &ActorContext<Self>,
     ) -> Result<IndexMetadata, IndexingServiceError> {
         let _protect_guard = ctx.protect_zone();
-        let index_metadata = self.metastore.index_metadata(index_id).await?;
+        let index_metadata_response = self
+            .metastore_service
+            .index_metadata(IndexMetadataRequest {
+                index_id: index_id.to_string(),
+            })
+            .await?;
+        let index_metadata = serde_json::from_str(
+            &index_metadata_response.index_metadata_serialized_json,
+        )
+        .map_err(|error| MetastoreError::InternalError {
+            message: "Cannot deserialized `IndexMetadata` returned by the metastore".to_string(),
+            cause: error.to_string(),
+        })?;
         Ok(index_metadata)
     }
 }
@@ -457,6 +470,7 @@ mod tests {
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
     use quickwit_config::VecSourceParams;
+    use quickwit_control_plane::MetastoreService;
     use quickwit_metastore::quickwit_metastore_uri_resolver;
 
     use super::*;
@@ -480,10 +494,11 @@ mod tests {
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
         let storage_resolver = StorageUriResolver::for_test();
+        let metastore_service = MetastoreService::from_metastore(metastore.clone());
         let indexing_server = IndexingService::new(
             data_dir_path,
             indexer_config,
-            metastore.clone(),
+            metastore_service,
             storage_resolver.clone(),
             None,
         );

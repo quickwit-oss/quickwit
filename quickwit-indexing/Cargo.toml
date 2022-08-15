@@ -29,6 +29,7 @@ quickwit-common = { version = "0.3.1", path = "../quickwit-common" }
 quickwit-config = { version = "0.3.1", path = "../quickwit-config", features = [
   "testsuite"
 ] }
+quickwit-control-plane = { path = "../quickwit-control-plane", version = "0.3.1" }
 quickwit-directories = { version = "0.3.1", path = "../quickwit-directories" }
 quickwit-doc-mapper = { version = "0.3.1", path = "../quickwit-doc-mapper", features = [
     "testsuite",

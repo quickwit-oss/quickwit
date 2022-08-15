@@ -7,9 +7,9 @@ members = [
   "quickwit-cluster",
   "quickwit-common",
   "quickwit-config",
-  "quickwit-core",
   "quickwit-directories",
   "quickwit-doc-mapper",
+  "quickwit-control-plane",
   "quickwit-indexing",
   "quickwit-ingest-api",
   "quickwit-metastore",
@@ -22,3 +22,4 @@ members = [
 
 [profile.dev]
 debug = 0
+

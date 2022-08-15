@@ -75,9 +75,13 @@ impl RunCliCommand {
                 let service = QuickwitService::try_from(service_str)?;
                 iter::once(service).collect()
             } else {
-                [QuickwitService::Indexer, QuickwitService::Searcher]
-                    .into_iter()
-                    .collect()
+                [
+                    QuickwitService::Indexer,
+                    QuickwitService::Searcher,
+                    QuickwitService::ControlPlane,
+                ]
+                .into_iter()
+                .collect()
             };
         let metastore_uri = matches
             .value_of("metastore-uri")
@@ -156,7 +160,7 @@ mod tests {
                 services,
                 ..
             })
-            if config_uri == expected_config_uri && services.len() == 2
+            if config_uri == expected_config_uri && services.len() == 3
         ));
         Ok(())
     }

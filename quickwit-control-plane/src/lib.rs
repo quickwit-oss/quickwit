@@ -17,6 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod rest_handler;
+mod index;
+mod metastore_service;
 
-pub use self::rest_handler::index_management_handlers;
+pub use index::{
+    create_index, delete_index, FileEntry, SplitDeletionError, MAX_CONCURRENT_STORAGE_REQUESTS,
+};
+pub use metastore_service::MetastoreService;

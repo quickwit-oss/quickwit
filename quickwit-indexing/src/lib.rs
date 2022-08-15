@@ -17,13 +17,19 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::Arc;
+use std::io;
+use std::path::{Path, PathBuf};
 
+use actors::INDEXING_DIR_NAME;
 use itertools::Itertools;
+use models::CACHE;
 use quickwit_actors::{Mailbox, Universe};
+use quickwit_common::fs::empty_dir;
 use quickwit_config::QuickwitConfig;
+use quickwit_control_plane::MetastoreService;
 use quickwit_ingest_api::IngestApiService;
-use quickwit_metastore::Metastore;
+use quickwit_metastore::IndexMetadata;
+use quickwit_proto::metastore_api::ListIndexesMetadatasRequest;
 use quickwit_storage::StorageUriResolver;
 use tracing::info;
 
@@ -48,9 +54,7 @@ mod test_utils;
 
 pub use test_utils::{mock_split, mock_split_meta, TestSandbox};
 
-pub use self::garbage_collection::{
-    delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
-};
+pub use self::garbage_collection::{delete_splits_with_files, run_garbage_collect};
 use self::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 pub use self::source::check_source_connectivity;
 
@@ -61,7 +65,7 @@ pub fn new_split_id() -> String {
 pub async fn start_indexer_service(
     universe: &Universe,
     config: &QuickwitConfig,
-    metastore: Arc<dyn Metastore>,
+    mut metastore_service: MetastoreService,
     storage_uri_resolver: StorageUriResolver,
     ingest_api_service: Option<Mailbox<IngestApiService>>,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
@@ -69,13 +73,17 @@ pub async fn start_indexer_service(
     let indexing_server = IndexingService::new(
         config.data_dir_path.to_path_buf(),
         config.indexer_config.clone(),
-        metastore.clone(),
+        metastore_service.clone(),
         storage_uri_resolver,
         ingest_api_service.clone(),
     );
     let (indexer_service_mailbox, _) = universe.spawn_actor(indexing_server).spawn();
 
-    let index_metadatas = metastore.list_indexes_metadatas().await?;
+    let indexes_metadatas_response = metastore_service
+        .list_indexes_metadatas(ListIndexesMetadatasRequest {})
+        .await?;
+    let index_metadatas: Vec<IndexMetadata> =
+        serde_json::from_str(&indexes_metadatas_response.indexes_metadatas_serialized_json)?;
     info!(index_ids = %index_metadatas.iter().map(|im| &im.index_id).join(", "), "Spawning indexing pipeline(s).");
 
     for index_metadata in index_metadatas {
@@ -89,7 +97,7 @@ pub async fn start_indexer_service(
     // IngestApi garbage collector
     if let Some(ingest_api_service_mailbox) = ingest_api_service {
         let ingest_api_garbage_collector = IngestApiGarbageCollector::new(
-            metastore,
+            metastore_service,
             ingest_api_service_mailbox,
             indexer_service_mailbox.clone(),
         );
@@ -97,4 +105,45 @@ pub async fn start_indexer_service(
     }
 
     Ok(indexer_service_mailbox)
+}
+
+/// Helper function to get the cache path.
+pub fn get_cache_directory_path(data_dir_path: &Path, index_id: &str, source_id: &str) -> PathBuf {
+    data_dir_path
+        .join(INDEXING_DIR_NAME)
+        .join(index_id)
+        .join(source_id)
+        .join(CACHE)
+}
+
+/// Clears the cache directory of a given source.
+///
+/// * `data_dir_path` - Path to directory where data (tmp data, splits kept for caching purpose) is
+///   persisted.
+/// * `index_id` - The target index Id.
+/// * `source_id` -  The source Id.
+pub async fn clear_cache_directory(
+    data_dir_path: &Path,
+    index_id: String,
+    source_id: String,
+) -> anyhow::Result<()> {
+    let cache_directory_path = get_cache_directory_path(data_dir_path, &index_id, &source_id);
+    info!(path = %cache_directory_path.display(), "Clearing cache directory.");
+    empty_dir(&cache_directory_path).await?;
+    Ok(())
+}
+
+/// Removes the indexing directory of a given index.
+///
+/// * `data_dir_path` - Path to directory where data (tmp data, splits kept for caching purpose) is
+///   persisted.
+/// * `index_id` - The target index ID.
+pub async fn remove_indexing_directory(data_dir_path: &Path, index_id: String) -> io::Result<()> {
+    let indexing_directory_path = data_dir_path.join(INDEXING_DIR_NAME).join(index_id);
+    info!(path = %indexing_directory_path.display(), "Clearing indexing directory.");
+    match tokio::fs::remove_dir_all(indexing_directory_path.as_path()).await {
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
 }

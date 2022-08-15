@@ -27,6 +27,7 @@ use anyhow::bail;
 use chitchat::transport::UdpTransport;
 use chitchat::FailureDetectorConfig;
 use quickwit_config::QuickwitConfig;
+use serde::{Deserialize, Serialize};
 
 pub use crate::cluster::{
     create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster, ClusterMember,
@@ -41,10 +42,11 @@ fn unix_timestamp() -> u64 {
     duration_since_epoch.as_secs()
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum QuickwitService {
     Indexer,
     Searcher,
+    ControlPlane,
 }
 
 impl QuickwitService {
@@ -52,6 +54,7 @@ impl QuickwitService {
         match self {
             QuickwitService::Indexer => "indexer",
             QuickwitService::Searcher => "searcher",
+            QuickwitService::ControlPlane => "control-plane",
         }
     }
 }
@@ -63,6 +66,7 @@ impl TryFrom<&str> for QuickwitService {
         match service_str {
             "indexer" => Ok(QuickwitService::Indexer),
             "searcher" => Ok(QuickwitService::Searcher),
+            "control-plane" => Ok(QuickwitService::ControlPlane),
             _ => {
                 bail!("Service `{service_str}` unknown");
             }
@@ -77,7 +81,7 @@ pub async fn start_cluster_service(
     let member = ClusterMember::new(
         quickwit_config.node_id.clone(),
         unix_timestamp(),
-        quickwit_config.grpc_advertise_addr,
+        quickwit_config.gossip_advertise_addr,
         services.clone(),
         quickwit_config.grpc_listen_addr,
     );

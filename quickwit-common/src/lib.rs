@@ -54,6 +54,27 @@ pub fn split_file(split_id: &str) -> String {
     format!("{}.split", split_id)
 }
 
+pub fn extract_time_range(
+    start_timestamp_opt: Option<i64>,
+    end_timestamp_opt: Option<i64>,
+) -> Option<Range<i64>> {
+    match (start_timestamp_opt, end_timestamp_opt) {
+        (Some(start_timestamp), Some(end_timestamp)) => Some(Range {
+            start: start_timestamp,
+            end: end_timestamp,
+        }),
+        (_, Some(end_timestamp)) => Some(Range {
+            start: i64::MIN,
+            end: end_timestamp,
+        }),
+        (Some(start_timestamp), _) => Some(Range {
+            start: start_timestamp,
+            end: i64::MAX,
+        }),
+        _ => None,
+    }
+}
+
 pub fn get_from_env<T: FromStr + Debug>(key: &str, default_value: T) -> T {
     if let Ok(value_str) = std::env::var(key) {
         if let Ok(value) = T::from_str(&value_str) {

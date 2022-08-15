@@ -42,13 +42,13 @@ mod metrics;
 mod tests;
 
 use metrics::SEARCH_METRICS;
+use quickwit_common::extract_time_range;
 
 /// Refer to this as `crate::Result<T>`.
 pub type Result<T> = std::result::Result<T, SearchError>;
 
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
-use std::ops::Range;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -102,27 +102,6 @@ fn partial_hit_sorting_key(partial_hit: &PartialHit) -> (Reverse<u64>, GlobalDoc
         Reverse(partial_hit.sorting_field_value),
         GlobalDocAddress::from_partial_hit(partial_hit),
     )
-}
-
-fn extract_time_range(
-    start_timestamp_opt: Option<i64>,
-    end_timestamp_opt: Option<i64>,
-) -> Option<Range<i64>> {
-    match (start_timestamp_opt, end_timestamp_opt) {
-        (Some(start_timestamp), Some(end_timestamp)) => Some(Range {
-            start: start_timestamp,
-            end: end_timestamp,
-        }),
-        (_, Some(end_timestamp)) => Some(Range {
-            start: i64::MIN,
-            end: end_timestamp,
-        }),
-        (Some(start_timestamp), _) => Some(Range {
-            start: start_timestamp,
-            end: i64::MAX,
-        }),
-        _ => None,
-    }
 }
 
 fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAndFooterOffsets {
