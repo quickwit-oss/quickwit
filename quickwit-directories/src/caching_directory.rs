@@ -66,7 +66,7 @@ impl CachingDirectory {
     /// Warming: The resulting CacheDirectory will cache all information without ever
     /// removing any item from the cache.
     /// Prefer using `.new_with_capacity_in_bytes(...)` in most case.
-    pub fn new_with_unlimited_capacity(underlying: Arc<dyn Directory>) -> CachingDirectory {
+    pub fn new_unbounded(underlying: Arc<dyn Directory>) -> CachingDirectory {
         CachingDirectory {
             underlying,
             cache: Arc::new(MemorySizedCache::with_infinite_capacity(
