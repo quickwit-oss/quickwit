@@ -56,7 +56,7 @@ use itertools::Itertools;
 use quickwit_cluster::Cluster;
 use quickwit_config::{build_doc_mapper, QuickwitConfig, SEARCHER_CONFIG_INSTANCE};
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
-use quickwit_doc_mapper::DocMapper;
+use quickwit_doc_mapper::{DocMapper, SortBy};
 use quickwit_metastore::{Metastore, SplitMetadata, SplitState};
 use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
@@ -174,8 +174,21 @@ fn convert_leaf_hit(
     leaf_hit: quickwit_proto::LeafHit,
     doc_mapper: &dyn DocMapper,
 ) -> crate::Result<quickwit_proto::Hit> {
-    let hit_json: BTreeMap<String, Vec<JsonValue>> = serde_json::from_str(&leaf_hit.leaf_json)
+    let mut hit_json: BTreeMap<String, Vec<JsonValue>> = serde_json::from_str(&leaf_hit.leaf_json)
         .map_err(|_| SearchError::InternalError("Invalid leaf json.".to_string()))?;
+    if let SortBy::Score { .. } = doc_mapper.sort_by() {
+        hit_json.insert(
+            "_score".to_string(),
+            vec![JsonValue::Number(
+                leaf_hit
+                    .partial_hit
+                    .as_ref()
+                    .expect("IDK HOW THIS IS NONE")
+                    .sorting_field_value
+                    .into(),
+            )],
+        );
+    }
     let doc = doc_mapper.doc_to_json(hit_json)?;
     let json = serde_json::to_string(&doc).expect("Json serialization should never fail.");
     Ok(quickwit_proto::Hit {
