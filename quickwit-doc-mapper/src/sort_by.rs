@@ -134,8 +134,8 @@ fn validate_sort_by_score(
         for field in fields {
             if !schema.get_field_entry(*field).has_fieldnorms() {
                 bail!(
-                    "Fieldnorms for field: \"{}\" is disabled. To calculate BM25 score fieldnorms \
-                     must be enabled for the field.",
+                    "Fieldnorms for field `{}` is missing. Fieldnorms must be stored for the \
+                     field to compute the BM25 score of the documents.",
                     schema.get_field_name(*field)
                 )
             }

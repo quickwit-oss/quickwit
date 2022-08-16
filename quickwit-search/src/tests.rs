@@ -323,30 +323,42 @@ async fn single_node_search_sort_by_field(
     sort_by_field: &str,
     fieldnorms_enabled: bool,
 ) -> anyhow::Result<()> {
-    let fieldnorms_str = if fieldnorms_enabled {
-        "fieldnorms: true"
-    } else {
-        ""
-    };
     let index_id = "single-node-sorting-sort-by-".to_string()
         + sort_by_field
         + "fieldnorms-"
         + &fieldnorms_enabled.to_string();
-    let doc_mapping_yaml = format!(
-        r#"
-                field_mappings:
-                  - name: description
-                    type: text
-                    {}
-                  - name: ts
-                    type: i64
-                    fast: true
-                  - name: temperature
-                    type: i64
-                    fast: true
-            "#,
-        fieldnorms_str
-    );
+
+    let doc_mapping_with_fieldnorms = r#"
+            field_mappings:
+              - name: description
+                type: text
+                fieldnorms: true
+              - name: ts
+                type: i64
+                fast: true
+              - name: temperature
+                type: i64
+                fast: true
+            "#;
+
+    let doc_mapping_without_fieldnorms = r#"
+            field_mappings:
+              - name: description
+                type: text
+              - name: ts
+                type: i64
+                fast: true
+              - name: temperature
+                type: i64
+                fast: true
+            "#;
+
+    let doc_mapping_yaml = if fieldnorms_enabled {
+        doc_mapping_with_fieldnorms
+    } else {
+        doc_mapping_without_fieldnorms
+    };
+
     let indexing_settings_json = r#"{
             "timestamp_field": "ts",
             "sort_field": "ts",
@@ -354,7 +366,7 @@ async fn single_node_search_sort_by_field(
         }"#;
     let test_sandbox = TestSandbox::create(
         &index_id,
-        doc_mapping_yaml.as_str(),
+        doc_mapping_yaml,
         indexing_settings_json,
         &["description"],
     )
@@ -410,8 +422,8 @@ async fn test_single_node_sort_by_score_should_fail() -> anyhow::Result<()> {
     assert_eq!(
         search_response.err().map(|err| err.to_string()),
         Some(
-            "Invalid query: Fieldnorms for field: \"description\" is disabled. To calculate BM25 \
-             score fieldnorms must be enabled for the field."
+            "Invalid query: Fieldnorms for field `description` is missing. Fieldnorms must be \
+             stored for the field to compute the BM25 score of the documents."
                 .to_string()
         )
     );
