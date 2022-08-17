@@ -20,6 +20,7 @@
 use std::collections::BTreeSet;
 
 use assert_json_diff::assert_json_include;
+use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DefaultDocMapper;
 use quickwit_indexing::TestSandbox;
 use quickwit_proto::{LeafHit, SearchRequest, SortOrder};
@@ -578,7 +579,9 @@ async fn test_search_dynamic_util(test_sandbox: &TestSandbox, query: &str) -> Ve
         max_hits: 100,
         ..Default::default()
     };
+    let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
     let search_response = leaf_search(
+        searcher_context,
         &request,
         test_sandbox.storage(),
         &splits_offsets,

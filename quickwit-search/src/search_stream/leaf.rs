@@ -23,8 +23,6 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use futures::{FutureExt, StreamExt};
-use once_cell::sync::OnceCell;
-use quickwit_config::get_searcher_config_instance;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::{
     LeafSearchStreamResponse, OutputFormat, SearchRequest, SearchStreamRequest,
@@ -35,7 +33,6 @@ use tantivy::fastfield::FastValue;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema, Type};
 use tantivy::{ReloadPolicy, Searcher};
-use tokio::sync::{Semaphore, SemaphorePermit};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::*;
 
@@ -43,24 +40,8 @@ use super::collector::{PartionnedFastFieldCollector, PartitionValues};
 use super::FastFieldCollector;
 use crate::filters::TimestampFilterBuilder;
 use crate::leaf::{open_index, warmup};
+use crate::service::SearcherContext;
 use crate::{Result, SearchError};
-
-fn get_max_num_concurrent_split_streams() -> usize {
-    get_searcher_config_instance().max_num_concurrent_split_streams
-}
-
-async fn get_split_stream_permit() -> SemaphorePermit<'static> {
-    static INSTANCE: OnceCell<Semaphore> = OnceCell::new();
-    INSTANCE
-        .get_or_init(|| {
-            let max_num_concurrent_split_streams =
-                get_max_num_concurrent_split_streams();
-            Semaphore::new(max_num_concurrent_split_streams)
-        })
-        .acquire()
-        .await
-        .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
-}
 
 /// `leaf` step of search stream.
 // Note: we return a stream of a result with a tonic::Status error
@@ -70,6 +51,7 @@ async fn get_split_stream_permit() -> SemaphorePermit<'static> {
 // to tonic::Status as tonic::Status is required by the stream result
 // signature defined by proto generated code.
 pub async fn leaf_search_stream(
+    searcher_context: Arc<SearcherContext>,
     request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
@@ -79,7 +61,9 @@ pub async fn leaf_search_stream(
     let span = info_span!("leaf_search_stream",);
     tokio::spawn(
         async move {
-            let mut stream = leaf_search_results_stream(request, storage, splits, doc_mapper).await;
+            let mut stream =
+                leaf_search_results_stream(searcher_context, request, storage, splits, doc_mapper)
+                    .await;
             while let Some(item) = stream.next().await {
                 if let Err(error) = result_sender.send(item) {
                     error!(
@@ -96,15 +80,19 @@ pub async fn leaf_search_stream(
 }
 
 async fn leaf_search_results_stream(
+    searcher_context: Arc<SearcherContext>,
     request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
     doc_mapper: Arc<dyn DocMapper>,
 ) -> impl futures::Stream<Item = crate::Result<LeafSearchStreamResponse>> + Sync + Send + 'static {
-    let max_num_concurrent_split_streams = get_max_num_concurrent_split_streams();
+    let max_num_concurrent_split_streams = searcher_context
+        .searcher_config
+        .max_num_concurrent_split_streams;
     futures::stream::iter(splits)
         .map(move |split| {
             leaf_search_stream_single_split(
+                searcher_context.clone(),
                 split,
                 doc_mapper.clone(),
                 request.clone(),
@@ -116,16 +104,21 @@ async fn leaf_search_results_stream(
 }
 
 /// Apply a leaf search on a single split.
-#[instrument(fields(split_id = %split.split_id), skip(split, doc_mapper, stream_request, storage))]
+#[instrument(fields(split_id = %split.split_id), skip(searcher_context, split, doc_mapper, stream_request, storage))]
 async fn leaf_search_stream_single_split(
+    searcher_context: Arc<SearcherContext>,
     split: SplitIdAndFooterOffsets,
     doc_mapper: Arc<dyn DocMapper>,
     stream_request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchStreamResponse> {
-    let _leaf_split_stream_permit = get_split_stream_permit().await;
+    let _leaf_split_stream_permit = searcher_context
+        .split_stream_semaphore
+        .acquire()
+        .await
+        .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
 
-    let index = open_index(storage, &split).await?;
+    let index = open_index(&searcher_context, storage, &split).await?;
     let split_schema = index.schema();
 
     let request_fields = Arc::new(SearchStreamRequestFields::from_request(
@@ -442,6 +435,7 @@ mod tests {
     use std::convert::TryInto;
     use std::str::from_utf8;
 
+    use quickwit_config::SearcherConfig;
     use quickwit_indexing::TestSandbox;
     use serde_json::json;
     use tantivy::time::{Duration, OffsetDateTime};
@@ -501,7 +495,9 @@ mod tests {
                 split_footer_end: split_meta.split_metadata.footer_offsets.end,
             })
             .collect();
+        let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
         let mut single_node_stream = leaf_search_stream(
+            searcher_context,
             request,
             test_sandbox.storage(),
             splits_offsets,
@@ -577,7 +573,9 @@ mod tests {
                 split_footer_end: split_meta.split_metadata.footer_offsets.end,
             })
             .collect();
+        let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
         let mut single_node_stream = leaf_search_stream(
+            searcher_context,
             request,
             test_sandbox.storage(),
             splits_offsets,
@@ -630,7 +628,9 @@ mod tests {
                 split_footer_end: split_meta.split_metadata.footer_offsets.end,
             })
             .collect();
+        let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
         let mut single_node_stream = leaf_search_stream(
+            searcher_context,
             request,
             test_sandbox.storage(),
             splits_offsets,
@@ -725,7 +725,9 @@ mod tests {
                 split_footer_end: split_meta.split_metadata.footer_offsets.end,
             })
             .collect();
+        let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
         let mut single_node_stream = leaf_search_stream(
+            searcher_context,
             request,
             test_sandbox.storage(),
             splits_offsets,

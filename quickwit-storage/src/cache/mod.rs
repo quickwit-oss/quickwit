@@ -28,11 +28,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use once_cell::sync::OnceCell;
+pub use quickwit_cache::QuickwitCache;
+pub use storage_with_cache::StorageWithCache;
 
 pub use self::memory_sized_cache::MemorySizedCache;
-use crate::cache::quickwit_cache::QuickwitCache;
-use crate::cache::storage_with_cache::StorageWithCache;
 use crate::{OwnedBytes, Storage};
 
 /// Wraps the given directory with a slice cache that is actually global
@@ -43,12 +42,14 @@ use crate::{OwnedBytes, Storage};
 /// - it relies on the idea that all of the files we attempt to cache
 /// have universally unique names. It happens to be true today, but this might be very error prone
 /// in the future.
-pub fn wrap_storage_with_long_term_cache(storage: Arc<dyn Storage>) -> Arc<dyn Storage> {
-    static SINGLETON: OnceCell<Arc<dyn Cache>> = OnceCell::new();
-    let cache = SINGLETON
-        .get_or_init(|| Arc::new(QuickwitCache::default()))
-        .clone();
-    Arc::new(StorageWithCache { storage, cache })
+pub fn wrap_storage_with_long_term_cache(
+    long_term_cache: Arc<dyn Cache>,
+    storage: Arc<dyn Storage>,
+) -> Arc<dyn Storage> {
+    Arc::new(StorageWithCache {
+        storage,
+        cache: long_term_cache,
+    })
 }
 
 /// The `Cache` trait is the abstraction used to describe the caching logic
