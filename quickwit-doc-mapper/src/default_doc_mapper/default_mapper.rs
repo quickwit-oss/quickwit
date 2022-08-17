@@ -65,7 +65,7 @@ impl From<SortByConfig> for SortBy {
 }
 
 /// Defines how an unmapped field should be handled.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) enum Mode {
     Lenient,
     Strict,

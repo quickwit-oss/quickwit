@@ -267,7 +267,11 @@ pub async fn start_searcher_service(
     SEARCHER_CONFIG_INSTANCE
         .set(quickwit_config.searcher_config.clone())
         .expect("could not set searcher config in global once cell");
-    let client_pool = SearchClientPool::create_and_keep_updated(cluster).await?;
+    let client_pool = SearchClientPool::create_and_keep_updated(
+        &cluster.members(),
+        cluster.member_change_watcher(),
+    )
+    .await?;
     let cluster_client = ClusterClient::new(client_pool.clone());
     let search_service = Arc::new(SearchServiceImpl::new(
         metastore,

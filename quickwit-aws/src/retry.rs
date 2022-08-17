@@ -34,7 +34,7 @@ pub trait Retryable {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Retry<E> {
     Transient(E),
     Permanent(E),

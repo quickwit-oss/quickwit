@@ -106,7 +106,7 @@ impl FromStr for Protocol {
 
 const PROTOCOL_SEPARATOR: &str = "://";
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Extension {
     Json,
     Toml,
@@ -127,7 +127,7 @@ impl Extension {
 }
 
 /// Encapsulates the URI type.
-#[derive(PartialEq, Eq, Hash, Clone)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub struct Uri {
     uri: String,
     protocol_idx: usize,

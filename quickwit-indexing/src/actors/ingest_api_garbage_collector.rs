@@ -39,7 +39,7 @@ const RUN_INTERVAL: Duration = if cfg!(test) {
     Duration::from_secs(60 * 60) // 1h
 };
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct IngestApiGarbageCollectorCounters {
     /// The number of passes the garbage collector has performed.
     pub num_passes: usize,

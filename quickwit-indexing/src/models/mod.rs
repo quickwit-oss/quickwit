@@ -42,5 +42,5 @@ pub use publisher_message::SplitUpdate;
 pub use raw_doc_batch::RawDocBatch;
 pub use scratch_directory::ScratchDirectory;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Clone, Copy, Debug)]
 pub struct Observe;

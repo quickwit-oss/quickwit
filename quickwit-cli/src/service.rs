@@ -52,7 +52,7 @@ pub fn build_run_command<'a>() -> Command<'a> {
         ])
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct RunCliCommand {
     pub config_uri: Uri,
     pub data_dir_path: Option<PathBuf>,

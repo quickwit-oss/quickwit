@@ -78,7 +78,7 @@ where D: Deserializer<'de> {
 
 /// This struct represents the QueryString passed to
 /// the rest API.
-#[derive(Deserialize, Debug, PartialEq, Eq, Default)]
+#[derive(Deserialize, Debug, Eq, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct SearchRequestQueryString {
     /// Query text. The query language is that of tantivy.
@@ -208,7 +208,7 @@ pub fn search_stream_handler(
 
 /// This struct represents the search stream query passed to
 /// the REST API.
-#[derive(Deserialize, Debug, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct SearchStreamRequestQueryString {
     /// Query text. The query language is that of tantivy.

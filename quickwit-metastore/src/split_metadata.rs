@@ -28,7 +28,7 @@ use time::OffsetDateTime;
 use crate::VersionedSplitMetadataDeserializeHelper;
 
 /// Carries split metadata.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Split {
     /// The state of the split.
     pub split_state: SplitState,
@@ -51,7 +51,7 @@ impl Split {
 /// Carries immutable split metadata.
 /// This struct can deserialize older format automatically
 /// but can only serialize to the last version.
-#[derive(Clone, Eq, PartialEq, Default, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(into = "VersionedSplitMetadataDeserializeHelper")]
 pub struct SplitMetadata {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
@@ -126,7 +126,7 @@ impl SplitMetadata {
 }
 
 /// A split state.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub enum SplitState {
     /// The split is almost ready. Some of its files may have been uploaded in the storage.
     Staged,

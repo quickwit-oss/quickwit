@@ -70,13 +70,13 @@ pub struct PingerSenderActor {
     peers: HashMap<String, Mailbox<PingReceiverActor>>,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SenderState {
     pub count: usize,
     pub num_peers: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct AddPeer(Mailbox<PingReceiverActor>);
 
 impl Actor for PingerSenderActor {
@@ -202,10 +202,10 @@ async fn test_ping_actor() {
 
 struct BuggyActor;
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 struct DoNothing;
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 struct Block;
 
 impl Actor for BuggyActor {
@@ -310,7 +310,7 @@ async fn test_actor_running_states() {
     assert_eq!(ping_handle.state(), ActorState::Idle);
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Clone, Debug, Default)]
 struct LoopingActor {
     pub loop_count: usize,
     pub single_shot_count: usize,

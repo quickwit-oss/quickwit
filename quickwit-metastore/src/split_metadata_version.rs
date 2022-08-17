@@ -89,7 +89,7 @@ impl From<SplitMetadataAndFooterV0> for SplitMetadata {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Default, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub(crate) struct SplitMetadataV1 {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
