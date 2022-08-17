@@ -20,7 +20,7 @@
 use anyhow::{bail, Context};
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
-use tantivy::schema::{FieldType, Schema};
+use tantivy::schema::{Field, FieldType, Schema};
 use tantivy::Order as TantivyOrder;
 
 // TODO: Move to `quickwit-config` when `quickwit-config` no longer depends on
@@ -97,9 +97,13 @@ pub enum SortBy {
     },
 }
 
-pub(crate) fn validate_sort_by_field_name(field_name: &str, schema: &Schema) -> anyhow::Result<()> {
+pub(crate) fn validate_sort_by_field_name(
+    field_name: &str,
+    schema: &Schema,
+    search_fields_opt: Option<&Vec<Field>>,
+) -> anyhow::Result<()> {
     if field_name == "_score" {
-        return Ok(());
+        return validate_sort_by_score(schema, search_fields_opt);
     }
     let sort_by_field = schema
         .get_field(field_name)
@@ -119,6 +123,24 @@ pub(crate) fn validate_sort_by_field_name(field_name: &str, schema: &Schema) -> 
         )
     }
 
+    Ok(())
+}
+
+fn validate_sort_by_score(
+    schema: &Schema,
+    search_fields_opt: Option<&Vec<Field>>,
+) -> anyhow::Result<()> {
+    if let Some(fields) = search_fields_opt {
+        for field in fields {
+            if !schema.get_field_entry(*field).has_fieldnorms() {
+                bail!(
+                    "Fieldnorms for field `{}` is missing. Fieldnorms must be stored for the \
+                     field to compute the BM25 score of the documents.",
+                    schema.get_field_name(*field)
+                )
+            }
+        }
+    }
     Ok(())
 }
 

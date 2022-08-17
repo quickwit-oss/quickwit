@@ -42,6 +42,7 @@ mod metrics;
 mod tests;
 
 use metrics::SEARCH_METRICS;
+use root::validate_request;
 
 /// Refer to this as `crate::Result<T>`.
 pub type Result<T> = std::result::Result<T, SearchError>;
@@ -205,6 +206,12 @@ pub async fn single_node_search(
     .map_err(|err| {
         SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
     })?;
+
+    validate_request(search_request)?;
+
+    // Validates the query by effectively building it against the current schema.
+    doc_mapper.query(doc_mapper.schema(), search_request)?;
+
     let leaf_search_response = leaf_search(
         search_request,
         index_storage.clone(),
