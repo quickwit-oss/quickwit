@@ -77,7 +77,7 @@ pub async fn start_cluster_service(
     let member = ClusterMember::new(
         quickwit_config.node_id.clone(),
         unix_timestamp(),
-        quickwit_config.grpc_advertise_addr,
+        quickwit_config.gossip_advertise_addr,
         services.clone(),
         quickwit_config.grpc_listen_addr,
     );
