@@ -52,7 +52,7 @@ enum SortingFieldComputer {
 
 impl SortingFieldComputer {
     /// Returns the ranking key for the given element
-    fn compute_sorting_field(&self, doc_id: DocId, score: Score) -> u64 {
+    fn compute_sorting_field(&self, doc_id: DocId, score: Score) -> HitScore {
         match self {
             SortingFieldComputer::FastField {
                 fast_field_reader,
@@ -61,18 +61,17 @@ impl SortingFieldComputer {
                 let field_val = fast_field_reader.get(doc_id);
                 match order {
                     // Descending is our most common case.
-                    SortOrder::Desc => field_val,
+                    SortOrder::Desc => field_val.into(),
                     // We get Ascending order by using a decreasing mapping over u64 as the
                     // sorting_field.
-                    SortOrder::Asc => u64::MAX - field_val,
+                    SortOrder::Asc => (u64::MAX - field_val).into(),
                 }
             }
-            SortingFieldComputer::DocId => 0u64,
+            SortingFieldComputer::DocId => 0f32.into(),
             SortingFieldComputer::Score { order } => {
-                let u64_score = f32_to_u64(score);
                 match order {
-                    SortOrder::Desc => u64_score,
-                    SortOrder::Asc => u64::MAX - u64_score,
+                    SortOrder::Desc => score.into(),
+                    SortOrder::Asc => (f32::MAX - score).into(),
                 }
             }
         }
@@ -111,11 +110,65 @@ fn resolve_sort_by(
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct HitScore(f32);
+
+impl HitScore {
+    /// Transforming the f32 using this method does not preserve the value of [`HitScore`].
+    fn as_u64_lossy(&self) -> u64 {
+        f32_to_u64(self.0)
+    }
+}
+
+impl From<HitScore> for u64 {
+    fn from(hit_score: HitScore) -> Self {
+        hit_score.as_u64_lossy()
+    }
+}
+
+impl From<HitScore> for f32 {
+    fn from(hit_score: HitScore) -> Self {
+        hit_score.0
+    }
+}
+
+impl From<f32> for HitScore {
+    fn from(val: f32) -> Self {
+        HitScore(val)
+    }
+}
+
+impl From<u64> for HitScore {
+    fn from(val: u64) -> Self {
+        HitScore(val as f32)
+    }
+}
+
+impl PartialEq for HitScore {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_u64_lossy().eq(&other.as_u64_lossy())
+    }
+}
+
+impl PartialOrd for HitScore {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.as_u64_lossy().partial_cmp(&other.as_u64_lossy())
+    }
+}
+
+impl Eq for HitScore {}
+
+impl Ord for HitScore {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_u64_lossy().cmp(&other.as_u64_lossy())
+    }
+}
+
 /// PartialHitHeapItem order is the inverse of the natural order
 /// so that we actually have a min-heap.
 #[derive(Clone, Copy)]
 struct PartialHitHeapItem {
-    sorting_field_value: u64,
+    sorting_field_value: HitScore,
     doc_id: DocId,
 }
 
@@ -170,7 +223,7 @@ impl QuickwitSegmentCollector {
     }
 
     fn collect_top_k(&mut self, doc_id: DocId, score: Score) {
-        let sorting_field_value: u64 = self.sort_by.compute_sorting_field(doc_id, score);
+        let sorting_field_value: HitScore = self.sort_by.compute_sorting_field(doc_id, score);
         if self.at_capacity() {
             if let Some(limit_sorting_field) = self.hits.peek().map(|head| head.sorting_field_value)
             {
@@ -224,7 +277,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
             .into_sorted_vec()
             .into_iter()
             .map(|hit| PartialHit {
-                sorting_field_value: hit.sorting_field_value,
+                sorting_field_value: hit.sorting_field_value.into(),
                 segment_ord,
                 doc_id: hit.doc_id,
                 split_id: split_id.clone(),
@@ -505,11 +558,11 @@ mod tests {
     #[test]
     fn test_partial_hit_ordered_by_sorting_field() {
         let lesser_score = PartialHitHeapItem {
-            sorting_field_value: 1u64,
+            sorting_field_value: 1u64.into(),
             doc_id: 1u32,
         };
         let higher_score = PartialHitHeapItem {
-            sorting_field_value: 2u64,
+            sorting_field_value: 2u64.into(),
             doc_id: 1u32,
         };
         assert_eq!(lesser_score.cmp(&higher_score), Ordering::Greater);
@@ -518,7 +571,7 @@ mod tests {
     #[test]
     fn test_merge_partial_hits_no_tie() {
         let make_doc = |sorting_field_value: u64| PartialHit {
-            sorting_field_value,
+            sorting_field_value: sorting_field_value as f32,
             split_id: "split1".to_string(),
             segment_ord: 0u32,
             doc_id: 0u32,
@@ -532,7 +585,7 @@ mod tests {
     #[test]
     fn test_merge_partial_hits_with_tie() {
         let make_hit_given_split_id = |split_id: u64| PartialHit {
-            sorting_field_value: 0u64,
+            sorting_field_value: 0f32,
             split_id: format!("split_{}", split_id),
             segment_ord: 0u32,
             doc_id: 0u32,

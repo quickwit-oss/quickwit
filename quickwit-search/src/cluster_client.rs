@@ -230,7 +230,7 @@ mod tests {
 
     fn mock_partial_hit(split_id: &str, sorting_field_value: u64, doc_id: u32) -> PartialHit {
         PartialHit {
-            sorting_field_value,
+            sorting_field_value: sorting_field_value as f32,
             split_id: split_id.to_string(),
             segment_ord: 1,
             doc_id,

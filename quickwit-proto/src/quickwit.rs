@@ -153,8 +153,8 @@ pub struct PartialHit {
     /// - the split_id,
     /// - the segment_ord,
     /// - the doc id.
-    #[prost(uint64, tag="1")]
-    pub sorting_field_value: u64,
+    #[prost(float, tag="1")]
+    pub sorting_field_value: f32,
     #[prost(string, tag="2")]
     pub split_id: ::prost::alloc::string::String,
     /// (segment_ord, doc) form a tantivy DocAddress, which is sufficient to identify a document

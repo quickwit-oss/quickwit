@@ -37,7 +37,7 @@ use tokio::task::spawn_blocking;
 use tracing::{debug, error, instrument};
 
 use crate::cluster_client::ClusterClient;
-use crate::collector::make_merge_collector;
+use crate::collector::{make_merge_collector, HitScore};
 use crate::search_client_pool::Job;
 use crate::{
     extract_split_and_footer_offsets, list_relevant_splits, SearchClientPool, SearchError,
@@ -261,15 +261,15 @@ pub async fn root_search(
         .flat_map(|response| response.hits.into_iter());
 
     let mut hits: Vec<quickwit_proto::Hit> = leaf_hits
-        .map(|leaf_hit: quickwit_proto::LeafHit| crate::convert_leaf_hit(leaf_hit, &*doc_mapper))
+        .map(|leaf_hit: quickwit_proto::LeafHit| crate::convert_leaf_hit(leaf_hit, &*doc_mapper, search_request))
         .collect::<crate::Result<_>>()?;
 
     hits.sort_unstable_by_key(|hit| {
         Reverse(
             hit.partial_hit
                 .as_ref()
-                .map(|hit| hit.sorting_field_value)
-                .unwrap_or(0),
+                .map(|hit| HitScore::from(hit.sorting_field_value))
+                .unwrap_or(0f32.into()),
         )
     });
 
@@ -373,7 +373,7 @@ mod tests {
         doc_id: u32,
     ) -> quickwit_proto::PartialHit {
         quickwit_proto::PartialHit {
-            sorting_field_value,
+            sorting_field_value: sorting_field_value as f32,
             split_id: split_id.to_string(),
             segment_ord: 1,
             doc_id,

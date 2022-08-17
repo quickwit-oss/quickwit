@@ -192,7 +192,7 @@ message PartialHit {
   // - the split_id,
   // - the segment_ord,
   // - the doc id.
-  uint64 sorting_field_value = 1;
+  float sorting_field_value = 1;
   string split_id = 2;
 
   // (segment_ord, doc) form a tantivy DocAddress, which is sufficient to identify a document

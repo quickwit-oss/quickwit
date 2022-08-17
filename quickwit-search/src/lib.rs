@@ -41,6 +41,7 @@ mod metrics;
 #[cfg(test)]
 mod tests;
 
+use collector::HitScore;
 use metrics::SEARCH_METRICS;
 
 /// Refer to this as `crate::Result<T>`.
@@ -56,7 +57,7 @@ use itertools::Itertools;
 use quickwit_cluster::Cluster;
 use quickwit_config::{build_doc_mapper, QuickwitConfig, SEARCHER_CONFIG_INSTANCE};
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
-use quickwit_doc_mapper::{DocMapper, SortBy};
+use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{Metastore, SplitMetadata, SplitState};
 use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
@@ -97,9 +98,9 @@ impl GlobalDocAddress {
     }
 }
 
-fn partial_hit_sorting_key(partial_hit: &PartialHit) -> (Reverse<u64>, GlobalDocAddress) {
+fn partial_hit_sorting_key(partial_hit: &PartialHit) -> (Reverse<HitScore>, GlobalDocAddress) {
     (
-        Reverse(partial_hit.sorting_field_value),
+        Reverse(partial_hit.sorting_field_value.into()),
         GlobalDocAddress::from_partial_hit(partial_hit),
     )
 }
@@ -173,19 +174,22 @@ async fn list_relevant_splits(
 fn convert_leaf_hit(
     leaf_hit: quickwit_proto::LeafHit,
     doc_mapper: &dyn DocMapper,
+    search_request: &SearchRequest,
 ) -> crate::Result<quickwit_proto::Hit> {
     let mut hit_json: BTreeMap<String, Vec<JsonValue>> = serde_json::from_str(&leaf_hit.leaf_json)
         .map_err(|_| SearchError::InternalError("Invalid leaf json.".to_string()))?;
-    if let SortBy::Score { .. } = doc_mapper.sort_by() {
+    if Some("_score".to_string()) == search_request.sort_by_field {
         hit_json.insert(
             "_score".to_string(),
             vec![JsonValue::Number(
-                leaf_hit
-                    .partial_hit
-                    .as_ref()
-                    .expect("IDK HOW THIS IS NONE")
-                    .sorting_field_value
-                    .into(),
+                serde_json::value::Number::from_f64(
+                    leaf_hit
+                        .partial_hit
+                        .as_ref()
+                        .expect("IDK HOW THIS IS NONE")
+                        .sorting_field_value as f64,
+                )
+                .expect("Converting f32 to f64 should never fail."),
             )],
         );
     }
@@ -236,7 +240,7 @@ pub async fn single_node_search(
     let hits: Vec<quickwit_proto::Hit> = fetch_docs_response
         .hits
         .into_iter()
-        .map(|leaf_hit| crate::convert_leaf_hit(leaf_hit, &*doc_mapper))
+        .map(|leaf_hit| crate::convert_leaf_hit(leaf_hit, &*doc_mapper, search_request))
         .collect::<crate::Result<_>>()?;
     let elapsed = start_instant.elapsed();
     let aggregation = if let Some(intermediate_aggregation_result) =
