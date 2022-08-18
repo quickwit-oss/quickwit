@@ -71,7 +71,7 @@ impl SortingFieldComputer {
             SortingFieldComputer::Score { order } => {
                 match order {
                     SortOrder::Desc => score.into(),
-                    SortOrder::Asc => (f32::MAX - score).into(),
+                    SortOrder::Asc => (-score).into(),
                 }
             }
         }
@@ -120,12 +120,6 @@ impl HitScore {
     }
 }
 
-impl From<HitScore> for u64 {
-    fn from(hit_score: HitScore) -> Self {
-        hit_score.as_u64_lossy()
-    }
-}
-
 impl From<HitScore> for f32 {
     fn from(hit_score: HitScore) -> Self {
         hit_score.0
@@ -150,13 +144,13 @@ impl PartialEq for HitScore {
     }
 }
 
+impl Eq for HitScore {}
+
 impl PartialOrd for HitScore {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.as_u64_lossy().partial_cmp(&other.as_u64_lossy())
     }
 }
-
-impl Eq for HitScore {}
 
 impl Ord for HitScore {
     fn cmp(&self, other: &Self) -> Ordering {
