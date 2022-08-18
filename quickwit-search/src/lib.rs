@@ -176,29 +176,43 @@ fn convert_leaf_hit(
     doc_mapper: &dyn DocMapper,
     search_request: &SearchRequest,
 ) -> crate::Result<quickwit_proto::Hit> {
-    let mut hit_json: BTreeMap<String, Vec<JsonValue>> = serde_json::from_str(&leaf_hit.leaf_json)
+    let hit_json: BTreeMap<String, Vec<JsonValue>> = serde_json::from_str(&leaf_hit.leaf_json)
         .map_err(|_| SearchError::InternalError("Invalid leaf json.".to_string()))?;
-    if Some("_score".to_string()) == search_request.sort_by_field {
-        hit_json.insert(
-            "_score".to_string(),
-            vec![JsonValue::Number(
-                serde_json::value::Number::from_f64(
-                    leaf_hit
-                        .partial_hit
-                        .as_ref()
-                        .expect("IDK HOW THIS IS NONE")
-                        .sorting_field_value as f64,
-                )
-                .expect("Converting f32 to f64 should never fail."),
-            )],
-        );
-    }
-    let doc = doc_mapper.doc_to_json(hit_json)?;
+
+    let mut doc = doc_mapper.doc_to_json(hit_json)?;
+
+    insert_score_field(search_request, &leaf_hit, &mut doc);
+
     let json = serde_json::to_string(&doc).expect("Json serialization should never fail.");
     Ok(quickwit_proto::Hit {
         json,
         partial_hit: leaf_hit.partial_hit,
     })
+}
+
+fn insert_score_field(
+    search_request: &SearchRequest,
+    leaf_hit: &quickwit_proto::LeafHit,
+    doc: &mut serde_json::Map<String, JsonValue>,
+) {
+    if Some("_score".to_string()) == search_request.sort_by_field {
+        let score = leaf_hit
+            .partial_hit
+            .as_ref()
+            .expect("PartialHit should never be None for LeafHit")
+            .sorting_field_value;
+        let score = match search_request.sort_order() {
+            quickwit_proto::SortOrder::Asc => -score,
+            quickwit_proto::SortOrder::Desc => score,
+        };
+        doc.insert(
+            "_score".to_string(),
+            JsonValue::Number(
+                serde_json::value::Number::from_f64(score as f64)
+                    .expect("Converting f32 to f64 should never fail."),
+            ),
+        );
+    }
 }
 
 /// Performs a search on the current node.

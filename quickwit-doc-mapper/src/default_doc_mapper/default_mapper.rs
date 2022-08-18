@@ -500,10 +500,6 @@ impl DocMapper for DefaultDocMapper {
             );
         }
 
-        if let Some(json_val_vec) = named_doc.get("_score") {
-            doc_json.insert("_score".to_string(), json_val_vec[0].clone());
-        }
-
         Ok(doc_json)
     }
 
