@@ -43,6 +43,7 @@ mod tests;
 
 use metrics::SEARCH_METRICS;
 use root::validate_request;
+use service::SearcherContext;
 
 /// Refer to this as `crate::Result<T>`.
 pub type Result<T> = std::result::Result<T, SearchError>;
@@ -55,7 +56,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use itertools::Itertools;
 use quickwit_cluster::Cluster;
-use quickwit_config::{build_doc_mapper, QuickwitConfig, SEARCHER_CONFIG_INSTANCE};
+use quickwit_config::{build_doc_mapper, QuickwitConfig, SearcherConfig};
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{Metastore, SplitMetadata, SplitState};
@@ -211,8 +212,9 @@ pub async fn single_node_search(
 
     // Validates the query by effectively building it against the current schema.
     doc_mapper.query(doc_mapper.schema(), search_request)?;
-
+    let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
     let leaf_search_response = leaf_search(
+        searcher_context.clone(),
         search_request,
         index_storage.clone(),
         &split_metadata[..],
@@ -221,6 +223,7 @@ pub async fn single_node_search(
     .await
     .context("Failed to perform leaf search.")?;
     let fetch_docs_response = fetch_docs(
+        searcher_context.clone(),
         leaf_search_response.partial_hits,
         index_storage,
         &split_metadata,
@@ -264,9 +267,6 @@ pub async fn start_searcher_service(
     storage_uri_resolver: StorageUriResolver,
     cluster: Arc<Cluster>,
 ) -> anyhow::Result<Arc<dyn SearchService>> {
-    SEARCHER_CONFIG_INSTANCE
-        .set(quickwit_config.searcher_config.clone())
-        .expect("could not set searcher config in global once cell");
     let client_pool = SearchClientPool::create_and_keep_updated(
         &cluster.members(),
         cluster.member_change_watcher(),
@@ -278,6 +278,7 @@ pub async fn start_searcher_service(
         storage_uri_resolver,
         cluster_client,
         client_pool,
+        quickwit_config.searcher_config.clone(),
     ));
     Ok(search_service)
 }
