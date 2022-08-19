@@ -79,6 +79,7 @@ impl From<SplitMetadataAndFooterV0> for SplitMetadata {
         SplitMetadata {
             footer_offsets: v0.footer_offsets,
             split_id: v0.split_metadata.split_id,
+            partition_id: 0u64,
             num_docs: v0.split_metadata.num_docs,
             uncompressed_docs_size_in_bytes: v0.split_metadata.size_in_bytes,
             time_range: v0.split_metadata.time_range,
@@ -96,6 +97,9 @@ pub(crate) struct SplitMetadataV1 {
     /// In reality, some information may be implicitly configured
     /// in the storage URI resolver: for instance, the Amazon S3 region.
     pub split_id: String,
+
+    #[serde(default)]
+    pub partition_id: u64,
 
     /// Number of records (or documents) in the split.
     pub num_docs: usize,
@@ -135,6 +139,7 @@ impl From<SplitMetadataV1> for SplitMetadata {
     fn from(v1: SplitMetadataV1) -> Self {
         SplitMetadata {
             footer_offsets: v1.footer_offsets,
+            partition_id: v1.partition_id,
             split_id: v1.split_id,
             num_docs: v1.num_docs,
             uncompressed_docs_size_in_bytes: v1.uncompressed_docs_size_in_bytes,
@@ -150,6 +155,7 @@ impl From<SplitMetadata> for SplitMetadataV1 {
     fn from(v1: SplitMetadata) -> Self {
         SplitMetadataV1 {
             footer_offsets: v1.footer_offsets,
+            partition_id: v1.partition_id,
             split_id: v1.split_id,
             num_docs: v1.num_docs,
             uncompressed_docs_size_in_bytes: v1.uncompressed_docs_size_in_bytes,

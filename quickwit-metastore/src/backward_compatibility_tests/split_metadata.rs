@@ -24,6 +24,7 @@ use crate::SplitMetadata;
 pub(crate) fn sample_split_metadata_for_regression() -> SplitMetadata {
     SplitMetadata {
         split_id: "split".to_string(),
+        partition_id: 7u64,
         num_docs: 12303,
         uncompressed_docs_size_in_bytes: 234234,
         time_range: Some(121000..=130198),
@@ -36,12 +37,12 @@ pub(crate) fn sample_split_metadata_for_regression() -> SplitMetadata {
 
 #[test]
 fn test_split_metadata_backward_compatibility() -> anyhow::Result<()> {
-    let sample_split_metdata = sample_split_metadata_for_regression();
+    let sample_split_metadata = sample_split_metadata_for_regression();
     super::test_json_backward_compatibility_helper(
         "split-metadata",
         |deserialized: &SplitMetadata, expected: &SplitMetadata| {
             assert_eq!(deserialized, expected);
         },
-        sample_split_metdata,
+        sample_split_metadata,
     )
 }

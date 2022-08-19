@@ -185,6 +185,7 @@ pub fn mock_split(split_id: &str) -> Split {
 pub fn mock_split_meta(split_id: &str) -> SplitMetadata {
     SplitMetadata {
         split_id: split_id.to_string(),
+        partition_id: 13u64,
         num_docs: 10,
         uncompressed_docs_size_in_bytes: 256,
         time_range: None,

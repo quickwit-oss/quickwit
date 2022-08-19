@@ -28,8 +28,10 @@ use crate::models::ScratchDirectory;
 
 pub struct PackagedSplit {
     pub split_id: String,
-    pub replaced_split_ids: Vec<String>,
     pub index_id: String,
+    pub partition_id: u64,
+
+    pub replaced_split_ids: Vec<String>,
     pub time_range: Option<RangeInclusive<i64>>,
     pub size_in_bytes: u64,
     pub split_scratch_directory: ScratchDirectory,
@@ -44,6 +46,7 @@ impl fmt::Debug for PackagedSplit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("PackagedSplit")
             .field("split_id", &self.split_id)
+            .field("partition_id", &self.partition_id)
             .field("replaced_split_ids", &self.replaced_split_ids)
             .field("index_id", &self.index_id)
             .field("time_range", &self.time_range)
