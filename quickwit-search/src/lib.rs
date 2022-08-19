@@ -74,7 +74,7 @@ pub use crate::error::{parse_grpc_error, SearchError};
 use crate::fetch_docs::fetch_docs;
 use crate::leaf::leaf_search;
 pub use crate::root::root_search;
-pub use crate::search_client_pool::{SearchClientPool, create_search_service_client};
+pub use crate::search_client_pool::{create_search_service_client, SearchClientPool};
 pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};

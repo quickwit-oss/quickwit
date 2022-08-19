@@ -29,7 +29,9 @@ mod sequencer;
 mod uploader;
 
 pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineHandler, IndexingPipelineParams};
-pub use indexing_service::{IndexingService, IndexingServiceError, INDEXING_DIR_NAME};
+pub use indexing_service::{
+    IndexingService, IndexingServiceError, IndexingServiceState, INDEXING_DIR_NAME,
+};
 use tantivy::schema::{Field, FieldType};
 mod merge_executor;
 mod merge_planner;

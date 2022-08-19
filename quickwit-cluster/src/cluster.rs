@@ -40,8 +40,8 @@ use crate::error::{ClusterError, ClusterResult};
 use crate::QuickwitService;
 
 const GRPC_ADVERTISE_ADDR_KEY: &str = "grpc_advertise_addr";
-const GOSSIP_INTERVAL: Duration = if cfg!(test) {
-    Duration::from_millis(200)
+const GOSSIP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(25)
 } else {
     Duration::from_secs(1)
 };
@@ -270,6 +270,8 @@ impl Cluster {
         let live_nodes = chitchat_guard.live_nodes().cloned().collect::<Vec<_>>();
         let dead_nodes = chitchat_guard.dead_nodes().cloned().collect::<Vec<_>>();
         ClusterState {
+            cluster_id: self.cluster_id.to_string(),
+            self_node_id: self.node_id.to_string(),
             state,
             live_nodes,
             dead_nodes,
@@ -386,9 +388,11 @@ fn parse_available_services_val(
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ClusterState {
-    state: ClusterStateSnapshot,
-    live_nodes: Vec<NodeId>,
-    dead_nodes: Vec<NodeId>,
+    pub cluster_id: String,
+    pub self_node_id: String,
+    pub state: ClusterStateSnapshot,
+    pub live_nodes: Vec<NodeId>,
+    pub dead_nodes: Vec<NodeId>,
 }
 
 /// Compute the gRPC port from the chitchat listen address for tests.

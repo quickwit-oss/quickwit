@@ -17,31 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-
-use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::time::Duration;
 
 use hyper::client::HttpConnector;
-use hyper::{Body, Uri};
-use itertools::Itertools;
-use quickwit_cluster::QuickwitService;
-use quickwit_common::new_coolid;
-use quickwit_common::uri::Uri as QuickwitUri;
-use quickwit_config::QuickwitConfig;
-use quickwit_control_plane::MetastoreService;
-use quickwit_indexing::IndexingServiceState;
-use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
-use quickwit_proto::tonic::transport::Endpoint;
-use quickwit_search::{create_search_service_client, SearchServiceClient};
-use rand::seq::SliceRandom;
-use serde::__private::from_utf8_lossy;
-use tempfile::TempDir;
+use hyper::{Body, Response, StatusCode};
+use quickwit_cluster::ClusterState;
+use quickwit_indexing::actors::IndexingServiceState;
+use serde::de::DeserializeOwned;
 use tokio_stream::StreamExt;
-
-use crate::cluster_api::SerializedCluster;
-use crate::serve_quickwit;
 
 pub struct QuickwitRestClient {
     addr: SocketAddr,
@@ -55,20 +39,20 @@ impl QuickwitRestClient {
             .pool_idle_timeout(Duration::from_secs(30))
             .http2_only(true)
             .build_http();
-        let api_root = format!("http://{}/api/v1", self.addr);
-        Self { addr, api_root, client }
+        let api_root = format!("http://{}/api/v1", addr);
+        Self {
+            addr,
+            api_root,
+            client,
+        }
     }
 
-    pub async fn cluster_state(&self) -> anyhow::Result<SerializedCluster> {
+    pub async fn cluster_state(&self) -> anyhow::Result<ClusterState> {
         let uri = format!("{}/cluster", self.api_root)
             .parse::<hyper::Uri>()
             .unwrap();
-        let mut response = self.client.get(uri).await?;
-        let mut body = Vec::new();
-        while let Some(chunk) = response.body_mut().next().await {
-            body.extend_from_slice(&chunk?);
-        }
-        let cluster_state: SerializedCluster = serde_json::from_slice(&body)?;
+        let response = self.client.get(uri).await?;
+        let cluster_state = parse_body(response).await?;
         Ok(cluster_state)
     }
 
@@ -76,13 +60,20 @@ impl QuickwitRestClient {
         let uri = format!("http://{}/api/v1/indexing", self.addr)
             .parse::<hyper::Uri>()
             .unwrap();
-        let mut response = self.client.get(uri).await?;
-        let mut body = Vec::new();
-        while let Some(chunk) = response.body_mut().next().await {
-            body.extend_from_slice(&chunk?);
-        }
-        println!("indexing body {}", from_utf8_lossy(&body));
-        let indexing_service_state: IndexingServiceState = serde_json::from_slice(&body)?;
+        let response = self.client.get(uri).await?;
+        let indexing_service_state = parse_body(response).await?;
         Ok(indexing_service_state)
     }
+}
+
+async fn parse_body<T: DeserializeOwned>(mut response: Response<Body>) -> anyhow::Result<T> {
+    if response.status() != StatusCode::OK {
+        anyhow::bail!("Unexepected status {}", response.status());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.body_mut().next().await {
+        body.extend_from_slice(&chunk?);
+    }
+    let deserialized_element: T = serde_json::from_slice(&body)?;
+    Ok(deserialized_element)
 }
