@@ -39,7 +39,7 @@ use crate::SearchServiceClient;
 
 /// Create a SearchServiceClient with SocketAddr as an argument.
 /// It will try to reconnect to the node automatically.
-async fn create_search_service_client(
+pub async fn create_search_service_client(
     grpc_addr: SocketAddr,
 ) -> anyhow::Result<SearchServiceClient> {
     let uri = Uri::builder()

@@ -33,6 +33,7 @@ mod ingest_api;
 mod node_info_handler;
 mod search_api;
 mod ui_handler;
+mod tests;
 
 use std::collections::HashSet;
 use std::convert::Infallible;

@@ -35,7 +35,7 @@ async fn indexing_endpoint(
 }
 
 fn indexing_get_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone {
-    warp::path!("api" / "v1" / "indexing").and(warp::get())
+    warp::path!("indexing").and(warp::get())
 }
 
 pub fn indexing_get_handler(
