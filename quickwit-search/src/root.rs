@@ -109,7 +109,7 @@ impl From<FetchDocsJob> for SplitIdAndFooterOffsets {
     }
 }
 
-fn validate_request(search_request: &SearchRequest) -> crate::Result<()> {
+pub(crate) fn validate_request(search_request: &SearchRequest) -> crate::Result<()> {
     if let Some(agg) = search_request.aggregation_request.as_ref() {
         let _agg: Aggregations = serde_json::from_str(agg)
             .map_err(|err| SearchError::InvalidAggregationRequest(err.to_string()))?;
@@ -159,8 +159,8 @@ pub async fn root_search(
 
     validate_request(search_request)?;
 
-    // try to build query against current schema
-    let _query = doc_mapper.query(doc_mapper.schema(), search_request)?;
+    // Validates the query by effectively building it against the current schema.
+    doc_mapper.query(doc_mapper.schema(), search_request)?;
 
     let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
         SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {}", err))
@@ -727,6 +727,7 @@ mod tests {
         assert_eq!(search_response.hits.len(), 3);
         Ok(())
     }
+
     #[tokio::test]
     async fn test_root_search_multiple_splits_retry_on_all_nodes() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {

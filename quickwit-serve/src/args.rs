@@ -20,7 +20,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ServeArgs {
     /// Socket address of the REST server.
     pub rest_socket_addr: SocketAddr,

@@ -29,10 +29,9 @@ use quickwit_doc_mapper::{
     DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, ModeType, QuickwitJsonOptions, SortBy,
     SortByConfig, SortOrder,
 };
-use serde::de::IgnoredAny;
-use serde::{Deserialize, Serialize};
+use serde::de::{Error, IgnoredAny};
+use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::config::deser_valid_uri;
 use crate::source_config::SourceConfig;
 use crate::{is_false, validate_identifier};
 
@@ -78,6 +77,7 @@ impl IndexingResources {
         Byte::from_bytes(2_000_000_000) // 2GB
     }
 
+    #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
         Self {
             __num_threads_deprecated: IgnoredAny,
@@ -95,7 +95,7 @@ impl Default for IndexingResources {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MergePolicy {
     #[serde(default = "MergePolicy::default_demux_factor")]
@@ -193,7 +193,7 @@ impl IndexingSettings {
         SortBy::DocId
     }
 
-    // TODO(guilload) Hide this method if possible.
+    #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
         Self {
             resources: IndexingResources::for_test(),
@@ -221,7 +221,7 @@ impl Default for IndexingSettings {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SearchSettings {
     #[serde(default)]
@@ -234,7 +234,7 @@ pub struct IndexConfig {
     pub version: usize,
     pub index_id: String,
     #[serde(default)]
-    #[serde(deserialize_with = "deser_valid_uri")]
+    #[serde(deserialize_with = "deser_and_validate_uri")]
     pub index_uri: Option<Uri>,
     pub doc_mapping: DocMapping,
     #[serde(default)]
@@ -300,13 +300,13 @@ impl IndexConfig {
         if self.sources.len() > self.sources().len() {
             bail!("Index config contains duplicate sources.")
         }
-        for source in self.sources.iter() {
+        for source in &self.sources {
             source.validate()?;
         }
         // Validation is made by building the doc mapper.
         // Note: this needs a deep refactoring to separate the doc mapping configuration,
         // and doc mapper implementations.
-        let _ = build_doc_mapper(
+        build_doc_mapper(
             &self.doc_mapping,
             &self.search_settings,
             &self.indexing_settings,
@@ -332,6 +332,10 @@ pub fn build_doc_mapper(
     let sort_by = match indexing_settings.sort_by() {
         SortBy::DocId => None,
         SortBy::FastField { field_name, order } => Some(SortByConfig { field_name, order }),
+        SortBy::Score { order } => Some(SortByConfig {
+            field_name: "_score".to_string(),
+            order,
+        }),
     };
     let builder = DefaultDocMapperBuilder {
         store_source: doc_mapping.store_source,
@@ -346,6 +350,16 @@ pub fn build_doc_mapper(
         partition_key: doc_mapping.partition_key.clone(),
     };
     Ok(Arc::new(builder.try_build()?))
+}
+
+/// Deserializes and validates a [`Uri`].
+fn deser_and_validate_uri<'de, D>(deserializer: D) -> Result<Option<Uri>, D::Error>
+where D: Deserializer<'de> {
+    let uri_opt: Option<String> = Deserialize::deserialize(deserializer)?;
+    uri_opt
+        .map(|uri| Uri::try_new(&uri))
+        .transpose()
+        .map_err(D::Error::custom)
 }
 
 #[cfg(test)]

@@ -26,8 +26,6 @@ use anyhow::Context;
 use futures::future::try_join_all;
 use futures::Future;
 use itertools::{Either, Itertools};
-use once_cell::sync::OnceCell;
-use quickwit_config::get_searcher_config_instance;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, QUICKWIT_TOKENIZER_MANAGER};
 use quickwit_proto::{
@@ -42,42 +40,20 @@ use tantivy::error::AsyncIoError;
 use tantivy::query::Query;
 use tantivy::schema::{Cardinality, FieldType};
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
-use tokio::sync::{Semaphore, SemaphorePermit};
 use tokio::task::spawn_blocking;
 use tracing::*;
 
 use crate::collector::{make_collector_for_split, make_merge_collector};
+use crate::service::SearcherContext;
 use crate::SearchError;
-
-async fn get_leaf_search_split_semaphore() -> SemaphorePermit<'static> {
-    static INSTANCE: OnceCell<Semaphore> = OnceCell::new();
-    INSTANCE
-        .get_or_init(|| {
-            let max_num_concurrent_split_streams = get_searcher_config_instance().max_num_concurrent_split_searches;
-            Semaphore::new(max_num_concurrent_split_streams)
-        })
-        .acquire()
-        .await
-        .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
-}
-
-fn global_split_footer_cache() -> &'static MemorySizedCache<String> {
-    static INSTANCE: OnceCell<MemorySizedCache<String>> = OnceCell::new();
-    INSTANCE.get_or_init(|| {
-        let config = get_searcher_config_instance();
-        MemorySizedCache::with_capacity_in_bytes(
-            config.split_footer_cache_capacity.get_bytes() as usize,
-            &quickwit_storage::STORAGE_METRICS.split_footer_cache,
-        )
-    })
-}
 
 async fn get_split_footer_from_cache_or_fetch(
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
+    footer_cache: &MemorySizedCache<String>,
 ) -> anyhow::Result<OwnedBytes> {
     {
-        let possible_val = global_split_footer_cache().get(&split_and_footer_offsets.split_id);
+        let possible_val = footer_cache.get(&split_and_footer_offsets.split_id);
         if let Some(footer_data) = possible_val {
             return Ok(footer_data);
         }
@@ -98,7 +74,7 @@ async fn get_split_footer_from_cache_or_fetch(
             )
         })?;
 
-    global_split_footer_cache().put(
+    footer_cache.put(
         split_and_footer_offsets.split_id.to_owned(),
         footer_data_opt.clone(),
     );
@@ -110,31 +86,45 @@ async fn get_split_footer_from_cache_or_fetch(
 ///
 /// The resulting index uses a dynamic and a static cache.
 pub(crate) async fn open_index(
+    searcher_context: &Arc<SearcherContext>,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<Index> {
-    open_index_with_cache(index_storage, split_and_footer_offsets, true).await
+    open_index_with_cache(
+        searcher_context,
+        index_storage,
+        split_and_footer_offsets,
+        true,
+    )
+    .await
 }
 
 /// Opens a `tantivy::Index` for the given split.
 ///
 /// The resulting index uses a dynamic and a static cache.
 pub(crate) async fn open_index_with_cache(
+    searcher_context: &Arc<SearcherContext>,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
     unlimited_cache: bool,
 ) -> anyhow::Result<Index> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
-    let footer_data =
-        get_split_footer_from_cache_or_fetch(index_storage.clone(), split_and_footer_offsets)
-            .await?;
+    let footer_data = get_split_footer_from_cache_or_fetch(
+        index_storage.clone(),
+        split_and_footer_offsets,
+        &searcher_context.split_footer_cache,
+    )
+    .await?;
 
     let (hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data(
         index_storage,
         split_file,
         FileSlice::new(Arc::new(footer_data)),
     )?;
-    let bundle_storage_with_cache = wrap_storage_with_long_term_cache(Arc::new(bundle_storage));
+    let bundle_storage_with_cache = wrap_storage_with_long_term_cache(
+        searcher_context.storage_long_term_cache.clone(),
+        Arc::new(bundle_storage),
+    );
     let directory = StorageDirectory::new(bundle_storage_with_cache);
     let hot_directory = if unlimited_cache {
         let caching_directory = CachingDirectory::new_with_unlimited_capacity(Arc::new(directory));
@@ -168,6 +158,7 @@ pub(crate) async fn warmup(
     query: &dyn Query,
     fast_field_names: &HashSet<String>,
     term_dict_field_names: &HashSet<String>,
+    requires_scoring: bool,
 ) -> anyhow::Result<()> {
     let warm_up_terms_future =
         warm_up_terms(searcher, query).instrument(debug_span!("warm_up_terms"));
@@ -175,14 +166,18 @@ pub(crate) async fn warmup(
         .instrument(debug_span!("warm_up_term_dicts"));
     let warm_up_fastfields_future = warm_up_fastfields(searcher, fast_field_names)
         .instrument(debug_span!("warm_up_fastfields"));
-    let (warm_up_terms_res, warm_up_fastfields_res, warm_up_term_dict_res) = tokio::join!(
+    let warm_up_fieldnorms_future = warm_up_fieldnorms(searcher, requires_scoring)
+        .instrument(debug_span!("warm_up_fieldnorms"));
+    let (warm_up_terms_res, warm_up_fastfields_res, warm_up_term_dict_res, warm_up_fieldnorms_res) = tokio::join!(
         warm_up_terms_future,
         warm_up_fastfields_future,
-        warm_up_term_dict_future
+        warm_up_term_dict_future,
+        warm_up_fieldnorms_future,
     );
     warm_up_terms_res?;
     warm_up_fastfields_res?;
     warm_up_term_dict_res?;
+    warm_up_fieldnorms_res?;
     Ok(())
 }
 
@@ -314,17 +309,35 @@ async fn warm_up_terms(searcher: &Searcher, query: &dyn Query) -> anyhow::Result
     Ok(())
 }
 
+async fn warm_up_fieldnorms(searcher: &Searcher, requires_scoring: bool) -> anyhow::Result<()> {
+    if !requires_scoring {
+        return Ok(());
+    }
+    let mut warm_up_futures = Vec::new();
+    for field in searcher.schema().fields() {
+        for segment_reader in searcher.segment_readers() {
+            let fieldnorm_readers = segment_reader.fieldnorms_readers();
+            let file_handle_opt = fieldnorm_readers.get_inner_file().open_read(field.0);
+            if let Some(file_handle) = file_handle_opt {
+                warm_up_futures.push(async move { file_handle.read_bytes_async().await })
+            }
+        }
+    }
+    try_join_all(warm_up_futures).await?;
+    Ok(())
+}
+
 /// Apply a leaf search on a single split.
-#[instrument(skip(search_request, storage, split, doc_mapper))]
+#[instrument(skip(searcher_context, search_request, storage, split, doc_mapper))]
 async fn leaf_search_single_split(
+    searcher_context: &Arc<SearcherContext>,
     search_request: &SearchRequest,
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
     doc_mapper: Arc<dyn DocMapper>,
-    leaf_split_search_permit: SemaphorePermit<'static>,
 ) -> crate::Result<LeafSearchResponse> {
     let split_id = split.split_id.to_string();
-    let index = open_index(storage, &split).await?;
+    let index = open_index(searcher_context, storage, &split).await?;
     let split_schema = index.schema();
     let quickwit_collector = make_collector_for_split(
         split_id.clone(),
@@ -343,6 +356,7 @@ async fn leaf_search_single_split(
         &query,
         &quickwit_collector.fast_field_names(),
         &quickwit_collector.term_dict_field_names(),
+        quickwit_collector.requires_scoring(),
     )
     .await?;
     let leaf_search_response = crate::run_cpu_intensive(move || {
@@ -364,6 +378,7 @@ async fn leaf_search_single_split(
 /// charge to consolidate, identify the actual final top hits to display, and
 /// fetch the actual documents to convert the partial hits into actual Hits.
 pub async fn leaf_search(
+    searcher_context: Arc<SearcherContext>,
     request: &SearchRequest,
     index_storage: Arc<dyn Storage>,
     splits: &[SplitIdAndFooterOffsets],
@@ -374,18 +389,22 @@ pub async fn leaf_search(
         .map(|split| {
             let doc_mapper_clone = doc_mapper.clone();
             let index_storage_clone = index_storage.clone();
+            let searcher_context_clone = searcher_context.clone();
             async move {
-                let leaf_split_search_permit = get_leaf_search_split_semaphore().await;
+                let _leaf_split_search_permit = searcher_context_clone.leaf_search_split_semaphore
+                    .acquire()
+                    .await
+                    .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
                 crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
                 let timer = crate::SEARCH_METRICS
                     .leaf_search_split_duration_secs
                     .start_timer();
                 let leaf_search_single_split_res = leaf_search_single_split(
+                    &searcher_context_clone,
                     request,
                     index_storage_clone,
                     split.clone(),
                     doc_mapper_clone,
-                    leaf_split_search_permit,
                 )
                 .await;
                 timer.observe_duration();

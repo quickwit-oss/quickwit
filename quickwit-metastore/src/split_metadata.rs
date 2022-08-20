@@ -28,7 +28,7 @@ use time::OffsetDateTime;
 use crate::VersionedSplitMetadataDeserializeHelper;
 
 /// Carries split metadata.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Split {
     /// The state of the split.
     pub split_state: SplitState,
@@ -51,7 +51,7 @@ impl Split {
 /// Carries immutable split metadata.
 /// This struct can deserialize older format automatically
 /// but can only serialize to the last version.
-#[derive(Clone, Eq, PartialEq, Default, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(into = "VersionedSplitMetadataDeserializeHelper")]
 pub struct SplitMetadata {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
@@ -59,6 +59,14 @@ pub struct SplitMetadata {
     /// In reality, some information may be implicitly configured
     /// in the storage URI resolver: for instance, the Amazon S3 region.
     pub split_id: String,
+
+    /// Partition to which the split belong to.
+    ///
+    /// Partitions are usually meant to isolate documents based on some field like
+    /// `tenant_id`. For this reason, ideally splits with a different `partition_id`
+    /// should not be merged together. Merging two splits with different `partition_id`
+    /// does not hurt correctness however.
+    pub partition_id: u64,
 
     /// Number of records (or documents) in the split.
     /// TODO make u64
@@ -105,20 +113,6 @@ pub struct SplitMetadata {
 }
 
 impl SplitMetadata {
-    /// Creates a new instance of split metadata.
-    pub fn new(split_id: String) -> Self {
-        Self {
-            split_id,
-            num_docs: 0,
-            uncompressed_docs_size_in_bytes: 0,
-            time_range: None,
-            create_timestamp: utc_now_timestamp(),
-            tags: Default::default(),
-            demux_num_ops: 0,
-            footer_offsets: Default::default(),
-        }
-    }
-
     /// Returns the split_id.
     pub fn split_id(&self) -> &str {
         &self.split_id
@@ -126,7 +120,7 @@ impl SplitMetadata {
 }
 
 /// A split state.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub enum SplitState {
     /// The split is almost ready. Some of its files may have been uploaded in the storage.
     Staged,

@@ -27,7 +27,7 @@ use crate::error::{ServiceError, ServiceErrorCode};
 const JSON_SERIALIZATION_ERROR: &str = "JSON serialization failed.";
 
 /// Output format for the search results.
-#[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Deserialize, Clone, Debug, Eq, PartialEq, Copy)]
 #[serde(rename_all = "lowercase")]
 pub enum Format {
     Json,

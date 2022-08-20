@@ -62,7 +62,7 @@ pub enum IndexingServiceError {
     InvalidParams(anyhow::Error),
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct IndexingServiceState {
     num_running_pipelines: usize,
     num_successful_pipelines: usize,

@@ -35,7 +35,7 @@ impl<ObservableState> Deref for Observation<ObservableState> {
 }
 
 // Describes the actual outcome of observation.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ObservationType {
     /// The actor is alive and was able to snapshot its state within `HEARTBEAT`
     Alive,

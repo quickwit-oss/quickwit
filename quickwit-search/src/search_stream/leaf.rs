@@ -23,8 +23,6 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use futures::{FutureExt, StreamExt};
-use once_cell::sync::OnceCell;
-use quickwit_config::get_searcher_config_instance;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::{
     LeafSearchStreamResponse, OutputFormat, SearchRequest, SearchStreamRequest,
@@ -35,7 +33,6 @@ use tantivy::fastfield::FastValue;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema, Type};
 use tantivy::{ReloadPolicy, Searcher};
-use tokio::sync::{Semaphore, SemaphorePermit};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::*;
 
@@ -43,24 +40,8 @@ use super::collector::{PartionnedFastFieldCollector, PartitionValues};
 use super::FastFieldCollector;
 use crate::filters::TimestampFilterBuilder;
 use crate::leaf::{open_index, warmup};
+use crate::service::SearcherContext;
 use crate::{Result, SearchError};
-
-fn get_max_num_concurrent_split_streams() -> usize {
-    get_searcher_config_instance().max_num_concurrent_split_streams
-}
-
-async fn get_split_stream_permit() -> SemaphorePermit<'static> {
-    static INSTANCE: OnceCell<Semaphore> = OnceCell::new();
-    INSTANCE
-        .get_or_init(|| {
-            let max_num_concurrent_split_streams =
-                get_max_num_concurrent_split_streams();
-            Semaphore::new(max_num_concurrent_split_streams)
-        })
-        .acquire()
-        .await
-        .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
-}
 
 /// `leaf` step of search stream.
 // Note: we return a stream of a result with a tonic::Status error
@@ -70,6 +51,7 @@ async fn get_split_stream_permit() -> SemaphorePermit<'static> {
 // to tonic::Status as tonic::Status is required by the stream result
 // signature defined by proto generated code.
 pub async fn leaf_search_stream(
+    searcher_context: Arc<SearcherContext>,
     request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
@@ -79,7 +61,9 @@ pub async fn leaf_search_stream(
     let span = info_span!("leaf_search_stream",);
     tokio::spawn(
         async move {
-            let mut stream = leaf_search_results_stream(request, storage, splits, doc_mapper).await;
+            let mut stream =
+                leaf_search_results_stream(searcher_context, request, storage, splits, doc_mapper)
+                    .await;
             while let Some(item) = stream.next().await {
                 if let Err(error) = result_sender.send(item) {
                     error!(
@@ -96,15 +80,19 @@ pub async fn leaf_search_stream(
 }
 
 async fn leaf_search_results_stream(
+    searcher_context: Arc<SearcherContext>,
     request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
     doc_mapper: Arc<dyn DocMapper>,
 ) -> impl futures::Stream<Item = crate::Result<LeafSearchStreamResponse>> + Sync + Send + 'static {
-    let max_num_concurrent_split_streams = get_max_num_concurrent_split_streams();
+    let max_num_concurrent_split_streams = searcher_context
+        .searcher_config
+        .max_num_concurrent_split_streams;
     futures::stream::iter(splits)
         .map(move |split| {
             leaf_search_stream_single_split(
+                searcher_context.clone(),
                 split,
                 doc_mapper.clone(),
                 request.clone(),
@@ -116,16 +104,21 @@ async fn leaf_search_results_stream(
 }
 
 /// Apply a leaf search on a single split.
-#[instrument(fields(split_id = %split.split_id), skip(split, doc_mapper, stream_request, storage))]
+#[instrument(fields(split_id = %split.split_id), skip(searcher_context, split, doc_mapper, stream_request, storage))]
 async fn leaf_search_stream_single_split(
+    searcher_context: Arc<SearcherContext>,
     split: SplitIdAndFooterOffsets,
     doc_mapper: Arc<dyn DocMapper>,
     stream_request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchStreamResponse> {
-    let _leaf_split_stream_permit = get_split_stream_permit().await;
+    let _leaf_split_stream_permit = searcher_context
+        .split_stream_semaphore
+        .acquire()
+        .await
+        .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
 
-    let index = open_index(storage, &split).await?;
+    let index = open_index(&searcher_context, storage, &split).await?;
     let split_schema = index.schema();
 
     let request_fields = Arc::new(SearchStreamRequestFields::from_request(
@@ -165,11 +158,15 @@ async fn leaf_search_stream_single_split(
         search_request.end_timestamp,
     );
 
+    let requires_scoring =
+        matches!(&search_request.sort_by_field, Some(field_name) if field_name == "_score");
+
     warmup(
         &searcher,
         query.as_ref(),
         &request_fields.fast_fields_for_request(timestamp_filter_builder_opt.as_ref()),
         &Default::default(),
+        requires_scoring,
     )
     .await?;
 
@@ -189,7 +186,7 @@ async fn leaf_search_stream_single_split(
                     &m_request_fields,
                     timestamp_filter_builder_opt,
                     &searcher,
-                    query.as_ref(),
+                    &query,
                 )?;
                 super::serialize::<i64>(&collected_values, &mut buffer, output_format).map_err(
                     |_| {
@@ -204,7 +201,7 @@ async fn leaf_search_stream_single_split(
                     &m_request_fields,
                     timestamp_filter_builder_opt,
                     &searcher,
-                    query.as_ref(),
+                    &query,
                 )?;
                 super::serialize::<u64>(&collected_values, &mut buffer, output_format).map_err(
                     |_| {
@@ -214,12 +211,27 @@ async fn leaf_search_stream_single_split(
                     },
                 )?;
             }
+            (Type::Date, None) => {
+                let collected_values = collect_values::<i64>(
+                    &m_request_fields,
+                    timestamp_filter_builder_opt,
+                    &searcher,
+                    query.as_ref(),
+                )?;
+                super::serialize::<i64>(&collected_values, &mut buffer, output_format).map_err(
+                    |_| {
+                        SearchError::InternalError(
+                            "Error when serializing i64 during export".to_owned(),
+                        )
+                    },
+                )?;
+            }
             (Type::I64, Some(Type::I64)) => {
                 let collected_values = collect_partitioned_values::<i64, i64>(
                     &m_request_fields,
                     timestamp_filter_builder_opt,
                     &searcher,
-                    query.as_ref(),
+                    &query,
                 )?;
                 super::serialize_partitions::<i64, i64>(collected_values.as_slice(), &mut buffer)
                     .map_err(|_| {
@@ -233,7 +245,7 @@ async fn leaf_search_stream_single_split(
                     &m_request_fields,
                     timestamp_filter_builder_opt,
                     &searcher,
-                    query.as_ref(),
+                    &query,
                 )?;
                 super::serialize_partitions::<u64, u64>(collected_values.as_slice(), &mut buffer)
                     .map_err(|_| {
@@ -423,8 +435,10 @@ mod tests {
     use std::convert::TryInto;
     use std::str::from_utf8;
 
+    use quickwit_config::SearcherConfig;
     use quickwit_indexing::TestSandbox;
     use serde_json::json;
+    use tantivy::time::{Duration, OffsetDateTime};
 
     use super::*;
 
@@ -481,7 +495,87 @@ mod tests {
                 split_footer_end: split_meta.split_metadata.footer_offsets.end,
             })
             .collect();
+        let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
         let mut single_node_stream = leaf_search_stream(
+            searcher_context,
+            request,
+            test_sandbox.storage(),
+            splits_offsets,
+            test_sandbox.doc_mapper(),
+        )
+        .await;
+        let res = single_node_stream.next().await.expect("no leaf result")?;
+        assert_eq!(
+            from_utf8(&res.data)?,
+            format!("{}\n", filtered_timestamp_values.join("\n"))
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_leaf_search_stream_filtering_with_datetime() -> anyhow::Result<()> {
+        let index_id = "single-node-simple-datetime";
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+              - name: ts
+                type: datetime
+                input_formats:
+                  - "unix_ts_secs"
+                fast: true
+        "#;
+        let indexing_settings_yaml = r#"
+            timestamp_field: ts
+        "#;
+        let test_sandbox = TestSandbox::create(
+            index_id,
+            doc_mapping_yaml,
+            indexing_settings_yaml,
+            &["body"],
+        )
+        .await?;
+        let mut docs = vec![];
+        let mut filtered_timestamp_values = vec![];
+        let start_date = OffsetDateTime::from_unix_timestamp(0)?;
+        let num_days = 20;
+        for i in 0..30 {
+            let dt = start_date.checked_add(Duration::days(i + 1)).unwrap();
+            let body = format!("info @ t:{}", i + 1);
+            docs.push(json!({"body": body, "ts": dt.unix_timestamp()}));
+            if i + 1 < num_days {
+                let ts_micros = dt.unix_timestamp() * 1_000_000;
+                filtered_timestamp_values.push(ts_micros.to_string());
+            }
+        }
+        test_sandbox.add_documents(docs).await?;
+
+        let end_timestamp = start_date
+            .checked_add(Duration::days(num_days))
+            .unwrap()
+            .unix_timestamp();
+        let request = SearchStreamRequest {
+            index_id: index_id.to_string(),
+            query: "info".to_string(),
+            search_fields: vec![],
+            start_timestamp: None,
+            end_timestamp: Some(end_timestamp),
+            fast_field: "ts".to_string(),
+            output_format: 0,
+            partition_by_field: None,
+        };
+        let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
+        let splits_offsets = splits
+            .into_iter()
+            .map(|split_meta| SplitIdAndFooterOffsets {
+                split_id: split_meta.split_id().to_string(),
+                split_footer_start: split_meta.split_metadata.footer_offsets.start,
+                split_footer_end: split_meta.split_metadata.footer_offsets.end,
+            })
+            .collect();
+        let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
+        let mut single_node_stream = leaf_search_stream(
+            searcher_context,
             request,
             test_sandbox.storage(),
             splits_offsets,
@@ -534,7 +628,9 @@ mod tests {
                 split_footer_end: split_meta.split_metadata.footer_offsets.end,
             })
             .collect();
+        let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
         let mut single_node_stream = leaf_search_stream(
+            searcher_context,
             request,
             test_sandbox.storage(),
             splits_offsets,
@@ -629,7 +725,9 @@ mod tests {
                 split_footer_end: split_meta.split_metadata.footer_offsets.end,
             })
             .collect();
+        let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
         let mut single_node_stream = leaf_search_stream(
+            searcher_context,
             request,
             test_sandbox.storage(),
             splits_offsets,

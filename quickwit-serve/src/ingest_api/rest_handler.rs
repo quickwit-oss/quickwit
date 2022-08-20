@@ -56,7 +56,7 @@ pub enum BulkApiError {
 
 impl warp::reject::Reject for BulkApiError {}
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all(deserialize = "lowercase"))]
 enum BulkAction {
     Index(BulkActionMeta),
@@ -72,7 +72,7 @@ impl BulkAction {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 struct BulkActionMeta {
     #[serde(alias = "_index")]
     index: String,

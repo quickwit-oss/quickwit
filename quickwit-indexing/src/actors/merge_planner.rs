@@ -117,6 +117,7 @@ mod tests {
     use tokio::runtime::Runtime;
 
     use super::*;
+    use crate::actors::combine_partition_ids;
     use crate::actors::merge_executor::{demux_virtual_split, VirtualSplit};
     use crate::merge_policy::MergeOperation;
     use crate::{new_split_id, StableMultitenantWithTimestampMergePolicy};
@@ -165,6 +166,7 @@ mod tests {
         let tags = compute_merge_tags(splits);
         SplitMetadata {
             split_id: merged_split_id,
+            partition_id: combine_partition_ids(splits),
             num_docs,
             uncompressed_docs_size_in_bytes: size_in_bytes,
             time_range,
@@ -202,6 +204,7 @@ mod tests {
         for demuxed_split in demuxed_splits {
             let split_metadata = SplitMetadata {
                 split_id: new_split_id(),
+                partition_id: combine_partition_ids(splits),
                 num_docs: demuxed_split.total_num_docs(),
                 uncompressed_docs_size_in_bytes: (size_in_bytes as f32 / num_docs as f32) as u64
                     * demuxed_split.total_num_docs() as u64,
@@ -285,6 +288,7 @@ mod tests {
     ) -> SplitMetadata {
         SplitMetadata {
             split_id: crate::new_split_id(),
+            partition_id: 3u64,
             num_docs: num_docs as usize,
             uncompressed_docs_size_in_bytes: 256u64 * num_docs,
             time_range: Some(time_range),

@@ -71,10 +71,10 @@ pub struct IndexingPipelineHandler {
 
 // Messages
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Supervise;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Spawn {
     retry_count: usize,
 }

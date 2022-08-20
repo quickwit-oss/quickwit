@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use tokio::net::{lookup_host, ToSocketAddrs};
 
 /// Represents a host, i.e. an IP address (`127.0.0.1`) or a hostname (`localhost`).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Host {
     Hostname(String),
     IpAddr(IpAddr),
@@ -61,6 +61,12 @@ impl Host {
                 .map(|socket_addr| socket_addr.ip()),
             Host::IpAddr(ip_addr) => Ok(*ip_addr),
         }
+    }
+}
+
+impl Default for Host {
+    fn default() -> Self {
+        Host::IpAddr(IpAddr::V4(Ipv4Addr::LOCALHOST))
     }
 }
 
@@ -175,11 +181,20 @@ impl HostAddr {
     }
 
     /// Resolves the host if necessary and returns a `SocketAddr`.
-    pub async fn to_socket_addr(&self) -> anyhow::Result<SocketAddr> {
+    pub async fn resolve(&self) -> anyhow::Result<SocketAddr> {
         self.host
             .resolve()
             .await
             .map(|ip_addr| SocketAddr::new(ip_addr, self.port))
+    }
+
+    /// Skips DNS resolution if possible and returns the host address as a `SocketAddr`.
+    pub fn to_socket_addr(self) -> Option<SocketAddr> {
+        if let Host::IpAddr(ip_addr) = self.host {
+            Some(SocketAddr::new(ip_addr, self.port))
+        } else {
+            None
+        }
     }
 }
 
@@ -205,16 +220,6 @@ pub fn find_available_tcp_port() -> anyhow::Result<u16> {
 /// Attempts to find the private IP of the host. Returns the matching interface name along with it.
 pub fn find_private_ip() -> Option<(String, IpAddr)> {
     _find_private_ip(&datalink::interfaces())
-}
-
-#[cfg(any(target_os = "linux", target_os = "android"))]
-fn is_dormant(interface: &NetworkInterface) -> bool {
-    interface.is_dormant()
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "android")))]
-fn is_dormant(_interface: &NetworkInterface) -> bool {
-    false
 }
 
 fn _find_private_ip(interfaces: &[NetworkInterface]) -> Option<(String, IpAddr)> {
@@ -246,6 +251,16 @@ fn _find_private_ip(interfaces: &[NetworkInterface]) -> Option<(String, IpAddr)>
         })
         .next()
         .map(|(interface, ip_net)| (interface.name.clone(), ip_net.ip()))
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn is_dormant(interface: &NetworkInterface) -> bool {
+    interface.is_dormant()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+fn is_dormant(_interface: &NetworkInterface) -> bool {
+    false
 }
 
 /// Converts an object into a resolved `SocketAddr`.

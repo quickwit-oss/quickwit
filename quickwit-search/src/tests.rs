@@ -20,6 +20,7 @@
 use std::collections::BTreeSet;
 
 use assert_json_diff::assert_json_include;
+use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DefaultDocMapper;
 use quickwit_indexing::TestSandbox;
 use quickwit_proto::{LeafHit, SearchRequest, SortOrder};
@@ -222,7 +223,10 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
               - name: body
                 type: text
               - name: ts
-                type: i64
+                type: datetime
+                input_formats:
+                    - "rfc3339"
+                    - "unix_ts_secs"
                 fast: true
               - name: owner
                 type: text
@@ -291,7 +295,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
     assert!(&single_node_response.hits[0].json.contains("t:19"));
     assert!(&single_node_response.hits[18].json.contains("t:1"));
 
-    // filter on tag, should not return any hit since no split is tagged
+    // filter on tag, should return an error since no split is tagged
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
         query: "tag:foo AND info".to_string(),
@@ -307,17 +311,38 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         &*test_sandbox.metastore(),
         test_sandbox.storage_uri_resolver(),
     )
-    .await?;
-    assert_eq!(single_node_response.num_hits, 0);
-    assert_eq!(single_node_response.hits.len(), 0);
-
+    .await;
+    assert!(single_node_response.is_err());
+    assert_eq!(
+        single_node_response.err().map(|err| err.to_string()),
+        Some("Invalid query: Field does not exists: 'tag'".to_string())
+    );
     Ok(())
 }
 
-#[tokio::test]
-async fn test_single_node_sorting_with_query() -> anyhow::Result<()> {
-    let index_id = "single-node-sorting";
-    let doc_mapping_yaml = r#"
+async fn single_node_search_sort_by_field(
+    sort_by_field: &str,
+    fieldnorms_enabled: bool,
+) -> anyhow::Result<()> {
+    let index_id = "single-node-sorting-sort-by-".to_string()
+        + sort_by_field
+        + "fieldnorms-"
+        + &fieldnorms_enabled.to_string();
+
+    let doc_mapping_with_fieldnorms = r#"
+            field_mappings:
+              - name: description
+                type: text
+                fieldnorms: true
+              - name: ts
+                type: i64
+                fast: true
+              - name: temperature
+                type: i64
+                fast: true
+            "#;
+
+    let doc_mapping_without_fieldnorms = r#"
             field_mappings:
               - name: description
                 type: text
@@ -327,14 +352,21 @@ async fn test_single_node_sorting_with_query() -> anyhow::Result<()> {
               - name: temperature
                 type: i64
                 fast: true
-        "#;
+            "#;
+
+    let doc_mapping_yaml = if fieldnorms_enabled {
+        doc_mapping_with_fieldnorms
+    } else {
+        doc_mapping_without_fieldnorms
+    };
+
     let indexing_settings_json = r#"{
             "timestamp_field": "ts",
             "sort_field": "ts",
             "sort_order": "desc"
         }"#;
     let test_sandbox = TestSandbox::create(
-        index_id,
+        &index_id,
         doc_mapping_yaml,
         indexing_settings_json,
         &["description"],
@@ -356,7 +388,7 @@ async fn test_single_node_sorting_with_query() -> anyhow::Result<()> {
         end_timestamp: None,
         max_hits: 15,
         start_offset: 0,
-        sort_by_field: Some("temperature".to_string()),
+        sort_by_field: Some(sort_by_field.to_string()),
         sort_order: Some(SortOrder::Desc as i32),
         ..Default::default()
     };
@@ -374,6 +406,28 @@ async fn test_single_node_sorting_with_query() -> anyhow::Result<()> {
         .unwrap()
         .sorting_field_value
         >= hits[1].partial_hit.as_ref().unwrap().sorting_field_value));
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_single_node_sorting_with_query() -> anyhow::Result<()> {
+    single_node_search_sort_by_field("temperature", false).await?;
+    single_node_search_sort_by_field("_score", true).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_single_node_sort_by_score_should_fail() -> anyhow::Result<()> {
+    let search_response = single_node_search_sort_by_field("_score", false).await;
+    assert!(search_response.is_err());
+    assert_eq!(
+        search_response.err().map(|err| err.to_string()),
+        Some(
+            "Invalid query: Fieldnorms for field `description` is missing. Fieldnorms must be \
+             stored for the field to compute the BM25 score of the documents."
+                .to_string()
+        )
+    );
     Ok(())
 }
 
@@ -422,10 +476,15 @@ async fn test_single_node_invalid_sorting_with_query() -> anyhow::Result<()> {
         &*test_sandbox.metastore(),
         test_sandbox.storage_uri_resolver(),
     )
-    .await?;
-    assert_eq!(single_node_response.errors.len(), 1);
-    assert!(single_node_response.errors[0]
-        .contains("Sort by field on type text is currently not supported"));
+    .await;
+    assert!(single_node_response.is_err());
+    assert_eq!(
+        single_node_response.err().map(|err| err.to_string()),
+        Some(
+            "Invalid query: Sort by field on type text is currently not supported `description`."
+                .to_string()
+        )
+    );
     Ok(())
 }
 
@@ -520,7 +579,9 @@ async fn test_search_dynamic_util(test_sandbox: &TestSandbox, query: &str) -> Ve
         max_hits: 100,
         ..Default::default()
     };
+    let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
     let search_response = leaf_search(
+        searcher_context,
         &request,
         test_sandbox.storage(),
         &splits_offsets,

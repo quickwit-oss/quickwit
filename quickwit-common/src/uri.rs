@@ -32,11 +32,11 @@ use serde::{Serialize, Serializer};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum Protocol {
+    Azure,
     File,
     PostgreSQL,
     Ram,
     S3,
-    Azure,
 }
 
 impl Protocol {
@@ -75,7 +75,7 @@ impl Protocol {
     }
 
     pub fn is_object_storage(&self) -> bool {
-        matches!(&self, Protocol::S3 | Protocol::Azure)
+        matches!(&self, Protocol::Azure | Protocol::S3)
     }
 
     pub fn is_database(&self) -> bool {
@@ -106,7 +106,7 @@ impl FromStr for Protocol {
 
 const PROTOCOL_SEPARATOR: &str = "://";
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Extension {
     Json,
     Toml,
@@ -127,7 +127,7 @@ impl Extension {
 }
 
 /// Encapsulates the URI type.
-#[derive(PartialEq, Eq, Hash, Clone)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub struct Uri {
     uri: String,
     protocol_idx: usize,
@@ -192,8 +192,8 @@ impl Uri {
         Self { uri, protocol_idx }
     }
 
-    #[cfg(test)]
-    fn for_test(uri: &str) -> Self {
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test(uri: &str) -> Self {
         Uri::new(uri.to_string())
     }
 

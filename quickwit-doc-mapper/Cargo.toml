@@ -24,7 +24,8 @@ quickwit-proto = { version = "0.3.1", path = "../quickwit-proto" }
 regex = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "d24f31f", default-features = false, features = [
+siphasher = "0.3"
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "f4d7621", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",

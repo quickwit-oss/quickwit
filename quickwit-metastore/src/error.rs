@@ -99,6 +99,6 @@ pub enum MetastoreResolverError {
     /// but the resolver failed to actually connect to the storage.
     /// e.g. Connection error, credential error, incompatible version,
     /// internal error in third party, etc.
-    #[error("Failed to open metastore: `{0}`")]
+    #[error("Failed to connect to metastore: `{0}`")]
     FailedToOpenMetastore(MetastoreError),
 }

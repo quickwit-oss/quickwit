@@ -26,14 +26,16 @@ openssl = { version = "0.10.36", default-features = false, optional = true }
 quickwit-actors = { version = "0.3.1", path = "../quickwit-actors" }
 quickwit-aws = { version = "0.3.1", path = "../quickwit-aws" }
 quickwit-common = { version = "0.3.1", path = "../quickwit-common" }
-quickwit-config = { version = "0.3.1", path = "../quickwit-config" }
+quickwit-config = { version = "0.3.1", path = "../quickwit-config", features = [
+  "testsuite"
+] }
 quickwit-directories = { version = "0.3.1", path = "../quickwit-directories" }
 quickwit-doc-mapper = { version = "0.3.1", path = "../quickwit-doc-mapper", features = [
     "testsuite",
 ] }
-quickwit-ingest-api = { path = "../quickwit-ingest-api", version = "0.3.0" }
+quickwit-ingest-api = { path = "../quickwit-ingest-api", version = "0.3.1" }
 quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore" }
-quickwit-proto = { path = "../quickwit-proto", version = "0.3.0" }
+quickwit-proto = { path = "../quickwit-proto", version = "0.3.1" }
 quickwit-storage = { version = "0.3.1", path = "../quickwit-storage" }
 rdkafka = { version = "0.28", default-features = false, features = [
     "tokio",
@@ -50,7 +52,7 @@ rusoto_kinesis = { version = "0.48", default-features = false, features = [
 serde = "1"
 serde_json = "1"
 serde_yaml = "0.9"
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "d24f31f", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "f4d7621", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",
@@ -62,7 +64,7 @@ time = { version = "0.3.9", features = ["std"] }
 tokio = { version = "1", features = ["sync"] }
 tokio-stream = "0.1"
 tracing = "0.1.29"
-ulid = "0.6"
+ulid = "1.0"
 
 [features]
 kafka = ["rdkafka", "backoff"]

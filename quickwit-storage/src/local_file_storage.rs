@@ -227,7 +227,7 @@ impl Storage for LocalFileStorage {
 }
 
 /// A File storage resolver
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct LocalFileStorageFactory {}
 
 impl StorageFactory for LocalFileStorageFactory {

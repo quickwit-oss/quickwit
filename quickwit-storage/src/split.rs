@@ -101,7 +101,7 @@ impl PutPayload for FilePayload {
 }
 
 /// SplitPayloadBuilder is used to create a `SplitPayload`.
-#[derive(Default, Debug)]
+#[derive(Debug, Default)]
 pub struct SplitPayloadBuilder {
     metadata: BundleStorageFileOffsets,
     current_offset: usize,

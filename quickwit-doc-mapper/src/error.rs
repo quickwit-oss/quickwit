@@ -33,7 +33,7 @@ impl From<tantivy::query::QueryParserError> for QueryParserError {
 
 /// Error that may happen when parsing
 /// a document from JSON.
-#[derive(Debug, Error, PartialEq)]
+#[derive(Debug, Error, Eq, PartialEq)]
 pub enum DocParsingError {
     /// The provided string is not valid JSON.
     #[error("The provided string is not a valid JSON object. {0}")]

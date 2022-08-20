@@ -37,7 +37,7 @@ pub fn cluster_handler(
 
 /// This struct represents the QueryString passed to
 /// the rest API.
-#[derive(Deserialize, Debug, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct ClusterStateQueryString {
     /// The output format requested.

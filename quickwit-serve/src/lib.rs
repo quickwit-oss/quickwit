@@ -96,7 +96,7 @@ pub async fn serve_quickwit(
     services: &HashSet<QuickwitService>,
 ) -> anyhow::Result<()> {
     let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&config.metastore_uri())
+        .resolve(&config.metastore_uri)
         .await?;
     let indexes = metastore
         .list_indexes_metadatas()
@@ -148,10 +148,10 @@ pub async fn serve_quickwit(
     let index_service = Arc::new(IndexService::new(
         metastore,
         storage_resolver,
-        config.default_index_root_uri(),
+        config.default_index_root_uri.clone(),
     ));
-    let grpc_listen_addr = config.grpc_listen_addr().await?;
-    let rest_listen_addr = config.rest_listen_addr().await?;
+    let grpc_listen_addr = config.grpc_listen_addr;
+    let rest_listen_addr = config.rest_listen_addr;
 
     let quickwit_services = QuickwitServices {
         config: Arc::new(config),
@@ -201,7 +201,7 @@ fn check_is_configured_for_cluster(
     Ok(())
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Debug)]
 pub struct QuickwitBuildInfo {
     pub commit_version_tag: &'static str,
     pub cargo_pkg_version: &'static str,

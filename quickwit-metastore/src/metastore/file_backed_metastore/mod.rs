@@ -845,8 +845,8 @@ mod tests {
             .times(1)
             .returning(move |path, _| {
                 assert!(path == Path::new("indexes_states.json"));
-                return Err(StorageErrorKind::Io
-                    .with_error(anyhow::anyhow!("Oops. Some network problem maybe?")));
+                Err(StorageErrorKind::Io
+                    .with_error(anyhow::anyhow!("Oops. Some network problem maybe?")))
             });
         mock_storage
             .expect_get_all()
@@ -890,8 +890,8 @@ mod tests {
                 if path == Path::new("indexes_states.json") {
                     return block_on(ram_storage_clone.put(path, put_payload));
                 }
-                return Err(StorageErrorKind::Io
-                    .with_error(anyhow::anyhow!("Oops. Some network problem maybe?")));
+                Err(StorageErrorKind::Io
+                    .with_error(anyhow::anyhow!("Oops. Some network problem maybe?")))
             });
         mock_storage
             .expect_get_all()

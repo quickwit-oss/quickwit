@@ -25,7 +25,7 @@ use tantivy::directory::error::{OpenDirectoryError, OpenReadError};
 use thiserror::Error;
 
 /// Storage error kind.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum StorageErrorKind {
     /// The target index does not exist.
     DoesNotExist,
@@ -83,7 +83,7 @@ impl From<StorageError> for io::Error {
 }
 
 /// Generic StorageError.
-#[derive(Error, Debug, Clone)]
+#[derive(Clone, Debug, Error)]
 #[error("StorageError(kind={kind:?}, source={source})")]
 #[allow(missing_docs)]
 pub struct StorageError {
