@@ -23,7 +23,7 @@ anyhow = "1"
 async-trait = "0.1"
 atty = "0.2"
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
-clap = { version = "= 3.1", features = [ "env"] }
+clap = { version = "= 3.1", features = ["env"] }
 colored = "2.0.0"
 console-subscriber = { version = "0.1.0", optional = true }
 futures = "0.3"
