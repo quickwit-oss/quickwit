@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod args;
-mod error;
 mod format;
 mod metrics;
 
@@ -45,14 +44,14 @@ use std::time::Duration;
 
 use format::Format;
 use quickwit_actors::{Mailbox, Universe};
-use quickwit_cluster::{Cluster, QuickwitService};
+use quickwit_cluster::{Cluster, ClusterMember, QuickwitService};
 use quickwit_common::uri::Uri;
 use quickwit_config::QuickwitConfig;
 use quickwit_core::IndexService;
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexer_service;
 use quickwit_ingest_api::{init_ingest_api, IngestApiService};
-use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore};
+use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreGrpcClient};
 use quickwit_search::{start_searcher_service, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use serde::{Deserialize, Serialize};
@@ -73,6 +72,7 @@ struct QuickwitServices {
     pub config: Arc<QuickwitConfig>,
     pub build_info: Arc<QuickwitBuildInfo>,
     pub cluster: Arc<Cluster>,
+    pub metastore: Arc<dyn Metastore>,
     /// We do have a search service even on nodes that are not running `search`.
     /// It is only used to serve the rest API calls and will only execute
     /// the root requests.
@@ -83,23 +83,48 @@ struct QuickwitServices {
     pub services: HashSet<QuickwitService>,
 }
 
+// &Vec<ClusterMember> signature is needed by `Cluster::wait_for_members`.
+#[allow(clippy::ptr_arg)]
+fn has_node_with_metastore_service(members: &Vec<ClusterMember>) -> bool {
+    members.iter().any(|member| {
+        member
+            .available_services
+            .contains(&QuickwitService::Metastore)
+    })
+}
+
 pub async fn serve_quickwit(
     config: QuickwitConfig,
     services: &HashSet<QuickwitService>,
 ) -> anyhow::Result<()> {
-    let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&config.metastore_uri)
+    let storage_resolver = quickwit_storage_uri_resolver().clone();
+    let cluster = quickwit_cluster::start_cluster_service(&config, services).await?;
+
+    // Instanciate either a file-backed or postgresql [`Metastore`] if the node runs a `Metastore`
+    // service, else instanciate a [`MetastoreGrpcClient`].
+    let metastore: Arc<dyn Metastore> = if services.contains(&QuickwitService::Metastore) {
+        quickwit_metastore_uri_resolver()
+            .resolve(&config.metastore_uri)
+            .await?
+    } else {
+        // Wait 5 seconds for nodes running a `Metastore` service.
+        cluster
+            .wait_for_members(has_node_with_metastore_service, Duration::from_secs(5))
+            .await?;
+        let metastore_client = MetastoreGrpcClient::create_and_update_from_members(
+            &cluster.members(),
+            cluster.member_change_watcher(),
+        )
         .await?;
+        Arc::new(metastore_client)
+    };
+
     let indexes = metastore
         .list_indexes_metadatas()
         .await?
         .into_iter()
         .map(|index| (index.index_id, index.index_uri));
-    check_is_configured_for_cluster(&config.peer_seeds, metastore.uri(), indexes)?;
-
-    let storage_resolver = quickwit_storage_uri_resolver().clone();
-
-    let cluster = quickwit_cluster::start_cluster_service(&config, services).await?;
+    check_is_configured_for_cluster(&config.peer_seeds, &config.metastore_uri, indexes)?;
 
     tokio::spawn(node_readyness_reporting_task(
         cluster.clone(),
@@ -142,7 +167,7 @@ pub async fn serve_quickwit(
 
     // Always instanciate index management service.
     let index_service = Arc::new(IndexService::new(
-        metastore,
+        metastore.clone(),
         storage_resolver,
         config.default_index_root_uri.clone(),
     ));
@@ -153,6 +178,7 @@ pub async fn serve_quickwit(
         config: Arc::new(config),
         build_info: Arc::new(build_quickwit_build_info()),
         cluster,
+        metastore,
         ingest_api_service,
         search_service,
         indexer_service,

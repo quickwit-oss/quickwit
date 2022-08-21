@@ -32,6 +32,7 @@ use quickwit_config::{
 use quickwit_ingest_api::IngestApiService;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
+use quickwit_proto::{ServiceError, ServiceErrorCode};
 use quickwit_storage::{StorageResolverError, StorageUriResolver};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -66,6 +67,18 @@ pub enum IndexingServiceError {
     MetastoreError(#[from] MetastoreError),
     #[error("Invalid params `{0}`.")]
     InvalidParams(anyhow::Error),
+}
+
+impl ServiceError for IndexingServiceError {
+    fn status_code(&self) -> ServiceErrorCode {
+        match self {
+            Self::MissingPipeline { .. } => ServiceErrorCode::NotFound,
+            Self::PipelineAlreadyExists { .. } => ServiceErrorCode::BadRequest,
+            Self::StorageError(_) => ServiceErrorCode::Internal,
+            Self::MetastoreError(_) => ServiceErrorCode::Internal,
+            Self::InvalidParams(_) => ServiceErrorCode::BadRequest,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]

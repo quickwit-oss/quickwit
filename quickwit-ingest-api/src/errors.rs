@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_proto::tonic;
+use quickwit_proto::{tonic, ServiceError, ServiceErrorCode};
 use serde::Serialize;
 use thiserror::Error;
 
@@ -31,6 +31,17 @@ pub enum IngestApiError {
     IndexAlreadyExists { index_id: String },
     #[error("Ingest API service is down")]
     IngestAPIServiceDown,
+}
+
+impl ServiceError for IngestApiError {
+    fn status_code(&self) -> ServiceErrorCode {
+        match self {
+            IngestApiError::Corruption { .. } => ServiceErrorCode::Internal,
+            IngestApiError::IndexDoesNotExist { .. } => ServiceErrorCode::NotFound,
+            IngestApiError::IndexAlreadyExists { .. } => ServiceErrorCode::BadRequest,
+            IngestApiError::IngestAPIServiceDown => ServiceErrorCode::Internal,
+        }
+    }
 }
 
 #[derive(Error, Debug)]

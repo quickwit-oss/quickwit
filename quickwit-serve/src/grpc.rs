@@ -20,6 +20,8 @@
 use std::net::SocketAddr;
 
 use quickwit_cluster::QuickwitService;
+use quickwit_metastore::GrpcMetastoreAdapter;
+use quickwit_proto::metastore_api::metastore_api_service_server::MetastoreApiServiceServer;
 use quickwit_proto::search_service_server::SearchServiceServer;
 use quickwit_proto::tonic;
 use tonic::transport::Server;
@@ -28,7 +30,7 @@ use tracing::*;
 use crate::search_api::GrpcSearchAdapter;
 use crate::QuickwitServices;
 
-/// Starts gRPC service given a gRPC address and a search service and cluster service.
+/// Starts gRPC services given a gRPC address.
 pub(crate) async fn start_grpc_server(
     grpc_listen_addr: SocketAddr,
     quickwit_services: &QuickwitServices,
@@ -37,7 +39,7 @@ pub(crate) async fn start_grpc_server(
 
     let mut server = Server::builder();
 
-    // We only mount the gRPC service if the searcher is enabled on this node.
+    // We only mount the gRPC search service if `QuickwitService::Searcher` is enabled on this node.
     let search_grpc_service = if quickwit_services
         .services
         .contains(&QuickwitService::Searcher)
@@ -49,7 +51,22 @@ pub(crate) async fn start_grpc_server(
         None
     };
 
-    let server_router = server.add_optional_service(search_grpc_service);
+    // We only mount the gRPC metastore service if `QuickwitService::Metastore` is enabled on this
+    // node.
+    let metastore_grpc = if quickwit_services
+        .services
+        .contains(&QuickwitService::Metastore)
+    {
+        let metastore = quickwit_services.metastore.clone();
+        let grpc_metastore = GrpcMetastoreAdapter::from(metastore);
+        Some(MetastoreApiServiceServer::new(grpc_metastore))
+    } else {
+        None
+    };
+
+    let server_router = server
+        .add_optional_service(search_grpc_service)
+        .add_optional_service(metastore_grpc);
     server_router.serve(grpc_listen_addr).await?;
 
     Ok(())

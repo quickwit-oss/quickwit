@@ -157,7 +157,7 @@ impl FileBackedIndex {
                     "Failed to stage split  `{}`: split already exists.",
                     split_metadata.split_id()
                 ),
-                cause: anyhow::anyhow!(""),
+                cause: "".to_string(),
             });
         }
 

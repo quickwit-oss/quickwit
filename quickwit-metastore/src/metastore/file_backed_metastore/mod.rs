@@ -291,7 +291,7 @@ impl Metastore for FileBackedMetastore {
         } else if index_exists(&*self.storage, &index_metadata.index_id).await? {
             return Err(MetastoreError::InternalError {
                 message: format!("Index {index_id} cannot be created."),
-                cause: anyhow::anyhow!(
+                cause: format!(
                     "Index {index_id} is not present in the `indexes_states.json` file but its \
                      file `{index_id}/metastore.json` is on the storage."
                 ),
@@ -500,17 +500,15 @@ async fn get_index_mutex(
         IndexState::Alive(lazy_index) => lazy_index.get().await,
         IndexState::Creating => Err(MetastoreError::InternalError {
             message: format!("Index `{index_id}` cannot be retrieved."),
-            cause: anyhow::anyhow!(
-                "Index `{index_id}` is in transitioning state `Creating` and this should not \
-                 happened. Either recreate or delete it."
-            ),
+            cause: "Index `{index_id}` is in transitioning state `Creating` and this should not \
+                    happened. Either recreate or delete it."
+                .to_string(),
         }),
         IndexState::Deleting => Err(MetastoreError::InternalError {
             message: format!("Index `{index_id}` cannot be retrieved."),
-            cause: anyhow::anyhow!(
-                "Index `{index_id}` is in transitioning state `Deleting` and this should not \
-                 happened. Try to delete it again."
-            ),
+            cause: "Index `{index_id}` is in transitioning state `Deleting` and this should not \
+                    happened. Try to delete it again."
+                .to_string(),
         }),
     }
 }

@@ -53,7 +53,7 @@ impl Index {
         let mut index_metadata = serde_json::from_str::<IndexMetadata>(&self.index_metadata_json)
             .map_err(|err| MetastoreError::InternalError {
             message: "Failed to deserialize index metadata.".to_string(),
-            cause: anyhow::anyhow!(err),
+            cause: err.to_string(),
         })?;
         // `create_timestamp` and `update_timestamp` are stored in dedicated columns but are also
         // duplicated in [`IndexMetadata`]. We must override the duplicates with the authentic
@@ -102,7 +102,7 @@ impl Split {
             );
             MetastoreError::InternalError {
                 message,
-                cause: anyhow::anyhow!(err),
+                cause: err.to_string(),
             }
         })
     }
@@ -120,7 +120,7 @@ impl Split {
             );
             MetastoreError::InternalError {
                 message,
-                cause: anyhow::anyhow!(err)
+                cause: err.to_string(),
             }
         })
     }

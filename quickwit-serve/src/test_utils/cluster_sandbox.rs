@@ -67,8 +67,8 @@ impl ClusterSandbox {
     // Starts one node that runs all the services.
     pub async fn start_standalone_node() -> anyhow::Result<Self> {
         let temp_dir = tempfile::tempdir()?;
-        let services = HashSet::from_iter([QuickwitService::Searcher]);
-        let node_configs = build_node_configs(temp_dir.path().to_path_buf(), &[services]);
+        let services = HashSet::from_iter([QuickwitService::Searcher, QuickwitService::Metastore]);
+        let node_configs = build_node_configs(temp_dir.path().to_path_buf(), vec![services]);
         // There is exactly one node.
         let node_config = node_configs[0].clone();
         let node_config_clone = node_config.clone();
@@ -130,7 +130,7 @@ impl ClusterSandbox {
             .unwrap();
         let mut grpc_search_clients = HashMap::new();
         for node_config in node_configs.iter() {
-            if node_config.services.contains(&QuickwitService::Indexer) {
+            if !node_config.services.contains(&QuickwitService::Searcher) {
                 continue;
             }
             let search_client =
