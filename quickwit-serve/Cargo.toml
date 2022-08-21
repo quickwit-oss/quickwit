@@ -54,6 +54,7 @@ warp = "0.3"
 
 [dev-dependencies]
 assert-json-diff = "2.0.1"
+itertools = "0.10.3"
 mockall = "0.11"
 quickwit-cluster = { version = "0.3.1", path = "../quickwit-cluster", features = [
   "testsuite"
@@ -70,4 +71,3 @@ quickwit-storage = { version = "0.3.1", path = "../quickwit-storage", features =
 rand = "0.8"
 tokio = { version = "1", features = ["full"] }
 tempfile = "3.3.0"
-itertools = "0.10.3"

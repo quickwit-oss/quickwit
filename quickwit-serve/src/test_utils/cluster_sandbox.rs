@@ -51,6 +51,10 @@ pub struct NodeConfig {
 ///
 /// The goal is to start several nodes and use the gRPC or REST clients to
 /// test it.
+///
+/// WARNING: currently we cannot start an indexer in different test as it will
+/// will share the same `INGEST_API_SERVICE_INSTANCE`. The ingest API will be
+/// dropped by the first running test and the other tests will fail.
 pub struct ClusterSandbox {
     pub node_configs: Vec<NodeConfig>,
     pub grpc_search_clients: HashMap<SocketAddr, SearchServiceClient>,
@@ -63,7 +67,7 @@ impl ClusterSandbox {
     // Starts one node that runs all the services.
     pub async fn start_standalone_node() -> anyhow::Result<Self> {
         let temp_dir = tempfile::tempdir()?;
-        let services = HashSet::from_iter([QuickwitService::Searcher, QuickwitService::Indexer]);
+        let services = HashSet::from_iter([QuickwitService::Searcher]);
         let node_configs = build_node_configs(temp_dir.path().to_path_buf(), vec![services]);
         // There is exactly one node.
         let node_config = node_configs[0].clone();
@@ -98,8 +102,6 @@ impl ClusterSandbox {
     // For now, starts only 3 nodes:
     // - 2 searchers.
     // - 1 indexer.
-    // Currently we cannot start several indexers in the same process as they
-    // will share the same `INGEST_API_SERVICE_INSTANCE`.
     pub async fn start_cluster_nodes() -> anyhow::Result<Self> {
         let temp_dir = tempfile::tempdir()?;
         let nodes_services = vec![
@@ -256,7 +258,7 @@ async fn wait_for_server_ready(socket_addr: SocketAddr) -> anyhow::Result<()> {
         .path_and_query("/")
         .build()?;
     while num_attempts < max_num_attempts {
-        tokio::time::sleep(Duration::from_millis(50 * (num_attempts + 1))).await;
+        tokio::time::sleep(Duration::from_millis(20 * (num_attempts + 1))).await;
         match Endpoint::from(uri.clone()).connect().await {
             Ok(_) => break,
             Err(_) => {
