@@ -59,8 +59,9 @@ async fn test_standalone_server() -> anyhow::Result<()> {
     assert!(search_result.is_ok());
     let cluster_result = sandbox.rest_client.cluster_state().await;
     assert!(cluster_result.is_ok());
-    let indexing_service_state = sandbox.rest_client.indexing_service_state().await.unwrap();
-    assert_eq!(indexing_service_state.num_running_pipelines, 1);
+    let indexing_service_state_result = sandbox.rest_client.indexing_service_state().await;
+    // There is no indexing service running.
+    assert!(indexing_service_state_result.is_err());
     Ok(())
 }
 
