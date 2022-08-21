@@ -52,7 +52,7 @@ pub struct NodeConfig {
 /// The goal is to start several nodes and use the gRPC or REST clients to
 /// test it.
 ///
-/// WARNING: currently we cannot start an indexer in different test as it will
+/// WARNING: Currently, we cannot start an indexer in a different test as it will
 /// will share the same `INGEST_API_SERVICE_INSTANCE`. The ingest API will be
 /// dropped by the first running test and the other tests will fail.
 pub struct ClusterSandbox {
