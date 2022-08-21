@@ -3,7 +3,7 @@
 # Website: https://quickwit.io
 # Docs: https://quickwit.io/docs/configuration/node-config
 #
-# Configure AWS credentials: https://quickwit.io/docs/guides/configure-aws-env
+# Configure AWS credentials: https://quickwit.io/docs/guides/aws-setup#aws-credentials
 #
 # -------------------------------- General settings --------------------------------
 #
