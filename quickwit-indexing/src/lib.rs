@@ -27,9 +27,9 @@ use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
 use tracing::info;
 
-pub use crate::actors::IndexingServiceError;
-use crate::actors::{
-    IndexingPipeline, IndexingPipelineParams, IndexingService, IngestApiGarbageCollector,
+pub use crate::actors::{
+    IndexingPipeline, IndexingPipelineParams, IndexingService, IndexingServiceError,
+    IngestApiGarbageCollector,
 };
 use crate::models::{IndexingStatistics, SpawnPipelinesForIndex};
 pub use crate::split_store::{

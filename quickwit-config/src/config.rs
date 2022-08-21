@@ -483,8 +483,10 @@ impl QuickwitConfig {
             .with_port(rest_listen_port)
             .to_socket_addr()
             .expect("The default host should be an IP address.");
+        let grpc_listen_port = quickwit_common::net::find_available_tcp_port()
+            .expect("The OS should almost always find an available port.");
         let grpc_listen_addr = listen_address
-            .with_port(rest_listen_port + 1)
+            .with_port(grpc_listen_port)
             .to_socket_addr()
             .expect("The default host should be an IP address.");
 

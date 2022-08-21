@@ -33,7 +33,7 @@ use quickwit_ingest_api::IngestApiService;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
 use quickwit_storage::{StorageResolverError, StorageUriResolver};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{error, info};
 
@@ -62,11 +62,11 @@ pub enum IndexingServiceError {
     InvalidParams(anyhow::Error),
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct IndexingServiceState {
-    num_running_pipelines: usize,
-    num_successful_pipelines: usize,
-    num_failed_pipelines: usize,
+    pub num_running_pipelines: usize,
+    pub num_successful_pipelines: usize,
+    pub num_failed_pipelines: usize,
 }
 
 pub struct IndexingService {
