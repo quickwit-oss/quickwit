@@ -39,6 +39,7 @@ fn test_check_is_configured_for_cluster_on_single_node() {
 
 #[tokio::test]
 async fn test_standalone_server() -> anyhow::Result<()> {
+    quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
     let mut search_client = sandbox.get_random_search_client();
     let search_result = search_client
@@ -65,10 +66,9 @@ async fn test_standalone_server() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_multi_nodes_cluster() -> anyhow::Result<()> {
+    quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandbox::start_cluster_nodes().await.unwrap();
-    let cluster_result = sandbox.rest_client.cluster_state().await;
-    assert!(cluster_result.is_ok());
-    assert_eq!(cluster_result.unwrap().live_nodes.len(), 2);
+    sandbox.wait_for_cluster_num_live_nodes(2).await.unwrap();
     let indexing_service_state = sandbox.rest_client.indexing_service_state().await.unwrap();
     assert_eq!(indexing_service_state.num_running_pipelines, 1);
     Ok(())

@@ -26,13 +26,15 @@ use hyper::Uri;
 use itertools::Itertools;
 use quickwit_cluster::QuickwitService;
 use quickwit_common::new_coolid;
+use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::QuickwitConfig;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
 use quickwit_proto::tonic::transport::Endpoint;
 use quickwit_search::{create_search_service_client, SearchServiceClient};
-use rand::seq::SliceRandom;
+use rand::seq::IteratorRandom;
 use tempfile::TempDir;
+use tracing::info;
 
 use super::rest_client::QuickwitRestClient;
 use crate::serve_quickwit;
@@ -68,7 +70,7 @@ impl ClusterSandbox {
         let node_config_clone = node_config.clone();
         // Creates an index before starting nodes as currently Quickwit does not support
         // dynamic creation/deletion of indexes/sources.
-        let index_for_test = new_coolid("index-for-test");
+        let index_for_test = append_random_suffix("test-standalone-node-index");
         create_index_for_test(&index_for_test, &node_config.quickwit_config).await?;
         tokio::spawn(async move {
             let result = serve_quickwit(
@@ -106,7 +108,7 @@ impl ClusterSandbox {
             HashSet::from_iter([QuickwitService::Indexer]),
         ];
         let node_configs = build_node_configs(temp_dir.path().to_path_buf(), nodes_services);
-        let index_for_test = new_coolid("index-for-test");
+        let index_for_test = append_random_suffix("test-multi-nodes-cluster-index");
         // Creates an index before starting nodes as currently Quickwit does not support
         // dynamic creation/deletion of indexes/sources.
         create_index_for_test(&index_for_test, &node_configs[0].quickwit_config).await?;
@@ -118,7 +120,7 @@ impl ClusterSandbox {
                     &node_config_clone.services,
                 )
                 .await;
-                println!("Quickwit server terminated: {:?}", result);
+                info!("Quickwit server terminated: {:?}", result);
                 Result::<_, anyhow::Error>::Ok(())
             });
         }
@@ -148,9 +150,29 @@ impl ClusterSandbox {
         })
     }
 
+    pub async fn wait_for_cluster_num_live_nodes(
+        &self,
+        expected_num_alive_nodes: usize,
+    ) -> anyhow::Result<()> {
+        let mut num_attempts = 0;
+        let max_num_attempts = 3;
+        while num_attempts < max_num_attempts {
+            tokio::time::sleep(Duration::from_millis(100 * (num_attempts + 1))).await;
+            let cluster_state = self.rest_client.cluster_state().await?;
+            if cluster_state.live_nodes.len() == expected_num_alive_nodes {
+                return Ok(());
+            }
+            num_attempts += 1;
+        }
+        if num_attempts == max_num_attempts {
+            anyhow::bail!("Too many attempts to get expected num members.");
+        }
+        Ok(())
+    }
+
     pub fn get_random_search_client(&self) -> SearchServiceClient {
-        let addresses = self.grpc_search_clients.keys().collect_vec();
-        let selected_addr = addresses.choose(&mut rand::thread_rng()).unwrap();
+        let mut rng = rand::thread_rng();
+        let selected_addr = self.grpc_search_clients.keys().choose(&mut rng).unwrap();
         self.grpc_search_clients.get(selected_addr).unwrap().clone()
     }
 }
@@ -234,6 +256,7 @@ async fn wait_for_server_ready(socket_addr: SocketAddr) -> anyhow::Result<()> {
         .path_and_query("/")
         .build()?;
     while num_attempts < max_num_attempts {
+        tokio::time::sleep(Duration::from_millis(20 * (num_attempts + 1))).await;
         match Endpoint::from(uri.clone()).connect().await {
             Ok(_) => break,
             Err(_) => {
@@ -244,7 +267,6 @@ async fn wait_for_server_ready(socket_addr: SocketAddr) -> anyhow::Result<()> {
                     max_num_attempts
                 );
                 num_attempts += 1;
-                tokio::time::sleep(Duration::from_millis(10 * (num_attempts))).await;
             }
         }
     }
