@@ -270,8 +270,8 @@ impl Cluster {
         let live_nodes = chitchat_guard.live_nodes().cloned().collect::<Vec<_>>();
         let dead_nodes = chitchat_guard.dead_nodes().cloned().collect::<Vec<_>>();
         ClusterState {
-            cluster_id: self.cluster_id.to_string(),
-            self_node_id: self.node_id.to_string(),
+            cluster_id: self.cluster_id.clone(),
+            self_node_id: self.node_id.clone(),
             state,
             live_nodes,
             dead_nodes,

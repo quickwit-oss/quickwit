@@ -129,7 +129,7 @@ impl ClusterSandbox {
             .unwrap();
         let mut grpc_search_clients = HashMap::new();
         for node_config in node_configs.iter() {
-            if node_config.services.contains(&QuickwitService::Searcher) {
+            if node_config.services.contains(&QuickwitService::Indexer) {
                 continue;
             }
             let search_client =
@@ -173,7 +173,7 @@ async fn create_index_for_test(
     Ok(())
 }
 
-/// Build a list of [`NodeConfig`] given a list of Quickwit services.
+/// Builds a list of [`NodeConfig`] given a list of Quickwit services.
 /// Each element of `nodes_services` defines the services of a given node.
 /// For each node, a `QuickwitConfig` is built with the right parameters
 /// such that we will be able to run `quickwit_serve` on them and form
