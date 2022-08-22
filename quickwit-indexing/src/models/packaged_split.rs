@@ -24,12 +24,12 @@ use std::time::Instant;
 
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 
-use crate::models::ScratchDirectory;
+use crate::models::{IndexingPipelineId, ScratchDirectory};
 
 pub struct PackagedSplit {
     pub split_id: String,
-    pub index_id: String,
     pub partition_id: u64,
+    pub pipeline_id: IndexingPipelineId,
 
     pub replaced_split_ids: Vec<String>,
     pub time_range: Option<RangeInclusive<i64>>,
@@ -48,7 +48,6 @@ impl fmt::Debug for PackagedSplit {
             .field("split_id", &self.split_id)
             .field("partition_id", &self.partition_id)
             .field("replaced_split_ids", &self.replaced_split_ids)
-            .field("index_id", &self.index_id)
             .field("time_range", &self.time_range)
             .field("size_in_bytes", &self.size_in_bytes)
             .field("split_scratch_directory", &self.split_scratch_directory)
@@ -81,7 +80,7 @@ impl PackagedSplitBatch {
         assert_eq!(
             splits
                 .iter()
-                .map(|split| split.index_id.clone())
+                .map(|split| split.pipeline_id.index_id.clone())
                 .collect::<HashSet<_>>()
                 .len(),
             1,
@@ -97,7 +96,7 @@ impl PackagedSplitBatch {
     pub fn index_id(&self) -> String {
         self.splits
             .get(0)
-            .map(|split| split.index_id.clone())
+            .map(|split| split.pipeline_id.index_id.clone())
             .unwrap()
     }
 

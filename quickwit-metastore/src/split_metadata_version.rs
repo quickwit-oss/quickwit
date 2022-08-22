@@ -79,7 +79,10 @@ impl From<SplitMetadataAndFooterV0> for SplitMetadata {
         SplitMetadata {
             footer_offsets: v0.footer_offsets,
             split_id: v0.split_metadata.split_id,
-            partition_id: 0u64,
+            partition_id: 0,
+            source_id: "unknown".to_string(),
+            node_id: "unknown".to_string(),
+            pipeline_ord: 0,
             num_docs: v0.split_metadata.num_docs,
             uncompressed_docs_size_in_bytes: v0.split_metadata.size_in_bytes,
             time_range: v0.split_metadata.time_range,
@@ -100,6 +103,12 @@ pub(crate) struct SplitMetadataV1 {
 
     #[serde(default)]
     pub partition_id: u64,
+
+    #[serde(default)]
+    pub source_id: Option<String>,
+
+    #[serde(default)]
+    pub node_id: Option<String>,
 
     /// Number of records (or documents) in the split.
     pub num_docs: usize,
@@ -137,57 +146,77 @@ pub(crate) struct SplitMetadataV1 {
 
 impl From<SplitMetadataV1> for SplitMetadata {
     fn from(v1: SplitMetadataV1) -> Self {
+        let source_id = v1.source_id.unwrap_or_else(|| "unknown".to_string());
+
+        let (node_id, pipeline_ord) = if let Some(node_id) = v1.node_id {
+            if let Some((node_id, pipeline_ord)) = node_id.rsplit_once('/') {
+                (
+                    node_id.to_string(),
+                    pipeline_ord.parse::<usize>().unwrap_or(0),
+                )
+            } else {
+                (node_id.to_string(), 0)
+            }
+        } else {
+            ("unknown".to_string(), 0)
+        };
+
         SplitMetadata {
-            footer_offsets: v1.footer_offsets,
-            partition_id: v1.partition_id,
             split_id: v1.split_id,
+            partition_id: v1.partition_id,
+            source_id,
+            node_id,
+            pipeline_ord,
             num_docs: v1.num_docs,
             uncompressed_docs_size_in_bytes: v1.uncompressed_docs_size_in_bytes,
             time_range: v1.time_range,
             create_timestamp: v1.create_timestamp,
             tags: v1.tags,
             demux_num_ops: v1.demux_num_ops,
+            footer_offsets: v1.footer_offsets,
         }
     }
 }
 
 impl From<SplitMetadata> for SplitMetadataV1 {
-    fn from(v1: SplitMetadata) -> Self {
+    fn from(split: SplitMetadata) -> Self {
         SplitMetadataV1 {
-            footer_offsets: v1.footer_offsets,
-            partition_id: v1.partition_id,
-            split_id: v1.split_id,
-            num_docs: v1.num_docs,
-            uncompressed_docs_size_in_bytes: v1.uncompressed_docs_size_in_bytes,
-            time_range: v1.time_range,
-            create_timestamp: v1.create_timestamp,
-            tags: v1.tags,
-            demux_num_ops: v1.demux_num_ops,
+            split_id: split.split_id,
+            partition_id: split.partition_id,
+            source_id: Some(split.source_id),
+            node_id: Some(format!("{}/{}", split.node_id, split.pipeline_ord)),
+            num_docs: split.num_docs,
+            uncompressed_docs_size_in_bytes: split.uncompressed_docs_size_in_bytes,
+            time_range: split.time_range,
+            create_timestamp: split.create_timestamp,
+            tags: split.tags,
+            demux_num_ops: split.demux_num_ops,
+            footer_offsets: split.footer_offsets,
         }
     }
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "version")]
-pub(crate) enum VersionedSplitMetadataDeserializeHelper {
+pub(crate) enum VersionedSplitMetadata {
     #[serde(rename = "0")]
     V0(SplitMetadataAndFooterV0),
     #[serde(rename = "1")]
     V1(SplitMetadataV1),
 }
 
-impl From<VersionedSplitMetadataDeserializeHelper> for SplitMetadata {
-    fn from(versioned_helper: VersionedSplitMetadataDeserializeHelper) -> Self {
+impl From<VersionedSplitMetadata> for SplitMetadata {
+    fn from(versioned_helper: VersionedSplitMetadata) -> Self {
         match versioned_helper {
-            VersionedSplitMetadataDeserializeHelper::V0(split_metadata) => split_metadata.into(),
-            VersionedSplitMetadataDeserializeHelper::V1(split_metadata) => split_metadata.into(),
+            VersionedSplitMetadata::V0(v0) => v0.into(),
+            VersionedSplitMetadata::V1(v1) => v1.into(),
         }
     }
 }
 
-impl From<SplitMetadata> for VersionedSplitMetadataDeserializeHelper {
+impl From<SplitMetadata> for VersionedSplitMetadata {
     fn from(split_metadata: SplitMetadata) -> Self {
-        VersionedSplitMetadataDeserializeHelper::V1(split_metadata.into())
+        VersionedSplitMetadata::V1(split_metadata.into())
     }
 }
 
@@ -211,7 +240,7 @@ impl<'de> Deserialize<'de> for SplitMetadata {
             );
         }
         Ok(
-            serde_json::from_value::<VersionedSplitMetadataDeserializeHelper>(split_metadata_value)
+            serde_json::from_value::<VersionedSplitMetadata>(split_metadata_value)
                 .map_err(serde::de::Error::custom)?
                 .into(),
         )

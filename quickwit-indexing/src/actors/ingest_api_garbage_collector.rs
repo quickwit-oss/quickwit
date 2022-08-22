@@ -31,7 +31,7 @@ use tracing::{debug, error, info, instrument};
 
 use super::IndexingService;
 use crate::actors::indexing_service::INGEST_API_SOURCE_ID;
-use crate::models::ShutdownPipeline;
+use crate::models::ShutdownPipelines;
 
 const RUN_INTERVAL: Duration = if cfg!(test) {
     Duration::from_secs(60) // 1min
@@ -80,9 +80,9 @@ impl IngestApiGarbageCollector {
     async fn delete_queue(&self, queue_id: &str) -> anyhow::Result<()> {
         // shutdown the pipeline if any
         self.indexing_service
-            .ask_for_res(ShutdownPipeline {
+            .ask_for_res(ShutdownPipelines {
                 index_id: queue_id.to_string(),
-                source_id: INGEST_API_SOURCE_ID.to_string(),
+                source_id: Some(INGEST_API_SOURCE_ID.to_string()),
             })
             .await?;
 
@@ -216,6 +216,7 @@ mod tests {
         let indexer_config = IndexerConfig::for_test().unwrap();
         let storage_resolver = StorageUriResolver::for_test();
         let indexing_server = IndexingService::new(
+            "test-node".to_string(),
             data_dir_path,
             indexer_config,
             metastore.clone(),
