@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use tokio::net::{lookup_host, ToSocketAddrs};
 
 /// Represents a host, i.e. an IP address (`127.0.0.1`) or a hostname (`localhost`).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Host {
     Hostname(String),
     IpAddr(IpAddr),

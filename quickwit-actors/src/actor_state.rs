@@ -20,7 +20,7 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
 #[repr(u32)]
-#[derive(Clone, Debug, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ActorState {
     /// Processing implies that the actor has some message(s) (this includes commands) to process.
     Processing = 0,

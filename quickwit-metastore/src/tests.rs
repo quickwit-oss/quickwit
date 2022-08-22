@@ -1382,6 +1382,7 @@ pub mod test_suite {
         let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: split_id_1.to_string(),
+            partition_id: 3u64,
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
@@ -1393,6 +1394,7 @@ pub mod test_suite {
         let split_metadata_2 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: "list-splits-two".to_string(),
+            partition_id: 3u64,
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(100..=199),
@@ -1404,6 +1406,7 @@ pub mod test_suite {
         let split_metadata_3 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: "list-splits-three".to_string(),
+            partition_id: 3u64,
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(200..=299),
@@ -1415,6 +1418,7 @@ pub mod test_suite {
         let split_metadata_4 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: "list-splits-four".to_string(),
+            partition_id: 3u64,
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(300..=399),
@@ -1426,6 +1430,7 @@ pub mod test_suite {
         let split_metadata_5 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: "list-splits-five".to_string(),
+            partition_id: 3u64,
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: None,
@@ -1816,6 +1821,7 @@ pub mod test_suite {
             let split_metadata_6 = SplitMetadata {
                 footer_offsets: 1000..2000,
                 split_id: "list-splits-six".to_string(),
+                partition_id: 3u64,
                 num_docs: 1,
                 uncompressed_docs_size_in_bytes: 2,
                 time_range: None,

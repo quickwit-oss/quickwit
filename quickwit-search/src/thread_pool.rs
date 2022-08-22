@@ -34,7 +34,7 @@ fn search_thread_pool() -> &'static rayon::ThreadPool {
     })
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Panicked;
 
 /// Function similar to `tokio::spawn_blocking`.

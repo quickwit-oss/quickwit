@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 
 use lru::KeyRef;
 
-#[derive(Hash, Debug, Clone, PartialEq, Eq)]
+#[derive(Hash, Clone, Debug, Eq, PartialEq)]
 pub struct SliceAddress {
     pub path: PathBuf,
     pub byte_range: Range<usize>,

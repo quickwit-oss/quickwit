@@ -32,14 +32,15 @@ use tantivy::{IndexReader, ReloadPolicy, Score, Searcher, SnippetGenerator};
 use tracing::error;
 
 use crate::leaf::open_index_with_cache;
+use crate::service::SearcherContext;
 use crate::GlobalDocAddress;
 
 const SNIPPET_MAX_NUM_CHARS: usize = 150;
 
 /// Given a list of global doc address, fetches all the documents and
 /// returns them as a hashmap.
-#[allow(clippy::needless_lifetimes)]
 async fn fetch_docs_to_map(
+    searcher_context: Arc<SearcherContext>,
     mut global_doc_addrs: Vec<GlobalDocAddress>,
     index_storage: Arc<dyn Storage>,
     splits: &[SplitIdAndFooterOffsets],
@@ -66,6 +67,7 @@ async fn fetch_docs_to_map(
             .get(split_id)
             .ok_or_else(|| anyhow::anyhow!("Failed to find offset for split {}", split_id))?;
         split_fetch_docs_futures.push(fetch_docs_in_split(
+            searcher_context.clone(),
             global_doc_addrs,
             index_storage.clone(),
             *split_and_offset,
@@ -105,6 +107,7 @@ async fn fetch_docs_to_map(
 /// and the storage associated to an index, fetches the document from
 /// the split document stores, and returns the full hits.
 pub async fn fetch_docs(
+    searcher_context: Arc<SearcherContext>,
     partial_hits: Vec<PartialHit>,
     index_storage: Arc<dyn Storage>,
     splits: &[SplitIdAndFooterOffsets],
@@ -148,10 +151,11 @@ pub async fn fetch_docs(
 const NUM_CONCURRENT_REQUESTS: usize = 10;
 
 async fn get_searcher_for_split_without_cache(
+    searcher_context: &Arc<SearcherContext>,
     index_storage: Arc<dyn Storage>,
     split: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<IndexReader> {
-    let index = open_index_with_cache(index_storage, split, false)
+    let index = open_index_with_cache(searcher_context, index_storage, split, false)
         .await
         .with_context(|| "open-index-for-split")?;
     let reader = index
@@ -170,9 +174,9 @@ struct DocBundle {
 }
 
 /// Fetching docs from a specific split.
-#[tracing::instrument(skip(global_doc_addrs, index_storage, split))]
-#[allow(clippy::needless_lifetimes)]
+#[tracing::instrument(skip(global_doc_addrs, index_storage, split, searcher_context))]
 async fn fetch_docs_in_split(
+    searcher_context: Arc<SearcherContext>,
     mut global_doc_addrs: Vec<GlobalDocAddress>,
     index_storage: Arc<dyn Storage>,
     split: &SplitIdAndFooterOffsets,
@@ -180,12 +184,10 @@ async fn fetch_docs_in_split(
     search_request: &SearchRequest,
 ) -> anyhow::Result<Vec<(GlobalDocAddress, DocBundle)>> {
     global_doc_addrs.sort_by_key(|doc| doc.doc_addr);
-
-    let index_reader = get_searcher_for_split_without_cache(index_storage, split).await?;
-    let searcher = index_reader.searcher();
+    let index_reader = get_searcher_for_split_without_cache(&searcher_context, index_storage, split).await?;
+    let searcher = Arc::new(index_reader.searcher());
     let snippet_generators =
         Arc::new(create_snippet_generators(&searcher, doc_mapper, search_request).await?);
-
     let doc_futures = global_doc_addrs.into_iter().map(|global_doc_addr| {
         let searcher = searcher.clone();
         let moved_snippet_generators = snippet_generators.clone();

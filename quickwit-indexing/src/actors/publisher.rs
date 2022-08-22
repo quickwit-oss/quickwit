@@ -30,7 +30,7 @@ use crate::actors::{GarbageCollector, MergePlanner};
 use crate::models::{NewSplits, SplitUpdate};
 use crate::source::{SourceActor, SuggestTruncate};
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct PublisherCounters {
     pub num_published_splits: u64,
     pub num_replace_operations: u64,

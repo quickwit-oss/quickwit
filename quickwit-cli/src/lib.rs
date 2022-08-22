@@ -61,13 +61,14 @@ pub fn parse_duration_with_unit(duration_with_unit_str: &str) -> anyhow::Result<
         .ok_or_else(|| anyhow::anyhow!("Invalid duration format: `[0-9]+[smhd]`"))?;
     let value = captures.get(1).unwrap().as_str().parse::<u64>().unwrap();
     let unit = captures.get(2).unwrap().as_str();
-    return match unit {
+
+    match unit {
         "s" => Ok(Duration::from_secs(value)),
         "m" => Ok(Duration::from_secs(value * 60)),
         "h" => Ok(Duration::from_secs(value * 60 * 60)),
         "d" => Ok(Duration::from_secs(value * 60 * 60 * 24)),
         _ => bail!("Invalid duration format: `[0-9]+[smhd]`"),
-    };
+    }
 }
 
 async fn load_quickwit_config(

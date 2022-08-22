@@ -95,7 +95,7 @@ impl Default for IndexingResources {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MergePolicy {
     #[serde(default = "MergePolicy::default_demux_factor")]
@@ -221,7 +221,7 @@ impl Default for IndexingSettings {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SearchSettings {
     #[serde(default)]
@@ -332,6 +332,10 @@ pub fn build_doc_mapper(
     let sort_by = match indexing_settings.sort_by() {
         SortBy::DocId => None,
         SortBy::FastField { field_name, order } => Some(SortByConfig { field_name, order }),
+        SortBy::Score { order } => Some(SortByConfig {
+            field_name: "_score".to_string(),
+            order,
+        }),
     };
     let builder = DefaultDocMapperBuilder {
         store_source: doc_mapping.store_source,

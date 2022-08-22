@@ -29,7 +29,9 @@ mod sequencer;
 mod uploader;
 
 pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineHandler, IndexingPipelineParams};
-pub use indexing_service::{IndexingService, IndexingServiceError, INDEXING_DIR_NAME};
+pub use indexing_service::{
+    IndexingService, IndexingServiceError, IndexingServiceState, INDEXING_DIR_NAME,
+};
 use tantivy::schema::{Field, FieldType};
 mod merge_executor;
 mod merge_planner;
@@ -40,7 +42,7 @@ pub use self::indexer::{Indexer, IndexerCounters};
 pub use self::ingest_api_garbage_collector::{
     IngestApiGarbageCollector, IngestApiGarbageCollectorCounters,
 };
-pub use self::merge_executor::MergeExecutor;
+pub use self::merge_executor::{combine_partition_ids, MergeExecutor};
 pub use self::merge_planner::MergePlanner;
 pub use self::merge_split_downloader::MergeSplitDownloader;
 pub use self::packager::Packager;

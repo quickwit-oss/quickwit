@@ -68,34 +68,34 @@ pub fn build_source_command<'a>() -> Command<'a> {
         .arg_required_else_help(true)
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct CreateSourceArgs {
     pub config_uri: Uri,
     pub index_id: String,
     pub source_config_uri: Uri,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct DeleteSourceArgs {
     pub config_uri: Uri,
     pub index_id: String,
     pub source_id: String,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct DescribeSourceArgs {
     pub config_uri: Uri,
     pub index_id: String,
     pub source_id: String,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ListSourcesArgs {
     pub config_uri: Uri,
     pub index_id: String,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum SourceCliCommand {
     CreateSource(CreateSourceArgs),
     DeleteSource(DeleteSourceArgs),

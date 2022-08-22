@@ -29,7 +29,8 @@ use chitchat::FailureDetectorConfig;
 use quickwit_config::QuickwitConfig;
 
 pub use crate::cluster::{
-    create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster, ClusterState, Member,
+    create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster, ClusterMember,
+    ClusterState,
 };
 pub use crate::error::{ClusterError, ClusterResult};
 
@@ -40,7 +41,7 @@ fn unix_timestamp() -> u64 {
     duration_since_epoch.as_secs()
 }
 
-#[derive(Debug, PartialEq, Eq, Copy, Hash, Clone)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum QuickwitService {
     Indexer,
     Searcher,
@@ -73,18 +74,18 @@ pub async fn start_cluster_service(
     quickwit_config: &QuickwitConfig,
     services: &HashSet<QuickwitService>,
 ) -> anyhow::Result<Arc<Cluster>> {
-    let member = Member::new(
+    let member = ClusterMember::new(
         quickwit_config.node_id.clone(),
         unix_timestamp(),
         quickwit_config.gossip_advertise_addr,
+        services.clone(),
+        quickwit_config.grpc_listen_addr,
     );
 
     let cluster = Cluster::join(
         member,
-        services,
         quickwit_config.gossip_listen_addr,
         quickwit_config.cluster_id.clone(),
-        quickwit_config.grpc_advertise_addr,
         quickwit_config.peer_seed_addrs().await?,
         FailureDetectorConfig::default(),
         &UdpTransport,

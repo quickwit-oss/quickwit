@@ -41,7 +41,7 @@ use crate::{AskError, Command, KillSwitch, Mailbox, QueueCapacity, SendError};
 /// after the end of the execution.
 ///
 /// It is in many ways, similar to the exit status code of a program.
-#[derive(Error, Debug, Clone)]
+#[derive(Clone, Debug, Error)]
 pub enum ActorExitStatus {
     /// The actor successfully exited.
     ///

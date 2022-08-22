@@ -22,7 +22,7 @@ use std::sync::atomic::Ordering;
 use crate::actors::{IndexerCounters, PublisherCounters, UploaderCounters};
 
 /// A Struct that holds all statistical data about indexing
-#[derive(Debug, Default, Clone)]
+#[derive(Clone, Debug, Default)]
 pub struct IndexingStatistics {
     /// Number of document processed (valid or not)
     pub num_docs: u64,

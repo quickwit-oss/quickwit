@@ -21,7 +21,7 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use quickwit_cluster::{Cluster, ClusterState};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use warp::{Filter, Rejection};
 
 use crate::Format;
@@ -37,7 +37,7 @@ pub fn cluster_handler(
 
 /// This struct represents the QueryString passed to
 /// the rest API.
-#[derive(Deserialize, Debug, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct ClusterStateQueryString {
     /// The output format requested.
@@ -62,18 +62,6 @@ async fn get_cluster(
         .make_rest_reply_non_serializable_error(cluster_endpoint(cluster).await))
 }
 
-#[derive(Serialize)]
-struct SerializedCluster {
-    cluster_id: String,
-    node_id: String,
-    state: ClusterState,
-}
-
-async fn cluster_endpoint(cluster: Arc<Cluster>) -> Result<SerializedCluster, Infallible> {
-    let cluster_state = cluster.state().await;
-    Ok(SerializedCluster {
-        cluster_id: cluster.cluster_id.clone(),
-        node_id: cluster.node_id.clone(),
-        state: cluster_state,
-    })
+async fn cluster_endpoint(cluster: Arc<Cluster>) -> Result<ClusterState, Infallible> {
+    Ok(cluster.state().await)
 }

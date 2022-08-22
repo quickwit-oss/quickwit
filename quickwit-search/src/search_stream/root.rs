@@ -54,8 +54,8 @@ pub async fn root_search_stream(
         SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
     })?;
 
-    // try to build query against current schema
-    let _query = doc_mapper.query(doc_mapper.schema(), &search_request)?;
+    // Validates the query by effectively building it against the current schema.
+    doc_mapper.query(doc_mapper.schema(), &search_request)?;
 
     let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
         SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {}", err))

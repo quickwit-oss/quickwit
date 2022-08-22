@@ -28,7 +28,7 @@ use crate::cache::Cache;
 use crate::{OwnedBytes, Storage, StorageResult};
 
 /// Use with care, StorageWithCache is read-only.
-pub(crate) struct StorageWithCache {
+pub struct StorageWithCache {
     pub storage: Arc<dyn Storage>,
     pub cache: Arc<dyn Cache>,
 }

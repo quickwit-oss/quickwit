@@ -19,7 +19,7 @@
 
 use quickwit_metastore::SplitMetadata;
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct NewSplits {
     pub new_splits: Vec<SplitMetadata>,
 }

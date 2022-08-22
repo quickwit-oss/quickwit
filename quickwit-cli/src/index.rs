@@ -134,6 +134,8 @@ pub fn build_index_command<'a>() -> Command<'a> {
                         .required(false),
                     arg!(--"end-timestamp" <TIMESTAMP> "Filters out documents after that timestamp (time-series indexes only).")
                         .required(false),
+                    arg!(--"sort-by-score" "Setting this flag calculates and sorts documents by their BM25 score.")
+                        .required(false),
                 ])
             )
         .subcommand(
@@ -193,7 +195,7 @@ pub struct DescribeIndexArgs {
     pub index_id: String,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct CreateIndexArgs {
     pub index_config_uri: Uri,
     pub config_uri: Uri,
@@ -201,7 +203,7 @@ pub struct CreateIndexArgs {
     pub overwrite: bool,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct IngestDocsArgs {
     pub index_id: String,
     pub input_path_opt: Option<PathBuf>,
@@ -211,7 +213,7 @@ pub struct IngestDocsArgs {
     pub clear_cache: bool,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct SearchIndexArgs {
     pub index_id: String,
     pub query: String,
@@ -224,9 +226,10 @@ pub struct SearchIndexArgs {
     pub end_timestamp: Option<i64>,
     pub config_uri: Uri,
     pub data_dir: Option<PathBuf>,
+    pub sort_by_score: bool,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct DeleteIndexArgs {
     pub index_id: String,
     pub dry_run: bool,
@@ -234,7 +237,7 @@ pub struct DeleteIndexArgs {
     pub data_dir: Option<PathBuf>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct GarbageCollectIndexArgs {
     pub index_id: String,
     pub grace_period: Duration,
@@ -243,20 +246,20 @@ pub struct GarbageCollectIndexArgs {
     pub data_dir: Option<PathBuf>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct MergeOrDemuxArgs {
     pub index_id: String,
     pub config_uri: Uri,
     pub data_dir: Option<PathBuf>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ListIndexesArgs {
     pub config_uri: Uri,
     pub metastore_uri: Option<Uri>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum IndexCliCommand {
     List(ListIndexesArgs),
     Create(CreateIndexArgs),
@@ -398,6 +401,7 @@ impl IndexCliCommand {
         let snippet_fields = matches
             .values_of("snippet-fields")
             .map(|values| values.map(|value| value.to_string()).collect());
+        let sort_by_score = matches.is_present("sort-by-score");
         let start_timestamp = if matches.is_present("start-timestamp") {
             Some(matches.value_of_t::<i64>("start-timestamp")?)
         } else {
@@ -425,6 +429,7 @@ impl IndexCliCommand {
             end_timestamp,
             config_uri,
             data_dir,
+            sort_by_score,
         }))
     }
 
@@ -909,7 +914,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
         max_hits: args.max_hits as u64,
         start_offset: args.start_offset as u64,
         sort_order: None,
-        sort_by_field: None,
+        sort_by_field: args.sort_by_score.then_some("_score".to_string()),
         aggregation_request: args.aggregation,
     };
     let search_response: SearchResponse =

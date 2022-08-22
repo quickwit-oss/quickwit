@@ -52,6 +52,11 @@ pub struct SortByConfig {
 
 impl From<SortByConfig> for SortBy {
     fn from(sort_by_config: SortByConfig) -> Self {
+        if sort_by_config.field_name == "_score" {
+            return SortBy::Score {
+                order: sort_by_config.order,
+            };
+        }
         SortBy::FastField {
             field_name: sort_by_config.field_name,
             order: sort_by_config.order,
@@ -60,7 +65,7 @@ impl From<SortByConfig> for SortBy {
 }
 
 /// Defines how an unmapped field should be handled.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) enum Mode {
     Lenient,
     Strict,
@@ -234,7 +239,7 @@ fn resolve_sort_field(
     schema: &Schema,
 ) -> anyhow::Result<SortBy> {
     if let Some(sort_by_config) = sort_by_config_opt {
-        validate_sort_by_field_name(&sort_by_config.field_name, schema)?;
+        validate_sort_by_field_name(&sort_by_config.field_name, schema, None)?;
         let sort_by: SortBy = sort_by_config.into();
         return Ok(sort_by);
     }
@@ -373,6 +378,10 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
             SortBy::DocId => None,
             SortBy::FastField { field_name, order } => Some(SortByConfig {
                 field_name: field_name.clone(),
+                order: *order,
+            }),
+            SortBy::Score { order } => Some(SortByConfig {
+                field_name: "_score".to_string(),
                 order: *order,
             }),
         };

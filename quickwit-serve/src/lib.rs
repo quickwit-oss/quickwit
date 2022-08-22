@@ -32,6 +32,10 @@ mod indexing_api;
 mod ingest_api;
 mod node_info_handler;
 mod search_api;
+#[cfg(test)]
+mod test_utils;
+#[cfg(test)]
+mod tests;
 mod ui_handler;
 
 use std::collections::HashSet;
@@ -103,7 +107,6 @@ pub async fn serve_quickwit(
         .await?
         .into_iter()
         .map(|index| (index.index_id, index.index_uri));
-
     check_is_configured_for_cluster(&config.peer_seeds, metastore.uri(), indexes)?;
 
     let storage_resolver = quickwit_storage_uri_resolver().clone();
@@ -201,7 +204,7 @@ fn check_is_configured_for_cluster(
     Ok(())
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Debug)]
 pub struct QuickwitBuildInfo {
     pub commit_version_tag: &'static str,
     pub cargo_pkg_version: &'static str,
@@ -353,3 +356,4 @@ mod tests {
         .unwrap();
     }
 }
+

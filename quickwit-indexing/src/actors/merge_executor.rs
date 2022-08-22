@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::RangeInclusive;
 use std::path::Path;
 use std::time::Instant;
@@ -223,6 +223,32 @@ fn merge_all_segments(index: &Index) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Following Boost's hash_combine.
+fn combine_two_hashes(lhs: u64, rhs: u64) -> u64 {
+    let update_to_xor = rhs
+        .wrapping_add(0x9e3779b9)
+        .wrapping_add(lhs << 6)
+        .wrapping_add(lhs >> 2);
+    lhs ^ update_to_xor
+}
+
+fn combine_partition_ids_aux(partition_ids: impl Iterator<Item = u64>) -> u64 {
+    let sorted_unique_partition_ids: BTreeSet<u64> = partition_ids.collect();
+    let mut sorted_unique_partition_ids_it = sorted_unique_partition_ids.into_iter();
+    if let Some(partition_id) = sorted_unique_partition_ids_it.next() {
+        sorted_unique_partition_ids_it.fold(partition_id, |acc, partition_id| {
+            combine_two_hashes(acc, partition_id)
+        })
+    } else {
+        // This is not forbidden but this should never happen.
+        0u64
+    }
+}
+
+pub fn combine_partition_ids(splits: &[SplitMetadata]) -> u64 {
+    combine_partition_ids_aux(splits.iter().map(|split| split.partition_id))
+}
+
 fn merge_split_directories(
     union_index_meta: IndexMeta,
     split_directories: Vec<Box<dyn Directory>>,
@@ -290,6 +316,7 @@ impl MergeExecutor {
     ) -> anyhow::Result<()> {
         let start = Instant::now();
         info!("merge-start");
+        let partition_id = combine_partition_ids_aux(splits.iter().map(|split| split.partition_id));
         let replaced_split_ids: Vec<String> = splits
             .iter()
             .map(|split| split.split_id().to_string())
@@ -323,6 +350,7 @@ impl MergeExecutor {
         let indexed_split = IndexedSplit {
             split_id: split_merge_id,
             index_id: self.index_id.clone(),
+            partition_id,
             replaced_split_ids,
             time_range,
             demux_num_ops: 0,
@@ -360,6 +388,7 @@ impl MergeExecutor {
             self.demux_field_name.is_some(),
             "`process_demux` cannot be called without a demux field."
         );
+        let partition_id = combine_partition_ids_aux(splits.iter().map(|split| split.partition_id));
         let demux_field_name = self.demux_field_name.as_ref().unwrap();
         let replaced_split_ids = splits
             .iter()
@@ -467,6 +496,7 @@ impl MergeExecutor {
             let indexed_split = IndexedSplit {
                 split_id,
                 index_id: self.index_id.clone(),
+                partition_id,
                 replaced_split_ids: replaced_split_ids.clone(),
                 time_range,
                 demux_num_ops: initial_demux_num_ops + 1,
@@ -631,7 +661,7 @@ pub fn build_demux_mapping(
 // split as input and produced demuxed virtual splits. The virtual splits are
 // then used for the real demux that will create real split.
 // Hence the usage of `virtual`.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct VirtualSplit(BTreeMap<u64, usize>);
 
 impl VirtualSplit {
@@ -1174,5 +1204,34 @@ mod tests {
                 proptest::collection::vec(100_000..5_000_000_usize, num_tenants)
             })
             .boxed()
+    }
+
+    #[test]
+    fn test_combine_partition_ids_singleton_unchanged() {
+        assert_eq!(combine_partition_ids_aux([17].into_iter()), 17);
+    }
+
+    #[test]
+    fn test_combine_partition_ids_zero_has_an_impact() {
+        assert_ne!(
+            combine_partition_ids_aux([12u64, 0u64].into_iter()),
+            combine_partition_ids_aux([12u64].into_iter())
+        );
+    }
+
+    #[test]
+    fn test_combine_partition_ids_depends_on_partition_id_set() {
+        assert_eq!(
+            combine_partition_ids_aux([12, 16, 12, 13].into_iter()),
+            combine_partition_ids_aux([12, 16, 13].into_iter())
+        );
+    }
+
+    #[test]
+    fn test_combine_partition_ids_order_does_not_matter() {
+        assert_eq!(
+            combine_partition_ids_aux([7, 12, 13].into_iter()),
+            combine_partition_ids_aux([12, 13, 7].into_iter())
+        );
     }
 }

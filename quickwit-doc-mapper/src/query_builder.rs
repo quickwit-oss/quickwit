@@ -34,10 +34,6 @@ pub(crate) fn build_query(
     let user_input_ast = tantivy_query_grammar::parse_query(&request.query)
         .map_err(|_| TantivyQueryParserError::SyntaxError(request.query.to_string()))?;
 
-    if let Some(sort_by_field) = request.sort_by_field.as_ref() {
-        validate_sort_by_field_name(sort_by_field, &schema)?;
-    }
-
     if has_range_clause(&user_input_ast) {
         return Err(anyhow::anyhow!("Range queries are not currently allowed.").into());
     }
@@ -58,6 +54,10 @@ pub(crate) fn build_query(
     } else {
         resolve_fields(&schema, &request.search_fields)?
     };
+
+    if let Some(sort_by_field) = request.sort_by_field.as_ref() {
+        validate_sort_by_field_name(sort_by_field, &schema, Some(&search_fields))?;
+    }
 
     let mut query_parser =
         QueryParser::new(schema, search_fields, QUICKWIT_TOKENIZER_MANAGER.clone());
