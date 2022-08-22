@@ -591,7 +591,7 @@ fn test_convert_leaf_hit_aux(
             partial_hit: Default::default(),
         },
         &default_doc_mapper,
-        &SearchRequest::default()
+        &SearchRequest::default(),
     )
     .unwrap();
     let hit_json: serde_json::Value = serde_json::from_str(&hit.json).unwrap();

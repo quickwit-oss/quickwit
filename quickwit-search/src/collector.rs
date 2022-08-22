@@ -68,12 +68,10 @@ impl SortingFieldComputer {
                 }
             }
             SortingFieldComputer::DocId => 0f32.into(),
-            SortingFieldComputer::Score { order } => {
-                match order {
-                    SortOrder::Desc => score.into(),
-                    SortOrder::Asc => (-score).into(),
-                }
-            }
+            SortingFieldComputer::Score { order } => match order {
+                SortOrder::Desc => score.into(),
+                SortOrder::Asc => (-score).into(),
+            },
         }
     }
 }

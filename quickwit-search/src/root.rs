@@ -261,7 +261,9 @@ pub async fn root_search(
         .flat_map(|response| response.hits.into_iter());
 
     let mut hits: Vec<quickwit_proto::Hit> = leaf_hits
-        .map(|leaf_hit: quickwit_proto::LeafHit| crate::convert_leaf_hit(leaf_hit, &*doc_mapper, search_request))
+        .map(|leaf_hit: quickwit_proto::LeafHit| {
+            crate::convert_leaf_hit(leaf_hit, &*doc_mapper, search_request)
+        })
         .collect::<crate::Result<_>>()?;
 
     hits.sort_unstable_by_key(|hit| {
@@ -269,7 +271,7 @@ pub async fn root_search(
             hit.partial_hit
                 .as_ref()
                 .map(|hit| HitScore::from(hit.sorting_field_value))
-                .unwrap_or(0f32.into()),
+                .unwrap_or_else(|| 0f32.into()),
         )
     });
 
