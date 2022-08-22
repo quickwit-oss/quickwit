@@ -113,13 +113,18 @@ enum PrepareDocumentOutcome {
 }
 
 impl IndexerState {
-    fn create_indexed_split(&self, ctx: &ActorContext<Indexer>) -> anyhow::Result<IndexedSplit> {
+    fn create_indexed_split(
+        &self,
+        partition_id: u64,
+        ctx: &ActorContext<Indexer>,
+    ) -> anyhow::Result<IndexedSplit> {
         let index_builder = IndexBuilder::new()
             .settings(self.index_settings.clone())
             .schema(self.schema.clone())
             .tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
         let indexed_split = IndexedSplit::new_in_dir(
             self.index_id.clone(),
+            partition_id,
             self.indexing_directory.scratch_directory.clone(),
             self.indexing_settings.resources.clone(),
             index_builder,
@@ -132,14 +137,14 @@ impl IndexerState {
 
     fn get_or_create_indexed_split<'a>(
         &self,
-        partition: u64,
+        partition_id: u64,
         splits: &'a mut FnvHashMap<u64, IndexedSplit>,
         ctx: &ActorContext<Indexer>,
     ) -> anyhow::Result<&'a mut IndexedSplit> {
-        match splits.entry(partition) {
+        match splits.entry(partition_id) {
             Entry::Occupied(indexed_split) => Ok(indexed_split.into_mut()),
             Entry::Vacant(vacant_entry) => {
-                let indexed_split = self.create_indexed_split(ctx)?;
+                let indexed_split = self.create_indexed_split(partition_id, ctx)?;
                 Ok(vacant_entry.insert(indexed_split))
             }
         }

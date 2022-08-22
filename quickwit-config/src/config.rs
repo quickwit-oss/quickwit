@@ -25,7 +25,6 @@ use anyhow::{bail, Context};
 use byte_unit::Byte;
 use derivative::Derivative;
 use json_comments::StripComments;
-use once_cell::sync::OnceCell;
 use quickwit_common::net::{find_private_ip, Host, HostAddr};
 use quickwit_common::new_coolid;
 use quickwit_common::uri::{Extension, Uri};
@@ -113,12 +112,6 @@ impl Default for IndexerConfig {
             split_store_max_num_splits: Self::default_split_store_max_num_splits(),
         }
     }
-}
-
-pub static SEARCHER_CONFIG_INSTANCE: once_cell::sync::OnceCell<SearcherConfig> = OnceCell::new();
-
-pub fn get_searcher_config_instance() -> &'static SearcherConfig {
-    SEARCHER_CONFIG_INSTANCE.get_or_init(SearcherConfig::default)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -490,8 +483,10 @@ impl QuickwitConfig {
             .with_port(rest_listen_port)
             .to_socket_addr()
             .expect("The default host should be an IP address.");
+        let grpc_listen_port = quickwit_common::net::find_available_tcp_port()
+            .expect("The OS should almost always find an available port.");
         let grpc_listen_addr = listen_address
-            .with_port(rest_listen_port + 1)
+            .with_port(grpc_listen_port)
             .to_socket_addr()
             .expect("The default host should be an IP address.");
 

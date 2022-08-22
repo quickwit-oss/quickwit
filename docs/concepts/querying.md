@@ -44,4 +44,4 @@ Quickwit does caching in many places to deliver a highly performing query engine
 
 ### Scoring
 
-Quickwit supports sorting docs by their BM25 scores. By default BM25 scoring is disabled to improve query times but it can be opt-in by setting `sort_by_field` option to `_score` in queries.
+Quickwit supports sorting docs by their BM25 scores. In order to query by score, [fieldnorms](../configuration/index-config.md#Text-type) must be enabled for the field. By default BM25 scoring is disabled to improve query times but it can be opt-in by setting `sort_by_field` option to `_score` in queries.

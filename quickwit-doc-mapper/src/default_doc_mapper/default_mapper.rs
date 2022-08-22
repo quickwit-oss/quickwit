@@ -239,7 +239,7 @@ fn resolve_sort_field(
     schema: &Schema,
 ) -> anyhow::Result<SortBy> {
     if let Some(sort_by_config) = sort_by_config_opt {
-        validate_sort_by_field_name(&sort_by_config.field_name, schema)?;
+        validate_sort_by_field_name(&sort_by_config.field_name, schema, None)?;
         let sort_by: SortBy = sort_by_config.into();
         return Ok(sort_by);
     }

@@ -22,7 +22,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use quickwit_config::get_searcher_config_instance;
 
 use crate::cache::{Cache, MemorySizedCache};
 use crate::metrics::CacheMetrics;
@@ -30,7 +29,9 @@ use crate::OwnedBytes;
 
 const FULL_SLICE: Range<usize> = 0..usize::MAX;
 
-pub(crate) struct QuickwitCache {
+/// Quickwit storage cache with a size limit.
+/// It is used currently by to cache only fast fields data.
+pub struct QuickwitCache {
     router: Vec<(&'static str, Arc<dyn Cache>)>,
 }
 
@@ -40,29 +41,30 @@ impl From<Vec<(&'static str, Arc<dyn Cache>)>> for QuickwitCache {
     }
 }
 
-impl Default for QuickwitCache {
-    fn default() -> Self {
+impl QuickwitCache {
+    /// Creates a [`QuickwitCache`] with a cache on fast fields
+    /// with a capacity of `fast_field_cache_capacity`.
+    pub fn new(fast_field_cache_capacity: usize) -> Self {
         let mut quickwit_cache = QuickwitCache::empty();
-        let config = get_searcher_config_instance();
-        let fast_cache_cap = config.fast_field_cache_capacity.get_bytes();
         let fast_field_cache_counters: &'static CacheMetrics =
             &crate::STORAGE_METRICS.fast_field_cache;
         quickwit_cache.add_route(
             ".fast",
             Arc::new(SimpleCache::with_capacity_in_bytes(
-                fast_cache_cap as usize,
+                fast_field_cache_capacity as usize,
                 fast_field_cache_counters,
             )),
         );
         quickwit_cache
     }
-}
 
-impl QuickwitCache {
+    /// Empties cache.
     pub fn empty() -> QuickwitCache {
         QuickwitCache::from(Vec::new())
     }
 
+    /// Adds a caching route defined by a path suffix. All elements with a path matching
+    /// this suffix will be cached.
     pub fn add_route(&mut self, path_suffix: &'static str, route_cache: Arc<dyn Cache>) {
         self.router.push((path_suffix, route_cache));
     }

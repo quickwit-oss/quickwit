@@ -60,6 +60,14 @@ pub struct SplitMetadata {
     /// in the storage URI resolver: for instance, the Amazon S3 region.
     pub split_id: String,
 
+    /// Partition to which the split belong to.
+    ///
+    /// Partitions are usually meant to isolate documents based on some field like
+    /// `tenant_id`. For this reason, ideally splits with a different `partition_id`
+    /// should not be merged together. Merging two splits with different `partition_id`
+    /// does not hurt correctness however.
+    pub partition_id: u64,
+
     /// Number of records (or documents) in the split.
     /// TODO make u64
     pub num_docs: usize,
@@ -105,20 +113,6 @@ pub struct SplitMetadata {
 }
 
 impl SplitMetadata {
-    /// Creates a new instance of split metadata.
-    pub fn new(split_id: String) -> Self {
-        Self {
-            split_id,
-            num_docs: 0,
-            uncompressed_docs_size_in_bytes: 0,
-            time_range: None,
-            create_timestamp: utc_now_timestamp(),
-            tags: Default::default(),
-            demux_num_ops: 0,
-            footer_offsets: Default::default(),
-        }
-    }
-
     /// Returns the split_id.
     pub fn split_id(&self) -> &str {
         &self.split_id
