@@ -111,12 +111,12 @@ async fn test_single_search_with_snippet() -> anyhow::Result<()> {
     assert_eq!(single_node_result.hits.len(), 2);
 
     let highlight_json: serde_json::Value =
-        serde_json::from_str(single_node_result.hits[0].highlight.as_ref().unwrap())?;
+        serde_json::from_str(single_node_result.hits[0].snippet.as_ref().unwrap())?;
     let expected_json: serde_json::Value = json!({"title": [], "body": ["Snoopy is an anthropomorphic <b>beagle</b> in the comic strip"]});
     assert_json_eq!(highlight_json, expected_json);
 
     let highlight_json: serde_json::Value =
-        serde_json::from_str(single_node_result.hits[1].highlight.as_ref().unwrap())?;
+        serde_json::from_str(single_node_result.hits[1].snippet.as_ref().unwrap())?;
     let expected_json: serde_json::Value = json!({
         "title": ["<b>beagle</b>"],
         "body": ["The <b>beagle</b> is a breed of small scent hound"]

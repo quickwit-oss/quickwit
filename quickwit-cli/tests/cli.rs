@@ -386,6 +386,7 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
         end_timestamp: None,
         config_uri: Uri::try_new(&test_env.resource_files["config"].display().to_string()).unwrap(),
         data_dir: None,
+        sort_by_score: false,
     };
     let search_response = search_index(args).await?;
     assert_eq!(search_response.hits.len(), 1);
@@ -395,7 +396,7 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
         json!({"event": "baz", "ts": 9})
     );
     assert_eq!(
-        serde_json::from_str::<Value>(hit.highlight.as_ref().unwrap()).unwrap(),
+        serde_json::from_str::<Value>(hit.snippet.as_ref().unwrap()).unwrap(),
         json!({
             "event": [ "<b>baz</b>"]
         })

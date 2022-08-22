@@ -90,9 +90,8 @@ pub struct SearchRequestQueryString {
     #[serde(rename(deserialize = "search_field"))]
     #[serde(deserialize_with = "from_simple_list")]
     pub search_fields: Option<Vec<String>>,
-    /// Fields to extract snippet on
+    /// Fields to extract snippets on.
     #[serde(default)]
-    #[serde(rename(deserialize = "snippet_fields"))]
     #[serde(deserialize_with = "from_simple_list")]
     pub snippet_fields: Option<Vec<String>>,
     /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
@@ -808,9 +807,7 @@ mod tests {
                 hits: vec![quickwit_proto::Hit {
                     json: r#"{"title": "foo", "body": "foo bar baz"}"#.to_string(),
                     partial_hit: None,
-                    highlight: Some(
-                        r#"{"title": [], "body": ["foo <em>bar</em> baz"]}"#.to_string(),
-                    ),
+                    snippet: Some(r#"{"title": [], "body": ["foo <em>bar</em> baz"]}"#.to_string()),
                 }],
                 num_hits: 1,
                 elapsed_time_micros: 16,
@@ -830,7 +827,7 @@ mod tests {
             "num_hits": 1,
             "hits": [{
                 "document": {"title": "foo", "body": "foo bar baz"},
-                "highlight": {"title": [], "body": ["foo <em>bar</em> baz"]}
+                "snippet": {"title": [], "body": ["foo <em>bar</em> baz"]}
             }],
             "elapsed_time_micros": 16,
             "errors": [],

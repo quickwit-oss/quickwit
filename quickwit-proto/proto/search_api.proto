@@ -170,8 +170,8 @@ message LeafHit {
   string leaf_json = 1;
   // The partial hit (ie: the sorting field + the document address)
   PartialHit partial_hit = 2;
-  // The highlighted part of the matching content 
-  optional string leaf_highlight_json = 3;
+  // A snippet of the matching content 
+  optional string leaf_snippet_json = 3;
 }
 
 message Hit {
@@ -179,8 +179,8 @@ message Hit {
   string json = 1;
   // The partial hit (ie: the sorting field + the document address)
   PartialHit partial_hit = 2;
-  // The highlighted part of the matching content 
-  optional string highlight = 3;
+  // A snippet of the matching content 
+  optional string snippet = 3;
 }
 
 // A partial hit, is a hit for which we have not fetch the content yet.
@@ -249,7 +249,7 @@ message FetchDocsRequest {
   SearchRequest search_request = 5;
 
   // `DocMapper` as json serialized trait.
-  string doc_mapper = 6;
+  optional string doc_mapper = 6;
 }
 
 message FetchDocsResponse {
@@ -294,7 +294,7 @@ message SearchStreamRequest {
   // The field by which we want to partition
   optional string partition_by_field = 9;
 
-  // Fields to extract snippet on
+  // Fields to extract snippet on.
   repeated string  snippet_fields = 10;
 }
 

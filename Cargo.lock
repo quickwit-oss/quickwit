@@ -3111,7 +3111,7 @@ dependencies = [
  "serde_json",
  "siphasher",
  "tantivy",
- "tantivy-query-grammar 0.18.0 (git+https://github.com/quickwit-oss/tantivy/?rev=d24f31f)",
+ "tantivy-query-grammar",
  "thiserror",
  "time 0.3.13",
  "tracing",
@@ -4527,7 +4527,7 @@ dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
  "tantivy-fst",
- "tantivy-query-grammar 0.18.0 (git+https://github.com/quickwit-oss/tantivy/?rev=f4d7621)",
+ "tantivy-query-grammar",
  "tempfile",
  "thiserror",
  "time 0.3.13",
@@ -4565,16 +4565,6 @@ dependencies = [
 name = "tantivy-query-grammar"
 version = "0.18.0"
 source = "git+https://github.com/quickwit-oss/tantivy/?rev=8e773ad#8e773ade7715210fb18a9a3b870329eed35dd1ad"
-dependencies = [
- "combine",
- "once_cell",
- "regex",
-]
-
-[[package]]
-name = "tantivy-query-grammar"
-version = "0.18.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=f4d7621#f4d76213708011c7394861add5902193fc99d4fb"
 dependencies = [
  "combine",
  "once_cell",

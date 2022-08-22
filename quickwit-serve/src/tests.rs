@@ -47,6 +47,7 @@ async fn test_standalone_server() -> anyhow::Result<()> {
             index_id: sandbox.index_id_for_test.clone(),
             query: "*".to_string(),
             search_fields: Vec::new(),
+            snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
             aggregation_request: None,

@@ -183,7 +183,7 @@ fn convert_leaf_hit(
     Ok(quickwit_proto::Hit {
         json,
         partial_hit: leaf_hit.partial_hit,
-        highlight: leaf_hit.leaf_highlight_json,
+        snippet: leaf_hit.leaf_snippet_json,
     })
 }
 
@@ -223,13 +223,25 @@ pub async fn single_node_search(
     )
     .await
     .context("Failed to perform leaf search.")?;
+
+    let doc_mapper_opt = if !search_request.snippet_fields.is_empty() {
+        Some(doc_mapper.clone())
+    } else {
+        None
+    };
+    let search_request_opt = if !search_request.snippet_fields.is_empty() {
+        Some(search_request)
+    } else {
+        None
+    };
+
     let fetch_docs_response = fetch_docs(
         searcher_context.clone(),
         leaf_search_response.partial_hits,
         index_storage,
         &split_metadata,
-        doc_mapper.clone(),
-        search_request,
+        doc_mapper_opt,
+        search_request_opt,
     )
     .await
     .context("Failed to perform fetch docs.")?;

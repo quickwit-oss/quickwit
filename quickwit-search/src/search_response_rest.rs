@@ -54,19 +54,20 @@ impl TryFrom<quickwit_proto::SearchResponse> for SearchResponseRest {
                     serde_json::from_str(&hit.json).map_err(|err| {
                         SearchError::InternalError(format!(
                             "Failed to serialize document `{}` to JSON: `{}`.",
-                            hit.json, err
+                            &hit.json[..100],
+                            err
                         ))
                     })?;
                 hit_value.insert("document".to_string(), document);
 
-                if let Some(highlight_json) = &hit.highlight {
-                    let highlight: Value = serde_json::from_str(highlight_json).map_err(|err| {
+                if let Some(snippet_json) = &hit.snippet {
+                    let snippet: Value = serde_json::from_str(snippet_json).map_err(|err| {
                         SearchError::InternalError(format!(
-                            "Failed to serialize highlight `{}` to JSON: `{}`.",
-                            highlight_json, err
+                            "Failed to serialize snippet `{}` to JSON: `{}`.",
+                            snippet_json, err
                         ))
                     })?;
-                    hit_value.insert("highlight".to_string(), highlight);
+                    hit_value.insert("snippet".to_string(), snippet);
                 }
                 Ok(Value::Object(hit_value))
             })

@@ -84,7 +84,7 @@ fn has_range_clause(user_input_ast: &UserInputAst) -> bool {
 /// Tells if the query has a Term or Range node which does not
 /// specify a search field.
 fn needs_default_search_field(user_input_ast: &UserInputAst) -> bool {
-    collect_field_nodes(user_input_ast)
+    collect_field_names(user_input_ast)
         .iter()
         .any(|field_opt| field_opt.is_none())
 }
@@ -100,17 +100,17 @@ fn resolve_fields(schema: &Schema, field_names: &[String]) -> anyhow::Result<Vec
     Ok(fields)
 }
 
-// Collects the fields nodes on term or range ast nodes
-fn collect_field_nodes(user_input_ast: &UserInputAst) -> Vec<Option<String>> {
+// Collects the fields names on term and range ast nodes.
+fn collect_field_names(user_input_ast: &UserInputAst) -> Vec<Option<String>> {
     match user_input_ast {
         UserInputAst::Clause(sub_queries) => {
             let mut fields = vec![];
             for (_, sub_ast) in sub_queries {
-                fields.extend(collect_field_nodes(sub_ast));
+                fields.extend(collect_field_names(sub_ast));
             }
             fields
         }
-        UserInputAst::Boost(ast, _) => collect_field_nodes(ast),
+        UserInputAst::Boost(ast, _) => collect_field_names(ast),
         UserInputAst::Leaf(leaf) => match &**leaf {
             UserInputLeaf::Literal(UserInputLiteral { field_name, .. }) => vec![field_name.clone()],
             UserInputLeaf::Range { field, .. } => vec![field.clone()],
@@ -126,7 +126,7 @@ fn validate_requested_snippet_fields(
     user_input_ast: &UserInputAst,
     default_field_names: &[String],
 ) -> anyhow::Result<()> {
-    let query_fields: Vec<String> = collect_field_nodes(user_input_ast)
+    let query_fields: Vec<String> = collect_field_names(user_input_ast)
         .into_iter()
         .flatten()
         .collect();
