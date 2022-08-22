@@ -932,8 +932,8 @@ mod tests {
             .unwrap();
         assert_eq!(
             parse_err.to_string(),
-            "The field 'root.my_field' could not be parsed: Expected JSON number, got \
-             'Array([Number(1), Number(2)])'."
+            "The field 'root.my_field' could not be parsed: Expected JSON number, got 'Array \
+             [Number(1), Number(2)]'."
         );
     }
 
