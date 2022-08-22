@@ -103,7 +103,7 @@ Quickwit supports the following raw types `text`, `i64`, `u64`, `f64`, `datetime
 
 ### Raw types
 
-#### text type
+#### Text type
 
 This field is a text field that will be analyzed and split into tokens before indexing.
 This kind of field is tailored for full-text search.
