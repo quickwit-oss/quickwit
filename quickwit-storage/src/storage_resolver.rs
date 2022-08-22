@@ -120,7 +120,7 @@ impl StorageUriResolver {
         StorageUriResolverBuilder::default()
     }
 
-    /// Creates `StorageUriResolver` for testing.
+    /// Creates a `StorageUriResolver` for testing.
     #[doc(hidden)]
     pub fn for_test() -> Self {
         #[allow(unused_mut)]

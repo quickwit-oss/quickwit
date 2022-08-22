@@ -61,7 +61,7 @@ impl TypedSourceFactory for KinesisSourceFactory {
         params: KinesisSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
-        KinesisSource::try_new(ctx.config.source_id.clone(), params, checkpoint).await
+        KinesisSource::try_new(ctx.source_config.source_id.clone(), params, checkpoint).await
     }
 }
 

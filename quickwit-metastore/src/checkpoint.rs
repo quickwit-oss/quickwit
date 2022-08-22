@@ -386,16 +386,16 @@ pub struct IndexCheckpointDelta {
 }
 
 impl IndexCheckpointDelta {
+    pub fn is_empty(&self) -> bool {
+        self.source_delta.is_empty()
+    }
+
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(source_id: &str, pos_range: Range<u64>) -> Self {
         IndexCheckpointDelta {
             source_id: source_id.to_string(),
             source_delta: SourceCheckpointDelta::from(pos_range),
         }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.source_delta.is_empty()
     }
 }
 

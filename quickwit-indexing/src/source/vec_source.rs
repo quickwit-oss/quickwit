@@ -63,7 +63,7 @@ impl TypedSourceFactory for VecSourceFactory {
             Some(Position::Beginning) | None => 0,
         };
         Ok(VecSource {
-            source_id: ctx.config.source_id.clone(),
+            source_id: ctx.source_config.source_id.clone(),
             next_item_idx,
             params,
             partition,
@@ -126,16 +126,16 @@ mod tests {
 
     use quickwit_actors::{create_test_mailbox, Actor, Command, Universe};
     use quickwit_config::{SourceConfig, SourceParams};
+    use quickwit_metastore::metastore_for_test;
     use serde_json::json;
 
     use super::*;
-    use crate::source::{source_factory, SourceActor};
+    use crate::source::SourceActor;
 
     #[tokio::test]
     async fn test_vec_source() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
-        let (mailbox, inbox) = create_test_mailbox();
+        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
         let items = std::iter::repeat_with(|| "{}".to_string())
             .take(100)
             .collect();
@@ -144,12 +144,12 @@ mod tests {
             batch_num_docs: 3,
             partition: "partition".to_string(),
         };
-        let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
+        let metastore = metastore_for_test();
         let vec_source = VecSourceFactory::typed_create_source(
             Arc::new(SourceExecutionContext {
                 metastore,
                 index_id: "test-index".to_string(),
-                config: SourceConfig {
+                source_config: SourceConfig {
                     source_id: "my-vec-source".to_string(),
                     source_params: SourceParams::Vec(params.clone()),
                 },
@@ -160,7 +160,7 @@ mod tests {
         .await?;
         let vec_source_actor = SourceActor {
             source: Box::new(vec_source),
-            indexer_mailbox: mailbox,
+            indexer_mailbox,
         };
         assert_eq!(
             vec_source_actor.name(),
@@ -171,7 +171,7 @@ mod tests {
         let (actor_termination, last_observation) = vec_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(last_observation, json!({"next_item_idx": 100u64}));
-        let batches = inbox.drain_for_test();
+        let batches = indexer_inbox.drain_for_test();
         assert_eq!(batches.len(), 35);
         let raw_batch = batches[1].downcast_ref::<RawDocBatch>().unwrap();
         assert_eq!(
@@ -187,9 +187,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_vec_source_from_checkpoint() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
-        let (mailbox, inbox) = create_test_mailbox();
+        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
         let items = (0..10).map(|i| format!("{}", i)).collect();
         let params = VecSourceParams {
             items,
@@ -199,12 +198,12 @@ mod tests {
         let mut checkpoint = SourceCheckpoint::default();
         checkpoint.try_apply_delta(SourceCheckpointDelta::from(0u64..2u64))?;
 
-        let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
+        let metastore = metastore_for_test();
         let vec_source = VecSourceFactory::typed_create_source(
             Arc::new(SourceExecutionContext {
                 metastore,
                 index_id: "test-index".to_string(),
-                config: SourceConfig {
+                source_config: SourceConfig {
                     source_id: "my-vec-source".to_string(),
                     source_params: SourceParams::Vec(params.clone()),
                 },
@@ -215,14 +214,14 @@ mod tests {
         .await?;
         let vec_source_actor = SourceActor {
             source: Box::new(vec_source),
-            indexer_mailbox: mailbox,
+            indexer_mailbox,
         };
         let (_vec_source_mailbox, vec_source_handle) =
             universe.spawn_actor(vec_source_actor).spawn();
         let (actor_termination, last_observation) = vec_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(last_observation, json!({"next_item_idx": 10}));
-        let messages = inbox.drain_for_test();
+        let messages = indexer_inbox.drain_for_test();
         let batch = messages[0].downcast_ref::<RawDocBatch>().unwrap();
         assert_eq!(&batch.docs[0], "2");
         Ok(())

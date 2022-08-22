@@ -407,7 +407,7 @@ impl IndexingPipeline {
                 Arc::new(SourceExecutionContext {
                     metastore: self.params.metastore.clone(),
                     index_id: self.params.index_id.clone(),
-                    config: self.params.source.clone(),
+                    source_config: self.params.source.clone(),
                 }),
                 source_checkpoint,
             )

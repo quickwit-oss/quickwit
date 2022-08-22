@@ -74,10 +74,11 @@ mod tests {
     use quickwit_actors::{create_test_mailbox, Health, Supervisable, Universe};
     use quickwit_config::SourceParams;
     use quickwit_metastore::checkpoint::SourceCheckpoint;
+    use quickwit_metastore::metastore_for_test;
     use serde_json::json;
 
     use super::*;
-    use crate::source::{source_factory, SourceActor, SourceConfig};
+    use crate::source::{SourceActor, SourceConfig};
 
     #[tokio::test]
     async fn test_void_source_loading() -> anyhow::Result<()> {
@@ -86,12 +87,12 @@ mod tests {
         //     source_params: SourceParams::void(),
         // };
         // let source_loader = quickwit_supported_sources();
-        let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
+        let metastore = metastore_for_test();
         let _ = VoidSourceFactory::typed_create_source(
             Arc::new(SourceExecutionContext {
                 metastore,
                 index_id: "test-index".to_string(),
-                config: SourceConfig {
+                source_config: SourceConfig {
                     source_id: "void-test-source".to_string(),
                     source_params: SourceParams::void(),
                 },
@@ -100,21 +101,17 @@ mod tests {
             SourceCheckpoint::default(),
         )
         .await?;
-
         Ok(())
     }
 
     #[tokio::test]
     async fn test_void_source_running() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
-        let universe = Universe::new();
-        let (mailbox, _) = create_test_mailbox();
-        let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
+        let metastore = metastore_for_test();
         let void_source = VoidSourceFactory::typed_create_source(
             Arc::new(SourceExecutionContext {
                 metastore,
                 index_id: "test-index".to_string(),
-                config: SourceConfig {
+                source_config: SourceConfig {
                     source_id: "void-test-source".to_string(),
                     source_params: SourceParams::void(),
                 },
@@ -123,10 +120,12 @@ mod tests {
             SourceCheckpoint::default(),
         )
         .await?;
+        let (indexer_mailbox, _) = create_test_mailbox();
         let void_source_actor = SourceActor {
             source: Box::new(void_source),
-            indexer_mailbox: mailbox,
+            indexer_mailbox,
         };
+        let universe = Universe::new();
         let (_, void_source_handle) = universe.spawn_actor(void_source_actor).spawn();
         matches!(void_source_handle.health(), Health::Healthy);
         let (actor_termination, observed_state) = void_source_handle.quit().await;
