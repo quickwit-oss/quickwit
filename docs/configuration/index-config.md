@@ -116,6 +116,7 @@ description: Body of the document
 type: text
 tokenizer: default
 record: position
+fieldnorms: true
 ```
 
 **Parameters for text field**
@@ -126,6 +127,7 @@ record: position
 | `stored`    | Whether value is stored in the document store | `true` |
 | `tokenizer` | Name of the `Tokenizer`, choices between `raw`, `default` and `en_stem` | `default` |
 | `record`    | Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
+| `fieldnorms` | Whether to store fieldnorms for the field. Fieldnorms are required to calculate the BM25 Score of the document. | `false` |  
 | `fast`     | Whether value is stored in a fast field. The fast field will contain the term ids. The effective cardinality depends on the tokenizer. When creating fast fields on text fields it is recommended to use the "raw" tokenizer, since it will store the original text unchanged. The "default" tokenizer will store the terms as lower case and this will be reflected in the dictionary ([see tokenizers](#description-of-available-tokenizers)). | `false` |
 
 #### **Description of available tokenizers**
