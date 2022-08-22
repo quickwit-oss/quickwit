@@ -89,6 +89,7 @@ pub mod test_suite {
 
         let source = SourceConfig {
             source_id: source_id.to_string(),
+            num_pipelines: 1,
             source_params: SourceParams::void(),
         };
 
@@ -147,6 +148,7 @@ pub mod test_suite {
 
         let source = SourceConfig {
             source_id: source_id.to_string(),
+            num_pipelines: 1,
             source_params: SourceParams::void(),
         };
 
@@ -1388,7 +1390,7 @@ pub mod test_suite {
             time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:foo", "tag:bar"]),
-            demux_num_ops: 0,
+            ..Default::default()
         };
 
         let split_metadata_2 = SplitMetadata {
@@ -1400,7 +1402,7 @@ pub mod test_suite {
             time_range: Some(100..=199),
             create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:bar"]),
-            demux_num_ops: 0,
+            ..Default::default()
         };
 
         let split_metadata_3 = SplitMetadata {
@@ -1412,7 +1414,7 @@ pub mod test_suite {
             time_range: Some(200..=299),
             create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:foo", "tag:baz"]),
-            demux_num_ops: 0,
+            ..Default::default()
         };
 
         let split_metadata_4 = SplitMetadata {
@@ -1424,7 +1426,7 @@ pub mod test_suite {
             time_range: Some(300..=399),
             create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:foo"]),
-            demux_num_ops: 0,
+            ..Default::default()
         };
 
         let split_metadata_5 = SplitMetadata {
@@ -1436,7 +1438,7 @@ pub mod test_suite {
             time_range: None,
             create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:baz", "tag:biz"]),
-            demux_num_ops: 0,
+            ..Default::default()
         };
 
         {
@@ -1827,7 +1829,7 @@ pub mod test_suite {
                 time_range: None,
                 create_timestamp: current_timestamp,
                 tags: to_set(&[]),
-                demux_num_ops: 0,
+                ..Default::default()
             };
             metastore
                 .stage_split(index_id, split_metadata_6.clone())

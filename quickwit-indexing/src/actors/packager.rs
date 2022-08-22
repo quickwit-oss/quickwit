@@ -341,10 +341,10 @@ fn create_packaged_split(
     ctx.record_progress();
 
     let packaged_split = PackagedSplit {
-        split_id: split.split_id.to_string(),
+        split_id: split.split_id,
         partition_id: split.partition_id,
+        pipeline_id: split.pipeline_id,
         replaced_split_ids: split.replaced_split_ids,
-        index_id: split.index_id,
         split_scratch_directory: split.split_scratch_directory,
         num_docs,
         demux_num_ops: split.demux_num_ops,
@@ -377,7 +377,7 @@ mod tests {
     use tantivy::{doc, Index};
 
     use super::*;
-    use crate::models::ScratchDirectory;
+    use crate::models::{IndexingPipelineId, ScratchDirectory};
 
     fn make_indexed_split_for_test(segments_timestamps: &[&[i64]]) -> anyhow::Result<IndexedSplit> {
         let split_scratch_directory = ScratchDirectory::for_test()?;
@@ -430,14 +430,20 @@ mod tests {
                 }
             }
         }
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
         // We don't commit, that's the job of the packager.
         //
         // TODO: In the future we would like that kind of segment flush to emit a new split,
         // but this will require work on tantivy.
         let indexed_split = IndexedSplit {
             split_id: "test-split".to_string(),
-            index_id: "test-index".to_string(),
             partition_id: 17u64,
+            pipeline_id,
             time_range: timerange_opt,
             demux_num_ops: 0,
             num_docs,

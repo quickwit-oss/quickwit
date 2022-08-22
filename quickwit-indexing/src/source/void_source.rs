@@ -79,6 +79,7 @@ mod tests {
     async fn test_void_source_loading() -> anyhow::Result<()> {
         let source_config = SourceConfig {
             source_id: "void-test-source".to_string(),
+            num_pipelines: 1,
             source_params: SourceParams::void(),
         };
         let source_loader = quickwit_supported_sources();

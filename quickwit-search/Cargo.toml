@@ -56,7 +56,9 @@ tracing-opentelemetry = "0.17"
 [dev-dependencies]
 assert-json-diff = "2"
 chitchat = "0.4"
-quickwit-indexing = { version = "0.3.1", path = "../quickwit-indexing" }
+quickwit-indexing = { version = "0.3.1", path = "../quickwit-indexing", features = [
+  "testsuite"
+] }
 quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore", features = [
   "testsuite"
 ] }

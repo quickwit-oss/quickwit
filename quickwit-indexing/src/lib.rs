@@ -31,7 +31,7 @@ pub use crate::actors::{
     IndexingPipeline, IndexingPipelineParams, IndexingService, IndexingServiceError,
     IngestApiGarbageCollector,
 };
-use crate::models::{IndexingStatistics, SpawnPipelinesForIndex};
+use crate::models::{IndexingStatistics, SpawnPipelines};
 pub use crate::split_store::{
     get_tantivy_directory_from_split_bundle, IndexingSplitStore, IndexingSplitStoreParams,
     SplitFolder,
@@ -44,8 +44,10 @@ pub mod merge_policy;
 pub mod models;
 pub mod source;
 mod split_store;
+#[cfg(any(test, feature = "testsuite"))]
 mod test_utils;
 
+#[cfg(any(test, feature = "testsuite"))]
 pub use test_utils::{mock_split, mock_split_meta, TestSandbox};
 
 pub use self::garbage_collection::{
@@ -66,21 +68,22 @@ pub async fn start_indexer_service(
     ingest_api_service: Option<Mailbox<IngestApiService>>,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
     info!("Starting indexer service.");
-    let indexing_server = IndexingService::new(
+    let indexing_service = IndexingService::new(
+        config.node_id.clone(),
         config.data_dir_path.to_path_buf(),
         config.indexer_config.clone(),
         metastore.clone(),
         storage_uri_resolver,
         ingest_api_service.clone(),
     );
-    let (indexer_service_mailbox, _) = universe.spawn_actor(indexing_server).spawn();
+    let (indexer_service_mailbox, _) = universe.spawn_actor(indexing_service).spawn();
 
     let index_metadatas = metastore.list_indexes_metadatas().await?;
-    info!(index_ids = %index_metadatas.iter().map(|im| &im.index_id).join(", "), "Spawning indexing pipeline(s).");
+    info!(index_ids=%index_metadatas.iter().map(|im| &im.index_id).join(", "), "Spawning indexing pipeline(s).");
 
     for index_metadata in index_metadatas {
         indexer_service_mailbox
-            .ask_for_res(SpawnPipelinesForIndex {
+            .ask_for_res(SpawnPipelines {
                 index_id: index_metadata.index_id,
             })
             .await?;

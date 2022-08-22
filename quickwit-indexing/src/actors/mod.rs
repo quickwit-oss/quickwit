@@ -28,7 +28,7 @@ mod publisher;
 mod sequencer;
 mod uploader;
 
-pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineHandler, IndexingPipelineParams};
+pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineHandle, IndexingPipelineParams};
 pub use indexing_service::{
     IndexingService, IndexingServiceError, IndexingServiceState, INDEXING_DIR_NAME,
 };

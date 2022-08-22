@@ -79,6 +79,7 @@
     },
     "sources": [
       {
+        "num_pipelines": 2,
         "params": {
           "client_params": {},
           "topic": "kafka-topic"
@@ -98,10 +99,10 @@
         "end": 2000,
         "start": 1000
       },
-      "node_id": "unknown/0",
+      "node_id": "node/1",
       "num_docs": 12303,
-      "partition_id": 0,
-      "source_id": "unknown",
+      "partition_id": 7,
+      "source_id": "source",
       "split_id": "split",
       "split_state": "Published",
       "tags": [

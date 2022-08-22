@@ -45,7 +45,7 @@ use quickwit_common::rand::append_random_suffix;
 use quickwit_common::split_file;
 use quickwit_indexing::actors::MergeExecutor;
 use quickwit_indexing::merge_policy::MergeOperation;
-use quickwit_indexing::models::{MergeScratch, ScratchDirectory};
+use quickwit_indexing::models::{IndexingPipelineId, MergeScratch, ScratchDirectory};
 use quickwit_indexing::{get_tantivy_directory_from_split_bundle, new_split_id, TestSandbox};
 use quickwit_metastore::{SplitMetadata, SplitState};
 use tantivy::Directory;
@@ -154,7 +154,6 @@ async fn test_failpoint_uploader_after_panics_right_away() -> anyhow::Result<()>
 }
 
 async fn aux_test_failpoints() -> anyhow::Result<()> {
-    quickwit_common::setup_logging_for_tests();
     let doc_mapper_yaml = r#"
         field_mappings:
           - name: body
@@ -224,7 +223,6 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     // time to time a kill switch activation because the ControlledDirectory did not
     // do any write during a HEARTBEAT... Before removing the protect zone, we need
     // to investigate this instability. Then this test will finally be really helpful.
-    quickwit_common::setup_logging_for_tests();
     let doc_mapper_yaml = r#"
         field_mappings:
           - name: body
@@ -286,9 +284,15 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         downloaded_splits_directory,
         tantivy_dirs,
     };
+    let pipeline_id = IndexingPipelineId {
+        index_id: index_id.to_string(),
+        source_id: "test-source".to_string(),
+        node_id: "test-node".to_string(),
+        pipeline_ord: 0,
+    };
     let (merge_packager_mailbox, _merge_packager_inbox) = create_test_mailbox();
     let merge_executor = MergeExecutor::new(
-        index_id.to_string(),
+        pipeline_id,
         merge_packager_mailbox,
         None,
         None,
