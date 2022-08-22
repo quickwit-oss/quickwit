@@ -55,7 +55,7 @@ impl<T: TypedSourceFactory> SourceFactory for T {
         ctx: Arc<SourceExecutionContext>,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Box<dyn Source>> {
-        let typed_params: T::Params = serde_json::from_value(ctx.config.params())?;
+        let typed_params: T::Params = serde_json::from_value(ctx.source_config.params())?;
         let file_source = Self::typed_create_source(ctx, typed_params, checkpoint).await?;
         Ok(Box::new(file_source))
     }
@@ -96,14 +96,14 @@ impl SourceLoader {
         ctx: Arc<SourceExecutionContext>,
         checkpoint: SourceCheckpoint,
     ) -> Result<Box<dyn Source>, SourceLoaderError> {
-        let source_type = ctx.config.source_type().to_string();
-        let source_id = ctx.config.source_id.clone();
+        let source_type = ctx.source_config.source_type().to_string();
+        let source_id = ctx.source_config.source_id.clone();
 
         let source_factory = self
             .type_to_factory
-            .get(ctx.config.source_type())
+            .get(ctx.source_config.source_type())
             .ok_or_else(|| SourceLoaderError::UnknownSourceType {
-                requested_source_type: ctx.config.source_type().to_string(),
+                requested_source_type: ctx.source_config.source_type().to_string(),
                 available_source_types: self.type_to_factory.keys().join(", "),
             })?;
         source_factory
@@ -118,32 +118,18 @@ impl SourceLoader {
 }
 
 #[cfg(test)]
-pub mod test_helpers {
-    use std::sync::Arc;
-
-    use quickwit_metastore::FileBackedMetastore;
-
-    pub async fn metastore_for_test() -> FileBackedMetastore {
-        use quickwit_storage::RamStorage;
-        FileBackedMetastore::try_new(Arc::new(RamStorage::default()), None)
-            .await
-            .unwrap()
-    }
-}
-
-#[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
     use quickwit_config::{SourceConfig, SourceParams};
-    use quickwit_metastore::Metastore;
+    use quickwit_metastore::metastore_for_test;
 
     use super::*;
     use crate::source::quickwit_supported_sources;
 
     #[tokio::test]
     async fn test_source_loader_success() -> anyhow::Result<()> {
-        let metastore: Arc<dyn Metastore> = Arc::new(test_helpers::metastore_for_test().await);
+        let metastore = metastore_for_test();
         let source_loader = quickwit_supported_sources();
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
@@ -154,7 +140,7 @@ mod tests {
                 Arc::new(SourceExecutionContext {
                     metastore: metastore.clone(),
                     index_id: "test-index".to_string(),
-                    config: source_config,
+                    source_config,
                 }),
                 SourceCheckpoint::default(),
             )

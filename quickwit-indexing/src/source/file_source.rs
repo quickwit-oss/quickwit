@@ -153,7 +153,7 @@ impl TypedSourceFactory for FileSourceFactory {
                 Box::new(tokio::io::stdin())
             };
         let file_source = FileSource {
-            source_id: ctx.config.source_id.clone(),
+            source_id: ctx.source_config.source_id.clone(),
             counters: FileSourceCounters {
                 previous_offset: offset,
                 current_offset: offset,
@@ -174,24 +174,23 @@ mod tests {
     use quickwit_actors::{create_test_mailbox, Command, Universe};
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
+    use quickwit_metastore::metastore_for_test;
 
     use super::*;
-    use crate::source::{source_factory, SourceActor};
+    use crate::source::SourceActor;
 
     #[tokio::test]
     async fn test_file_source() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
-        let (mailbox, inbox) = create_test_mailbox();
+        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
         let params = FileSourceParams::file("data/test_corpus.json");
 
-        let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
-
+        let metastore = metastore_for_test();
         let file_source = FileSourceFactory::typed_create_source(
             Arc::new(SourceExecutionContext {
                 metastore,
                 index_id: "test-index".to_string(),
-                config: SourceConfig {
+                source_config: SourceConfig {
                     source_id: "my-file-source".to_string(),
                     source_params: SourceParams::File(params.clone()),
                 },
@@ -202,7 +201,7 @@ mod tests {
         .await?;
         let file_source_actor = SourceActor {
             source: Box::new(file_source),
-            indexer_mailbox: mailbox,
+            indexer_mailbox,
         };
         let (_file_source_mailbox, file_source_handle) =
             universe.spawn_actor(file_source_actor).spawn();
@@ -216,7 +215,7 @@ mod tests {
                 "num_lines_processed": 4u32
             })
         );
-        let batch = inbox.drain_for_test();
+        let batch = indexer_inbox.drain_for_test();
         assert_eq!(batch.len(), 2);
         assert!(matches!(
             batch[1].downcast_ref::<Command>().unwrap(),
@@ -246,13 +245,12 @@ mod tests {
             .to_string_lossy()
             .to_string();
 
-        let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
-
+        let metastore = metastore_for_test();
         let source = FileSourceFactory::typed_create_source(
             Arc::new(SourceExecutionContext {
                 metastore,
                 index_id: "test-index".to_string(),
-                config: SourceConfig {
+                source_config: SourceConfig {
                     source_id: "my-file-source".to_string(),
                     source_params: SourceParams::File(params.clone()),
                 },
@@ -330,12 +328,12 @@ mod tests {
         );
         checkpoint.try_apply_delta(checkpoint_delta)?;
 
-        let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
+        let metastore = metastore_for_test();
         let source = FileSourceFactory::typed_create_source(
             Arc::new(SourceExecutionContext {
                 metastore,
                 index_id: "test-index".to_string(),
-                config: SourceConfig {
+                source_config: SourceConfig {
                     source_id: "my-file-source".to_string(),
                     source_params: SourceParams::File(params.clone()),
                 },

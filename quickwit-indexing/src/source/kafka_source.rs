@@ -38,7 +38,7 @@ use rdkafka::consumer::{
 use rdkafka::error::KafkaError;
 use rdkafka::message::BorrowedMessage;
 use rdkafka::util::Timeout;
-use rdkafka::{ClientContext, Message, Offset};
+use rdkafka::{ClientContext, Message, Offset, TopicPartitionList};
 use serde_json::json;
 use tokio::sync::mpsc;
 use tokio::task::{spawn_blocking, JoinHandle};
@@ -118,14 +118,8 @@ impl ClientContext for RdKafkaContext {}
 impl ConsumerContext for RdKafkaContext {
     fn pre_rebalance(&self, rebalance: &Rebalance) {
         if let Rebalance::Assign(tpl) = rebalance {
-            let partitions = tpl
-                .elements()
-                .iter()
-                .map(|tple| {
-                    assert_eq!(tple.topic(), self.topic);
-                    tple.partition()
-                })
-                .collect();
+            let partitions = collect_partitions(tpl, &self.topic);
+            debug!(partitions=?partitions, "Assign partitions.");
             let (assignment_tx, assignment_rx) = oneshot::channel();
             self.events_tx
                 .blocking_send(KafkaEvent::AssignPartitions {
@@ -148,12 +142,24 @@ impl ConsumerContext for RdKafkaContext {
                 partition.set_offset(offset).expect("");
             }
         }
-        if let Rebalance::Revoke(_) = rebalance {
+        if let Rebalance::Revoke(tpl) = rebalance {
+            let partitions = collect_partitions(tpl, &self.topic);
+            debug!(partitions=?partitions, "Revoke partitions.");
             self.events_tx
                 .blocking_send(KafkaEvent::RevokePartitions)
                 .expect("Failed to send revoke message to consumer.");
         }
     }
+}
+
+fn collect_partitions(tpl: &TopicPartitionList, topic: &str) -> Vec<i32> {
+    tpl.elements()
+        .iter()
+        .map(|tple| {
+            assert_eq!(tple.topic(), topic);
+            tple.partition()
+        })
+        .collect()
 }
 
 type RdKafkaConsumer = BaseConsumer<RdKafkaContext>;
@@ -172,8 +178,6 @@ pub struct KafkaSourceState {
     pub num_messages_processed: u64,
     // Number of invalid messages, i.e., that were empty or could not be parsed.
     pub num_invalid_messages: u64,
-    // Number of Kafka errors emitted by the consumer.
-    pub num_kafka_errors: usize,
 }
 
 /// A `KafkaSource` consumes a topic and forwards its messages to an `Indexer`.
@@ -192,7 +196,7 @@ impl fmt::Debug for KafkaSource {
         write!(
             f,
             "KafkaSource {{ source_id: {}, topic: {} }}",
-            self.ctx.config.source_id, self.topic
+            self.ctx.source_config.source_id, self.topic
         )
     }
 }
@@ -209,13 +213,13 @@ impl KafkaSource {
 
         info!(
             index_id=%ctx.index_id,
-            source_id=%ctx.config.source_id,
+            source_id=%ctx.source_config.source_id,
             topic=%topic,
             "Starting Kafka source."
         );
 
         let (events_tx, events_rx) = mpsc::channel(100);
-        let consumer = create_consumer(&ctx.config.source_id, params, events_tx.clone())?;
+        let consumer = create_consumer(&ctx.source_config.source_id, params, events_tx.clone())?;
         consumer
             .subscribe(&[&topic])
             .with_context(|| format!("Failed to subscribe to topic `{topic}`."))?;
@@ -299,7 +303,7 @@ impl KafkaSource {
             })?;
         let checkpoint = index_metadata
             .checkpoint
-            .source_checkpoint(&self.ctx.config.source_id)
+            .source_checkpoint(&self.ctx.source_config.source_id)
             .cloned()
             .unwrap_or_default();
 
@@ -423,13 +427,15 @@ impl Source for KafkaSource {
         let consumer = self.consumer.clone();
         spawn_blocking(move || {
             consumer.unsubscribe();
-        })
-        .await?;
+        });
         Ok(())
     }
 
     fn name(&self) -> String {
-        format!("KafkaSource{{source_id={}}}", self.ctx.config.source_id)
+        format!(
+            "KafkaSource{{source_id={}}}",
+            self.ctx.source_config.source_id
+        )
     }
 
     fn observable_state(&self) -> serde_json::Value {
@@ -452,7 +458,7 @@ impl Source for KafkaSource {
             .collect();
         json!({
             "index_id": self.ctx.index_id,
-            "source_id": self.ctx.config.source_id,
+            "source_id": self.ctx.source_config.source_id,
             "topic": self.topic,
             "assigned_partitions": assigned_partitions,
             "current_positions": current_positions,
@@ -469,17 +475,20 @@ fn spawn_consumer_poll_loop(
     events_tx: mpsc::Sender<KafkaEvent>,
 ) -> JoinHandle<()> {
     spawn_blocking(move || {
-        while let Some(message_res) = consumer.poll(None) {
-            let event = match message_res {
-                Ok(message) => KafkaEvent::Message(message.into()),
-                Err(KafkaError::PartitionEOF(partition)) => KafkaEvent::PartitionEOF(partition),
-                Err(error) => KafkaEvent::Error(anyhow!(error)),
-            };
-            if let Err(_) = events_tx.blocking_send(event) {
-                consumer.unsubscribe();
-                break;
+        while !events_tx.is_closed() {
+            if let Some(message_res) = consumer.poll(Some(Duration::from_secs(1))) {
+                let event = match message_res {
+                    Ok(message) => KafkaEvent::Message(message.into()),
+                    Err(KafkaError::PartitionEOF(partition)) => KafkaEvent::PartitionEOF(partition),
+                    Err(error) => KafkaEvent::Error(anyhow!(error)),
+                };
+                if let Err(_) = events_tx.blocking_send(event) {
+                    break;
+                }
             }
         }
+        debug!("Exiting consumer poll loop.");
+        consumer.unsubscribe();
     })
 }
 
@@ -655,19 +664,17 @@ fn parse_message_payload(message: &BorrowedMessage) -> Option<String> {
 mod kafka_broker_tests {
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_common::rand::append_random_suffix;
-    use quickwit_common::uri::Uri;
-    use quickwit_config::{DocMapping, SourceConfig, SourceParams};
-    use quickwit_metastore::checkpoint::{
-        IndexCheckpoint, IndexCheckpointDelta, SourceCheckpointDelta,
-    };
-    use quickwit_metastore::{FileBackedMetastore, IndexMetadata, Metastore, MetastoreResult};
+    use quickwit_config::{SourceConfig, SourceParams};
+    use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
+    use quickwit_metastore::{metastore_for_test, IndexMetadata, SplitMetadata};
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
     use rdkafka::message::ToBytes;
     use rdkafka::producer::{FutureProducer, FutureRecord};
 
     use super::*;
-    use crate::source::{quickwit_supported_sources, source_factory, SourceActor};
+    use crate::new_split_id;
+    use crate::source::{quickwit_supported_sources, SourceActor};
 
     fn create_admin_client(
         bootstrap_servers: &str,
@@ -758,6 +765,22 @@ mod kafka_broker_tests {
         format!("Key {}", id)
     }
 
+    fn get_source_config(topic: &str, bootstrap_servers: &str) -> (String, SourceConfig) {
+        let source_id = append_random_suffix("test-kafka-source--source");
+        let source_config = SourceConfig {
+            source_id: source_id.clone(),
+            source_params: SourceParams::Kafka(KafkaSourceParams {
+                topic: topic.to_string(),
+                client_log_level: None,
+                client_params: json!({
+                    "bootstrap.servers": bootstrap_servers,
+                }),
+                enable_backfill_mode: true,
+            }),
+        };
+        (source_id, source_config)
+    }
+
     fn merge_doc_batches(batches: Vec<RawDocBatch>) -> anyhow::Result<RawDocBatch> {
         let mut merged_batch = RawDocBatch::default();
         for batch in batches {
@@ -770,87 +793,46 @@ mod kafka_broker_tests {
         Ok(merged_batch)
     }
 
-    async fn create_test_index(metastore: Arc<FileBackedMetastore>) -> MetastoreResult<String> {
-        let index_id = append_random_suffix("kafka-source-test-index");
-        metastore
-            .create_index(IndexMetadata {
-                index_id: index_id.clone(),
-                index_uri: Uri::new("s3://localhost/test-index".to_string()),
-                checkpoint: IndexCheckpoint::default(),
-                doc_mapping: DocMapping {
-                    field_mappings: vec![],
-                    tag_fields: Default::default(),
-                    store_source: false,
-                    mode: Default::default(),
-                    dynamic_mapping: None,
-                    partition_key: "".to_string(),
-                },
-                indexing_settings: Default::default(),
-                search_settings: Default::default(),
-                sources: Default::default(),
-                create_timestamp: 0,
-                update_timestamp: 0,
-            })
-            .await?;
-        Ok(index_id)
-    }
-
     #[tokio::test]
     async fn test_kafka_source() -> anyhow::Result<()> {
         let universe = Universe::new();
+        let topic = append_random_suffix("test-kafka-source--topic");
 
         let bootstrap_servers = "localhost:9092".to_string();
-        let topic = append_random_suffix("test-kafka-source-topic");
-
         let admin_client = create_admin_client(&bootstrap_servers)?;
         create_topic(&admin_client, &topic, 3).await?;
 
-        let source_id = append_random_suffix("test-kafka-source");
-        let source_config = SourceConfig {
-            source_id: source_id.clone(),
-            source_params: SourceParams::Kafka(KafkaSourceParams {
-                topic: topic.clone(),
-                client_log_level: None,
-                client_params: json!({
-                    "bootstrap.servers": bootstrap_servers,
-                }),
-                enable_backfill_mode: true,
-            }),
-        };
-
         let source_loader = quickwit_supported_sources();
         {
-            let (sink, inbox) = create_test_mailbox();
-            let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
-            let index_id = create_test_index(metastore.clone()).await?;
+            let index_id = append_random_suffix("test-kafka-source--index");
+            let index_uri = format!("ram:///indexes/{index_id}");
 
-            let checkpoint = SourceCheckpoint::default();
+            let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
+            let metastore = metastore_for_test();
+            metastore.create_index(index_metadata).await?;
 
+            let (source_id, source_config) = get_source_config(&topic, &bootstrap_servers);
             let source = source_loader
                 .load_source(
                     Arc::new(SourceExecutionContext {
                         metastore,
-                        config: source_config.clone(),
+                        source_config: source_config.clone(),
                         index_id: index_id.clone(),
                     }),
-                    checkpoint,
+                    SourceCheckpoint::default(),
                 )
                 .await?;
-            let actor = SourceActor {
+
+            let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
+            let source_actor = SourceActor {
                 source,
-                indexer_mailbox: sink.clone(),
+                indexer_mailbox: indexer_mailbox.clone(),
             };
-            let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
-            let (exit_status, exit_state) = handle.join().await;
+            let (_source_mailbox, source_handle) = universe.spawn_actor(source_actor).spawn();
+            let (exit_status, exit_state) = source_handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages: Vec<RawDocBatch> = inbox
-                .drain_for_test()
-                .into_iter()
-                .flat_map(|msg_any| msg_any.downcast::<RawDocBatch>().ok())
-                .map(|boxed_msg| *boxed_msg)
-                .collect();
-
+            let messages: Vec<RawDocBatch> = indexer_inbox.drain_for_test_typed();
             assert!(messages.is_empty());
 
             let expected_current_positions: Vec<(i32, i64)> = vec![];
@@ -886,36 +868,35 @@ mod kafka_broker_tests {
             .await?;
         }
         {
-            let (sink, inbox) = create_test_mailbox();
-            let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
-            let index_id = create_test_index(metastore.clone()).await?;
+            let index_id = append_random_suffix("test-kafka-source--index");
+            let index_uri = format!("ram:///indexes/{index_id}");
 
-            let checkpoint = SourceCheckpoint::default();
+            let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
+            let metastore = metastore_for_test();
+            metastore.create_index(index_metadata).await?;
 
+            let (source_id, source_config) = get_source_config(&topic, &bootstrap_servers);
             let source = source_loader
                 .load_source(
                     Arc::new(SourceExecutionContext {
                         metastore,
-                        config: source_config.clone(),
+                        source_config: source_config.clone(),
                         index_id: index_id.clone(),
                     }),
-                    checkpoint,
+                    SourceCheckpoint::default(),
                 )
                 .await?;
-            let actor = SourceActor {
+
+            let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
+            let source_actor = SourceActor {
                 source,
-                indexer_mailbox: sink.clone(),
+                indexer_mailbox: indexer_mailbox.clone(),
             };
-            let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
-            let (exit_status, state) = handle.join().await;
+            let (_source_mailbox, source_handle) = universe.spawn_actor(source_actor).spawn();
+            let (exit_status, exit_state) = source_handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages: Vec<RawDocBatch> = inbox
-                .drain_for_test()
-                .into_iter()
-                .flat_map(|box_any| box_any.downcast::<RawDocBatch>().ok())
-                .map(|box_raw_doc_batch| *box_raw_doc_batch)
-                .collect();
+            let messages: Vec<RawDocBatch> = indexer_inbox.drain_for_test_typed();
             assert!(messages.len() >= 1);
 
             let batch = merge_doc_batches(messages)?;
@@ -950,37 +931,35 @@ mod kafka_broker_tests {
                 "num_messages_processed": 9u64,
                 "num_invalid_messages": 3u64,
             });
-            assert_eq!(state, expected_state);
+            assert_eq!(exit_state, expected_state);
         }
         {
-            let (sink, inbox) = create_test_mailbox();
-            let mut source_delta = SourceCheckpointDelta::from_partition_delta(
-                PartitionId::from(0u64),
-                Position::from(0u64),
-                Position::from(0u64),
-            );
+            let index_id = append_random_suffix("test-kafka-source--index");
+            let index_uri = format!("ram:///indexes/{index_id}");
+
+            let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
+            let metastore = metastore_for_test();
+            metastore.create_index(index_metadata).await?;
+
+            let split_id = new_split_id();
+            let split_metadata = SplitMetadata::for_test(split_id.clone());
+            metastore.stage_split(&index_id, split_metadata).await?;
+
+            let mut source_delta = SourceCheckpointDelta::default();
             source_delta
-                .record_partition_delta(
-                    PartitionId::from(1u64),
-                    Position::from(0u64),
-                    Position::from(2u64),
-                )
+                .record_partition_delta(0u64.into(), Position::Beginning, 0u64.into())
+                .unwrap();
+            source_delta
+                .record_partition_delta(1u64.into(), Position::Beginning, 2u64.into())
                 .unwrap();
 
+            let (source_id, source_config) = get_source_config(&topic, &bootstrap_servers);
             let index_delta = IndexCheckpointDelta {
-                source_id: source_config.source_id.clone(),
+                source_id: source_id.clone(),
                 source_delta,
             };
-            let metastore = Arc::new(source_factory::test_helpers::metastore_for_test().await);
-            let index_id = create_test_index(metastore.clone()).await?;
-
             metastore
-                .publish_splits(
-                    &index_id,
-                    &[&source_config.source_id.clone()],
-                    &[],
-                    Some(index_delta),
-                )
+                .publish_splits(&index_id, &[&split_id], &[], Some(index_delta))
                 .await
                 .unwrap();
 
@@ -988,26 +967,23 @@ mod kafka_broker_tests {
                 .load_source(
                     Arc::new(SourceExecutionContext {
                         metastore,
-                        config: source_config.clone(),
+                        source_config: source_config.clone(),
                         index_id: index_id.clone(),
                     }),
                     SourceCheckpoint::default(),
                 )
                 .await?;
-            let actor = SourceActor {
+
+            let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
+            let source_actor = SourceActor {
                 source,
-                indexer_mailbox: sink.clone(),
+                indexer_mailbox: indexer_mailbox.clone(),
             };
-            let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
-            let (exit_status, exit_state) = handle.join().await;
+            let (_source_mailbox, source_handle) = universe.spawn_actor(source_actor).spawn();
+            let (exit_status, exit_state) = source_handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages: Vec<RawDocBatch> = inbox
-                .drain_for_test()
-                .into_iter()
-                .flat_map(|box_message| box_message.downcast::<RawDocBatch>())
-                .map(|box_raw_batch| *box_raw_batch)
-                .collect();
+            let messages: Vec<RawDocBatch> = indexer_inbox.drain_for_test_typed();
             assert!(messages.len() >= 1);
 
             let batch = merge_doc_batches(messages)?;
@@ -1033,7 +1009,7 @@ mod kafka_broker_tests {
                 "topic":  topic,
                 "assigned_partitions": vec![0u64, 1u64, 2u64],
                 "current_positions":  vec![(0u64, 2u64), (2u64, 2u64)],
-                "num_active_partitions": 0usize,
+                "num_inactive_partitions": 3usize,
                 "num_bytes_processed": 36u64,
                 "num_messages_processed": 5u64,
                 "num_invalid_messages": 2u64,
@@ -1086,7 +1062,6 @@ mod kafka_broker_tests {
         .await;
 
         assert!(result.is_err());
-
         Ok(())
     }
 }

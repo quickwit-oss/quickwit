@@ -97,7 +97,7 @@ use crate::source::ingest_api_source::IngestApiSourceFactory;
 pub struct SourceExecutionContext {
     pub metastore: Arc<dyn Metastore>,
     pub index_id: String,
-    pub config: SourceConfig,
+    pub source_config: SourceConfig,
 }
 
 pub type SourceContext = ActorContext<SourceActor>;

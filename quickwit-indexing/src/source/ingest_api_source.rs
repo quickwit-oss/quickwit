@@ -203,11 +203,11 @@ impl TypedSourceFactory for IngestApiSourceFactory {
         let ingest_api_mailbox = get_ingest_api_service().ok_or_else(|| {
             anyhow::anyhow!(
                 "Could not get the `IngestApiSource {{ source_id: {} }}` instance.",
-                ctx.config.source_id
+                ctx.source_config.source_id
             )
         })?;
         IngestApiSource::make(
-            ctx.config.source_id.clone(),
+            ctx.source_config.source_id.clone(),
             params,
             ingest_api_mailbox,
             checkpoint,
