@@ -47,7 +47,7 @@ pub use metastore_resolver::{
     quickwit_metastore_uri_resolver, MetastoreFactory, MetastoreUriResolver,
 };
 pub use split_metadata::{Split, SplitMetadata, SplitState};
-pub(crate) use split_metadata_version::VersionedSplitMetadataDeserializeHelper;
+pub(crate) use split_metadata_version::VersionedSplitMetadata;
 
 #[cfg(test)]
 mod backward_compatibility_tests;

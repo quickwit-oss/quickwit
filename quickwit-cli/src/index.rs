@@ -819,11 +819,12 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     } else {
         SourceParams::stdin()
     };
-    let source = SourceConfig {
+    let source_config = SourceConfig {
         source_id: CLI_INGEST_SOURCE_ID.to_string(),
+        num_pipelines: 1,
         source_params,
     };
-    run_index_checklist(&config.metastore_uri, &args.index_id, Some(&source)).await?;
+    run_index_checklist(&config.metastore_uri, &args.index_id, Some(&source_config)).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&config.metastore_uri)
@@ -842,7 +843,8 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     };
     let universe = Universe::new();
     let indexing_server = IndexingService::new(
-        config.clone().data_dir_path,
+        config.node_id.clone(),
+        config.data_dir_path.clone(),
         indexer_config,
         metastore,
         quickwit_storage_uri_resolver().clone(),
@@ -852,7 +854,8 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     let pipeline_id = indexing_server_mailbox
         .ask_for_res(SpawnPipeline {
             index_id: args.index_id.clone(),
-            source,
+            source_config,
+            pipeline_ord: 0,
         })
         .await?;
     let pipeline_handle = indexing_server_mailbox
@@ -947,6 +950,7 @@ pub async fn merge_or_demux_cli(
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
     let indexing_server = IndexingService::new(
+        config.node_id,
         config.data_dir_path,
         indexer_config,
         metastore,

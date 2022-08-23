@@ -205,6 +205,9 @@ fn create_split_metadata(split: &PackagedSplit, footer_offsets: Range<u64>) -> S
     SplitMetadata {
         split_id: split.split_id.clone(),
         partition_id: split.partition_id,
+        source_id: split.pipeline_id.source_id.clone(),
+        node_id: split.pipeline_id.node_id.clone(),
+        pipeline_ord: split.pipeline_id.pipeline_ord,
         num_docs: split.num_docs as usize,
         time_range: split.time_range.clone(),
         uncompressed_docs_size_in_bytes: split.size_in_bytes,
@@ -252,14 +255,14 @@ async fn stage_and_upload_split(
         packaged_split,
         split_streamer.footer_range.start as u64..split_streamer.footer_range.end as u64,
     );
-    let index_id = packaged_split.index_id.clone();
-    info!(split_id = packaged_split.split_id.as_str(), "staging-split");
+    let index_id = &packaged_split.pipeline_id.index_id.clone();
+    info!(split_id=%packaged_split.split_id, "staging-split");
     metastore
-        .stage_split(&index_id, split_metadata.clone())
+        .stage_split(index_id, split_metadata.clone())
         .await?;
     counters.num_staged_splits.fetch_add(1, Ordering::SeqCst);
 
-    info!(split_id = packaged_split.split_id.as_str(), "storing-split");
+    info!(split_id=%packaged_split.split_id, "storing-split");
     split_store
         .store_split(
             &split_metadata,
@@ -283,11 +286,16 @@ mod tests {
     use tokio::sync::oneshot;
 
     use super::*;
-    use crate::models::ScratchDirectory;
+    use crate::models::{IndexingPipelineId, ScratchDirectory};
 
     #[tokio::test]
     async fn test_uploader_1() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox::<Sequencer<Publisher>>();
         let mut mock_metastore = MockMetastore::default();
@@ -312,7 +320,7 @@ mod tests {
         let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn();
         let split_scratch_directory = ScratchDirectory::for_test()?;
         let checkpoint_delta_opt: Option<IndexCheckpointDelta> = Some(IndexCheckpointDelta {
-            source_id: "source".to_string(),
+            source_id: "test-source".to_string(),
             source_delta: SourceCheckpointDelta::from(3..15),
         });
         uploader_mailbox
@@ -320,7 +328,7 @@ mod tests {
                 vec![PackagedSplit {
                     split_id: "test-split".to_string(),
                     partition_id: 3u64,
-                    index_id: "test-index".to_string(),
+                    pipeline_id,
                     time_range: Some(1_628_203_589i64..=1_628_203_640i64),
                     size_in_bytes: 1_000,
                     split_scratch_directory,
@@ -358,7 +366,7 @@ mod tests {
         assert_eq!(index_id, "test-index");
         assert_eq!(new_splits[0].split_id(), "test-split");
         let checkpoint_delta = checkpoint_delta_opt.unwrap();
-        assert_eq!(checkpoint_delta.source_id, "source");
+        assert_eq!(checkpoint_delta.source_id, "test-source");
         assert_eq!(
             checkpoint_delta.source_delta,
             SourceCheckpointDelta::from(3..15)
@@ -372,7 +380,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_uploader_emits_replace() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox::<Sequencer<Publisher>>();
         let mut mock_metastore = MockMetastore::default();
@@ -401,11 +414,11 @@ mod tests {
         let packaged_split_1 = PackagedSplit {
             split_id: "test-split-1".to_string(),
             partition_id: 3u64,
+            pipeline_id: pipeline_id.clone(),
             replaced_split_ids: vec![
                 "replaced-split-1".to_string(),
                 "replaced-split-2".to_string(),
             ],
-            index_id: "test-index".to_string(),
             time_range: Some(1_628_203_589i64..=1_628_203_640i64),
             size_in_bytes: 1_000,
             split_scratch_directory: split_scratch_directory_1,
@@ -418,11 +431,11 @@ mod tests {
         let package_split_2 = PackagedSplit {
             split_id: "test-split-2".to_string(),
             partition_id: 3u64,
+            pipeline_id,
             replaced_split_ids: vec![
                 "replaced-split-1".to_string(),
                 "replaced-split-2".to_string(),
             ],
-            index_id: "test-index".to_string(),
             time_range: Some(1_628_203_589i64..=1_628_203_640i64),
             size_in_bytes: 1_000,
             split_scratch_directory: split_scratch_directory_2,

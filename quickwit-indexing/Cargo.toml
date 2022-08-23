@@ -72,6 +72,7 @@ kafka-broker-tests = []
 vendored-kafka = ["kafka", "libz-sys/static", "openssl/vendored"]
 kinesis = ["rusoto_core", "rusoto_kinesis", "quickwit-aws/kinesis"]
 kinesis-localstack-tests = []
+testsuite = []
 
 [dev-dependencies]
 bytes = "1"
