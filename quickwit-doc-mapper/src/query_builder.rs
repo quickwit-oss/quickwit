@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
+
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
 use tantivy::schema::{Field, FieldType, Schema};
@@ -66,29 +68,6 @@ pub(crate) fn build_query(
     Ok(query)
 }
 
-fn has_range_clause(user_input_ast: &UserInputAst) -> bool {
-    match user_input_ast {
-        UserInputAst::Clause(sub_queries) => {
-            for (_, sub_ast) in sub_queries {
-                if has_range_clause(sub_ast) {
-                    return true;
-                }
-            }
-            false
-        }
-        UserInputAst::Boost(ast, _) => has_range_clause(ast),
-        UserInputAst::Leaf(leaf) => matches!(**leaf, UserInputLeaf::Range { .. }),
-    }
-}
-
-/// Tells if the query has a Term or Range node which does not
-/// specify a search field.
-fn needs_default_search_field(user_input_ast: &UserInputAst) -> bool {
-    collect_field_names(user_input_ast)
-        .iter()
-        .any(|field_opt| field_opt.is_none())
-}
-
 fn resolve_fields(schema: &Schema, field_names: &[String]) -> anyhow::Result<Vec<Field>> {
     let mut fields = vec![];
     for field_name in field_names {
@@ -100,23 +79,50 @@ fn resolve_fields(schema: &Schema, field_names: &[String]) -> anyhow::Result<Vec
     Ok(fields)
 }
 
-// Collects the fields names on term and range ast nodes.
-fn collect_field_names(user_input_ast: &UserInputAst) -> Vec<Option<String>> {
+// Extract leaves from query ast.
+fn collect_leaves(user_input_ast: &UserInputAst) -> Vec<&UserInputLeaf> {
     match user_input_ast {
         UserInputAst::Clause(sub_queries) => {
-            let mut fields = vec![];
+            let mut leaves = vec![];
             for (_, sub_ast) in sub_queries {
-                fields.extend(collect_field_names(sub_ast));
+                leaves.extend(collect_leaves(sub_ast));
             }
-            fields
+            leaves
         }
-        UserInputAst::Boost(ast, _) => collect_field_names(ast),
-        UserInputAst::Leaf(leaf) => match &**leaf {
-            UserInputLeaf::Literal(UserInputLiteral { field_name, .. }) => vec![field_name.clone()],
-            UserInputLeaf::Range { field, .. } => vec![field.clone()],
-            _ => vec![],
-        },
+        UserInputAst::Boost(ast, _) => collect_leaves(ast),
+        UserInputAst::Leaf(leaf) => vec![leaf],
     }
+}
+
+fn extract_field_name(leaf: &UserInputLeaf) -> Option<&str> {
+    match leaf {
+        UserInputLeaf::Literal(UserInputLiteral { field_name, .. }) => field_name.as_deref(),
+        UserInputLeaf::Range { field, .. } => field.as_deref(),
+        UserInputLeaf::All => None,
+    }
+}
+
+/// Tells if the query has a range ast node.
+fn has_range_clause(user_input_ast: &UserInputAst) -> bool {
+    collect_leaves(user_input_ast)
+        .into_iter()
+        .any(|leaf| matches!(*leaf, UserInputLeaf::Range { .. }))
+}
+
+/// Tells if the query has a Term or Range node which does not
+/// specify a search field.
+fn needs_default_search_field(user_input_ast: &UserInputAst) -> bool {
+    collect_leaves(user_input_ast)
+        .into_iter()
+        .any(|leaf| extract_field_name(leaf).is_none())
+}
+
+/// Collects all the fields names on the query ast nodes.
+fn field_names(user_input_ast: &UserInputAst) -> HashSet<&str> {
+    collect_leaves(user_input_ast)
+        .into_iter()
+        .filter_map(extract_field_name)
+        .collect()
 }
 
 #[allow(clippy::needless_collect)]
@@ -126,15 +132,11 @@ fn validate_requested_snippet_fields(
     user_input_ast: &UserInputAst,
     default_field_names: &[String],
 ) -> anyhow::Result<()> {
-    let query_fields: Vec<String> = collect_field_names(user_input_ast)
-        .into_iter()
-        .flatten()
-        .collect();
-
+    let query_fields = field_names(user_input_ast);
     for field_name in &request.snippet_fields {
         if !default_field_names.contains(field_name)
             && !request.search_fields.contains(field_name)
-            && !query_fields.contains(field_name)
+            && !query_fields.contains(field_name.as_str())
         {
             return Err(anyhow::anyhow!(
                 "The snippet field `{}` should be a default search field or appear in the query.",
