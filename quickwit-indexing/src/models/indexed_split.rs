@@ -30,7 +30,7 @@ use tantivy::merge_policy::NoMergePolicy;
 use tantivy::IndexBuilder;
 
 use crate::controlled_directory::ControlledDirectory;
-use crate::models::{IndexingPipelineId, ScratchDirectory};
+use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory};
 use crate::new_split_id;
 
 pub struct IndexedSplit {
@@ -124,5 +124,6 @@ impl IndexedSplit {
 pub struct IndexedSplitBatch {
     pub splits: Vec<IndexedSplit>,
     pub checkpoint_delta: Option<IndexCheckpointDelta>,
+    pub publish_lock: PublishLock,
     pub date_of_birth: Instant,
 }

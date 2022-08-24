@@ -46,7 +46,7 @@ use tokio::time;
 use tracing::{debug, info, warn};
 
 use crate::actors::Indexer;
-use crate::models::RawDocBatch;
+use crate::models::{NewPublishLock, PublishLock, RawDocBatch};
 use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
 
 /// Number of bytes after which we cut a new batch.
@@ -224,6 +224,7 @@ pub struct KafkaSource {
     events_rx: mpsc::Receiver<KafkaEvent>,
     consumer: Arc<RdKafkaConsumer>,
     poll_loop_jh: JoinHandle<()>,
+    publish_lock: PublishLock,
 }
 
 impl fmt::Debug for KafkaSource {
@@ -259,6 +260,7 @@ impl KafkaSource {
             .subscribe(&[&topic])
             .with_context(|| format!("Failed to subscribe to topic `{topic}`."))?;
         let poll_loop_jh = spawn_consumer_poll_loop(consumer.clone(), events_tx);
+        let publish_lock = PublishLock::default();
 
         let state = KafkaSourceState {
             ..Default::default()
@@ -271,6 +273,7 @@ impl KafkaSource {
             events_rx,
             consumer,
             poll_loop_jh,
+            publish_lock,
         })
     }
 
@@ -361,12 +364,19 @@ impl KafkaSource {
 
     async fn process_revoke_partitions(
         &mut self,
-        _ctx: &SourceContext,
+        ctx: &SourceContext,
+        indexer_mailbox: &Mailbox<Indexer>,
+        batch: &mut BatchBuilder,
         ack_tx: oneshot::Sender<()>,
     ) -> anyhow::Result<()> {
+        ctx.protect_future(self.publish_lock.kill()).await;
         ack_tx
             .send(())
             .map_err(|_| anyhow!("Consumer context was dropped."))?;
+        self.publish_lock = PublishLock::default();
+        ctx.send_message(indexer_mailbox, NewPublishLock(self.publish_lock.clone()))
+            .await?;
+        batch.clear();
         Ok(())
     }
 
@@ -397,21 +407,38 @@ struct BatchBuilder {
 }
 
 impl BatchBuilder {
-    fn push(&mut self, doc: String, num_bytes: u64) {
-        self.docs.push(doc);
-        self.num_bytes += num_bytes;
-    }
-
     fn build(self) -> RawDocBatch {
         RawDocBatch {
             docs: self.docs,
             checkpoint_delta: self.checkpoint_delta,
         }
     }
+
+    fn clear(&mut self) {
+        self.docs.clear();
+        self.num_bytes = 0;
+        self.checkpoint_delta = SourceCheckpointDelta::default();
+    }
+
+    fn push(&mut self, doc: String, num_bytes: u64) {
+        self.docs.push(doc);
+        self.num_bytes += num_bytes;
+    }
 }
 
 #[async_trait]
 impl Source for KafkaSource {
+    async fn initialize(
+        &mut self,
+        indexer_mailbox: &Mailbox<Indexer>,
+        ctx: &SourceContext,
+    ) -> Result<(), ActorExitStatus> {
+        let publish_lock = self.publish_lock.clone();
+        ctx.send_message(indexer_mailbox, NewPublishLock(publish_lock))
+            .await?;
+        Ok(())
+    }
+
     async fn emit_batches(
         &mut self,
         indexer_mailbox: &Mailbox<Indexer>,
@@ -429,7 +456,7 @@ impl Source for KafkaSource {
                     match event {
                         KafkaEvent::Message(message) => self.process_message(message, &mut batch).await?,
                         KafkaEvent::AssignPartitions { partitions, assignment_tx} => self.process_assign_partitions(ctx, &partitions, assignment_tx).await?,
-                        KafkaEvent::RevokePartitions { ack_tx } => self.process_revoke_partitions(ctx, ack_tx).await?,
+                        KafkaEvent::RevokePartitions { ack_tx } => self.process_revoke_partitions(ctx, indexer_mailbox, &mut batch, ack_tx).await?,
                         KafkaEvent::PartitionEOF(partition) => self.process_partition_eof(partition),
                         KafkaEvent::Error(error) => Err(ActorExitStatus::from(error))?,
                     }
@@ -863,11 +890,7 @@ mod kafka_broker_tests {
             let (source_id, source_config) = get_source_config(&topic, &bootstrap_servers);
             let source = source_loader
                 .load_source(
-                    Arc::new(SourceExecutionContext {
-                        metastore,
-                        source_config: source_config.clone(),
-                        index_id: index_id.clone(),
-                    }),
+                    SourceExecutionContext::for_test(metastore, &index_id, source_config.clone()),
                     SourceCheckpoint::default(),
                 )
                 .await?;
@@ -927,11 +950,7 @@ mod kafka_broker_tests {
             let (source_id, source_config) = get_source_config(&topic, &bootstrap_servers);
             let source = source_loader
                 .load_source(
-                    Arc::new(SourceExecutionContext {
-                        metastore,
-                        source_config: source_config.clone(),
-                        index_id: index_id.clone(),
-                    }),
+                    SourceExecutionContext::for_test(metastore, &index_id, source_config.clone()),
                     SourceCheckpoint::default(),
                 )
                 .await?;
@@ -1014,11 +1033,7 @@ mod kafka_broker_tests {
 
             let source = source_loader
                 .load_source(
-                    Arc::new(SourceExecutionContext {
-                        metastore,
-                        source_config: source_config.clone(),
-                        index_id: index_id.clone(),
-                    }),
+                    SourceExecutionContext::for_test(metastore, &index_id, source_config.clone()),
                     SourceCheckpoint::default(),
                 )
                 .await?;

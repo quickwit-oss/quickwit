@@ -103,6 +103,21 @@ pub struct SourceExecutionContext {
     pub source_config: SourceConfig,
 }
 
+impl SourceExecutionContext {
+    #[cfg(test)]
+    fn for_test(
+        metastore: Arc<dyn Metastore>,
+        index_id: &str,
+        source_config: SourceConfig,
+    ) -> Arc<SourceExecutionContext> {
+        Arc::new(Self {
+            metastore,
+            index_id: index_id.to_string(),
+            source_config,
+        })
+    }
+}
+
 pub type SourceContext = ActorContext<SourceActor>;
 
 /// A Source is a trait that is mounted in a light wrapping Actor called `SourceActor`.
@@ -131,7 +146,11 @@ pub type SourceContext = ActorContext<SourceActor>;
 #[async_trait]
 pub trait Source: Send + Sync + 'static {
     /// This method will be called before any calls to `emit_batches`.
-    async fn initialize(&mut self, _ctx: &SourceContext) -> Result<(), ActorExitStatus> {
+    async fn initialize(
+        &mut self,
+        _indexer_mailbox: &Mailbox<Indexer>,
+        _ctx: &SourceContext,
+    ) -> Result<(), ActorExitStatus> {
         Ok(())
     }
 
@@ -217,7 +236,7 @@ impl Actor for SourceActor {
     }
 
     async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        self.source.initialize(ctx).await?;
+        self.source.initialize(&self.indexer_mailbox, ctx).await?;
         self.handle(Loop, ctx).await?;
         Ok(())
     }

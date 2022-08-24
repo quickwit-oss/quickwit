@@ -24,7 +24,7 @@ use std::time::Instant;
 
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 
-use crate::models::{IndexingPipelineId, ScratchDirectory};
+use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory};
 
 pub struct PackagedSplit {
     pub split_id: String,
@@ -63,6 +63,7 @@ impl fmt::Debug for PackagedSplit {
 pub struct PackagedSplitBatch {
     pub splits: Vec<PackagedSplit>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+    pub publish_lock: PublishLock,
     pub date_of_birth: Instant,
 }
 
@@ -74,6 +75,7 @@ impl PackagedSplitBatch {
     pub fn new(
         splits: Vec<PackagedSplit>,
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+        publish_lock: PublishLock,
         date_of_birth: Instant,
     ) -> Self {
         assert!(!splits.is_empty());
@@ -89,6 +91,7 @@ impl PackagedSplitBatch {
         Self {
             splits,
             checkpoint_delta_opt,
+            publish_lock,
             date_of_birth,
         }
     }

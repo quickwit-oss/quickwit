@@ -69,7 +69,6 @@ impl TypedSourceFactory for VoidSourceFactory {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     use quickwit_actors::{create_test_mailbox, Health, Supervisable, Universe};
     use quickwit_config::SourceParams;
@@ -89,15 +88,15 @@ mod tests {
         // let source_loader = quickwit_supported_sources();
         let metastore = metastore_for_test();
         let _ = VoidSourceFactory::typed_create_source(
-            Arc::new(SourceExecutionContext {
+            SourceExecutionContext::for_test(
                 metastore,
-                index_id: "test-index".to_string(),
-                source_config: SourceConfig {
+                "test-index",
+                SourceConfig {
                     source_id: "void-test-source".to_string(),
                     num_pipelines: 1,
                     source_params: SourceParams::void(),
                 },
-            }),
+            ),
             VoidSourceParams,
             SourceCheckpoint::default(),
         )
@@ -109,15 +108,15 @@ mod tests {
     async fn test_void_source_running() -> anyhow::Result<()> {
         let metastore = metastore_for_test();
         let void_source = VoidSourceFactory::typed_create_source(
-            Arc::new(SourceExecutionContext {
+            SourceExecutionContext::for_test(
                 metastore,
-                index_id: "test-index".to_string(),
-                source_config: SourceConfig {
+                "test-index",
+                SourceConfig {
                     source_id: "void-test-source".to_string(),
                     num_pipelines: 1,
                     source_params: SourceParams::void(),
                 },
-            }),
+            ),
             VoidSourceParams,
             SourceCheckpoint::default(),
         )

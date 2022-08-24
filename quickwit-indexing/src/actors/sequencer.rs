@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt::Debug;
+
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
@@ -50,8 +52,16 @@ impl<A: Actor> Actor for Sequencer<A> {
     fn observable_state(&self) {}
 }
 
+#[derive(Debug)]
+pub enum SequencerCommand<T: Debug> {
+    /// Discard position in the sequence.
+    Discard,
+    /// Proceed with the enclosed value.
+    Proceed(T),
+}
+
 #[async_trait]
-impl<A, M> Handler<oneshot::Receiver<M>> for Sequencer<A>
+impl<A, M> Handler<oneshot::Receiver<SequencerCommand<M>>> for Sequencer<A>
 where
     A: Actor,
     A: Handler<M>,
@@ -61,16 +71,18 @@ where
 
     async fn handle(
         &mut self,
-        message: oneshot::Receiver<M>,
+        message: oneshot::Receiver<SequencerCommand<M>>,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        let msg = ctx
+        let command = ctx
             .protect_future(message)
             .await
-            .context("Message future failed.")?;
-        ctx.send_message(&self.mailbox, msg)
-            .await
-            .context("Failed to send message to publisher")?;
+            .context("Failed to receive command from uploader.")?;
+        if let SequencerCommand::Proceed(msg) = command {
+            ctx.send_message(&self.mailbox, msg)
+                .await
+                .context("Failed to send message to publisher.")?;
+        }
         Ok(())
     }
 }
@@ -118,16 +130,19 @@ mod tests {
         let (fut_tx_1, fut_rx_1) = oneshot::channel();
         let (fut_tx_2, fut_rx_2) = oneshot::channel();
         let (fut_tx_3, fut_rx_3) = oneshot::channel();
+        let (fut_tx_4, fut_rx_4) = oneshot::channel();
         sequencer_mailbox.send_message(fut_rx_1).await.unwrap();
         sequencer_mailbox.send_message(fut_rx_2).await.unwrap();
-        fut_tx_3.send(3).unwrap();
-        fut_tx_1.send(1).unwrap();
+        fut_tx_4.send(SequencerCommand::Proceed(4)).unwrap();
+        fut_tx_3.send(SequencerCommand::<usize>::Discard).unwrap();
         sequencer_mailbox.send_message(fut_rx_3).await.unwrap();
-        fut_tx_2.send(2).unwrap();
+        fut_tx_2.send(SequencerCommand::Proceed(2)).unwrap();
+        sequencer_mailbox.send_message(fut_rx_4).await.unwrap();
+        fut_tx_1.send(SequencerCommand::Proceed(1)).unwrap();
         std::mem::drop(sequencer_mailbox);
         let (exit_status, last_state) = test_handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Success));
-        assert_eq!(&last_state, &[1, 2, 3]);
+        assert_eq!(&last_state, &[1, 2, 4]);
         let (sequencer_exit_status, _) = sequencer_handle.join().await;
         assert!(matches!(sequencer_exit_status, ActorExitStatus::Success));
     }

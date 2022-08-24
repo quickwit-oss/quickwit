@@ -128,8 +128,9 @@ impl Handler<SplitUpdate> for Publisher {
             index_id,
             new_splits,
             replaced_split_ids,
-            date_of_birth,
             checkpoint_delta_opt,
+            publish_lock,
+            date_of_birth,
         } = split_update;
 
         let split_ids: Vec<&str> = new_splits.iter().map(|split| split.split_id()).collect();
@@ -137,16 +138,23 @@ impl Handler<SplitUpdate> for Publisher {
         let replaced_split_ids_ref_vec: Vec<&str> =
             replaced_split_ids.iter().map(String::as_str).collect();
 
-        self.metastore
-            .publish_splits(
+        if let Some(_guard) = publish_lock.acquire().await {
+            ctx.protect_future(self.metastore.publish_splits(
                 &index_id,
                 &split_ids[..],
                 &replaced_split_ids_ref_vec,
                 checkpoint_delta_opt.clone(),
-            )
+            ))
             .await
             .context("Failed to publish splits.")?;
-
+        } else {
+            // TODO: Remove the junk right away?
+            info!(
+                split_ids=?split_ids,
+                "Splits' publish lock is dead."
+            );
+            return Ok(());
+        }
         info!(new_splits=?split_ids, tts=%date_of_birth.elapsed().as_secs_f32(), checkpoint_delta=?checkpoint_delta_opt, "publish-new-splits");
         if let Some(source_mailbox) = self.source_mailbox_opt.as_ref() {
             if let Some(checkpoint) = checkpoint_delta_opt {
@@ -193,6 +201,7 @@ mod tests {
     use quickwit_metastore::{MockMetastore, SplitMetadata};
 
     use super::*;
+    use crate::models::PublishLock;
 
     #[tokio::test]
     async fn test_publisher_publish_operation() {
@@ -239,6 +248,7 @@ mod tests {
                     source_id: "source".to_string(),
                     source_delta: SourceCheckpointDelta::from(1..3),
                 }),
+                publish_lock: PublishLock::default(),
                 date_of_birth: Instant::now(),
             })
             .await
@@ -301,6 +311,7 @@ mod tests {
             }],
             replaced_split_ids: vec!["split1".to_string(), "split2".to_string()],
             checkpoint_delta_opt: None,
+            publish_lock: PublishLock::default(),
             date_of_birth: Instant::now(),
         };
         assert!(publisher_mailbox

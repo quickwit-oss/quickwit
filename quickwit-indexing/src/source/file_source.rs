@@ -169,7 +169,6 @@ impl TypedSourceFactory for FileSourceFactory {
 #[cfg(test)]
 mod tests {
     use std::io::Write;
-    use std::sync::Arc;
 
     use quickwit_actors::{create_test_mailbox, Command, Universe};
     use quickwit_config::{SourceConfig, SourceParams};
@@ -187,15 +186,15 @@ mod tests {
 
         let metastore = metastore_for_test();
         let file_source = FileSourceFactory::typed_create_source(
-            Arc::new(SourceExecutionContext {
+            SourceExecutionContext::for_test(
                 metastore,
-                index_id: "test-index".to_string(),
-                source_config: SourceConfig {
-                    source_id: "my-file-source".to_string(),
+                "test-index",
+                SourceConfig {
+                    source_id: "test-file-source".to_string(),
                     num_pipelines: 1,
                     source_params: SourceParams::File(params.clone()),
                 },
-            }),
+            ),
             params,
             SourceCheckpoint::default(),
         )
@@ -248,15 +247,15 @@ mod tests {
 
         let metastore = metastore_for_test();
         let source = FileSourceFactory::typed_create_source(
-            Arc::new(SourceExecutionContext {
+            SourceExecutionContext::for_test(
                 metastore,
-                index_id: "test-index".to_string(),
-                source_config: SourceConfig {
-                    source_id: "my-file-source".to_string(),
+                "test-index",
+                SourceConfig {
+                    source_id: "test-file-source".to_string(),
                     num_pipelines: 1,
                     source_params: SourceParams::File(params.clone()),
                 },
-            }),
+            ),
             params,
             SourceCheckpoint::default(),
         )
@@ -332,15 +331,15 @@ mod tests {
 
         let metastore = metastore_for_test();
         let source = FileSourceFactory::typed_create_source(
-            Arc::new(SourceExecutionContext {
+            SourceExecutionContext::for_test(
                 metastore,
-                index_id: "test-index".to_string(),
-                source_config: SourceConfig {
-                    source_id: "my-file-source".to_string(),
+                "test-index",
+                SourceConfig {
+                    source_id: "test-file-source".to_string(),
                     num_pipelines: 1,
                     source_params: SourceParams::File(params.clone()),
                 },
-            }),
+            ),
             params,
             checkpoint,
         )
@@ -361,9 +360,8 @@ mod tests {
                 "num_lines_processed": 98u64
             })
         );
-        let indexer_msgs = inbox.drain_for_test();
-        let received_batch = indexer_msgs[0].downcast_ref::<RawDocBatch>().unwrap();
-        assert!(received_batch.docs[0].starts_with("2\n"));
+        let indexer_messages: Vec<RawDocBatch> = inbox.drain_for_test_typed();
+        assert!(indexer_messages[0].docs[0].starts_with("2\n"));
         Ok(())
     }
 }
