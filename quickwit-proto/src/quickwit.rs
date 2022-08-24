@@ -36,6 +36,9 @@ pub struct SearchRequest {
     /// json serialized aggregation_request
     #[prost(string, optional, tag="11")]
     pub aggregation_request: ::core::option::Option<::prost::alloc::string::String>,
+    /// Fields to extract snippet on
+    #[prost(string, repeated, tag="12")]
+    pub snippet_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -125,6 +128,9 @@ pub struct LeafHit {
     /// The partial hit (ie: the sorting field + the document address)
     #[prost(message, optional, tag="2")]
     pub partial_hit: ::core::option::Option<PartialHit>,
+    /// A snippet of the matching content 
+    #[prost(string, optional, tag="3")]
+    pub leaf_snippet_json: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -135,6 +141,9 @@ pub struct Hit {
     /// The partial hit (ie: the sorting field + the document address)
     #[prost(message, optional, tag="2")]
     pub partial_hit: ::core::option::Option<PartialHit>,
+    /// A snippet of the matching content 
+    #[prost(string, optional, tag="3")]
+    pub snippet: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// A partial hit, is a hit for which we have not fetch the content yet.
 /// Instead, it holds a document_uri which is enough information to
@@ -203,6 +212,13 @@ pub struct FetchDocsRequest {
     /// split files.
     #[prost(string, tag="4")]
     pub index_uri: ::prost::alloc::string::String,
+    /// Search request. This is a perfect copy of the original search request,
+    /// that was sent to root apart from the start_offset & max_hits params.
+    #[prost(message, optional, tag="5")]
+    pub search_request: ::core::option::Option<SearchRequest>,
+    /// `DocMapper` as json serialized trait.
+    #[prost(string, optional, tag="6")]
+    pub doc_mapper: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -237,6 +253,9 @@ pub struct SearchStreamRequest {
     /// The field by which we want to partition
     #[prost(string, optional, tag="9")]
     pub partition_by_field: ::core::option::Option<::prost::alloc::string::String>,
+    /// Fields to extract snippet on.
+    #[prost(string, repeated, tag="10")]
+    pub snippet_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
