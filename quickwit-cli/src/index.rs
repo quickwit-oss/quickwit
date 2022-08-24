@@ -1116,10 +1116,11 @@ pub async fn start_statistics_reporting_loop(
             * 100.0;
 
         println!(
-            "Indexed {} documents out of {} documents in {} {}",
+            "Indexed {} out of {} documents in {}. Failed to index {} document(s). {}\n",
             num_indexed_docs,
             pipeline_statistics.num_docs.separate_with_commas(),
             format_duration(secs),
+            pipeline_statistics.num_invalid_docs.separate_with_commas(),
             colorize_error_rate(error_rate),
         );
     }
