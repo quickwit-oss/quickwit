@@ -1116,9 +1116,9 @@ pub async fn start_statistics_reporting_loop(
             * 100.0;
 
         println!(
-            "Indexed {}/{} documents in {} {}",
+            "Indexed {} documents out of {} documents in {} {}",
             num_indexed_docs,
-            pipeline_statistics.num_invalid_docs.separate_with_commas(),
+            pipeline_statistics.num_docs.separate_with_commas(),
             format_duration(secs),
             colorize_error_rate(error_rate),
         );
