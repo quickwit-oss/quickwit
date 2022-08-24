@@ -210,7 +210,6 @@ pub mod test_suite {
             .delete_index("non-existent-index")
             .await
             .unwrap_err();
-        println!("error {:?}", result);
         assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
 
         metastore

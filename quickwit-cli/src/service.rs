@@ -34,8 +34,12 @@ pub fn build_run_command<'a>() -> Command<'a> {
     Command::new("run")
         .about("Runs quickwit services. By default, `indexer` and `searcher` are started.")
         .args(&[
-            arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.").env("QW_DATA_DIR").required(false),
-            arg!(--"service" <SERVICE> "Services (searcher|indexer) to run. If unspecified run `metastore`, `searcher` and `indexer`.").required(false),
+            arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
+                .env("QW_DATA_DIR")
+                .required(false),
+            arg!(--"service" <SERVICE> "Services (searcher|indexer|metastore) to run. If unspecified all services `metastore`, `searcher` and `indexer` are started.")
+                .multiple_occurrences(true)
+                .required(false),
             arg!(--"metastore-uri" <METASTORE_URI> "Metastore URI. Override the `metastore_uri` parameter defined in the config file. Defaults to file-backed, but could be Amazon S3 or PostgreSQL.")
                 .env("QW_METASTORE_URI")
                 .required(false),
@@ -70,12 +74,10 @@ impl RunCliCommand {
             .expect("`config` is a required arg.")?;
         let data_dir_path = matches.value_of("data-dir").map(PathBuf::from);
         let services = matches
-            .value_of("service")
-            .map(|services_str| {
-                let services: Result<HashSet<_>, _> = services_str
-                    .split(',')
-                    .map(QuickwitService::try_from)
-                    .collect();
+            .values_of("service")
+            .map(|values| {
+                let services: Result<HashSet<_>, _> =
+                    values.into_iter().map(QuickwitService::try_from).collect();
                 services
             })
             .transpose()?
@@ -199,7 +201,9 @@ mod tests {
         let matches = command.try_get_matches_from(vec![
             "run",
             "--service",
-            "metastore,searcher",
+            "searcher",
+            "--service",
+            "metastore",
             "--config",
             "/config.yaml",
         ])?;

@@ -79,7 +79,7 @@ async fn test_standalone_server() -> anyhow::Result<()> {
 async fn test_multi_nodes_cluster() -> anyhow::Result<()> {
     let nodes_services = vec![
         HashSet::from_iter([QuickwitService::Searcher]),
-        HashSet::from_iter([QuickwitService::Searcher]),
+        HashSet::from_iter([QuickwitService::Metastore]),
         HashSet::from_iter([QuickwitService::Indexer]),
     ];
     let sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services)
@@ -99,9 +99,9 @@ async fn test_multi_nodes_cluster() -> anyhow::Result<()> {
             sort_by_field: None,
             sort_order: None,
             start_offset: 0,
+            snippet_fields: Vec::new(),
         })
         .await;
-    println!("search_result {:?}", search_result);
     assert!(search_result.is_ok());
     let indexing_service_state = sandbox.rest_client.indexing_service_state().await.unwrap();
     assert_eq!(indexing_service_state.num_running_pipelines, 1);

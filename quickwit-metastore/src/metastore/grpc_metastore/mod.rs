@@ -57,7 +57,7 @@ use crate::{
 const CLIENT_TIMEOUT_DURATION: Duration = if cfg!(test) {
     Duration::from_millis(100)
 } else {
-    Duration::from_secs(100)
+    Duration::from_secs(5)
 };
 
 /// The [`MetastoreGrpcClient`] sends gRPC requests to cluster members running a [`Metastore`]
@@ -111,14 +111,9 @@ impl MetastoreGrpcClient {
             .connect_with_connector(service_fn(move |_: Uri| {
                 let client = client.take();
                 async move {
-                    if let Some(client) = client {
-                        Ok(client)
-                    } else {
-                        Err(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            "Client already taken",
-                        ))
-                    }
+                    client.ok_or_else(|| {
+                        std::io::Error::new(std::io::ErrorKind::Other, "Client already taken")
+                    })
                 }
             }))
             .await?;
@@ -130,7 +125,8 @@ impl MetastoreGrpcClient {
 #[async_trait]
 impl Metastore for MetastoreGrpcClient {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
-        unimplemented!()
+        // TODO: https://github.com/quickwit-oss/quickwit/issues/1879
+        Ok(())
     }
 
     fn uri(&self) -> &QuickwitUri {
@@ -625,7 +621,6 @@ mod tests {
         // Send empty vec to signal that there is no more control plane in the cluster.
         let _ = members_tx.send(Vec::new());
         let err = metastore_client.index_metadata(index_id).await.unwrap_err();
-        println!("metastore error {:?}", err);
         assert!(
             matches!(err, MetastoreError::ConnectionError { message } if message.starts_with("gRPC request timeout triggered by the channel timeout"))
         );

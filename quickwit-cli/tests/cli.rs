@@ -848,7 +848,7 @@ async fn test_all_local_index() -> Result<()> {
     // serve & api-search
     let mut server_process = spawn_command(
         format!(
-            "run --service searcher,metastore --config {}",
+            "run --service searcher --service metastore --config {}",
             test_env.resource_files["config"].display(),
         )
         .as_str(),
@@ -946,7 +946,7 @@ async fn test_cmd_all_with_s3_localstack_cli() -> Result<()> {
     // TODO: ditto.
     let mut server_process = spawn_command(
         format!(
-            "run --service searcher,metastore --config {}",
+            "run --service searcher --service metastore --config {}",
             test_env.resource_files["config"].display(),
         )
         .as_str(),
@@ -1031,7 +1031,7 @@ async fn test_cmd_all_with_s3_localstack_internal_api() -> Result<()> {
     // TODO: ditto.
     let mut server_process = spawn_command(
         format!(
-            "run --service searcher,metastore --config {}",
+            "run --service searcher --service metastore --config {}",
             test_env.resource_files["config"].display(),
         )
         .as_str(),

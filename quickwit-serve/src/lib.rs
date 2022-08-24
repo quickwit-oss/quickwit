@@ -107,9 +107,9 @@ pub async fn serve_quickwit(
             .resolve(&config.metastore_uri)
             .await?
     } else {
-        // Wait 5 seconds for nodes running a `Metastore` service.
+        // Wait 10 seconds for nodes running a `Metastore` service.
         cluster
-            .wait_for_members(has_node_with_metastore_service, Duration::from_secs(5))
+            .wait_for_members(has_node_with_metastore_service, Duration::from_secs(10))
             .await?;
         let metastore_client = MetastoreGrpcClient::create_and_update_from_members(
             &cluster.members(),
@@ -165,7 +165,7 @@ pub async fn serve_quickwit(
     )
     .await?;
 
-    // Always instanciate index management service.
+    // Always instanciate index service.
     let index_service = Arc::new(IndexService::new(
         metastore.clone(),
         storage_resolver,
