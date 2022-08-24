@@ -30,8 +30,8 @@ use quickwit_proto::ingest_api::{DropQueueRequest, ListQueuesRequest};
 use tracing::{debug, error, info, instrument};
 
 use super::IndexingService;
-use crate::actors::indexing_service::INGEST_API_SOURCE_ID;
 use crate::models::ShutdownPipelines;
+use crate::source::INGEST_API_SOURCE_ID;
 
 const RUN_INTERVAL: Duration = if cfg!(test) {
     Duration::from_secs(60) // 1min
@@ -45,6 +45,8 @@ pub struct IngestApiGarbageCollectorCounters {
     pub num_passes: usize,
     /// The number of deleted queues.
     pub num_deleted_queues: usize,
+    /// The number of delete failures.
+    pub num_delete_failures: usize,
 }
 
 #[derive(Debug)]
@@ -78,7 +80,7 @@ impl IngestApiGarbageCollector {
     }
 
     async fn delete_queue(&self, queue_id: &str) -> anyhow::Result<()> {
-        // shutdown the pipeline if any
+        // Shutdown the pipeline if any.
         self.indexing_service
             .ask_for_res(ShutdownPipelines {
                 index_id: queue_id.to_string(),
@@ -86,13 +88,12 @@ impl IngestApiGarbageCollector {
             })
             .await?;
 
-        // delete the queue
+        // Delete the queue.
         self.ingest_api_service
             .ask_for_res(DropQueueRequest {
                 queue_id: queue_id.to_string(),
             })
             .await?;
-
         Ok(())
     }
 
@@ -102,11 +103,11 @@ impl IngestApiGarbageCollector {
             .ingest_api_service
             .ask_for_res(ListQueuesRequest {})
             .await
-            .context("Failed to list queues")?
+            .context("Failed to list queues.")?
             .queues
             .into_iter()
             .collect();
-        debug!(queues=?queues, "list-queues");
+        debug!(queues=?queues, "List ingest API queues.");
 
         let index_ids: HashSet<String> = self
             .metastore
@@ -116,18 +117,19 @@ impl IngestApiGarbageCollector {
             .into_iter()
             .map(|index_metadata| index_metadata.index_id)
             .collect();
-        debug!(index_ids=?index_ids, "list-index-ids");
+        debug!(index_ids=?index_ids, metastore_uri=%self.metastore.uri(), "List indexes.");
 
         let queue_ids_to_delete = queues.difference(&index_ids);
+
         for queue_id in queue_ids_to_delete {
             if let Err(delete_queue_error) = self.delete_queue(queue_id).await {
                 error!(error=?delete_queue_error, queue_id=%queue_id, "queue-delete-failure");
+                self.counters.num_delete_failures += 1;
             } else {
                 info!(queue_id=%queue_id, "queue-delete-success");
                 self.counters.num_deleted_queues += 1;
             }
         }
-
         Ok(())
     }
 }
@@ -165,7 +167,6 @@ impl Handler<Loop> for IngestApiGarbageCollector {
             // It will retry in one hour.
             error!(error=?gc_err, "ingest-queue-gc-failed");
         }
-
         ctx.schedule_self_msg(RUN_INTERVAL, Loop).await;
         Ok(())
     }
@@ -178,7 +179,7 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_common::uri::Uri;
     use quickwit_config::IndexerConfig;
-    use quickwit_ingest_api::spawn_ingest_api_actor;
+    use quickwit_ingest_api::{init_ingest_api, QUEUES_DIR_NAME};
     use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
     use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
     use quickwit_storage::StorageUriResolver;
@@ -201,12 +202,12 @@ mod tests {
         // Setup ingest api objects
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
-        let ingest_api_mailbox =
-            spawn_ingest_api_actor(&universe, temp_dir.path().join("queues").as_path())?;
+        let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
+        let ingest_api_service = init_ingest_api(&universe, &queues_dir_path).await?;
         let create_queue_req = CreateQueueIfNotExistsRequest {
             queue_id: index_id.clone(),
         };
-        ingest_api_mailbox
+        ingest_api_service
             .ask_for_res(create_queue_req)
             .await
             .map_err(|error| anyhow::anyhow!(error))?;
@@ -215,20 +216,21 @@ mod tests {
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
         let storage_resolver = StorageUriResolver::for_test();
+        let enable_ingest_api = true;
         let indexing_server = IndexingService::new(
             "test-node".to_string(),
             data_dir_path,
             indexer_config,
             metastore.clone(),
             storage_resolver.clone(),
-            Some(ingest_api_mailbox.clone()),
+            enable_ingest_api,
         );
         let (indexing_server_mailbox, _indexing_server_handle) =
             universe.spawn_actor(indexing_server).spawn();
 
         let ingest_api_garbage_collector = IngestApiGarbageCollector::new(
             metastore.clone(),
-            ingest_api_mailbox,
+            ingest_api_service,
             indexing_server_mailbox,
         );
         let (_maibox, handler) = universe.spawn_actor(ingest_api_garbage_collector).spawn();

@@ -842,13 +842,14 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         ..Default::default()
     };
     let universe = Universe::new();
+    let enable_ingest_api = false;
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
         indexer_config,
         metastore,
         quickwit_storage_uri_resolver().clone(),
-        None,
+        enable_ingest_api,
     );
     let (indexing_server_mailbox, _) = universe.spawn_actor(indexing_server).spawn();
     let pipeline_id = indexing_server_mailbox
@@ -949,13 +950,14 @@ pub async fn merge_or_demux_cli(
         .resolve(&config.metastore_uri)
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
+    let enable_ingest_api = false;
     let indexing_server = IndexingService::new(
         config.node_id,
         config.data_dir_path,
         indexer_config,
         metastore,
         storage_resolver,
-        None,
+        enable_ingest_api,
     );
     let universe = Universe::new();
     let (indexing_server_mailbox, _) = universe.spawn_actor(indexing_server).spawn();

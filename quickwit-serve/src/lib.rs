@@ -49,8 +49,8 @@ use quickwit_common::uri::Uri;
 use quickwit_config::QuickwitConfig;
 use quickwit_core::IndexService;
 use quickwit_indexing::actors::IndexingService;
-use quickwit_indexing::start_indexer_service;
-use quickwit_ingest_api::{init_ingest_api, IngestApiService};
+use quickwit_indexing::start_indexing_service;
+use quickwit_ingest_api::{start_ingest_api_service, IngestApiService};
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreGrpcClient};
 use quickwit_search::{start_searcher_service, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
@@ -124,6 +124,7 @@ pub async fn serve_quickwit(
         .await?
         .into_iter()
         .map(|index| (index.index_id, index.index_uri));
+
     check_is_configured_for_cluster(&config.peer_seeds, &config.metastore_uri, indexes)?;
 
     tokio::spawn(node_readyness_reporting_task(
@@ -133,29 +134,22 @@ pub async fn serve_quickwit(
 
     let universe = Universe::new();
 
-    let ingest_api_service: Option<Mailbox<IngestApiService>> = if services
-        .contains(&QuickwitService::Indexer)
-    {
-        let ingest_api_service = init_ingest_api(&universe, &config.data_dir_path.join("queues"))?;
-        Some(ingest_api_service)
+    let (ingest_api_service, indexer_service) = if services.contains(&QuickwitService::Indexer) {
+        let ingest_api_service = start_ingest_api_service(&universe, &config.data_dir_path).await?;
+        // TODO: Move to indexer config?
+        let enable_ingest_api = true;
+        let indexing_service = start_indexing_service(
+            &universe,
+            &config,
+            metastore.clone(),
+            storage_resolver.clone(),
+            enable_ingest_api,
+        )
+        .await?;
+        (Some(ingest_api_service), Some(indexing_service))
     } else {
-        None
+        (None, None)
     };
-
-    let indexer_service: Option<Mailbox<IndexingService>> =
-        if services.contains(&QuickwitService::Indexer) {
-            let indexer_service = start_indexer_service(
-                &universe,
-                &config,
-                metastore.clone(),
-                storage_resolver.clone(),
-                ingest_api_service.clone(),
-            )
-            .await?;
-            Some(indexer_service)
-        } else {
-            None
-        };
 
     let search_service: Arc<dyn SearchService> = start_searcher_service(
         &config,
@@ -187,7 +181,6 @@ pub async fn serve_quickwit(
     };
     let grpc_server = grpc::start_grpc_server(grpc_listen_addr, &quickwit_services);
     let rest_server = rest::start_rest_server(rest_listen_addr, &quickwit_services);
-
     tokio::try_join!(grpc_server, rest_server)?;
     Ok(())
 }
