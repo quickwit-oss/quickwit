@@ -30,9 +30,25 @@ use crate::{is_false, validate_identifier};
 /// Reserved source ID for the `quickwit index ingest` CLI command.
 pub const CLI_INGEST_SOURCE_ID: &str = ".cli-ingest-source";
 
+fn default_num_pipelines() -> usize {
+    1
+}
+
+fn is_one(num: &usize) -> bool {
+    *num == 1
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceConfig {
     pub source_id: String,
+
+    #[doc(hidden)]
+    #[serde(default = "default_num_pipelines", skip_serializing_if = "is_one")]
+    /// Number of indexing pipelines spawned for the source on each indexer.
+    /// Therefore, if there exists `n` indexers in the cluster, there will be `n` * `num_pipelines`
+    /// indexing pipelines running for the source.
+    pub num_pipelines: usize,
+
     #[serde(flatten)]
     pub source_params: SourceParams,
 }
@@ -134,6 +150,13 @@ impl SourceConfig {
             SourceParams::IngestApi(params) => serde_json::to_value(params),
         }
         .unwrap()
+    }
+
+    pub fn num_pipelines(&self) -> Option<usize> {
+        match &self.source_params {
+            SourceParams::Kafka(_) | SourceParams::Void(_) => Some(self.num_pipelines),
+            _ => None,
+        }
     }
 }
 
@@ -269,7 +292,7 @@ impl TryFrom<KinesisSourceParamsInner> for KinesisSourceParams {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct VecSourceParams {
-    pub items: Vec<String>,
+    pub docs: Vec<String>,
     pub batch_num_docs: usize,
     #[serde(default)]
     pub partition: String,
@@ -314,6 +337,7 @@ mod tests {
             .unwrap();
         let expected_source_config = SourceConfig {
             source_id: "hdfs-logs-kafka-source".to_string(),
+            num_pipelines: 2,
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: "cloudera-cluster-logs".to_string(),
                 client_log_level: None,
@@ -321,6 +345,7 @@ mod tests {
             }),
         };
         assert_eq!(source_config, expected_source_config);
+        assert_eq!(source_config.num_pipelines().unwrap(), 2);
     }
 
     #[tokio::test]
@@ -333,6 +358,7 @@ mod tests {
             .unwrap();
         let expected_source_config = SourceConfig {
             source_id: "hdfs-logs-kinesis-source".to_string(),
+            num_pipelines: 1,
             source_params: SourceParams::Kinesis(KinesisSourceParams {
                 stream_name: "emr-cluster-logs".to_string(),
                 region_or_endpoint: None,
@@ -340,6 +366,7 @@ mod tests {
             }),
         };
         assert_eq!(source_config, expected_source_config);
+        assert!(source_config.num_pipelines().is_none());
     }
 
     #[test]

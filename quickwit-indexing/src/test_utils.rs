@@ -88,6 +88,7 @@ impl TestSandbox {
         let storage_resolver = StorageUriResolver::for_test();
         let storage = storage_resolver.resolve(&index_uri)?;
         let indexing_server = IndexingService::new(
+            "test-node".to_string(),
             temp_dir.path().to_path_buf(),
             indexer_config,
             metastore.clone(),
@@ -124,10 +125,11 @@ impl TestSandbox {
             .map(|doc_json| doc_json.to_string())
             .collect();
         let add_docs_id = self.add_docs_id.fetch_add(1, Ordering::SeqCst);
-        let source = SourceConfig {
+        let source_config = SourceConfig {
             source_id: self.index_id.clone(),
+            num_pipelines: 0,
             source_params: SourceParams::Vec(VecSourceParams {
-                items: docs,
+                docs,
                 batch_num_docs: 10,
                 partition: format!("add-docs-{}", add_docs_id),
             }),
@@ -136,7 +138,8 @@ impl TestSandbox {
             .indexing_server_mailbox
             .ask_for_res(SpawnPipeline {
                 index_id: self.index_id.clone(),
-                source,
+                source_config,
+                pipeline_ord: 0,
             })
             .await?;
         let pipeline_handle = self
@@ -190,9 +193,8 @@ pub fn mock_split_meta(split_id: &str) -> SplitMetadata {
         uncompressed_docs_size_in_bytes: 256,
         time_range: None,
         create_timestamp: 0,
-        tags: Default::default(),
-        demux_num_ops: 0,
         footer_offsets: 700..800,
+        ..Default::default()
     }
 }
 

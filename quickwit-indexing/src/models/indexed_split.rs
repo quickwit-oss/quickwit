@@ -30,13 +30,13 @@ use tantivy::merge_policy::NoMergePolicy;
 use tantivy::IndexBuilder;
 
 use crate::controlled_directory::ControlledDirectory;
-use crate::models::ScratchDirectory;
+use crate::models::{IndexingPipelineId, ScratchDirectory};
 use crate::new_split_id;
 
 pub struct IndexedSplit {
     pub split_id: String,
-    pub index_id: String,
     pub partition_id: u64,
+    pub pipeline_id: IndexingPipelineId,
 
     pub replaced_split_ids: Vec<String>,
 
@@ -73,7 +73,7 @@ impl fmt::Debug for IndexedSplit {
 
 impl IndexedSplit {
     pub fn new_in_dir(
-        index_id: String,
+        pipeline_id: IndexingPipelineId,
         partition_id: u64,
         scratch_directory: ScratchDirectory,
         indexing_resources: IndexingResources,
@@ -100,7 +100,7 @@ impl IndexedSplit {
         )?;
         index_writer.set_merge_policy(Box::new(NoMergePolicy));
         Ok(IndexedSplit {
-            index_id,
+            pipeline_id,
             partition_id,
             split_id,
             replaced_split_ids: Vec::new(),

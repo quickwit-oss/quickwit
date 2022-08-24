@@ -25,7 +25,7 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::VersionedSplitMetadataDeserializeHelper;
+use crate::VersionedSplitMetadata;
 
 /// Carries split metadata.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -52,7 +52,7 @@ impl Split {
 /// This struct can deserialize older format automatically
 /// but can only serialize to the last version.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
-#[serde(into = "VersionedSplitMetadataDeserializeHelper")]
+#[serde(into = "VersionedSplitMetadata")]
 pub struct SplitMetadata {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
@@ -60,13 +60,22 @@ pub struct SplitMetadata {
     /// in the storage URI resolver: for instance, the Amazon S3 region.
     pub split_id: String,
 
-    /// Partition to which the split belong to.
+    /// Partition to which the split belongs to.
     ///
     /// Partitions are usually meant to isolate documents based on some field like
     /// `tenant_id`. For this reason, ideally splits with a different `partition_id`
     /// should not be merged together. Merging two splits with different `partition_id`
     /// does not hurt correctness however.
     pub partition_id: u64,
+
+    /// Source ID.
+    pub source_id: String,
+
+    /// Node ID.
+    pub node_id: String,
+
+    /// Pipeline ordinal.
+    pub pipeline_ord: usize,
 
     /// Number of records (or documents) in the split.
     /// TODO make u64
@@ -76,7 +85,6 @@ pub struct SplitMetadata {
     ///
     /// Note this is not the split file size. It is the size of the original
     /// JSON payloads.
-    #[serde(alias = "original_size_in_bytes", alias = "size_in_bytes")]
     pub uncompressed_docs_size_in_bytes: u64,
 
     /// If a timestamp field is available, the min / max timestamp in
@@ -84,7 +92,6 @@ pub struct SplitMetadata {
     pub time_range: Option<RangeInclusive<i64>>,
 
     /// Timestamp for tracking when the split was created.
-    #[serde(default = "utc_now_timestamp")]
     pub create_timestamp: i64,
 
     /// Set of unique tags values of form `{field_name}:{field_value}`.
@@ -97,11 +104,9 @@ pub struct SplitMetadata {
     /// no field value is added to the set.
     ///
     /// [`MAX_VALUES_PER_TAG_FIELD`]: https://github.com/quickwit-oss/quickwit/blob/main/quickwit-indexing/src/actors/packager.rs#L36
-    #[serde(default)]
     pub tags: BTreeSet<String>,
 
     /// Number of demux operations this split has undergone.
-    #[serde(default)]
     pub demux_num_ops: usize,
 
     /// Contains the range of bytes of the footer that needs to be downloaded
@@ -113,6 +118,25 @@ pub struct SplitMetadata {
 }
 
 impl SplitMetadata {
+    /// Creates a new instance of split metadata.
+    pub fn new(
+        split_id: String,
+        partition_id: u64,
+        source_id: String,
+        node_id: String,
+        pipeline_ord: usize,
+    ) -> Self {
+        Self {
+            split_id,
+            partition_id,
+            source_id,
+            node_id,
+            pipeline_ord,
+            create_timestamp: utc_now_timestamp(),
+            ..Default::default()
+        }
+    }
+
     /// Returns the split_id.
     pub fn split_id(&self) -> &str {
         &self.split_id

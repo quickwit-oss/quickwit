@@ -19,10 +19,33 @@
 
 use quickwit_config::SourceConfig;
 
-#[derive(Clone, Debug, Hash, Eq, PartialEq)]
-pub struct IndexingPipelineId {
+use super::IndexingPipelineId;
+
+#[derive(Debug)]
+pub struct SpawnPipelines {
     pub index_id: String,
-    pub source_id: String,
+    // TODO
+    // pub source_id: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SpawnPipeline {
+    pub index_id: String,
+    pub source_config: SourceConfig,
+    pub pipeline_ord: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct ShutdownPipelines {
+    pub index_id: String,
+    pub source_id: Option<String>,
+    // TODO
+    // pub pipeline_ord: Option<usize>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ShutdownPipeline {
+    pub pipeline_id: IndexingPipelineId,
 }
 
 /// Detaches a pipeline from the indexing service. The pipeline is no longer managed by the
@@ -43,21 +66,4 @@ pub struct SpawnMergePipeline {
     pub index_id: String,
     pub merge_enabled: bool,
     pub demux_enabled: bool,
-}
-
-#[derive(Debug)]
-pub struct SpawnPipelinesForIndex {
-    pub index_id: String,
-}
-
-#[derive(Clone, Debug)]
-pub struct SpawnPipeline {
-    pub index_id: String,
-    pub source: SourceConfig,
-}
-
-#[derive(Clone, Debug)]
-pub struct ShutdownPipeline {
-    pub index_id: String,
-    pub source_id: String,
 }

@@ -818,6 +818,7 @@ mod kafka_broker_tests {
 
         let source_config = SourceConfig {
             source_id: "test-kafka-source".to_string(),
+            num_pipelines: 1,
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: topic.clone(),
                 client_log_level: None,

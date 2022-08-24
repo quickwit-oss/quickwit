@@ -287,7 +287,7 @@ impl StableMultitenantWithTimestampMergePolicy {
     }
 
     fn merge_operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
-        if !self.merge_enabled || splits.is_empty() {
+        if !self.merge_enabled || splits.len() < 2 {
             return Vec::new();
         }
         // First we isolate splits that are mature.
