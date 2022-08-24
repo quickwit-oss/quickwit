@@ -485,9 +485,8 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "chitchat"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63e16bc6492a6744d6e322e22562c3ab89404ba326aedb65a570799d2e042687"
+version = "0.5.0"
+source = "git+https://github.com/quickwit-oss/chitchat?rev=cd568ba#cd568ba2ca4fc83b5dcb079b4606a2c3521b9339"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3281,6 +3280,7 @@ dependencies = [
  "assert-json-diff",
  "async-trait",
  "bytes",
+ "chitchat",
  "futures",
  "futures-util",
  "hyper",
