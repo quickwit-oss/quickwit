@@ -110,7 +110,7 @@ impl Source for VecSource {
     }
 
     fn name(&self) -> String {
-        format!("VecSource{{source_id={}}}", self.source_id)
+        format!("VecSource {{ source_id={} }}", self.source_id)
     }
 
     fn observable_state(&self) -> serde_json::Value {
@@ -122,8 +122,6 @@ impl Source for VecSource {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use quickwit_actors::{create_test_mailbox, Actor, Command, Universe};
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::metastore_for_test;
@@ -146,15 +144,15 @@ mod tests {
         };
         let metastore = metastore_for_test();
         let vec_source = VecSourceFactory::typed_create_source(
-            Arc::new(SourceExecutionContext {
+            SourceExecutionContext::for_test(
                 metastore,
-                index_id: "test-index".to_string(),
-                source_config: SourceConfig {
-                    source_id: "my-vec-source".to_string(),
+                "test-index",
+                SourceConfig {
+                    source_id: "test-vec-source".to_string(),
                     num_pipelines: 1,
                     source_params: SourceParams::Vec(params.clone()),
                 },
-            }),
+            ),
             params,
             SourceCheckpoint::default(),
         )
@@ -165,7 +163,7 @@ mod tests {
         };
         assert_eq!(
             vec_source_actor.name(),
-            "VecSource{source_id=my-vec-source}"
+            "VecSource { source_id=test-vec-source }"
         );
         let (_vec_source_mailbox, vec_source_handle) =
             universe.spawn_actor(vec_source_actor).spawn();
@@ -201,15 +199,15 @@ mod tests {
 
         let metastore = metastore_for_test();
         let vec_source = VecSourceFactory::typed_create_source(
-            Arc::new(SourceExecutionContext {
+            SourceExecutionContext::for_test(
                 metastore,
-                index_id: "test-index".to_string(),
-                source_config: SourceConfig {
-                    source_id: "my-vec-source".to_string(),
+                "test-index",
+                SourceConfig {
+                    source_id: "test-vec-source".to_string(),
                     num_pipelines: 1,
                     source_params: SourceParams::Vec(params.clone()),
                 },
-            }),
+            ),
             params,
             checkpoint,
         )

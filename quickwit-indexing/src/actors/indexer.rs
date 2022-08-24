@@ -42,7 +42,8 @@ use ulid::Ulid;
 
 use crate::actors::Packager;
 use crate::models::{
-    IndexedSplit, IndexedSplitBatch, IndexingDirectory, IndexingPipelineId, RawDocBatch,
+    IndexedSplit, IndexedSplitBatch, IndexingDirectory, IndexingPipelineId, NewPublishLock,
+    PublishLock, RawDocBatch,
 };
 
 #[derive(Debug)]
@@ -98,6 +99,7 @@ struct IndexerState {
     doc_mapper: Arc<dyn DocMapper>,
     indexing_directory: IndexingDirectory,
     indexing_settings: IndexingSettings,
+    publish_lock: PublishLock,
     timestamp_field_opt: Option<Field>,
     schema: Schema,
     index_settings: IndexSettings,
@@ -153,12 +155,13 @@ impl IndexerState {
 
     fn create_workbench(&self) -> anyhow::Result<IndexingWorkbench> {
         let workbench = IndexingWorkbench {
+            workbench_id: Ulid::new(),
+            indexed_splits: FnvHashMap::with_capacity_and_hasher(250, Default::default()),
             checkpoint_delta: IndexCheckpointDelta {
                 source_id: self.pipeline_id.source_id.clone(),
                 source_delta: SourceCheckpointDelta::default(),
             },
-            indexed_splits: FnvHashMap::with_capacity_and_hasher(250, Default::default()),
-            workbench_id: Ulid::new(),
+            publish_lock: self.publish_lock.clone(),
             date_of_birth: Instant::now(),
         };
         Ok(workbench)
@@ -243,10 +246,14 @@ impl IndexerState {
         let IndexingWorkbench {
             checkpoint_delta,
             indexed_splits,
+            publish_lock,
             ..
         } = self
             .get_or_create_workbench(indexing_workbench_opt, ctx)
             .await?;
+        if publish_lock.is_dead() {
+            return Ok(());
+        }
         checkpoint_delta
             .source_delta
             .extend(batch.checkpoint_delta)
@@ -294,9 +301,10 @@ impl IndexerState {
 
 /// A workbench hosts the set of `IndexedSplit` that will are being built.
 struct IndexingWorkbench {
-    checkpoint_delta: IndexCheckpointDelta,
-    indexed_splits: FnvHashMap<u64, IndexedSplit>,
     workbench_id: Ulid,
+    indexed_splits: FnvHashMap<u64, IndexedSplit>,
+    checkpoint_delta: IndexCheckpointDelta,
+    publish_lock: PublishLock,
     // TODO create this Instant on the source side to be more accurate.
     // Right now this instant is used to compute time-to-search, but this
     // does not include the amount of time a document could have been
@@ -370,9 +378,8 @@ impl Handler<CommitTimeout> for Indexer {
         commit_timeout: CommitTimeout,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if let Some(indexing_workbench) = self.indexing_workbench_opt.as_ref() {
-            // This is a timeout for a different split.
-            // We can ignore it.
+        if let Some(indexing_workbench) = &self.indexing_workbench_opt {
+            // If this is a timeout for a different workbench, we must ignore it.
             if indexing_workbench.workbench_id != commit_timeout.workbench_id {
                 return Ok(());
             }
@@ -392,6 +399,22 @@ impl Handler<RawDocBatch> for Indexer {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.process_batch(batch, ctx).await
+    }
+}
+
+#[async_trait]
+impl Handler<NewPublishLock> for Indexer {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        message: NewPublishLock,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        let NewPublishLock(publish_lock) = message;
+        self.indexing_workbench_opt = None;
+        self.indexer_state.publish_lock = publish_lock;
+        Ok(())
     }
 }
 
@@ -428,12 +451,14 @@ impl Indexer {
                 compression_level: Some(indexing_settings.docstore_compression_level),
             }),
         };
+        let publish_lock = PublishLock::default();
         Self {
             indexer_state: IndexerState {
                 pipeline_id,
                 doc_mapper,
                 indexing_directory,
                 indexing_settings,
+                publish_lock,
                 timestamp_field_opt,
                 schema,
                 index_settings,
@@ -476,8 +501,9 @@ impl Indexer {
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         let IndexingWorkbench {
-            checkpoint_delta,
             indexed_splits,
+            checkpoint_delta,
+            publish_lock,
             date_of_birth,
             ..
         } = if let Some(indexing_workbench) = self.indexing_workbench_opt.take() {
@@ -491,13 +517,13 @@ impl Indexer {
         // Avoid producing empty split, but still update the checkpoint to avoid
         // reprocessing the same faulty documents.
         if splits.is_empty() {
-            self.metastore
-                .publish_splits(
+            if let Some(_guard) = publish_lock.acquire().await {
+                ctx.protect_future(self.metastore.publish_splits(
                     &self.indexer_state.pipeline_id.index_id,
                     &[],
                     &[],
                     Some(checkpoint_delta),
-                )
+                ))
                 .await
                 .with_context(|| {
                     format!(
@@ -507,9 +533,15 @@ impl Indexer {
                         &self.indexer_state.pipeline_id.source_id
                     )
                 })?;
+            } else {
+                info!(
+                    split_ids=?splits.iter().map(|split| &split.split_id).join(", "),
+                    "Splits' publish lock is dead."
+                );
+                // TODO: Remove the junk right away?
+            }
             return Ok(());
         }
-
         let num_splits = splits.len() as u64;
         let split_ids = splits.iter().map(|split| &split.split_id).join(",");
         info!(commit_trigger=?commit_trigger, split_ids=%split_ids, num_docs=self.counters.num_docs_in_workbench, "send-to-packager");
@@ -518,6 +550,7 @@ impl Indexer {
             IndexedSplitBatch {
                 splits,
                 checkpoint_delta: Some(checkpoint_delta),
+                publish_lock,
                 date_of_birth,
             },
         )

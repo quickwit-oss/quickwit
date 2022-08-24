@@ -176,7 +176,11 @@ impl KinesisSource {
 
 #[async_trait]
 impl Source for KinesisSource {
-    async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
+    async fn initialize(
+        &mut self,
+        _indexer_maibox: &Mailbox<Indexer>,
+        ctx: &SourceContext,
+    ) -> Result<(), ActorExitStatus> {
         let shards = ctx
             .protect_future(list_shards(
                 &self.kinesis_client,

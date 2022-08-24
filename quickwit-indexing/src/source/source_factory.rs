@@ -119,7 +119,6 @@ impl SourceLoader {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::metastore_for_test;
@@ -138,11 +137,7 @@ mod tests {
         };
         source_loader
             .load_source(
-                Arc::new(SourceExecutionContext {
-                    metastore: metastore.clone(),
-                    index_id: "test-index".to_string(),
-                    source_config,
-                }),
+                SourceExecutionContext::for_test(metastore, "test-index", source_config),
                 SourceCheckpoint::default(),
             )
             .await?;
