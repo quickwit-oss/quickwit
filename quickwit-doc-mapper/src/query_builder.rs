@@ -125,7 +125,6 @@ fn field_names(user_input_ast: &UserInputAst) -> HashSet<&str> {
         .collect()
 }
 
-#[allow(clippy::needless_collect)]
 fn validate_requested_snippet_fields(
     schema: &Schema,
     request: &SearchRequest,

@@ -19,6 +19,7 @@
 
 use std::convert::TryFrom;
 
+use quickwit_common::truncate_str;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
@@ -54,7 +55,7 @@ impl TryFrom<quickwit_proto::SearchResponse> for SearchResponseRest {
                     serde_json::from_str(&hit.json).map_err(|err| {
                         SearchError::InternalError(format!(
                             "Failed to serialize document `{}` to JSON: `{}`.",
-                            &hit.json[..100],
+                            truncate_str(&hit.json, 100),
                             err
                         ))
                     })?;
