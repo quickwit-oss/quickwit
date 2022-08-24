@@ -153,8 +153,12 @@ impl ConsumerContext for RdKafkaContext {
                 "New partition assignment"
             );
             for (partition, offset) in assignment {
-                let mut partition = tpl.find_partition(&self.topic, partition).expect("");
-                partition.set_offset(offset).expect("");
+                let mut partition = tpl
+                    .find_partition(&self.topic, partition)
+                    .expect("Failed to find partition in assignment. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
+                partition
+                    .set_offset(offset)
+                    .expect("Failed to convert `Offset` to `i64`. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
             }
         }
         if let Rebalance::Revoke(tpl) = rebalance {
