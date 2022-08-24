@@ -84,7 +84,9 @@ enum KafkaEvent {
         partitions: Vec<i32>,
         assignment_tx: oneshot::Sender<Vec<(i32, Offset)>>,
     },
-    RevokePartitions,
+    RevokePartitions {
+        ack_tx: oneshot::Sender<()>,
+    },
     PartitionEOF(i32),
     Error(anyhow::Error),
 }
@@ -115,28 +117,41 @@ struct RdKafkaContext {
 
 impl ClientContext for RdKafkaContext {}
 
+macro_rules! return_if_err {
+    ($expression:expr, $lit: literal) => {
+        match $expression {
+            Ok(v) => v,
+            Err(_) => {
+                debug!(concat!($lit, "The source was dropped."));
+                return;
+            }
+        }
+    };
+}
+
 impl ConsumerContext for RdKafkaContext {
     fn pre_rebalance(&self, rebalance: &Rebalance) {
         if let Rebalance::Assign(tpl) = rebalance {
             let partitions = collect_partitions(tpl, &self.topic);
             debug!(partitions=?partitions, "Assign partitions.");
+
             let (assignment_tx, assignment_rx) = oneshot::channel();
-            self.events_tx
-                .blocking_send(KafkaEvent::AssignPartitions {
+            return_if_err!(
+                self.events_tx.blocking_send(KafkaEvent::AssignPartitions {
                     partitions,
                     assignment_tx,
-                })
-                .expect("Failed to send assign message to consumer.");
-            let assignment = assignment_rx
-                .recv()
-                .expect("Failed to receive assignment from consumer.");
-
+                }),
+                "Failed to send assign message to source."
+            );
+            let assignment = return_if_err!(
+                assignment_rx.recv(),
+                "Failed to receive assignment from source."
+            );
             info!(
                 topic=%self.topic,
                 partitions=%assignment.iter().map(|(partition, _)| partition).join(","),
                 "New partition assignment"
             );
-
             for (partition, offset) in assignment {
                 let mut partition = tpl.find_partition(&self.topic, partition).expect("");
                 partition.set_offset(offset).expect("");
@@ -145,9 +160,14 @@ impl ConsumerContext for RdKafkaContext {
         if let Rebalance::Revoke(tpl) = rebalance {
             let partitions = collect_partitions(tpl, &self.topic);
             debug!(partitions=?partitions, "Revoke partitions.");
-            self.events_tx
-                .blocking_send(KafkaEvent::RevokePartitions)
-                .expect("Failed to send revoke message to consumer.");
+
+            let (ack_tx, ack_rx) = oneshot::channel();
+            return_if_err!(
+                self.events_tx
+                    .blocking_send(KafkaEvent::RevokePartitions { ack_tx }),
+                "Failed to send revoke message to source."
+            );
+            return_if_err!(ack_rx.recv(), "Failed to receive revoke ack from source");
         }
     }
 }
@@ -324,7 +344,14 @@ impl KafkaSource {
         Ok(())
     }
 
-    async fn process_revoke_partitions(&mut self) -> anyhow::Result<()> {
+    async fn process_revoke_partitions(
+        &mut self,
+        _ctx: &SourceContext,
+        ack_tx: oneshot::Sender<()>,
+    ) -> anyhow::Result<()> {
+        ack_tx
+            .send(())
+            .map_err(|_| anyhow!("Consumer context was dropped."))?;
         Ok(())
     }
 
@@ -386,7 +413,7 @@ impl Source for KafkaSource {
                     match event {
                         KafkaEvent::Message(message) => self.process_message(message, &mut batch).await?,
                         KafkaEvent::AssignPartitions { partitions, assignment_tx} => self.process_assign_partitions(ctx, &partitions, assignment_tx).await?,
-                        KafkaEvent::RevokePartitions => self.process_revoke_partitions().await?,
+                        KafkaEvent::RevokePartitions { ack_tx } => self.process_revoke_partitions(ctx, ack_tx).await?,
                         KafkaEvent::PartitionEOF(partition) => self.process_partition_eof(partition),
                         KafkaEvent::Error(error) => Err(ActorExitStatus::from(error))?,
                     }
