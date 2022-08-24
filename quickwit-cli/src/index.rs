@@ -25,7 +25,7 @@ use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
 use clap::{arg, ArgMatches, Command};
-use colored::Colorize;
+use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use itertools::Itertools;
 use quickwit_actors::{ActorHandle, ObservationType, Universe};
@@ -1120,19 +1120,31 @@ pub async fn start_statistics_reporting_loop(
             - pipeline_statistics.num_invalid_docs)
             .separate_with_commas();
 
-        let success_rate = 1.0
-            - (pipeline_statistics.num_invalid_docs as f64 / pipeline_statistics.num_docs as f64)
-                * 100.0;
+        let error_rate = (pipeline_statistics.num_invalid_docs as f64
+            / pipeline_statistics.num_docs as f64)
+            * 100.0;
+
         println!(
-            "Indexed {}/{} documents in {} ({:.1}% success rate).",
+            "Indexed {}/{} documents in {} {}",
             num_indexed_docs,
             pipeline_statistics.num_invalid_docs.separate_with_commas(),
             format_duration(secs),
-            success_rate
+            colorize_error_rate(error_rate),
         );
     }
 
     Ok(pipeline_statistics)
+}
+
+fn colorize_error_rate(error_rate: f64) -> ColoredString {
+    let error_rate_message = format!("({:.1}% error rate)", error_rate);
+    if error_rate < 1.0 {
+        error_rate_message.yellow()
+    } else if error_rate < 5.0 {
+        error_rate_message.truecolor(255, 181, 46) //< Orange
+    } else {
+        error_rate_message.red()
+    }
 }
 
 /// A struct to print data on the standard output.

@@ -102,7 +102,7 @@ impl CacheMetrics {
             ),
             misses_num_items: new_counter(
                 "cache_miss_total",
-                "Number of {component_name} cache hits",
+                "Number of {component_name} cache misses",
                 &namespace,
             ),
         }
