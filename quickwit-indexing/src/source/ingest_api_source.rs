@@ -28,7 +28,7 @@ use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
 use quickwit_proto::ingest_api::{FetchRequest, FetchResponse, SuggestTruncateRequest};
 use serde::Serialize;
 
-use super::file_source::BATCH_NUM_BYTES_THRESHOLD;
+use super::file_source::BATCH_NUM_BYTES_LIMIT;
 use super::{Source, SourceActor, SourceContext, TypedSourceFactory};
 use crate::actors::Indexer;
 use crate::models::RawDocBatch;
@@ -53,8 +53,9 @@ pub struct IngestApiSourceCounters {
 
 pub struct IngestApiSource {
     source_id: String,
+    partition_id: PartitionId,
     params: IngestApiSourceParams,
-    ingest_api_mailbox: Mailbox<IngestApiService>,
+    ingest_api_service: Mailbox<IngestApiService>,
     counters: IngestApiSourceCounters,
 }
 
@@ -65,28 +66,29 @@ impl fmt::Debug for IngestApiSource {
 }
 
 impl IngestApiSource {
-    pub async fn make(
+    pub async fn new(
         source_id: String,
         params: IngestApiSourceParams,
-        ingest_api_mailbox: Mailbox<IngestApiService>,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
+        let ingest_api_service = get_ingest_api_service(&params.queues_dir_path).await?;
         let partition_id = PartitionId::from(params.index_id.clone());
-        let offset = if let Some(Position::Offset(offset_str)) =
-            checkpoint.position_for_partition(&partition_id).cloned()
+        let previous_offset = if let Some(Position::Offset(offset_str)) =
+            checkpoint.position_for_partition(&partition_id)
         {
             Some(offset_str.parse::<u64>()?)
         } else {
             None
         };
-
+        let current_offset = previous_offset;
         let ingest_api_source = IngestApiSource {
             source_id,
+            partition_id,
             params,
-            ingest_api_mailbox,
+            ingest_api_service,
             counters: IngestApiSourceCounters {
-                previous_offset: offset,
-                current_offset: offset,
+                previous_offset,
+                current_offset,
                 num_docs_processed: 0,
             },
         };
@@ -112,14 +114,14 @@ impl Source for IngestApiSource {
             start_after: self.counters.current_offset,
             num_bytes_limit: self
                 .params
-                .batch_num_bytes_threshold
-                .or(Some(BATCH_NUM_BYTES_THRESHOLD)),
+                .batch_num_bytes_limit
+                .or(Some(BATCH_NUM_BYTES_LIMIT)),
         };
         let FetchResponse {
             first_position: first_position_opt,
             doc_batch: doc_batch_opt,
         } = self
-            .ingest_api_mailbox
+            .ingest_api_service
             .ask_for_res(fetch_req)
             .await
             .map_err(anyhow::Error::from)?;
@@ -140,7 +142,7 @@ impl Source for IngestApiSource {
             iter_doc_payloads(&doc_batch).map(|buff| String::from_utf8_lossy(buff).to_string()),
         );
         let current_offset = first_position + raw_doc_batch.docs.len() as u64 - 1;
-        let partition_id = PartitionId::from(self.params.index_id.as_str());
+        let partition_id = self.partition_id.clone();
         raw_doc_batch
             .checkpoint_delta
             .record_partition_delta(
@@ -160,16 +162,15 @@ impl Source for IngestApiSource {
         checkpoint: SourceCheckpoint,
         _ctx: &ActorContext<SourceActor>,
     ) -> anyhow::Result<()> {
-        let partition_id = PartitionId::from(self.params.index_id.clone());
         if let Some(Position::Offset(offset_str)) =
-            checkpoint.position_for_partition(&partition_id).cloned()
+            checkpoint.position_for_partition(&self.partition_id)
         {
             let up_to_position_included = offset_str.parse::<u64>()?;
             let suggest_truncate_req = SuggestTruncateRequest {
                 index_id: self.params.index_id.clone(),
                 up_to_position_included,
             };
-            self.ingest_api_mailbox
+            self.ingest_api_service
                 .ask_for_res(suggest_truncate_req)
                 .await
                 .map_err(anyhow::Error::from)?;
@@ -198,13 +199,7 @@ impl TypedSourceFactory for IngestApiSourceFactory {
         params: IngestApiSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
-        let ingest_api_mailbox = get_ingest_api_service().ok_or_else(|| {
-            anyhow::anyhow!(
-                "Could not get the `IngestApiSource {{ source_id: {} }}` instance.",
-                source_id
-            )
-        })?;
-        IngestApiSource::make(source_id, params, ingest_api_mailbox, checkpoint).await
+        IngestApiSource::new(source_id, params, checkpoint).await
     }
 }
 
@@ -213,12 +208,13 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::{create_test_mailbox, Universe};
-    use quickwit_ingest_api::{add_doc, spawn_ingest_api_actor, Queues};
+    use quickwit_common::rand::append_random_suffix;
+    use quickwit_ingest_api::{add_doc, init_ingest_api, Queues};
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
     use quickwit_proto::ingest_api::{DocBatch, IngestRequest};
 
     use super::*;
-    use crate::source::SourceActor;
+    use crate::source::{SourceActor, INGEST_API_SOURCE_ID};
 
     fn make_ingest_request(index_id: String, num_batch: u64, batch_size: usize) -> IngestRequest {
         let mut doc_batches = vec![];
@@ -239,40 +235,37 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_api_source() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
-        let index_id = "my-index".to_string();
-        let queue_path = tempfile::tempdir()?;
+        let index_id = append_random_suffix("test-ingest-api-source");
+        let source_id = INGEST_API_SOURCE_ID.to_string();
+        let temp_dir = tempfile::tempdir()?;
+        let queues_dir_path = temp_dir.path();
 
         // create queue
-        let mut queues = Queues::open(queue_path.path())?;
+        let mut queues = Queues::open(queues_dir_path)?;
         queues.create_queue(&index_id)?;
         drop(queues);
 
-        let ingest_api_mailbox = spawn_ingest_api_actor(&universe, queue_path.path())?;
+        let ingest_api_service = init_ingest_api(&universe, queues_dir_path).await?;
 
         let ingest_req = make_ingest_request(index_id.clone(), 2, 1000);
 
-        ingest_api_mailbox
+        ingest_api_service
             .ask_for_res(ingest_req)
             .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
 
-        let (mailbox, inbox) = create_test_mailbox();
+        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
         let params = IngestApiSourceParams {
+            queues_dir_path: queues_dir_path.to_path_buf(),
             index_id,
-            batch_num_bytes_threshold: Some(4 * 500),
+            batch_num_bytes_limit: Some(4 * 500),
         };
-        let ingest_api_source = IngestApiSource::make(
-            "my-source".to_string(),
-            params,
-            ingest_api_mailbox,
-            SourceCheckpoint::default(),
-        )
-        .await?;
+        let ingest_api_source =
+            IngestApiSource::new(source_id, params, SourceCheckpoint::default()).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
-            batch_sink: mailbox,
+            batch_sink: indexer_mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_actor(ingest_api_source_actor).spawn();
@@ -290,39 +283,35 @@ mod tests {
                 "num_docs_processed": 2000u64
             })
         );
-        let indexer_msgs = inbox.drain_for_test();
-        assert_eq!(indexer_msgs.len(), 4);
-        let received_batch = indexer_msgs[1].downcast_ref::<RawDocBatch>().unwrap();
-        assert!(received_batch.docs[0].starts_with("0501"));
+        let doc_batches: Vec<RawDocBatch> = indexer_inbox.drain_for_test_typed();
+        assert_eq!(doc_batches.len(), 4);
+        assert!(doc_batches[1].docs[0].starts_with("0501"));
         Ok(())
     }
 
     #[tokio::test]
     async fn test_ingest_api_source_without_existing_queue() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
-        let index_id = "my-index".to_string();
-        let queue_path = tempfile::tempdir()?;
-        let ingest_api_mailbox = spawn_ingest_api_actor(&universe, queue_path.path())?;
+        let index_id = append_random_suffix("test-ingest-api-source");
+        let source_id = INGEST_API_SOURCE_ID.to_string();
+        let temp_dir = tempfile::tempdir()?;
+        let queues_dir_path = temp_dir.path();
+        let ingest_api_service = init_ingest_api(&universe, queues_dir_path).await?;
 
         let ingest_req = make_ingest_request(index_id.clone(), 2, 1000);
-        assert!(ingest_api_mailbox.ask_for_res(ingest_req).await.is_err());
+        assert!(ingest_api_service.ask_for_res(ingest_req).await.is_err());
 
-        let (mailbox, _inbox) = create_test_mailbox();
+        let (indexer_mailbox, _inbox) = create_test_mailbox();
         let params = IngestApiSourceParams {
+            queues_dir_path: queues_dir_path.to_path_buf(),
             index_id,
-            batch_num_bytes_threshold: Some(4 * 500),
+            batch_num_bytes_limit: Some(4 * 500),
         };
-        let ingest_api_source = IngestApiSource::make(
-            "my-source".to_string(),
-            params,
-            ingest_api_mailbox,
-            SourceCheckpoint::default(),
-        )
-        .await?;
+        let ingest_api_source =
+            IngestApiSource::new(source_id, params, SourceCheckpoint::default()).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
-            batch_sink: mailbox,
+            batch_sink: indexer_mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_actor(ingest_api_source_actor).spawn();
@@ -333,28 +322,30 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_api_source_resume_from_checkpoint() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
-        let index_id = "my-index".to_string();
-        let queue_path = tempfile::tempdir()?;
+        let index_id = append_random_suffix("test-ingest-api-source");
+        let source_id = INGEST_API_SOURCE_ID.to_string();
+        let temp_dir = tempfile::tempdir()?;
+        let queues_dir_path = temp_dir.path();
 
         // create queue
-        let mut queues = Queues::open(queue_path.path())?;
+        let mut queues = Queues::open(queues_dir_path)?;
         queues.create_queue(&index_id)?;
         drop(queues);
 
-        let ingest_api_mailbox = spawn_ingest_api_actor(&universe, queue_path.path())?;
+        let ingest_api_service = init_ingest_api(&universe, queues_dir_path).await?;
 
         let ingest_req = make_ingest_request(index_id.clone(), 4, 1000);
-        ingest_api_mailbox
+        ingest_api_service
             .ask_for_res(ingest_req)
             .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
 
-        let (mailbox, inbox) = create_test_mailbox();
+        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
         let params = IngestApiSourceParams {
+            queues_dir_path: queues_dir_path.to_path_buf(),
             index_id,
-            batch_num_bytes_threshold: None,
+            batch_num_bytes_limit: None,
         };
         let mut checkpoint = SourceCheckpoint::default();
         let partition_id = PartitionId::from(params.index_id.clone());
@@ -365,16 +356,10 @@ mod tests {
         );
         checkpoint.try_apply_delta(checkpoint_delta)?;
 
-        let ingest_api_source = IngestApiSource::make(
-            "my-source".to_string(),
-            params,
-            ingest_api_mailbox,
-            checkpoint,
-        )
-        .await?;
+        let ingest_api_source = IngestApiSource::new(source_id, params, checkpoint).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
-            batch_sink: mailbox,
+            batch_sink: indexer_mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_actor(ingest_api_source_actor).spawn();
@@ -392,49 +377,45 @@ mod tests {
                 "num_docs_processed": 2799u64
             })
         );
-        let indexer_msgs = inbox.drain_for_test();
-        assert_eq!(indexer_msgs.len(), 1);
-        let received_batch = indexer_msgs[0].downcast_ref::<RawDocBatch>().unwrap();
-        assert!(received_batch.docs[0].starts_with("1201"));
+        let doc_batches: Vec<RawDocBatch> = indexer_inbox.drain_for_test_typed();
+        assert_eq!(doc_batches.len(), 1);
+        assert!(doc_batches[0].docs[0].starts_with("1201"));
         Ok(())
     }
 
     #[tokio::test]
     async fn test_ingest_api_source_with_one_doc() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
-        let index_id = "my-index".to_string();
-        let queue_path = tempfile::tempdir()?;
+        let index_id = append_random_suffix("test-ingest-api-source");
+        let source_id = INGEST_API_SOURCE_ID.to_string();
+        let temp_dir = tempfile::tempdir()?;
+        let queues_dir_path = temp_dir.path();
 
         // create queue
-        let mut queues = Queues::open(queue_path.path())?;
+        let mut queues = Queues::open(queues_dir_path)?;
         queues.create_queue(&index_id)?;
         drop(queues);
 
-        let ingest_api_mailbox = spawn_ingest_api_actor(&universe, queue_path.path())?;
+        let ingest_api_service = init_ingest_api(&universe, queues_dir_path).await?;
 
         let ingest_req = make_ingest_request(index_id.clone(), 1, 1);
 
-        ingest_api_mailbox
+        ingest_api_service
             .ask_for_res(ingest_req)
             .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
 
-        let (mailbox, inbox) = create_test_mailbox();
+        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
         let params = IngestApiSourceParams {
+            queues_dir_path: queues_dir_path.to_path_buf(),
             index_id,
-            batch_num_bytes_threshold: None,
+            batch_num_bytes_limit: None,
         };
-        let ingest_api_source = IngestApiSource::make(
-            "my-source".to_string(),
-            params,
-            ingest_api_mailbox,
-            SourceCheckpoint::default(),
-        )
-        .await?;
+        let ingest_api_source =
+            IngestApiSource::new(source_id, params, SourceCheckpoint::default()).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
-            batch_sink: mailbox,
+            batch_sink: indexer_mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_actor(ingest_api_source_actor).spawn();
@@ -452,10 +433,9 @@ mod tests {
                 "num_docs_processed": 1u64
             })
         );
-        let indexer_msgs = inbox.drain_for_test();
-        assert_eq!(indexer_msgs.len(), 1);
-        let received_batch = indexer_msgs[0].downcast_ref::<RawDocBatch>().unwrap();
-        assert!(received_batch.docs[0].starts_with("0000"));
+        let doc_batches: Vec<RawDocBatch> = indexer_inbox.drain_for_test_typed();
+        assert_eq!(doc_batches.len(), 1);
+        assert!(doc_batches[0].docs[0].starts_with("0000"));
         Ok(())
     }
 }
