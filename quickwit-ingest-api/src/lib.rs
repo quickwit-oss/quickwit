@@ -21,7 +21,6 @@ mod errors;
 mod ingest_api_service;
 mod position;
 mod queue;
-mod metrics;
 
 use std::path::Path;
 

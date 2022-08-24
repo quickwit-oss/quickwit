@@ -3,13 +3,13 @@ title: Metrics
 sidebar_position: 6
 ---
 
-Quickwit exposes some key metrics through [Prometheus](https://prometheus.io/). You can use any front-end that supports Prometheus to visually examine the behaviour of Quickwit.
+Quickwit exposes some key metrics via [Prometheus](https://prometheus.io/). You can use any front-end that supports Prometheus to examine the behavior of Quickwit visually.
 
 ## CLI Metrics
 
 | Namespace | Metric Name | Description | Type |
 | --------- | ----------- | ----------- | ---- |
-| `quickwit` | `allocated_num_bytes` | Number of bytes allocated memory, as reported by jemallocated. | `gauge` |
+| `quickwit` | `allocated_num_bytes` | Number of bytes allocated memory, as reported by jemalloc. | `gauge` |
 
 ## Search Metrics
 
@@ -41,7 +41,7 @@ Currently Quickwit exposes metrics for three caches: `fastfields`, `shortlived`,
 | Namespace | Metric Name | Description | Type |
 | --------- | ----------- | ----------- | ---- |
 | `cache_{cache_name}` | `in_cache_count` | Count of {cache_name} in cache | `gauge` |
-| `cache_{cache_name}` | `in_cache_num_bytes` | Number of {component_name} bytes in cache | `gauge` |
-| `cache_{cache_name}` | `cache_hit_total` | Number of {component_name} cache hits | `counter` |
-| `cache_{cache_name}` | `cache_hits_bytes` | Number of {component_name} cache hits in bytes | `counter` |
-| `cache_{cache_name}` | `cache_miss_total` | Number of {component_name} cache hits | `counter` |
+| `cache_{cache_name}` | `in_cache_num_bytes` | Number of {cache_name} bytes in cache | `gauge` |
+| `cache_{cache_name}` | `cache_hit_total` | Number of {cache_name} cache hits | `counter` |
+| `cache_{cache_name}` | `cache_hits_bytes` | Number of {cache_name} cache hits in bytes | `counter` |
+| `cache_{cache_name}` | `cache_miss_total` | Number of {cache_name} cache hits | `counter` |
