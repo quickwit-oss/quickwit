@@ -19,10 +19,9 @@
 
 use hyper::header::CONTENT_TYPE;
 use hyper::StatusCode;
+use quickwit_proto::{ServiceError, ServiceErrorCode};
 use serde::{self, Deserialize, Serialize};
 use warp::reply::{self, WithHeader, WithStatus};
-
-use crate::error::{ServiceError, ServiceErrorCode};
 
 const JSON_SERIALIZATION_ERROR: &str = "JSON serialization failed.";
 
@@ -85,7 +84,7 @@ impl Format {
         }
     }
 
-    pub(crate) fn make_reply_for_err<E: crate::error::ServiceError + Serialize>(
+    pub(crate) fn make_reply_for_err<E: ServiceError + Serialize>(
         &self,
         err: E,
     ) -> WithStatus<WithHeader<String>> {
@@ -98,10 +97,7 @@ impl Format {
         reply::with_status(reply_with_header, status_code)
     }
 
-    pub(crate) fn make_rest_reply<
-        T: serde::Serialize,
-        E: crate::error::ServiceError + Serialize,
-    >(
+    pub(crate) fn make_rest_reply<T: serde::Serialize, E: ServiceError + Serialize>(
         self,
         result: Result<T, E>,
     ) -> WithStatus<WithHeader<String>> {

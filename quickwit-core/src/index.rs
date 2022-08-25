@@ -35,6 +35,7 @@ use quickwit_metastore::{
     IndexMetadata, Metastore, MetastoreError, MetastoreUriResolver, Split, SplitMetadata,
     SplitState,
 };
+use quickwit_proto::{ServiceError, ServiceErrorCode};
 use quickwit_storage::{StorageResolverError, StorageUriResolver};
 use tantivy::time::OffsetDateTime;
 use thiserror::Error;
@@ -50,6 +51,17 @@ pub enum IndexServiceError {
     SplitDeletionError(#[from] SplitDeletionError),
     #[error("Invalid index config: {0}.")]
     InvalidIndexConfig(String),
+}
+
+impl ServiceError for IndexServiceError {
+    fn status_code(&self) -> ServiceErrorCode {
+        match self {
+            Self::StorageError(_) => ServiceErrorCode::Internal,
+            Self::MetastoreError(_) => ServiceErrorCode::Internal,
+            Self::SplitDeletionError(_) => ServiceErrorCode::Internal,
+            Self::InvalidIndexConfig(_) => ServiceErrorCode::BadRequest,
+        }
+    }
 }
 
 /// Index service responsible for creating, updating and deleting indexes.

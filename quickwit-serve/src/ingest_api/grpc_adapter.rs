@@ -24,9 +24,7 @@ use quickwit_proto::ingest_api::{
     ingest_api_service_server as grpc, FetchRequest, FetchResponse, IngestRequest, IngestResponse,
     TailRequest,
 };
-use quickwit_proto::tonic;
-
-use crate::error::convert_to_grpc_result;
+use quickwit_proto::{convert_to_grpc_result, tonic};
 
 #[derive(Clone)]
 pub struct GrpcIngestApiAdapter(Mailbox<IngestApiService>);

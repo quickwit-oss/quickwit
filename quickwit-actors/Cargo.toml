@@ -16,6 +16,7 @@ async-trait = "0.1"
 flume = "0.10"
 futures = "0.3"
 quickwit-common = { version = "0.3.1", path = "../quickwit-common" }
+quickwit-proto = { version = "0.3.1", path = "../quickwit-proto" }
 thiserror = "1"
 tokio = { version = "^1.20", features = ["full"] }
 tracing = "0.1.29"

@@ -2,6 +2,7 @@ ignore = [
   "quickwit-proto/src/cluster.rs",
   "quickwit-proto/src/quickwit.rs",
   "quickwit-proto/src/quickwit_ingest_api.rs",
+  "quickwit-proto/src/quickwit_metastore_api.rs",
 ]
 
 comment_width = 120

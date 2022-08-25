@@ -15,12 +15,15 @@ async-trait = "0.1"
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
 sqlx = {version = "0.6", features = ["runtime-tokio-rustls", "postgres", "migrate", "time"], optional=true}
 futures = "0.3.17"
+http = "0.2"
 itertools = "0.10.3"
 mockall = { version = "0.11", optional = true }
 once_cell = "1"
+quickwit-cluster = { version = "0.3.1", path = "../quickwit-cluster" }
 quickwit-common = { version = "0.3.1", path = "../quickwit-common" }
 quickwit-config = { version = "0.3.1", path = "../quickwit-config" }
 quickwit-doc-mapper = { version = "0.3.1", path = "../quickwit-doc-mapper" }
+quickwit-proto = { version = "0.3.1", path = "../quickwit-proto" }
 quickwit-storage = { version = "0.3.1", path = "../quickwit-storage" }
 regex = "1"
 serde = { version = "1.0", features = ["derive", "rc"] }
@@ -29,6 +32,8 @@ tempfile = { version = "3", optional = true }
 thiserror = "1.0"
 time = { version = "0.3.9", features = ["std"] }
 tokio = { version = "1.20", features = ["full"] }
+tokio-stream = "0.1"
+tower = "0.4.13"
 tracing = "0.1.29"
 
 [dev-dependencies]

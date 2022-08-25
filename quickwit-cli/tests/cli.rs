@@ -839,7 +839,8 @@ async fn test_all_local_index() -> Result<()> {
     let metadata_file_exists = test_env
         .storage
         .exists(&Path::new(&test_env.index_id).join("metastore.json"))
-        .await?;
+        .await
+        .unwrap();
     assert_eq!(metadata_file_exists, true);
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
@@ -847,7 +848,7 @@ async fn test_all_local_index() -> Result<()> {
     // serve & api-search
     let mut server_process = spawn_command(
         format!(
-            "run --service searcher --config {}",
+            "run --service searcher --service metastore --config {}",
             test_env.resource_files["config"].display(),
         )
         .as_str(),
@@ -945,7 +946,7 @@ async fn test_cmd_all_with_s3_localstack_cli() -> Result<()> {
     // TODO: ditto.
     let mut server_process = spawn_command(
         format!(
-            "run --service searcher --config {}",
+            "run --service searcher --service metastore --config {}",
             test_env.resource_files["config"].display(),
         )
         .as_str(),
@@ -1030,7 +1031,7 @@ async fn test_cmd_all_with_s3_localstack_internal_api() -> Result<()> {
     // TODO: ditto.
     let mut server_process = spawn_command(
         format!(
-            "run --service searcher --config {}",
+            "run --service searcher --service metastore --config {}",
             test_env.resource_files["config"].display(),
         )
         .as_str(),

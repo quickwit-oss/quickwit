@@ -24,7 +24,7 @@ use futures::stream::StreamExt;
 use hyper::header::HeaderValue;
 use hyper::HeaderMap;
 use quickwit_doc_mapper::{SortByField, SortOrder};
-use quickwit_proto::{OutputFormat, SortOrder as ProtoSortOrder};
+use quickwit_proto::{OutputFormat, ServiceError, SortOrder as ProtoSortOrder};
 use quickwit_search::{SearchError, SearchResponseRest, SearchService};
 use serde::{de, Deserialize, Deserializer};
 use tracing::info;
@@ -32,7 +32,6 @@ use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
 
-use crate::error::ServiceError;
 use crate::{with_arg, Format};
 
 fn sort_by_field_mini_dsl<'de, D>(deserializer: D) -> Result<Option<SortByField>, D::Error>

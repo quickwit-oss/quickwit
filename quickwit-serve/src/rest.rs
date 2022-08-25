@@ -21,11 +21,11 @@ use std::net::SocketAddr;
 
 use hyper::http;
 use quickwit_common::metrics;
+use quickwit_proto::ServiceErrorCode;
 use tracing::{error, info};
 use warp::{redirect, Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
-use crate::error::ServiceErrorCode;
 use crate::format::FormatError;
 use crate::health_check_api::health_check_handlers;
 use crate::index_api::index_management_handlers;
