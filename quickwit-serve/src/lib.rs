@@ -41,6 +41,7 @@ mod ui_handler;
 use std::collections::HashSet;
 use std::convert::Infallible;
 use std::sync::Arc;
+use std::time::Duration;
 
 use format::Format;
 use quickwit_actors::{Mailbox, Universe};
@@ -51,7 +52,7 @@ use quickwit_core::IndexService;
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexer_service;
 use quickwit_ingest_api::{init_ingest_api, IngestApiService};
-use quickwit_metastore::quickwit_metastore_uri_resolver;
+use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore};
 use quickwit_search::{start_searcher_service, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use serde::{Deserialize, Serialize};
@@ -62,24 +63,11 @@ pub use crate::metrics::SERVE_METRICS;
 #[cfg(test)]
 use crate::rest::recover_fn;
 
-fn require<T: Clone + Send>(
-    val_opt: Option<T>,
-) -> impl Filter<Extract = (T,), Error = Rejection> + Clone {
-    warp::any().and_then(move || {
-        let val_opt_clone = val_opt.clone();
-        async move {
-            if let Some(val) = val_opt_clone {
-                Ok(val)
-            } else {
-                Err(warp::reject())
-            }
-        }
-    })
-}
-
-fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infallible> + Clone {
-    warp::any().map(move || arg.clone())
-}
+const READYNESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(25)
+} else {
+    Duration::from_secs(10)
+};
 
 struct QuickwitServices {
     pub config: Arc<QuickwitConfig>,
@@ -112,6 +100,11 @@ pub async fn serve_quickwit(
     let storage_resolver = quickwit_storage_uri_resolver().clone();
 
     let cluster = quickwit_cluster::start_cluster_service(&config, services).await?;
+
+    tokio::spawn(node_readyness_reporting_task(
+        cluster.clone(),
+        metastore.clone(),
+    ));
 
     let universe = Universe::new();
 
@@ -171,6 +164,35 @@ pub async fn serve_quickwit(
 
     tokio::try_join!(grpc_server, rest_server)?;
     Ok(())
+}
+
+fn require<T: Clone + Send>(
+    val_opt: Option<T>,
+) -> impl Filter<Extract = (T,), Error = Rejection> + Clone {
+    warp::any().and_then(move || {
+        let val_opt_clone = val_opt.clone();
+        async move {
+            if let Some(val) = val_opt_clone {
+                Ok(val)
+            } else {
+                Err(warp::reject())
+            }
+        }
+    })
+}
+
+fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infallible> + Clone {
+    warp::any().map(move || arg.clone())
+}
+
+/// Reports node readyness to chitchat cluster every 10 seconds (25 ms for tests).
+async fn node_readyness_reporting_task(cluster: Arc<Cluster>, metastore: Arc<dyn Metastore>) {
+    let mut interval = tokio::time::interval(READYNESS_REPORTING_INTERVAL);
+    loop {
+        interval.tick().await;
+        let node_ready = metastore.check_connectivity().await.is_ok();
+        cluster.set_self_node_ready(node_ready).await;
+    }
 }
 
 /// Checks if the conditions required to smoothly run a Quickwit cluster are met.
