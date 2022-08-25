@@ -309,7 +309,7 @@ impl Cluster {
         timeout_after: Duration,
     ) -> anyhow::Result<()>
     where
-        F: FnMut(&Vec<ClusterMember>) -> bool,
+        F: FnMut(&[ClusterMember]) -> bool,
     {
         timeout(
             timeout_after,

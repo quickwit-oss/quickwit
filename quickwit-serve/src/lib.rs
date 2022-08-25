@@ -83,9 +83,7 @@ struct QuickwitServices {
     pub services: HashSet<QuickwitService>,
 }
 
-// &Vec<ClusterMember> signature is needed by `Cluster::wait_for_members`.
-#[allow(clippy::ptr_arg)]
-fn has_node_with_metastore_service(members: &Vec<ClusterMember>) -> bool {
+fn has_node_with_metastore_service(members: &[ClusterMember]) -> bool {
     members.iter().any(|member| {
         member
             .available_services
