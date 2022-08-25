@@ -345,20 +345,36 @@ impl KafkaSource {
             .cloned()
             .unwrap_or_default();
 
-        let next_offsets: Vec<(i32, Offset)> = partitions
-            .iter()
-            .map(|partition| (*partition, compute_next_offset(*partition, &checkpoint)))
-            .collect();
+        self.state.assigned_partitions.clear();
+        self.state.current_positions.clear();
+        self.state.num_inactive_partitions = 0;
 
+        let mut next_offsets: Vec<(i32, Offset)> = Vec::with_capacity(partitions.len());
+
+        for &partition in partitions {
+            let partition_id = PartitionId::from(partition as i64);
+            let current_position = checkpoint
+                .position_for_partition(&partition_id)
+                .cloned()
+                .unwrap_or(Position::Beginning);
+            let next_offset = match &current_position {
+                Position::Beginning => Offset::Beginning,
+                Position::Offset(offset_str) => {
+                    let offset: i64 = offset_str.parse().expect("Failed to parse checkpoint position to i64. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
+                    Offset::Offset(offset + 1)
+                }
+            };
+            self.state
+                .assigned_partitions
+                .insert(partition, partition_id);
+            self.state
+                .current_positions
+                .insert(partition, current_position);
+            next_offsets.push((partition, next_offset));
+        }
         assignment_tx
             .send(next_offsets)
             .map_err(|_| anyhow!("Consumer context was dropped."))?;
-
-        self.state.num_inactive_partitions = 0;
-        self.state.assigned_partitions = partitions
-            .iter()
-            .map(|partition| (*partition, PartitionId::from(*partition as i64)))
-            .collect();
         Ok(())
     }
 
@@ -511,19 +527,11 @@ impl Source for KafkaSource {
     fn observable_state(&self) -> serde_json::Value {
         let assigned_partitions: Vec<&i32> =
             self.state.assigned_partitions.keys().sorted().collect();
-        let current_positions: Vec<(&i32, i64)> = self
+        let current_positions: Vec<(&i32, &str)> = self
             .state
             .current_positions
             .iter()
-            .map(|(partition_id, position)| {
-                let offset = match position {
-                    Position::Beginning => -1,
-                    Position::Offset(offset_str) => offset_str
-                        .parse::<i64>()
-                        .expect("Failed to parse offset to i64. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."),
-                    };
-                (partition_id, offset)
-            })
+            .map(|(partition, position)| (partition, position.as_str()))
             .sorted()
             .collect();
         json!({
@@ -606,21 +614,6 @@ pub(super) async fn check_connectivity(params: KafkaSourceParams) -> anyhow::Res
     Ok(())
 }
 
-fn compute_next_offset(partition: i32, checkpoint: &SourceCheckpoint) -> Offset {
-    let partition_id = PartitionId::from(partition as i64);
-    match checkpoint.position_for_partition(&partition_id) {
-        Some(Position::Offset(offset_str)) => {
-            let offset_i64 = offset_str.parse::<i64>().expect("Failed to parse offset to i64. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
-            if offset_i64 < 0 {
-                Offset::Beginning
-            } else {
-                Offset::Offset(offset_i64 + 1)
-            }
-        }
-        Some(Position::Beginning) | None => Offset::Beginning,
-    }
-}
-
 /// Creates a new `KafkaSourceConsumer`.
 fn create_consumer(
     source_id: &str,
@@ -699,14 +692,6 @@ fn parse_message_payload(message: &BorrowedMessage) -> Option<String> {
     match message.payload_view::<str>() {
         Some(Ok(payload)) if !payload.is_empty() => {
             let doc = payload.to_string();
-            debug!(
-                topic = ?message.topic(),
-                partition_id = ?message.partition(),
-                offset = ?message.offset(),
-                timestamp = ?message.timestamp(),
-                num_bytes = ?message.payload_len(),
-                "Message received.",
-            );
             return Some(doc);
         }
         Some(Ok(_)) => debug!(
@@ -907,17 +892,16 @@ mod kafka_broker_tests {
             let messages: Vec<RawDocBatch> = indexer_inbox.drain_for_test_typed();
             assert!(messages.is_empty());
 
-            let expected_current_positions: Vec<(i32, i64)> = vec![];
             let expected_state = json!({
                 "index_id": index_id,
                 "source_id": source_id,
                 "topic":  topic,
-                "assigned_partitions": vec![0u64, 1u64, 2u64],
-                "current_positions":  expected_current_positions,
-                "num_inactive_partitions": 3u64,
-                "num_bytes_processed": 0u64,
-                "num_messages_processed": 0u64,
-                "num_invalid_messages": 0u64,
+                "assigned_partitions": vec![0, 1, 2],
+                "current_positions": vec![(0, ""), (1, ""), (2, "")],
+                "num_inactive_partitions": 3,
+                "num_bytes_processed": 0,
+                "num_messages_processed": 0,
+                "num_invalid_messages": 0,
             });
             assert_eq!(exit_state, expected_state);
         }
@@ -992,12 +976,12 @@ mod kafka_broker_tests {
                 "index_id": index_id,
                 "source_id": source_id,
                 "topic":  topic,
-                "assigned_partitions": vec![0u64, 1u64, 2u64],
-                "current_positions":  vec![(0u32, 2u64), (1u32, 2u64), (2u32, 2u64)],
-                "num_inactive_partitions": 3usize,
-                "num_bytes_processed": 72u64,
-                "num_messages_processed": 9u64,
-                "num_invalid_messages": 3u64,
+                "assigned_partitions": vec![0, 1, 2],
+                "current_positions":  vec![(0, "00000000000000000002"), (1, "00000000000000000002"), (2, "00000000000000000002")],
+                "num_inactive_partitions": 3,
+                "num_bytes_processed": 72,
+                "num_messages_processed": 9,
+                "num_invalid_messages": 3,
             });
             assert_eq!(exit_state, expected_state);
         }
@@ -1071,12 +1055,12 @@ mod kafka_broker_tests {
                 "index_id": index_id,
                 "source_id": source_id,
                 "topic":  topic,
-                "assigned_partitions": vec![0u64, 1u64, 2u64],
-                "current_positions":  vec![(0u64, 2u64), (2u64, 2u64)],
-                "num_inactive_partitions": 3usize,
-                "num_bytes_processed": 36u64,
-                "num_messages_processed": 5u64,
-                "num_invalid_messages": 2u64,
+                "assigned_partitions": vec![0, 1, 2],
+                "current_positions":  vec![(0, "00000000000000000002"), (1, "00000000000000000002"), (2, "00000000000000000002")],
+                "num_inactive_partitions": 3,
+                "num_bytes_processed": 36,
+                "num_messages_processed": 5,
+                "num_invalid_messages": 2,
             });
             assert_eq!(exit_state, expected_exit_state);
         }
