@@ -129,8 +129,29 @@ macro_rules! return_if_err {
     };
 }
 
+/// The rebalance protocol at a very high level:
+/// - A consumer joins or leaves a consumer group.
+/// - Consumers receive a revoke partitions notification, which gives them the opportunity to commit
+/// the work in progress.
+/// - Broker waits for ALL the consumers to ack the revoke notification (synchronization barrier).
+/// - Consumers receive new partition assignmennts.
+///
+/// The API of the rebalance callback is better explained in the docs of `librdkafka`:
+/// <https://docs.confluent.io/2.0.0/clients/librdkafka/classRdKafka_1_1RebalanceCb.html>
 impl ConsumerContext for RdKafkaContext {
     fn pre_rebalance(&self, rebalance: &Rebalance) {
+        if let Rebalance::Revoke(tpl) = rebalance {
+            let partitions = collect_partitions(tpl, &self.topic);
+            debug!(partitions=?partitions, "Revoke partitions.");
+
+            let (ack_tx, ack_rx) = oneshot::channel();
+            return_if_err!(
+                self.events_tx
+                    .blocking_send(KafkaEvent::RevokePartitions { ack_tx }),
+                "Failed to send revoke message to source."
+            );
+            return_if_err!(ack_rx.recv(), "Failed to receive revoke ack from source");
+        }
         if let Rebalance::Assign(tpl) = rebalance {
             let partitions = collect_partitions(tpl, &self.topic);
             debug!(partitions=?partitions, "Assign partitions.");
@@ -160,18 +181,6 @@ impl ConsumerContext for RdKafkaContext {
                     .set_offset(offset)
                     .expect("Failed to convert `Offset` to `i64`. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
             }
-        }
-        if let Rebalance::Revoke(tpl) = rebalance {
-            let partitions = collect_partitions(tpl, &self.topic);
-            debug!(partitions=?partitions, "Revoke partitions.");
-
-            let (ack_tx, ack_rx) = oneshot::channel();
-            return_if_err!(
-                self.events_tx
-                    .blocking_send(KafkaEvent::RevokePartitions { ack_tx }),
-                "Failed to send revoke message to source."
-            );
-            return_if_err!(ack_rx.recv(), "Failed to receive revoke ack from source");
         }
     }
 }
@@ -230,7 +239,7 @@ impl KafkaSource {
     pub async fn try_new(
         ctx: Arc<SourceExecutionContext>,
         params: KafkaSourceParams,
-        _checkpoint: SourceCheckpoint,
+        _ignored_checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
         let topic = params.topic.clone();
         let backfill_mode_enabled = params.enable_backfill_mode;
@@ -372,6 +381,7 @@ impl KafkaSource {
 
     fn should_exit(&self) -> bool {
         self.backfill_mode_enabled
+            // This check ensures that we don't shutdown the source before the first partition assignment.
             && self.state.num_inactive_partitions > 0
             && self.state.num_inactive_partitions == self.state.assigned_partitions.len()
     }
@@ -501,6 +511,11 @@ impl Source for KafkaSource {
     }
 }
 
+// `rust-rdkafka` provides an async API via `StreamConsumer` for consuming topics asynchronously,
+// BUT the async calls to `recev()` end up being sync when a rebalance occurs because the rebalance
+// callback is sync. Until `rust-rdkafka` offers a fully asynchronous API, we poll the consumer in a
+// blocking tokio task and handle the rebalance events via message passing between the rebalance
+// callback and the source.
 fn spawn_consumer_poll_loop(
     consumer: Arc<RdKafkaConsumer>,
     events_tx: mpsc::Sender<KafkaEvent>,
