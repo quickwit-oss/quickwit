@@ -29,6 +29,7 @@ use quickwit_proto::ingest_api::{
     QueueExistsRequest, SuggestTruncateRequest, TailRequest,
 };
 
+use crate::metrics::INGEST_METRICS;
 use crate::{iter_doc_payloads, IngestApiError, Position, Queues};
 
 pub struct IngestApiService {
@@ -55,12 +56,23 @@ impl IngestApiService {
             return Err(IngestApiError::IndexDoesNotExist { index_id });
         }
 
+        INGEST_METRICS
+            .num_docs_in
+            .inc_by(request.doc_batches.len() as u64);
+
         let mut num_docs = 0usize;
         for doc_batch in &request.doc_batches {
             // TODO better error handling.
             // If there is an error, we probably want a transactional behavior.
             let records_it = iter_doc_payloads(doc_batch);
-            self.queues.append_batch(&doc_batch.index_id, records_it)?;
+            self.queues
+                .append_batch(&doc_batch.index_id, records_it)
+                .map_err(|err| {
+                    INGEST_METRICS
+                        .num_docs_out
+                        .inc_by((request.doc_batches.len() - num_docs) as u64);
+                    err
+                })?;
             num_docs += doc_batch.doc_lens.len();
         }
         Ok(IngestResponse {

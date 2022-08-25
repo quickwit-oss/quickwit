@@ -24,6 +24,7 @@ use quickwit_proto::ingest_api::{DocBatch, FetchResponse, ListQueuesResponse};
 use rocksdb::{Direction, IteratorMode, WriteBatch, WriteOptions, DB};
 use tracing::warn;
 
+use crate::metrics::INGEST_METRICS;
 use crate::{add_doc, Position};
 
 const FETCH_PAYLOAD_LIMIT: usize = 2_000_000; // 2MB
@@ -104,6 +105,7 @@ impl Queues {
         let cf_opts = default_rocks_db_options();
         self.db.create_cf(&real_queue_id, &cf_opts)?;
         self.last_position_per_queue.insert(real_queue_id, None);
+        INGEST_METRICS.queue_count.inc();
         Ok(())
     }
 
@@ -111,6 +113,7 @@ impl Queues {
         let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
         self.db.drop_cf(&real_queue_id)?;
         self.last_position_per_queue.remove(&real_queue_id);
+        INGEST_METRICS.queue_count.dec();
         Ok(())
     }
 
