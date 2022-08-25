@@ -306,6 +306,7 @@ async fn test_cmd_search_aggregation() -> Result<()> {
         max_hits: 10,
         start_offset: 0,
         search_fields: Some(vec!["city".to_string()]),
+        snippet_fields: None,
         start_timestamp: None,
         end_timestamp: None,
         config_uri: Uri::try_new(&test_env.resource_files["config"].display().to_string()).unwrap(),
@@ -361,6 +362,45 @@ async fn test_cmd_search_aggregation() -> Result<()> {
         })
     );
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_cmd_search_with_snippets() -> Result<()> {
+    let index_id = append_random_suffix("test-search-cmd");
+    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    create_logs_index(&test_env);
+
+    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
+
+    // search with snippets
+    let args = SearchIndexArgs {
+        index_id: test_env.index_id,
+        query: "event:baz".to_string(),
+        aggregation: None,
+        max_hits: 10,
+        start_offset: 0,
+        search_fields: None,
+        snippet_fields: Some(vec!["event".to_string()]),
+        start_timestamp: None,
+        end_timestamp: None,
+        config_uri: Uri::try_new(&test_env.resource_files["config"].display().to_string()).unwrap(),
+        data_dir: None,
+        sort_by_score: false,
+    };
+    let search_response = search_index(args).await?;
+    assert_eq!(search_response.hits.len(), 1);
+    let hit = &search_response.hits[0];
+    assert_eq!(
+        serde_json::from_str::<Value>(&hit.json).unwrap(),
+        json!({"event": "baz", "ts": 9})
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(hit.snippet.as_ref().unwrap()).unwrap(),
+        json!({
+            "event": [ "<b>baz</b>"]
+        })
+    );
     Ok(())
 }
 

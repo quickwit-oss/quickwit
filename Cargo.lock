@@ -1085,7 +1085,7 @@ checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 [[package]]
 name = "fastfield_codecs"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=f4d7621#f4d76213708011c7394861add5902193fc99d4fb"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=8e773ad#8e773ade7715210fb18a9a3b870329eed35dd1ad"
 dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
@@ -2385,7 +2385,7 @@ dependencies = [
 [[package]]
 name = "ownedbytes"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=f4d7621#f4d76213708011c7394861add5902193fc99d4fb"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=8e773ad#8e773ade7715210fb18a9a3b870329eed35dd1ad"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -3112,7 +3112,7 @@ dependencies = [
  "serde_json",
  "siphasher",
  "tantivy",
- "tantivy-query-grammar 0.18.0 (git+https://github.com/quickwit-oss/tantivy/?rev=d24f31f)",
+ "tantivy-query-grammar",
  "thiserror",
  "time 0.3.13",
  "tracing",
@@ -4502,7 +4502,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.18.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=f4d7621#f4d76213708011c7394861add5902193fc99d4fb"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=8e773ad#8e773ade7715210fb18a9a3b870329eed35dd1ad"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -4544,7 +4544,7 @@ dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
  "tantivy-fst",
- "tantivy-query-grammar 0.18.0 (git+https://github.com/quickwit-oss/tantivy/?rev=f4d7621)",
+ "tantivy-query-grammar",
  "tempfile",
  "thiserror",
  "time 0.3.13",
@@ -4556,12 +4556,12 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=f4d7621#f4d76213708011c7394861add5902193fc99d4fb"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=8e773ad#8e773ade7715210fb18a9a3b870329eed35dd1ad"
 
 [[package]]
 name = "tantivy-common"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=f4d7621#f4d76213708011c7394861add5902193fc99d4fb"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=8e773ad#8e773ade7715210fb18a9a3b870329eed35dd1ad"
 dependencies = [
  "byteorder",
  "ownedbytes",
@@ -4581,17 +4581,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.18.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d24f31f#d24f31f965543e7ad300b4ce9965b27aef8f3be1"
-dependencies = [
- "combine",
- "once_cell",
- "regex",
-]
-
-[[package]]
-name = "tantivy-query-grammar"
-version = "0.18.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=f4d7621#f4d76213708011c7394861add5902193fc99d4fb"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=8e773ad#8e773ade7715210fb18a9a3b870329eed35dd1ad"
 dependencies = [
  "combine",
  "once_cell",

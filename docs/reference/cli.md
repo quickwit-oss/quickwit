@@ -209,7 +209,7 @@ Quantiles [1%, 25%, 50%, 75%, 99%]: [448, 448, 448, 448, 448]
 Searches an index with ID `--index` and returns the documents matching the query specified with `--query`.
 More details on the [query language page](query-language.md).
 The offset of the first hit returned and the number of hits returned can be set with the `start-offset` and `max-hits` options.
-It's possible to override the default search fields `search-fields` option to define the list of fields that Quickwit will search into if the user query does not explicitly target a field in the query.
+It's possible to override the default search fields `search-fields` option to define the list of fields that Quickwit will search into if the user query does not explicitly target a field in the query. Quickwit will return snippets of the matching content when requested via the `snippet-fields` options.
 Search can also be limited to a time range using the `start-timestamp` and `end-timestamp` options.
 These timestamp options are useful for boosting query performance when using a time series dataset.
 
@@ -225,6 +225,7 @@ quickwit index search
     [--max-hits <max-hits>]
     [--start-offset <start-offset>]
     [--search-fields <search-fields>]
+    [--snippet-fields <snippet-fields>]
     [--start-timestamp <start-timestamp>]
     [--end-timestamp <end-timestamp>]
     [--sort-by-score]
@@ -238,6 +239,7 @@ quickwit index search
 `--max-hits` Maximum number of hits returned. (default: 20) \
 `--start-offset` Offset in the global result set of the first hit returned. (default: 0) \
 `--search-fields` List of fields that Quickwit will search into if the user query does not explicitly target a field in the query. It overrides the default search fields defined in the index config. Space-separated list, e.g. "field1 field2". \
+`--snippet-fields` List of fields that Quickwit will extract snippet on. Space-separated list, e.g. "field1 field2". \
 `--start-timestamp` Filters out documents before that timestamp (time-series indexes only). \
 `--end-timestamp` Filters out documents after that timestamp (time-series indexes only). \
 `--sort-by-score` Setting this flag calculates and sorts documents by their BM25 score.

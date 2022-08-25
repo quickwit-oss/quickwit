@@ -25,7 +25,7 @@ use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
 use clap::{arg, ArgMatches, Command};
-use colored::Colorize;
+use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use itertools::Itertools;
 use quickwit_actors::{ActorHandle, ObservationType, Universe};
@@ -127,6 +127,9 @@ pub fn build_index_command<'a>() -> Command<'a> {
                     arg!(--"search-fields" <FIELD_NAME> "List of fields that Quickwit will search into if the user query does not explicitly target a field in the query. It overrides the default search fields defined in the index config. Space-separated list, e.g. \"field1 field2\". ")
                         .multiple_values(true)
                         .required(false),
+                    arg!(--"snippet-fields" <FIELD_NAME> "List of fields that Quickwit will return snippet highlight on. Space-separated list, e.g. \"field1 field2\". ")
+                        .multiple_values(true)
+                        .required(false),
                     arg!(--"start-timestamp" <TIMESTAMP> "Filters out documents before that timestamp (time-series indexes only).")
                         .required(false),
                     arg!(--"end-timestamp" <TIMESTAMP> "Filters out documents after that timestamp (time-series indexes only).")
@@ -218,6 +221,7 @@ pub struct SearchIndexArgs {
     pub max_hits: usize,
     pub start_offset: usize,
     pub search_fields: Option<Vec<String>>,
+    pub snippet_fields: Option<Vec<String>>,
     pub start_timestamp: Option<i64>,
     pub end_timestamp: Option<i64>,
     pub config_uri: Uri,
@@ -394,6 +398,9 @@ impl IndexCliCommand {
         let search_fields = matches
             .values_of("search-fields")
             .map(|values| values.map(|value| value.to_string()).collect());
+        let snippet_fields = matches
+            .values_of("snippet-fields")
+            .map(|values| values.map(|value| value.to_string()).collect());
         let sort_by_score = matches.is_present("sort-by-score");
         let start_timestamp = if matches.is_present("start-timestamp") {
             Some(matches.value_of_t::<i64>("start-timestamp")?)
@@ -417,6 +424,7 @@ impl IndexCliCommand {
             max_hits,
             start_offset,
             search_fields,
+            snippet_fields,
             start_timestamp,
             end_timestamp,
             config_uri,
@@ -903,6 +911,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
         index_id: args.index_id,
         query: args.query.clone(),
         search_fields: args.search_fields.unwrap_or_default(),
+        snippet_fields: args.snippet_fields.unwrap_or_default(),
         start_timestamp: args.start_timestamp,
         end_timestamp: args.end_timestamp,
         max_hits: args.max_hits as u64,
@@ -1111,19 +1120,32 @@ pub async fn start_statistics_reporting_loop(
             - pipeline_statistics.num_invalid_docs)
             .separate_with_commas();
 
-        let success_rate = 1.0
-            - (pipeline_statistics.num_invalid_docs as f64 / pipeline_statistics.num_docs as f64)
-                * 100.0;
+        let error_rate = (pipeline_statistics.num_invalid_docs as f64
+            / pipeline_statistics.num_docs as f64)
+            * 100.0;
+
         println!(
-            "Indexed {}/{} documents in {} ({:.1}% success rate).",
+            "Indexed {} out of {} documents in {}. Failed to index {} document(s). {}\n",
             num_indexed_docs,
-            pipeline_statistics.num_invalid_docs.separate_with_commas(),
+            pipeline_statistics.num_docs.separate_with_commas(),
             format_duration(secs),
-            success_rate
+            pipeline_statistics.num_invalid_docs.separate_with_commas(),
+            colorize_error_rate(error_rate),
         );
     }
 
     Ok(pipeline_statistics)
+}
+
+fn colorize_error_rate(error_rate: f64) -> ColoredString {
+    let error_rate_message = format!("({:.1}% error rate)", error_rate);
+    if error_rate < 1.0 {
+        error_rate_message.yellow()
+    } else if error_rate < 5.0 {
+        error_rate_message.truecolor(255, 181, 46) //< Orange
+    } else {
+        error_rate_message.red()
+    }
 }
 
 /// A struct to print data on the standard output.
