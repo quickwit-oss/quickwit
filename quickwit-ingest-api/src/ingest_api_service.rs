@@ -66,14 +66,9 @@ impl IngestApiService {
             // If there is an error, we probably want a transactional behavior.
             let records_it = iter_doc_payloads(doc_batch);
             self.queues
-                .append_batch(&doc_batch.index_id, records_it)
-                .map_err(|err| {
-                    INGEST_METRICS
-                        .num_docs_out
-                        .inc_by((request.doc_batches.len() - num_docs) as u64);
-                    err
-                })?;
+                .append_batch(&doc_batch.index_id, records_it)?;
             num_docs += doc_batch.doc_lens.len();
+            INGEST_METRICS.num_docs_out.inc_by(doc_batch.doc_lens.len() as u64);
         }
         Ok(IngestResponse {
             num_docs_for_processing: num_docs as u64,
