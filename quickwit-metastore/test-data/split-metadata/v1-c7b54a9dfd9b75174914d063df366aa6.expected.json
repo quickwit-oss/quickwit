@@ -5,8 +5,10 @@
     "end": 2000,
     "start": 1000
   },
+  "node_id": "unknown/0",
   "num_docs": 12303,
   "partition_id": 7,
+  "source_id": "unknown",
   "split_id": "split",
   "tags": [
     "234",

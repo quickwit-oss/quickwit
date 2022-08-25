@@ -21,6 +21,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use quickwit_actors::{Mailbox, Universe};
+use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
     build_doc_mapper, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
@@ -40,14 +41,14 @@ use crate::models::{DetachPipeline, IndexingStatistics, SpawnPipeline};
 /// The test index content is entirely in RAM and isolated,
 /// but the construction of the index involves temporary file directory.
 pub struct TestSandbox {
-    _universe: Universe,
     index_id: String,
-    indexing_server_mailbox: Mailbox<IndexingService>,
+    indexing_service: Mailbox<IndexingService>,
     doc_mapper: Arc<dyn DocMapper>,
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
     storage: Arc<dyn Storage>,
     add_docs_id: AtomicUsize,
+    _universe: Universe,
     _temp_dir: tempfile::TempDir,
 }
 
@@ -65,6 +66,7 @@ impl TestSandbox {
         indexing_settings_yaml: &str,
         search_fields: &[&str],
     ) -> anyhow::Result<Self> {
+        let node_id = append_random_suffix("test-node");
         let index_uri = index_uri(index_id);
         let mut index_meta = IndexMetadata::for_test(index_id, index_uri.as_str());
         index_meta.doc_mapping = serde_yaml::from_str(doc_mapping_yaml)?;
@@ -87,25 +89,27 @@ impl TestSandbox {
         metastore.create_index(index_meta.clone()).await?;
         let storage_resolver = StorageUriResolver::for_test();
         let storage = storage_resolver.resolve(&index_uri)?;
-        let indexing_server = IndexingService::new(
+        let universe = Universe::new();
+        let enable_ingest_api = false;
+        let indexing_service_actor = IndexingService::new(
+            node_id.to_string(),
             temp_dir.path().to_path_buf(),
             indexer_config,
             metastore.clone(),
             storage_resolver.clone(),
-            None,
+            enable_ingest_api,
         );
-        let universe = Universe::new();
-        let (indexing_server_mailbox, _indexing_server_handle) =
-            universe.spawn_actor(indexing_server).spawn();
+        let (indexing_service, _indexing_service_handle) =
+            universe.spawn_actor(indexing_service_actor).spawn();
         Ok(TestSandbox {
-            _universe: universe,
             index_id: index_id.to_string(),
-            indexing_server_mailbox,
+            indexing_service,
             doc_mapper,
             metastore,
             storage_resolver,
             storage,
             add_docs_id: AtomicUsize::default(),
+            _universe: universe,
             _temp_dir: temp_dir,
         })
     }
@@ -124,23 +128,25 @@ impl TestSandbox {
             .map(|doc_json| doc_json.to_string())
             .collect();
         let add_docs_id = self.add_docs_id.fetch_add(1, Ordering::SeqCst);
-        let source = SourceConfig {
+        let source_config = SourceConfig {
             source_id: self.index_id.clone(),
+            num_pipelines: 0,
             source_params: SourceParams::Vec(VecSourceParams {
-                items: docs,
+                docs,
                 batch_num_docs: 10,
                 partition: format!("add-docs-{}", add_docs_id),
             }),
         };
         let pipeline_id = self
-            .indexing_server_mailbox
+            .indexing_service
             .ask_for_res(SpawnPipeline {
                 index_id: self.index_id.clone(),
-                source,
+                source_config,
+                pipeline_ord: 0,
             })
             .await?;
         let pipeline_handle = self
-            .indexing_server_mailbox
+            .indexing_service
             .ask_for_res(DetachPipeline { pipeline_id })
             .await?;
         let (_pipeline_exit_status, pipeline_statistics) = pipeline_handle.join().await;
@@ -190,9 +196,8 @@ pub fn mock_split_meta(split_id: &str) -> SplitMetadata {
         uncompressed_docs_size_in_bytes: 256,
         time_range: None,
         create_timestamp: 0,
-        tags: Default::default(),
-        demux_num_ops: 0,
         footer_offsets: 700..800,
+        ..Default::default()
     }
 }
 

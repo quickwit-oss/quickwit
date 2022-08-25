@@ -94,6 +94,7 @@ mod tests {
                 index_id: "test-index".to_string(),
                 source_config: SourceConfig {
                     source_id: "void-test-source".to_string(),
+                    num_pipelines: 1,
                     source_params: SourceParams::void(),
                 },
             }),
@@ -113,6 +114,7 @@ mod tests {
                 index_id: "test-index".to_string(),
                 source_config: SourceConfig {
                     source_id: "void-test-source".to_string(),
+                    num_pipelines: 1,
                     source_params: SourceParams::void(),
                 },
             }),

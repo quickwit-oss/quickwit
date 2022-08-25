@@ -19,4 +19,4 @@
 
 mod handler;
 
-pub use handler::liveness_check_handler;
+pub use handler::health_check_handlers;

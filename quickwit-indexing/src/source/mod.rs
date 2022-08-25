@@ -93,6 +93,9 @@ pub use void_source::{VoidSource, VoidSourceFactory};
 use crate::actors::Indexer;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
 
+/// Reserved source ID used for the ingest API.
+pub const INGEST_API_SOURCE_ID: &str = ".ingest-api";
+
 /// Runtime configuration used during execution of a source actor.
 pub struct SourceExecutionContext {
     pub metastore: Arc<dyn Metastore>,
@@ -329,6 +332,7 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "void".to_string(),
+                num_pipelines: 1,
                 source_params: SourceParams::void(),
             };
             check_source_connectivity(&source_config).await?;
@@ -336,6 +340,7 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "vec".to_string(),
+                num_pipelines: 1,
                 source_params: SourceParams::Vec(VecSourceParams::default()),
             };
             check_source_connectivity(&source_config).await?;
@@ -343,6 +348,7 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "file".to_string(),
+                num_pipelines: 1,
                 source_params: SourceParams::file("file-does-not-exist.json"),
             };
             assert!(check_source_connectivity(&source_config).await.is_err());
@@ -350,6 +356,7 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "file".to_string(),
+                num_pipelines: 1,
                 source_params: SourceParams::file("data/test_corpus.json"),
             };
             assert!(check_source_connectivity(&source_config).await.is_ok());

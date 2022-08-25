@@ -19,7 +19,7 @@
 
 use quickwit_doc_mapper::QueryParserError;
 use quickwit_metastore::MetastoreError;
-use quickwit_proto::tonic;
+use quickwit_proto::{tonic, ServiceError, ServiceErrorCode};
 use quickwit_storage::StorageResolverError;
 use serde::{Deserialize, Serialize};
 use tantivy::TantivyError;
@@ -42,6 +42,19 @@ pub enum SearchError {
     InvalidArgument(String),
     #[error("Invalid query: {0}")]
     InvalidQuery(String),
+}
+
+impl ServiceError for SearchError {
+    fn status_code(&self) -> ServiceErrorCode {
+        match self {
+            SearchError::IndexDoesNotExist { .. } => ServiceErrorCode::NotFound,
+            SearchError::InternalError(_) => ServiceErrorCode::Internal,
+            SearchError::StorageResolverError(_) => ServiceErrorCode::BadRequest,
+            SearchError::InvalidQuery(_) => ServiceErrorCode::BadRequest,
+            SearchError::InvalidArgument(_) => ServiceErrorCode::BadRequest,
+            SearchError::InvalidAggregationRequest(_) => ServiceErrorCode::BadRequest,
+        }
+    }
 }
 
 /// Parse tonic error and returns `SearchError`.

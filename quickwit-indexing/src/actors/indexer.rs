@@ -41,7 +41,9 @@ use tracing::{info, warn};
 use ulid::Ulid;
 
 use crate::actors::Packager;
-use crate::models::{IndexedSplit, IndexedSplitBatch, IndexingDirectory, RawDocBatch};
+use crate::models::{
+    IndexedSplit, IndexedSplitBatch, IndexingDirectory, IndexingPipelineId, RawDocBatch,
+};
 
 #[derive(Debug)]
 struct CommitTimeout {
@@ -92,8 +94,7 @@ impl IndexerCounters {
 }
 
 struct IndexerState {
-    index_id: String,
-    source_id: String,
+    pipeline_id: IndexingPipelineId,
     doc_mapper: Arc<dyn DocMapper>,
     indexing_directory: IndexingDirectory,
     indexing_settings: IndexingSettings,
@@ -123,7 +124,7 @@ impl IndexerState {
             .schema(self.schema.clone())
             .tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
         let indexed_split = IndexedSplit::new_in_dir(
-            self.index_id.clone(),
+            self.pipeline_id.clone(),
             partition_id,
             self.indexing_directory.scratch_directory.clone(),
             self.indexing_settings.resources.clone(),
@@ -153,7 +154,7 @@ impl IndexerState {
     fn create_workbench(&self) -> anyhow::Result<IndexingWorkbench> {
         let workbench = IndexingWorkbench {
             checkpoint_delta: IndexCheckpointDelta {
-                source_id: self.source_id.clone(),
+                source_id: self.pipeline_id.source_id.clone(),
                 source_delta: SourceCheckpointDelta::default(),
             },
             indexed_splits: FnvHashMap::with_capacity_and_hasher(250, Default::default()),
@@ -403,9 +404,8 @@ enum CommitTrigger {
 
 impl Indexer {
     pub fn new(
-        index_id: String,
+        pipeline_id: IndexingPipelineId,
         doc_mapper: Arc<dyn DocMapper>,
-        source_id: String,
         metastore: Arc<dyn Metastore>,
         indexing_directory: IndexingDirectory,
         indexing_settings: IndexingSettings,
@@ -430,8 +430,7 @@ impl Indexer {
         };
         Self {
             indexer_state: IndexerState {
-                index_id,
-                source_id,
+                pipeline_id,
                 doc_mapper,
                 indexing_directory,
                 indexing_settings,
@@ -494,7 +493,7 @@ impl Indexer {
         if splits.is_empty() {
             self.metastore
                 .publish_splits(
-                    &self.indexer_state.index_id,
+                    &self.indexer_state.pipeline_id.index_id,
                     &[],
                     &[],
                     Some(checkpoint_delta),
@@ -504,7 +503,8 @@ impl Indexer {
                     format!(
                         "Failed to update the checkpoint for {}, {} after a split containing only \
                          errors.",
-                        &self.indexer_state.index_id, &self.indexer_state.source_id
+                        &self.indexer_state.pipeline_id.index_id,
+                        &self.indexer_state.pipeline_id.source_id
                     )
                 })?;
             return Ok(());
@@ -556,7 +556,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_simple() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
         let doc_mapper = Arc::new(quickwit_doc_mapper::default_doc_mapper_for_tests());
         let indexing_directory = IndexingDirectory::for_test().await?;
         let mut indexing_settings = IndexingSettings::for_test();
@@ -564,7 +569,7 @@ mod tests {
         indexing_settings.sort_field = Some("timestamp".to_string());
         indexing_settings.sort_order = Some(SortOrder::Desc);
         indexing_settings.timestamp_field = Some("timestamp".to_string());
-        let (mailbox, inbox) = create_test_mailbox();
+        let (packager_mailbox, packager_inbox) = create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_publish_splits()
@@ -572,15 +577,13 @@ mod tests {
                 assert!(splits.is_empty());
                 Ok(())
             });
-
         let indexer = Indexer::new(
-            "test-index".to_string(),
+            pipeline_id,
             doc_mapper,
-            "source-id".to_string(),
             Arc::new(metastore),
             indexing_directory,
             indexing_settings,
-            mailbox,
+            packager_mailbox,
         );
         let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
@@ -629,7 +632,7 @@ mod tests {
                 overall_num_bytes: 525
             }
         );
-        let output_messages = inbox.drain_for_test();
+        let output_messages = packager_inbox.drain_for_test();
         assert_eq!(output_messages.len(), 1);
         let batch = output_messages[0]
             .downcast_ref::<IndexedSplitBatch>()
@@ -644,11 +647,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_timeout() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
         let doc_mapper = Arc::new(quickwit_doc_mapper::default_doc_mapper_for_tests());
         let indexing_directory = IndexingDirectory::for_test().await?;
         let indexing_settings = IndexingSettings::for_test();
-        let (mailbox, inbox) = create_test_mailbox();
+        let (packager_mailbox, packager_inbox) = create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_publish_splits()
@@ -656,15 +664,13 @@ mod tests {
                 assert!(splits.is_empty());
                 Ok(())
             });
-
         let indexer = Indexer::new(
-            "test-index".to_string(),
+            pipeline_id,
             doc_mapper,
-            "source-id".to_string(),
             Arc::new(metastore),
             indexing_directory,
             indexing_settings,
-            mailbox,
+            packager_mailbox,
         );
         let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
@@ -703,7 +709,7 @@ mod tests {
                 overall_num_bytes: 137
             }
         );
-        let output_messages = inbox.drain_for_test();
+        let output_messages = packager_inbox.drain_for_test();
         assert_eq!(output_messages.len(), 1);
         let indexed_split_batch = output_messages[0]
             .downcast_ref::<IndexedSplitBatch>()
@@ -714,11 +720,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_eof() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
         let doc_mapper = Arc::new(quickwit_doc_mapper::default_doc_mapper_for_tests());
         let indexing_directory = IndexingDirectory::for_test().await?;
         let indexing_settings = IndexingSettings::for_test();
-        let (mailbox, inbox) = create_test_mailbox();
+        let (packager_mailbox, packager_inbox) = create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_publish_splits()
@@ -727,13 +738,12 @@ mod tests {
                 Ok(())
             });
         let indexer = Indexer::new(
-            "test-index".to_string(),
+            pipeline_id,
             doc_mapper,
-            "source-id".to_string(),
             Arc::new(metastore),
             indexing_directory,
             indexing_settings,
-            mailbox,
+            packager_mailbox,
         );
         let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
@@ -760,7 +770,7 @@ mod tests {
                 overall_num_bytes: 137
             }
         );
-        let output_messages = inbox.drain_for_test();
+        let output_messages = packager_inbox.drain_for_test();
         assert_eq!(output_messages.len(), 1);
         assert_eq!(
             output_messages[0]
@@ -785,13 +795,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_partitioning() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
         let doc_mapper: Arc<dyn DocMapper> = Arc::new(
             serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_WITH_PARTITION_JSON).unwrap(),
         );
         let indexing_directory = IndexingDirectory::for_test().await?;
         let indexing_settings = IndexingSettings::for_test();
-        let (mailbox, inbox) = create_test_mailbox();
+        let (packager_mailbox, packager_inbox) = create_test_mailbox();
         let mut metastore = MockMetastore::default();
         metastore
             .expect_publish_splits()
@@ -801,13 +816,12 @@ mod tests {
             });
 
         let indexer = Indexer::new(
-            "test-index".to_string(),
+            pipeline_id,
             doc_mapper,
-            "source-id".to_string(),
             Arc::new(metastore),
             indexing_directory,
             indexing_settings,
-            mailbox,
+            packager_mailbox,
         );
         let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
@@ -851,7 +865,7 @@ mod tests {
             }
         );
 
-        let output_messages = inbox.drain_for_test();
+        let output_messages = packager_inbox.drain_for_test();
         assert_eq!(output_messages.len(), 1);
 
         let indexed_split_batch = output_messages[0]

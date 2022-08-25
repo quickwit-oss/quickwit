@@ -49,6 +49,8 @@ use crate::actors::Indexer;
 use crate::models::RawDocBatch;
 use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
 
+/// Number of bytes after which we cut a new batch.
+///
 /// We try to emit chewable batches for the indexer.
 /// One batch = one message to the indexer actor.
 ///
@@ -58,7 +60,7 @@ use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFa
 /// - we will not have a precise control of the timeout before commit.
 ///
 /// 5MB seems like a good one size fits all value.
-const TARGET_BATCH_NUM_BYTES: u64 = 5_000_000;
+const BATCH_NUM_BYTES_LIMIT: u64 = 5_000_000;
 
 /// Factory for instantiating a `KafkaSource`.
 pub struct KafkaSourceFactory;
@@ -431,7 +433,7 @@ impl Source for KafkaSource {
                         KafkaEvent::PartitionEOF(partition) => self.process_partition_eof(partition),
                         KafkaEvent::Error(error) => Err(ActorExitStatus::from(error))?,
                     }
-                    if batch.num_bytes >= TARGET_BATCH_NUM_BYTES {
+                    if batch.num_bytes >= BATCH_NUM_BYTES_LIMIT {
                         break;
                     }
                 }
@@ -815,6 +817,7 @@ mod kafka_broker_tests {
         let source_id = append_random_suffix("test-kafka-source--source");
         let source_config = SourceConfig {
             source_id: source_id.clone(),
+            num_pipelines: 1,
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: topic.to_string(),
                 client_log_level: None,

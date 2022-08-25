@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod args;
-mod error;
 mod format;
 mod metrics;
 
@@ -32,22 +31,27 @@ mod indexing_api;
 mod ingest_api;
 mod node_info_handler;
 mod search_api;
+#[cfg(test)]
+mod test_utils;
+#[cfg(test)]
+mod tests;
 mod ui_handler;
 
 use std::collections::HashSet;
 use std::convert::Infallible;
 use std::sync::Arc;
+use std::time::Duration;
 
 use format::Format;
 use quickwit_actors::{Mailbox, Universe};
-use quickwit_cluster::{Cluster, QuickwitService};
+use quickwit_cluster::{Cluster, ClusterMember, QuickwitService};
 use quickwit_common::uri::Uri;
 use quickwit_config::QuickwitConfig;
 use quickwit_core::IndexService;
 use quickwit_indexing::actors::IndexingService;
-use quickwit_indexing::start_indexer_service;
-use quickwit_ingest_api::{init_ingest_api, IngestApiService};
-use quickwit_metastore::quickwit_metastore_uri_resolver;
+use quickwit_indexing::start_indexing_service;
+use quickwit_ingest_api::{start_ingest_api_service, IngestApiService};
+use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreGrpcClient};
 use quickwit_search::{start_searcher_service, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use serde::{Deserialize, Serialize};
@@ -57,6 +61,127 @@ pub use crate::args::ServeArgs;
 pub use crate::metrics::SERVE_METRICS;
 #[cfg(test)]
 use crate::rest::recover_fn;
+
+const READYNESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(25)
+} else {
+    Duration::from_secs(10)
+};
+
+struct QuickwitServices {
+    pub config: Arc<QuickwitConfig>,
+    pub build_info: Arc<QuickwitBuildInfo>,
+    pub cluster: Arc<Cluster>,
+    pub metastore: Arc<dyn Metastore>,
+    /// We do have a search service even on nodes that are not running `search`.
+    /// It is only used to serve the rest API calls and will only execute
+    /// the root requests.
+    pub search_service: Arc<dyn SearchService>,
+    pub indexer_service: Option<Mailbox<IndexingService>>,
+    pub ingest_api_service: Option<Mailbox<IngestApiService>>,
+    pub index_service: Arc<IndexService>,
+    pub services: HashSet<QuickwitService>,
+}
+
+fn has_node_with_metastore_service(members: &[ClusterMember]) -> bool {
+    members.iter().any(|member| {
+        member
+            .available_services
+            .contains(&QuickwitService::Metastore)
+    })
+}
+
+pub async fn serve_quickwit(
+    config: QuickwitConfig,
+    services: &HashSet<QuickwitService>,
+) -> anyhow::Result<()> {
+    let storage_resolver = quickwit_storage_uri_resolver().clone();
+    let cluster = quickwit_cluster::start_cluster_service(&config, services).await?;
+
+    // Instanciate either a file-backed or postgresql [`Metastore`] if the node runs a `Metastore`
+    // service, else instanciate a [`MetastoreGrpcClient`].
+    let metastore: Arc<dyn Metastore> = if services.contains(&QuickwitService::Metastore) {
+        quickwit_metastore_uri_resolver()
+            .resolve(&config.metastore_uri)
+            .await?
+    } else {
+        // Wait 10 seconds for nodes running a `Metastore` service.
+        cluster
+            .wait_for_members(has_node_with_metastore_service, Duration::from_secs(10))
+            .await?;
+        let metastore_client = MetastoreGrpcClient::create_and_update_from_members(
+            &cluster.members(),
+            cluster.member_change_watcher(),
+        )
+        .await?;
+        Arc::new(metastore_client)
+    };
+
+    let indexes = metastore
+        .list_indexes_metadatas()
+        .await?
+        .into_iter()
+        .map(|index| (index.index_id, index.index_uri));
+
+    check_is_configured_for_cluster(&config.peer_seeds, &config.metastore_uri, indexes)?;
+
+    tokio::spawn(node_readyness_reporting_task(
+        cluster.clone(),
+        metastore.clone(),
+    ));
+
+    let universe = Universe::new();
+
+    let (ingest_api_service, indexer_service) = if services.contains(&QuickwitService::Indexer) {
+        let ingest_api_service = start_ingest_api_service(&universe, &config.data_dir_path).await?;
+        // TODO: Move to indexer config?
+        let enable_ingest_api = true;
+        let indexing_service = start_indexing_service(
+            &universe,
+            &config,
+            metastore.clone(),
+            storage_resolver.clone(),
+            enable_ingest_api,
+        )
+        .await?;
+        (Some(ingest_api_service), Some(indexing_service))
+    } else {
+        (None, None)
+    };
+
+    let search_service: Arc<dyn SearchService> = start_searcher_service(
+        &config,
+        metastore.clone(),
+        storage_resolver.clone(),
+        cluster.clone(),
+    )
+    .await?;
+
+    // Always instanciate index service.
+    let index_service = Arc::new(IndexService::new(
+        metastore.clone(),
+        storage_resolver,
+        config.default_index_root_uri.clone(),
+    ));
+    let grpc_listen_addr = config.grpc_listen_addr;
+    let rest_listen_addr = config.rest_listen_addr;
+
+    let quickwit_services = QuickwitServices {
+        config: Arc::new(config),
+        build_info: Arc::new(build_quickwit_build_info()),
+        cluster,
+        metastore,
+        ingest_api_service,
+        search_service,
+        indexer_service,
+        index_service,
+        services: services.clone(),
+    };
+    let grpc_server = grpc::start_grpc_server(grpc_listen_addr, &quickwit_services);
+    let rest_server = rest::start_rest_server(rest_listen_addr, &quickwit_services);
+    tokio::try_join!(grpc_server, rest_server)?;
+    Ok(())
+}
 
 fn require<T: Clone + Send>(
     val_opt: Option<T>,
@@ -77,97 +202,14 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
     warp::any().map(move || arg.clone())
 }
 
-struct QuickwitServices {
-    pub config: Arc<QuickwitConfig>,
-    pub build_info: Arc<QuickwitBuildInfo>,
-    pub cluster: Arc<Cluster>,
-    /// We do have a search service even on nodes that are not running `search`.
-    /// It is only used to serve the rest API calls and will only execute
-    /// the root requests.
-    pub search_service: Arc<dyn SearchService>,
-    pub indexer_service: Option<Mailbox<IndexingService>>,
-    pub ingest_api_service: Option<Mailbox<IngestApiService>>,
-    pub index_service: Arc<IndexService>,
-    pub services: HashSet<QuickwitService>,
-}
-
-pub async fn serve_quickwit(
-    config: QuickwitConfig,
-    services: &HashSet<QuickwitService>,
-) -> anyhow::Result<()> {
-    let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&config.metastore_uri)
-        .await?;
-    let indexes = metastore
-        .list_indexes_metadatas()
-        .await?
-        .into_iter()
-        .map(|index| (index.index_id, index.index_uri));
-
-    check_is_configured_for_cluster(&config.peer_seeds, metastore.uri(), indexes)?;
-
-    let storage_resolver = quickwit_storage_uri_resolver().clone();
-
-    let cluster = quickwit_cluster::start_cluster_service(&config, services).await?;
-
-    let universe = Universe::new();
-
-    let ingest_api_service: Option<Mailbox<IngestApiService>> = if services
-        .contains(&QuickwitService::Indexer)
-    {
-        let ingest_api_service = init_ingest_api(&universe, &config.data_dir_path.join("queues"))?;
-        Some(ingest_api_service)
-    } else {
-        None
-    };
-
-    let indexer_service: Option<Mailbox<IndexingService>> =
-        if services.contains(&QuickwitService::Indexer) {
-            let indexer_service = start_indexer_service(
-                &universe,
-                &config,
-                metastore.clone(),
-                storage_resolver.clone(),
-                ingest_api_service.clone(),
-            )
-            .await?;
-            Some(indexer_service)
-        } else {
-            None
-        };
-
-    let search_service: Arc<dyn SearchService> = start_searcher_service(
-        &config,
-        metastore.clone(),
-        storage_resolver.clone(),
-        cluster.clone(),
-    )
-    .await?;
-
-    // Always instanciate index management service.
-    let index_service = Arc::new(IndexService::new(
-        metastore,
-        storage_resolver,
-        config.default_index_root_uri.clone(),
-    ));
-    let grpc_listen_addr = config.grpc_listen_addr;
-    let rest_listen_addr = config.rest_listen_addr;
-
-    let quickwit_services = QuickwitServices {
-        config: Arc::new(config),
-        build_info: Arc::new(build_quickwit_build_info()),
-        cluster,
-        ingest_api_service,
-        search_service,
-        indexer_service,
-        index_service,
-        services: services.clone(),
-    };
-    let grpc_server = grpc::start_grpc_server(grpc_listen_addr, &quickwit_services);
-    let rest_server = rest::start_rest_server(rest_listen_addr, &quickwit_services);
-
-    tokio::try_join!(grpc_server, rest_server)?;
-    Ok(())
+/// Reports node readyness to chitchat cluster every 10 seconds (25 ms for tests).
+async fn node_readyness_reporting_task(cluster: Arc<Cluster>, metastore: Arc<dyn Metastore>) {
+    let mut interval = tokio::time::interval(READYNESS_REPORTING_INTERVAL);
+    loop {
+        interval.tick().await;
+        let node_ready = metastore.check_connectivity().await.is_ok();
+        cluster.set_self_node_ready(node_ready).await;
+    }
 }
 
 /// Checks if the conditions required to smoothly run a Quickwit cluster are met.
@@ -228,127 +270,5 @@ pub fn build_quickwit_build_info() -> QuickwitBuildInfo {
         commit_short_hash: env!("QW_COMMIT_SHORT_HASH"),
         commit_date: env!("QW_COMMIT_DATE"),
         version,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::net::SocketAddr;
-    use std::ops::Range;
-    use std::sync::Arc;
-
-    use futures::TryStreamExt;
-    use quickwit_indexing::mock_split;
-    use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
-    use quickwit_proto::search_service_server::SearchServiceServer;
-    use quickwit_proto::{tonic, OutputFormat};
-    use quickwit_search::{
-        root_search_stream, ClusterClient, MockSearchService, SearchClientPool, SearchError,
-        SearchService,
-    };
-    use tokio_stream::wrappers::UnboundedReceiverStream;
-    use tonic::transport::Server;
-
-    use super::*;
-    use crate::search_api::GrpcSearchAdapter;
-
-    async fn start_test_server(
-        address: SocketAddr,
-        search_service: Arc<dyn SearchService>,
-    ) -> anyhow::Result<()> {
-        let search_grpc_adpater = GrpcSearchAdapter::from(search_service);
-        tokio::spawn(async move {
-            Server::builder()
-                .add_service(SearchServiceServer::new(search_grpc_adpater))
-                .serve(address)
-                .await?;
-            Result::<_, anyhow::Error>::Ok(())
-        });
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_serve_search_stream_with_a_leaf_error_on_leaf_node() -> anyhow::Result<()> {
-        // This test aims at checking the client gRPC implementation.
-        let request = quickwit_proto::SearchStreamRequest {
-            index_id: "test-index".to_string(),
-            query: "test".to_string(),
-            search_fields: vec!["body".to_string()],
-            start_timestamp: None,
-            end_timestamp: None,
-            fast_field: "timestamp".to_string(),
-            output_format: OutputFormat::Csv as i32,
-            partition_by_field: None,
-        };
-        let mut metastore = MockMetastore::new();
-        metastore
-            .expect_index_metadata()
-            .returning(|_index_id: &str| {
-                Ok(IndexMetadata::for_test(
-                    "test-index",
-                    "ram:///indexes/test-index",
-                ))
-            });
-        metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
-                Ok(vec![mock_split("split_1"), mock_split("split_2")])
-            },
-        );
-        let mut mock_search_service = MockSearchService::new();
-        let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
-        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {
-            data: b"123".to_vec(),
-            split_id: "split_1".to_string(),
-        }))?;
-        result_sender.send(Err(SearchError::InternalError(
-            "Error on `split2`".to_string(),
-        )))?;
-        mock_search_service
-            .expect_leaf_search_stream()
-            .withf(|request| request.split_offsets.len() == 2) // First request.
-            .return_once(
-                |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
-                    Ok(UnboundedReceiverStream::new(result_receiver))
-                },
-            );
-        mock_search_service
-            .expect_leaf_search_stream()
-            .withf(|request| request.split_offsets.len() == 1) // Retry request on the failing split.
-            .return_once(
-                |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
-                    Err(SearchError::InternalError(
-                        "Error again on `split2`".to_string(),
-                    ))
-                },
-            );
-        // The test will hang on indefinitely if we don't drop the sender.
-        drop(result_sender);
-
-        let grpc_addr: SocketAddr = "127.0.0.1:20000".parse()?;
-        start_test_server(grpc_addr, Arc::new(mock_search_service)).await?;
-        let client_pool = SearchClientPool::for_addrs(&[grpc_addr]).await?;
-        let cluster_client = ClusterClient::new(client_pool.clone());
-        let stream = root_search_stream(request, &metastore, cluster_client, &client_pool).await?;
-        let result: Result<Vec<_>, SearchError> = stream.try_collect().await;
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Internal error: `Internal error: `Error again on `split2``.`."
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_check_is_configured_for_cluster_on_single_node() {
-        check_is_configured_for_cluster(
-            &[],
-            &Uri::new("file://qwdata/indexes".to_string()),
-            [(
-                "foo-index".to_string(),
-                Uri::new("file:///qwdata/indexes/foo-index".to_string()),
-            )]
-            .into_iter(),
-        )
-        .unwrap();
     }
 }

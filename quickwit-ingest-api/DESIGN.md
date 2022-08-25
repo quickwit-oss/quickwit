@@ -9,7 +9,7 @@ and act as source, for an indexing pipeline.
 One of the key constraint for Quickwit's API is to behave properly even
 when hosting thousands of indices.
 
-Appending to thousands of files diid not seem like the right idea.
+Appending to thousands of files did not seem like the right idea.
 
 A first solution we considered, was to write all documents in a joined write-ahead log (WAL),
 and keep separate queues in memory. Consumers would advertise the last published checkpoint.

@@ -22,9 +22,10 @@ mod ingest_api_service;
 mod position;
 mod queue;
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 pub use errors::IngestApiError;
 use errors::Result;
 pub use ingest_api_service::IngestApiService;
@@ -33,35 +34,63 @@ pub use position::Position;
 pub use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_proto::ingest_api::DocBatch;
-use tracing::info;
+use tokio::sync::Mutex;
 
-pub static INGEST_API_SERVICE_INSTANCE: OnceCell<Mailbox<IngestApiService>> = OnceCell::new();
+pub const QUEUES_DIR_NAME: &str = "queues";
 
-/// Initializes the [`IngestApiService`] singleton.
-pub fn init_ingest_api(
+type IngestApiServiceMailboxes = HashMap<PathBuf, Mailbox<IngestApiService>>;
+
+pub static INGEST_API_SERVICE_MAILBOXES: OnceCell<Mutex<IngestApiServiceMailboxes>> =
+    OnceCell::new();
+
+/// Initializes an [`IngestApiService`] consuming the queue located at `queue_path`.
+pub async fn init_ingest_api(
     universe: &Universe,
-    queue_path: &Path,
+    queues_dir_path: &Path,
 ) -> anyhow::Result<Mailbox<IngestApiService>> {
-    let ingest_api_service = INGEST_API_SERVICE_INSTANCE
-        .get_or_try_init(|| spawn_ingest_api_actor(universe, queue_path))
-        .context("Failed to initialize the ingest API service.")?;
-    Ok(ingest_api_service.clone())
+    let mut guard = INGEST_API_SERVICE_MAILBOXES
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .await;
+    if let Some(mailbox) = guard.get(queues_dir_path) {
+        return Ok(mailbox.clone());
+    }
+    let ingest_api_actor =
+        IngestApiService::with_queues_dir(queues_dir_path).with_context(|| {
+            format!(
+                "Failed to open RocksDB instance located at `{}`.",
+                queues_dir_path.display()
+            )
+        })?;
+    let (ingest_api_service, _ingest_api_handle) = universe.spawn_actor(ingest_api_actor).spawn();
+    guard.insert(queues_dir_path.to_path_buf(), ingest_api_service.clone());
+    Ok(ingest_api_service)
 }
 
-/// Gets the instance of the single IngestApiService via a copy of it's Mailbox.
-pub fn get_ingest_api_service() -> Option<Mailbox<IngestApiService>> {
-    INGEST_API_SERVICE_INSTANCE.get().cloned()
+/// Returns the instance of the single IngestApiService via a copy of it's Mailbox.
+pub async fn get_ingest_api_service(
+    queues_dir_path: &Path,
+) -> anyhow::Result<Mailbox<IngestApiService>> {
+    let guard = INGEST_API_SERVICE_MAILBOXES
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .await;
+    if let Some(mailbox) = guard.get(queues_dir_path) {
+        return Ok(mailbox.clone());
+    }
+    bail!(
+        "Ingest API service with queues directory located at `{}` is not initialized.",
+        queues_dir_path.display()
+    )
 }
 
-/// Creates a ingest API service actor.
-pub fn spawn_ingest_api_actor(
+/// Starts an [`IngestApiService`] instance at `<data_dir_path>/queues`.
+pub async fn start_ingest_api_service(
     universe: &Universe,
-    queue_path: &Path,
+    data_dir_path: &Path,
 ) -> anyhow::Result<Mailbox<IngestApiService>> {
-    info!(queue_path=?queue_path, "Spawning ingest API actor");
-    let ingest_api_actor = IngestApiService::with_queue_path(queue_path)?;
-    let (ingest_api_mailbox, _ingest_api_handle) = universe.spawn_actor(ingest_api_actor).spawn();
-    Ok(ingest_api_mailbox)
+    let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
+    init_ingest_api(universe, &queues_dir_path).await
 }
 
 /// Adds a document raw bytes to a [`DocBatch`]
@@ -83,4 +112,45 @@ pub fn iter_doc_payloads(doc_batch: &DocBatch) -> impl Iterator<Item = &[u8]> {
             *current_offset = end;
             Some(&doc_batch.concat_docs[start..end])
         })
+}
+
+#[cfg(test)]
+mod tests {
+
+    use quickwit_proto::ingest_api::CreateQueueRequest;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_get_ingest_api_service() {
+        let universe = Universe::new();
+        let tempdir = tempfile::tempdir().unwrap();
+
+        let queues_0_dir_path = tempdir.path().join("queues-0");
+        get_ingest_api_service(&queues_0_dir_path)
+            .await
+            .unwrap_err();
+        init_ingest_api(&universe, &queues_0_dir_path)
+            .await
+            .unwrap();
+        let ingest_api_service_0 = get_ingest_api_service(&queues_0_dir_path).await.unwrap();
+        ingest_api_service_0
+            .ask_for_res(CreateQueueRequest {
+                queue_id: "test-queue".to_string(),
+            })
+            .await
+            .unwrap();
+
+        let queues_1_dir_path = tempdir.path().join("queues-1");
+        init_ingest_api(&universe, &queues_1_dir_path)
+            .await
+            .unwrap();
+        let ingest_api_service_1 = get_ingest_api_service(&queues_1_dir_path).await.unwrap();
+        ingest_api_service_1
+            .ask_for_res(CreateQueueRequest {
+                queue_id: "test-queue".to_string(),
+            })
+            .await
+            .unwrap();
+    }
 }

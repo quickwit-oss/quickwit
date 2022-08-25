@@ -172,6 +172,7 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
     };
     let kafka_source = SourceConfig {
         source_id: "kafka-source".to_string(),
+        num_pipelines: 2,
         source_params: SourceParams::Kafka(KafkaSourceParams {
             topic: "kafka-topic".to_string(),
             client_log_level: None,

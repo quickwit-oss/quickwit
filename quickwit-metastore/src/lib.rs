@@ -38,16 +38,17 @@ mod metastore_resolver;
 
 pub use error::{MetastoreError, MetastoreResolverError, MetastoreResult};
 pub use metastore::file_backed_metastore::FileBackedMetastore;
+pub use metastore::grpc_metastore::{GrpcMetastoreAdapter, MetastoreGrpcClient};
 #[cfg(feature = "postgres")]
 pub use metastore::postgresql_metastore::PostgresqlMetastore;
-#[cfg(feature = "testsuite")]
+#[cfg(any(test, feature = "testsuite"))]
 pub use metastore::MockMetastore;
 pub use metastore::{file_backed_metastore, IndexMetadata, Metastore};
 pub use metastore_resolver::{
     quickwit_metastore_uri_resolver, MetastoreFactory, MetastoreUriResolver,
 };
 pub use split_metadata::{Split, SplitMetadata, SplitState};
-pub(crate) use split_metadata_version::VersionedSplitMetadataDeserializeHelper;
+pub(crate) use split_metadata_version::VersionedSplitMetadata;
 
 #[cfg(test)]
 mod backward_compatibility_tests;

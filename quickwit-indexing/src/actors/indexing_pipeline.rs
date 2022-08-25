@@ -23,7 +23,6 @@ use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
-use itertools::Itertools;
 use quickwit_actors::{
     create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, KillSwitch,
     QueueCapacity, Supervisable,
@@ -42,14 +41,14 @@ use crate::actors::{
     GarbageCollector, Indexer, MergeExecutor, MergePlanner, NamedField, Packager, Publisher,
     Uploader,
 };
-use crate::models::{IndexingDirectory, IndexingStatistics, Observe};
+use crate::models::{IndexingDirectory, IndexingPipelineId, IndexingStatistics, Observe};
 use crate::source::{quickwit_supported_sources, SourceActor, SourceExecutionContext};
 use crate::split_store::{IndexingSplitStore, IndexingSplitStoreParams};
 use crate::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(600); // 10 min.
 
-pub struct IndexingPipelineHandler {
+pub struct IndexingPipelineHandle {
     /// Indexing pipeline
     pub source: ActorHandle<SourceActor>,
     pub indexer: ActorHandle<Indexer>,
@@ -83,7 +82,7 @@ pub struct IndexingPipeline {
     params: IndexingPipelineParams,
     previous_generations_statistics: IndexingStatistics,
     statistics: IndexingStatistics,
-    handlers: Option<IndexingPipelineHandler>,
+    handles: Option<IndexingPipelineHandle>,
     // Killswitch used for the actors in the pipeline. This is not the supervisor killswitch.
     kill_switch: KillSwitch,
 }
@@ -117,29 +116,29 @@ impl IndexingPipeline {
         Self {
             params,
             previous_generations_statistics: Default::default(),
-            handlers: None,
+            handles: None,
             kill_switch: KillSwitch::default(),
             statistics: IndexingStatistics::default(),
         }
     }
 
     fn supervisables(&self) -> Vec<&dyn Supervisable> {
-        if let Some(handlers) = self.handlers.as_ref() {
+        if let Some(handles) = &self.handles {
             let supervisables: Vec<&dyn Supervisable> = vec![
-                &handlers.source,
-                &handlers.indexer,
-                &handlers.packager,
-                &handlers.uploader,
-                &handlers.sequencer,
-                &handlers.publisher,
-                &handlers.garbage_collector,
-                &handlers.merge_planner,
-                &handlers.merge_split_downloader,
-                &handlers.merge_executor,
-                &handlers.merge_packager,
-                &handlers.merge_uploader,
-                &handlers.merge_sequencer,
-                &handlers.merge_publisher,
+                &handles.source,
+                &handles.indexer,
+                &handles.packager,
+                &handles.uploader,
+                &handles.sequencer,
+                &handles.publisher,
+                &handles.garbage_collector,
+                &handles.merge_planner,
+                &handles.merge_split_downloader,
+                &handles.merge_executor,
+                &handles.merge_packager,
+                &handles.merge_uploader,
+                &handles.merge_sequencer,
+                &handles.merge_publisher,
             ];
             supervisables
         } else {
@@ -169,18 +168,34 @@ impl IndexingPipeline {
         }
 
         if !failure_or_unhealthy_actors.is_empty() {
-            error!(index=%self.params.index_id, gen=self.generation(), healthy=?healthy_actors, failure_or_unhealthy_actors=?failure_or_unhealthy_actors, success=?success_actors, "indexing pipeline error.");
+            error!(
+                pipeline_id=?self.params.pipeline_id,
+                generation=self.generation(),
+                healthy_actors=?healthy_actors,
+                failed_or_unhealthy_actors=?failure_or_unhealthy_actors,
+                success_actors=?success_actors,
+                "Indexing pipeline failure."
+            );
             return Health::FailureOrUnhealthy;
         }
-
         if healthy_actors.is_empty() {
-            // all actors finished successfully.
-            info!(index=%self.params.index_id, gen=self.generation(), "indexing-pipeline-success");
+            // All the actors finished successfully.
+            info!(
+                pipeline_id=?self.params.pipeline_id,
+                generation=self.generation(),
+                "Indexing pipeline success."
+            );
             return Health::Success;
         }
-
-        // No error at this point, and there are still actors running
-        debug!(index=%self.params.index_id, gen=self.generation(), healthy=?healthy_actors, failure_or_unhealthy_actors=?failure_or_unhealthy_actors, success=?success_actors, "pipeline is judged healthy.");
+        // No error at this point and there are still some actors running.
+        debug!(
+            pipeline_id=?self.params.pipeline_id,
+            generation=self.generation(),
+            healthy_actors=?healthy_actors,
+            failed_or_unhealthy_actors=?failure_or_unhealthy_actors,
+            success_actors=?success_actors,
+            "Indexing pipeline running."
+        );
         Health::Healthy
     }
 
@@ -189,7 +204,7 @@ impl IndexingPipeline {
     }
 
     // TODO this should return an error saying whether we can retry or not.
-    #[instrument(name="", level="info", skip_all, fields(index=%self.params.index_id, gen=self.generation()))]
+    #[instrument(name="", level="info", skip_all, fields(index=%self.params.pipeline_id.index_id, gen=self.generation()))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         self.statistics.num_spawn_attempts += 1;
         self.kill_switch = KillSwitch::default();
@@ -205,9 +220,12 @@ impl IndexingPipeline {
         };
         let merge_policy: Arc<dyn MergePolicy> = Arc::new(stable_multitenant_merge_policy);
         info!(
-            root_dir = %self.params.indexing_directory.path().display(),
-            merge_policy = ?merge_policy,
-            "spawn-indexing-pipeline",
+            index_id=%self.params.pipeline_id.index_id,
+            source_id=%self.params.pipeline_id.source_id,
+            pipeline_ord=%self.params.pipeline_id.pipeline_ord,
+            root_dir=%self.params.indexing_directory.path().display(),
+            merge_policy=?merge_policy,
+            "Spawning indexing pipeline.",
         );
         let split_store = IndexingSplitStore::create_with_local_store(
             self.params.storage.clone(),
@@ -221,7 +239,12 @@ impl IndexingPipeline {
         let published_splits = self
             .params
             .metastore
-            .list_splits(&self.params.index_id, SplitState::Published, None, None)
+            .list_splits(
+                &self.params.pipeline_id.index_id,
+                SplitState::Published,
+                None,
+                None,
+            )
             .await?
             .into_iter()
             .map(|split| split.split_metadata)
@@ -235,7 +258,7 @@ impl IndexingPipeline {
 
         // Garbage colletor
         let garbage_collector = GarbageCollector::new(
-            self.params.index_id.clone(),
+            self.params.pipeline_id.clone(),
             split_store.clone(),
             self.params.metastore.clone(),
         );
@@ -301,7 +324,7 @@ impl IndexingPipeline {
             .spawn();
 
         let merge_executor = MergeExecutor::new(
-            self.params.index_id.clone(),
+            self.params.pipeline_id.clone(),
             merge_packager_mailbox,
             self.params.indexing_settings.timestamp_field.clone(),
             self.params.indexing_settings.demux_field.clone(),
@@ -324,9 +347,9 @@ impl IndexingPipeline {
             .spawn();
 
         // Merge planner
-        let published_split_metadatas = published_splits.into_iter().collect_vec();
         let merge_planner = MergePlanner::new(
-            published_split_metadatas,
+            self.params.pipeline_id.clone(),
+            published_splits,
             merge_policy.clone(),
             merge_split_downloader_mailbox,
         );
@@ -378,9 +401,8 @@ impl IndexingPipeline {
             .spawn();
         // Indexer
         let indexer = Indexer::new(
-            self.params.index_id.clone(),
+            self.params.pipeline_id.clone(),
             self.params.doc_mapper.clone(),
-            self.params.source.source_id.clone(),
             self.params.metastore.clone(),
             self.params.indexing_directory.clone(),
             self.params.indexing_settings.clone(),
@@ -395,19 +417,19 @@ impl IndexingPipeline {
         let index_metadata = self
             .params
             .metastore
-            .index_metadata(&self.params.index_id)
+            .index_metadata(&self.params.pipeline_id.index_id)
             .await?;
         let source_checkpoint = index_metadata
             .checkpoint
-            .source_checkpoint(&self.params.source.source_id)
+            .source_checkpoint(&self.params.pipeline_id.source_id)
             .cloned()
             .unwrap_or_default(); // TODO Have a stricter check.
         let source = quickwit_supported_sources()
             .load_source(
                 Arc::new(SourceExecutionContext {
                     metastore: self.params.metastore.clone(),
-                    index_id: self.params.index_id.clone(),
-                    source_config: self.params.source.clone(),
+                    index_id: self.params.pipeline_id.index_id.clone(),
+                    source_config: self.params.source_config.clone(),
                 }),
                 source_checkpoint,
             )
@@ -425,7 +447,7 @@ impl IndexingPipeline {
         // Increment generation once we are sure there will be no spawning error.
         self.previous_generations_statistics = self.statistics.clone();
         self.statistics.generation += 1;
-        self.handlers = Some(IndexingPipelineHandler {
+        self.handles = Some(IndexingPipelineHandle {
             source: source_handler,
             indexer: indexer_handler,
             packager: packager_handler,
@@ -460,7 +482,7 @@ impl IndexingPipeline {
 
     async fn terminate(&mut self) {
         self.kill_switch.kill();
-        if let Some(handlers) = self.handlers.take() {
+        if let Some(handlers) = self.handles.take() {
             tokio::join!(
                 handlers.source.kill(),
                 handlers.indexer.kill(),
@@ -487,11 +509,11 @@ impl Handler<Observe> for IndexingPipeline {
         _: Observe,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if let Some(handlers) = self.handlers.as_ref() {
+        if let Some(handles) = &self.handles {
             let (indexer_counters, uploader_counters, publisher_counters) = join!(
-                handlers.indexer.observe(),
-                handlers.uploader.observe(),
-                handlers.publisher.observe(),
+                handles.indexer.observe(),
+                handles.uploader.observe(),
+                handles.publisher.observe(),
             );
             self.statistics = self
                 .previous_generations_statistics
@@ -518,7 +540,7 @@ impl Handler<Supervise> for IndexingPipeline {
         _: Supervise,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if self.handlers.is_some() {
+        if self.handles.is_some() {
             match self.healthcheck() {
                 Health::Healthy => {}
                 Health::FailureOrUnhealthy => {
@@ -546,7 +568,7 @@ impl Handler<Spawn> for IndexingPipeline {
         spawn: Spawn,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if self.handlers.is_some() {
+        if self.handles.is_some() {
             return Ok(());
         }
         self.previous_generations_statistics.num_spawn_attempts = 1 + spawn.retry_count;
@@ -572,11 +594,11 @@ impl Handler<Spawn> for IndexingPipeline {
 }
 
 pub struct IndexingPipelineParams {
-    pub index_id: String,
+    pub pipeline_id: IndexingPipelineId,
     pub doc_mapper: Arc<dyn DocMapper>,
     pub indexing_directory: IndexingDirectory,
     pub indexing_settings: IndexingSettings,
-    pub source: SourceConfig,
+    pub source_config: SourceConfig,
     pub split_store_max_num_bytes: usize,
     pub split_store_max_num_splits: usize,
     pub metastore: Arc<dyn Metastore>,
@@ -584,9 +606,11 @@ pub struct IndexingPipelineParams {
 }
 
 impl IndexingPipelineParams {
+    #[allow(clippy::too_many_arguments)]
     pub async fn try_new(
+        pipeline_id: IndexingPipelineId,
         index_metadata: IndexMetadata,
-        source: SourceConfig,
+        source_config: SourceConfig,
         indexing_dir_path: PathBuf,
         split_store_max_num_bytes: usize,
         split_store_max_num_splits: usize,
@@ -599,15 +623,15 @@ impl IndexingPipelineParams {
             &index_metadata.indexing_settings,
         )?;
         let indexing_directory_path = indexing_dir_path
-            .join(&index_metadata.index_id)
-            .join(&source.source_id);
+            .join(&pipeline_id.index_id)
+            .join(&pipeline_id.source_id);
         let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path).await?;
         Ok(Self {
-            index_id: index_metadata.index_id,
+            pipeline_id,
             doc_mapper,
             indexing_directory,
             indexing_settings: index_metadata.indexing_settings,
-            source,
+            source_config,
             split_store_max_num_bytes,
             split_store_max_num_splits,
             metastore,
@@ -703,22 +727,29 @@ mod tests {
             .times(1)
             .returning(|_, _, _, _| Ok(()));
         let universe = Universe::new();
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
+            num_pipelines: 1,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
         };
-        let indexing_pipeline_params = IndexingPipelineParams {
-            index_id: "test-index".to_string(),
+        let pipeline_params = IndexingPipelineParams {
+            pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_tests()),
+            source_config,
             indexing_directory: IndexingDirectory::for_test().await?,
             indexing_settings: IndexingSettings::for_test(),
             split_store_max_num_bytes: 10_000_000,
             split_store_max_num_splits: 100,
-            source: source_config,
             metastore: Arc::new(metastore),
             storage: Arc::new(RamStorage::default()),
         };
-        let pipeline = IndexingPipeline::new(indexing_pipeline_params);
+        let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_actor(pipeline).spawn();
         let (pipeline_exit_status, pipeline_statistics) = pipeline_handler.join().await;
         assert_eq!(pipeline_statistics.generation, 1);
@@ -785,18 +816,25 @@ mod tests {
             .times(1)
             .returning(|_, _, _, _| Ok(()));
         let universe = Universe::new();
-        let source = SourceConfig {
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
+        let source_config = SourceConfig {
+            source_id: "test-source".to_string(),
+            num_pipelines: 1,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
         };
         let pipeline_params = IndexingPipelineParams {
-            index_id: "test-index".to_string(),
+            pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_tests()),
+            source_config,
             indexing_directory: IndexingDirectory::for_test().await?,
             indexing_settings: IndexingSettings::for_test(),
             split_store_max_num_bytes: 10_000_000,
             split_store_max_num_splits: 100,
-            source,
             metastore: Arc::new(metastore),
             storage: Arc::new(RamStorage::default()),
         };

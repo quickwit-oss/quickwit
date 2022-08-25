@@ -87,7 +87,7 @@ impl Source for VecSource {
     ) -> Result<Duration, ActorExitStatus> {
         let mut doc_batch = RawDocBatch::default();
         doc_batch.docs.extend(
-            self.params.items[self.next_item_idx..]
+            self.params.docs[self.next_item_idx..]
                 .iter()
                 .take(self.params.batch_num_docs)
                 .cloned(),
@@ -136,11 +136,11 @@ mod tests {
     async fn test_vec_source() -> anyhow::Result<()> {
         let universe = Universe::new();
         let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
-        let items = std::iter::repeat_with(|| "{}".to_string())
+        let docs = std::iter::repeat_with(|| "{}".to_string())
             .take(100)
             .collect();
         let params = VecSourceParams {
-            items,
+            docs,
             batch_num_docs: 3,
             partition: "partition".to_string(),
         };
@@ -151,6 +151,7 @@ mod tests {
                 index_id: "test-index".to_string(),
                 source_config: SourceConfig {
                     source_id: "my-vec-source".to_string(),
+                    num_pipelines: 1,
                     source_params: SourceParams::Vec(params.clone()),
                 },
             }),
@@ -189,9 +190,9 @@ mod tests {
     async fn test_vec_source_from_checkpoint() -> anyhow::Result<()> {
         let universe = Universe::new();
         let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
-        let items = (0..10).map(|i| format!("{}", i)).collect();
+        let docs = (0..10).map(|i| format!("{}", i)).collect();
         let params = VecSourceParams {
-            items,
+            docs,
             batch_num_docs: 3,
             partition: "".to_string(),
         };
@@ -205,6 +206,7 @@ mod tests {
                 index_id: "test-index".to_string(),
                 source_config: SourceConfig {
                     source_id: "my-vec-source".to_string(),
+                    num_pipelines: 1,
                     source_params: SourceParams::Vec(params.clone()),
                 },
             }),

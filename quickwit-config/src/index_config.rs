@@ -584,10 +584,12 @@ mod tests {
             invalid_index_config.sources = vec![
                 SourceConfig {
                     source_id: "void_1".to_string(),
+                    num_pipelines: 1,
                     source_params: SourceParams::void(),
                 },
                 SourceConfig {
                     source_id: "void_1".to_string(),
+                    num_pipelines: 1,
                     source_params: SourceParams::void(),
                 },
             ];
@@ -603,6 +605,7 @@ mod tests {
             let mut invalid_index_config = index_config.clone();
             invalid_index_config.sources = vec![SourceConfig {
                 source_id: "file_params_1".to_string(),
+                num_pipelines: 1,
                 source_params: SourceParams::stdin(),
             }];
             assert!(invalid_index_config.validate().is_err());

@@ -44,10 +44,12 @@ use tracing::{debug, info, info_span, Span};
 use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeOperation;
-use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, ScratchDirectory};
+use crate::models::{
+    IndexedSplit, IndexedSplitBatch, IndexingPipelineId, MergeScratch, ScratchDirectory,
+};
 
 pub struct MergeExecutor {
-    index_id: String,
+    pipeline_id: IndexingPipelineId,
     merge_packager_mailbox: Mailbox<Packager>,
     timestamp_field_name: Option<String>,
     demux_field_name: Option<String>,
@@ -289,7 +291,7 @@ fn create_demux_output_directory(
 
 impl MergeExecutor {
     pub fn new(
-        index_id: String,
+        pipeline_id: IndexingPipelineId,
         merge_packager_mailbox: Mailbox<Packager>,
         timestamp_field_name: Option<String>,
         demux_field_name: Option<String>,
@@ -297,7 +299,7 @@ impl MergeExecutor {
         max_demuxed_split_num_docs: usize,
     ) -> Self {
         MergeExecutor {
-            index_id,
+            pipeline_id,
             merge_packager_mailbox,
             timestamp_field_name,
             demux_field_name,
@@ -308,12 +310,13 @@ impl MergeExecutor {
 
     async fn process_merge(
         &mut self,
-        split_merge_id: String,
+        merge_split_id: String,
         splits: Vec<SplitMetadata>,
         tantivy_dirs: Vec<Box<dyn Directory>>,
         merge_scratch_directory: ScratchDirectory,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
+        let pipeline_id = self.pipeline_id.clone();
         let start = Instant::now();
         info!("merge-start");
         let partition_id = combine_partition_ids_aux(splits.iter().map(|split| split.partition_id));
@@ -348,9 +351,9 @@ impl MergeExecutor {
         ctx.record_progress();
 
         let indexed_split = IndexedSplit {
-            split_id: split_merge_id,
-            index_id: self.index_id.clone(),
+            split_id: merge_split_id,
             partition_id,
+            pipeline_id,
             replaced_split_ids,
             time_range,
             demux_num_ops: 0,
@@ -389,6 +392,7 @@ impl MergeExecutor {
             "`process_demux` cannot be called without a demux field."
         );
         let partition_id = combine_partition_ids_aux(splits.iter().map(|split| split.partition_id));
+        let pipeline_id = self.pipeline_id.clone();
         let demux_field_name = self.demux_field_name.as_ref().unwrap();
         let replaced_split_ids = splits
             .iter()
@@ -495,8 +499,8 @@ impl MergeExecutor {
             let index_writer = index.writer_with_num_threads(1, 3_000_000)?;
             let indexed_split = IndexedSplit {
                 split_id,
-                index_id: self.index_id.clone(),
                 partition_id,
+                pipeline_id: pipeline_id.clone(),
                 replaced_split_ids: replaced_split_ids.clone(),
                 time_range,
                 demux_num_ops: initial_demux_num_ops + 1,
@@ -856,21 +860,23 @@ pub fn compute_current_split_bounds(
 
 #[cfg(test)]
 mod tests {
-    use std::mem;
-
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_common::split_file;
     use quickwit_metastore::SplitMetadata;
 
     use super::*;
     use crate::merge_policy::MergeOperation;
-    use crate::models::ScratchDirectory;
-    use crate::{get_tantivy_directory_from_split_bundle, new_split_id, TestSandbox};
+    use crate::models::{IndexingPipelineId, ScratchDirectory};
+    use crate::{get_tantivy_directory_from_split_bundle, TestSandbox};
 
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
-        let index_id = "test-index";
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
         let doc_mapping_yaml = r#"
             field_mappings:
               - name: body
@@ -879,7 +885,8 @@ mod tests {
                 type: i64
                 fast: true
         "#;
-        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
+        let test_sandbox =
+            TestSandbox::create(&pipeline_id.index_id, doc_mapping_yaml, "{}", &["body"]).await?;
         for split_id in 0..4 {
             let docs = vec![
                 serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713u64 + split_id }),
@@ -888,7 +895,7 @@ mod tests {
         }
         let metastore = test_sandbox.metastore();
         let split_metas: Vec<SplitMetadata> = metastore
-            .list_all_splits(index_id)
+            .list_all_splits(&pipeline_id.index_id)
             .await?
             .into_iter()
             .map(|split| split.split_metadata)
@@ -919,7 +926,7 @@ mod tests {
         };
         let (merge_packager_mailbox, merge_packager_inbox) = create_test_mailbox();
         let merge_executor = MergeExecutor::new(
-            index_id.to_string(),
+            pipeline_id,
             merge_packager_mailbox,
             None,
             None,
@@ -944,266 +951,6 @@ mod tests {
         let searcher = reader.searcher();
         assert_eq!(searcher.segment_readers().len(), 1);
         Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_demux_execution() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
-        let index_id = "test-index-demux";
-        let doc_mapping_yaml = r#"
-            field_mappings:
-              - name: body
-                type: text
-              - name: ts
-                type: i64
-                fast: true
-              - name: tenant_id
-                type: u64
-                fast: true
-            tag_fields: [tenant_id]
-        "#;
-        let indexing_settings_yaml = r#"
-            demux_field: tenant_id
-            timestamp_field: ts
-        "#;
-        let test_sandbox = TestSandbox::create(
-            index_id,
-            doc_mapping_yaml,
-            indexing_settings_yaml,
-            &["body"],
-        )
-        .await?;
-        let mut last_tenant_min_timestamp = 0i64;
-        let mut last_tenant_max_timestamp = 0i64;
-        for split_id in 0..4 {
-            let last_tenant_timestamp: i64 = 1631072713 + (1 + split_id) * 20;
-            let docs = vec![
-                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713i64 + split_id, "tenant_id": 10u64 }),
-                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713i64 + (1 + split_id) * 10, "tenant_id": 11u64 }),
-                serde_json::json!({"body ": format!("split{}", split_id), "ts": last_tenant_timestamp, "tenant_id": 12u64 }),
-            ];
-            if split_id == 0 {
-                last_tenant_min_timestamp = last_tenant_timestamp;
-            }
-            if split_id == 3 {
-                last_tenant_max_timestamp = last_tenant_timestamp;
-            }
-            test_sandbox.add_documents(docs).await?;
-        }
-        let metastore = test_sandbox.metastore();
-        let split_metas: Vec<SplitMetadata> = metastore
-            .list_all_splits(index_id)
-            .await?
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect();
-        let demux_split_ids = (0..split_metas.len() - 1)
-            .map(|_| new_split_id())
-            .collect_vec();
-        let total_num_bytes_docs = split_metas
-            .iter()
-            .map(|meta| meta.uncompressed_docs_size_in_bytes)
-            .sum::<u64>();
-        let merge_scratch_directory = ScratchDirectory::for_test()?;
-        let downloaded_splits_directory =
-            merge_scratch_directory.named_temp_child("downloaded-splits")?;
-        for split_meta in &split_metas {
-            let split_filename = split_file(split_meta.split_id());
-            let dest_filepath = downloaded_splits_directory.path().join(&split_filename);
-            test_sandbox
-                .storage()
-                .copy_to_file(Path::new(&split_filename), &dest_filepath)
-                .await?;
-        }
-        let merge_scratch = MergeScratch {
-            merge_operation: MergeOperation::Demux {
-                splits: split_metas,
-                demux_split_ids,
-            },
-            merge_scratch_directory,
-            downloaded_splits_directory,
-            tantivy_dirs: Default::default(),
-        };
-        let (merge_packager_mailbox, merge_packager_inbox) = create_test_mailbox();
-        let merge_executor = MergeExecutor::new(
-            index_id.to_string(),
-            merge_packager_mailbox,
-            Some("ts".to_string()),
-            Some("tenant_id".to_string()),
-            2,
-            5,
-        );
-        let universe = Universe::new();
-        let (merge_executor_mailbox, merge_executor_handle) =
-            universe.spawn_actor(merge_executor).spawn();
-        merge_executor_mailbox.send_message(merge_scratch).await?;
-        mem::drop(merge_executor_mailbox);
-        let _ = merge_executor_handle.join().await;
-        let mut packager_msgs = merge_packager_inbox.drain_for_test();
-        assert_eq!(packager_msgs.len(), 1);
-        let mut splits = packager_msgs
-            .pop()
-            .unwrap()
-            .downcast::<IndexedSplitBatch>()
-            .unwrap()
-            .splits;
-        assert_eq!(splits.len(), 3);
-        let total_num_docs: u64 = splits.iter().map(|split| split.num_docs).sum();
-        assert_eq!(total_num_docs, 12);
-        let first_index_split = splits.first().unwrap();
-        assert_eq!(first_index_split.num_docs, 4);
-        // We expect that in the last split, we have the last tenant
-        // and thus the time range of this tenant.
-        let last_indexed_split = splits.pop().unwrap();
-        assert_eq!(
-            last_indexed_split.time_range.unwrap(),
-            last_tenant_min_timestamp..=last_tenant_max_timestamp
-        );
-        assert_eq!(last_indexed_split.num_docs, 4);
-        assert_eq!(
-            last_indexed_split.docs_size_in_bytes,
-            total_num_bytes_docs / 3
-        );
-        assert_eq!(last_indexed_split.demux_num_ops, 1);
-        let reader = last_indexed_split.index.reader()?;
-        let searcher = reader.searcher();
-        assert_eq!(searcher.segment_readers().len(), 1);
-        Ok(())
-    }
-
-    #[test]
-    fn test_demux_with_same_num_docs() {
-        let mut num_docs_map = BTreeMap::new();
-        num_docs_map.insert(0, 100);
-        num_docs_map.insert(1, 100);
-        num_docs_map.insert(2, 100);
-        let splits = demux_virtual_split(VirtualSplit::new(num_docs_map), 100, 200, 3);
-
-        assert_eq!(splits.len(), 3);
-        assert_eq!(splits[0].num_docs(0), 100);
-        assert_eq!(splits[1].num_docs(1), 100);
-        assert_eq!(splits[2].num_docs(2), 100);
-    }
-
-    #[test]
-    fn test_demux_distribution_with_huge_diff_in_num_docs() {
-        let mut num_docs_map = BTreeMap::new();
-        num_docs_map.insert(0, 1);
-        num_docs_map.insert(1, 200);
-        num_docs_map.insert(2, 200);
-        num_docs_map.insert(3, 1);
-        let splits = demux_virtual_split(VirtualSplit::new(num_docs_map), 100, 200, 3);
-
-        assert_eq!(splits.len(), 3);
-        assert_eq!(splits[0].num_docs(0), 1);
-        assert_eq!(splits[0].num_docs(1), 199);
-        assert_eq!(splits[1].num_docs(1), 1);
-        assert_eq!(splits[1].num_docs(2), 101);
-        assert_eq!(splits[2].num_docs(2), 99);
-        assert_eq!(splits[2].num_docs(3), 1);
-    }
-
-    #[test]
-    fn test_demux_not_cutting_tenants_docs_into_two_splits_thanks_to_nice_min_max() {
-        let mut num_docs_map = BTreeMap::new();
-        num_docs_map.insert(0, 1);
-        num_docs_map.insert(1, 50);
-        num_docs_map.insert(2, 75);
-        num_docs_map.insert(3, 100);
-        num_docs_map.insert(4, 50);
-        num_docs_map.insert(5, 150);
-        let splits = demux_virtual_split(VirtualSplit::new(num_docs_map), 100, 200, 3);
-
-        assert_eq!(splits.len(), 3);
-        assert_eq!(splits[0].num_docs(0), 1);
-        assert_eq!(splits[0].num_docs(1), 50);
-        assert_eq!(splits[0].num_docs(2), 75);
-        assert_eq!(splits[1].num_docs(3), 100);
-        assert_eq!(splits[2].num_docs(4), 50);
-        assert_eq!(splits[2].num_docs(5), 150);
-    }
-
-    #[test]
-    fn test_demux_should_not_cut_tenant_with_small_tenants_with_same_num_docs() {
-        let mut num_docs_map = BTreeMap::new();
-        for i in 0..1000 {
-            num_docs_map.insert(i as u64, 20_001);
-        }
-        let splits =
-            demux_virtual_split(VirtualSplit::new(num_docs_map), 10_000_000, 20_000_000, 2);
-        assert_eq!(splits.len(), 2);
-        assert_eq!(splits[0].total_num_docs(), 10_000_500);
-        assert_eq!(splits[1].total_num_docs(), 10_000_500);
-    }
-
-    #[test]
-    fn test_demux_should_cut_one_huge_tenant_into_all_splits() {
-        let mut num_docs_map = BTreeMap::new();
-        num_docs_map.insert(0, 30_000_001);
-        let splits =
-            demux_virtual_split(VirtualSplit::new(num_docs_map), 10_000_000, 20_000_000, 3);
-        assert_eq!(splits.len(), 3);
-        assert_eq!(splits[0].total_num_docs(), 10_000_001);
-        assert_eq!(splits[1].total_num_docs(), 10_000_000);
-        assert_eq!(splits[2].total_num_docs(), 10_000_000);
-    }
-
-    #[test]
-    #[should_panic(
-        expected = "Input split num docs must be `<= max_split_num_docs * output_num_splits`."
-    )]
-    fn test_demux_should_panic_when_one_split_has_too_many_docs() {
-        let mut num_docs_map = BTreeMap::new();
-        num_docs_map.insert(0, 1);
-        num_docs_map.insert(1, 201);
-        num_docs_map.insert(2, 201);
-        num_docs_map.insert(3, 201);
-        demux_virtual_split(VirtualSplit::new(num_docs_map), 100, 200, 3);
-    }
-
-    use proptest::prelude::*;
-
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
-        #[test]
-        fn test_proptest_simulate_demux_with_huge_tenants(tenants_num_docs in gen_tenants_docs()) {
-            test_demux_aux(&tenants_num_docs[..]);
-        }
-    }
-
-    fn test_demux_aux(tenants_num_docs: &[usize]) {
-        let total_num_docs = tenants_num_docs.iter().sum::<usize>();
-        // We always generate a total_num_docs >= 10_000_000
-        let output_num_splits = total_num_docs / 5_000_000;
-        let mut num_docs_map = BTreeMap::new();
-        for (i, num_docs) in tenants_num_docs.iter().enumerate() {
-            num_docs_map.insert(i as u64, *num_docs);
-        }
-        let splits = demux_virtual_split(
-            VirtualSplit::new(num_docs_map),
-            5_000_000,
-            15_000_000,
-            output_num_splits,
-        );
-        let tenant_count_per_split_mean = splits
-            .iter()
-            .map(|split| split.sorted_demux_values().len())
-            .sum::<usize>()
-            / output_num_splits;
-        // Demux at best can divide by output_num_splits the number of tenants, that means with no
-        // cutting.
-        assert!(tenant_count_per_split_mean >= tenants_num_docs.len() / output_num_splits);
-        // Demux at worse put tenants_num_docs.len() / output_num_splits + 1 tenant in each demuxed
-        // split, that means that we cut one tenant for each split.
-        assert!(tenant_count_per_split_mean <= tenants_num_docs.len() / output_num_splits + 1);
-    }
-
-    fn gen_tenants_docs() -> BoxedStrategy<Vec<usize>> {
-        (100..1_000_usize)
-            .prop_flat_map(move |num_tenants| {
-                proptest::collection::vec(100_000..5_000_000_usize, num_tenants)
-            })
-            .boxed()
     }
 
     #[test]

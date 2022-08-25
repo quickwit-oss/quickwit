@@ -27,6 +27,7 @@ use quickwit_metastore::Metastore;
 use tracing::info;
 
 use crate::garbage_collection::run_garbage_collect;
+use crate::models::IndexingPipelineId;
 use crate::split_store::IndexingSplitStore;
 
 const RUN_INTERVAL: Duration = Duration::from_secs(60); // 1 minutes
@@ -57,7 +58,7 @@ struct Loop;
 
 /// An actor for collecting garbage periodically from an index.
 pub struct GarbageCollector {
-    index_id: String,
+    pipeline_id: IndexingPipelineId,
     split_store: IndexingSplitStore,
     metastore: Arc<dyn Metastore>,
     counters: GarbageCollectorCounters,
@@ -65,12 +66,12 @@ pub struct GarbageCollector {
 
 impl GarbageCollector {
     pub fn new(
-        index_id: String,
+        pipeline_id: IndexingPipelineId,
         split_store: IndexingSplitStore,
         metastore: Arc<dyn Metastore>,
     ) -> Self {
         Self {
-            index_id,
+            pipeline_id,
             split_store,
             metastore,
             counters: GarbageCollectorCounters::default(),
@@ -94,7 +95,11 @@ impl Actor for GarbageCollector {
         &mut self,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
-        self.handle(Loop, ctx).await
+        // This effectively disables garbage collection actors with a `pipeline_ord` > 0.
+        if self.pipeline_id.pipeline_ord == 0 {
+            self.handle(Loop, ctx).await?
+        }
+        Ok(())
     }
 }
 
@@ -111,7 +116,7 @@ impl Handler<Loop> for GarbageCollector {
         self.counters.num_passes += 1;
 
         let deleted_file_entries = run_garbage_collect(
-            &self.index_id,
+            &self.pipeline_id.index_id,
             self.split_store.clone(),
             self.metastore.clone(),
             STAGED_GRACE_PERIOD,
@@ -134,7 +139,6 @@ impl Handler<Loop> for GarbageCollector {
                 .map(|entry| entry.file_size_in_bytes as usize)
                 .sum::<usize>();
         }
-
         ctx.schedule_self_msg(RUN_INTERVAL, Loop).await;
         Ok(())
     }
@@ -167,9 +171,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_garbage_collect_calls_dependencies_appropriately() {
-        quickwit_common::setup_logging_for_tests();
-        let foo_index = "foo-index";
-
         let mut mock_storage = MockStorage::default();
         mock_storage.expect_delete().times(3).returning(|path| {
             assert!(
@@ -183,7 +184,7 @@ mod tests {
         let mut mock_metastore = MockMetastore::default();
         mock_metastore.expect_list_splits().times(2).returning(
             |index_id, split_state, _time_range, _tags| {
-                assert_eq!(index_id, "foo-index");
+                assert_eq!(index_id, "test-index");
                 let splits = match split_state {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -198,7 +199,7 @@ mod tests {
             .expect_mark_splits_for_deletion()
             .times(1)
             .returning(|index_id, split_ids| {
-                assert_eq!(index_id, "foo-index");
+                assert_eq!(index_id, "test-index");
                 assert_eq!(split_ids, vec!["a"]);
                 Ok(())
             });
@@ -206,17 +207,23 @@ mod tests {
             .expect_delete_splits()
             .times(1)
             .returning(|index_id, split_ids| {
-                assert_eq!(index_id, "foo-index");
+                assert_eq!(index_id, "test-index");
                 assert_eq!(split_ids, vec!["a", "b", "c"]);
                 Ok(())
             });
 
-        let universe = Universe::new();
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
         let garbage_collect_actor = GarbageCollector::new(
-            foo_index.to_string(),
+            pipeline_id,
             IndexingSplitStore::create_with_no_local_store(Arc::new(mock_storage)),
             Arc::new(mock_metastore),
         );
+        let universe = Universe::new();
         let (_maibox, handler) = universe.spawn_actor(garbage_collect_actor).spawn();
 
         let state_after_initialization = handler.process_pending_and_observe().await.state;
@@ -227,9 +234,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_garbage_collect_get_calls_repeatedly() {
-        quickwit_common::setup_logging_for_tests();
-        let foo_index = "foo-index";
-
         let mut mock_storage = MockStorage::default();
         mock_storage.expect_delete().times(4).returning(|path| {
             assert!(path == Path::new("a.split") || path == Path::new("b.split"));
@@ -239,7 +243,7 @@ mod tests {
         let mut mock_metastore = MockMetastore::default();
         mock_metastore.expect_list_splits().times(4).returning(
             |index_id, split_state, _time_range, _tags| {
-                assert_eq!(index_id, "foo-index");
+                assert_eq!(index_id, "test-index");
                 let splits = match split_state {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -254,7 +258,7 @@ mod tests {
             .expect_mark_splits_for_deletion()
             .times(2)
             .returning(|index_id, split_ids| {
-                assert_eq!(index_id, "foo-index");
+                assert_eq!(index_id, "test-index");
                 assert_eq!(split_ids, vec!["a"]);
                 Ok(())
             });
@@ -262,34 +266,40 @@ mod tests {
             .expect_delete_splits()
             .times(2)
             .returning(|index_id, split_ids| {
-                assert_eq!(index_id, "foo-index");
+                assert_eq!(index_id, "test-index");
                 assert_eq!(split_ids, vec!["a", "b"]);
                 Ok(())
             });
 
-        let universe = Universe::new();
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
         let garbage_collect_actor = GarbageCollector::new(
-            foo_index.to_string(),
+            pipeline_id,
             IndexingSplitStore::create_with_no_local_store(Arc::new(mock_storage)),
             Arc::new(mock_metastore),
         );
-        let (_maibox, handler) = universe.spawn_actor(garbage_collect_actor).spawn();
+        let universe = Universe::new();
+        let (_maibox, handle) = universe.spawn_actor(garbage_collect_actor).spawn();
 
-        let state_after_initialization = handler.process_pending_and_observe().await.state;
+        let state_after_initialization = handle.process_pending_and_observe().await.state;
         assert_eq!(state_after_initialization.num_passes, 1);
         assert_eq!(state_after_initialization.num_deleted_files, 2);
         assert_eq!(state_after_initialization.num_deleted_bytes, 40);
 
         // 30 secs later
         universe.simulate_time_shift(Duration::from_secs(30)).await;
-        let state_after_initialization = handler.process_pending_and_observe().await.state;
+        let state_after_initialization = handle.process_pending_and_observe().await.state;
         assert_eq!(state_after_initialization.num_passes, 1);
         assert_eq!(state_after_initialization.num_deleted_files, 2);
         assert_eq!(state_after_initialization.num_deleted_bytes, 40);
 
         // 60 secs later
         universe.simulate_time_shift(RUN_INTERVAL).await;
-        let state_after_initialization = handler.process_pending_and_observe().await.state;
+        let state_after_initialization = handle.process_pending_and_observe().await.state;
         assert_eq!(state_after_initialization.num_passes, 2);
         assert_eq!(state_after_initialization.num_deleted_files, 4);
         assert_eq!(state_after_initialization.num_deleted_bytes, 80);

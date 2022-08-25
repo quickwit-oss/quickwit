@@ -17,22 +17,25 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::SplitMetadata;
 use tracing::info;
 
 use crate::actors::MergeSplitDownloader;
-use crate::models::NewSplits;
+use crate::models::{IndexingPipelineId, NewSplits};
 use crate::MergePolicy;
 
 /// The merge planner decides when to start a merge or a demux task.
 pub struct MergePlanner {
+    pipeline_id: IndexingPipelineId,
     /// A young split is a split that has not reached maturity
     /// yet and can be candidate to merge and demux operations.
-    young_splits: Vec<SplitMetadata>,
+    partitioned_young_splits: HashMap<u64, Vec<SplitMetadata>>,
     merge_policy: Arc<dyn MergePolicy>,
     merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
 }
@@ -52,7 +55,8 @@ impl Actor for MergePlanner {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        self.send_operations(ctx).await?;
+        let target_partition_ids = self.partitioned_young_splits.keys().cloned().collect_vec();
+        self.send_merge_ops(ctx, &target_partition_ids).await?;
         Ok(())
     }
 }
@@ -66,44 +70,90 @@ impl Handler<NewSplits> for MergePlanner {
         message: NewSplits,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        let mut has_new_young_split = false;
-        for split in message.new_splits {
-            if self.merge_policy.is_mature(&split) {
-                info!(split_id=%split.split_id(), num_docs=split.num_docs, size_in_bytes=split.uncompressed_docs_size_in_bytes, "mature-split");
-                continue;
-            }
-            self.young_splits.push(split);
-            has_new_young_split = true;
+        let mut target_partition_ids = Vec::new();
+
+        let partitioned_new_young_splits = message
+            .new_splits
+            .into_iter()
+            .filter(|split| {
+                let is_immature = !self.merge_policy.is_mature(split);
+                if !is_immature {
+                    info!(
+                        split_id=%split.split_id(),
+                        index_id=%self.pipeline_id.index_id,
+                        source_id=%split.source_id,
+                        pipeline_ord=%split.pipeline_ord,
+                        num_docs=split.num_docs,
+                        num_bytes=split.uncompressed_docs_size_in_bytes,
+                        "Split is mature."
+                    );
+                }
+                is_immature
+            })
+            .group_by(|split| split.partition_id);
+
+        for (partition_id, new_young_splits) in &partitioned_new_young_splits {
+            let young_splits = self
+                .partitioned_young_splits
+                .entry(partition_id)
+                .or_default();
+            young_splits.extend(new_young_splits);
+            target_partition_ids.push(partition_id);
         }
-        if has_new_young_split {
-            self.send_operations(ctx).await?;
-        }
+        self.send_merge_ops(ctx, &target_partition_ids).await?;
         Ok(())
     }
 }
 
 impl MergePlanner {
     pub fn new(
-        young_splits: Vec<SplitMetadata>,
+        pipeline_id: IndexingPipelineId,
+        published_splits: Vec<SplitMetadata>,
         merge_policy: Arc<dyn MergePolicy>,
         merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
     ) -> MergePlanner {
+        let mut partitioned_young_splits: HashMap<u64, Vec<SplitMetadata>> = HashMap::new();
+        for split in published_splits {
+            if !belongs_to_pipeline(&pipeline_id, &split) || merge_policy.is_mature(&split) {
+                continue;
+            }
+            partitioned_young_splits
+                .entry(split.partition_id)
+                .or_default()
+                .push(split);
+        }
         MergePlanner {
-            young_splits,
+            pipeline_id,
+            partitioned_young_splits,
             merge_policy,
             merge_split_downloader_mailbox,
         }
     }
 
-    async fn send_operations(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        let merge_candidates = self.merge_policy.operations(&mut self.young_splits);
-        for merge_operation in merge_candidates {
-            info!(merge_operation=?merge_operation, "planning-merge");
-            ctx.send_message(&self.merge_split_downloader_mailbox, merge_operation)
-                .await?;
+    async fn send_merge_ops(
+        &mut self,
+        ctx: &ActorContext<Self>,
+        target_partition_ids: &[u64],
+    ) -> Result<(), ActorExitStatus> {
+        for partition_id in target_partition_ids {
+            if let Some(young_splits) = self.partitioned_young_splits.get_mut(partition_id) {
+                let merge_operations = self.merge_policy.operations(young_splits);
+
+                for merge_operation in merge_operations {
+                    info!(merge_operation=?merge_operation, "Planned merge operation.");
+                    ctx.send_message(&self.merge_split_downloader_mailbox, merge_operation)
+                        .await?;
+                }
+            }
         }
         Ok(())
     }
+}
+
+fn belongs_to_pipeline(pipeline_id: &IndexingPipelineId, split: &SplitMetadata) -> bool {
+    pipeline_id.source_id == split.source_id
+        && pipeline_id.node_id == split.node_id
+        && pipeline_id.pipeline_ord == split.pipeline_ord
 }
 
 #[cfg(test)]
@@ -122,48 +172,37 @@ mod tests {
     use crate::merge_policy::MergeOperation;
     use crate::{new_split_id, StableMultitenantWithTimestampMergePolicy};
 
-    fn merged_timestamp(splits: &[SplitMetadata]) -> Option<RangeInclusive<i64>> {
-        let time_start = splits
+    fn merge_time_range(splits: &[SplitMetadata]) -> Option<RangeInclusive<i64>> {
+        let time_range_start = splits
             .iter()
-            .flat_map(|split| {
-                split
-                    .time_range
-                    .as_ref()
-                    .map(|time_range| *time_range.start())
-            })
+            .flat_map(|split| &split.time_range)
+            .map(|time_range| *time_range.start())
             .min()?;
-        let time_end = splits
+        let time_range_end = splits
             .iter()
-            .flat_map(|split| {
-                split
-                    .time_range
-                    .as_ref()
-                    .map(|time_range| *time_range.end())
-            })
+            .flat_map(|split| &split.time_range)
+            .map(|time_range| *time_range.end())
             .max()?;
-        Some(time_start..=time_end)
+        Some(time_range_start..=time_range_end)
     }
 
-    fn compute_merge_tags(splits: &[SplitMetadata]) -> BTreeSet<String> {
-        let mut tag_set: BTreeSet<String> = BTreeSet::new();
-        for split in splits {
-            for tag in &split.tags {
-                tag_set.insert(tag.clone());
-            }
-        }
-        tag_set
+    fn merge_tags(splits: &[SplitMetadata]) -> BTreeSet<String> {
+        splits
+            .iter()
+            .flat_map(|split| split.tags.iter().cloned())
+            .collect()
     }
 
     fn fake_merge(splits: &[SplitMetadata]) -> SplitMetadata {
-        assert!(!splits.is_empty(), "Splits is not empty.");
+        assert!(!splits.is_empty(), "Split list should not be empty.");
         let num_docs = splits.iter().map(|split| split.num_docs).sum();
         let size_in_bytes = splits
             .iter()
             .map(|split| split.uncompressed_docs_size_in_bytes)
             .sum();
-        let time_range = merged_timestamp(splits);
+        let time_range = merge_time_range(splits);
         let merged_split_id = new_split_id();
-        let tags = compute_merge_tags(splits);
+        let tags = merge_tags(splits);
         SplitMetadata {
             split_id: merged_split_id,
             partition_id: combine_partition_ids(splits),
@@ -172,20 +211,20 @@ mod tests {
             time_range,
             create_timestamp: 0,
             tags,
-            demux_num_ops: 0,
             footer_offsets: 0..100,
+            ..Default::default()
         }
     }
 
     fn fake_demux(splits: &[SplitMetadata]) -> Vec<SplitMetadata> {
-        assert!(!splits.is_empty(), "Splits must not be empty.");
+        assert!(!splits.is_empty(), "Split list should not be empty.");
         let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
         let size_in_bytes: u64 = splits
             .iter()
             .map(|split| split.uncompressed_docs_size_in_bytes)
             .sum();
-        let time_range = merged_timestamp(splits);
-        let tags = compute_merge_tags(splits);
+        let time_range = merge_time_range(splits);
+        let tags = merge_tags(splits);
         let mut demux_values_map = BTreeMap::new();
         for split in splits {
             let mut num_docs = split.num_docs;
@@ -204,6 +243,9 @@ mod tests {
         for demuxed_split in demuxed_splits {
             let split_metadata = SplitMetadata {
                 split_id: new_split_id(),
+                source_id: "test-source".to_string(),
+                node_id: "test-node".to_string(),
+                pipeline_ord: 0,
                 partition_id: combine_partition_ids(splits),
                 num_docs: demuxed_split.total_num_docs(),
                 uncompressed_docs_size_in_bytes: (size_in_bytes as f32 / num_docs as f32) as u64
@@ -244,7 +286,14 @@ mod tests {
         predicate: Pred,
     ) -> anyhow::Result<()> {
         let (merge_op_mailbox, merge_op_inbox) = create_test_mailbox::<MergeSplitDownloader>();
-        let merge_planner = MergePlanner::new(Vec::new(), merge_policy, merge_op_mailbox);
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
+        let merge_planner =
+            MergePlanner::new(pipeline_id, Vec::new(), merge_policy, merge_op_mailbox);
         let universe = Universe::new();
         let mut split_index: HashMap<String, SplitMetadata> = HashMap::default();
         let (merge_planner_mailbox, merge_planner_handler) =
@@ -294,8 +343,8 @@ mod tests {
             time_range: Some(time_range),
             create_timestamp: 0,
             tags: BTreeSet::from_iter(vec!["tenant_id:1".to_string(), "tenant_id:2".to_string()]),
-            demux_num_ops: 0,
             footer_offsets: 0..100,
+            ..Default::default()
         }
     }
 

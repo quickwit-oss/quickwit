@@ -36,8 +36,8 @@ use crate::actors::Indexer;
 use crate::models::RawDocBatch;
 use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
 
-/// Cut a new batch as soon as we have read BATCH_NUM_BYTES_THRESHOLD.
-pub(crate) const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
+/// Number of bytes after which a new batch is cut.
+pub(crate) const BATCH_NUM_BYTES_LIMIT: u64 = 500_000u64;
 
 #[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FileSourceCounters {
@@ -67,7 +67,7 @@ impl Source for FileSource {
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         // We collect batches of documents before sending them to the indexer.
-        let limit_num_bytes = self.counters.previous_offset + BATCH_NUM_BYTES_THRESHOLD;
+        let limit_num_bytes = self.counters.previous_offset + BATCH_NUM_BYTES_LIMIT;
         let mut reached_eof = false;
         let mut doc_batch = RawDocBatch::default();
         while self.counters.current_offset < limit_num_bytes {
@@ -192,6 +192,7 @@ mod tests {
                 index_id: "test-index".to_string(),
                 source_config: SourceConfig {
                     source_id: "my-file-source".to_string(),
+                    num_pipelines: 1,
                     source_params: SourceParams::File(params.clone()),
                 },
             }),
@@ -252,6 +253,7 @@ mod tests {
                 index_id: "test-index".to_string(),
                 source_config: SourceConfig {
                     source_id: "my-file-source".to_string(),
+                    num_pipelines: 1,
                     source_params: SourceParams::File(params.clone()),
                 },
             }),
@@ -335,6 +337,7 @@ mod tests {
                 index_id: "test-index".to_string(),
                 source_config: SourceConfig {
                     source_id: "my-file-source".to_string(),
+                    num_pipelines: 1,
                     source_params: SourceParams::File(params.clone()),
                 },
             }),

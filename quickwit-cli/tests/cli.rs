@@ -306,6 +306,7 @@ async fn test_cmd_search_aggregation() -> Result<()> {
         max_hits: 10,
         start_offset: 0,
         search_fields: Some(vec!["city".to_string()]),
+        snippet_fields: None,
         start_timestamp: None,
         end_timestamp: None,
         config_uri: Uri::try_new(&test_env.resource_files["config"].display().to_string()).unwrap(),
@@ -361,6 +362,45 @@ async fn test_cmd_search_aggregation() -> Result<()> {
         })
     );
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_cmd_search_with_snippets() -> Result<()> {
+    let index_id = append_random_suffix("test-search-cmd");
+    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    create_logs_index(&test_env);
+
+    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
+
+    // search with snippets
+    let args = SearchIndexArgs {
+        index_id: test_env.index_id,
+        query: "event:baz".to_string(),
+        aggregation: None,
+        max_hits: 10,
+        start_offset: 0,
+        search_fields: None,
+        snippet_fields: Some(vec!["event".to_string()]),
+        start_timestamp: None,
+        end_timestamp: None,
+        config_uri: Uri::try_new(&test_env.resource_files["config"].display().to_string()).unwrap(),
+        data_dir: None,
+        sort_by_score: false,
+    };
+    let search_response = search_index(args).await?;
+    assert_eq!(search_response.hits.len(), 1);
+    let hit = &search_response.hits[0];
+    assert_eq!(
+        serde_json::from_str::<Value>(&hit.json).unwrap(),
+        json!({"event": "baz", "ts": 9})
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(hit.snippet.as_ref().unwrap()).unwrap(),
+        json!({
+            "event": [ "<b>baz</b>"]
+        })
+    );
     Ok(())
 }
 
@@ -799,7 +839,8 @@ async fn test_all_local_index() -> Result<()> {
     let metadata_file_exists = test_env
         .storage
         .exists(&Path::new(&test_env.index_id).join("metastore.json"))
-        .await?;
+        .await
+        .unwrap();
     assert_eq!(metadata_file_exists, true);
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
@@ -807,7 +848,7 @@ async fn test_all_local_index() -> Result<()> {
     // serve & api-search
     let mut server_process = spawn_command(
         format!(
-            "run --service searcher --config {}",
+            "run --service searcher --service metastore --config {}",
             test_env.resource_files["config"].display(),
         )
         .as_str(),
@@ -905,7 +946,7 @@ async fn test_cmd_all_with_s3_localstack_cli() -> Result<()> {
     // TODO: ditto.
     let mut server_process = spawn_command(
         format!(
-            "run --service searcher --config {}",
+            "run --service searcher --service metastore --config {}",
             test_env.resource_files["config"].display(),
         )
         .as_str(),
@@ -990,7 +1031,7 @@ async fn test_cmd_all_with_s3_localstack_internal_api() -> Result<()> {
     // TODO: ditto.
     let mut server_process = spawn_command(
         format!(
-            "run --service searcher --config {}",
+            "run --service searcher --service metastore --config {}",
             test_env.resource_files["config"].display(),
         )
         .as_str(),

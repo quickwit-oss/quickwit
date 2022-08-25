@@ -19,7 +19,9 @@
 
 use std::convert::TryFrom;
 
+use quickwit_common::truncate_str;
 use serde::Serialize;
+use serde_json::{Map, Value};
 
 use crate::error::SearchError;
 
@@ -48,12 +50,27 @@ impl TryFrom<quickwit_proto::SearchResponse> for SearchResponseRest {
             .hits
             .into_iter()
             .map(|hit| {
-                serde_json::from_str(&hit.json).map_err(|err| {
-                    SearchError::InternalError(format!(
-                        "Failed to serialize document `{}` to JSON: `{}`.",
-                        hit.json, err
-                    ))
-                })
+                let mut hit_value = Map::with_capacity(2);
+                let document: serde_json::Value =
+                    serde_json::from_str(&hit.json).map_err(|err| {
+                        SearchError::InternalError(format!(
+                            "Failed to serialize document `{}` to JSON: `{}`.",
+                            truncate_str(&hit.json, 100),
+                            err
+                        ))
+                    })?;
+                hit_value.insert("document".to_string(), document);
+
+                if let Some(snippet_json) = &hit.snippet {
+                    let snippet: Value = serde_json::from_str(snippet_json).map_err(|err| {
+                        SearchError::InternalError(format!(
+                            "Failed to serialize snippet `{}` to JSON: `{}`.",
+                            snippet_json, err
+                        ))
+                    })?;
+                    hit_value.insert("snippet".to_string(), snippet);
+                }
+                Ok(Value::Object(hit_value))
             })
             .collect::<crate::Result<Vec<serde_json::Value>>>()?;
         Ok(SearchResponseRest {

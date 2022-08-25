@@ -67,8 +67,43 @@ pub fn get_from_env<T: FromStr + Debug>(key: &str, default_value: T) -> T {
     default_value
 }
 
+pub fn truncate_str(text: &str, max_len: usize) -> &str {
+    if max_len > text.len() {
+        return text;
+    }
+
+    let mut truncation_index = max_len;
+    while !text.is_char_boundary(truncation_index) {
+        truncation_index -= 1;
+    }
+    &text[..truncation_index]
+}
+
+pub fn extract_time_range(
+    start_timestamp_opt: Option<i64>,
+    end_timestamp_opt: Option<i64>,
+) -> Option<Range<i64>> {
+    match (start_timestamp_opt, end_timestamp_opt) {
+        (Some(start_timestamp), Some(end_timestamp)) => Some(Range {
+            start: start_timestamp,
+            end: end_timestamp,
+        }),
+        (_, Some(end_timestamp)) => Some(Range {
+            start: i64::MIN,
+            end: end_timestamp,
+        }),
+        (Some(start_timestamp), _) => Some(Range {
+            start: start_timestamp,
+            end: i64::MAX,
+        }),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::truncate_str;
+
     #[test]
     fn test_get_from_env() {
         const TEST_KEY: &str = "TEST_KEY";
@@ -77,5 +112,18 @@ mod tests {
         assert_eq!(super::get_from_env(TEST_KEY, 10), 15);
         std::env::set_var(TEST_KEY, "1invalidnumber");
         assert_eq!(super::get_from_env(TEST_KEY, 10), 10);
+    }
+
+    #[test]
+    fn test_truncate_str() {
+        assert_eq!(truncate_str("", 0), "");
+        assert_eq!(truncate_str("", 3), "");
+        assert_eq!(truncate_str("hello", 0), "");
+        assert_eq!(truncate_str("hello", 5), "hello");
+        assert_eq!(truncate_str("hello", 6), "hello");
+        assert_eq!(truncate_str("hello-world", 5), "hello");
+        assert_eq!(truncate_str("hello-world", 6), "hello-");
+        assert_eq!(truncate_str("hello🧑‍🔬world", 6), "hello");
+        assert_eq!(truncate_str("hello🧑‍🔬world", 7), "hello");
     }
 }

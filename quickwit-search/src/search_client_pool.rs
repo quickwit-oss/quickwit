@@ -39,7 +39,7 @@ use crate::SearchServiceClient;
 
 /// Create a SearchServiceClient with SocketAddr as an argument.
 /// It will try to reconnect to the node automatically.
-async fn create_search_service_client(
+pub async fn create_search_service_client(
     grpc_addr: SocketAddr,
 ) -> anyhow::Result<SearchServiceClient> {
     let uri = Uri::builder()
@@ -350,7 +350,7 @@ mod tests {
     async fn create_cluster_simple_for_test(
         transport: &dyn Transport,
     ) -> anyhow::Result<Arc<Cluster>> {
-        let cluster = create_cluster_for_test(Vec::new(), &["searcher"], transport).await?;
+        let cluster = create_cluster_for_test(Vec::new(), &["searcher"], transport, true).await?;
         Ok(Arc::new(cluster))
     }
 
@@ -377,7 +377,8 @@ mod tests {
         let transport = ChannelTransport::default();
         let cluster1 = create_cluster_simple_for_test(&transport).await?;
         let node_1 = cluster1.gossip_listen_addr.to_string();
-        let cluster2 = create_cluster_for_test(vec![node_1], &["searcher"], &transport).await?;
+        let cluster2 =
+            create_cluster_for_test(vec![node_1], &["searcher"], &transport, true).await?;
 
         cluster1
             .wait_for_members(|members| members.len() == 2, Duration::from_secs(5))

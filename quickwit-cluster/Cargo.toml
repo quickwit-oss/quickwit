@@ -12,7 +12,7 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 anyhow = "1.0"
 async-trait = "0.1"
-chitchat = "0.4"
+chitchat = { git = "https://github.com/quickwit-oss/chitchat", rev = "cd568ba" }
 itertools = "0.10"
 quickwit-common = { version = "0.3.1", path = "../quickwit-common" }
 quickwit-config = { version = "0.3.1", path = "../quickwit-config" }
@@ -23,6 +23,9 @@ thiserror = "1.0"
 tokio = { version = "1.20", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tracing = "0.1.29"
+
+[features]
+testsuite = []
 
 [dev-dependencies]
 tempfile = "3"
