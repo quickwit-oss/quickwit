@@ -19,6 +19,7 @@
 
 use std::sync::Arc;
 
+use actors::JanitorService;
 use itertools::Itertools;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_config::QuickwitConfig;
@@ -100,4 +101,21 @@ pub async fn start_indexer_service(
     }
 
     Ok(indexer_service_mailbox)
+}
+
+pub async fn start_janitor_service(
+    universe: &Universe,
+    config: &QuickwitConfig,
+    metastore: Arc<dyn Metastore>,
+    storage_uri_resolver: StorageUriResolver,
+) -> anyhow::Result<Mailbox<JanitorService>> {
+    info!("Starting janitor service.");
+    let janitor_service = JanitorService::new(
+        config.data_dir_path.to_path_buf(),
+        metastore,
+        storage_uri_resolver,
+    );
+    let (janitor_service_mailbox, _) = universe.spawn_actor(janitor_service).spawn();
+
+    Ok(janitor_service_mailbox)
 }
