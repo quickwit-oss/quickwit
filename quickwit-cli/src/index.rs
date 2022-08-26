@@ -837,7 +837,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
             quickwit_storage_uri_resolver().clone(),
             config.default_index_root_uri.clone(),
         );
-        index_service.reset_index(&args.index_id).await?;
+        index_service.clear_index(&args.index_id).await?;
     }
     let indexer_config = IndexerConfig {
         ..Default::default()

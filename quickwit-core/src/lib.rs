@@ -17,16 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-#![allow(clippy::bool_assert_comparison)]
-
-//! `quickwit-core` provides IndexService that let you manage your indexes:
-//! - `create` for creating a new index;
-//! - `get_index` for getting an index;
-//! - `get_indexes` for getting all indexes registered in the metastore;
-//! - `reset_index` for indexing new-line delimited json documents;
-//! - `delete_index` for deleting an index;
-//! - `garbage_collect_index` for garbage collecting dangling files.
-
 mod index;
 
 pub use index::{

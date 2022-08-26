@@ -97,7 +97,7 @@ impl IndexService {
     }
 
     /// Get all indexes.
-    pub async fn get_indexes(&self) -> anyhow::Result<Vec<IndexMetadata>> {
+    pub async fn list_indexes(&self) -> anyhow::Result<Vec<IndexMetadata>> {
         let indexes_metadatas = self.metastore.list_indexes_metadatas().await?;
         Ok(indexes_metadatas)
     }
@@ -265,7 +265,7 @@ impl IndexService {
     /// * `metastore` - A metastore object for interacting with the metastore.
     /// * `index_id` - The target index Id.
     /// * `storage_resolver` - A storage resolver object to access the storage.
-    pub async fn reset_index(&self, index_id: &str) -> anyhow::Result<()> {
+    pub async fn clear_index(&self, index_id: &str) -> anyhow::Result<()> {
         let index_metadata = self.metastore.index_metadata(index_id).await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let splits = self.metastore.list_all_splits(index_id).await?;
