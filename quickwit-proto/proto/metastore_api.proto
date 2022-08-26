@@ -58,6 +58,9 @@ service MetastoreApiService {
 
   // Remove source.
   rpc delete_source(DeleteSourceRequest) returns (SourceResponse);
+
+  // Resets source checkpoint.
+  rpc reset_source_checkpoint(ResetSourceCheckpointRequest) returns (SourceResponse);
 }
 
 message CreateIndexRequest {
@@ -132,6 +135,11 @@ message AddSourceRequest {
 }
 
 message DeleteSourceRequest {
+  string index_id = 1;
+  string source_id = 2;
+}
+
+message ResetSourceCheckpointRequest {
   string index_id = 1;
   string source_id = 2;
 }

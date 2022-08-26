@@ -124,6 +124,14 @@ pub struct DeleteSourceRequest {
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResetSourceCheckpointRequest {
+    #[prost(string, tag="1")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub source_id: ::prost::alloc::string::String,
+}
+#[derive(Serialize, Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SourceResponse {
 }
 /// Generated client implementations.
@@ -438,6 +446,26 @@ pub mod metastore_api_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
+        /// Resets source checkpoint.
+        pub async fn reset_source_checkpoint(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ResetSourceCheckpointRequest>,
+        ) -> Result<tonic::Response<super::SourceResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit_metastore_api.MetastoreApiService/reset_source_checkpoint",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -506,6 +534,11 @@ pub mod metastore_api_service_server {
         async fn delete_source(
             &self,
             request: tonic::Request<super::DeleteSourceRequest>,
+        ) -> Result<tonic::Response<super::SourceResponse>, tonic::Status>;
+        /// Resets source checkpoint.
+        async fn reset_source_checkpoint(
+            &self,
+            request: tonic::Request<super::ResetSourceCheckpointRequest>,
         ) -> Result<tonic::Response<super::SourceResponse>, tonic::Status>;
     }
     #[derive(Debug)]
@@ -1032,6 +1065,48 @@ pub mod metastore_api_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = delete_sourceSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit_metastore_api.MetastoreApiService/reset_source_checkpoint" => {
+                    #[allow(non_camel_case_types)]
+                    struct reset_source_checkpointSvc<T: MetastoreApiService>(
+                        pub Arc<T>,
+                    );
+                    impl<
+                        T: MetastoreApiService,
+                    > tonic::server::UnaryService<super::ResetSourceCheckpointRequest>
+                    for reset_source_checkpointSvc<T> {
+                        type Response = super::SourceResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ResetSourceCheckpointRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).reset_source_checkpoint(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = reset_source_checkpointSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

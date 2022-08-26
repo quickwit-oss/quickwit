@@ -21,6 +21,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::bail;
+use dialoguer::theme::ColorfulTheme;
+use dialoguer::Confirm;
 use once_cell::sync::Lazy;
 use quickwit_common::run_checklist;
 use quickwit_common::uri::Uri;
@@ -132,6 +134,21 @@ pub fn make_table<T: Tabled>(
     table
         .with(Header(header))
         .with(Modify::new(Rows::single(0)).with(Alignment::center()))
+}
+
+/// Prompts user for confirmation.
+fn prompt_confirmation(prompt: &str, default: bool) -> bool {
+    if Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt(prompt)
+        .default(default)
+        .interact()
+        .unwrap()
+    {
+        true
+    } else {
+        println!("Aborting.");
+        false
+    }
 }
 
 #[cfg(test)]
