@@ -23,7 +23,6 @@ mod garbage_collector;
 mod indexer;
 mod indexing_service;
 mod ingest_api_garbage_collector;
-mod janitor_service;
 mod packager;
 mod publisher;
 mod sequencer;
@@ -33,7 +32,6 @@ pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineHandle, IndexingPi
 pub use indexing_service::{
     IndexingService, IndexingServiceError, IndexingServiceState, INDEXING_DIR_NAME,
 };
-pub use janitor_service::JanitorService;
 use tantivy::schema::{Field, FieldType};
 mod merge_executor;
 mod merge_planner;

@@ -34,7 +34,7 @@ const RUN_INTERVAL: Duration = if cfg!(test) {
 };
 
 #[derive(Clone, Debug, Default)]
-pub struct JanitorServiceStats {
+pub struct JanitorServiceCounters {
     /// Number of passes.
     pub num_passes: usize,
 }
@@ -43,7 +43,7 @@ pub struct JanitorService {
     _data_dir_path: PathBuf,
     _metastore: Arc<dyn Metastore>,
     _storage_resolver: StorageUriResolver,
-    stats: JanitorServiceStats,
+    counters: JanitorServiceCounters,
 }
 
 impl JanitorService {
@@ -56,17 +56,17 @@ impl JanitorService {
             _data_dir_path: data_dir_path,
             _metastore: metastore,
             _storage_resolver: storage_resolver,
-            stats: JanitorServiceStats::default(),
+            counters: JanitorServiceCounters::default(),
         }
     }
 }
 
 #[async_trait]
 impl Actor for JanitorService {
-    type ObservableState = JanitorServiceStats;
+    type ObservableState = JanitorServiceCounters;
 
     fn observable_state(&self) -> Self::ObservableState {
-        self.stats.clone()
+        self.counters.clone()
     }
 
     async fn initialize(
@@ -86,7 +86,7 @@ impl Handler<Loop> for JanitorService {
 
     async fn handle(&mut self, _: Loop, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         info!("janitor-service-operation");
-        self.stats.num_passes += 1;
+        self.counters.num_passes += 1;
         ctx.schedule_self_msg(RUN_INTERVAL, Loop).await;
         Ok(())
     }
@@ -115,17 +115,17 @@ mod tests {
             JanitorService::new(data_dir_path, metastore.clone(), storage_resolver.clone());
         let universe = Universe::new();
         let (_, handle) = universe.spawn_actor(janitor_service).spawn();
-        let stats = handle.observe().await;
-        assert_eq!(stats.num_passes, 1);
+        let counters = handle.observe().await;
+        assert_eq!(counters.num_passes, 1);
 
         // 30 secs later
         universe.simulate_time_shift(Duration::from_secs(30)).await;
-        let stats = handle.process_pending_and_observe().await.state;
-        assert_eq!(stats.num_passes, 1);
+        let counters = handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.num_passes, 1);
 
         // 60 secs later
         universe.simulate_time_shift(RUN_INTERVAL).await;
-        let stats = handle.process_pending_and_observe().await.state;
-        assert_eq!(stats.num_passes, 2);
+        let counters = handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.num_passes, 2);
     }
 }

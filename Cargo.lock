@@ -3193,6 +3193,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-janitor"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "quickwit-actors",
+ "quickwit-common",
+ "quickwit-config",
+ "quickwit-metastore",
+ "quickwit-storage",
+ "serde",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "quickwit-metastore"
 version = "0.3.1"
 dependencies = [
@@ -3305,6 +3322,7 @@ dependencies = [
  "quickwit-doc-mapper",
  "quickwit-indexing",
  "quickwit-ingest-api",
+ "quickwit-janitor",
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-search",
