@@ -21,13 +21,13 @@ use std::net::SocketAddr;
 
 use hyper::http;
 use quickwit_common::metrics;
+use quickwit_proto::ServiceErrorCode;
 use tracing::{error, info};
 use warp::{redirect, Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
-use crate::error::ServiceErrorCode;
 use crate::format::FormatError;
-use crate::health_check_api::liveness_check_handler;
+use crate::health_check_api::health_check_handlers;
 use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::{elastic_bulk_handler, ingest_handler, tail_handler};
@@ -71,14 +71,14 @@ pub(crate) async fn start_rest_server(
         ))
         .or(index_management_handlers(
             quickwit_services.index_service.clone(),
-        ));
+        ))
+        .or(health_check_handlers(quickwit_services.cluster.clone()));
     let api_v1_root_route = api_v1_root_url.and(api_v1_routes);
     let redirect_root_to_ui_route =
         warp::path::end().map(|| redirect(http::Uri::from_static("/ui/search")));
     let rest_routes = api_v1_root_route
         .or(redirect_root_to_ui_route)
         .or(ui_handler())
-        .or(liveness_check_handler())
         .or(metrics_service)
         .with(request_counter)
         .recover(recover_fn);

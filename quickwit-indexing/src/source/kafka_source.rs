@@ -50,6 +50,8 @@ use crate::actors::Indexer;
 use crate::models::RawDocBatch;
 use crate::source::{Source, SourceContext, TypedSourceFactory};
 
+/// Number of bytes after which we cut a new batch.
+///
 /// We try to emit chewable batches for the indexer.
 /// One batch = one message to the indexer actor.
 ///
@@ -59,7 +61,7 @@ use crate::source::{Source, SourceContext, TypedSourceFactory};
 /// - we will not have a precise control of the timeout before commit.
 ///
 /// 5MB seems like a good one size fits all value.
-const TARGET_BATCH_NUM_BYTES: u64 = 5_000_000;
+const BATCH_NUM_BYTES_LIMIT: u64 = 5_000_000;
 
 /// Factory for instantiating a `KafkaSource`.
 pub struct KafkaSourceFactory;
@@ -240,7 +242,7 @@ impl Source for KafkaSource {
                 .record_partition_delta(partition_id, previous_position, current_position)
                 .context("Failed to record partition delta.")?;
 
-            if batch_num_bytes >= TARGET_BATCH_NUM_BYTES {
+            if batch_num_bytes >= BATCH_NUM_BYTES_LIMIT {
                 break;
             }
             ctx.record_progress();

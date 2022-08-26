@@ -46,6 +46,7 @@ pub enum QuickwitService {
     Indexer,
     Searcher,
     Janitor,
+    Metastore,
 }
 
 impl QuickwitService {
@@ -54,6 +55,7 @@ impl QuickwitService {
             QuickwitService::Indexer => "indexer",
             QuickwitService::Searcher => "searcher",
             QuickwitService::Janitor => "janitor",
+            QuickwitService::Metastore => "metastore",
         }
     }
 }
@@ -66,6 +68,7 @@ impl TryFrom<&str> for QuickwitService {
             "indexer" => Ok(QuickwitService::Indexer),
             "searcher" => Ok(QuickwitService::Searcher),
             "janitor" => Ok(QuickwitService::Janitor),
+            "metastore" => Ok(QuickwitService::Metastore),
             _ => {
                 bail!("Service `{service_str}` unknown");
             }

@@ -17,15 +17,17 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::io;
-
+use quickwit_proto::{ServiceError, ServiceErrorCode};
+use serde::{Deserialize, Serialize};
+#[cfg(feature = "postgres")]
+use sqlx;
 use thiserror::Error;
 
 use crate::checkpoint::IncompatibleCheckpointDelta;
 
 /// Metastore error kinds.
 #[allow(missing_docs)]
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Serialize, Deserialize)]
 pub enum MetastoreError {
     #[error("Connection error: `{message}`.")]
     ConnectionError { message: String },
@@ -42,17 +44,14 @@ pub enum MetastoreError {
     /// Any generic internal error.
     /// The message can be helpful to users, but the detail of the error
     /// are judged uncoverable and not useful for error handling.
-    #[error("Internal error: `{message}` Cause: `{cause:?}`.")]
-    InternalError {
-        message: String,
-        cause: anyhow::Error,
-    },
+    #[error("Internal error: `{message}` Cause: `{cause}`.")]
+    InternalError { message: String, cause: String },
 
-    #[error("Failed to deserialize index metadata: `{cause:?}`")]
-    InvalidManifest { cause: serde_json::Error },
+    #[error("Failed to deserialize index metadata: `{message}`")]
+    InvalidManifest { message: String },
 
-    #[error("IOError `{0:?}`")]
-    Io(io::Error),
+    #[error("IOError `{message}`")]
+    Io { message: String },
 
     #[error("Splits `{split_ids:?}` do not exist.")]
     SplitsDoNotExist { split_ids: Vec<String> },
@@ -75,9 +74,55 @@ pub enum MetastoreError {
     #[error("Source `{source_id}` does not exist.")]
     SourceDoesNotExist { source_id: String },
 
-    #[cfg(feature = "postgres")]
-    #[error("Database error: {0:?}.")]
-    DbError(#[from] sqlx::Error),
+    #[error("Database error: `{message}`.")]
+    DbError { message: String },
+
+    #[error("Cannot parse `{name}` from json string: `{message}`.")]
+    JsonDeserializeError { name: String, message: String },
+
+    #[error("Cannot serialize in json entiy `{name}`: `{message}`.")]
+    JsonSerializeError { name: String, message: String },
+}
+
+#[cfg(feature = "postgres")]
+impl From<sqlx::Error> for MetastoreError {
+    fn from(error: sqlx::Error) -> Self {
+        MetastoreError::DbError {
+            message: error.to_string(),
+        }
+    }
+}
+
+impl From<MetastoreError> for quickwit_proto::tonic::Status {
+    fn from(metastore_error: MetastoreError) -> Self {
+        let grpc_code = metastore_error.status_code().to_grpc_status_code();
+        let error_msg = serde_json::to_string(&metastore_error)
+            .unwrap_or_else(|_| format!("Raw metastore error: {}", metastore_error));
+        quickwit_proto::tonic::Status::new(grpc_code, error_msg)
+    }
+}
+
+impl ServiceError for MetastoreError {
+    fn status_code(&self) -> ServiceErrorCode {
+        match self {
+            Self::ConnectionError { .. } => ServiceErrorCode::Internal,
+            Self::Forbidden { .. } => ServiceErrorCode::Internal,
+            Self::IncompatibleCheckpointDelta(_) => ServiceErrorCode::BadRequest,
+            Self::IndexAlreadyExists { .. } => ServiceErrorCode::BadRequest,
+            Self::IndexDoesNotExist { .. } => ServiceErrorCode::BadRequest,
+            Self::InternalError { .. } => ServiceErrorCode::Internal,
+            Self::InvalidManifest { .. } => ServiceErrorCode::Internal,
+            Self::Io { .. } => ServiceErrorCode::Internal,
+            Self::SourceAlreadyExists { .. } => ServiceErrorCode::BadRequest,
+            Self::SourceDoesNotExist { .. } => ServiceErrorCode::BadRequest,
+            Self::SplitsDoNotExist { .. } => ServiceErrorCode::BadRequest,
+            Self::SplitsNotDeletable { .. } => ServiceErrorCode::BadRequest,
+            Self::SplitsNotStaged { .. } => ServiceErrorCode::BadRequest,
+            Self::DbError { .. } => ServiceErrorCode::Internal,
+            Self::JsonDeserializeError { .. } => ServiceErrorCode::Internal,
+            Self::JsonSerializeError { .. } => ServiceErrorCode::Internal,
+        }
+    }
 }
 
 /// Generic Result type for metastore operations.

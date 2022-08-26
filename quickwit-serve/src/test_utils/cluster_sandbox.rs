@@ -67,8 +67,8 @@ impl ClusterSandbox {
     // Starts one node that runs all the services.
     pub async fn start_standalone_node() -> anyhow::Result<Self> {
         let temp_dir = tempfile::tempdir()?;
-        let services = HashSet::from_iter([QuickwitService::Searcher]);
-        let node_configs = build_node_configs(temp_dir.path().to_path_buf(), vec![services]);
+        let services = HashSet::from_iter([QuickwitService::Searcher, QuickwitService::Metastore]);
+        let node_configs = build_node_configs(temp_dir.path().to_path_buf(), &[services]);
         // There is exactly one node.
         let node_config = node_configs[0].clone();
         let node_config_clone = node_config.clone();
@@ -99,16 +99,11 @@ impl ClusterSandbox {
         })
     }
 
-    // For now, starts only 3 nodes:
-    // - 2 searchers.
-    // - 1 indexer.
-    pub async fn start_cluster_nodes() -> anyhow::Result<Self> {
+    // Starts nodes with corresponding services given by `nodes_services`.
+    pub async fn start_cluster_nodes(
+        nodes_services: &[HashSet<QuickwitService>],
+    ) -> anyhow::Result<Self> {
         let temp_dir = tempfile::tempdir()?;
-        let nodes_services = vec![
-            HashSet::from_iter([QuickwitService::Searcher]),
-            HashSet::from_iter([QuickwitService::Searcher]),
-            HashSet::from_iter([QuickwitService::Indexer]),
-        ];
         let node_configs = build_node_configs(temp_dir.path().to_path_buf(), nodes_services);
         let index_for_test = append_random_suffix("test-multi-nodes-cluster-index");
         // Creates an index before starting nodes as currently Quickwit does not support
@@ -133,7 +128,7 @@ impl ClusterSandbox {
             .unwrap();
         let mut grpc_search_clients = HashMap::new();
         for node_config in node_configs.iter() {
-            if node_config.services.contains(&QuickwitService::Indexer) {
+            if !node_config.services.contains(&QuickwitService::Searcher) {
                 continue;
             }
             let search_client =
@@ -209,7 +204,7 @@ async fn create_index_for_test(
 /// - `peers` defined by others nodes `gossip_advertise_addr`.
 pub fn build_node_configs(
     root_data_dir: PathBuf,
-    nodes_services: Vec<HashSet<QuickwitService>>,
+    nodes_services: &[HashSet<QuickwitService>],
 ) -> Vec<NodeConfig> {
     let cluster_id = new_coolid("test-cluster");
     let mut node_configs = Vec::new();

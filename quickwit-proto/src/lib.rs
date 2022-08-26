@@ -21,18 +21,82 @@
 
 mod quickwit;
 mod quickwit_ingest_api;
+mod quickwit_metastore_api;
 
 pub mod ingest_api {
     pub use crate::quickwit_ingest_api::*;
 }
 
+pub mod metastore_api {
+    pub use crate::quickwit_metastore_api::*;
+}
+
 #[macro_use]
 extern crate serde;
 
+use std::convert::Infallible;
 use std::fmt;
 
 pub use quickwit::*;
 pub use tonic;
+use tonic::codegen::http;
+
+/// This enum serves as a Rosetta stone of
+/// gRPC and Http status code.
+///
+/// It is voluntarily a restricted subset.
+#[derive(Clone, Copy)]
+pub enum ServiceErrorCode {
+    NotFound,
+    Internal,
+    MethodNotAllowed,
+    UnsupportedMediaType,
+    BadRequest,
+}
+
+impl ServiceErrorCode {
+    pub fn to_grpc_status_code(self) -> tonic::Code {
+        match self {
+            ServiceErrorCode::NotFound => tonic::Code::NotFound,
+            ServiceErrorCode::Internal => tonic::Code::Internal,
+            ServiceErrorCode::BadRequest => tonic::Code::InvalidArgument,
+            ServiceErrorCode::MethodNotAllowed => tonic::Code::InvalidArgument,
+            ServiceErrorCode::UnsupportedMediaType => tonic::Code::InvalidArgument,
+        }
+    }
+    pub fn to_http_status_code(self) -> http::StatusCode {
+        match self {
+            ServiceErrorCode::NotFound => http::StatusCode::NOT_FOUND,
+            ServiceErrorCode::Internal => http::StatusCode::INTERNAL_SERVER_ERROR,
+            ServiceErrorCode::BadRequest => http::StatusCode::BAD_REQUEST,
+            ServiceErrorCode::MethodNotAllowed => http::StatusCode::METHOD_NOT_ALLOWED,
+            ServiceErrorCode::UnsupportedMediaType => http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        }
+    }
+}
+
+impl ServiceError for Infallible {
+    fn status_code(&self) -> ServiceErrorCode {
+        unreachable!()
+    }
+}
+
+pub trait ServiceError: ToString {
+    fn grpc_error(&self) -> tonic::Status {
+        let grpc_code = self.status_code().to_grpc_status_code();
+        let error_msg = self.to_string();
+        tonic::Status::new(grpc_code, error_msg)
+    }
+
+    fn status_code(&self) -> ServiceErrorCode;
+}
+
+pub fn convert_to_grpc_result<T, E: ServiceError>(
+    res: Result<T, E>,
+) -> Result<tonic::Response<T>, tonic::Status> {
+    res.map(|outcome| tonic::Response::new(outcome))
+        .map_err(|err| err.grpc_error())
+}
 
 impl From<SearchStreamRequest> for SearchRequest {
     fn from(item: SearchStreamRequest) -> Self {
@@ -40,6 +104,7 @@ impl From<SearchStreamRequest> for SearchRequest {
             index_id: item.index_id,
             query: item.query,
             search_fields: item.search_fields,
+            snippet_fields: item.snippet_fields,
             start_timestamp: item.start_timestamp,
             end_timestamp: item.end_timestamp,
             max_hits: 0,

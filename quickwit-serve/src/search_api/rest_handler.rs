@@ -24,7 +24,7 @@ use futures::stream::StreamExt;
 use hyper::header::HeaderValue;
 use hyper::HeaderMap;
 use quickwit_doc_mapper::{SortByField, SortOrder};
-use quickwit_proto::{OutputFormat, SortOrder as ProtoSortOrder};
+use quickwit_proto::{OutputFormat, ServiceError, SortOrder as ProtoSortOrder};
 use quickwit_search::{SearchError, SearchResponseRest, SearchService};
 use serde::{de, Deserialize, Deserializer};
 use tracing::info;
@@ -32,7 +32,6 @@ use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
 
-use crate::error::ServiceError;
 use crate::{with_arg, Format};
 
 fn sort_by_field_mini_dsl<'de, D>(deserializer: D) -> Result<Option<SortByField>, D::Error>
@@ -90,6 +89,10 @@ pub struct SearchRequestQueryString {
     #[serde(rename(deserialize = "search_field"))]
     #[serde(deserialize_with = "from_simple_list")]
     pub search_fields: Option<Vec<String>>,
+    /// Fields to extract snippets on.
+    #[serde(default)]
+    #[serde(deserialize_with = "from_simple_list")]
+    pub snippet_fields: Option<Vec<String>>,
     /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
     pub start_timestamp: Option<i64>,
     /// If set, restrict search to documents with a `timestamp < end_timestamp``.
@@ -135,6 +138,7 @@ async fn search_endpoint(
         index_id,
         query: search_request.query,
         search_fields: search_request.search_fields.unwrap_or_default(),
+        snippet_fields: search_request.snippet_fields.unwrap_or_default(),
         start_timestamp: search_request.start_timestamp,
         end_timestamp: search_request.end_timestamp,
         max_hits: search_request.max_hits,
@@ -218,6 +222,11 @@ struct SearchStreamRequestQueryString {
     #[serde(rename(deserialize = "search_field"))]
     #[serde(deserialize_with = "from_simple_list")]
     pub search_fields: Option<Vec<String>>,
+    /// Fields to extract snippet on
+    #[serde(default)]
+    #[serde(rename(deserialize = "snippet_fields"))]
+    #[serde(deserialize_with = "from_simple_list")]
+    pub snippet_fields: Option<Vec<String>>,
     /// If set, restricts search to documents with a `timestamp >= start_timestamp`.
     pub start_timestamp: Option<i64>,
     /// If set, restricts search to documents with a `timestamp < end_timestamp``.
@@ -241,6 +250,7 @@ async fn search_stream_endpoint(
         index_id,
         query: search_request.query,
         search_fields: search_request.search_fields.unwrap_or_default(),
+        snippet_fields: search_request.snippet_fields.unwrap_or_default(),
         start_timestamp: search_request.start_timestamp,
         end_timestamp: search_request.end_timestamp,
         fast_field: search_request.fast_field,
@@ -322,7 +332,7 @@ fn search_stream_filter(
 
 #[cfg(test)]
 mod tests {
-    use assert_json_diff::assert_json_include;
+    use assert_json_diff::{assert_json_eq, assert_json_include};
     use bytes::Bytes;
     use mockall::predicate;
     use quickwit_search::{MockSearchService, SearchError};
@@ -555,7 +565,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "error": "unknown field `end_unix_timestamp`, expected one of `query`, `aggs`, `search_field`, `start_timestamp`, `end_timestamp`, `max_hits`, `start_offset`, `format`, `sort_by_field`"
+            "error": "unknown field `end_unix_timestamp`, expected one of `query`, `aggs`, `search_field`, `snippet_fields`, `start_timestamp`, `end_timestamp`, `max_hits`, `start_offset`, `format`, `sort_by_field`"
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())
@@ -718,6 +728,7 @@ mod tests {
             &super::SearchStreamRequestQueryString {
                 query: "obama".to_string(),
                 search_fields: None,
+                snippet_fields: None,
                 start_timestamp: None,
                 end_timestamp: None,
                 fast_field: "external_id".to_string(),
@@ -743,6 +754,7 @@ mod tests {
             &super::SearchStreamRequestQueryString {
                 query: "obama".to_string(),
                 search_fields: None,
+                snippet_fields: None,
                 start_timestamp: None,
                 end_timestamp: None,
                 fast_field: "external_id".to_string(),
@@ -784,5 +796,42 @@ mod tests {
             parse_error.to_string(),
             "Expected a non empty string field."
         );
+    }
+
+    #[tokio::test]
+    async fn test_rest_search_api_route_serialize_results_with_snippet() -> anyhow::Result<()> {
+        let mut mock_search_service = MockSearchService::new();
+        mock_search_service.expect_root_search().returning(|_| {
+            Ok(quickwit_proto::SearchResponse {
+                hits: vec![quickwit_proto::Hit {
+                    json: r#"{"title": "foo", "body": "foo bar baz"}"#.to_string(),
+                    partial_hit: None,
+                    snippet: Some(r#"{"title": [], "body": ["foo <em>bar</em> baz"]}"#.to_string()),
+                }],
+                num_hits: 1,
+                elapsed_time_micros: 16,
+                errors: vec![],
+                ..Default::default()
+            })
+        });
+        let rest_search_api_handler = search_handler(mock_search_service);
+        let resp = warp::test::request()
+            .path("/quickwit-demo-index/search?query=bar&snippet_fields=title,body")
+            .reply(&rest_search_api_handler)
+            .await;
+
+        assert_eq!(resp.status(), 200);
+        let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
+        let expected_response_json = serde_json::json!({
+            "num_hits": 1,
+            "hits": [{
+                "document": {"title": "foo", "body": "foo bar baz"},
+                "snippet": {"title": [], "body": ["foo <em>bar</em> baz"]}
+            }],
+            "elapsed_time_micros": 16,
+            "errors": [],
+        });
+        assert_json_eq!(resp_json, expected_response_json);
+        Ok(())
     }
 }

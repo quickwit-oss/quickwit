@@ -23,15 +23,15 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox, Observation,
-    Supervisable,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Observation, Supervisable,
 };
 use quickwit_config::{
     IndexerConfig, IngestApiSourceParams, SourceConfig, SourceParams, VecSourceParams,
 };
-use quickwit_ingest_api::IngestApiService;
+use quickwit_ingest_api::{get_ingest_api_service, QUEUES_DIR_NAME};
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
+use quickwit_proto::{ServiceError, ServiceErrorCode};
 use quickwit_storage::{StorageResolverError, StorageUriResolver};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -41,12 +41,11 @@ use crate::models::{
     DetachPipeline, IndexingPipelineId, Observe, ObservePipeline, ShutdownPipeline,
     ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
 };
+use crate::source::INGEST_API_SOURCE_ID;
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingStatistics};
 
+/// Name of the indexing directory, usually located at `<data_dir_path>/indexing`.
 pub const INDEXING_DIR_NAME: &str = "indexing";
-
-/// Reserved source ID used for the ingest API.
-pub const INGEST_API_SOURCE_ID: &str = ".ingest-api";
 
 #[derive(Error, Debug)]
 pub enum IndexingServiceError {
@@ -68,6 +67,18 @@ pub enum IndexingServiceError {
     InvalidParams(anyhow::Error),
 }
 
+impl ServiceError for IndexingServiceError {
+    fn status_code(&self) -> ServiceErrorCode {
+        match self {
+            Self::MissingPipeline { .. } => ServiceErrorCode::NotFound,
+            Self::PipelineAlreadyExists { .. } => ServiceErrorCode::BadRequest,
+            Self::StorageError(_) => ServiceErrorCode::Internal,
+            Self::MetastoreError(_) => ServiceErrorCode::Internal,
+            Self::InvalidParams(_) => ServiceErrorCode::BadRequest,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct IndexingServiceState {
     pub num_running_pipelines: usize,
@@ -77,14 +88,14 @@ pub struct IndexingServiceState {
 
 pub struct IndexingService {
     node_id: String,
-    indexing_dir_path: PathBuf,
+    data_dir_path: PathBuf,
     split_store_max_num_bytes: usize,
     split_store_max_num_splits: usize,
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
     pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     state: IndexingServiceState,
-    ingest_api_service: Option<Mailbox<IngestApiService>>,
+    enable_ingest_api: bool,
 }
 
 impl IndexingService {
@@ -99,11 +110,11 @@ impl IndexingService {
         indexer_config: IndexerConfig,
         metastore: Arc<dyn Metastore>,
         storage_resolver: StorageUriResolver,
-        ingest_api_service: Option<Mailbox<IngestApiService>>,
+        enable_ingest_api: bool,
     ) -> IndexingService {
         Self {
             node_id,
-            indexing_dir_path: data_dir_path.join(INDEXING_DIR_NAME),
+            data_dir_path,
             split_store_max_num_bytes: indexer_config.split_store_max_num_bytes.get_bytes()
                 as usize,
             split_store_max_num_splits: indexer_config.split_store_max_num_splits,
@@ -111,7 +122,7 @@ impl IndexingService {
             storage_resolver,
             pipeline_handles: Default::default(),
             state: Default::default(),
-            ingest_api_service,
+            enable_ingest_api,
         }
     }
 
@@ -193,22 +204,11 @@ impl IndexingService {
                 pipeline_ids.push(pipeline_id);
             }
         }
-        // Spawn ingest API pipeline for this index if needed.
-        if let Some(ingest_api_service) = &self.ingest_api_service {
-            // Ensure the queue exist.
-            let create_queue_req = CreateQueueIfNotExistsRequest {
-                queue_id: index_id.clone(),
-            };
-            ingest_api_service
-                .ask_for_res(create_queue_req)
-                .await
-                .map_err(|err| IndexingServiceError::InvalidParams(err.into()))?;
-
-            let source_id = INGEST_API_SOURCE_ID.to_string();
-            let ingest_api_pipeline_id = self
-                .spawn_ingest_api_pipeline(ctx, index_id, source_id, index_metadata)
+        if self.enable_ingest_api {
+            let pipeline_id = self
+                .spawn_ingest_api_pipeline(ctx, index_id, index_metadata)
                 .await?;
-            pipeline_ids.push(ingest_api_pipeline_id);
+            pipeline_ids.push(pipeline_id);
         }
         Ok(pipeline_ids)
     }
@@ -227,12 +227,13 @@ impl IndexingService {
                 pipeline_ord: pipeline_id.pipeline_ord,
             });
         }
+        let indexing_dir_path = self.data_dir_path.join(INDEXING_DIR_NAME);
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let pipeline_params = IndexingPipelineParams::try_new(
             pipeline_id.clone(),
             index_metadata,
             source_config,
-            self.indexing_dir_path.clone(),
+            indexing_dir_path,
             self.split_store_max_num_bytes,
             self.split_store_max_num_splits,
             self.metastore.clone(),
@@ -252,21 +253,40 @@ impl IndexingService {
         &mut self,
         ctx: &ActorContext<Self>,
         index_id: String,
-        source_id: String,
         index_metadata: IndexMetadata,
     ) -> Result<IndexingPipelineId, IndexingServiceError> {
+        let source_id = INGEST_API_SOURCE_ID.to_string();
+
         let pipeline_id = IndexingPipelineId {
             index_id: index_id.clone(),
             source_id: source_id.clone(),
             node_id: self.node_id.clone(),
             pipeline_ord: 0,
         };
+        if self.pipeline_handles.contains_key(&pipeline_id) {
+            return Ok(pipeline_id);
+        }
+        let queues_dir_path = self.data_dir_path.join(QUEUES_DIR_NAME);
+        let ingest_api_service = get_ingest_api_service(&queues_dir_path)
+            .await
+            .expect("The ingest API service should have been initialized beforehand.");
+
+        // Ensure the queue exists.
+        let create_queue_req = CreateQueueIfNotExistsRequest {
+            queue_id: index_id.clone(),
+        };
+        ingest_api_service
+            .ask_for_res(create_queue_req)
+            .await
+            .map_err(|err| IndexingServiceError::InvalidParams(err.into()))?;
+
         let source_config = SourceConfig {
             source_id,
             num_pipelines: 1,
             source_params: SourceParams::IngestApi(IngestApiSourceParams {
                 index_id,
-                batch_num_bytes_threshold: None,
+                batch_num_bytes_limit: None,
+                queues_dir_path,
             }),
         };
         self.spawn_pipeline_inner(
@@ -521,6 +541,7 @@ mod tests {
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
     use quickwit_config::{SourceConfig, VecSourceParams};
+    use quickwit_ingest_api::init_ingest_api;
     use quickwit_metastore::quickwit_metastore_uri_resolver;
 
     use super::*;
@@ -544,15 +565,18 @@ mod tests {
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
         let storage_resolver = StorageUriResolver::for_test();
+        let universe = Universe::new();
+        let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
+        init_ingest_api(&universe, &queues_dir_path).await.unwrap();
+        let enable_ingest_api = true;
         let indexing_server = IndexingService::new(
             "test-node".to_string(),
             data_dir_path,
             indexer_config,
             metastore.clone(),
             storage_resolver.clone(),
-            None,
+            enable_ingest_api,
         );
-        let universe = Universe::new();
         let (indexing_server_mailbox, indexing_server_handle) =
             universe.spawn_actor(indexing_server).spawn();
         let observation = indexing_server_handle.observe().await;
@@ -637,7 +661,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             indexing_server_handle.observe().await.num_running_pipelines,
-            2
+            3
         );
 
         let source_config_2 = SourceConfig {
@@ -658,7 +682,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             indexing_server_handle.observe().await.num_running_pipelines,
-            4
+            5
         );
 
         // Test `shutdown_pipeline`
@@ -675,7 +699,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             indexing_server_handle.observe().await.num_running_pipelines,
-            3
+            4
         );
 
         // Test `shutdown_pipelines`
@@ -688,7 +712,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             indexing_server_handle.observe().await.num_running_pipelines,
-            2
+            3
         );
         indexing_server_mailbox
             .ask_for_res(ShutdownPipelines {

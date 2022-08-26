@@ -19,7 +19,7 @@
 
 use std::collections::BTreeSet;
 
-use assert_json_diff::assert_json_include;
+use assert_json_diff::{assert_json_eq, assert_json_include};
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DefaultDocMapper;
 use quickwit_indexing::TestSandbox;
@@ -70,6 +70,58 @@ async fn test_single_node_simple() -> anyhow::Result<()> {
     assert_json_include!(actual: hit_json, expected: expected_json);
     assert!(single_node_result.elapsed_time_micros > 10);
     assert!(single_node_result.elapsed_time_micros < 1_000_000);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_single_search_with_snippet() -> anyhow::Result<()> {
+    let index_id = "single-node-with-snippet";
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: title
+                type: text
+              - name: body
+                type: text
+        "#;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
+    let docs = vec![
+        json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle in the comic strip."}),
+        json!({"title": "beagle", "body": "The beagle is a breed of small scent hound."}),
+        json!({"title": "lisa", "body": "Lisa is a character in `The Simpsons` animated tv series."}),
+    ];
+    test_sandbox.add_documents(docs.clone()).await?;
+    let search_request = SearchRequest {
+        index_id: index_id.to_string(),
+        query: "beagle".to_string(),
+        search_fields: vec!["title".to_string(), "body".to_string()],
+        snippet_fields: vec!["title".to_string(), "body".to_string()],
+        start_timestamp: None,
+        end_timestamp: None,
+        max_hits: 2,
+        start_offset: 0,
+        ..Default::default()
+    };
+    let single_node_result = single_node_search(
+        &search_request,
+        &*test_sandbox.metastore(),
+        test_sandbox.storage_uri_resolver(),
+    )
+    .await?;
+    assert_eq!(single_node_result.num_hits, 2);
+    assert_eq!(single_node_result.hits.len(), 2);
+
+    let highlight_json: serde_json::Value =
+        serde_json::from_str(single_node_result.hits[0].snippet.as_ref().unwrap())?;
+    let expected_json: serde_json::Value = json!({"title": [], "body": ["Snoopy is an anthropomorphic <b>beagle</b> in the comic strip"]});
+    assert_json_eq!(highlight_json, expected_json);
+
+    let highlight_json: serde_json::Value =
+        serde_json::from_str(single_node_result.hits[1].snippet.as_ref().unwrap())?;
+    let expected_json: serde_json::Value = json!({
+        "title": ["<b>beagle</b>"],
+        "body": ["The <b>beagle</b> is a breed of small scent hound"]
+    });
+    assert_json_eq!(highlight_json, expected_json);
     Ok(())
 }
 
@@ -640,7 +692,7 @@ fn test_convert_leaf_hit_aux(
     let hit = convert_leaf_hit(
         LeafHit {
             leaf_json: serde_json::to_string(&leaf_hit_json).unwrap(),
-            partial_hit: Default::default(),
+            ..Default::default()
         },
         &default_doc_mapper,
     )

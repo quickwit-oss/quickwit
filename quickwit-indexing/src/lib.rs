@@ -23,7 +23,7 @@ use actors::JanitorService;
 use itertools::Itertools;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_config::QuickwitConfig;
-use quickwit_ingest_api::IngestApiService;
+use quickwit_ingest_api::{get_ingest_api_service, QUEUES_DIR_NAME};
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
 use tracing::info;
@@ -61,46 +61,45 @@ pub fn new_split_id() -> String {
     ulid::Ulid::new().to_string()
 }
 
-pub async fn start_indexer_service(
+pub async fn start_indexing_service(
     universe: &Universe,
     config: &QuickwitConfig,
     metastore: Arc<dyn Metastore>,
-    storage_uri_resolver: StorageUriResolver,
-    ingest_api_service: Option<Mailbox<IngestApiService>>,
+    storage_resolver: StorageUriResolver,
+    enable_ingest_api: bool,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
     info!("Starting indexer service.");
+    // Spawn indexing service.
     let indexing_service = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.to_path_buf(),
         config.indexer_config.clone(),
         metastore.clone(),
-        storage_uri_resolver,
-        ingest_api_service.clone(),
+        storage_resolver,
+        enable_ingest_api,
     );
-    let (indexer_service_mailbox, _) = universe.spawn_actor(indexing_service).spawn();
+    let (indexing_service, _) = universe.spawn_actor(indexing_service).spawn();
 
+    // List indexes and spawn indexing pipeline(s) for each of them.
     let index_metadatas = metastore.list_indexes_metadatas().await?;
     info!(index_ids=%index_metadatas.iter().map(|im| &im.index_id).join(", "), "Spawning indexing pipeline(s).");
 
     for index_metadata in index_metadatas {
-        indexer_service_mailbox
+        indexing_service
             .ask_for_res(SpawnPipelines {
                 index_id: index_metadata.index_id,
             })
             .await?;
     }
-
-    // IngestApi garbage collector
-    if let Some(ingest_api_service_mailbox) = ingest_api_service {
-        let ingest_api_garbage_collector = IngestApiGarbageCollector::new(
-            metastore,
-            ingest_api_service_mailbox,
-            indexer_service_mailbox.clone(),
-        );
+    // Spawn Ingest Api garbage collector.
+    if enable_ingest_api {
+        let queues_dir_path = config.data_dir_path.join(QUEUES_DIR_NAME);
+        let ingest_api_service = get_ingest_api_service(&queues_dir_path).await?;
+        let ingest_api_garbage_collector =
+            IngestApiGarbageCollector::new(metastore, ingest_api_service, indexing_service.clone());
         universe.spawn_actor(ingest_api_garbage_collector).spawn();
     }
-
-    Ok(indexer_service_mailbox)
+    Ok(indexing_service)
 }
 
 pub async fn start_janitor_service(

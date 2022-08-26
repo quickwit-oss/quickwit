@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashSet;
-use std::iter;
 use std::path::PathBuf;
 
 use clap::{arg, ArgMatches, Command};
@@ -35,8 +34,12 @@ pub fn build_run_command<'a>() -> Command<'a> {
     Command::new("run")
         .about("Runs quickwit services. By default, `indexer` and `searcher` are started.")
         .args(&[
-            arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.").env("QW_DATA_DIR").required(false),
-            arg!(--"service" <SERVICE> "Services (searcher|indexer) to run. If unspecified run both `searcher` and `indexer`.").required(false),
+            arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
+                .env("QW_DATA_DIR")
+                .required(false),
+            arg!(--"service" <SERVICE> "Services (searcher|indexer|metastore) to run. If unspecified all services `metastore`, `searcher` and `indexer` are started.")
+                .multiple_occurrences(true)
+                .required(false),
             arg!(--"metastore-uri" <METASTORE_URI> "Metastore URI. Override the `metastore_uri` parameter defined in the config file. Defaults to file-backed, but could be Amazon S3 or PostgreSQL.")
                 .env("QW_METASTORE_URI")
                 .required(false),
@@ -70,15 +73,21 @@ impl RunCliCommand {
             .map(Uri::try_new)
             .expect("`config` is a required arg.")?;
         let data_dir_path = matches.value_of("data-dir").map(PathBuf::from);
-        let services: HashSet<QuickwitService> =
-            if let Some(service_str) = matches.value_of("service") {
-                let service = QuickwitService::try_from(service_str)?;
-                iter::once(service).collect()
-            } else {
-                [QuickwitService::Indexer, QuickwitService::Searcher]
-                    .into_iter()
-                    .collect()
-            };
+        let services = matches
+            .values_of("service")
+            .map(|values| {
+                let services: Result<HashSet<_>, _> =
+                    values.into_iter().map(QuickwitService::try_from).collect();
+                services
+            })
+            .transpose()?
+            .unwrap_or_else(|| {
+                HashSet::from_iter([
+                    QuickwitService::Metastore,
+                    QuickwitService::Indexer,
+                    QuickwitService::Searcher,
+                ])
+            });
         let metastore_uri = matches
             .value_of("metastore-uri")
             .map(Uri::try_new)
@@ -156,7 +165,7 @@ mod tests {
                 services,
                 ..
             })
-            if config_uri == expected_config_uri && services.len() == 2
+            if config_uri == expected_config_uri && services.len() == 3
         ));
         Ok(())
     }
@@ -185,6 +194,36 @@ mod tests {
         ));
         Ok(())
     }
+
+    #[test]
+    fn test_parse_service_run_args_searcher_and_metastore() -> anyhow::Result<()> {
+        let command = build_cli().no_binary_name(true);
+        let matches = command.try_get_matches_from(vec![
+            "run",
+            "--service",
+            "searcher",
+            "--service",
+            "metastore",
+            "--config",
+            "/config.yaml",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let expected_config_uri = Uri::try_new("file:///config.yaml").unwrap();
+        let expected_services =
+            HashSet::from_iter([QuickwitService::Metastore, QuickwitService::Searcher]);
+        assert!(matches!(
+            command,
+            CliCommand::Run(RunCliCommand {
+                config_uri,
+                data_dir_path: None,
+                services,
+                ..
+            })
+            if config_uri == expected_config_uri && services.len() == 2 && services == expected_services
+        ));
+        Ok(())
+    }
+
     #[test]
     fn test_parse_service_run_indexer_only_args() -> anyhow::Result<()> {
         let command = build_cli().no_binary_name(true);

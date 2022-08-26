@@ -17,76 +17,84 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::fmt;
+use std::convert::Infallible;
+use std::sync::Arc;
 
-use serde::Serialize;
-use serde_json::json;
-use warp::http::header::{HeaderMap, HeaderValue};
+use quickwit_cluster::Cluster;
 use warp::hyper::StatusCode;
 use warp::reply::with_status;
 use warp::{Filter, Rejection};
 
-/// A service status.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-pub enum ServiceStatus {
-    /// The service is alive.
-    Alive,
+use crate::with_arg;
+
+/// Health check handlers.
+pub fn health_check_handlers(
+    cluster: Arc<Cluster>,
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    liveness_handler().or(readyness_handler(cluster))
 }
 
-impl fmt::Display for ServiceStatus {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-/// Liveness check handler.
-pub fn liveness_check_handler() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone
-{
-    let mut headers = HeaderMap::new();
-    headers.insert("content-type", HeaderValue::from_static("application/json"));
-
-    let service_status = ServiceStatus::Alive;
-
+pub fn liveness_handler() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     warp::path!("health" / "livez")
-        .map(move || make_reply(live_predicate(service_status), service_status))
-        .with(warp::reply::with::headers(headers))
+        .and(warp::path::end())
+        .and(warp::get())
+        .and_then(get_liveness)
 }
 
-/// Make an HTTP response based on the given service status.
-fn make_reply(ok: bool, service_status: ServiceStatus) -> impl warp::Reply {
-    let mut status_code = if ok {
+pub fn readyness_handler(
+    cluster: Arc<Cluster>,
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    warp::path!("health" / "readyz")
+        .and(warp::path::end())
+        .and(warp::get())
+        .and(with_arg(cluster))
+        .and_then(get_readyness)
+}
+
+async fn get_liveness() -> Result<impl warp::Reply, Infallible> {
+    Ok(with_status(warp::reply::json(&true), StatusCode::OK))
+}
+
+async fn get_readyness(cluster: Arc<Cluster>) -> Result<impl warp::Reply, Infallible> {
+    let is_ready = cluster.is_self_node_ready().await;
+    let status_code = if is_ready {
         StatusCode::OK
     } else {
         StatusCode::SERVICE_UNAVAILABLE
     };
-
-    let json = json!({ "service_status": service_status });
-
-    let json_str = match serde_json::to_string(&json) {
-        Ok(json) => json,
-        Err(err) => {
-            status_code = StatusCode::INTERNAL_SERVER_ERROR;
-            json!({"error": err.to_string()}).to_string()
-        }
-    };
-
-    with_status(json_str, status_code)
-}
-
-/// Check if the service is alive.
-fn live_predicate(service_status: ServiceStatus) -> bool {
-    matches!(service_status, ServiceStatus::Alive)
+    Ok(with_status(warp::reply::json(&is_ready), status_code))
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use chitchat::transport::ChannelTransport;
+    use quickwit_cluster::create_cluster_for_test;
 
     #[tokio::test]
-    async fn test_rest_search_api_health_check_livez() {
-        let rest_search_api_filter = super::liveness_check_handler();
+    async fn test_rest_search_api_health_checks() {
+        let transport = ChannelTransport::default();
+        let cluster = Arc::new(
+            create_cluster_for_test(Vec::new(), &[], &transport, false)
+                .await
+                .unwrap(),
+        );
+        let health_check_handler = super::health_check_handlers(cluster.clone());
         let resp = warp::test::request()
             .path("/health/livez")
-            .reply(&rest_search_api_filter)
+            .reply(&health_check_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let resp = warp::test::request()
+            .path("/health/readyz")
+            .reply(&health_check_handler)
+            .await;
+        assert_eq!(resp.status(), 503);
+        cluster.set_self_node_ready(true).await;
+        let resp = warp::test::request()
+            .path("/health/readyz")
+            .reply(&health_check_handler)
             .await;
         assert_eq!(resp.status(), 200);
     }

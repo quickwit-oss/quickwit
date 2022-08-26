@@ -28,7 +28,6 @@ use serde::de::DeserializeOwned;
 use tokio_stream::StreamExt;
 
 pub struct QuickwitRestClient {
-    addr: SocketAddr,
     api_root: String,
     client: hyper::Client<HttpConnector, Body>,
 }
@@ -40,11 +39,7 @@ impl QuickwitRestClient {
             .http2_only(true)
             .build_http();
         let api_root = format!("http://{}/api/v1", addr);
-        Self {
-            addr,
-            api_root,
-            client,
-        }
+        Self { api_root, client }
     }
 
     pub async fn cluster_state(&self) -> anyhow::Result<ClusterState> {
@@ -57,12 +52,23 @@ impl QuickwitRestClient {
     }
 
     pub async fn indexing_service_state(&self) -> anyhow::Result<IndexingServiceState> {
-        let uri = format!("http://{}/api/v1/indexing", self.addr)
+        let uri = format!("{}/indexing", self.api_root)
             .parse::<hyper::Uri>()
             .unwrap();
         let response = self.client.get(uri).await?;
         let indexing_service_state = parse_body(response).await?;
         Ok(indexing_service_state)
+    }
+
+    pub async fn is_ready(&self) -> anyhow::Result<bool> {
+        let uri = format!("{}/health/readyz", self.api_root)
+            .parse::<hyper::Uri>()
+            .unwrap();
+        let response = self.client.get(uri).await?;
+        if response.status() == StatusCode::OK {
+            return Ok(true);
+        }
+        Ok(false)
     }
 }
 

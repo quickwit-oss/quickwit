@@ -26,7 +26,7 @@ use std::time::Duration;
 use chitchat::transport::Transport;
 use chitchat::{
     spawn_chitchat, ChitchatConfig, ChitchatHandle, ClusterStateSnapshot, FailureDetectorConfig,
-    NodeId,
+    NodeId, NodeState,
 };
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -39,6 +39,9 @@ use tracing::{debug, error, info, warn};
 use crate::error::{ClusterError, ClusterResult};
 use crate::QuickwitService;
 
+const HEALTH_KEY: &str = "health";
+const HEALTH_VALUE_READY: &str = "READY";
+const HEALTH_VALUE_NOT_READY: &str = "NOT_READY";
 const GRPC_ADVERTISE_ADDR_KEY: &str = "grpc_advertise_addr";
 const GOSSIP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(25)
@@ -117,6 +120,13 @@ pub struct Cluster {
     stop: Arc<AtomicBool>,
 }
 
+fn is_ready_predicate(node_state: &NodeState) -> bool {
+    node_state
+        .get(HEALTH_KEY)
+        .map(|health_value| health_value == HEALTH_VALUE_READY)
+        .unwrap_or(false)
+}
+
 impl Cluster {
     /// Create a cluster given a host key and a listen address.
     /// When a cluster is created, the thread that monitors cluster events
@@ -147,6 +157,7 @@ impl Cluster {
             listen_addr: gossip_listen_addr,
             seed_nodes: peer_seed_addrs,
             failure_detector_config,
+            is_ready_predicate: Some(Box::new(is_ready_predicate)),
         };
         let chitchat_handle = spawn_chitchat(
             chitchat_config,
@@ -162,6 +173,7 @@ impl Cluster {
                         .map(|service| service.as_str())
                         .join(","),
                 ),
+                (HEALTH_KEY.to_string(), HEALTH_VALUE_NOT_READY.to_string()),
             ],
             transport,
         )
@@ -193,7 +205,7 @@ impl Cluster {
         // Prepare to start a task that will monitor cluster events.
         let task_stop = cluster.stop.clone();
         tokio::task::spawn(async move {
-            let mut node_change_receiver = chitchat.lock().await.live_nodes_watcher();
+            let mut node_change_receiver = chitchat.lock().await.ready_nodes_watcher();
 
             while let Some(members_set) = node_change_receiver.next().await {
                 let state_snapshot = chitchat.lock().await.state_snapshot();
@@ -297,7 +309,7 @@ impl Cluster {
         timeout_after: Duration,
     ) -> anyhow::Result<()>
     where
-        F: FnMut(&Vec<ClusterMember>) -> bool,
+        F: FnMut(&[ClusterMember]) -> bool,
     {
         timeout(
             timeout_after,
@@ -307,6 +319,22 @@ impl Cluster {
         )
         .await?;
         Ok(())
+    }
+
+    pub async fn set_self_node_ready(&self, ready: bool) {
+        let health_value = if ready {
+            HEALTH_VALUE_READY
+        } else {
+            HEALTH_VALUE_NOT_READY
+        };
+        self.set_key_value(HEALTH_KEY, health_value).await
+    }
+
+    pub async fn is_self_node_ready(&self) -> bool {
+        let chitchat = self.chitchat_handle.chitchat();
+        let mut chitchat_mutex = chitchat.lock().await;
+        let node_state = chitchat_mutex.self_node_state();
+        is_ready_predicate(node_state)
     }
 }
 
@@ -407,6 +435,7 @@ pub async fn create_cluster_for_test_with_id(
     seeds: Vec<String>,
     services: &HashSet<QuickwitService>,
     transport: &dyn Transport,
+    self_node_is_ready: bool,
 ) -> anyhow::Result<Cluster> {
     let gossip_advertise_addr: SocketAddr = ([127, 0, 0, 1], node_id).into();
     let node_id = format!("node_{node_id}");
@@ -426,6 +455,7 @@ pub async fn create_cluster_for_test_with_id(
         transport,
     )
     .await?;
+    cluster.set_self_node_ready(self_node_is_ready).await;
     Ok(cluster)
 }
 
@@ -443,6 +473,7 @@ pub async fn create_cluster_for_test(
     seeds: Vec<String>,
     services: &[&str],
     transport: &dyn Transport,
+    self_node_is_ready: bool,
 ) -> anyhow::Result<Cluster> {
     static NODE_AUTO_INCREMENT: AtomicU16 = AtomicU16::new(1u16);
     let node_id = NODE_AUTO_INCREMENT.fetch_add(1, Ordering::Relaxed);
@@ -456,6 +487,7 @@ pub async fn create_cluster_for_test(
         seeds,
         &services,
         transport,
+        self_node_is_ready,
     )
     .await?;
     Ok(cluster)
@@ -474,7 +506,7 @@ mod tests {
     #[tokio::test]
     async fn test_cluster_single_node() -> anyhow::Result<()> {
         let transport = ChannelTransport::default();
-        let cluster = create_cluster_for_test(Vec::new(), &[], &transport).await?;
+        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false).await?;
         let members: Vec<SocketAddr> = cluster
             .members()
             .iter()
@@ -482,6 +514,31 @@ mod tests {
             .collect();
         let expected_members = vec![cluster.gossip_listen_addr];
         assert_eq!(members, expected_members);
+        assert!(!cluster.is_self_node_ready().await);
+        let cluster_state = cluster.state().await;
+        let self_node_state_not_ready = cluster_state
+            .state
+            .node_states
+            .get(&cluster.node_id)
+            .unwrap();
+        assert_eq!(
+            self_node_state_not_ready.get(HEALTH_KEY).unwrap(),
+            HEALTH_VALUE_NOT_READY
+        );
+        cluster.set_self_node_ready(true).await;
+        assert!(cluster.is_self_node_ready().await);
+        let cluster_state = cluster.state().await;
+        let self_node_state_ready = cluster_state
+            .state
+            .node_states
+            .get(&cluster.node_id)
+            .unwrap();
+        assert_eq!(
+            self_node_state_ready.get(HEALTH_KEY).unwrap(),
+            HEALTH_VALUE_READY
+        );
+        cluster.set_self_node_ready(false).await;
+        assert!(!cluster.is_self_node_ready().await);
         cluster.shutdown().await;
         Ok(())
     }
@@ -490,12 +547,12 @@ mod tests {
     async fn test_cluster_available_searcher() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
-        let cluster1 = create_cluster_for_test(Vec::new(), &["searcher"], &transport).await?;
+        let cluster1 = create_cluster_for_test(Vec::new(), &["searcher"], &transport, true).await?;
         let node_1 = cluster1.gossip_listen_addr.to_string();
         let cluster2 =
-            create_cluster_for_test(vec![node_1.clone()], &["searcher"], &transport).await?;
-        let cluster3 = create_cluster_for_test(vec![node_1], &["indexer"], &transport).await?;
-
+            create_cluster_for_test(vec![node_1.clone()], &["searcher"], &transport, true).await?;
+        let cluster3 =
+            create_cluster_for_test(vec![node_1], &["indexer"], &transport, true).await?;
         let mut expected_searchers = vec![
             grpc_addr_from_listen_addr_for_test(cluster1.gossip_listen_addr),
             grpc_addr_from_listen_addr_for_test(cluster2.gossip_listen_addr),
@@ -522,13 +579,13 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
         let cluster1 =
-            create_cluster_for_test(Vec::new(), &["searcher", "indexer"], &transport).await?;
+            create_cluster_for_test(Vec::new(), &["searcher", "indexer"], &transport, true).await?;
         let node_1 = cluster1.gossip_listen_addr.to_string();
         let cluster2 =
-            create_cluster_for_test(vec![node_1.clone()], &["indexer"], &transport).await?;
+            create_cluster_for_test(vec![node_1.clone()], &["indexer"], &transport, true).await?;
         let cluster3 =
-            create_cluster_for_test(vec![node_1], &["indexer", "searcher"], &transport).await?;
-
+            create_cluster_for_test(vec![node_1], &["indexer", "searcher"], &transport, true)
+                .await?;
         let mut expected_indexers = vec![
             grpc_addr_from_listen_addr_for_test(cluster1.gossip_listen_addr),
             grpc_addr_from_listen_addr_for_test(cluster2.gossip_listen_addr),
@@ -557,10 +614,10 @@ mod tests {
     async fn test_cluster_multiple_nodes() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
-        let cluster1 = create_cluster_for_test(Vec::new(), &[], &transport).await?;
+        let cluster1 = create_cluster_for_test(Vec::new(), &[], &transport, true).await?;
         let node_1 = cluster1.gossip_listen_addr.to_string();
-        let cluster2 = create_cluster_for_test(vec![node_1.clone()], &[], &transport).await?;
-        let cluster3 = create_cluster_for_test(vec![node_1], &[], &transport).await?;
+        let cluster2 = create_cluster_for_test(vec![node_1.clone()], &[], &transport, true).await?;
+        let cluster3 = create_cluster_for_test(vec![node_1], &[], &transport, true).await?;
 
         let wait_secs = Duration::from_secs(30);
 
@@ -609,6 +666,7 @@ mod tests {
             Vec::new(),
             &HashSet::default(),
             &transport,
+            true,
         )
         .await?;
         let cluster2a = create_cluster_for_test_with_id(
@@ -617,6 +675,7 @@ mod tests {
             vec![cluster1a.gossip_listen_addr.to_string()],
             &HashSet::default(),
             &transport,
+            true,
         )
         .await?;
         let cluster1b = create_cluster_for_test_with_id(
@@ -628,6 +687,7 @@ mod tests {
             ],
             &HashSet::default(),
             &transport,
+            true,
         )
         .await?;
         let cluster2b = create_cluster_for_test_with_id(
@@ -639,6 +699,7 @@ mod tests {
             ],
             &HashSet::default(),
             &transport,
+            true,
         )
         .await?;
 
@@ -687,6 +748,7 @@ mod tests {
             Vec::new(),
             &HashSet::default(),
             &transport,
+            true,
         )
         .await?;
         let node_1 = cluster1.gossip_listen_addr.to_string();
@@ -696,6 +758,7 @@ mod tests {
             vec![node_1.clone()],
             &HashSet::default(),
             &transport,
+            true,
         )
         .await?;
 
@@ -741,6 +804,7 @@ mod tests {
             &transport,
         )
         .await?;
+        cluster2.set_self_node_ready(true).await;
 
         for cluster in [cluster1, cluster2] {
             cluster
@@ -772,6 +836,7 @@ mod tests {
             Vec::new(),
             &HashSet::default(),
             &transport,
+            true,
         )
         .await?;
         let node_1 = cluster1.gossip_listen_addr.to_string();
@@ -781,6 +846,7 @@ mod tests {
             vec![node_1.clone()],
             &HashSet::default(),
             &transport,
+            true,
         )
         .await?;
         let node_2 = cluster2.gossip_listen_addr.to_string();
@@ -790,10 +856,11 @@ mod tests {
             vec![node_2],
             &HashSet::default(),
             &transport,
+            true,
         )
         .await?;
 
-        let wait_secs = Duration::from_secs(4);
+        let wait_secs = Duration::from_secs(5);
 
         for cluster in [&cluster1, &cluster2] {
             cluster
@@ -841,6 +908,7 @@ mod tests {
             &transport,
         )
         .await?;
+        cluster2.set_self_node_ready(true).await;
         let node_2 = cluster2.gossip_listen_addr.to_string();
 
         let cluster3 = Cluster::join(
@@ -858,6 +926,7 @@ mod tests {
             &transport,
         )
         .await?;
+        cluster3.set_self_node_ready(true).await;
 
         for cluster in [&cluster1, &cluster2, &cluster3] {
             cluster
@@ -879,6 +948,38 @@ mod tests {
                 .collect();
             assert_eq!(&member_ids, &expected_member_ids);
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_cluster_with_node_becoming_ready() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let transport = ChannelTransport::default();
+        let cluster1 =
+            create_cluster_for_test(Vec::new(), &["searcher", "indexer"], &transport, true).await?;
+        let node_1 = cluster1.gossip_listen_addr.to_string();
+        let cluster2 =
+            create_cluster_for_test(vec![node_1.clone()], &["indexer"], &transport, false).await?;
+        let wait_secs = Duration::from_secs(30);
+
+        // Cluster 2 sees 2 members: himself and node 1.
+        cluster2
+            .wait_for_members(|members| members.len() == 2, wait_secs)
+            .await
+            .unwrap();
+        // However cluster 1 sees only 1 member, himself.
+        cluster1
+            .wait_for_members(|members| members.len() == 1, wait_secs)
+            .await
+            .unwrap();
+        // Cluster2 now becomes ready.
+        cluster2.set_self_node_ready(true).await;
+        // And cluster1 now sees 2 members.
+        cluster1
+            .wait_for_members(|members| members.len() == 2, wait_secs)
+            .await
+            .unwrap();
+
         Ok(())
     }
 }

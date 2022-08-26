@@ -306,8 +306,9 @@ pub struct VoidSourceParams;
 #[serde(deny_unknown_fields)]
 pub struct IngestApiSourceParams {
     pub index_id: String,
+    pub queues_dir_path: PathBuf,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub batch_num_bytes_threshold: Option<u64>,
+    pub batch_num_bytes_limit: Option<u64>,
 }
 
 #[cfg(test)]
@@ -476,10 +477,15 @@ mod tests {
     fn test_ingest_api_source_params_serialization() {
         let yaml = r#"
             index_id: wikipedia
-            batch_num_bytes_threshold: 200000
+            batch_num_bytes_limit: 200000
+            queues_dir_path: ./qwdata/queues
         "#;
         let ingest_api_params = serde_yaml::from_str::<IngestApiSourceParams>(yaml).unwrap();
         assert_eq!(ingest_api_params.index_id, "wikipedia");
-        assert_eq!(ingest_api_params.batch_num_bytes_threshold, Some(200000))
+        assert_eq!(ingest_api_params.batch_num_bytes_limit, Some(200000));
+        assert_eq!(
+            ingest_api_params.queues_dir_path,
+            Path::new("./qwdata/queues")
+        )
     }
 }

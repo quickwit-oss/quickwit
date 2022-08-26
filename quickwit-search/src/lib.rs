@@ -42,6 +42,7 @@ mod metrics;
 mod tests;
 
 use metrics::SEARCH_METRICS;
+use quickwit_common::extract_time_range;
 use root::validate_request;
 use service::SearcherContext;
 
@@ -50,7 +51,6 @@ pub type Result<T> = std::result::Result<T, SearchError>;
 
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
-use std::ops::Range;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -104,27 +104,6 @@ fn partial_hit_sorting_key(partial_hit: &PartialHit) -> (Reverse<u64>, GlobalDoc
         Reverse(partial_hit.sorting_field_value),
         GlobalDocAddress::from_partial_hit(partial_hit),
     )
-}
-
-fn extract_time_range(
-    start_timestamp_opt: Option<i64>,
-    end_timestamp_opt: Option<i64>,
-) -> Option<Range<i64>> {
-    match (start_timestamp_opt, end_timestamp_opt) {
-        (Some(start_timestamp), Some(end_timestamp)) => Some(Range {
-            start: start_timestamp,
-            end: end_timestamp,
-        }),
-        (_, Some(end_timestamp)) => Some(Range {
-            start: i64::MIN,
-            end: end_timestamp,
-        }),
-        (Some(start_timestamp), _) => Some(Range {
-            start: start_timestamp,
-            end: i64::MAX,
-        }),
-        _ => None,
-    }
 }
 
 fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAndFooterOffsets {
@@ -183,6 +162,7 @@ fn convert_leaf_hit(
     Ok(quickwit_proto::Hit {
         json,
         partial_hit: leaf_hit.partial_hit,
+        snippet: leaf_hit.leaf_snippet_json,
     })
 }
 
@@ -222,11 +202,25 @@ pub async fn single_node_search(
     )
     .await
     .context("Failed to perform leaf search.")?;
+
+    let doc_mapper_opt = if !search_request.snippet_fields.is_empty() {
+        Some(doc_mapper.clone())
+    } else {
+        None
+    };
+    let search_request_opt = if !search_request.snippet_fields.is_empty() {
+        Some(search_request)
+    } else {
+        None
+    };
+
     let fetch_docs_response = fetch_docs(
         searcher_context.clone(),
         leaf_search_response.partial_hits,
         index_storage,
         &split_metadata,
+        doc_mapper_opt,
+        search_request_opt,
     )
     .await
     .context("Failed to perform fetch docs.")?;

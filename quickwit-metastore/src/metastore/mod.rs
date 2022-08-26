@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 pub mod file_backed_metastore;
+pub mod grpc_metastore;
 mod index_metadata;
 #[cfg(feature = "postgres")]
 pub mod postgresql_metastore;
