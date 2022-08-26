@@ -446,7 +446,7 @@ pub mod metastore_api_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        /// Clear source checkpoint.
+        /// Resets source checkpoint.
         pub async fn reset_source_checkpoint(
             &mut self,
             request: impl tonic::IntoRequest<super::ResetSourceCheckpointRequest>,
@@ -535,7 +535,7 @@ pub mod metastore_api_service_server {
             &self,
             request: tonic::Request<super::DeleteSourceRequest>,
         ) -> Result<tonic::Response<super::SourceResponse>, tonic::Status>;
-        /// Clear source checkpoint.
+        /// Resets source checkpoint.
         async fn reset_source_checkpoint(
             &self,
             request: tonic::Request<super::ResetSourceCheckpointRequest>,

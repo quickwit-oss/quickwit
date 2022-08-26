@@ -161,7 +161,7 @@ impl IndexCheckpoint {
         Ok(())
     }
 
-    /// Clears the checkpoint of the source identified by `source_id`. Returns whether a mutation
+    /// Resets the checkpoint of the source identified by `source_id`. Returns whether a mutation
     /// occurred.
     pub(crate) fn reset_source(&mut self, source_id: &str) -> bool {
         self.per_source.remove(source_id).is_some()

@@ -408,7 +408,7 @@ impl Metastore for MetastoreGrpcClient {
         Ok(())
     }
 
-    /// Clears a source checkpoint.
+    /// Resets a source checkpoint.
     async fn reset_source_checkpoint(
         &self,
         index_id: &str,
