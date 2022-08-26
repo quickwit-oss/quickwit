@@ -348,16 +348,13 @@ pub(super) fn get_region(region_or_endpoint: Option<RegionOrEndpoint>) -> anyhow
         });
     }
 
-    // TODO: Change this to let_chain when 1.64 lands. (this is ugly)
     if let Some(RegionOrEndpoint::Region(region)) = region_or_endpoint {
-        match region.parse() {
-            Ok(region_val) => return Ok(region_val),
-            Err(_) => {}
-        }
+        return region
+            .parse()
+            .with_context(|| format!("Failed to parse region: `{}`", region));
     }
 
-    sniff_s3_region_and_cache() //< We fallback to S3 region if parsing from `region_or_endpoint`
-                                //< fails
+    sniff_s3_region_and_cache() //< We fallback to S3 region if `region_or_endpoint` is `None`
 }
 
 #[cfg(all(test, feature = "kinesis-localstack-tests"))]
