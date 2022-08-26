@@ -67,7 +67,7 @@ pub fn build_source_command<'a>() -> Command<'a> {
             )
         .subcommand(
             Command::new("reset-checkpoint")
-                .about("Clears a source checkpoint. This is action is destructive and cannot be undone. Proceed with caution.")
+                .about("Clears a source checkpoint. This operation is destructive and cannot be undone. Proceed with caution.")
                 .args(&[
                     arg!(--index <INDEX_ID> "Index ID"),
                     arg!(--source <SOURCE_ID> "Source ID"),

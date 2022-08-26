@@ -32,11 +32,11 @@ use quickwit_indexing::{
     SplitDeletionError,
 };
 use quickwit_metastore::{
-    IndexMetadata, Metastore, MetastoreError, MetastoreUriResolver, Split, SplitMetadata,
-    SplitState,
+    quickwit_metastore_uri_resolver, IndexMetadata, Metastore, MetastoreError,
+    MetastoreUriResolver, Split, SplitMetadata, SplitState,
 };
 use quickwit_proto::{ServiceError, ServiceErrorCode};
-use quickwit_storage::{StorageResolverError, StorageUriResolver};
+use quickwit_storage::{quickwit_storage_uri_resolver, StorageResolverError, StorageUriResolver};
 use tantivy::time::OffsetDateTime;
 use thiserror::Error;
 use tracing::{error, info};
@@ -84,6 +84,16 @@ impl IndexService {
             default_index_root_uri,
         }
     }
+
+    pub async fn from_config(config: QuickwitConfig) -> anyhow::Result<Self> {
+        let metastore = quickwit_metastore_uri_resolver()
+            .resolve(&config.metastore_uri)
+            .await?;
+        let storage_resolver = quickwit_storage_uri_resolver().clone();
+        let index_service = Self::new(metastore, storage_resolver, config.default_index_root_uri);
+        Ok(index_service)
+    }
+
     /// Get an index from `index_id`.
     pub async fn get_index(&self, index_id: &str) -> Result<IndexMetadata, IndexServiceError> {
         let index_metadata = self.metastore.index_metadata(index_id).await?;
@@ -261,6 +271,7 @@ impl IndexService {
     /// - mark all splits for deletion in the metastore.
     /// - delete the files of all splits marked for deletion using garbage collection.
     /// - delete the splits from the metastore.
+    /// - reset all the source checkpoints.
     ///
     /// * `metastore` - A metastore object for interacting with the metastore.
     /// * `index_id` - The target index Id.
@@ -288,7 +299,12 @@ impl IndexService {
         )
         .await
         {
-            error!(metastore_uri = %self.metastore.uri(), index_id = %index_id, error = ?err, "Not all split files could be deleted during garbage collection.");
+            error!(metastore_uri=%self.metastore.uri(), index_id=%index_id, error=?err, "Failed to delete all the split files during garbage collection.");
+        }
+        for source_id in index_metadata.sources.keys() {
+            self.metastore
+                .reset_source_checkpoint(index_id, source_id)
+                .await?;
         }
         Ok(())
     }
