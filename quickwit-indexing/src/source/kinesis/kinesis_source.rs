@@ -406,8 +406,7 @@ mod tests {
 
         {
             let region_or_endpoint = Some(RegionOrEndpoint::Region("quickwit-hq-1".to_string()));
-            let region = get_region(region_or_endpoint).unwrap();
-            assert_eq!(sniff_s3_region_and_cache().unwrap(), region);
+            get_region(region_or_endpoint).unwrap_err();
         }
     }
 
