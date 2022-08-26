@@ -59,7 +59,7 @@ service MetastoreApiService {
   // Remove source.
   rpc delete_source(DeleteSourceRequest) returns (SourceResponse);
 
-  // Clear source checkpoint.
+  // Resets source checkpoint.
   rpc reset_source_checkpoint(ResetSourceCheckpointRequest) returns (SourceResponse);
 }
 
