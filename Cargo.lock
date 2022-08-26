@@ -2910,6 +2910,7 @@ version = "0.3.1"
 dependencies = [
  "anyhow",
  "async-trait",
+ "ec2_instance_metadata",
  "futures",
  "hyper-rustls",
  "once_cell",
@@ -3336,7 +3337,6 @@ dependencies = [
  "azure_storage_blobs",
  "base64",
  "bytes",
- "ec2_instance_metadata",
  "fnv",
  "futures",
  "lru",
