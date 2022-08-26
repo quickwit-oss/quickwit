@@ -50,7 +50,7 @@ that are not defined in the mapping will be entirely discarded.
 
 `mode` can take another value: `dynamic`.
 When set to dynamic, all extra fields will actually be mapped using a catch-all configuration.
-By default, this catch-all configuration indexes and stores all of these fields, but this can be configured by settings the [`dynamic_mapping` attribute](../configuration/index-config#mode).
+By default, this catch-all configuration indexes and stores all of these fields, but this can be configured by setting the [`dynamic_mapping` attribute](../configuration/index-config#mode).
 A minimalist, yet perfectly valid and useful index configuration is then:
 
 ```yaml
@@ -94,7 +94,7 @@ For instance, let's consider the following user event log:
 }
 ```
 
-Each event type comes with its own set of set of attributes. Declaring our mapping as the union of all of these event-specific mappings would be a tedious exercise.
+Each event type comes with its own set of attributes. Declaring our mapping as the union of all of these event-specific mappings would be a tedious exercise.
 
 Instead, we can cherry-pick the fields that are common to all of the logs, and rely on dynamic mode to handle the rest.
 
