@@ -45,6 +45,7 @@ fn unix_timestamp() -> u64 {
 pub enum QuickwitService {
     Indexer,
     Searcher,
+    Janitor,
     Metastore,
 }
 
@@ -53,6 +54,7 @@ impl QuickwitService {
         match self {
             QuickwitService::Indexer => "indexer",
             QuickwitService::Searcher => "searcher",
+            QuickwitService::Janitor => "janitor",
             QuickwitService::Metastore => "metastore",
         }
     }
@@ -65,6 +67,7 @@ impl TryFrom<&str> for QuickwitService {
         match service_str {
             "indexer" => Ok(QuickwitService::Indexer),
             "searcher" => Ok(QuickwitService::Searcher),
+            "janitor" => Ok(QuickwitService::Janitor),
             "metastore" => Ok(QuickwitService::Metastore),
             _ => {
                 bail!("Service `{service_str}` unknown");

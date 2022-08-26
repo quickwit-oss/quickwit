@@ -51,6 +51,8 @@ use quickwit_core::IndexService;
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest_api::{start_ingest_api_service, IngestApiService};
+use quickwit_janitor::actors::JanitorService;
+use quickwit_janitor::start_janitor_service;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreGrpcClient};
 use quickwit_search::{start_searcher_service, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
@@ -78,6 +80,8 @@ struct QuickwitServices {
     /// the root requests.
     pub search_service: Arc<dyn SearchService>,
     pub indexer_service: Option<Mailbox<IndexingService>>,
+    #[allow(dead_code)] // TODO remove
+    pub janitor_service: Option<Mailbox<JanitorService>>,
     pub ingest_api_service: Option<Mailbox<IngestApiService>>,
     pub index_service: Arc<IndexService>,
     pub services: HashSet<QuickwitService>,
@@ -149,6 +153,19 @@ pub async fn serve_quickwit(
         (None, None)
     };
 
+    let janitor_service = if services.contains(&QuickwitService::Janitor) {
+        let janitor_service = start_janitor_service(
+            &universe,
+            &config,
+            metastore.clone(),
+            storage_resolver.clone(),
+        )
+        .await?;
+        Some(janitor_service)
+    } else {
+        None
+    };
+
     let search_service: Arc<dyn SearchService> = start_searcher_service(
         &config,
         metastore.clone(),
@@ -157,12 +174,13 @@ pub async fn serve_quickwit(
     )
     .await?;
 
-    // Always instanciate index service.
+    // Always instantiate index management service.
     let index_service = Arc::new(IndexService::new(
         metastore.clone(),
         storage_resolver,
         config.default_index_root_uri.clone(),
     ));
+
     let grpc_listen_addr = config.grpc_listen_addr;
     let rest_listen_addr = config.rest_listen_addr;
 
@@ -171,9 +189,10 @@ pub async fn serve_quickwit(
         build_info: Arc::new(build_quickwit_build_info()),
         cluster,
         metastore,
-        ingest_api_service,
         search_service,
         indexer_service,
+        janitor_service,
+        ingest_api_service,
         index_service,
         services: services.clone(),
     };
