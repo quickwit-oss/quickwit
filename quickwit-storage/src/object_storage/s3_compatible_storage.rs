@@ -27,7 +27,7 @@ use futures::{stream, StreamExt};
 use once_cell::sync::OnceCell;
 use quickwit_aws::error::RusotoErrorWrapper;
 use quickwit_aws::get_http_client;
-use quickwit_aws::region::sniff_s3_region_and_cache;
+use quickwit_aws::region::sniff_aws_region_and_cache;
 use quickwit_aws::retry::{retry, Retry, RetryParams, Retryable};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
@@ -102,7 +102,7 @@ impl S3CompatibleObjectStorage {
 
     /// Creates an object storage given a region and an uri.
     pub fn from_uri(uri: &Uri) -> Result<S3CompatibleObjectStorage, StorageResolverError> {
-        let region = sniff_s3_region_and_cache().map_err(|err| {
+        let region = sniff_aws_region_and_cache().map_err(|err| {
             StorageResolverError::FailedToOpenStorage {
                 kind: StorageErrorKind::Service,
                 message: err.to_string(),

@@ -25,7 +25,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
-use quickwit_aws::region::sniff_s3_region_and_cache;
+use quickwit_aws::region::sniff_aws_region_and_cache;
 use quickwit_aws::retry::RetryParams;
 use quickwit_config::{KinesisSourceParams, RegionOrEndpoint};
 use quickwit_metastore::checkpoint::{
@@ -354,7 +354,7 @@ pub(super) fn get_region(region_or_endpoint: Option<RegionOrEndpoint>) -> anyhow
             .with_context(|| format!("Failed to parse region: `{}`", region));
     }
 
-    sniff_s3_region_and_cache() //< We fallback to S3 region if `region_or_endpoint` is `None`
+    sniff_aws_region_and_cache() //< We fallback to AWS region if `region_or_endpoint` is `None`
 }
 
 #[cfg(all(test, feature = "kinesis-localstack-tests"))]

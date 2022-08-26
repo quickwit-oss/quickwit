@@ -30,7 +30,7 @@ use tracing::{debug, error, info, instrument, warn};
 const QUICKWIT_DEFAULT_REGION: Region = Region::UsEast1;
 
 #[instrument]
-fn sniff_s3_region() -> anyhow::Result<Region> {
+fn sniff_aws_region() -> anyhow::Result<Region> {
     // Attempt to read region from environment variable and return an error if malformed.
     if let Some(region) = region_from_env_variables()? {
         info!(region=?region, from="env-variable", "set-aws-region");
@@ -63,10 +63,10 @@ fn sniff_s3_region() -> anyhow::Result<Region> {
 /// impact the start of quickwit in a context where S3 is not used.
 ///
 /// This function caches its results.
-pub fn sniff_s3_region_and_cache() -> anyhow::Result<Region> {
+pub fn sniff_aws_region_and_cache() -> anyhow::Result<Region> {
     static CACHED_S3_DEFAULT_REGION: OnceCell<Region> = OnceCell::new();
     CACHED_S3_DEFAULT_REGION
-        .get_or_try_init(sniff_s3_region)
+        .get_or_try_init(sniff_aws_region)
         .map(|region| region.clone())
 }
 
