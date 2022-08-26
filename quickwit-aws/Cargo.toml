@@ -12,6 +12,7 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
+ec2_instance_metadata = "0.3"
 futures = "0.3"
 hyper-rustls = "0.23"
 once_cell = "1"

@@ -30,6 +30,7 @@ use rusoto_core::{HttpClient, HttpConfig};
 use rusoto_sts::WebIdentityProvider;
 
 pub mod error;
+pub mod region;
 pub mod retry;
 
 /// A timeout for idle sockets being kept-alive.
