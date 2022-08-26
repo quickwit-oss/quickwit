@@ -108,7 +108,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
             metastore
-                .publish_splits(&index_id, &[&split_id], &[], None)
+                .publish_splits(&index_id, &[split_id], &[], None)
                 .await
                 .unwrap();
         }
