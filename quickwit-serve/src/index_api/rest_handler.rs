@@ -89,7 +89,10 @@ async fn get_indexes_metadatas(
     index_service: Arc<IndexService>,
 ) -> Result<impl warp::Reply, Infallible> {
     info!("get-indexes-metadatas");
-    let index_metadata = index_service.get_indexes().await.map_err(SearchError::from);
+    let index_metadata = index_service
+        .list_indexes()
+        .await
+        .map_err(SearchError::from);
     Ok(Format::default().make_rest_reply_non_serializable_error(index_metadata))
 }
 
