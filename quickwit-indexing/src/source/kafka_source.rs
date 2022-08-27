@@ -33,7 +33,7 @@ use quickwit_metastore::checkpoint::{
 };
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::{
-    BaseConsumer, Consumer, ConsumerContext, DefaultConsumerContext, Rebalance,
+    BaseConsumer, Consumer, ConsumerContext, DefaultConsumerContext, Rebalance, RebalanceProtocol,
 };
 use rdkafka::error::KafkaError;
 use rdkafka::message::BorrowedMessage;
@@ -249,13 +249,6 @@ impl KafkaSource {
         let topic = params.topic.clone();
         let backfill_mode_enabled = params.enable_backfill_mode;
 
-        info!(
-            index_id=%ctx.index_id,
-            source_id=%ctx.source_config.source_id,
-            topic=%topic,
-            "Starting Kafka source."
-        );
-
         let (events_tx, events_rx) = mpsc::channel(100);
         let consumer = create_consumer(&ctx.source_config.source_id, params, events_tx.clone())?;
         consumer
@@ -264,6 +257,18 @@ impl KafkaSource {
         let poll_loop_jh = spawn_consumer_poll_loop(consumer.clone(), events_tx);
         let publish_lock = PublishLock::default();
 
+        let rebalance_protocol_str = match consumer.rebalance_protocol() {
+            RebalanceProtocol::None => "off group", // The consumer has not joined the group yet.
+            RebalanceProtocol::Eager => "eager",
+            RebalanceProtocol::Cooperative => "cooperative",
+        };
+        info!(
+            index_id=%ctx.index_id,
+            source_id=%ctx.source_config.source_id,
+            topic=%topic,
+            rebalance_protocol=%rebalance_protocol_str,
+            "Starting Kafka source."
+        );
         let state = KafkaSourceState {
             ..Default::default()
         };
