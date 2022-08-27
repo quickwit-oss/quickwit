@@ -205,7 +205,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_publisher_publish_operation() {
-        quickwit_common::setup_logging_for_tests();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_publish_splits()
@@ -278,7 +277,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_publisher_replace_operation() {
-        quickwit_common::setup_logging_for_tests();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_publish_splits()
@@ -324,5 +322,44 @@ mod tests {
         let merge_planner_msgs = merge_planner_inbox.drain_for_test_typed::<NewSplits>();
         assert_eq!(merge_planner_msgs.len(), 1);
         assert_eq!(merge_planner_msgs[0].new_splits.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn publisher_acquires_publish_lock() {
+        let mut mock_metastore = MockMetastore::default();
+        mock_metastore.expect_publish_splits().never();
+        let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
+        let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
+
+        let publisher = Publisher::new(
+            PublisherType::MainPublisher,
+            Arc::new(mock_metastore),
+            merge_planner_mailbox,
+            garbage_collector_mailbox,
+            None,
+        );
+        let universe = Universe::new();
+        let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
+
+        let publish_lock = PublishLock::default();
+        publish_lock.kill().await;
+
+        publisher_mailbox
+            .send_message(SplitUpdate {
+                index_id: "test-index".to_string(),
+                new_splits: vec![SplitMetadata::for_test("test-split".to_string())],
+                replaced_split_ids: Vec::new(),
+                checkpoint_delta_opt: None,
+                publish_lock,
+                date_of_birth: Instant::now(),
+            })
+            .await
+            .unwrap();
+
+        let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
+        assert_eq!(publisher_observation.num_published_splits, 0);
+
+        let merger_messages = merge_planner_inbox.drain_for_test();
+        assert!(merger_messages.is_empty());
     }
 }
