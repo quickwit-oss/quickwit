@@ -52,7 +52,7 @@ pub const DYNAMIC_FIELD_NAME: &str = "_dynamic";
 
 /// Returns a default `DefaultIndexConfig` for unit tests.
 #[cfg(any(test, feature = "testsuite"))]
-pub fn default_doc_mapper_for_tests() -> DefaultDocMapper {
+pub fn default_doc_mapper_for_test() -> DefaultDocMapper {
     const JSON_CONFIG_VALUE: &str = r#"
         {
             "store_source": true,

@@ -568,7 +568,7 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::{create_test_mailbox, Universe};
-    use quickwit_doc_mapper::{DefaultDocMapper, SortOrder};
+    use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper, SortOrder};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_metastore::MockMetastore;
 
@@ -595,7 +595,7 @@ mod tests {
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
         };
-        let doc_mapper = Arc::new(quickwit_doc_mapper::default_doc_mapper_for_tests());
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let indexing_directory = IndexingDirectory::for_test().await?;
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 3;
@@ -686,7 +686,7 @@ mod tests {
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
         };
-        let doc_mapper = Arc::new(quickwit_doc_mapper::default_doc_mapper_for_tests());
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let indexing_directory = IndexingDirectory::for_test().await?;
         let indexing_settings = IndexingSettings::for_test();
         let (packager_mailbox, packager_inbox) = create_test_mailbox();
@@ -759,7 +759,7 @@ mod tests {
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
         };
-        let doc_mapper = Arc::new(quickwit_doc_mapper::default_doc_mapper_for_tests());
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let indexing_directory = IndexingDirectory::for_test().await?;
         let indexing_settings = IndexingSettings::for_test();
         let (packager_mailbox, packager_inbox) = create_test_mailbox();
