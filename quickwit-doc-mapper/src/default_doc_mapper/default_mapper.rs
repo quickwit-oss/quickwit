@@ -588,7 +588,7 @@ mod tests {
 
     #[test]
     fn test_json_deserialize() -> anyhow::Result<()> {
-        let config = crate::default_doc_mapper_for_tests();
+        let config = crate::default_doc_mapper_for_test();
         assert!(config.source_field.is_some());
         let mut default_search_field_names: Vec<String> = config.default_search_field_names;
         default_search_field_names.sort();
@@ -629,7 +629,7 @@ mod tests {
 
     #[test]
     fn test_parsing_document() {
-        let doc_mapper = crate::default_doc_mapper_for_tests();
+        let doc_mapper = crate::default_doc_mapper_for_test();
         let json_doc = example_json_doc_value();
         let (_, document) = doc_mapper.doc_from_json(json_doc.to_string()).unwrap();
         let schema = doc_mapper.schema();
@@ -669,7 +669,7 @@ mod tests {
 
     #[test]
     fn test_accept_parsing_document_with_unknown_fields_and_missing_fields() {
-        let doc_mapper = crate::default_doc_mapper_for_tests();
+        let doc_mapper = crate::default_doc_mapper_for_test();
         doc_mapper
             .doc_from_json(
                 r#"{
@@ -686,7 +686,7 @@ mod tests {
 
     #[test]
     fn test_fail_parsing_document_with_missing_fast_field() {
-        let doc_mapper = crate::default_doc_mapper_for_tests();
+        let doc_mapper = crate::default_doc_mapper_for_test();
         let result = doc_mapper.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
@@ -706,7 +706,7 @@ mod tests {
 
     #[test]
     fn test_fail_to_parse_document_with_wrong_cardinality() -> anyhow::Result<()> {
-        let doc_mapper = crate::default_doc_mapper_for_tests();
+        let doc_mapper = crate::default_doc_mapper_for_test();
         let result = doc_mapper.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
@@ -725,7 +725,7 @@ mod tests {
 
     #[test]
     fn test_fail_to_parse_document_with_wrong_value() -> anyhow::Result<()> {
-        let doc_mapper = crate::default_doc_mapper_for_tests();
+        let doc_mapper = crate::default_doc_mapper_for_test();
         let result = doc_mapper.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,

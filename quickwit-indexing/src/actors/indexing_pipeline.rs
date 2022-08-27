@@ -647,7 +647,7 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_config::{IndexingSettings, SourceParams};
-    use quickwit_doc_mapper::default_doc_mapper_for_tests;
+    use quickwit_doc_mapper::default_doc_mapper_for_test;
     use quickwit_metastore::{IndexMetadata, MetastoreError, MockMetastore};
     use quickwit_storage::RamStorage;
 
@@ -740,7 +740,7 @@ mod tests {
         };
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
-            doc_mapper: Arc::new(default_doc_mapper_for_tests()),
+            doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             indexing_directory: IndexingDirectory::for_test().await?,
             indexing_settings: IndexingSettings::for_test(),
@@ -829,7 +829,7 @@ mod tests {
         };
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
-            doc_mapper: Arc::new(default_doc_mapper_for_tests()),
+            doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             indexing_directory: IndexingDirectory::for_test().await?,
             indexing_settings: IndexingSettings::for_test(),
