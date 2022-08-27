@@ -28,10 +28,10 @@ use quickwit_proto::{FetchDocsResponse, PartialHit, SearchRequest, SplitIdAndFoo
 use quickwit_storage::Storage;
 use tantivy::query::{Query, QueryParserError};
 use tantivy::schema::{Field, Value};
-use tantivy::{IndexReader, ReloadPolicy, Score, Searcher, SnippetGenerator};
+use tantivy::{ReloadPolicy, Score, Searcher, SnippetGenerator};
 use tracing::error;
 
-use crate::leaf::open_index_with_cache;
+use crate::leaf::open_index_with_caches;
 use crate::service::SearcherContext;
 use crate::GlobalDocAddress;
 
@@ -150,23 +150,6 @@ pub async fn fetch_docs(
 
 const NUM_CONCURRENT_REQUESTS: usize = 10;
 
-async fn get_searcher_for_split_without_cache(
-    searcher_context: &Arc<SearcherContext>,
-    index_storage: Arc<dyn Storage>,
-    split: &SplitIdAndFooterOffsets,
-) -> anyhow::Result<IndexReader> {
-    let index = open_index_with_cache(searcher_context, index_storage, split, false)
-        .await
-        .with_context(|| "open-index-for-split")?;
-    let reader = index
-        .reader_builder()
-        // the docs are presorted so a cache size of NUM_CONCURRENT_REQUESTS is fine
-        .doc_store_cache_size(NUM_CONCURRENT_REQUESTS)
-        .reload_policy(ReloadPolicy::Manual)
-        .try_into()?;
-    Ok(reader)
-}
-
 /// A struct for holding a fetched document's content and snippet.
 #[derive(Debug)]
 struct Document {
@@ -185,8 +168,17 @@ async fn fetch_docs_in_split(
     search_request_opt: Option<&SearchRequest>,
 ) -> anyhow::Result<Vec<(GlobalDocAddress, Document)>> {
     global_doc_addrs.sort_by_key(|doc| doc.doc_addr);
-    let index_reader =
-        get_searcher_for_split_without_cache(&searcher_context, index_storage, split).await?;
+    // Opens the index without the ephemeral unbounded cache, this cache is indeed not useful
+    // when fetching docs as we will fetch them only once.
+    let index = open_index_with_caches(&searcher_context, index_storage, split, false)
+        .await
+        .with_context(|| "open-index-for-split")?;
+    let index_reader = index
+        .reader_builder()
+        // the docs are presorted so a cache size of NUM_CONCURRENT_REQUESTS is fine
+        .doc_store_cache_size(NUM_CONCURRENT_REQUESTS)
+        .reload_policy(ReloadPolicy::Manual)
+        .try_into()?;
     let searcher = Arc::new(index_reader.searcher());
     let fields_snippet_generator_opt =
         if let (Some(doc_mapper), Some(search_request)) = (doc_mapper_opt, search_request_opt) {
