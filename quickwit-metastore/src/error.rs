@@ -20,7 +20,6 @@
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "postgres")]
-use sqlx;
 use thiserror::Error;
 
 use crate::checkpoint::IncompatibleCheckpointDelta;

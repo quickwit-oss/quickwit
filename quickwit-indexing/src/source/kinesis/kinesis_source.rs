@@ -436,13 +436,13 @@ mod tests {
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages: Vec<RawDocBatch> = inbox
+            let next_message = inbox
                 .drain_for_test()
                 .into_iter()
                 .flat_map(|box_any| box_any.downcast::<RawDocBatch>().ok())
                 .map(|box_raw_doc_batch| *box_raw_doc_batch)
-                .collect();
-            assert!(messages.is_empty());
+                .next();
+            assert!(next_message.is_none());
 
             let expected_shard_consumer_positions: Vec<(ShardId, SeqNo)> = Vec::new();
             let expected_state = json!({
@@ -470,11 +470,11 @@ mod tests {
         .unwrap();
         let shard_sequence_numbers: HashMap<usize, SeqNo> = sequence_numbers
             .iter()
-            .map(|(shard_id, records)| (shard_id.clone(), records.last().unwrap().clone()))
+            .map(|(shard_id, records)| (*shard_id, records.last().unwrap().clone()))
             .collect();
         let shard_positions: HashMap<usize, Position> = shard_sequence_numbers
             .iter()
-            .map(|(shard_id, seqno)| (shard_id.clone(), Position::from(seqno.clone())))
+            .map(|(shard_id, seqno)| (*shard_id, Position::from(seqno.clone())))
             .collect();
         {
             let checkpoint = SourceCheckpoint::default();
@@ -496,7 +496,7 @@ mod tests {
                 .flat_map(|box_any| box_any.downcast::<RawDocBatch>().ok())
                 .map(|box_raw_doc_batch| *box_raw_doc_batch)
                 .collect();
-            assert!(messages.len() >= 1);
+            assert!(!messages.is_empty());
 
             let batch = merge_doc_batches(messages).unwrap();
             let expected_docs = vec![
@@ -567,7 +567,7 @@ mod tests {
                 .flat_map(|box_any| box_any.downcast::<RawDocBatch>().ok())
                 .map(|box_raw_doc_batch| *box_raw_doc_batch)
                 .collect();
-            assert!(messages.len() >= 1);
+            assert!(!messages.is_empty());
 
             let batch = merge_doc_batches(messages).unwrap();
             let expected_docs = vec!["Record #00", "Record #01", "Record #11"];

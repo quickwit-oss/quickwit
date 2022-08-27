@@ -503,7 +503,7 @@ fn compute_assignment(
     let mut assignment = TopicPartitionList::with_capacity(partition_ids.len());
     for &partition_id in partition_ids {
         let next_offset = compute_next_offset(partition_id, checkpoint, watermarks)?;
-        let _ = assignment.add_partition_offset(topic, partition_id, next_offset)?;
+        assignment.add_partition_offset(topic, partition_id, next_offset)?;
     }
     Ok(assignment)
 }
@@ -846,14 +846,14 @@ mod kafka_broker_tests {
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages: Vec<RawDocBatch> = inbox
+            let next_message = inbox
                 .drain_for_test()
                 .into_iter()
                 .flat_map(|msg_any| msg_any.downcast::<RawDocBatch>().ok())
                 .map(|boxed_msg| *boxed_msg)
-                .collect();
+                .next();
 
-            assert!(messages.is_empty());
+            assert!(next_message.is_none());
 
             let expected_current_positions: Vec<(i32, i64)> = vec![];
             let expected_state = json!({
@@ -905,7 +905,7 @@ mod kafka_broker_tests {
                 .flat_map(|box_any| box_any.downcast::<RawDocBatch>().ok())
                 .map(|box_raw_doc_batch| *box_raw_doc_batch)
                 .collect();
-            assert!(messages.len() >= 1);
+            assert!(!messages.is_empty());
 
             let batch = merge_doc_batches(messages)?;
             let expected_docs = vec![
@@ -964,7 +964,7 @@ mod kafka_broker_tests {
                 .flat_map(|box_message| box_message.downcast::<RawDocBatch>())
                 .map(|box_raw_batch| *box_raw_batch)
                 .collect();
-            assert!(messages.len() >= 1);
+            assert!(!messages.is_empty());
 
             let batch = merge_doc_batches(messages)?;
             let expected_docs = vec!["Message #002", "Message #200", "Message #202"];
