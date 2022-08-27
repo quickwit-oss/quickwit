@@ -21,6 +21,7 @@ mod errors;
 mod ingest_api_service;
 mod position;
 mod queue;
+mod recordlog;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

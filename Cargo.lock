@@ -3209,6 +3209,7 @@ version = "0.3.1"
 dependencies = [
  "anyhow",
  "async-trait",
+ "crc32fast",
  "flume",
  "futures",
  "once_cell",

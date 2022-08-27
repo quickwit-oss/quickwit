@@ -468,7 +468,7 @@ pub fn write_hotcache<D: Directory>(
     // We use the caching directory here in order to defensively ensure that
     // the content of the directory that will be written in the hotcache is precisely
     // the same that was read on the first pass.
-    let caching_directory = CachingDirectory::new_with_unlimited_capacity(Arc::new(directory));
+    let caching_directory = CachingDirectory::new_unbounded(Arc::new(directory));
     let debug_proxy_directory = DebugProxyDirectory::wrap(caching_directory);
     let index = Index::open(debug_proxy_directory.clone())?;
     let schema = index.schema();

@@ -234,8 +234,8 @@ pub struct SearcherContext {
     pub split_stream_semaphore: Semaphore,
     /// Split footer cache.
     pub split_footer_cache: MemorySizedCache<String>,
-    /// Storage cache that lives until the searcher stops.
-    pub storage_long_term_cache: Arc<dyn Cache>,
+    /// Fast fields cache.
+    pub fast_fields_cache: Arc<dyn Cache>,
 }
 
 impl SearcherContext {
@@ -257,7 +257,7 @@ impl SearcherContext {
             split_footer_cache: global_split_footer_cache,
             leaf_search_split_semaphore,
             split_stream_semaphore,
-            storage_long_term_cache,
+            fast_fields_cache: storage_long_term_cache,
         }
     }
 }

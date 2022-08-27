@@ -82,31 +82,15 @@ async fn get_split_footer_from_cache_or_fetch(
     Ok(footer_data_opt)
 }
 
-/// Opens a `tantivy::Index` for the given split.
-///
-/// The resulting index uses a dynamic and a static cache.
-pub(crate) async fn open_index(
+/// Opens a `tantivy::Index` for the given split with several cache layers:
+/// - A split footer cache given by `SearcherContext.split_footer_cache`.
+/// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
+/// - An ephemeral unbounded cache directory whose lifetime is tied to the returned `Index`.
+pub(crate) async fn open_index_with_caches(
     searcher_context: &Arc<SearcherContext>,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
-) -> anyhow::Result<Index> {
-    open_index_with_cache(
-        searcher_context,
-        index_storage,
-        split_and_footer_offsets,
-        true,
-    )
-    .await
-}
-
-/// Opens a `tantivy::Index` for the given split.
-///
-/// The resulting index uses a dynamic and a static cache.
-pub(crate) async fn open_index_with_cache(
-    searcher_context: &Arc<SearcherContext>,
-    index_storage: Arc<dyn Storage>,
-    split_and_footer_offsets: &SplitIdAndFooterOffsets,
-    unlimited_cache: bool,
+    ephemeral_unbounded_cache: bool,
 ) -> anyhow::Result<Index> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
     let footer_data = get_split_footer_from_cache_or_fetch(
@@ -122,12 +106,12 @@ pub(crate) async fn open_index_with_cache(
         FileSlice::new(Arc::new(footer_data)),
     )?;
     let bundle_storage_with_cache = wrap_storage_with_long_term_cache(
-        searcher_context.storage_long_term_cache.clone(),
+        searcher_context.fast_fields_cache.clone(),
         Arc::new(bundle_storage),
     );
     let directory = StorageDirectory::new(bundle_storage_with_cache);
-    let hot_directory = if unlimited_cache {
-        let caching_directory = CachingDirectory::new_with_unlimited_capacity(Arc::new(directory));
+    let hot_directory = if ephemeral_unbounded_cache {
+        let caching_directory = CachingDirectory::new_unbounded(Arc::new(directory));
         HotDirectory::open(caching_directory, hotcache_bytes.read_bytes()?)?
     } else {
         HotDirectory::open(directory, hotcache_bytes.read_bytes()?)?
@@ -337,7 +321,7 @@ async fn leaf_search_single_split(
     doc_mapper: Arc<dyn DocMapper>,
 ) -> crate::Result<LeafSearchResponse> {
     let split_id = split.split_id.to_string();
-    let index = open_index(searcher_context, storage, &split).await?;
+    let index = open_index_with_caches(searcher_context, storage, &split, true).await?;
     let split_schema = index.schema();
     let quickwit_collector = make_collector_for_split(
         split_id.clone(),
