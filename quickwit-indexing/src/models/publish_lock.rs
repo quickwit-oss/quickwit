@@ -45,7 +45,6 @@ impl Debug for PublishLock {
 }
 
 impl PublishLock {
-
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(is_alive: bool, id: &'static str) -> Self {
         let inner = PublishLockInner {
