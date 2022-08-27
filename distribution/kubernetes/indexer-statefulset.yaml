@@ -3,12 +3,12 @@ kind: StatefulSet
 metadata:
   name: indexer
 spec:
+  replicas: 1
   selector:
     matchLabels:
       app: quickwit
       service: indexer
   serviceName: indexers
-  replicas: 1
   template:
     metadata:
       labels:
@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: quickwit
-          image: quickwit/quickwit:nightly
+          image: quickwit/quickwit:edge
           args: ["run", "--service", "indexer"]
           ports:
             - containerPort: 7280

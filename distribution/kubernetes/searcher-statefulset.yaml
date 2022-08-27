@@ -3,12 +3,12 @@ kind: StatefulSet
 metadata:
   name: searcher
 spec:
+  replicas: 2
   selector:
     matchLabels:
       app: quickwit
       service: searcher
   serviceName: searchers
-  replicas: 2
   template:
     metadata:
       labels:
@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: quickwit
-          image: guilload/quickwit:latest
+          image: guilload/quickwit:edge
           args: ["run", "--service", "searcher"]
           ports:
             - containerPort: 7280
