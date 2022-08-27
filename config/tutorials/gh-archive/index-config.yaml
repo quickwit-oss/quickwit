@@ -40,7 +40,6 @@ doc_mapping:
       precision: seconds
 
 indexing_settings:
-  commit_timeout_secs: 15
   timestamp_field: created_at
 
 search_settings:
