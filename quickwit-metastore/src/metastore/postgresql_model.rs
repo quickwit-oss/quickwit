@@ -120,7 +120,7 @@ impl Split {
             );
             MetastoreError::InternalError {
                 message,
-                cause: err.to_string(),
+                cause: err,
             }
         })
     }

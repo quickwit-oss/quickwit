@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write;
 use std::ops::Range;
 use std::sync::Arc;
 use std::time::Duration;
@@ -220,17 +221,19 @@ async fn list_splits_helper(
     "#
     .to_string();
     if let Some(state) = state_opt {
-        sql.push_str(&format!(" AND split_state = '{}'", state.as_str()));
+        let _ = write!(sql, " AND split_state = '{}'", state.as_str());
     }
     if let Some(time_range) = time_range_opt {
-        sql.push_str(&format!(
+        let _ = write!(
+            sql,
             " AND (time_range_end >= {} OR time_range_end IS NULL) ",
             time_range.start
-        ));
-        sql.push_str(&format!(
+        );
+        let _ = write!(
+            sql,
             " AND (time_range_start < {} OR time_range_start IS NULL) ",
             time_range.end
-        ));
+        );
     }
 
     if let Some(tags) = tags_opt {

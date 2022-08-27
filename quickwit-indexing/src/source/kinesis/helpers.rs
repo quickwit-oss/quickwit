@@ -80,7 +80,7 @@ pub(crate) mod tests {
         I: IntoIterator<Item = (usize, &'static str)>,
     {
         let shard_hash_keys: HashMap<usize, String> =
-            list_shards(kinesis_client, &DEFAULT_RETRY_PARAMS, &stream_name, None)
+            list_shards(kinesis_client, &DEFAULT_RETRY_PARAMS, stream_name, None)
                 .await?
                 .into_iter()
                 .flat_map(|shard| {
