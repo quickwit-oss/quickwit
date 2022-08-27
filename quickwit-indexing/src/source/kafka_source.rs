@@ -736,11 +736,9 @@ mod kafka_broker_tests {
     use crate::new_split_id;
     use crate::source::{quickwit_supported_sources, SourceActor};
 
-    fn create_admin_client(
-        bootstrap_servers: &str,
-    ) -> anyhow::Result<AdminClient<DefaultClientContext>> {
+    fn create_admin_client() -> anyhow::Result<AdminClient<DefaultClientContext>> {
         let admin_client = ClientConfig::new()
-            .set("bootstrap.servers", bootstrap_servers)
+            .set("bootstrap.servers", "localhost:9092")
             .create()?;
         Ok(admin_client)
     }
@@ -773,7 +771,6 @@ mod kafka_broker_tests {
     }
 
     async fn populate_topic<K, M, J, Q>(
-        bootstrap_servers: &str,
         topic: &str,
         num_messages: i32,
         key_fn: &K,
@@ -788,7 +785,7 @@ mod kafka_broker_tests {
         Q: ToBytes,
     {
         let producer: &FutureProducer = &ClientConfig::new()
-            .set("bootstrap.servers", bootstrap_servers)
+            .set("bootstrap.servers", "localhost:9092")
             .set("statistics.interval.ms", "500")
             .set("api.version.request", "true")
             .set("debug", "all")
@@ -825,7 +822,7 @@ mod kafka_broker_tests {
         format!("Key {}", id)
     }
 
-    fn get_source_config(topic: &str, bootstrap_servers: &str) -> (String, SourceConfig) {
+    fn get_source_config(topic: &str) -> (String, SourceConfig) {
         let source_id = append_random_suffix("test-kafka-source--source");
         let source_config = SourceConfig {
             source_id: source_id.clone(),
@@ -834,7 +831,7 @@ mod kafka_broker_tests {
                 topic: topic.to_string(),
                 client_log_level: None,
                 client_params: json!({
-                    "bootstrap.servers": bootstrap_servers,
+                    "bootstrap.servers": "localhost:9092",
                 }),
                 enable_backfill_mode: true,
             }),
@@ -855,12 +852,166 @@ mod kafka_broker_tests {
     }
 
     #[tokio::test]
+    async fn test_kafka_source_process_message() {
+        let admin_client = create_admin_client().unwrap();
+        let topic = append_random_suffix("test-kafka-source-process-message--topic");
+        create_topic(&admin_client, &topic, 1).await.unwrap();
+
+        let metastore = metastore_for_test();
+        let index_id = append_random_suffix("test-kafka-source-process-message--index");
+        let (_source_id, source_config) = get_source_config(&topic);
+        let params = if let SourceParams::Kafka(params) = source_config.clone().source_params {
+            params
+        } else {
+            unreachable!()
+        };
+        let ctx = SourceExecutionContext::for_test(metastore, &index_id, source_config);
+        let ignored_checkpoint = SourceCheckpoint::default();
+        let mut kafka_source = KafkaSource::try_new(ctx, params, ignored_checkpoint)
+            .await
+            .unwrap();
+
+        let partition_id_1 = PartitionId::from(1u64);
+        let partition_id_2 = PartitionId::from(2u64);
+
+        kafka_source.state.assigned_partitions =
+            HashMap::from_iter([(1, partition_id_1.clone()), (2, partition_id_2.clone())]);
+
+        assert_eq!(kafka_source.state.num_messages_processed, 0);
+        assert_eq!(kafka_source.state.num_invalid_messages, 0);
+
+        let mut batch = BatchBuilder::default();
+
+        let message = KafkaMessage {
+            doc_opt: None,
+            payload_len: 7,
+            partition: 1,
+            offset: 0,
+        };
+        kafka_source
+            .process_message(message, &mut batch)
+            .await
+            .unwrap();
+
+        assert_eq!(batch.docs.len(), 0);
+        assert_eq!(batch.num_bytes, 0);
+        assert_eq!(
+            kafka_source.state.current_positions.get(&1).unwrap(),
+            &Position::from(0u64)
+        );
+        assert_eq!(kafka_source.state.num_bytes_processed, 7);
+        assert_eq!(kafka_source.state.num_messages_processed, 1);
+        assert_eq!(kafka_source.state.num_invalid_messages, 1);
+
+        let message = KafkaMessage {
+            doc_opt: Some("test-doc".to_string()),
+            payload_len: 8,
+            partition: 1,
+            offset: 1,
+        };
+        kafka_source
+            .process_message(message, &mut batch)
+            .await
+            .unwrap();
+
+        assert_eq!(batch.docs.len(), 1);
+        assert_eq!(batch.docs[0], "test-doc");
+        assert_eq!(batch.num_bytes, 8);
+        assert_eq!(
+            kafka_source.state.current_positions.get(&1).unwrap(),
+            &Position::from(1u64)
+        );
+        assert_eq!(kafka_source.state.num_bytes_processed, 15);
+        assert_eq!(kafka_source.state.num_messages_processed, 2);
+        assert_eq!(kafka_source.state.num_invalid_messages, 1);
+
+        let message = KafkaMessage {
+            doc_opt: Some("test-doc".to_string()),
+            payload_len: 8,
+            partition: 2,
+            offset: 42,
+        };
+        kafka_source
+            .process_message(message, &mut batch)
+            .await
+            .unwrap();
+
+        assert_eq!(batch.docs.len(), 2);
+        assert_eq!(batch.docs[1], "test-doc");
+        assert_eq!(batch.num_bytes, 16);
+        assert_eq!(
+            kafka_source.state.current_positions.get(&2).unwrap(),
+            &Position::from(42u64)
+        );
+        assert_eq!(kafka_source.state.num_bytes_processed, 23);
+        assert_eq!(kafka_source.state.num_messages_processed, 3);
+        assert_eq!(kafka_source.state.num_invalid_messages, 1);
+
+        let mut expected_checkpoint_delta = SourceCheckpointDelta::default();
+        expected_checkpoint_delta
+            .record_partition_delta(partition_id_1, Position::Beginning, Position::from(1u64))
+            .unwrap();
+        expected_checkpoint_delta
+            .record_partition_delta(partition_id_2, Position::from(41u64), Position::from(42u64))
+            .unwrap();
+        assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);
+
+        // Message from unassigned partition
+        let message = KafkaMessage {
+            doc_opt: Some("test-doc".to_string()),
+            payload_len: 8,
+            partition: 3,
+            offset: 42,
+        };
+        kafka_source
+            .process_message(message, &mut batch)
+            .await
+            .unwrap_err();
+    }
+
+    #[tokio::test]
+    async fn test_kafka_source_process_assign_partitions() {}
+
+    #[tokio::test]
+    async fn test_kafka_source_process_revoke_partitions() {}
+
+    #[tokio::test]
+    async fn test_kafka_source_process_partition_eof() {
+        let admin_client = create_admin_client().unwrap();
+        let topic = append_random_suffix("test-kafka-source-process-message--topic");
+        create_topic(&admin_client, &topic, 1).await.unwrap();
+
+        let metastore = metastore_for_test();
+        let index_id = append_random_suffix("test-kafka-source-process-message--index");
+        let (_source_id, source_config) = get_source_config(&topic);
+        let params = if let SourceParams::Kafka(params) = source_config.clone().source_params {
+            params
+        } else {
+            unreachable!()
+        };
+        let ctx = SourceExecutionContext::for_test(metastore, &index_id, source_config);
+        let ignored_checkpoint = SourceCheckpoint::default();
+        let mut kafka_source = KafkaSource::try_new(ctx, params, ignored_checkpoint)
+            .await
+            .unwrap();
+        let partition_id_1 = PartitionId::from(1u64);
+        kafka_source.state.assigned_partitions = HashMap::from_iter([(1, partition_id_1)]);
+
+        assert!(!kafka_source.should_exit());
+
+        kafka_source.process_partition_eof(1);
+        assert_eq!(kafka_source.state.num_inactive_partitions, 1);
+        assert!(kafka_source.should_exit());
+
+        kafka_source.backfill_mode_enabled = false;
+        assert!(!kafka_source.should_exit());
+    }
+
+    #[tokio::test]
     async fn test_kafka_source() -> anyhow::Result<()> {
         let universe = Universe::new();
+        let admin_client = create_admin_client()?;
         let topic = append_random_suffix("test-kafka-source--topic");
-
-        let bootstrap_servers = "localhost:9092".to_string();
-        let admin_client = create_admin_client(&bootstrap_servers)?;
         create_topic(&admin_client, &topic, 3).await?;
 
         let source_loader = quickwit_supported_sources();
@@ -872,7 +1023,7 @@ mod kafka_broker_tests {
             let metastore = metastore_for_test();
             metastore.create_index(index_metadata).await?;
 
-            let (source_id, source_config) = get_source_config(&topic, &bootstrap_servers);
+            let (source_id, source_config) = get_source_config(&topic);
             let source = source_loader
                 .load_source(
                     SourceExecutionContext::for_test(metastore, &index_id, source_config.clone()),
@@ -907,7 +1058,6 @@ mod kafka_broker_tests {
         }
         for partition_id in 0..3 {
             populate_topic(
-                &bootstrap_servers,
                 &topic,
                 3,
                 &key_fn,
@@ -931,7 +1081,7 @@ mod kafka_broker_tests {
             let metastore = metastore_for_test();
             metastore.create_index(index_metadata).await?;
 
-            let (source_id, source_config) = get_source_config(&topic, &bootstrap_servers);
+            let (source_id, source_config) = get_source_config(&topic);
             let source = source_loader
                 .load_source(
                     SourceExecutionContext::for_test(metastore, &index_id, source_config.clone()),
@@ -1005,7 +1155,7 @@ mod kafka_broker_tests {
                 .record_partition_delta(1u64.into(), Position::Beginning, 2u64.into())
                 .unwrap();
 
-            let (source_id, source_config) = get_source_config(&topic, &bootstrap_servers);
+            let (source_id, source_config) = get_source_config(&topic);
             let index_delta = IndexCheckpointDelta {
                 source_id: source_id.clone(),
                 source_delta,
@@ -1072,7 +1222,7 @@ mod kafka_broker_tests {
         let bootstrap_servers = "localhost:9092".to_string();
         let topic = append_random_suffix("test-kafka-connectivity-topic");
 
-        let admin_client = create_admin_client(&bootstrap_servers)?;
+        let admin_client = create_admin_client()?;
         create_topic(&admin_client, &topic, 1).await?;
 
         // Check valid connectivity
