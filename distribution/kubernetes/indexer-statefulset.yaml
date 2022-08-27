@@ -83,14 +83,14 @@ spec:
               value: "discovery.$(NAMESPACE).svc.cluster.local"
             - name: QW_ADVERTISE_ADDRESS
               value: "$(POD_IP)"
-          readinessProbe:
-            httpGet:
-              path: /healthz/indexer/readyz
-              port: rest
-          livenessProbe:
-            httpGet:
-              path: /healthz/indexer/livez
-              port: rest
+          # readinessProbe:
+          #   httpGet:
+          #     path: /healthz/indexer/readyz
+          #     port: rest
+          # livenessProbe:
+          #   httpGet:
+          #     path: /healthz/indexer/livez
+          #     port: rest
       volumes:
         - name: config-volume
           configMap:
