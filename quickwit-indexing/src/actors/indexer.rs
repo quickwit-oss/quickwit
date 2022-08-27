@@ -905,7 +905,172 @@ mod tests {
             .downcast_ref::<IndexedSplitBatch>()
             .unwrap();
         assert_eq!(indexed_split_batch.splits.len(), 2);
-
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_indexer_propagates_publish_lock() {
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let indexing_directory = IndexingDirectory::for_test().await.unwrap();
+        let mut indexing_settings = IndexingSettings::for_test();
+        indexing_settings.split_num_docs_target = 1;
+        let mut metastore = MockMetastore::default();
+        metastore.expect_publish_splits().never();
+        let (packager_mailbox, packager_inbox) = create_test_mailbox();
+        let indexer = Indexer::new(
+            pipeline_id,
+            doc_mapper,
+            Arc::new(metastore),
+            indexing_directory,
+            indexing_settings,
+            packager_mailbox,
+        );
+        let universe = Universe::new();
+        let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
+
+        for id in ["foo-publish-lock", "bar-publish-lock"] {
+            let publish_lock = PublishLock::for_test(true, id);
+
+            indexer_mailbox
+                .send_message(NewPublishLock(publish_lock))
+                .await
+                .unwrap();
+
+            indexer_mailbox
+            .send_message(RawDocBatch {
+                docs: vec![
+                        r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#.to_string(),
+                    ],
+                checkpoint_delta: SourceCheckpointDelta::from(0..1),
+            })
+            .await.unwrap();
+        }
+        universe
+            .send_exit_with_success(&indexer_mailbox)
+            .await
+            .unwrap();
+        let (exit_status, _indexer_counters) = indexer_handle.join().await;
+        assert!(matches!(exit_status, ActorExitStatus::Success));
+
+        let packager_messages: Vec<IndexedSplitBatch> = packager_inbox.drain_for_test_typed();
+        assert_eq!(packager_messages.len(), 2);
+        assert_eq!(packager_messages[0].splits.len(), 1);
+        assert_eq!(packager_messages[0].publish_lock.id, "foo-publish-lock");
+        assert_eq!(packager_messages[1].splits.len(), 1);
+        assert_eq!(packager_messages[1].publish_lock.id, "bar-publish-lock");
+    }
+
+    #[tokio::test]
+    async fn test_indexer_ignores_messages_when_publish_lock_is_dead() {
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let indexing_directory = IndexingDirectory::for_test().await.unwrap();
+        let mut indexing_settings = IndexingSettings::for_test();
+        indexing_settings.split_num_docs_target = 1;
+        let mut metastore = MockMetastore::default();
+        metastore.expect_publish_splits().never();
+        let (packager_mailbox, packager_inbox) = create_test_mailbox();
+        let indexer = Indexer::new(
+            pipeline_id,
+            doc_mapper,
+            Arc::new(metastore),
+            indexing_directory,
+            indexing_settings,
+            packager_mailbox,
+        );
+        let universe = Universe::new();
+        let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
+
+        let publish_lock = PublishLock::for_test(false, "foo-publish-lock");
+
+        indexer_mailbox
+            .send_message(NewPublishLock(publish_lock))
+            .await
+            .unwrap();
+
+        indexer_mailbox
+            .send_message(RawDocBatch {
+                docs: vec![
+                        r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#.to_string(),
+                    ],
+                checkpoint_delta: SourceCheckpointDelta::from(0..1),
+            })
+            .await.unwrap();
+
+        universe
+            .send_exit_with_success(&indexer_mailbox)
+            .await
+            .unwrap();
+        let (exit_status, _indexer_counters) = indexer_handle.join().await;
+        assert!(matches!(exit_status, ActorExitStatus::Success));
+
+        let packager_messages = packager_inbox.drain_for_test();
+        assert!(packager_messages.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_indexer_acquires_publish_lock() {
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let indexing_directory = IndexingDirectory::for_test().await.unwrap();
+        let indexing_settings = IndexingSettings::for_test();
+        let mut metastore = MockMetastore::default();
+        metastore.expect_publish_splits().never();
+        let (packager_mailbox, packager_inbox) = create_test_mailbox();
+        let indexer = Indexer::new(
+            pipeline_id,
+            doc_mapper,
+            Arc::new(metastore),
+            indexing_directory,
+            indexing_settings,
+            packager_mailbox,
+        );
+        let universe = Universe::new();
+        let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
+
+        let publish_lock = PublishLock::for_test(true, "foo-publish-lock");
+
+        indexer_mailbox
+            .send_message(NewPublishLock(publish_lock.clone()))
+            .await
+            .unwrap();
+
+        indexer_mailbox
+            .send_message(RawDocBatch {
+                docs: vec![
+                    "{".to_string(), // Bad JSON
+                ],
+                checkpoint_delta: SourceCheckpointDelta::from(0..1),
+            })
+            .await
+            .unwrap();
+
+        publish_lock.kill().await;
+
+        universe
+            .send_exit_with_success(&indexer_mailbox)
+            .await
+            .unwrap();
+        let (exit_status, _indexer_counters) = indexer_handle.join().await;
+        assert!(matches!(exit_status, ActorExitStatus::Success));
+
+        let packager_messages = packager_inbox.drain_for_test();
+        assert!(packager_messages.is_empty());
     }
 }
