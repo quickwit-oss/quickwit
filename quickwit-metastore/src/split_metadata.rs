@@ -141,6 +141,15 @@ impl SplitMetadata {
     pub fn split_id(&self) -> &str {
         &self.split_id
     }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    /// Returns an instance of `SplitMetadata` for testing.
+    pub fn for_test(split_id: String) -> Self {
+        Self {
+            split_id,
+            ..Default::default()
+        }
+    }
 }
 
 /// A split state.

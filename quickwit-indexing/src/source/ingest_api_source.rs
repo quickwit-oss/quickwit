@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -32,6 +33,7 @@ use super::file_source::BATCH_NUM_BYTES_LIMIT;
 use super::{Source, SourceActor, SourceContext, TypedSourceFactory};
 use crate::actors::Indexer;
 use crate::models::RawDocBatch;
+use crate::source::SourceExecutionContext;
 
 /// Wait time for SourceActor before pooling for new documents.
 /// TODO: Think of better way, maybe increment this (i.e wait longer) as time
@@ -195,10 +197,11 @@ impl TypedSourceFactory for IngestApiSourceFactory {
     type Params = IngestApiSourceParams;
 
     async fn typed_create_source(
-        source_id: String,
+        ctx: Arc<SourceExecutionContext>,
         params: IngestApiSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
+        let source_id = ctx.source_config.source_id.clone();
         IngestApiSource::new(source_id, params, checkpoint).await
     }
 }
@@ -265,7 +268,7 @@ mod tests {
             IngestApiSource::new(source_id, params, SourceCheckpoint::default()).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
-            batch_sink: indexer_mailbox,
+            indexer_mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_actor(ingest_api_source_actor).spawn();
@@ -311,7 +314,7 @@ mod tests {
             IngestApiSource::new(source_id, params, SourceCheckpoint::default()).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
-            batch_sink: indexer_mailbox,
+            indexer_mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_actor(ingest_api_source_actor).spawn();
@@ -359,7 +362,7 @@ mod tests {
         let ingest_api_source = IngestApiSource::new(source_id, params, checkpoint).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
-            batch_sink: indexer_mailbox,
+            indexer_mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_actor(ingest_api_source_actor).spawn();
@@ -415,7 +418,7 @@ mod tests {
             IngestApiSource::new(source_id, params, SourceCheckpoint::default()).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
-            batch_sink: indexer_mailbox,
+            indexer_mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_actor(ingest_api_source_actor).spawn();

@@ -42,7 +42,7 @@ use crate::actors::{
     Uploader,
 };
 use crate::models::{IndexingDirectory, IndexingPipelineId, IndexingStatistics, Observe};
-use crate::source::{quickwit_supported_sources, SourceActor};
+use crate::source::{quickwit_supported_sources, SourceActor, SourceExecutionContext};
 use crate::split_store::{IndexingSplitStore, IndexingSplitStoreParams};
 use crate::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 
@@ -425,11 +425,18 @@ impl IndexingPipeline {
             .cloned()
             .unwrap_or_default(); // TODO Have a stricter check.
         let source = quickwit_supported_sources()
-            .load_source(self.params.source_config.clone(), source_checkpoint)
+            .load_source(
+                Arc::new(SourceExecutionContext {
+                    metastore: self.params.metastore.clone(),
+                    index_id: self.params.pipeline_id.index_id.clone(),
+                    source_config: self.params.source_config.clone(),
+                }),
+                source_checkpoint,
+            )
             .await?;
         let actor_source = SourceActor {
             source,
-            batch_sink: indexer_mailbox,
+            indexer_mailbox,
         };
         let (_source_mailbox, source_handler) = ctx
             .spawn_actor(actor_source)
@@ -640,7 +647,7 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_config::{IndexingSettings, SourceParams};
-    use quickwit_doc_mapper::default_doc_mapper_for_tests;
+    use quickwit_doc_mapper::default_doc_mapper_for_test;
     use quickwit_metastore::{IndexMetadata, MetastoreError, MockMetastore};
     use quickwit_storage::RamStorage;
 
@@ -733,7 +740,7 @@ mod tests {
         };
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
-            doc_mapper: Arc::new(default_doc_mapper_for_tests()),
+            doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             indexing_directory: IndexingDirectory::for_test().await?,
             indexing_settings: IndexingSettings::for_test(),
@@ -822,7 +829,7 @@ mod tests {
         };
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
-            doc_mapper: Arc::new(default_doc_mapper_for_tests()),
+            doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             indexing_directory: IndexingDirectory::for_test().await?,
             indexing_settings: IndexingSettings::for_test(),

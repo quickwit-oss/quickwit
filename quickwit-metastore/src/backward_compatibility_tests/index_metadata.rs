@@ -177,6 +177,7 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
             topic: "kafka-topic".to_string(),
             client_log_level: None,
             client_params: serde_json::json!({}),
+            enable_backfill_mode: false,
         }),
     };
     let mut sources = HashMap::default();

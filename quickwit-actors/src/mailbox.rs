@@ -228,7 +228,7 @@ impl<A: Actor> Inbox<A> {
         self.rx
             .drain_low_priority()
             .into_iter()
-            .map(|mut msg| msg.message())
+            .map(|mut envelope| envelope.message())
             .collect()
     }
 
@@ -241,14 +241,7 @@ impl<A: Actor> Inbox<A> {
         self.rx
             .drain_low_priority()
             .into_iter()
-            .map(|mut msg| msg.message())
-            .flat_map(|any_msg| {
-                if let Ok(boxed_m) = any_msg.downcast::<M>() {
-                    Some(*boxed_m)
-                } else {
-                    None
-                }
-            })
+            .flat_map(|mut envelope| envelope.message_typed())
             .collect()
     }
 }

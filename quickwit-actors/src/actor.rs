@@ -35,6 +35,8 @@ use crate::actor_state::{ActorState, AtomicState};
 use crate::progress::{Progress, ProtectedZoneGuard};
 use crate::scheduler::{Callback, ScheduleEvent, Scheduler};
 use crate::spawn_builder::SpawnBuilder;
+#[cfg(any(test, feature = "testsuite"))]
+use crate::Universe;
 use crate::{AskError, Command, KillSwitch, Mailbox, QueueCapacity, SendError};
 
 /// The actor exit status represents the outcome of the execution of an actor,
@@ -278,6 +280,20 @@ impl<A: Actor> ActorContext<A> {
             }
             .into(),
         }
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test(
+        universe: &Universe,
+        actor_mailbox: Mailbox<A>,
+        observable_state_tx: watch::Sender<A::ObservableState>,
+    ) -> Self {
+        Self::new(
+            actor_mailbox,
+            universe.kill_switch.clone(),
+            universe.scheduler_mailbox.clone(),
+            observable_state_tx,
+        )
     }
 
     pub(crate) fn sleep_count(&self) -> usize {

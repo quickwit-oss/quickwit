@@ -19,6 +19,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -42,7 +43,7 @@ use super::api::list_shards;
 use super::shard_consumer::{ShardConsumer, ShardConsumerHandle, ShardConsumerMessage};
 use crate::models::RawDocBatch;
 use crate::source::kinesis::helpers::get_kinesis_client;
-use crate::source::{Indexer, Source, SourceContext, TypedSourceFactory};
+use crate::source::{Indexer, Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
 
 const TARGET_BATCH_NUM_BYTES: u64 = 5_000_000;
 
@@ -57,11 +58,11 @@ impl TypedSourceFactory for KinesisSourceFactory {
     type Params = KinesisSourceParams;
 
     async fn typed_create_source(
-        source_id: String,
+        ctx: Arc<SourceExecutionContext>,
         params: KinesisSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
-        KinesisSource::try_new(source_id, params, checkpoint).await
+        KinesisSource::try_new(ctx.source_config.source_id.clone(), params, checkpoint).await
     }
 }
 
@@ -99,7 +100,7 @@ pub struct KinesisSource {
     // Receiver for the communication channel between the source and the shard consumers.
     shard_consumers_rx: mpsc::Receiver<ShardConsumerMessage>,
     state: KinesisSourceState,
-    shutdown_at_stream_eof: bool,
+    backfill_mode_enabled: bool,
 }
 
 impl fmt::Debug for KinesisSource {
@@ -120,7 +121,7 @@ impl KinesisSource {
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
         let stream_name = params.stream_name;
-        let shutdown_at_stream_eof = params.shutdown_at_stream_eof;
+        let backfill_mode_enabled = params.enable_backfill_mode;
         let region = get_region(params.region_or_endpoint)?;
         let kinesis_client = get_kinesis_client(region)?;
         let (shard_consumers_tx, shard_consumers_rx) = mpsc::channel(1_000);
@@ -134,7 +135,7 @@ impl KinesisSource {
             shard_consumers_tx,
             shard_consumers_rx,
             state,
-            shutdown_at_stream_eof,
+            backfill_mode_enabled,
             retry_params,
         })
     }
@@ -156,7 +157,7 @@ impl KinesisSource {
             self.stream_name.clone(),
             shard_id.clone(),
             from_sequence_number_exclusive,
-            self.shutdown_at_stream_eof,
+            self.backfill_mode_enabled,
             self.kinesis_client.clone(),
             self.shard_consumers_tx.clone(),
             self.retry_params.clone(),
@@ -176,7 +177,11 @@ impl KinesisSource {
 
 #[async_trait]
 impl Source for KinesisSource {
-    async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
+    async fn initialize(
+        &mut self,
+        _indexer_maibox: &Mailbox<Indexer>,
+        ctx: &SourceContext,
+    ) -> Result<(), ActorExitStatus> {
         let shards = ctx
             .protect_future(list_shards(
                 &self.kinesis_client,
@@ -198,7 +203,7 @@ impl Source for KinesisSource {
 
     async fn emit_batches(
         &mut self,
-        batch_sink: &Mailbox<Indexer>,
+        indexer_mailbox: &Mailbox<Indexer>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_num_bytes = 0;
@@ -306,11 +311,11 @@ impl Source for KinesisSource {
                 docs,
                 checkpoint_delta,
             };
-            ctx.send_message(batch_sink, batch).await?;
+            ctx.send_message(indexer_mailbox, batch).await?;
         }
         if self.state.shard_consumers.is_empty() {
             info!(stream_name = %self.stream_name, "Reached end of stream.");
-            ctx.send_exit_with_success(batch_sink).await?;
+            ctx.send_exit_with_success(indexer_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
         Ok(Duration::default())
@@ -420,7 +425,7 @@ mod tests {
             region_or_endpoint: Some(RegionOrEndpoint::Endpoint(
                 "http://localhost:4566".to_string(),
             )),
-            shutdown_at_stream_eof: true,
+            enable_backfill_mode: true,
         };
         {
             let checkpoint = SourceCheckpoint::default();
@@ -430,7 +435,7 @@ mod tests {
                     .unwrap();
             let actor = SourceActor {
                 source: Box::new(kinesis_source),
-                batch_sink: mailbox.clone(),
+                indexer_mailbox: mailbox.clone(),
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;
@@ -484,7 +489,7 @@ mod tests {
                     .unwrap();
             let actor = SourceActor {
                 source: Box::new(kinesis_source),
-                batch_sink: mailbox.clone(),
+                indexer_mailbox: mailbox.clone(),
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;
@@ -555,7 +560,7 @@ mod tests {
                     .unwrap();
             let actor = SourceActor {
                 source: Box::new(kinesis_source),
-                batch_sink: mailbox,
+                indexer_mailbox: mailbox,
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;

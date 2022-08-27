@@ -45,7 +45,8 @@ use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeOperation;
 use crate::models::{
-    IndexedSplit, IndexedSplitBatch, IndexingPipelineId, MergeScratch, ScratchDirectory,
+    IndexedSplit, IndexedSplitBatch, IndexingPipelineId, MergeScratch, PublishLock,
+    ScratchDirectory,
 };
 
 pub struct MergeExecutor {
@@ -370,6 +371,7 @@ impl MergeExecutor {
             IndexedSplitBatch {
                 splits: vec![indexed_split],
                 checkpoint_delta: Default::default(),
+                publish_lock: PublishLock::default(),
                 date_of_birth: start,
             },
         )
@@ -526,6 +528,7 @@ impl MergeExecutor {
             IndexedSplitBatch {
                 splits: indexed_splits,
                 checkpoint_delta: None,
+                publish_lock: PublishLock::default(),
                 date_of_birth: start,
             },
         )

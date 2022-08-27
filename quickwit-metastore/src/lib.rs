@@ -52,3 +52,22 @@ pub(crate) use split_metadata_version::VersionedSplitMetadata;
 
 #[cfg(test)]
 mod backward_compatibility_tests;
+
+#[cfg(any(test, feature = "testsuite"))]
+mod for_test {
+    use std::sync::Arc;
+
+    use quickwit_storage::RamStorage;
+
+    use super::{FileBackedMetastore, Metastore};
+
+    /// Returns a metastore backed by an "in-memory file" for testing.
+    pub fn metastore_for_test() -> Arc<dyn Metastore> {
+        Arc::new(FileBackedMetastore::for_test(Arc::new(
+            RamStorage::default(),
+        )))
+    }
+}
+
+#[cfg(any(test, feature = "testsuite"))]
+pub use for_test::metastore_for_test;

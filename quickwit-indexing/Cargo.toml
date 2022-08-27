@@ -22,6 +22,7 @@ futures = "0.3"
 itertools = "0.10.3"
 libz-sys = { version = "1.1.3", optional = true }
 once_cell = "1"
+oneshot = "0.1.3"
 openssl = { version = "0.10.36", default-features = false, optional = true }
 quickwit-actors = { version = "0.3.1", path = "../quickwit-actors" }
 quickwit-aws = { version = "0.3.1", path = "../quickwit-aws" }
@@ -78,6 +79,9 @@ testsuite = []
 bytes = "1"
 mockall = "0.11"
 proptest = "1"
+quickwit-actors = { version = "0.3.1", path = "../quickwit-actors", features = [
+    "testsuite",
+] }
 quickwit-common = { version = "0.3.1", path = "../quickwit-common" }
 quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore", features = [
     "testsuite",

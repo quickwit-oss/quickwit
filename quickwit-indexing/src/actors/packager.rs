@@ -127,9 +127,17 @@ impl Handler<IndexedSplitBatch> for Packager {
         batch: IndexedSplitBatch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        info!(split_ids=?batch.splits.iter().map(|split| split.split_id.clone()).collect_vec(), "start-packaging-splits");
+        let split_ids: Vec<String> = batch
+            .splits
+            .iter()
+            .map(|split| split.split_id.clone())
+            .collect_vec();
+        info!(
+            split_ids=?split_ids,
+            "start-packaging-splits"
+        );
         for split in &batch.splits {
-            if let Some(controlled_directory) = split.controlled_directory_opt.as_ref() {
+            if let Some(controlled_directory) = &split.controlled_directory_opt {
                 controlled_directory.set_progress_and_kill_switch(
                     ctx.progress().clone(),
                     ctx.kill_switch().clone(),
@@ -139,12 +147,25 @@ impl Handler<IndexedSplitBatch> for Packager {
         fail_point!("packager:before");
         let mut packaged_splits = Vec::new();
         for split in batch.splits {
+            if batch.publish_lock.is_dead() {
+                // TODO: Remove the junk right away?
+                info!(
+                    split_ids=?split_ids,
+                    "Splits' publish lock is dead."
+                );
+                return Ok(());
+            }
             let packaged_split = self.process_indexed_split(split, ctx).await?;
             packaged_splits.push(packaged_split);
         }
         ctx.send_message(
             &self.uploader_mailbox,
-            PackagedSplitBatch::new(packaged_splits, batch.checkpoint_delta, batch.date_of_birth),
+            PackagedSplitBatch::new(
+                packaged_splits,
+                batch.checkpoint_delta,
+                batch.publish_lock,
+                batch.date_of_birth,
+            ),
         )
         .await?;
         fail_point!("packager:after");
@@ -377,7 +398,7 @@ mod tests {
     use tantivy::{doc, Index};
 
     use super::*;
-    use crate::models::{IndexingPipelineId, ScratchDirectory};
+    use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory};
 
     fn make_indexed_split_for_test(segments_timestamps: &[&[i64]]) -> anyhow::Result<IndexedSplit> {
         let split_scratch_directory = ScratchDirectory::for_test()?;
@@ -490,6 +511,7 @@ mod tests {
             .send_message(IndexedSplitBatch {
                 splits: vec![indexed_split],
                 checkpoint_delta: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
+                publish_lock: PublishLock::default(),
                 date_of_birth: Instant::now(),
             })
             .await?;
@@ -534,6 +556,7 @@ mod tests {
             .send_message(IndexedSplitBatch {
                 splits: vec![indexed_split],
                 checkpoint_delta: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
+                publish_lock: PublishLock::default(),
                 date_of_birth: Instant::now(),
             })
             .await?;
@@ -560,6 +583,7 @@ mod tests {
             .send_message(IndexedSplitBatch {
                 splits: vec![indexed_split_1, indexed_split_2],
                 checkpoint_delta: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
+                publish_lock: PublishLock::default(),
                 date_of_birth: Instant::now(),
             })
             .await?;
