@@ -22,6 +22,10 @@ fmt:
 	@echo "Checking license headers"
 	@bash scripts/check_license_headers.sh
 
+fix: fmt
+	@echo "Running cargo clippy --fix"
+	cargo clippy --fix --all-features --allow-dirty --allow-staged
+
 # Usage:
 # `make test-all` starts the Docker services and runs all the tests.
 # `make -k test-all docker-compose-down`, tears down the Docker services after running all the tests.

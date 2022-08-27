@@ -26,6 +26,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_aws::region::sniff_aws_region_and_cache;
 use quickwit_aws::retry::RetryParams;
 use quickwit_config::{KinesisSourceParams, RegionOrEndpoint};
 use quickwit_metastore::checkpoint::{
@@ -345,16 +346,20 @@ impl Source for KinesisSource {
 }
 
 pub(super) fn get_region(region_or_endpoint: Option<RegionOrEndpoint>) -> anyhow::Result<Region> {
-    match region_or_endpoint {
-        Some(RegionOrEndpoint::Endpoint(endpoint)) => Ok(Region::Custom {
+    if let Some(RegionOrEndpoint::Endpoint(endpoint)) = region_or_endpoint {
+        return Ok(Region::Custom {
             name: "Custom".to_string(),
             endpoint,
-        }),
-        Some(RegionOrEndpoint::Region(region)) => region
-            .parse()
-            .with_context(|| format!("Failed to parse region: `{}`", region)),
-        None => Ok(Region::default()),
+        });
     }
+
+    if let Some(RegionOrEndpoint::Region(region)) = region_or_endpoint {
+        return region
+            .parse()
+            .with_context(|| format!("Failed to parse region: `{}`", region));
+    }
+
+    sniff_aws_region_and_cache() //< We fallback to AWS region if `region_or_endpoint` is `None`
 }
 
 #[cfg(all(test, feature = "kinesis-localstack-tests"))]
@@ -380,6 +385,34 @@ mod tests {
         }
         merged_batch.docs.sort();
         Ok(merged_batch)
+    }
+
+    #[test]
+    fn test_kinesis_region_resolution() {
+        {
+            let region_or_endpoint = Some(RegionOrEndpoint::Endpoint(
+                "mycustomendpoint.quickwit".to_string(),
+            ));
+            let region = get_region(region_or_endpoint).unwrap();
+            assert_eq!(
+                Region::Custom {
+                    name: "Custom".to_string(),
+                    endpoint: "mycustomendpoint.quickwit".to_string()
+                },
+                region
+            );
+        }
+
+        {
+            let region_or_endpoint = Some(RegionOrEndpoint::Region("us-east-1".to_string()));
+            let region = get_region(region_or_endpoint).unwrap();
+            assert_eq!(Region::UsEast1, region);
+        }
+
+        {
+            let region_or_endpoint = Some(RegionOrEndpoint::Region("quickwit-hq-1".to_string()));
+            get_region(region_or_endpoint).unwrap_err();
+        }
     }
 
     #[tokio::test]
@@ -408,13 +441,13 @@ mod tests {
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages: Vec<RawDocBatch> = inbox
+            let next_message = inbox
                 .drain_for_test()
                 .into_iter()
                 .flat_map(|box_any| box_any.downcast::<RawDocBatch>().ok())
                 .map(|box_raw_doc_batch| *box_raw_doc_batch)
-                .collect();
-            assert!(messages.is_empty());
+                .next();
+            assert!(next_message.is_none());
 
             let expected_shard_consumer_positions: Vec<(ShardId, SeqNo)> = Vec::new();
             let expected_state = json!({
@@ -442,11 +475,11 @@ mod tests {
         .unwrap();
         let shard_sequence_numbers: HashMap<usize, SeqNo> = sequence_numbers
             .iter()
-            .map(|(shard_id, records)| (shard_id.clone(), records.last().unwrap().clone()))
+            .map(|(shard_id, records)| (*shard_id, records.last().unwrap().clone()))
             .collect();
         let shard_positions: HashMap<usize, Position> = shard_sequence_numbers
             .iter()
-            .map(|(shard_id, seqno)| (shard_id.clone(), Position::from(seqno.clone())))
+            .map(|(shard_id, seqno)| (*shard_id, Position::from(seqno.clone())))
             .collect();
         {
             let checkpoint = SourceCheckpoint::default();
@@ -468,7 +501,7 @@ mod tests {
                 .flat_map(|box_any| box_any.downcast::<RawDocBatch>().ok())
                 .map(|box_raw_doc_batch| *box_raw_doc_batch)
                 .collect();
-            assert!(messages.len() >= 1);
+            assert!(!messages.is_empty());
 
             let batch = merge_doc_batches(messages).unwrap();
             let expected_docs = vec![
@@ -539,7 +572,7 @@ mod tests {
                 .flat_map(|box_any| box_any.downcast::<RawDocBatch>().ok())
                 .map(|box_raw_doc_batch| *box_raw_doc_batch)
                 .collect();
-            assert!(messages.len() >= 1);
+            assert!(!messages.is_empty());
 
             let batch = merge_doc_batches(messages).unwrap();
             let expected_docs = vec!["Record #00", "Record #01", "Record #11"];

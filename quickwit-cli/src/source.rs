@@ -65,6 +65,14 @@ pub fn build_source_command<'a>() -> Command<'a> {
                     arg!(--index <INDEX_ID> "ID of the target index"),
                 ])
             )
+        .subcommand(
+            Command::new("reset-checkpoint")
+                .about("Resets a source checkpoint. This operation is destructive and cannot be undone. Proceed with caution.")
+                .args(&[
+                    arg!(--index <INDEX_ID> "Index ID"),
+                    arg!(--source <SOURCE_ID> "Source ID"),
+                ])
+            )
         .arg_required_else_help(true)
 }
 
@@ -96,11 +104,19 @@ pub struct ListSourcesArgs {
 }
 
 #[derive(Debug, Eq, PartialEq)]
+pub struct ResetCheckpointArgs {
+    pub config_uri: Uri,
+    pub index_id: String,
+    pub source_id: String,
+}
+
+#[derive(Debug, Eq, PartialEq)]
 pub enum SourceCliCommand {
     CreateSource(CreateSourceArgs),
     DeleteSource(DeleteSourceArgs),
     DescribeSource(DescribeSourceArgs),
     ListSources(ListSourcesArgs),
+    ResetCheckpoint(ResetCheckpointArgs),
 }
 
 impl SourceCliCommand {
@@ -110,6 +126,7 @@ impl SourceCliCommand {
             Self::DeleteSource(args) => delete_source_cli(args).await,
             Self::DescribeSource(args) => describe_source_cli(args).await,
             Self::ListSources(args) => list_sources_cli(args).await,
+            Self::ResetCheckpoint(args) => reset_checkpoint_cli(args).await,
         }
     }
 
@@ -122,6 +139,9 @@ impl SourceCliCommand {
             "delete" => Self::parse_delete_args(submatches).map(Self::DeleteSource),
             "describe" => Self::parse_describe_args(submatches).map(Self::DescribeSource),
             "list" => Self::parse_list_args(submatches).map(Self::ListSources),
+            "reset-checkpoint" => {
+                Self::parse_reset_checkpoint_args(submatches).map(Self::ResetCheckpoint)
+            }
             _ => bail!("Source subcommand `{}` is not implemented.", subcommand),
         }
     }
@@ -198,6 +218,26 @@ impl SourceCliCommand {
         Ok(ListSourcesArgs {
             config_uri,
             index_id,
+        })
+    }
+
+    fn parse_reset_checkpoint_args(matches: &ArgMatches) -> anyhow::Result<ResetCheckpointArgs> {
+        let config_uri = matches
+            .value_of("config")
+            .map(Uri::try_new)
+            .expect("`config` is a required arg.")?;
+        let index_id = matches
+            .value_of("index")
+            .map(String::from)
+            .expect("`index` is a required arg.");
+        let source_id = matches
+            .value_of("source")
+            .map(String::from)
+            .expect("`source` is a required arg.");
+        Ok(ResetCheckpointArgs {
+            config_uri,
+            index_id,
+            source_id,
         })
     }
 }
@@ -367,6 +407,21 @@ fn flatten_json(value: Value) -> Vec<(String, Value)> {
     acc
 }
 
+async fn reset_checkpoint_cli(args: ResetCheckpointArgs) -> anyhow::Result<()> {
+    let config = load_quickwit_config(&args.config_uri, None).await?;
+    let metastore = quickwit_metastore_uri_resolver()
+        .resolve(&config.metastore_uri)
+        .await?;
+    metastore
+        .reset_source_checkpoint(&args.index_id, &args.source_id)
+        .await?;
+    println!(
+        "Checkpoint successfully deleted for index `{}` and source `{}`.",
+        args.index_id, args.source_id
+    );
+    Ok(())
+}
+
 async fn resolve_index(metastore_uri: &Uri, index_id: &str) -> anyhow::Result<IndexMetadata> {
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
@@ -468,6 +523,31 @@ mod tests {
         let command = CliCommand::parse_cli_args(&matches).unwrap();
         let expected_command =
             CliCommand::Source(SourceCliCommand::DescribeSource(DescribeSourceArgs {
+                config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+                index_id: "hdfs-logs".to_string(),
+                source_id: "hdfs-logs-source".to_string(),
+            }));
+        assert_eq!(command, expected_command);
+    }
+
+    #[test]
+    fn test_parse_reset_checkpoint_args() {
+        let app = build_cli().no_binary_name(true);
+        let matches = app
+            .try_get_matches_from(vec![
+                "source",
+                "reset-checkpoint",
+                "--index",
+                "hdfs-logs",
+                "--source",
+                "hdfs-logs-source",
+                "--config",
+                "/conf.yaml",
+            ])
+            .unwrap();
+        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let expected_command =
+            CliCommand::Source(SourceCliCommand::ResetCheckpoint(ResetCheckpointArgs {
                 config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
                 index_id: "hdfs-logs".to_string(),
                 source_id: "hdfs-logs-source".to_string(),

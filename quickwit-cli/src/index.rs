@@ -53,8 +53,8 @@ use tracing::{debug, warn, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
 use crate::{
-    load_quickwit_config, make_table, parse_duration_with_unit, run_index_checklist,
-    THROUGHPUT_WINDOW_SIZE,
+    load_quickwit_config, make_table, parse_duration_with_unit, prompt_confirmation,
+    run_index_checklist, THROUGHPUT_WINDOW_SIZE,
 };
 
 pub fn build_index_command<'a>() -> Command<'a> {
@@ -174,8 +174,18 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 ])
             )
         .subcommand(
+            Command::new("clear")
+                .alias("clr")
+                .about("Clears and index. Deletes all its splits and resets its checkpoint. This operation is destructive and cannot be undone, proceed with caution.")
+                .args(&[
+                    arg!(--index <INDEX> "Index ID"),
+                    arg!(--yes),
+                ])
+            )
+        .subcommand(
             Command::new("delete")
-                .about("Delete an index.")
+            .alias("del")
+                .about("Deletes an index. This operation is destructive and cannot be undone, proceed with caution.")
                 .args(&[
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
@@ -189,6 +199,21 @@ pub fn build_index_command<'a>() -> Command<'a> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
+pub struct ClearIndexArgs {
+    pub config_uri: Uri,
+    pub index_id: String,
+    pub yes: bool,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct CreateIndexArgs {
+    pub config_uri: Uri,
+    pub index_config_uri: Uri,
+    pub data_dir: Option<PathBuf>,
+    pub overwrite: bool,
+}
+
+#[derive(Debug, Eq, PartialEq)]
 pub struct DescribeIndexArgs {
     pub config_uri: Uri,
     pub data_dir: Option<PathBuf>,
@@ -196,18 +221,10 @@ pub struct DescribeIndexArgs {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct CreateIndexArgs {
-    pub index_config_uri: Uri,
-    pub config_uri: Uri,
-    pub data_dir: Option<PathBuf>,
-    pub overwrite: bool,
-}
-
-#[derive(Debug, Eq, PartialEq)]
 pub struct IngestDocsArgs {
+    pub config_uri: Uri,
     pub index_id: String,
     pub input_path_opt: Option<PathBuf>,
-    pub config_uri: Uri,
     pub data_dir: Option<PathBuf>,
     pub overwrite: bool,
     pub clear_cache: bool,
@@ -215,6 +232,7 @@ pub struct IngestDocsArgs {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct SearchIndexArgs {
+    pub config_uri: Uri,
     pub index_id: String,
     pub query: String,
     pub aggregation: Option<String>,
@@ -224,32 +242,31 @@ pub struct SearchIndexArgs {
     pub snippet_fields: Option<Vec<String>>,
     pub start_timestamp: Option<i64>,
     pub end_timestamp: Option<i64>,
-    pub config_uri: Uri,
     pub data_dir: Option<PathBuf>,
     pub sort_by_score: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DeleteIndexArgs {
+    pub config_uri: Uri,
     pub index_id: String,
     pub dry_run: bool,
-    pub config_uri: Uri,
     pub data_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct GarbageCollectIndexArgs {
+    pub config_uri: Uri,
     pub index_id: String,
     pub grace_period: Duration,
     pub dry_run: bool,
-    pub config_uri: Uri,
     pub data_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct MergeOrDemuxArgs {
-    pub index_id: String,
     pub config_uri: Uri,
+    pub index_id: String,
     pub data_dir: Option<PathBuf>,
 }
 
@@ -261,14 +278,15 @@ pub struct ListIndexesArgs {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum IndexCliCommand {
-    List(ListIndexesArgs),
+    Clear(ClearIndexArgs),
     Create(CreateIndexArgs),
-    Describe(DescribeIndexArgs),
     Delete(DeleteIndexArgs),
     Demux(MergeOrDemuxArgs),
-    Merge(MergeOrDemuxArgs),
+    Describe(DescribeIndexArgs),
     GarbageCollect(GarbageCollectIndexArgs),
     Ingest(IngestDocsArgs),
+    List(ListIndexesArgs),
+    Merge(MergeOrDemuxArgs),
     Search(SearchIndexArgs),
 }
 
@@ -285,17 +303,72 @@ impl IndexCliCommand {
             .subcommand()
             .ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
         match subcommand {
-            "list" => Self::parse_list_args(submatches),
+            "clear" => Self::parse_clear_args(submatches),
             "create" => Self::parse_create_args(submatches),
             "delete" => Self::parse_delete_args(submatches),
-            "search" => Self::parse_search_args(submatches),
-            "merge" => Self::parse_merge_args(submatches),
             "demux" => Self::parse_demux_args(submatches),
             "describe" => Self::parse_describe_args(submatches),
             "gc" => Self::parse_garbage_collect_args(submatches),
             "ingest" => Self::parse_ingest_args(submatches),
+            "list" => Self::parse_list_args(submatches),
+            "merge" => Self::parse_merge_args(submatches),
+            "search" => Self::parse_search_args(submatches),
             _ => bail!("Index subcommand `{}` is not implemented.", subcommand),
         }
+    }
+
+    fn parse_clear_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let config_uri = matches
+            .value_of("config")
+            .map(Uri::try_new)
+            .expect("`config` is a required arg.")?;
+        let index_id = matches
+            .value_of("index")
+            .expect("`index` is a required arg.")
+            .to_string();
+        let yes = matches.is_present("yes");
+        Ok(Self::Clear(ClearIndexArgs {
+            config_uri,
+            index_id,
+            yes,
+        }))
+    }
+
+    fn parse_create_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let config_uri = matches
+            .value_of("config")
+            .map(Uri::try_new)
+            .expect("`config` is a required arg.")?;
+        let index_config_uri = matches
+            .value_of("index-config")
+            .map(Uri::try_new)
+            .expect("`index-config` is a required arg.")?;
+        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
+        let overwrite = matches.is_present("overwrite");
+
+        Ok(Self::Create(CreateIndexArgs {
+            config_uri,
+            data_dir,
+            index_config_uri,
+            overwrite,
+        }))
+    }
+
+    fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let config_uri = matches
+            .value_of("config")
+            .map(Uri::try_new)
+            .expect("`config` is a required arg.")?;
+        let index_id = matches
+            .value_of("index")
+            .expect("`index` is a required arg.")
+            .to_string();
+        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
+        Ok(Self::Describe(DescribeIndexArgs {
+            config_uri,
+            index_id,
+            data_dir,
+        }))
     }
 
     fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<Self> {
@@ -312,43 +385,6 @@ impl IndexCliCommand {
         Ok(Self::List(ListIndexesArgs {
             config_uri,
             metastore_uri,
-        }))
-    }
-
-    fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let index_id = matches
-            .value_of("index")
-            .expect("`index` is a required arg.")
-            .to_string();
-        let config_uri = matches
-            .value_of("config")
-            .map(Uri::try_new)
-            .expect("`config` is a required arg.")?;
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
-        Ok(Self::Describe(DescribeIndexArgs {
-            config_uri,
-            index_id,
-            data_dir,
-        }))
-    }
-
-    fn parse_create_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let index_config_uri = matches
-            .value_of("index-config")
-            .map(Uri::try_new)
-            .expect("`index-config` is a required arg.")?;
-        let config_uri = matches
-            .value_of("config")
-            .map(Uri::try_new)
-            .expect("`config` is a required arg.")?;
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
-        let overwrite = matches.is_present("overwrite");
-
-        Ok(Self::Create(CreateIndexArgs {
-            config_uri,
-            data_dir,
-            index_config_uri,
-            overwrite,
         }))
     }
 
@@ -512,21 +548,68 @@ impl IndexCliCommand {
 
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
-            Self::List(args) => list_index_cli(args).await,
+            Self::Clear(args) => clear_index_cli(args).await,
             Self::Create(args) => create_index_cli(args).await,
-            Self::Describe(args) => describe_index_cli(args).await,
-            Self::Ingest(args) => ingest_docs_cli(args).await,
-            Self::Search(args) => search_index_cli(args).await,
-            Self::Merge(args) => merge_or_demux_cli(args, true, false).await,
-            Self::Demux(args) => merge_or_demux_cli(args, false, true).await,
-            Self::GarbageCollect(args) => garbage_collect_index_cli(args).await,
             Self::Delete(args) => delete_index_cli(args).await,
+            Self::Demux(args) => merge_or_demux_cli(args, false, true).await,
+            Self::Describe(args) => describe_index_cli(args).await,
+            Self::GarbageCollect(args) => garbage_collect_index_cli(args).await,
+            Self::Ingest(args) => ingest_docs_cli(args).await,
+            Self::List(args) => list_index_cli(args).await,
+            Self::Merge(args) => merge_or_demux_cli(args, true, false).await,
+            Self::Search(args) => search_index_cli(args).await,
         }
     }
 }
 
+pub async fn clear_index_cli(args: ClearIndexArgs) -> anyhow::Result<()> {
+    debug!(args=?args, "clear-index");
+    if !args.yes {
+        let prompt = format!(
+            "This operation will delete all the splits of the index `{}` and reset its \
+             checkpoint. Do you want to proceed?",
+            args.index_id
+        );
+        if !prompt_confirmation(&prompt, false) {
+            return Ok(());
+        }
+    }
+    let config = load_quickwit_config(&args.config_uri, None).await?;
+    let index_service = IndexService::from_config(config).await?;
+    index_service.clear_index(&args.index_id).await?;
+    println!("Index `{}` successfully cleared.", args.index_id);
+    Ok(())
+}
+
+pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
+    debug!(args=?args, "create-index");
+    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Create).await;
+
+    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
+    let file_content = load_file(&args.index_config_uri).await?;
+    let index_config = IndexConfig::load(&args.index_config_uri, file_content.as_slice()).await?;
+    let index_id = index_config.index_id.clone();
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
+    let metastore = metastore_uri_resolver
+        .resolve(&quickwit_config.metastore_uri)
+        .await?;
+
+    validate_storage_uri(metastore_uri_resolver, &quickwit_config, &index_config).await?;
+
+    let index_service = IndexService::new(
+        metastore,
+        quickwit_storage_uri_resolver().clone(),
+        quickwit_config.default_index_root_uri,
+    );
+    index_service
+        .create_index(index_config, args.overwrite)
+        .await?;
+    println!("Index `{}` successfully created.", index_id);
+    Ok(())
+}
+
 pub async fn list_index_cli(args: ListIndexesArgs) -> anyhow::Result<()> {
-    debug!(args = ?args, "list");
+    debug!(args=?args, "list");
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
     let metastore_uri = args.metastore_uri.unwrap_or(quickwit_config.metastore_uri);
@@ -561,7 +644,7 @@ struct IndexRow {
 }
 
 pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
-    debug!(args = ?args, "describe");
+    debug!(args=?args, "describe");
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let metastore = metastore_uri_resolver
@@ -780,36 +863,8 @@ fn print_descriptive_stats(values: &[usize]) {
     );
 }
 
-pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
-    debug!(args = ?args, "create-index");
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Create).await;
-
-    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
-    let file_content = load_file(&args.index_config_uri).await?;
-    let index_config = IndexConfig::load(&args.index_config_uri, file_content.as_slice()).await?;
-    let index_id = index_config.index_id.clone();
-    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-    let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri)
-        .await?;
-
-    validate_storage_uri(metastore_uri_resolver, &quickwit_config, &index_config).await?;
-
-    let index_service = IndexService::new(
-        metastore,
-        quickwit_storage_uri_resolver().clone(),
-        quickwit_config.default_index_root_uri,
-    );
-    index_service
-        .create_index(index_config, args.overwrite)
-        .await?;
-    println!("Index `{}` successfully created.", index_id);
-
-    Ok(())
-}
-
 pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
-    debug!(args = ?args, "ingest-docs");
+    debug!(args=?args, "ingest-docs");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Ingest).await;
 
     let config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
@@ -836,7 +891,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
             quickwit_storage_uri_resolver().clone(),
             config.default_index_root_uri.clone(),
         );
-        index_service.reset_index(&args.index_id).await?;
+        index_service.clear_index(&args.index_id).await?;
     }
     let indexer_config = IndexerConfig {
         ..Default::default()
@@ -901,7 +956,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
 }
 
 pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResponse> {
-    debug!(args = ?args, "search-index");
+    debug!(args=?args, "search-index");
     let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
@@ -939,7 +994,7 @@ pub async fn merge_or_demux_cli(
     merge_enabled: bool,
     demux_enabled: bool,
 ) -> anyhow::Result<()> {
-    debug!(args = ?args, merge_enabled = merge_enabled, demux_enabled = demux_enabled, "run-merge-operations");
+    debug!(args=?args, merge_enabled = merge_enabled, demux_enabled = demux_enabled, "run-merge-operations");
     let config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     run_index_checklist(&config.metastore_uri, &args.index_id, None).await?;
     let indexer_config = IndexerConfig {
@@ -979,7 +1034,7 @@ pub async fn merge_or_demux_cli(
 }
 
 pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
-    debug!(args = ?args, "delete-index");
+    debug!(args=?args, "delete-index");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Delete).await;
 
     let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
@@ -1018,7 +1073,7 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
 }
 
 pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow::Result<()> {
-    debug!(args = ?args, "garbage-collect-index");
+    debug!(args=?args, "garbage-collect-index");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::GarbageCollect).await;
 
     let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;

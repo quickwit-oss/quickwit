@@ -575,7 +575,7 @@ fn spawn_consumer_poll_loop(
                     Err(KafkaError::PartitionEOF(partition)) => KafkaEvent::PartitionEOF(partition),
                     Err(error) => KafkaEvent::Error(anyhow!(error)),
                 };
-                if let Err(_) = events_tx.blocking_send(event) {
+                if events_tx.blocking_send(event).is_err() {
                     break;
                 }
             }
@@ -878,7 +878,7 @@ mod kafka_broker_tests {
         let split_id = new_split_id();
         let split_metadata = SplitMetadata::for_test(split_id.clone());
         metastore
-            .stage_split(&index_id, split_metadata)
+            .stage_split(index_id, split_metadata)
             .await
             .unwrap();
 
@@ -903,7 +903,7 @@ mod kafka_broker_tests {
             source_delta,
         };
         metastore
-            .publish_splits(&index_id, &[&split_id], &[], Some(index_delta))
+            .publish_splits(index_id, &[&split_id], &[], Some(index_delta))
             .await
             .unwrap();
     }
@@ -1264,7 +1264,7 @@ mod kafka_broker_tests {
             assert!(exit_status.is_success());
 
             let messages: Vec<RawDocBatch> = indexer_inbox.drain_for_test_typed();
-            assert!(messages.len() >= 1);
+            assert!(!messages.is_empty());
 
             let batch = merge_doc_batches(messages)?;
             let expected_docs = vec![
@@ -1335,7 +1335,7 @@ mod kafka_broker_tests {
             assert!(exit_status.is_success());
 
             let messages: Vec<RawDocBatch> = indexer_inbox.drain_for_test_typed();
-            assert!(messages.len() >= 1);
+            assert!(!messages.is_empty());
 
             let batch = merge_doc_batches(messages)?;
             let expected_docs = vec!["Message #002", "Message #200", "Message #202"];
@@ -1372,38 +1372,36 @@ mod kafka_broker_tests {
     }
 
     #[tokio::test]
-    async fn test_kafka_connectivity() -> anyhow::Result<()> {
+    async fn test_kafka_connectivity() {
         let bootstrap_servers = "localhost:9092".to_string();
         let topic = append_random_suffix("test-kafka-connectivity-topic");
 
-        let admin_client = create_admin_client()?;
-        create_topic(&admin_client, &topic, 1).await?;
+        let admin_client = create_admin_client().unwrap();
+        create_topic(&admin_client, &topic, 1).await.unwrap();
 
         // Check valid connectivity
-        let result = check_connectivity(KafkaSourceParams {
+        check_connectivity(KafkaSourceParams {
             topic: topic.clone(),
             client_log_level: None,
             client_params: json!({ "bootstrap.servers": bootstrap_servers }),
             enable_backfill_mode: true,
         })
-        .await?;
-
-        assert_eq!(result, ());
+        .await
+        .unwrap();
 
         // TODO: these tests should be checking the specific errors.
         // Non existent topic should throw an error.
-        let result = check_connectivity(KafkaSourceParams {
+        check_connectivity(KafkaSourceParams {
             topic: "non-existent-topic".to_string(),
             client_log_level: None,
             client_params: json!({ "bootstrap.servers": bootstrap_servers }),
             enable_backfill_mode: true,
         })
-        .await;
-
-        assert!(result.is_err());
+        .await
+        .unwrap_err();
 
         // Invalid brokers should throw an error
-        let result = check_connectivity(KafkaSourceParams {
+        let _result = check_connectivity(KafkaSourceParams {
             topic: topic.clone(),
             client_log_level: None,
             client_params: json!({
@@ -1411,9 +1409,7 @@ mod kafka_broker_tests {
             }),
             enable_backfill_mode: true,
         })
-        .await;
-
-        assert!(result.is_err());
-        Ok(())
+        .await
+        .unwrap_err();
     }
 }
