@@ -32,6 +32,8 @@ use tokio::sync::{Mutex, MutexGuard};
 #[derive(Clone, Default)]
 pub struct PublishLock {
     inner: Arc<PublishLockInner>,
+    #[cfg(any(test, feature = "testsuite"))]
+    pub id: &'static str,
 }
 
 impl Debug for PublishLock {
@@ -39,6 +41,21 @@ impl Debug for PublishLock {
         fmt.debug_struct("PublishLock")
             .field("is_alive", &self.is_alive())
             .finish()
+    }
+}
+
+impl PublishLock {
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test(is_alive: bool, id: &'static str) -> Self {
+        let inner = PublishLockInner {
+            alive: AtomicBool::new(is_alive),
+            mutex: Mutex::default(),
+        };
+        Self {
+            inner: Arc::new(inner),
+            id,
+        }
     }
 }
 
@@ -93,8 +110,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_publish_lock() {
-        let lock = PublishLock::default();
+        let lock = PublishLock::for_test(true, "foo-publish-lock");
         assert!(lock.is_alive());
+        assert_eq!(lock.id, "foo-publish-lock");
 
         let guard = lock.acquire().await.unwrap();
         assert!(timeout(Duration::from_millis(50), lock.kill())
