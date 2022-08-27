@@ -213,6 +213,8 @@ pub struct KafkaSourceState {
     pub num_messages_processed: u64,
     // Number of invalid messages, i.e., that were empty or could not be parsed.
     pub num_invalid_messages: u64,
+    /// Number of rebalances the consumer went through.
+    pub num_rebalances: usize,
 }
 
 /// A `KafkaSource` consumes a topic and forwards its messages to an `Indexer`.
@@ -389,10 +391,12 @@ impl KafkaSource {
         ack_tx
             .send(())
             .map_err(|_| anyhow!("Consumer context was dropped."))?;
+
+        batch.clear();
         self.publish_lock = PublishLock::default();
+        self.state.num_rebalances += 1;
         ctx.send_message(indexer_mailbox, NewPublishLock(self.publish_lock.clone()))
             .await?;
-        batch.clear();
         Ok(())
     }
 
@@ -544,6 +548,7 @@ impl Source for KafkaSource {
             "num_bytes_processed": self.state.num_bytes_processed,
             "num_messages_processed": self.state.num_messages_processed,
             "num_invalid_messages": self.state.num_invalid_messages,
+            "num_rebalances": self.state.num_rebalances,
         })
     }
 }
@@ -722,15 +727,16 @@ fn parse_message_payload(message: &BorrowedMessage) -> Option<String> {
 
 #[cfg(all(test, feature = "kafka-broker-tests"))]
 mod kafka_broker_tests {
-    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_actors::{create_test_mailbox, ActorContext, Universe};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
-    use quickwit_metastore::{metastore_for_test, IndexMetadata, SplitMetadata};
+    use quickwit_metastore::{metastore_for_test, IndexMetadata, Metastore, SplitMetadata};
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
     use rdkafka::message::ToBytes;
     use rdkafka::producer::{FutureProducer, FutureRecord};
+    use tokio::sync::watch;
 
     use super::*;
     use crate::new_split_id;
@@ -851,14 +857,60 @@ mod kafka_broker_tests {
         Ok(merged_batch)
     }
 
+    async fn setup_index(
+        metastore: Arc<dyn Metastore>,
+        index_id: &str,
+        source_id: &str,
+        partition_deltas: &[(u64, i64, i64)],
+    ) {
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
+        metastore.create_index(index_metadata).await.unwrap();
+
+        if partition_deltas.is_empty() {
+            return;
+        }
+        let split_id = new_split_id();
+        let split_metadata = SplitMetadata::for_test(split_id.clone());
+        metastore
+            .stage_split(&index_id, split_metadata)
+            .await
+            .unwrap();
+
+        let mut source_delta = SourceCheckpointDelta::default();
+        for (partition_id, from_position, to_position) in partition_deltas {
+            source_delta
+                .record_partition_delta(
+                    (*partition_id).into(),
+                    {
+                        if *from_position < 0 {
+                            Position::Beginning
+                        } else {
+                            (*from_position).into()
+                        }
+                    },
+                    (*to_position).into(),
+                )
+                .unwrap();
+        }
+        let index_delta = IndexCheckpointDelta {
+            source_id: source_id.to_string(),
+            source_delta,
+        };
+        metastore
+            .publish_splits(&index_id, &[&split_id], &[], Some(index_delta))
+            .await
+            .unwrap();
+    }
+
     #[tokio::test]
     async fn test_kafka_source_process_message() {
         let admin_client = create_admin_client().unwrap();
-        let topic = append_random_suffix("test-kafka-source-process-message--topic");
-        create_topic(&admin_client, &topic, 1).await.unwrap();
+        let topic = append_random_suffix("test-kafka-source--process-message--topic");
+        create_topic(&admin_client, &topic, 2).await.unwrap();
 
         let metastore = metastore_for_test();
-        let index_id = append_random_suffix("test-kafka-source-process-message--index");
+        let index_id = append_random_suffix("test-kafka-source--process-message--index");
         let (_source_id, source_config) = get_source_config(&topic);
         let params = if let SourceParams::Kafka(params) = source_config.clone().source_params {
             params
@@ -970,19 +1022,122 @@ mod kafka_broker_tests {
     }
 
     #[tokio::test]
-    async fn test_kafka_source_process_assign_partitions() {}
+    async fn test_kafka_source_process_assign_partitions() {
+        let admin_client = create_admin_client().unwrap();
+        let topic = append_random_suffix("test-kafka-source--process-assign-partitions--topic");
+        create_topic(&admin_client, &topic, 2).await.unwrap();
+
+        let metastore = metastore_for_test();
+        let index_id = append_random_suffix("test-kafka-source--process-assign-partitions--index");
+        let (source_id, source_config) = get_source_config(&topic);
+
+        setup_index(metastore.clone(), &index_id, &source_id, &[(2, -1, 42)]).await;
+
+        let params = if let SourceParams::Kafka(params) = source_config.clone().source_params {
+            params
+        } else {
+            unreachable!()
+        };
+        let ctx = SourceExecutionContext::for_test(metastore, &index_id, source_config);
+        let ignored_checkpoint = SourceCheckpoint::default();
+        let mut kafka_source = KafkaSource::try_new(ctx, params, ignored_checkpoint)
+            .await
+            .unwrap();
+        kafka_source.state.num_inactive_partitions = 1;
+
+        let universe = Universe::new();
+        let (source_mailbox, _source_inbox) = create_test_mailbox();
+        let (observable_state_tx, _observable_state_rx) = watch::channel(json!({}));
+        let ctx: ActorContext<SourceActor> =
+            ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
+        let (assignment_tx, assignment_rx) = oneshot::channel();
+
+        kafka_source
+            .process_assign_partitions(&ctx, &[1, 2], assignment_tx)
+            .await
+            .unwrap();
+
+        assert_eq!(kafka_source.state.num_inactive_partitions, 0);
+
+        let expected_assigned_partitions =
+            HashMap::from_iter([(1, PartitionId::from(1u64)), (2, PartitionId::from(2u64))]);
+        assert_eq!(
+            kafka_source.state.assigned_partitions,
+            expected_assigned_partitions
+        );
+        let expected_current_positions =
+            HashMap::from_iter([(1, Position::Beginning), (2, Position::from(42u64))]);
+        assert_eq!(
+            kafka_source.state.current_positions,
+            expected_current_positions
+        );
+
+        let assignment = assignment_rx.await.unwrap();
+        assert_eq!(
+            assignment,
+            &[(1, Offset::Beginning), (2, Offset::Offset(43))]
+        )
+    }
 
     #[tokio::test]
-    async fn test_kafka_source_process_revoke_partitions() {}
+    async fn test_kafka_source_process_revoke_partitions() {
+        let admin_client = create_admin_client().unwrap();
+        let topic = append_random_suffix("test-kafka-source--process-revoke-partitions--topic");
+        create_topic(&admin_client, &topic, 1).await.unwrap();
+
+        let metastore = metastore_for_test();
+        let index_id = append_random_suffix("test-kafka-source--process-revoke--partitions--index");
+        let (_source_id, source_config) = get_source_config(&topic);
+        let params = if let SourceParams::Kafka(params) = source_config.clone().source_params {
+            params
+        } else {
+            unreachable!()
+        };
+        let ctx = SourceExecutionContext::for_test(metastore, &index_id, source_config);
+        let ignored_checkpoint = SourceCheckpoint::default();
+        let mut kafka_source = KafkaSource::try_new(ctx, params, ignored_checkpoint)
+            .await
+            .unwrap();
+
+        let universe = Universe::new();
+        let (source_mailbox, _source_inbox) = create_test_mailbox();
+        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
+        let (observable_state_tx, _observable_state_rx) = watch::channel(json!({}));
+        let ctx: ActorContext<SourceActor> =
+            ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
+        let (ack_tx, ack_rx) = oneshot::channel();
+
+        let mut batch = BatchBuilder::default();
+        batch.push("test-doc".to_string(), 8);
+
+        let publish_lock = kafka_source.publish_lock.clone();
+        assert!(publish_lock.is_alive());
+        assert_eq!(kafka_source.state.num_rebalances, 0);
+
+        kafka_source
+            .process_revoke_partitions(&ctx, &indexer_mailbox, &mut batch, ack_tx)
+            .await
+            .unwrap();
+
+        ack_rx.await.unwrap();
+        assert!(batch.docs.is_empty());
+        assert!(publish_lock.is_dead());
+
+        assert_eq!(kafka_source.state.num_rebalances, 1);
+
+        let indexer_messages: Vec<NewPublishLock> = indexer_inbox.drain_for_test_typed();
+        assert_eq!(indexer_messages.len(), 1);
+        assert!(indexer_messages[0].0.is_alive());
+    }
 
     #[tokio::test]
     async fn test_kafka_source_process_partition_eof() {
         let admin_client = create_admin_client().unwrap();
-        let topic = append_random_suffix("test-kafka-source-process-message--topic");
+        let topic = append_random_suffix("test-kafka-source--process-partition-eof--topic");
         create_topic(&admin_client, &topic, 1).await.unwrap();
 
         let metastore = metastore_for_test();
-        let index_id = append_random_suffix("test-kafka-source-process-message--index");
+        let index_id = append_random_suffix("test-kafka-source--process-partiton-eof--index");
         let (_source_id, source_config) = get_source_config(&topic);
         let params = if let SourceParams::Kafka(params) = source_config.clone().source_params {
             params
@@ -1016,20 +1171,22 @@ mod kafka_broker_tests {
 
         let source_loader = quickwit_supported_sources();
         {
-            let index_id = append_random_suffix("test-kafka-source--index");
-            let index_uri = format!("ram:///indexes/{index_id}");
-
-            let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
             let metastore = metastore_for_test();
-            metastore.create_index(index_metadata).await?;
+            let index_id = append_random_suffix("test-kafka-source--index");
 
             let (source_id, source_config) = get_source_config(&topic);
             let source = source_loader
                 .load_source(
-                    SourceExecutionContext::for_test(metastore, &index_id, source_config.clone()),
+                    SourceExecutionContext::for_test(
+                        metastore.clone(),
+                        &index_id,
+                        source_config.clone(),
+                    ),
                     SourceCheckpoint::default(),
                 )
                 .await?;
+
+            setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
 
             let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
             let source_actor = SourceActor {
@@ -1053,6 +1210,7 @@ mod kafka_broker_tests {
                 "num_bytes_processed": 0,
                 "num_messages_processed": 0,
                 "num_invalid_messages": 0,
+                "num_rebalances": 0,
             });
             assert_eq!(exit_state, expected_state);
         }
@@ -1074,20 +1232,22 @@ mod kafka_broker_tests {
             .await?;
         }
         {
-            let index_id = append_random_suffix("test-kafka-source--index");
-            let index_uri = format!("ram:///indexes/{index_id}");
-
-            let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
             let metastore = metastore_for_test();
-            metastore.create_index(index_metadata).await?;
+            let index_id = append_random_suffix("test-kafka-source--index");
 
             let (source_id, source_config) = get_source_config(&topic);
             let source = source_loader
                 .load_source(
-                    SourceExecutionContext::for_test(metastore, &index_id, source_config.clone()),
+                    SourceExecutionContext::for_test(
+                        metastore.clone(),
+                        &index_id,
+                        source_config.clone(),
+                    ),
                     SourceCheckpoint::default(),
                 )
                 .await?;
+
+            setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
 
             let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
             let source_actor = SourceActor {
@@ -1132,45 +1292,33 @@ mod kafka_broker_tests {
                 "num_bytes_processed": 72,
                 "num_messages_processed": 9,
                 "num_invalid_messages": 3,
+                "num_rebalances": 0,
             });
             assert_eq!(exit_state, expected_state);
         }
         {
-            let index_id = append_random_suffix("test-kafka-source--index");
-            let index_uri = format!("ram:///indexes/{index_id}");
-
-            let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
             let metastore = metastore_for_test();
-            metastore.create_index(index_metadata).await?;
-
-            let split_id = new_split_id();
-            let split_metadata = SplitMetadata::for_test(split_id.clone());
-            metastore.stage_split(&index_id, split_metadata).await?;
-
-            let mut source_delta = SourceCheckpointDelta::default();
-            source_delta
-                .record_partition_delta(0u64.into(), Position::Beginning, 0u64.into())
-                .unwrap();
-            source_delta
-                .record_partition_delta(1u64.into(), Position::Beginning, 2u64.into())
-                .unwrap();
+            let index_id = append_random_suffix("test-kafka-source--index");
 
             let (source_id, source_config) = get_source_config(&topic);
-            let index_delta = IndexCheckpointDelta {
-                source_id: source_id.clone(),
-                source_delta,
-            };
-            metastore
-                .publish_splits(&index_id, &[&split_id], &[], Some(index_delta))
-                .await
-                .unwrap();
-
             let source = source_loader
                 .load_source(
-                    SourceExecutionContext::for_test(metastore, &index_id, source_config.clone()),
+                    SourceExecutionContext::for_test(
+                        metastore.clone(),
+                        &index_id,
+                        source_config.clone(),
+                    ),
                     SourceCheckpoint::default(),
                 )
                 .await?;
+
+            setup_index(
+                metastore.clone(),
+                &index_id,
+                &source_id,
+                &[(0, -1, 0), (1, -1, 2)],
+            )
+            .await;
 
             let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
             let source_actor = SourceActor {
@@ -1211,6 +1359,7 @@ mod kafka_broker_tests {
                 "num_bytes_processed": 36,
                 "num_messages_processed": 5,
                 "num_invalid_messages": 2,
+                "num_rebalances": 0,
             });
             assert_eq!(exit_state, expected_exit_state);
         }
