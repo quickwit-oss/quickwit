@@ -18,11 +18,14 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeSet, HashMap};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{bail, Context};
 use byte_unit::Byte;
+use cron::Schedule;
+use humantime::parse_duration;
 use json_comments::StripComments;
 use quickwit_common::uri::{Extension, Uri};
 use quickwit_doc_mapper::{
@@ -228,6 +231,101 @@ pub struct SearchSettings {
     pub default_search_fields: Vec<String>,
 }
 
+/// Defines on which split attribute the retention policy is applied relatively.
+#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "snake_case")]
+pub enum RetentionPolicyCutoffReference {
+    /// The split is deleted when `now() - split.publish_timestamp >= retention_policy.period`
+    PublishTimestamp,
+    /// The split is deleted when `now() - split.time_range.end >= retention_policy.period`
+    SplitTimestampField,
+}
+
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RetentionPolicy {
+    /// Duration of time for which the splits should be retained, expressed in a human-friendly way
+    /// (`1 hour`, `3 days`, `a week`, ...).
+    #[serde(rename = "period")]
+    retention_period: String,
+    /// Determines on which split attribute the retention policy is applied relatively. See
+    /// [`RetentionPolicyCutoffReference`] for more details.
+    pub cutoff_reference: RetentionPolicyCutoffReference,
+
+    /// Defines the frequency at which the retention policy is evaluated and applied, expressed in
+    /// a human-friendly way (`hourly`, `daily`, ...) or as a cron expression (`0 0 * * * *`,
+    /// `0 0 0 * * *`).
+    #[serde(default = "RetentionPolicy::default_schedule")]
+    #[serde(rename = "schedule")]
+    evaluation_schedule: String,
+}
+
+impl RetentionPolicy {
+    pub fn new(
+        retention_period: String,
+        cutoff_reference: RetentionPolicyCutoffReference,
+        evaluation_schedule: String,
+    ) -> Self {
+        Self {
+            retention_period,
+            cutoff_reference,
+            evaluation_schedule,
+        }
+    }
+
+    fn default_schedule() -> String {
+        "hourly".to_string()
+    }
+
+    pub fn retention_period(&self) -> anyhow::Result<Duration> {
+        parse_duration(&self.retention_period).with_context(|| {
+            format!(
+                "Failed to parse retention period `{}`.",
+                self.retention_period
+            )
+        })
+    }
+
+    pub fn evaluation_schedule(&self) -> anyhow::Result<Schedule> {
+        let evaluation_schedule = prepend_at_char(&self.evaluation_schedule);
+
+        Schedule::from_str(&evaluation_schedule).with_context(|| {
+            format!(
+                "Failed to parse retention evaluation schedule `{}`.",
+                self.evaluation_schedule
+            )
+        })
+    }
+
+    fn requires_timestamp_field(&self) -> bool {
+        matches!(
+            self.cutoff_reference,
+            RetentionPolicyCutoffReference::SplitTimestampField
+        )
+    }
+
+    fn validate(&self) -> anyhow::Result<()> {
+        self.retention_period()?;
+        self.evaluation_schedule()?;
+        Ok(())
+    }
+}
+
+/// Prepends an `@` char at the start of the cron expression if necessary:
+/// `hourly` -> `@hourly`
+fn prepend_at_char(schedule: &str) -> String {
+    let trimmed_schedule = schedule.trim();
+
+    if !trimmed_schedule.is_empty()
+        && !trimmed_schedule.starts_with('@')
+        && trimmed_schedule.chars().all(|ch| ch.is_ascii_alphabetic())
+    {
+        return format!("@{trimmed_schedule}");
+    }
+    trimmed_schedule.to_string()
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IndexConfig {
@@ -243,6 +341,9 @@ pub struct IndexConfig {
     pub search_settings: SearchSettings,
     #[serde(default)]
     pub sources: Vec<SourceConfig>,
+    #[serde(rename = "retention")]
+    #[serde(default)]
+    pub retention_policy: Option<RetentionPolicy>,
 }
 
 impl IndexConfig {
@@ -297,6 +398,18 @@ impl IndexConfig {
     pub fn validate(&self) -> anyhow::Result<()> {
         validate_identifier("Index ID", &self.index_id)?;
 
+        if let Some(retention_policy) = &self.retention_policy {
+            retention_policy.validate()?;
+
+            if retention_policy.requires_timestamp_field()
+                && self.indexing_settings.timestamp_field.is_none()
+            {
+                bail!(
+                    "Failed to validate index config. The retention policy cutoff reference \
+                     requires a timestamp field, but the indexing settings do not declare one."
+                );
+            }
+        }
         if self.sources.len() > self.sources().len() {
             bail!("Index config contains duplicate sources.")
         }
@@ -365,6 +478,8 @@ where D: Deserializer<'de> {
 #[cfg(test)]
 mod tests {
 
+    use cron::TimeUnitSpec;
+
     use super::*;
     use crate::SourceParams;
 
@@ -409,6 +524,15 @@ mod tests {
                         .into_iter()
                         .collect::<Vec<String>>(),
                     vec!["tenant_id".to_string()]
+                );
+                let expected_retention_policy = RetentionPolicy {
+                    retention_period: "90 days".to_string(),
+                    cutoff_reference: RetentionPolicyCutoffReference::SplitTimestampField,
+                    evaluation_schedule: "daily".to_string(),
+                };
+                assert_eq!(
+                    index_config.retention_policy.unwrap(),
+                    expected_retention_policy
                 );
                 assert_eq!(index_config.doc_mapping.store_source, true);
 
@@ -649,5 +773,154 @@ mod tests {
         "#;
         let minimal_config = serde_yaml::from_str::<IndexConfig>(config_yaml).unwrap();
         assert_eq!(minimal_config.doc_mapping.mode, ModeType::Lenient);
+    }
+
+    #[test]
+    fn test_retention_policy_serialization() {
+        let retention_policy = RetentionPolicy {
+            retention_period: "90 days".to_string(),
+            cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+            evaluation_schedule: "hourly".to_string(),
+        };
+        let retention_policy_yaml = serde_yaml::to_string(&retention_policy).unwrap();
+
+        assert_eq!(
+            serde_yaml::from_str::<RetentionPolicy>(&retention_policy_yaml).unwrap(),
+            retention_policy,
+        );
+    }
+
+    #[test]
+    fn test_retention_policy_deserialization() {
+        {
+            let retention_policy_yaml = r#"
+            period: 90 days
+            cutoff_reference: publish_timestamp
+        "#;
+            let retention_policy =
+                serde_yaml::from_str::<RetentionPolicy>(retention_policy_yaml).unwrap();
+
+            let expected_retention_policy = RetentionPolicy {
+                retention_period: "90 days".to_string(),
+                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                evaluation_schedule: "hourly".to_string(),
+            };
+            assert_eq!(retention_policy, expected_retention_policy);
+        }
+        {
+            let retention_policy_yaml = r#"
+            period: 90 days
+            cutoff_reference: publish_timestamp
+            schedule: daily
+        "#;
+            let retention_policy =
+                serde_yaml::from_str::<RetentionPolicy>(retention_policy_yaml).unwrap();
+
+            let expected_retention_policy = RetentionPolicy {
+                retention_period: "90 days".to_string(),
+                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                evaluation_schedule: "daily".to_string(),
+            };
+            assert_eq!(retention_policy, expected_retention_policy);
+        }
+    }
+
+    #[test]
+    fn test_parse_retention_policy_period() {
+        {
+            let retention_policy = RetentionPolicy {
+                retention_period: "1 hour".to_string(),
+                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                evaluation_schedule: "hourly".to_string(),
+            };
+            assert_eq!(
+                retention_policy.retention_period().unwrap(),
+                Duration::from_secs(3600)
+            );
+            {
+                let retention_policy = RetentionPolicy {
+                    retention_period: "foo".to_string(),
+                    cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                    evaluation_schedule: "hourly".to_string(),
+                };
+                assert_eq!(
+                    retention_policy.retention_period().unwrap_err().to_string(),
+                    "Failed to parse retention period `foo`."
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_prepend_at_char() {
+        assert_eq!(prepend_at_char(""), "");
+        assert_eq!(prepend_at_char("* * 0 0 0"), "* * 0 0 0");
+        assert_eq!(prepend_at_char("hourly"), "@hourly");
+        assert_eq!(prepend_at_char("@hourly"), "@hourly");
+    }
+
+    #[test]
+    fn test_parse_retention_policy_schedule() {
+        let hourly_schedule = Schedule::from_str("@hourly").unwrap();
+        {
+            let retention_policy = RetentionPolicy {
+                retention_period: "1 hour".to_string(),
+                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                evaluation_schedule: "@hourly".to_string(),
+            };
+            assert_eq!(
+                retention_policy.evaluation_schedule().unwrap(),
+                hourly_schedule
+            );
+        }
+        {
+            let retention_policy = RetentionPolicy {
+                retention_period: "1 hour".to_string(),
+                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                evaluation_schedule: "hourly".to_string(),
+            };
+            assert_eq!(
+                retention_policy.evaluation_schedule().unwrap(),
+                hourly_schedule
+            );
+        }
+        {
+            let retention_policy = RetentionPolicy {
+                retention_period: "1 hour".to_string(),
+                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                evaluation_schedule: "0 * * * * *".to_string(),
+            };
+            let evaluation_schedule = retention_policy.evaluation_schedule().unwrap();
+            assert_eq!(evaluation_schedule.seconds().count(), 1);
+            assert_eq!(evaluation_schedule.minutes().count(), 60);
+        }
+    }
+
+    #[test]
+    fn test_retention_policy_validate() {
+        {
+            let retention_policy = RetentionPolicy {
+                retention_period: "1 hour".to_string(),
+                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                evaluation_schedule: "hourly".to_string(),
+            };
+            retention_policy.validate().unwrap();
+        }
+        {
+            let retention_policy = RetentionPolicy {
+                retention_period: "foo".to_string(),
+                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                evaluation_schedule: "hourly".to_string(),
+            };
+            retention_policy.validate().unwrap_err();
+        }
+        {
+            let retention_policy = RetentionPolicy {
+                retention_period: "1 hour".to_string(),
+                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                evaluation_schedule: "foo".to_string(),
+            };
+            retention_policy.validate().unwrap_err();
+        }
     }
 }
