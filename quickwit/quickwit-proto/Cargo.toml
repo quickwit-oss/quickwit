@@ -10,10 +10,17 @@ homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
+anyhow = { workspace = true }
+enum-iterator = { workspace = true }
+itertools = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
 serde = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
 tonic = { workspace = true }
+tower = { workspace = true }
+tracing = { workspace = true }
 
 [build-dependencies]
 glob = "0.3.0"

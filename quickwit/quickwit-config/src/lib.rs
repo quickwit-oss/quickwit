@@ -24,7 +24,6 @@ use regex::Regex;
 mod config;
 mod index_config;
 pub mod merge_policy_config;
-pub mod service;
 mod source_config;
 mod templating;
 

@@ -23,6 +23,7 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 atty = { workspace = true }
 byte-unit = { workspace = true }
+chitchat = { workspace = true }
 clap = { workspace = true }
 colored = { workspace = true }
 console-subscriber = { workspace = true, optional = true }
@@ -73,6 +74,7 @@ predicates = { workspace = true }
 reqwest = { workspace = true }
 serial_test = { workspace = true }
 
+quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 
 [features]

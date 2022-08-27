@@ -31,7 +31,7 @@ use quickwit_cli::{
     QW_ENABLE_JAEGER_EXPORTER_ENV_KEY, QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY,
 };
 use quickwit_common::runtimes::RuntimesConfiguration;
-use quickwit_config::service::QuickwitService;
+use quickwit_proto::QuickwitService;
 use quickwit_serve::{build_quickwit_build_info, QuickwitBuildInfo};
 use quickwit_telemetry::payload::TelemetryEvent;
 use tonic::metadata::MetadataMap;

@@ -56,7 +56,7 @@ pub(crate) async fn start_rest_server(
             quickwit_services.config.clone(),
         ))
         .or(indexing_get_handler(
-            quickwit_services.indexer_service.clone(),
+            quickwit_services.indexing_service.clone(),
         ))
         .or(search_get_handler(quickwit_services.search_service.clone()))
         .or(search_post_handler(

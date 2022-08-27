@@ -30,6 +30,7 @@ tracing = { workspace = true }
 
 quickwit-common = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
+quickwit-proto = { workspace = true }
 
 [features]
 testsuite = []

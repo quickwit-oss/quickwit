@@ -17,7 +17,8 @@ FILTER = {
 	"quickwit-serve",
 	"quickwit-storage",
 	"quickwit-cluster",
-	"quickwit-core",
+	"quickwit-index",
+    "quickwit-control-plane",
     "tantivy"
 }
 

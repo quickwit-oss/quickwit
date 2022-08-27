@@ -17,6 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
+use std::net::SocketAddr;
+
 use std::fmt::Display;
 use std::str::FromStr;
 
@@ -25,12 +28,15 @@ use enum_iterator::{all, Sequence};
 use itertools::Itertools;
 use serde::Serialize;
 
+use crate::quickwit_indexing_api::IndexingTask;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Sequence)]
 pub enum QuickwitService {
     Indexer,
     Searcher,
     Janitor,
     Metastore,
+    ControlPlane,
 }
 
 impl QuickwitService {
@@ -40,6 +46,7 @@ impl QuickwitService {
             QuickwitService::Searcher => "searcher",
             QuickwitService::Janitor => "janitor",
             QuickwitService::Metastore => "metastore",
+            QuickwitService::ControlPlane => "control_plane",
         }
     }
     pub fn supported_services() -> Vec<QuickwitService> {
@@ -62,6 +69,7 @@ impl FromStr for QuickwitService {
             "searcher" => Ok(QuickwitService::Searcher),
             "janitor" => Ok(QuickwitService::Janitor),
             "metastore" => Ok(QuickwitService::Metastore),
+            "control_plane" => Ok(QuickwitService::ControlPlane),
             _ => {
                 bail!(
                     "Failed to parse service `{service_str}`. Supported services are: {}",
@@ -69,5 +77,48 @@ impl FromStr for QuickwitService {
                 )
             }
         }
+    }
+}
+
+
+/// Cluster member.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClusterMember {
+    /// An ID that makes a member unique. Chitchat node ID is built from
+    /// the concatenation `{node_unique_id}/{generation}`.
+    pub node_unique_id: String,
+    /// Timestamp (ms) when node starts.
+    pub generation: u64,
+    /// Gossip advertise address.
+    pub gossip_advertise_addr: SocketAddr,
+    /// Available services.
+    pub available_services: HashSet<QuickwitService>,
+    /// gRPC advertise address.
+    pub grpc_advertise_addr: SocketAddr,
+    /// Running indexing tasks.
+    /// Empty if the ndoe is not an indexer.
+    pub running_indexing_tasks: Vec<IndexingTask>,
+}
+
+impl ClusterMember {
+    pub fn new(
+        node_unique_id: String,
+        generation: u64,
+        gossip_advertise_addr: SocketAddr,
+        available_services: HashSet<QuickwitService>,
+        grpc_advertise_addr: SocketAddr,
+    ) -> Self {
+        Self {
+            node_unique_id,
+            generation,
+            gossip_advertise_addr,
+            available_services,
+            grpc_advertise_addr,
+            running_indexing_tasks: Vec::new(),
+        }
+    }
+
+    pub fn chitchat_id(&self) -> String {
+        format!("{}/{}", self.node_unique_id, self.generation)
     }
 }

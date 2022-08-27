@@ -23,7 +23,6 @@ mod doc_processor;
 mod index_serializer;
 mod indexer;
 mod indexing_service;
-mod ingest_api_garbage_collector;
 mod packager;
 mod publisher;
 mod sequencer;
@@ -41,9 +40,6 @@ mod merge_split_downloader;
 pub use self::doc_processor::{DocProcessor, DocProcessorCounters};
 pub use self::index_serializer::IndexSerializer;
 pub use self::indexer::{Indexer, IndexerCounters};
-pub use self::ingest_api_garbage_collector::{
-    IngestApiGarbageCollector, IngestApiGarbageCollectorCounters,
-};
 pub use self::merge_executor::{combine_partition_ids, merge_split_attrs, MergeExecutor};
 pub use self::merge_planner::MergePlanner;
 pub use self::merge_split_downloader::MergeSplitDownloader;

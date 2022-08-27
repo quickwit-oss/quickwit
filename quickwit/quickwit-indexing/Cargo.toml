@@ -15,6 +15,7 @@ arc-swap = { workspace = true }
 async-trait = { workspace = true }
 backoff = { workspace = true, optional = true }
 byte-unit = { workspace = true }
+chitchat = { workspace = true }
 fail = { workspace = true }
 flume = { workspace = true }
 fnv = { workspace = true }
@@ -45,6 +46,7 @@ quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-directories = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
+quickwit-cluster = { workspace = true }
 quickwit-ingest-api = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }

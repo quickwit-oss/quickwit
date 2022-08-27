@@ -24,7 +24,7 @@ use std::str::FromStr;
 use clap::{arg, ArgMatches, Command};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
-use quickwit_config::service::QuickwitService;
+use quickwit_proto::QuickwitService;
 use quickwit_serve::serve_quickwit;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::debug;
@@ -88,6 +88,7 @@ impl RunCliCommand {
                     QuickwitService::Indexer,
                     QuickwitService::Searcher,
                     QuickwitService::Janitor,
+                    QuickwitService::ControlPlane,
                 ])
             });
         let metastore_uri = matches
@@ -167,7 +168,7 @@ mod tests {
                 services,
                 ..
             })
-            if config_uri == expected_config_uri && services.len() == 4
+            if config_uri == expected_config_uri && services.len() == 5
         ));
         Ok(())
     }

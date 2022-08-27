@@ -1,0 +1,50 @@
+// Copyright (C) 2022 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+syntax = "proto3";
+
+package quickwit_indexing_api;
+
+service IndexingService {
+  /// Apply a physical plan on the node.
+  rpc applyIndexingPlan(ApplyIndexingPlanRequest) returns (ApplyIndexingPlanResponse);
+}
+
+message ApplyIndexingPlanRequest {
+  repeated IndexingTask indexing_tasks = 1;
+}
+
+message ApplyIndexingPlanResponse {
+  // TODO: define returned errors, one for each failed task?
+  repeated string errors = 1;
+}
+
+message IndexingTask {
+  /// Index ID of the task.
+  string index_id = 1;
+  /// Source ID of the task.
+  string source_id = 2;
+  /// Indexing pipeline ordinal of the task on the (index_id, source_id) with
+  /// 0 <= pipeline_idx < num_pipelines.
+  uint64 pipeline_ord = 3;
+  /// Task source partitions. Not needed right now as we only offer
+  /// indexing distribution with Kafka and we rely on Kafka consumer
+  /// groups for that.
+  ///repeated string partitions = 4;
+}

@@ -31,6 +31,8 @@ use chitchat::{
     NodeId, NodeState,
 };
 use itertools::Itertools;
+use quickwit_proto::indexing_api::IndexingTask;
+use quickwit_proto::{ClusterMember, QuickwitService};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::time::timeout;
@@ -39,12 +41,12 @@ use tokio_stream::StreamExt;
 use tracing::{debug, error, info, warn};
 
 use crate::error::{ClusterError, ClusterResult};
-use crate::QuickwitService;
 
 const HEALTH_KEY: &str = "health";
 const HEALTH_VALUE_READY: &str = "READY";
 const HEALTH_VALUE_NOT_READY: &str = "NOT_READY";
 const GRPC_ADVERTISE_ADDR_KEY: &str = "grpc_advertise_addr";
+const RUNNING_INDEXING_TASKS: &str = "running_indexing_tasks";
 const GOSSIP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(25)
 } else {
@@ -52,48 +54,8 @@ const GOSSIP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
 };
 const AVAILABLE_SERVICES_KEY: &str = "available_services";
 
-/// Cluster member.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ClusterMember {
-    /// An ID that makes a member unique. Chitchat node ID is built from
-    /// the concatenation `{node_unique_id}/{generation}`.
-    pub node_unique_id: String,
-    /// Timestamp (ms) when node starts.
-    pub generation: u64,
-    /// Gossip advertise address.
-    pub gossip_advertise_addr: SocketAddr,
-    /// Available services.
-    pub available_services: HashSet<QuickwitService>,
-    /// gRPC advertise address.
-    pub grpc_advertise_addr: SocketAddr,
-}
-
-impl ClusterMember {
-    pub fn new(
-        node_unique_id: String,
-        generation: u64,
-        gossip_advertise_addr: SocketAddr,
-        available_services: HashSet<QuickwitService>,
-        grpc_advertise_addr: SocketAddr,
-    ) -> Self {
-        Self {
-            node_unique_id,
-            generation,
-            gossip_advertise_addr,
-            available_services,
-            grpc_advertise_addr,
-        }
-    }
-
-    pub fn chitchat_id(&self) -> String {
-        format!("{}/{}", self.node_unique_id, self.generation)
-    }
-}
-
-impl From<ClusterMember> for NodeId {
-    fn from(member: ClusterMember) -> Self {
-        Self::new(member.chitchat_id(), member.gossip_advertise_addr)
-    }
+fn node_id_from_cluster_member(member: ClusterMember) -> NodeId {
+    NodeId::new(member.chitchat_id(), member.gossip_advertise_addr)
 }
 
 /// This is an implementation of a cluster using Chitchat.
@@ -149,7 +111,7 @@ impl Cluster {
             peer_seed_addrs = %peer_seed_addrs.join(", "),
             "Joining cluster."
         );
-        let self_node_id = NodeId::from(me.clone());
+        let self_node_id = node_id_from_cluster_member(me.clone());
         let chitchat_config = ChitchatConfig {
             node_id: self_node_id.clone(),
             cluster_id: cluster_id.clone(),
@@ -350,6 +312,16 @@ impl Cluster {
         let node_state = chitchat_mutex.self_node_state();
         is_ready_predicate(node_state)
     }
+
+    pub async fn set_self_node_running_indexing_tasks(
+        &self,
+        tasks: &[IndexingTask],
+    ) -> anyhow::Result<()> {
+        let running_indexing_tasks_json_string = serde_json::to_string(tasks)?;
+        self.set_key_value(RUNNING_INDEXING_TASKS, running_indexing_tasks_json_string)
+            .await;
+        Ok(())
+    }
 }
 
 // Builds cluster members with the given `NodeId`s and `ClusterStateSnapshot`.
@@ -403,6 +375,11 @@ fn build_cluster_member(node_id: &NodeId, node_state: &NodeState) -> anyhow::Res
             )
         })
         .map(|addr_str| addr_str.parse::<SocketAddr>())??;
+    let running_indexing_tasks = node_state
+        .get(RUNNING_INDEXING_TASKS)
+        .map(serde_json::from_str::<Vec<IndexingTask>>)
+        .transpose()?
+        .unwrap_or_default();
     let (node_unique_id, generation_str) = node_id.id.split_once('/').ok_or_else(|| {
         anyhow::anyhow!(
             "Failed to create cluster member instance from NodeId `{}`.",
@@ -410,13 +387,14 @@ fn build_cluster_member(node_id: &NodeId, node_state: &NodeState) -> anyhow::Res
         )
     })?;
     let generation = generation_str.parse()?;
-    Ok(ClusterMember::new(
-        node_unique_id.to_string(),
+    Ok(ClusterMember {
+        node_unique_id: node_unique_id.to_string(),
         generation,
-        node_id.gossip_public_address,
+        gossip_advertise_addr: node_id.gossip_public_address,
         available_services,
         grpc_advertise_addr,
-    ))
+        running_indexing_tasks,
+    })
 }
 
 fn parse_available_services_val(

@@ -21,15 +21,18 @@ use std::collections::VecDeque;
 use std::fmt::Display;
 use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
+use chitchat::transport::ChannelTransport;
 use clap::{arg, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use itertools::Itertools;
-use quickwit_actors::{ActorHandle, ObservationType, Universe};
+use quickwit_actors::{create_test_mailbox, ActorHandle, ObservationType, Universe};
+use quickwit_cluster::create_cluster_for_test;
 use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::{
@@ -888,7 +891,8 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     let metastore = metastore_uri_resolver
         .resolve(&config.metastore_uri)
         .await?;
-
+    let transport = ChannelTransport::default();
+    let fake_cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, false).await?;
     if args.overwrite {
         let index_service = IndexService::new(
             metastore.clone(),
@@ -901,14 +905,15 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         ..Default::default()
     };
     let universe = Universe::new();
-    let enable_ingest_api = false;
+    let (ingest_api_service_mailbox, _) = create_test_mailbox();
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
         indexer_config,
+        Arc::new(fake_cluster),
         metastore,
+        ingest_api_service_mailbox,
         quickwit_storage_uri_resolver().clone(),
-        enable_ingest_api,
     );
     let (indexing_server_mailbox, _) = universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_server_mailbox
@@ -1004,15 +1009,19 @@ pub async fn merge_cli(args: MergeArgs, merge_enabled: bool) -> anyhow::Result<(
     let metastore = metastore_uri_resolver
         .resolve(&config.metastore_uri)
         .await?;
+    let transport = ChannelTransport::default();
+    let fake_cluster =
+        create_cluster_for_test(Vec::new(), &["merge-cli"], &transport, false).await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
-    let enable_ingest_api = false;
+    let (ingest_api_service_mailbox, _) = create_test_mailbox();
     let indexing_server = IndexingService::new(
         config.node_id,
         config.data_dir_path,
         indexer_config,
+        Arc::new(fake_cluster),
         metastore,
+        ingest_api_service_mailbox,
         storage_resolver,
-        enable_ingest_api,
     );
     let universe = Universe::new();
     let (indexing_server_mailbox, _) = universe.spawn_builder().spawn(indexing_server);

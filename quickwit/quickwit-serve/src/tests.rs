@@ -24,9 +24,8 @@ use std::time::Duration;
 use chitchat::transport::ChannelTransport;
 use quickwit_cluster::create_cluster_for_test;
 use quickwit_common::uri::Uri;
-use quickwit_config::service::QuickwitService;
 use quickwit_metastore::{IndexMetadata, MockMetastore};
-use quickwit_proto::SearchRequest;
+use quickwit_proto::{QuickwitService, SearchRequest};
 
 use crate::test_utils::ClusterSandbox;
 use crate::{check_cluster_configuration, node_readyness_reporting_task};
@@ -86,15 +85,17 @@ async fn test_standalone_server() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_multi_nodes_cluster() -> anyhow::Result<()> {
+    quickwit_common::setup_logging_for_tests();
     let nodes_services = vec![
         HashSet::from_iter([QuickwitService::Searcher]),
         HashSet::from_iter([QuickwitService::Metastore]),
         HashSet::from_iter([QuickwitService::Indexer]),
+        HashSet::from_iter([QuickwitService::ControlPlane]),
     ];
     let sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services)
         .await
         .unwrap();
-    sandbox.wait_for_cluster_num_ready_nodes(2).await.unwrap();
+    sandbox.wait_for_cluster_num_ready_nodes(4).await.unwrap();
     let mut search_client = sandbox.get_random_search_client();
     let search_result = search_client
         .root_search(SearchRequest {

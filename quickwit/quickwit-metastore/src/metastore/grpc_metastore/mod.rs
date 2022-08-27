@@ -19,9 +19,7 @@
 
 mod grpc_adapter;
 
-use std::collections::HashSet;
 use std::error::Error;
-use std::net::SocketAddr;
 use std::ops::Range;
 use std::time::Duration;
 
@@ -29,9 +27,7 @@ use async_trait::async_trait;
 pub use grpc_adapter::GrpcMetastoreAdapter;
 use http::Uri;
 use itertools::Itertools;
-use quickwit_cluster::ClusterMember;
 use quickwit_common::uri::Uri as QuickwitUri;
-use quickwit_config::service::QuickwitService;
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::metastore_api_service_client::MetastoreApiServiceClient;
@@ -44,24 +40,17 @@ use quickwit_proto::metastore_api::{
 };
 use quickwit_proto::tonic::transport::{Channel, Endpoint};
 use quickwit_proto::tonic::Status;
-use tokio::sync::mpsc::Sender;
+use quickwit_proto::{
+    create_balance_channel_and_udpate_from_members, ClusterMember, QuickwitService,
+};
 use tokio_stream::wrappers::WatchStream;
-use tokio_stream::StreamExt;
-use tower::discover::Change;
 use tower::service_fn;
 use tower::timeout::error::Elapsed;
 use tower::timeout::Timeout;
-use tracing::{error, info};
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState,
-};
-
-const CLIENT_TIMEOUT_DURATION: Duration = if cfg!(test) {
-    Duration::from_millis(100)
-} else {
-    Duration::from_secs(5)
 };
 
 /// The [`MetastoreGrpcClient`] sends gRPC requests to cluster members running a [`Metastore`]
@@ -76,31 +65,14 @@ impl MetastoreGrpcClient {
     /// [`Metastore`] service. It listens to cluster members changes to update the
     /// nodes.
     pub async fn create_and_update_from_members(
-        mut members_watch_channel: WatchStream<Vec<ClusterMember>>,
+        members_watch_channel: WatchStream<Vec<ClusterMember>>,
     ) -> anyhow::Result<Self> {
-        // Create a balance channel whose endpoint can be updated thanks to a sender.
-        let (channel, channel_tx) = Channel::balance_channel(10);
-
-        // A request send to to a channel with no endpoint will hang. To avoid a blocking request, a
-        // timeout is added to the channel.
-        // TODO: ideally, we want to implement our own `Channel::balance_channel` to
-        // properly raise a timeout error.
-        let timeout_channel = Timeout::new(channel, CLIENT_TIMEOUT_DURATION);
-
-        let mut grpc_addresses_in_use = HashSet::new();
-
-        // Watch for cluster members changes and dynamically update channel endpoint.
-        tokio::spawn(async move {
-            while let Some(new_members) = members_watch_channel.next().await {
-                let new_grpc_addresses = get_metastore_grpc_addresses(&new_members);
-                update_channel_endpoints(&new_grpc_addresses, &grpc_addresses_in_use, &channel_tx)
-                    .await?; // <- Fails if the channel is closed. In this case we can stop the loop.
-                grpc_addresses_in_use = new_grpc_addresses;
-            }
-            Result::<_, anyhow::Error>::Ok(())
-        });
-
-        Ok(Self(MetastoreApiServiceClient::new(timeout_channel)))
+        let channel = create_balance_channel_and_udpate_from_members(
+            members_watch_channel,
+            QuickwitService::Metastore,
+        )
+        .await?;
+        Ok(Self(MetastoreApiServiceClient::new(channel)))
     }
 
     /// Creates a [`MetastoreService`] from a duplex stream client for testing purpose.
@@ -117,7 +89,8 @@ impl MetastoreGrpcClient {
                 }
             }))
             .await?;
-        let client = MetastoreApiServiceClient::new(Timeout::new(channel, CLIENT_TIMEOUT_DURATION));
+        let client =
+            MetastoreApiServiceClient::new(Timeout::new(channel, Duration::from_millis(100)));
         Ok(Self(client))
     }
 }
@@ -528,81 +501,6 @@ impl Metastore for MetastoreGrpcClient {
     }
 }
 
-fn get_metastore_grpc_addresses(members: &[ClusterMember]) -> HashSet<SocketAddr> {
-    members
-        .iter()
-        .filter(|member| {
-            member
-                .available_services
-                .contains(&QuickwitService::Metastore)
-        })
-        .map(|member| member.grpc_advertise_addr)
-        .collect()
-}
-
-/// Updates channel endpoints by:
-/// - Sending `Change::Insert` grpc addresses not already present in `grpc_addresses_in_use`.
-/// - Sending `Change::Remove` event on grpc addresses present in `grpc_addresses_in_use` but not in
-///   `updated_members`.
-async fn update_channel_endpoints(
-    new_grpc_addresses: &HashSet<SocketAddr>,
-    grpc_addresses_in_use: &HashSet<SocketAddr>,
-    endpoint_channel_rx: &Sender<Change<SocketAddr, Endpoint>>,
-) -> anyhow::Result<()> {
-    if new_grpc_addresses.is_empty() {
-        error!("No Metastore service is available in the cluster.");
-    }
-
-    let leaving_grpc_addresses = grpc_addresses_in_use
-        .difference(new_grpc_addresses)
-        .into_iter()
-        .collect_vec();
-    if !leaving_grpc_addresses.is_empty() {
-        info!(
-            addresses=?leaving_grpc_addresses,
-            "Removing gRPC addresses from `MetastoreGrpcClient`.",
-        );
-    }
-
-    for leaving_grpc_address in leaving_grpc_addresses {
-        endpoint_channel_rx
-            .send(Change::Remove(*leaving_grpc_address))
-            .await?;
-    }
-
-    let new_grpc_addresses = new_grpc_addresses
-        .difference(grpc_addresses_in_use)
-        .into_iter()
-        .collect_vec();
-    if !new_grpc_addresses.is_empty() {
-        info!(
-            addresses=?new_grpc_addresses,
-            "Adding gRPC addresses to `MetastoreGrpcClient`.",
-        );
-    }
-
-    for new_grpc_address in new_grpc_addresses {
-        let new_grpc_uri_result = Uri::builder()
-            .scheme("http")
-            .authority(new_grpc_address.to_string().as_str())
-            .path_and_query("/")
-            .build();
-        if let Ok(new_grpc_uri) = new_grpc_uri_result {
-            let new_grpc_endpoint = Endpoint::from(new_grpc_uri);
-            endpoint_channel_rx
-                .send(Change::Insert(*new_grpc_address, new_grpc_endpoint))
-                .await?;
-        } else {
-            error!(
-                "Cannot build `Uri` from socket address `{}`, address ignored.",
-                new_grpc_address
-            );
-        }
-    }
-
-    Ok(())
-}
-
 /// Parse tonic error and returns [`MetastoreError`].
 pub fn parse_grpc_error(grpc_error: &Status) -> MetastoreError {
     // TODO: we want to process network related errors so that we
@@ -663,10 +561,9 @@ mod tests {
     use std::net::SocketAddr;
     use std::sync::Arc;
 
-    use quickwit_cluster::ClusterMember;
-    use quickwit_config::service::QuickwitService;
     use quickwit_proto::metastore_api::metastore_api_service_server::MetastoreApiServiceServer;
     use quickwit_proto::tonic::transport::Server;
+    use quickwit_proto::{ClusterMember, QuickwitService};
     use tokio::sync::watch;
     use tokio_stream::wrappers::WatchStream;
 

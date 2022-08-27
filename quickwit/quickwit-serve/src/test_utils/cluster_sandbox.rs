@@ -27,10 +27,11 @@ use itertools::Itertools;
 use quickwit_common::new_coolid;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri as QuickwitUri;
-use quickwit_config::service::QuickwitService;
-use quickwit_config::QuickwitConfig;
+use quickwit_config::{IngestApiSourceParams, QuickwitConfig, SourceConfig, SourceParams};
+use quickwit_ingest_api::QUEUES_DIR_NAME;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
 use quickwit_proto::tonic::transport::Endpoint;
+use quickwit_proto::QuickwitService;
 use quickwit_search::{create_search_service_client, SearchServiceClient};
 use rand::seq::IteratorRandom;
 use tempfile::TempDir;
@@ -156,7 +157,8 @@ impl ClusterSandbox {
         while num_attempts < max_num_attempts {
             tokio::time::sleep(Duration::from_millis(100 * (num_attempts + 1))).await;
             let cluster_snapshot = self.rest_client.cluster_snapshot().await?;
-            if cluster_snapshot.ready_nodes.len() == expected_num_alive_nodes {
+            // We add +1 as self node is not in the `cluster_snapshot.ready_nodes`.
+            if cluster_snapshot.ready_nodes.len() + 1 == expected_num_alive_nodes {
                 return Ok(());
             }
             num_attempts += 1;
@@ -189,6 +191,18 @@ async fn create_index_for_test(
         .resolve(&quickwit_config.metastore_uri)
         .await?;
     metastore.create_index(index_meta.clone()).await?;
+    let source_config = SourceConfig {
+        source_id: format!("{}-ingest-api", index_id_for_test),
+        source_params: SourceParams::IngestApi(IngestApiSourceParams {
+            batch_num_bytes_limit: None,
+            index_id: index_id_for_test.to_string(),
+            queues_dir_path: quickwit_config.data_dir_path.join(QUEUES_DIR_NAME),
+        }),
+        num_pipelines: 1,
+    };
+    metastore
+        .add_source(index_id_for_test, source_config)
+        .await?;
     Ok(())
 }
 

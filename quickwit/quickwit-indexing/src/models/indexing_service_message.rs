@@ -21,13 +21,6 @@ use quickwit_config::SourceConfig;
 
 use super::IndexingPipelineId;
 
-#[derive(Debug)]
-pub struct SpawnPipelines {
-    pub index_id: String,
-    // TODO
-    // pub source_id: Option<String>,
-}
-
 #[derive(Clone, Debug)]
 pub struct SpawnPipeline {
     pub index_id: String,
@@ -39,8 +32,6 @@ pub struct SpawnPipeline {
 pub struct ShutdownPipelines {
     pub index_id: String,
     pub source_id: Option<String>,
-    // TODO
-    // pub pipeline_ord: Option<usize>,
 }
 
 #[derive(Clone, Debug)]

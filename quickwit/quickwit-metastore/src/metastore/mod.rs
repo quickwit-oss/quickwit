@@ -20,6 +20,7 @@
 pub mod file_backed_metastore;
 pub mod grpc_metastore;
 mod index_metadata;
+pub mod metastore_with_control_plane_triggers;
 #[cfg(feature = "postgres")]
 pub mod postgresql_metastore;
 #[cfg(feature = "postgres")]

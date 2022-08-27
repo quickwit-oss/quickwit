@@ -25,13 +25,12 @@ use std::sync::Arc;
 
 use chitchat::transport::UdpTransport;
 use chitchat::FailureDetectorConfig;
-use quickwit_config::service::QuickwitService;
-use quickwit_config::QuickwitConfig;
-
-pub use crate::cluster::{
-    create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster, ClusterMember,
-    ClusterSnapshot,
+pub use cluster::{
+    create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster, ClusterSnapshot,
 };
+use quickwit_config::QuickwitConfig;
+use quickwit_proto::{ClusterMember, QuickwitService};
+
 pub use crate::error::{ClusterError, ClusterResult};
 
 fn unix_timestamp() -> u64 {

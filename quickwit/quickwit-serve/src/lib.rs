@@ -47,15 +47,20 @@ use anyhow::anyhow;
 use format::Format;
 use itertools::Itertools;
 use quickwit_actors::{Mailbox, Universe};
-use quickwit_cluster::{Cluster, ClusterMember};
-use quickwit_config::service::QuickwitService;
+use quickwit_cluster::Cluster;
 use quickwit_config::QuickwitConfig;
+use quickwit_control_plane::actors::IndexingScheduler;
+use quickwit_control_plane::start_control_plane_service;
 use quickwit_core::IndexService;
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest_api::{start_ingest_api_service, IngestApiService};
 use quickwit_janitor::{start_janitor_service, JanitorService};
-use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreGrpcClient};
+use quickwit_metastore::{
+    quickwit_metastore_uri_resolver, Metastore, MetastoreGrpcClient,
+    MetastoreWithControlPlaneTriggers,
+};
+use quickwit_proto::{ClusterMember, ControlPlaneGrpcClient, QuickwitService};
 use quickwit_search::{start_searcher_service, SearchClientPool, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use serde::{Deserialize, Serialize};
@@ -82,10 +87,11 @@ struct QuickwitServices {
     /// It is only used to serve the rest API calls and will only execute
     /// the root requests.
     pub search_service: Arc<dyn SearchService>,
-    pub indexer_service: Option<Mailbox<IndexingService>>,
+    pub indexing_service: Option<Mailbox<IndexingService>>,
     #[allow(dead_code)] // TODO remove
     pub janitor_service: Option<JanitorService>,
     pub ingest_api_service: Option<Mailbox<IngestApiService>>,
+    pub indexing_scheduler_service: Option<Mailbox<IndexingScheduler>>,
     pub index_service: Arc<IndexService>,
     pub services: HashSet<QuickwitService>,
 }
@@ -108,9 +114,17 @@ pub async fn serve_quickwit(
     // Instanciate either a file-backed or postgresql [`Metastore`] if the node runs a `Metastore`
     // service, else instanciate a [`MetastoreGrpcClient`].
     let metastore: Arc<dyn Metastore> = if services.contains(&QuickwitService::Metastore) {
-        quickwit_metastore_uri_resolver()
+        let metastore = quickwit_metastore_uri_resolver()
             .resolve(&config.metastore_uri)
-            .await?
+            .await?;
+        let control_plane_client = ControlPlaneGrpcClient::create_and_update_from_members(
+            cluster.ready_member_change_watcher(),
+        )
+        .await?;
+        Arc::new(MetastoreWithControlPlaneTriggers::new(
+            metastore,
+            control_plane_client,
+        ))
     } else {
         // Wait 10 seconds for nodes running a `Metastore` service.
         cluster
@@ -140,16 +154,15 @@ pub async fn serve_quickwit(
 
     let universe = Universe::new();
 
-    let (ingest_api_service, indexer_service) = if services.contains(&QuickwitService::Indexer) {
+    let (ingest_api_service, indexing_service) = if services.contains(&QuickwitService::Indexer) {
         let ingest_api_service = start_ingest_api_service(&universe, &config.data_dir_path).await?;
-        // TODO: Move to indexer config?
-        let enable_ingest_api = true;
         let indexing_service = start_indexing_service(
             &universe,
             &config,
+            cluster.clone(),
             metastore.clone(),
+            ingest_api_service.clone(),
             storage_resolver.clone(),
-            enable_ingest_api,
         )
         .await?;
         (Some(ingest_api_service), Some(indexing_service))
@@ -189,6 +202,13 @@ pub async fn serve_quickwit(
         config.default_index_root_uri.clone(),
     ));
 
+    let indexing_scheduler_service: Option<Mailbox<IndexingScheduler>> =
+        if services.contains(&QuickwitService::ControlPlane) {
+            Some(start_control_plane_service(&universe, cluster.clone(), metastore.clone()).await?)
+        } else {
+            None
+        };
+
     let grpc_listen_addr = config.grpc_listen_addr;
     let rest_listen_addr = config.rest_listen_addr;
 
@@ -198,9 +218,10 @@ pub async fn serve_quickwit(
         cluster,
         metastore,
         search_service,
-        indexer_service,
+        indexing_service,
         janitor_service,
         ingest_api_service,
+        indexing_scheduler_service,
         index_service,
         services: services.clone(),
     };

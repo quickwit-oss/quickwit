@@ -19,20 +19,20 @@
 
 use std::sync::Arc;
 
-use itertools::Itertools;
 use quickwit_actors::{Mailbox, Universe};
+use quickwit_cluster::Cluster;
 use quickwit_config::QuickwitConfig;
-use quickwit_ingest_api::{get_ingest_api_service, QUEUES_DIR_NAME};
+use quickwit_ingest_api::IngestApiService;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
 use tracing::info;
 
 pub use crate::actors::{
-    IndexingPipeline, IndexingPipelineParams, IndexingService, IndexingServiceError,
-    IngestApiGarbageCollector, PublisherType, Sequencer, SplitsUpdateMailbox,
+    IndexingPipeline, IndexingPipelineParams, IndexingService, IndexingServiceError, PublisherType,
+    Sequencer, SplitsUpdateMailbox,
 };
 pub use crate::controlled_directory::ControlledDirectory;
-use crate::models::{IndexingStatistics, SpawnPipelines};
+use crate::models::IndexingStatistics;
 pub use crate::split_store::{
     get_tantivy_directory_from_split_bundle, IndexingSplitStore, SplitFolder,
     WeakIndexingSplitStore,
@@ -40,6 +40,7 @@ pub use crate::split_store::{
 
 pub mod actors;
 mod controlled_directory;
+pub mod grpc_adapter;
 pub mod merge_policy;
 mod metrics;
 pub mod models;
@@ -61,40 +62,22 @@ pub fn new_split_id() -> String {
 pub async fn start_indexing_service(
     universe: &Universe,
     config: &QuickwitConfig,
+    cluster: Arc<Cluster>,
     metastore: Arc<dyn Metastore>,
+    ingest_api_service: Mailbox<IngestApiService>,
     storage_resolver: StorageUriResolver,
-    enable_ingest_api: bool,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
     info!("Starting indexer service.");
-    // Spawn indexing service.
     let indexing_service = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.to_path_buf(),
         config.indexer_config.clone(),
-        metastore.clone(),
+        cluster,
+        metastore,
+        ingest_api_service,
         storage_resolver,
-        enable_ingest_api,
     );
     let (indexing_service, _) = universe.spawn_builder().spawn(indexing_service);
 
-    // List indexes and spawn indexing pipeline(s) for each of them.
-    let index_metadatas = metastore.list_indexes_metadatas().await?;
-    info!(index_ids=%index_metadatas.iter().map(|im| &im.index_id).join(", "), "Spawning indexing pipeline(s).");
-
-    for index_metadata in index_metadatas {
-        indexing_service
-            .ask_for_res(SpawnPipelines {
-                index_id: index_metadata.index_id,
-            })
-            .await?;
-    }
-    // Spawn Ingest Api garbage collector.
-    if enable_ingest_api {
-        let queues_dir_path = config.data_dir_path.join(QUEUES_DIR_NAME);
-        let ingest_api_service = get_ingest_api_service(&queues_dir_path).await?;
-        let ingest_api_garbage_collector =
-            IngestApiGarbageCollector::new(metastore, ingest_api_service, indexing_service.clone());
-        universe.spawn_builder().spawn(ingest_api_garbage_collector);
-    }
     Ok(indexing_service)
 }

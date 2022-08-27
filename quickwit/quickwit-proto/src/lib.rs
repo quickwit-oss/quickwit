@@ -22,6 +22,10 @@
 mod quickwit;
 mod quickwit_ingest_api;
 mod quickwit_metastore_api;
+mod quickwit_indexing_api;
+mod quickwit_control_plane_api;
+mod quickwit_models;
+mod quickwit_grpc_clients;
 
 pub mod ingest_api {
     pub use crate::quickwit_ingest_api::*;
@@ -103,6 +107,18 @@ use std::fmt;
 pub use quickwit::*;
 pub use tonic;
 use tonic::codegen::http;
+
+
+pub mod indexing_api {
+    pub use crate::quickwit_indexing_api::*;
+}
+
+pub mod control_plane_api {
+    pub use crate::quickwit_control_plane_api::*;
+}
+
+pub use quickwit_grpc_clients::{ControlPlaneGrpcClient, create_balance_channel_and_udpate_from_members};
+pub use quickwit_models::{ClusterMember, QuickwitService};
 
 /// This enum serves as a Rosetta stone of
 /// gRPC and Http status code.

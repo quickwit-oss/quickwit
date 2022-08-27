@@ -39,7 +39,7 @@ pub use indexing_directory::{IndexingDirectory, WeakIndexingDirectory, CACHE};
 pub use indexing_pipeline_id::IndexingPipelineId;
 pub use indexing_service_message::{
     DetachPipeline, ObservePipeline, ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline,
-    SpawnPipeline, SpawnPipelines,
+    SpawnPipeline,
 };
 pub use indexing_statistics::IndexingStatistics;
 pub use merge_planner_message::NewSplits;

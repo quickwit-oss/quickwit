@@ -20,7 +20,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use quickwit_actors::{Mailbox, Universe};
+use chitchat::transport::ChannelTransport;
+use quickwit_actors::{create_test_mailbox, Mailbox, Universe};
+use quickwit_cluster::create_cluster_for_test;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
@@ -85,6 +87,10 @@ impl TestSandbox {
         let indexer_config = IndexerConfig::for_test()?;
         let metastore_uri_resolver = quickwit_metastore_uri_resolver();
         let metastore_uri = metastore_uri.unwrap_or(METASTORE_URI);
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
         let metastore = metastore_uri_resolver
             .resolve(&Uri::new(metastore_uri.to_string()))
             .await?;
@@ -92,14 +98,15 @@ impl TestSandbox {
         let storage_resolver = StorageUriResolver::for_test();
         let storage = storage_resolver.resolve(&index_uri)?;
         let universe = Universe::new();
-        let enable_ingest_api = false;
+        let (ingest_api_service_mailbox, _) = create_test_mailbox();
         let indexing_service_actor = IndexingService::new(
             node_id.to_string(),
             temp_dir.path().to_path_buf(),
             indexer_config,
+            Arc::new(cluster),
             metastore.clone(),
+            ingest_api_service_mailbox,
             storage_resolver.clone(),
-            enable_ingest_api,
         );
         let (indexing_service, _indexing_service_handle) =
             universe.spawn_builder().spawn(indexing_service_actor);
