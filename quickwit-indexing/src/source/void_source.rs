@@ -77,31 +77,22 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::source::{SourceActor, SourceConfig};
+    use crate::source::{quickwit_supported_sources, SourceActor, SourceConfig};
 
     #[tokio::test]
-    async fn test_void_source_loading() -> anyhow::Result<()> {
-        // let source_config = SourceConfig {
-        //     source_id: "void-test-source".to_string(),
-        //     source_params: SourceParams::void(),
-        // };
-        // let source_loader = quickwit_supported_sources();
+    async fn test_void_source_loading() {
+        let source_config = SourceConfig {
+            source_id: "test-void-source".to_string(),
+            num_pipelines: 1,
+            source_params: SourceParams::void(),
+        };
         let metastore = metastore_for_test();
-        let _ = VoidSourceFactory::typed_create_source(
-            SourceExecutionContext::for_test(
-                metastore,
-                "test-index",
-                SourceConfig {
-                    source_id: "void-test-source".to_string(),
-                    num_pipelines: 1,
-                    source_params: SourceParams::void(),
-                },
-            ),
-            VoidSourceParams,
-            SourceCheckpoint::default(),
-        )
-        .await?;
-        Ok(())
+        let ctx = SourceExecutionContext::for_test(metastore, "test-index", source_config);
+        let source = quickwit_supported_sources()
+            .load_source(ctx, SourceCheckpoint::default())
+            .await
+            .unwrap();
+        assert_eq!(source.name(), "VoidSource");
     }
 
     #[tokio::test]
@@ -112,7 +103,7 @@ mod tests {
                 metastore,
                 "test-index",
                 SourceConfig {
-                    source_id: "void-test-source".to_string(),
+                    source_id: "test-void-source".to_string(),
                     num_pipelines: 1,
                     source_params: SourceParams::void(),
                 },
