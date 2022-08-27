@@ -1,6 +1,5 @@
 source_id: kafka-source
 source_type: kafka
-num_pipelines: 7
 params:
   topic: gh-archive
   client_params:
