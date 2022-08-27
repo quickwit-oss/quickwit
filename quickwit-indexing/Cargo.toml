@@ -79,6 +79,9 @@ testsuite = []
 bytes = "1"
 mockall = "0.11"
 proptest = "1"
+quickwit-actors = { version = "0.3.1", path = "../quickwit-actors", features = [
+    "testsuite",
+] }
 quickwit-common = { version = "0.3.1", path = "../quickwit-common" }
 quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore", features = [
     "testsuite",
