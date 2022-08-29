@@ -14,7 +14,6 @@
 //! later records are ok.
 //!
 //! # Usage
-//!
 mod frame;
 mod mem;
 mod multi_record_log;
@@ -24,9 +23,10 @@ mod rolling;
 #[cfg(test)]
 mod tests;
 
-pub use multi_record_log::MultiRecordLog;
-
 use std::convert::TryInto;
+pub use self::record::ReadRecordError;
+
+pub use multi_record_log::MultiRecordLog;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub(crate) enum Record<'a> {

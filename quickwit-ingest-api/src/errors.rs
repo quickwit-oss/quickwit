@@ -17,9 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::io;
+
 use quickwit_proto::{tonic, ServiceError, ServiceErrorCode};
 use serde::Serialize;
 use thiserror::Error;
+
+use crate::recordlog::ReadRecordError;
 
 #[derive(Error, Debug, Serialize)]
 pub enum IngestApiError {
@@ -31,6 +35,16 @@ pub enum IngestApiError {
     IndexAlreadyExists { index_id: String },
     #[error("Ingest API service is down")]
     IngestAPIServiceDown,
+    #[error("Read record error. `{0:?}`")]
+    ReadRecordError(#[from] ReadRecordError),
+    #[error("Io Error")]
+    IoError(String)
+}
+
+impl From<io::Error> for IngestApiError {
+    fn from(io_err: io::Error) -> Self {
+        IngestApiError::IoError(format!("{io_err:?}"))
+    }
 }
 
 impl ServiceError for IngestApiError {
@@ -40,6 +54,8 @@ impl ServiceError for IngestApiError {
             IngestApiError::IndexDoesNotExist { .. } => ServiceErrorCode::NotFound,
             IngestApiError::IndexAlreadyExists { .. } => ServiceErrorCode::BadRequest,
             IngestApiError::IngestAPIServiceDown => ServiceErrorCode::Internal,
+            IngestApiError::ReadRecordError(_) => ServiceErrorCode::Internal,
+            IngestApiError::IoError(_) => ServiceErrorCode::Internal,
         }
     }
 }
@@ -47,14 +63,6 @@ impl ServiceError for IngestApiError {
 #[derive(Error, Debug)]
 #[error("Key should contain 16 bytes. It contained {0} bytes.")]
 pub struct CorruptedKey(pub usize);
-
-impl From<rocksdb::Error> for IngestApiError {
-    fn from(err: rocksdb::Error) -> Self {
-        IngestApiError::Corruption {
-            msg: format!("RocksDB error: {err:?}"),
-        }
-    }
-}
 
 impl From<CorruptedKey> for IngestApiError {
     fn from(err: CorruptedKey) -> Self {
@@ -64,6 +72,7 @@ impl From<CorruptedKey> for IngestApiError {
     }
 }
 
+// TODO remove this.
 impl From<IngestApiError> for tonic::Status {
     fn from(error: IngestApiError) -> tonic::Status {
         let code = match &error {
@@ -71,6 +80,8 @@ impl From<IngestApiError> for tonic::Status {
             IngestApiError::IndexDoesNotExist { .. } => tonic::Code::NotFound,
             IngestApiError::IndexAlreadyExists { .. } => tonic::Code::AlreadyExists,
             IngestApiError::IngestAPIServiceDown => tonic::Code::Internal,
+            IngestApiError::ReadRecordError(_) => tonic::Code::Internal,
+            IngestApiError::IoError(_) => tonic::Code::Internal,
         };
         let message = error.to_string();
         tonic::Status::new(code, message)

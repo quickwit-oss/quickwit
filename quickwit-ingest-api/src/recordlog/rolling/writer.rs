@@ -24,9 +24,9 @@ use tokio::io::BufWriter;
 
 const LIMIT_NUM_BYTES: u64 = 50_000_000u64;
 
+use super::Directory;
 use crate::recordlog::record::RecordWriter;
 use crate::recordlog::Record;
-use super::Directory;
 
 pub(crate) struct RecordLogWriter {
     record_writer_opt: Option<RecordWriter<BufWriter<File>>>,

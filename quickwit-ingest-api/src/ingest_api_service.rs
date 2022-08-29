@@ -29,15 +29,15 @@ use quickwit_proto::ingest_api::{
     QueueExistsRequest, SuggestTruncateRequest, TailRequest,
 };
 
-use crate::{iter_doc_payloads, IngestApiError, Position, Queues};
+use crate::{iter_doc_payloads, IngestApiError, Queues};
 
 pub struct IngestApiService {
     queues: Queues,
 }
 
 impl IngestApiService {
-    pub fn with_queues_dir(queues_dir_path: &Path) -> crate::Result<Self> {
-        let queues = Queues::open(queues_dir_path)?;
+    pub async fn with_queues_dir(queues_dir_path: &Path) -> crate::Result<Self> {
+        let queues = Queues::open(queues_dir_path).await?;
         Ok(IngestApiService { queues })
     }
 
@@ -60,7 +60,7 @@ impl IngestApiService {
             // TODO better error handling.
             // If there is an error, we probably want a transactional behavior.
             let records_it = iter_doc_payloads(doc_batch);
-            self.queues.append_batch(&doc_batch.index_id, records_it)?;
+            self.queues.append_batch(&doc_batch.index_id, records_it).await?;
             num_docs += doc_batch.doc_lens.len();
         }
         Ok(IngestResponse {
@@ -69,7 +69,7 @@ impl IngestApiService {
     }
 
     fn fetch(&mut self, fetch_req: FetchRequest) -> crate::Result<FetchResponse> {
-        let start_from_opt: Option<Position> = fetch_req.start_after.map(Position::from);
+        let start_from_opt: Option<u64> = fetch_req.start_after;
         let num_bytes_limit_opt: Option<usize> = fetch_req
             .num_bytes_limit
             .map(|num_bytes_limit| num_bytes_limit as usize);
@@ -77,11 +77,11 @@ impl IngestApiService {
             .fetch(&fetch_req.index_id, start_from_opt, num_bytes_limit_opt)
     }
 
-    fn suggest_truncate(&mut self, request: SuggestTruncateRequest) -> crate::Result<()> {
+    async fn suggest_truncate(&mut self, request: SuggestTruncateRequest) -> crate::Result<()> {
         self.queues.suggest_truncate(
             &request.index_id,
-            Position::from(request.up_to_position_included),
-        )?;
+            request.up_to_position_included,
+        ).await?;
         Ok(())
     }
 }
@@ -197,7 +197,7 @@ impl Handler<SuggestTruncateRequest> for IngestApiService {
         request: SuggestTruncateRequest,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self.suggest_truncate(request))
+        Ok(self.suggest_truncate(request).await)
     }
 }
 

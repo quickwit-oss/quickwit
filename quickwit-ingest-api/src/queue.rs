@@ -17,100 +17,60 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
 use std::path::Path;
 
 use quickwit_proto::ingest_api::{DocBatch, FetchResponse, ListQueuesResponse};
-use rocksdb::{Direction, IteratorMode, WriteBatch, WriteOptions, DB};
-use tracing::warn;
-
+use crate::recordlog::MultiRecordLog;
 use crate::{add_doc, Position};
 
 const FETCH_PAYLOAD_LIMIT: usize = 2_000_000; // 2MB
 
-const QUICKWIT_CF_PREFIX: &str = ".queue_";
-
 pub struct Queues {
-    db: DB,
-    last_position_per_queue: HashMap<String, Option<Position>>,
+    multi_record_log: crate::recordlog::MultiRecordLog,
+    // last_position_per_queue: HashMap<String, Option<Position>>,
 }
 
-fn default_rocks_db_options() -> rocksdb::Options {
-    // TODO tweak
-    let mut options = rocksdb::Options::default();
-    options.create_if_missing(true);
-    options.set_max_open_files(512);
-    options.set_max_total_wal_size(100_000_000);
-    options
-}
-
-fn default_rocks_db_write_options() -> rocksdb::WriteOptions {
-    let mut write_options = WriteOptions::default();
-    write_options.set_sync(false);
-    write_options.disable_wal(false);
-    write_options
-}
-
-fn next_position(db: &DB, queue_id: &str) -> crate::Result<Option<Position>> {
-    let cf = db
-        .cf_handle(queue_id)
-        .ok_or_else(|| crate::IngestApiError::Corruption {
-            msg: format!("RocksDB error: Missing column `{queue_id}`"),
-        })?;
-    // That's iterating backward
-    let mut full_it = db.full_iterator_cf(&cf, IteratorMode::End);
-    match full_it.next() {
-        Some(Ok((key, _))) => {
-            let position = Position::try_from(&*key)?;
-            Ok(Some(position))
-        }
-        Some(Err(error)) => Err(error.into()),
-        None => Ok(None),
-    }
-}
+// fn next_position(db: &DB, queue_id: &str) -> crate::Result<Option<Position>> {
+//     let cf = db
+//         .cf_handle(queue_id)
+//         .ok_or_else(|| crate::IngestApiError::Corruption {
+//             msg: format!("RocksDB error: Missing column `{queue_id}`"),
+//         })?;
+//     // That's iterating backward
+//     let mut full_it = db.full_iterator_cf(&cf, IteratorMode::End);
+//     match full_it.next() {
+//         Some(Ok((key, _))) => {
+//             let position = Position::try_from(&*key)?;
+//             Ok(Some(position))
+//         }
+//         Some(Err(error)) => Err(error.into()),
+//         None => Ok(None),
+//     }
+// }
 
 impl Queues {
-    pub fn open(queues_dir_path: &Path) -> crate::Result<Queues> {
-        let options = default_rocks_db_options();
-        let queue_ids = if queues_dir_path.join("CURRENT").exists() {
-            DB::list_cf(&options, queues_dir_path)?
-        } else {
-            Vec::new()
-        };
-        let db = DB::open_cf(&options, queues_dir_path, &queue_ids)?;
-        let mut next_position_per_queue = HashMap::default();
-        for queue_id in queue_ids {
-            let next_position = next_position(&db, &queue_id)?;
-            next_position_per_queue.insert(queue_id, next_position);
-        }
-        Ok(Queues {
-            db,
-            last_position_per_queue: next_position_per_queue,
-        })
+    pub async fn open(queues_dir_path: &Path) -> crate::Result<Queues> {
+        let multi_record_log = MultiRecordLog::open(queues_dir_path).await?;
+        Ok(Queues { multi_record_log })
     }
 
     pub fn queue_exists(&self, queue_id: &str) -> bool {
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        self.db.cf_handle(&real_queue_id).is_some()
+        self.multi_record_log.queue_exists(queue_id)
     }
 
     pub fn create_queue(&mut self, queue_id: &str) -> crate::Result<()> {
+        // TODO check whether this is really necessary.
         if self.queue_exists(queue_id) {
             return Err(crate::IngestApiError::IndexAlreadyExists {
                 index_id: queue_id.to_string(),
             });
         }
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        let cf_opts = default_rocks_db_options();
-        self.db.create_cf(&real_queue_id, &cf_opts)?;
-        self.last_position_per_queue.insert(real_queue_id, None);
+        self.multi_record_log.create_queue(queue_id);
         Ok(())
     }
 
     pub fn drop_queue(&mut self, queue_id: &str) -> crate::Result<()> {
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        self.db.drop_cf(&real_queue_id)?;
-        self.last_position_per_queue.remove(&real_queue_id);
+        self.multi_record_log.remove_queue(queue_id);
         Ok(())
     }
 
@@ -127,86 +87,34 @@ impl Queues {
     /// In other words, truncating from a position, and fetching records starting
     /// earlier than this position can yield undefined result:
     /// the truncated records may or may not be returned.
-    pub fn suggest_truncate(
+    pub async fn suggest_truncate(
         &mut self,
-        queue_id: &str,
-        up_to_offset_included: Position,
+        queue: &str,
+        up_to_offset_included: u64,
     ) -> crate::Result<()> {
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        let cf_ref = self.db.cf_handle(&real_queue_id).unwrap(); // FIXME
-                                                                 // We want to keep the last record.
-        let last_position_opt = *self
-            .last_position_per_queue
-            .get(&real_queue_id)
-            .ok_or_else(|| crate::IngestApiError::IndexDoesNotExist {
-                index_id: queue_id.to_string(),
-            })?;
-
-        let last_position = if let Some(last_position) = last_position_opt {
-            last_position
-        } else {
-            warn!("Attempted to truncate an empty queue.");
-            return Ok(());
-        };
-
-        // We make sure that we keep one record, in order to ensure we do not reset
-        // the position counter.
-        let truncation_end_offset = if last_position > up_to_offset_included.inc() {
-            up_to_offset_included.inc()
-        } else {
-            last_position
-        };
-
-        self.db
-            .delete_file_in_range_cf(&cf_ref, Position::default(), truncation_end_offset)?;
-        self.db
-            .delete_range_cf(&cf_ref, Position::default(), truncation_end_offset)?;
+        self.multi_record_log.truncate(queue, up_to_offset_included).await?;
         Ok(())
     }
 
     // Append a single record to a target queue.
     #[cfg(test)]
     fn append(&mut self, queue_id: &str, record: &[u8]) -> crate::Result<()> {
-        self.append_batch(queue_id, std::iter::once(record))
+        todo!();
+        // self.append_batch(queue_id, std::iter::once(record))
     }
 
     // Append a batch of records to a target queue.
     //
     // This operation is atomic: the batch of records is either entirely added or not.
-    pub fn append_batch<'a>(
+    pub async fn append_batch<'a>(
         &mut self,
         queue_id: &str,
         records_it: impl Iterator<Item = &'a [u8]>,
     ) -> crate::Result<()> {
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        let column_does_not_exist = || crate::IngestApiError::IndexDoesNotExist {
-            index_id: queue_id.to_string(),
-        };
-        let last_position_opt = self
-            .last_position_per_queue
-            .get_mut(&real_queue_id)
-            .ok_or_else(column_does_not_exist)?;
-
-        let mut next_position = last_position_opt
-            .as_ref()
-            .map(Position::inc)
-            .unwrap_or_default();
-
-        let cf_ref = self
-            .db
-            .cf_handle(&real_queue_id)
-            .ok_or_else(column_does_not_exist)?;
-
-        let mut batch = WriteBatch::default();
         for record in records_it {
-            batch.put_cf(&cf_ref, next_position.as_ref(), record);
-            *last_position_opt = Some(next_position);
-            next_position = next_position.inc();
+            // TODO Optimize
+            self.multi_record_log.append_record(queue_id, record).await?;
         }
-
-        let write_options = default_rocks_db_write_options();
-        self.db.write_opt(batch, &write_options)?;
-
         Ok(())
     }
 
@@ -216,81 +124,50 @@ impl Queues {
     pub fn fetch(
         &self,
         queue_id: &str,
-        start_after: Option<Position>,
+        start_after: Option<u64>,
         num_bytes_limit: Option<usize>,
     ) -> crate::Result<FetchResponse> {
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        let cf = self.db.cf_handle(&real_queue_id).ok_or_else(|| {
-            crate::IngestApiError::IndexDoesNotExist {
-                index_id: queue_id.to_string(),
-            }
-        })?;
-
-        let start_position = start_after
-            .map(|position| position.inc())
-            .unwrap_or_default();
-        let full_it = self.db.full_iterator_cf(
-            &cf,
-            IteratorMode::From(start_position.as_ref(), Direction::Forward),
-        );
         let mut doc_batch = DocBatch::default();
         let mut num_bytes = 0;
-        let mut first_key_opt: Option<u64> = None;
         let size_limit = num_bytes_limit.unwrap_or(FETCH_PAYLOAD_LIMIT);
-        for kp_res in full_it {
-            let (key, payload) = kp_res?;
-            let position = Position::try_from(&*key)?;
-            if first_key_opt.is_none() {
-                first_key_opt = Some(position.into());
+        // TODO revisit semantic. Right now the off by one gig is painful.
+        let mut after_position =
+            if let Some(start_after) = start_after {
+                if start_after > 1 {
+                    start_after - 1
+                } else {
+                    0
+                }
+            } else {
+                0
+            };
+        loop {
+            if let Some((position, payload)) = self.multi_record_log.get_after(queue_id, after_position) {
+                num_bytes += add_doc(&*payload, &mut doc_batch);
+            } else {
+                break;
             }
-            num_bytes += add_doc(&*payload, &mut doc_batch);
             if num_bytes > size_limit {
                 break;
             }
         }
         Ok(FetchResponse {
-            first_position: first_key_opt,
+            // FIXME... right now the positon are not contiguous.
+            first_position: None,
             doc_batch: Some(doc_batch),
         })
     }
 
     // Streams messages from the start of the Stream.
     pub fn tail(&self, queue_id: &str) -> crate::Result<FetchResponse> {
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        let cf = self.db.cf_handle(&real_queue_id).ok_or_else(|| {
-            crate::IngestApiError::IndexDoesNotExist {
-                index_id: queue_id.to_string(),
-            }
-        })?;
-        let full_it = self.db.full_iterator_cf(&cf, IteratorMode::End);
-        let mut doc_batch = DocBatch::default();
-        let mut num_bytes = 0;
-        let mut first_key_opt: Option<u64> = None;
-        for kp_res in full_it {
-            let (key, payload) = kp_res?;
-            let position = Position::try_from(&*key)?;
-            if first_key_opt.is_none() {
-                first_key_opt = Some(position.into());
-            }
-            num_bytes += add_doc(&*payload, &mut doc_batch);
-            if num_bytes > FETCH_PAYLOAD_LIMIT {
-                break;
-            }
-        }
-        Ok(FetchResponse {
-            first_position: first_key_opt,
-            doc_batch: Some(doc_batch),
-        })
+        todo!();
     }
 
     pub fn list_queues(&self) -> crate::Result<ListQueuesResponse> {
         Ok(ListQueuesResponse {
             queues: self
-                .last_position_per_queue
-                .keys()
-                .filter_map(|real_queue_id| real_queue_id.strip_prefix(QUICKWIT_CF_PREFIX))
-                .map(ToString::to_string)
-                .collect(),
+                .multi_record_log
+                .list_queues()
         })
     }
 }

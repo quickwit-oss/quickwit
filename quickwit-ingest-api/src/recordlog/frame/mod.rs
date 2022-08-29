@@ -2,9 +2,8 @@ mod header;
 mod reader;
 mod writer;
 
-pub(crate) use self::header::FrameType;
 use self::header::Header;
-pub(crate) use self::header::HEADER_LEN;
+pub(crate) use self::header::{FrameType, HEADER_LEN};
 pub(crate) use self::reader::{FrameReader, ReadFrameError};
 pub(crate) use self::writer::FrameWriter;
 pub(crate) const BLOCK_LEN: usize = 32_768;
@@ -13,8 +12,7 @@ pub(crate) const BLOCK_LEN: usize = 32_768;
 mod tests {
     use std::io;
 
-    use super::{FrameType, HEADER_LEN};
-    use super::{FrameReader, FrameWriter, ReadFrameError, BLOCK_LEN};
+    use super::{FrameReader, FrameType, FrameWriter, ReadFrameError, BLOCK_LEN, HEADER_LEN};
 
     #[tokio::test]
     async fn test_frame_simple() -> io::Result<()> {

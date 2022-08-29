@@ -2,8 +2,9 @@ mod directory;
 mod reader;
 mod writer;
 
-pub use self::directory::Directory;
 use serde::{Deserialize, Serialize};
+
+pub use self::directory::Directory;
 pub(crate) use self::reader::RecordLogReader;
 pub(crate) use self::writer::RecordLogWriter;
 

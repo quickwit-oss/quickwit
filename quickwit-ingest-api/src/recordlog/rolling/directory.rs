@@ -19,11 +19,9 @@
 
 use std::collections::BTreeSet;
 use std::io;
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use tokio::fs::File;
-use tokio::fs::OpenOptions;
+use tokio::fs::{File, OpenOptions};
 
 pub struct Directory {
     dir: PathBuf,

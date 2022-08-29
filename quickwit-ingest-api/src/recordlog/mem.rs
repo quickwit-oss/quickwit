@@ -116,6 +116,8 @@ pub struct MemQueues {
 
 impl MemQueues {
     fn get_or_create_queue(&mut self, queue_id: &str) -> &mut MemQueue {
+        // TODO fix me... It seems we explicitly create queues today.
+        //
         // We do not rely on `entry` in order to avoid
         // the allocation.
         if !self.queues.contains_key(queue_id) {
@@ -123,15 +125,36 @@ impl MemQueues {
         }
         self.queues.get_mut(queue_id).unwrap()
     }
-}
 
-impl MemQueues {
+    pub fn queue_exists(&self, queue: &str) -> bool {
+        self.queues.contains_key(queue)
+    }
+
+    pub fn list_queues(&self) -> Vec<String> {
+        self.queues
+            .keys()
+            .cloned()
+            .collect()
+    }
+
+    pub fn create_queue(&mut self, queue: &str) -> bool {
+        if self.queues.contains_key(queue) {
+            return false;
+        }
+        self.queues.insert(queue.to_string(), Default::default());
+        true
+    }
+
+    pub fn remove_queue(&mut self, queue: &str) -> bool {
+        self.queues.remove_entry(queue).is_some()
+    }
+
     /// Appends a new record.
     ///
     /// # Panics
     ///
     /// Panics if the new position is not greater than the last seen position.
-    pub(crate) fn add_record(&mut self, queue_id: &str, position: u64, record: &[u8]) {
+    pub fn add_record(&mut self, queue_id: &str, position: u64, record: &[u8]) {
         assert!(position >= self.retained_range.end);
         self.retained_range.end = position;
         self.get_or_create_queue(queue_id)
@@ -139,7 +162,7 @@ impl MemQueues {
     }
 
     /// Returns the first record with position greater of equal to position.
-    pub(crate) fn get_after(&self, queue_id: &str, after_position: u64) -> Option<(u64, &[u8])> {
+    pub fn get_after(&self, queue_id: &str, after_position: u64) -> Option<(u64, &[u8])> {
         let (position, payload) = self.queues.get(queue_id)?.get_after(after_position)?;
         assert!(position >= after_position);
         Some((position, payload))

@@ -1,10 +1,11 @@
-use crate::recordlog::{
-    frame::{FrameReader, ReadFrameError},
-    Serializable,
-};
 use std::io;
+
+use serde::Serialize;
 use thiserror::Error;
 use tokio::io::AsyncRead;
+
+use crate::recordlog::frame::{FrameReader, ReadFrameError};
+use crate::recordlog::Serializable;
 
 pub struct RecordReader<R> {
     frame_reader: FrameReader<R>,
@@ -15,12 +16,18 @@ pub struct RecordReader<R> {
     within_record: bool,
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Serialize)]
 pub enum ReadRecordError {
     #[error("Io error: {0}")]
-    IoError(#[from] io::Error),
+    IoError(String),
     #[error("Corruption")]
     Corruption,
+}
+
+impl From<io::Error> for ReadRecordError {
+    fn from(io_err: io::Error) -> Self {
+        ReadRecordError::IoError(format!("{io_err:?}"))
+    }
 }
 
 impl<R: AsyncRead + Unpin> RecordReader<R> {
@@ -77,7 +84,7 @@ impl<R: AsyncRead + Unpin> RecordReader<R> {
                 }
                 Err(ReadFrameError::IoError(io_err)) => {
                     self.within_record = false;
-                    return Err(ReadRecordError::IoError(io_err));
+                    return Err(ReadRecordError::IoError(format!("{io_err:?}")));
                 }
                 Err(ReadFrameError::NotAvailable) => {
                     return Ok(false);

@@ -100,7 +100,7 @@ impl FrameType {
 
 #[cfg(test)]
 mod tests {
-    use super::{Header, HEADER_LEN, FrameType};
+    use super::{FrameType, Header, HEADER_LEN};
 
     #[test]
     fn test_frame_type_serialize_deserialize() {

@@ -1,5 +1,7 @@
-use crate::recordlog::{frame::{FrameType, FrameWriter}, Serializable};
 use tokio::io::{self, AsyncWrite};
+
+use crate::recordlog::frame::{FrameType, FrameWriter};
+use crate::recordlog::Serializable;
 
 pub struct RecordWriter<W> {
     frame_writer: FrameWriter<W>,

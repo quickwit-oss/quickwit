@@ -19,16 +19,13 @@
 
 use std::collections::VecDeque;
 use std::io;
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tokio::fs::File;
 
-use crate::recordlog::record::ReadRecordError;
-use crate::recordlog::record::RecordReader;
-use crate::recordlog::rolling::Directory;
+use crate::recordlog::record::{ReadRecordError, RecordReader};
+use crate::recordlog::rolling::{Directory, RecordLogWriter};
 use crate::recordlog::Record;
-use crate::recordlog::rolling::RecordLogWriter;
 
 pub(crate) struct RecordLogReader {
     directory: Directory,

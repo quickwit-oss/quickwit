@@ -1,11 +1,9 @@
 use std::io;
 use std::path::Path;
 
-use super::mem;
 use super::record::ReadRecordError;
-use super::rolling;
 use super::rolling::RecordLogReader;
-use super::Record;
+use super::{mem, rolling, Record};
 
 pub struct MultiRecordLog {
     record_log_writer: rolling::RecordLogWriter,
@@ -46,6 +44,10 @@ impl MultiRecordLog {
         self.record_log_writer.num_files()
     }
 
+    pub fn list_queues(&self) -> Vec<String> {
+        self.in_mem_queues.list_queues()
+    }
+
     // Returns a new position.
     fn inc_position(&mut self) -> u64 {
         self.last_position += 1;
@@ -63,6 +65,22 @@ impl MultiRecordLog {
         self.record_log_writer.flush().await?;
         self.in_mem_queues.add_record(queue, position, payload);
         Ok(())
+    }
+
+    pub fn queue_exists(&self, queue: &str) -> bool {
+        self.in_mem_queues.queue_exists(queue)
+    }
+
+    /// Returns false if the queue was already existing.
+    pub fn create_queue(&mut self, queue: &str) -> bool {
+        // TODO append to the logs too.
+        self.in_mem_queues.create_queue(queue)
+    }
+
+    /// Returns false if the queue does not exist.
+    pub fn remove_queue(&mut self, queue: &str) -> bool {
+        // TODO append to the logs too.
+        self.in_mem_queues.remove_queue(queue)
     }
 
     /// Returns the first record with position greater of equal to position.

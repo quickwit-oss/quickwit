@@ -20,8 +20,8 @@
 
 use tempfile::tempdir;
 
-use crate::recordlog::Record;
 use super::RecordLogReader;
+use crate::recordlog::Record;
 
 #[tokio::test]
 async fn test_record_log_reader_empty() {
