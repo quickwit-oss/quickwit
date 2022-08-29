@@ -24,9 +24,9 @@ use std::time::Duration;
 
 use hyper::Uri;
 use itertools::Itertools;
-use quickwit_cluster::QuickwitService;
 use quickwit_common::new_coolid;
 use quickwit_common::rand::append_random_suffix;
+use quickwit_common::service::QuickwitService;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::QuickwitConfig;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};

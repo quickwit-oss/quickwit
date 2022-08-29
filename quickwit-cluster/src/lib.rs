@@ -23,9 +23,9 @@ mod error;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use anyhow::bail;
 use chitchat::transport::UdpTransport;
 use chitchat::FailureDetectorConfig;
+use quickwit_common::service::QuickwitService;
 use quickwit_config::QuickwitConfig;
 
 pub use crate::cluster::{
@@ -41,40 +41,6 @@ fn unix_timestamp() -> u64 {
     duration_since_epoch.as_secs()
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub enum QuickwitService {
-    Indexer,
-    Searcher,
-    Janitor,
-    Metastore,
-}
-
-impl QuickwitService {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            QuickwitService::Indexer => "indexer",
-            QuickwitService::Searcher => "searcher",
-            QuickwitService::Janitor => "janitor",
-            QuickwitService::Metastore => "metastore",
-        }
-    }
-}
-
-impl TryFrom<&str> for QuickwitService {
-    type Error = anyhow::Error;
-
-    fn try_from(service_str: &str) -> Result<Self, Self::Error> {
-        match service_str {
-            "indexer" => Ok(QuickwitService::Indexer),
-            "searcher" => Ok(QuickwitService::Searcher),
-            "janitor" => Ok(QuickwitService::Janitor),
-            "metastore" => Ok(QuickwitService::Metastore),
-            _ => {
-                bail!("Service `{service_str}` unknown");
-            }
-        }
-    }
-}
 
 pub async fn start_cluster_service(
     quickwit_config: &QuickwitConfig,

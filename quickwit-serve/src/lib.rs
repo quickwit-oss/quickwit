@@ -44,7 +44,8 @@ use std::time::Duration;
 
 use format::Format;
 use quickwit_actors::{Mailbox, Universe};
-use quickwit_cluster::{Cluster, ClusterMember, QuickwitService};
+use quickwit_cluster::{Cluster, ClusterMember};
+use quickwit_common::service::QuickwitService;
 use quickwit_common::uri::Uri;
 use quickwit_config::QuickwitConfig;
 use quickwit_core::IndexService;

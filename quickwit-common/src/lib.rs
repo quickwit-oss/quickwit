@@ -25,6 +25,7 @@ pub mod metrics;
 pub mod net;
 pub mod rand;
 pub mod runtimes;
+pub mod service;
 pub mod uri;
 
 use std::fmt::Debug;

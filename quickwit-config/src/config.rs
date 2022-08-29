@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
 use std::env;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -27,6 +28,7 @@ use derivative::Derivative;
 use json_comments::StripComments;
 use quickwit_common::net::{find_private_ip, Host, HostAddr};
 use quickwit_common::new_coolid;
+use quickwit_common::service::QuickwitService;
 use quickwit_common::uri::{Extension, Uri};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -75,6 +77,13 @@ fn default_listen_address() -> String {
 
 fn default_rest_listen_port() -> u16 {
     7280
+}
+
+fn default_quickwit_services() -> Vec<String> {
+    vec!["metastore", "searcher", "indexer"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -171,6 +180,8 @@ struct QuickwitConfigBuilder {
     advertise_address: Option<String>,
     #[serde(default = "default_rest_listen_port")]
     rest_listen_port: u16,
+    #[serde(default = "default_quickwit_services")]
+    services: Vec<String>,
     gossip_listen_port: Option<u16>,
     grpc_listen_port: Option<u16>,
     #[serde(default)]
@@ -226,6 +237,13 @@ impl QuickwitConfigBuilder {
 
     fn from_yaml(bytes: &[u8]) -> anyhow::Result<Self> {
         serde_yaml::from_slice(bytes).context("Failed to parse YAML config file.")
+    }
+
+    fn services_from_vec(&self) -> anyhow::Result<HashSet<QuickwitService>> {
+        self.services
+            .iter()
+            .map(|service_string| QuickwitService::try_from(service_string.as_str()))
+            .collect::<Result<HashSet<_>, _>>()
     }
 
     /// Returns the REST listen address of the node, i.e. the socket address on which the REST API
@@ -349,6 +367,7 @@ impl QuickwitConfigBuilder {
             grpc_advertise_addr: self.grpc_advertise_addr(&listen_host).await?,
             metastore_uri: self.metastore_uri()?,
             default_index_root_uri: self.default_index_root_uri()?,
+            services: self.services_from_vec()?,
             version: self.version,
             cluster_id: self.cluster_id,
             node_id: self.node_id,
@@ -386,6 +405,7 @@ pub struct QuickwitConfig {
     pub grpc_listen_addr: SocketAddr,
     pub gossip_advertise_addr: SocketAddr,
     pub grpc_advertise_addr: SocketAddr,
+    pub services: HashSet<QuickwitService>,
     pub peer_seeds: Vec<String>,
     pub metastore_uri: Uri,
     pub default_index_root_uri: Uri,
@@ -494,6 +514,14 @@ impl QuickwitConfig {
         let metastore_uri = default_metastore_uri(&data_dir_path);
         let default_index_root_uri = default_index_root_uri(&data_dir_path);
 
+        let services = default_quickwit_services()
+            .iter()
+            .map(|service_string| {
+                QuickwitService::try_from(service_string.as_str())
+                    .expect("Default services should always get parsed correctly.")
+            })
+            .collect();
+
         Self {
             version: 0,
             cluster_id: default_cluster_id(),
@@ -501,6 +529,7 @@ impl QuickwitConfig {
             gossip_advertise_addr: gossip_listen_addr,
             grpc_advertise_addr: grpc_listen_addr,
             rest_listen_addr,
+            services,
             gossip_listen_addr,
             grpc_listen_addr,
             peer_seeds: Vec::new(),
@@ -529,6 +558,7 @@ mod tests {
                 listen_address: Host::default().to_string(),
                 advertise_address: None,
                 rest_listen_port: default_rest_listen_port(),
+                services: default_quickwit_services(),
                 gossip_listen_port: None,
                 grpc_listen_port: None,
                 peer_seeds: Vec::new(),

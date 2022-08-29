@@ -28,7 +28,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 pub use grpc_adapter::GrpcMetastoreAdapter;
 use http::Uri;
-use quickwit_cluster::{ClusterMember, QuickwitService};
+use quickwit_cluster::ClusterMember;
+use quickwit_common::service::QuickwitService;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
@@ -550,7 +551,8 @@ mod tests {
     use std::sync::Arc;
 
     use futures::StreamExt;
-    use quickwit_cluster::{ClusterMember, QuickwitService};
+    use quickwit_cluster::ClusterMember;
+    use quickwit_common::service::QuickwitService;
     use quickwit_proto::metastore_api::metastore_api_service_server::MetastoreApiServiceServer;
     use quickwit_proto::tonic::transport::Server;
     use tokio::sync::watch;

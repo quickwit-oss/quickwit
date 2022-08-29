@@ -22,8 +22,7 @@ use std::path::PathBuf;
 
 use clap::{arg, ArgMatches, Command};
 use itertools::Itertools;
-use quickwit_cluster::QuickwitService;
-use quickwit_common::uri::Uri;
+use quickwit_common::{uri::Uri, service::QuickwitService};
 use quickwit_serve::serve_quickwit;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::debug;
@@ -32,7 +31,7 @@ use crate::load_quickwit_config;
 
 pub fn build_run_command<'a>() -> Command<'a> {
     Command::new("run")
-        .about("Runs quickwit services. By default, `indexer` and `searcher` are started.")
+        .about("Runs quickwit services. By default, `metastore`, `indexer` and `searcher` are started.")
         .args(&[
             arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                 .env("QW_DATA_DIR")
