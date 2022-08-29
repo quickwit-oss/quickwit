@@ -41,7 +41,6 @@ fn unix_timestamp() -> u64 {
     duration_since_epoch.as_secs()
 }
 
-
 pub async fn start_cluster_service(
     quickwit_config: &QuickwitConfig,
     services: &HashSet<QuickwitService>,
