@@ -17,47 +17,83 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
-use quickwit_metastore::Metastore;
-use quickwit_storage::StorageUriResolver;
-use tracing::info;
-
-const RUN_INTERVAL: Duration = if cfg!(test) {
-    Duration::from_secs(60) // 1min
-} else {
-    Duration::from_secs(60 * 60) // 1h
+use quickwit_actors::{
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Supervisable,
 };
+use quickwit_metastore::{Metastore, MetastoreError};
+use quickwit_storage::{StorageResolverError, StorageUriResolver};
+use thiserror::Error;
+use tracing::{error, info};
+
+use super::garbage_collector::{GarbageCollector, GarbageCollectorCounters};
+
+const OBSERVATION_INTERVAL: Duration = Duration::from_secs(1);
+
+#[derive(Error, Debug)]
+pub enum JanitorServiceError {
+    #[error("Garbage collector already exists.")]
+    GarbageCollectionAlreadyExists,
+    #[error("Failed to resolve the storage `{0}`.")]
+    StorageError(#[from] StorageResolverError),
+    #[error("Metastore error `{0}`.")]
+    MetastoreError(#[from] MetastoreError),
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct SpawnGarbageCollector;
+
+#[derive(Clone, Copy, Debug, Default)]
+struct Observe;
+
+#[derive(Clone, Copy, Debug, Default)]
+struct Supervise;
 
 #[derive(Clone, Debug, Default)]
 pub struct JanitorServiceCounters {
-    /// Number of passes.
-    pub num_passes: usize,
+    pub garbage_collector_counters: GarbageCollectorCounters,
 }
 
 pub struct JanitorService {
-    _data_dir_path: PathBuf,
-    _metastore: Arc<dyn Metastore>,
-    _storage_resolver: StorageUriResolver,
+    node_id: String,
+    metastore: Arc<dyn Metastore>,
+    storage_resolver: StorageUriResolver,
+    garbage_collector_handle_opt: Option<ActorHandle<GarbageCollector>>,
     counters: JanitorServiceCounters,
 }
 
 impl JanitorService {
     pub fn new(
-        data_dir_path: PathBuf,
+        node_id: String,
         metastore: Arc<dyn Metastore>,
         storage_resolver: StorageUriResolver,
     ) -> Self {
         Self {
-            _data_dir_path: data_dir_path,
-            _metastore: metastore,
-            _storage_resolver: storage_resolver,
+            node_id,
+            metastore,
+            storage_resolver,
+            garbage_collector_handle_opt: None,
             counters: JanitorServiceCounters::default(),
         }
+    }
+
+    async fn spawn_garbage_collector(
+        &mut self,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), JanitorServiceError> {
+        if self.garbage_collector_handle_opt.is_some() {
+            return Err(JanitorServiceError::GarbageCollectionAlreadyExists);
+        }
+
+        let garbage_collector =
+            GarbageCollector::new(self.metastore.clone(), self.storage_resolver.clone());
+        let (_, garbage_collector_handle) = ctx.spawn_actor(garbage_collector).spawn();
+
+        self.garbage_collector_handle_opt = Some(garbage_collector_handle);
+        Ok(())
     }
 }
 
@@ -73,32 +109,89 @@ impl Actor for JanitorService {
         &mut self,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
-        self.handle(Loop, ctx).await
+        self.handle(SpawnGarbageCollector, ctx).await?;
+        self.handle(Observe, ctx).await?;
+        self.handle(Supervise, ctx).await
     }
 }
 
-#[derive(Debug)]
-struct Loop;
-
 #[async_trait]
-impl Handler<Loop> for JanitorService {
+impl Handler<Supervise> for JanitorService {
     type Reply = ();
 
-    async fn handle(&mut self, _: Loop, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        info!("janitor-service-operation");
-        self.counters.num_passes += 1;
-        ctx.schedule_self_msg(RUN_INTERVAL, Loop).await;
+    async fn handle(
+        &mut self,
+        _message: Supervise,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        if let Some(gc_handle) = &self.garbage_collector_handle_opt {
+            let supervisable_gc_handle: &dyn Supervisable = gc_handle;
+            match supervisable_gc_handle.health() {
+                Health::Success => info!(node_id=%self.node_id, "Garbage collector completed."),
+                Health::FailureOrUnhealthy => {
+                    error!(node_id=%self.node_id, "Garbage collector failed.")
+                }
+                Health::Healthy => (),
+            };
+        }
+        ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, Supervise)
+            .await;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<SpawnGarbageCollector> for JanitorService {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _message: SpawnGarbageCollector,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        if let Err(spawn_error) = self.spawn_garbage_collector(ctx).await {
+            if !matches!(
+                spawn_error,
+                JanitorServiceError::GarbageCollectionAlreadyExists
+            ) {
+                error!(error = ?spawn_error, "Could not spawn garbage collector.");
+                return Err(ActorExitStatus::Success);
+            }
+        }
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<Observe> for JanitorService {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _: Observe,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        if let Some(handle) = &self.garbage_collector_handle_opt {
+            let observation_counters = handle.observe().await;
+            self.counters = JanitorServiceCounters {
+                garbage_collector_counters: observation_counters.clone(),
+            };
+        }
+        ctx.schedule_self_msg(OBSERVATION_INTERVAL, Observe).await;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use quickwit_actors::Universe;
     use quickwit_common::uri::Uri;
     use quickwit_metastore::quickwit_metastore_uri_resolver;
 
     use super::*;
+    use crate::actors::garbage_collector::RUN_INTERVAL;
 
     #[tokio::test]
     async fn test_janitor_service() {
@@ -108,24 +201,22 @@ mod tests {
             .await
             .unwrap();
 
-        let temp_dir = tempfile::tempdir().unwrap();
-        let data_dir_path = temp_dir.path().to_path_buf();
         let storage_resolver = StorageUriResolver::for_test();
         let janitor_service =
-            JanitorService::new(data_dir_path, metastore.clone(), storage_resolver.clone());
+            JanitorService::new("one".to_string(), metastore.clone(), storage_resolver);
         let universe = Universe::new();
         let (_, handle) = universe.spawn_actor(janitor_service).spawn();
-        let counters = handle.observe().await;
-        assert_eq!(counters.num_passes, 1);
+        let counters = handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.garbage_collector_counters.num_passes, 1);
 
         // 30 secs later
         universe.simulate_time_shift(Duration::from_secs(30)).await;
         let counters = handle.process_pending_and_observe().await.state;
-        assert_eq!(counters.num_passes, 1);
+        assert_eq!(counters.garbage_collector_counters.num_passes, 1);
 
         // 60 secs later
         universe.simulate_time_shift(RUN_INTERVAL).await;
         let counters = handle.process_pending_and_observe().await.state;
-        assert_eq!(counters.num_passes, 2);
+        assert_eq!(counters.garbage_collector_counters.num_passes, 2);
     }
 }

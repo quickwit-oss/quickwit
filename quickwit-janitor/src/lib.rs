@@ -27,6 +27,11 @@ use quickwit_storage::StorageUriResolver;
 use tracing::info;
 
 pub mod actors;
+mod garbage_collection;
+
+pub use self::garbage_collection::{
+    delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
+};
 
 pub async fn start_janitor_service(
     universe: &Universe,
@@ -36,11 +41,10 @@ pub async fn start_janitor_service(
 ) -> anyhow::Result<Mailbox<JanitorService>> {
     info!("Starting janitor service.");
     let janitor_service = JanitorService::new(
-        config.data_dir_path.to_path_buf(),
-        metastore,
+        config.node_id.clone(),
+        metastore.clone(),
         storage_uri_resolver,
     );
-    let (janitor_service_mailbox, _) = universe.spawn_actor(janitor_service).spawn();
-
-    Ok(janitor_service_mailbox)
+    let (janitor_service, _) = universe.spawn_actor(janitor_service).spawn();
+    Ok(janitor_service)
 }

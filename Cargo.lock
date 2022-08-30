@@ -3232,6 +3232,8 @@ version = "0.3.1"
 dependencies = [
  "anyhow",
  "async-trait",
+ "futures",
+ "itertools",
  "quickwit-actors",
  "quickwit-common",
  "quickwit-config",
@@ -3239,7 +3241,10 @@ dependencies = [
  "quickwit-storage",
  "serde",
  "tempfile",
+ "thiserror",
+ "time 0.3.14",
  "tokio",
+ "tokio-stream",
  "tracing",
 ]
 
