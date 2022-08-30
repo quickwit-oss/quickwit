@@ -1,7 +1,6 @@
 use std::io;
 use std::path::Path;
 
-use super::record::ReadRecordError;
 use super::rolling::RecordLogReader;
 use super::{mem, rolling, Record};
 
@@ -12,7 +11,10 @@ pub struct MultiRecordLog {
 }
 
 impl MultiRecordLog {
-    pub async fn open(directory_path: &Path) -> Result<Self, ReadRecordError> {
+    pub async fn open(directory_path: &Path) -> crate::Result<Self> {
+        if !directory_path.exists() {
+            tokio::fs::create_dir(directory_path).await?;
+        }
         let mut record_log_reader = RecordLogReader::open(directory_path).await?;
         let mut in_mem_queues = mem::MemQueues::default();
         let mut last_position = 0u64;

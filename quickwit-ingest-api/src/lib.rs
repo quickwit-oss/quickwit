@@ -59,7 +59,7 @@ pub async fn init_ingest_api(
     let ingest_api_actor =
         IngestApiService::with_queues_dir(queues_dir_path).await.with_context(|| {
             format!(
-                "Failed to open RocksDB instance located at `{}`.",
+                "Failed to open the ingest API record log located at `{}`.",
                 queues_dir_path.display()
             )
         })?;

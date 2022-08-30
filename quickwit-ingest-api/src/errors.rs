@@ -27,7 +27,7 @@ use crate::recordlog::ReadRecordError;
 
 #[derive(Error, Debug, Serialize)]
 pub enum IngestApiError {
-    #[error("Rocks DB Error: {msg}.")]
+    #[error("Data Corruption : {msg}.")]
     Corruption { msg: String },
     #[error("Index `{index_id}` does not exist.")]
     IndexDoesNotExist { index_id: String },

@@ -21,32 +21,13 @@ use std::path::Path;
 
 use quickwit_proto::ingest_api::{DocBatch, FetchResponse, ListQueuesResponse};
 use crate::recordlog::MultiRecordLog;
-use crate::{add_doc, Position};
+use crate::add_doc;
 
 const FETCH_PAYLOAD_LIMIT: usize = 2_000_000; // 2MB
 
 pub struct Queues {
     multi_record_log: crate::recordlog::MultiRecordLog,
-    // last_position_per_queue: HashMap<String, Option<Position>>,
 }
-
-// fn next_position(db: &DB, queue_id: &str) -> crate::Result<Option<Position>> {
-//     let cf = db
-//         .cf_handle(queue_id)
-//         .ok_or_else(|| crate::IngestApiError::Corruption {
-//             msg: format!("RocksDB error: Missing column `{queue_id}`"),
-//         })?;
-//     // That's iterating backward
-//     let mut full_it = db.full_iterator_cf(&cf, IteratorMode::End);
-//     match full_it.next() {
-//         Some(Ok((key, _))) => {
-//             let position = Position::try_from(&*key)?;
-//             Ok(Some(position))
-//         }
-//         Some(Err(error)) => Err(error.into()),
-//         None => Ok(None),
-//     }
-// }
 
 impl Queues {
     pub async fn open(queues_dir_path: &Path) -> crate::Result<Queues> {
@@ -190,34 +171,34 @@ mod tests {
         tempdir: tempfile::TempDir,
     }
 
-    impl Default for QueuesForTest {
-        fn default() -> Self {
+    impl QueuesForTest {
+        async fn create() -> Self {
             let tempdir = tempfile::tempdir().unwrap();
             let mut queues_for_test = QueuesForTest {
                 tempdir,
                 queues: None,
             };
-            queues_for_test.reload();
+            queues_for_test.reload().await;
             queues_for_test
         }
     }
 
     impl QueuesForTest {
-        fn reload(&mut self) {
+        async fn reload(&mut self) {
             std::mem::drop(self.queues.take());
-            self.queues = Some(Queues::open(self.tempdir.path()).unwrap());
+            self.queues = Some(Queues::open(self.tempdir.path()).await.unwrap());
         }
 
         #[track_caller]
         fn fetch_test(
             &mut self,
             queue_id: &str,
-            start_after: Option<super::Position>,
+            start_after: Option<u64>,
             expected_first_pos_opt: Option<u64>,
             expected: &[&[u8]],
         ) {
             let fetch_resp = self.fetch(queue_id, start_after, None).unwrap();
-            assert_eq!(fetch_resp.first_position, expected_first_pos_opt);
+            assert_eq!(fetch_resp.first_position, expected_first_pos_opt, "First position returned differs");
             let doc_batch = fetch_resp.doc_batch.unwrap();
             let records: Vec<&[u8]> = iter_doc_payloads(&doc_batch).collect();
             assert_eq!(&records, expected);
@@ -244,9 +225,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_access_queue_twice() {
-        let mut queues = QueuesForTest::default();
+    #[tokio::test]
+    async fn test_access_queue_twice() {
+        let mut queues = QueuesForTest::create().await;
         queues.create_queue(TEST_QUEUE_ID).unwrap();
         let queue_err = queues.create_queue(TEST_QUEUE_ID).err().unwrap();
         assert!(matches!(
@@ -255,10 +236,10 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn test_list_queues() {
+    #[tokio::test]
+    async fn test_list_queues() {
         let queue_ids = vec!["foo".to_string(), "bar".to_string(), "baz".to_string()];
-        let mut queues = QueuesForTest::default();
+        let mut queues = QueuesForTest::create().await;
         for queue_id in queue_ids.iter() {
             queues.create_queue(queue_id).unwrap();
         }
@@ -274,9 +255,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_simple() {
-        let mut queues = QueuesForTest::default();
+    #[tokio::test]
+    async fn test_simple() {
+        let mut queues = QueuesForTest::create().await;
 
         queues.create_queue(TEST_QUEUE_ID).unwrap();
         queues
@@ -284,9 +265,10 @@ mod tests {
                 TEST_QUEUE_ID,
                 [b"hello", b"happy"].iter().map(|bytes| bytes.as_slice()),
             )
+            .await
             .unwrap();
 
-        queues.reload();
+        queues.reload().await;
         queues.fetch_test(
             TEST_QUEUE_ID,
             None,
@@ -294,7 +276,7 @@ mod tests {
             &[&b"hello"[..], &b"happy"[..]],
         );
 
-        queues.reload();
+        queues.reload().await;
         queues.fetch_test(
             TEST_QUEUE_ID,
             None,
@@ -303,9 +285,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_distinct_queues() {
-        let mut queues = QueuesForTest::default();
+    #[tokio::test]
+    async fn test_distinct_queues() {
+        let mut queues = QueuesForTest::create().await;
 
         queues.create_queue(TEST_QUEUE_ID).unwrap();
         queues.create_queue(TEST_QUEUE_ID2).unwrap();
@@ -316,15 +298,15 @@ mod tests {
         queues.fetch_test(TEST_QUEUE_ID2, None, Some(0), &[&b"hello2"[..]]);
     }
 
-    #[test]
-    fn test_create_reopen() {
-        let mut queues = QueuesForTest::default();
+    #[tokio::test]
+    async fn test_create_reopen() {
+        let mut queues = QueuesForTest::create().await;
         queues.create_queue(TEST_QUEUE_ID).unwrap();
 
-        queues.reload();
+        queues.reload().await;
         queues.append(TEST_QUEUE_ID, b"hello").unwrap();
 
-        queues.reload();
+        queues.reload().await;
         queues.append(TEST_QUEUE_ID, b"happy").unwrap();
 
         queues.fetch_test(
@@ -338,35 +320,38 @@ mod tests {
     // Note this test is specific to the current implementation of truncate.
     //
     // The truncate contract is actually not as accurate as what we are testing here.
-    #[test]
-    fn test_truncation() {
-        let mut queues = QueuesForTest::default();
+    #[tokio::test]
+    async fn test_truncation() {
+        let mut queues = QueuesForTest::create().await;
         queues.create_queue(TEST_QUEUE_ID).unwrap();
         queues.append(TEST_QUEUE_ID, b"hello").unwrap();
         queues.append(TEST_QUEUE_ID, b"happy").unwrap();
         queues
-            .suggest_truncate(TEST_QUEUE_ID, Position::from(0))
+            .suggest_truncate(TEST_QUEUE_ID, 0)
+            .await
             .unwrap();
         queues.fetch_test(TEST_QUEUE_ID, None, Some(1), &[&b"happy"[..]]);
     }
 
-    #[test]
-    fn test_truncation_and_reload() {
+    #[tokio::test]
+    async fn test_truncation_and_reload() {
         // This test makes sure that we don't reset the position counter when we truncate an entire
         // queue.
-        let mut queues = QueuesForTest::default();
+        let mut queues = QueuesForTest::create().await;
         queues.create_queue(TEST_QUEUE_ID).unwrap();
         queues.append(TEST_QUEUE_ID, b"hello").unwrap();
         queues.append(TEST_QUEUE_ID, b"happy").unwrap();
-        queues.reload();
+        queues.reload().await;
         queues
-            .suggest_truncate(TEST_QUEUE_ID, Position::from(100))
+            .suggest_truncate(TEST_QUEUE_ID, 100)
+            .await
+
             .unwrap();
-        queues.reload();
+        queues.reload().await;
         queues.append(TEST_QUEUE_ID, b"tax").unwrap();
         queues.fetch_test(
             TEST_QUEUE_ID,
-            Some(Position::from(1)),
+            Some(1),
             Some(2),
             &[&b"tax"[..]],
         );
@@ -377,8 +362,8 @@ mod tests {
         payload: Vec<u8>,
     }
     #[ignore]
-    #[test]
-    fn test_create_multiple_queue() {
+    #[tokio::test]
+    async fn test_create_multiple_queue() {
         use std::iter::repeat_with;
 
         use rand::rngs::StdRng;
@@ -413,7 +398,7 @@ mod tests {
             .collect();
 
         let tmpdir = tempfile::tempdir_in(".").unwrap();
-        let mut queues = Queues::open(tmpdir.path()).unwrap();
+        let mut queues = Queues::open(tmpdir.path()).await.unwrap();
         for queue_id in 0..NUM_QUEUES {
             println!("create queue {queue_id}");
             queues.create_queue(&queue_id.to_string()).unwrap();
