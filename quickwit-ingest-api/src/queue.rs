@@ -20,8 +20,9 @@
 use std::path::Path;
 
 use quickwit_proto::ingest_api::{DocBatch, FetchResponse, ListQueuesResponse};
-use crate::recordlog::MultiRecordLog;
+
 use crate::add_doc;
+use crate::recordlog::MultiRecordLog;
 
 const FETCH_PAYLOAD_LIMIT: usize = 2_000_000; // 2MB
 
@@ -73,7 +74,9 @@ impl Queues {
         queue: &str,
         up_to_offset_included: u64,
     ) -> crate::Result<()> {
-        self.multi_record_log.truncate(queue, up_to_offset_included).await?;
+        self.multi_record_log
+            .truncate(queue, up_to_offset_included)
+            .await?;
         Ok(())
     }
 
@@ -94,7 +97,9 @@ impl Queues {
     ) -> crate::Result<()> {
         for record in records_it {
             // TODO Optimize
-            self.multi_record_log.append_record(queue_id, record).await?;
+            self.multi_record_log
+                .append_record(queue_id, record)
+                .await?;
         }
         Ok(())
     }
@@ -112,18 +117,19 @@ impl Queues {
         let mut num_bytes = 0;
         let size_limit = num_bytes_limit.unwrap_or(FETCH_PAYLOAD_LIMIT);
         // TODO revisit semantic. Right now the off by one gig is painful.
-        let mut after_position =
-            if let Some(start_after) = start_after {
-                if start_after > 1 {
-                    start_after - 1
-                } else {
-                    0
-                }
+        let mut after_position = if let Some(start_after) = start_after {
+            if start_after > 1 {
+                start_after - 1
             } else {
                 0
-            };
+            }
+        } else {
+            0
+        };
         loop {
-            if let Some((position, payload)) = self.multi_record_log.get_after(queue_id, after_position) {
+            if let Some((position, payload)) =
+                self.multi_record_log.get_after(queue_id, after_position)
+            {
                 num_bytes += add_doc(&*payload, &mut doc_batch);
             } else {
                 break;
@@ -146,9 +152,7 @@ impl Queues {
 
     pub fn list_queues(&self) -> crate::Result<ListQueuesResponse> {
         Ok(ListQueuesResponse {
-            queues: self
-                .multi_record_log
-                .list_queues()
+            queues: self.multi_record_log.list_queues(),
         })
     }
 }
@@ -198,7 +202,10 @@ mod tests {
             expected: &[&[u8]],
         ) {
             let fetch_resp = self.fetch(queue_id, start_after, None).unwrap();
-            assert_eq!(fetch_resp.first_position, expected_first_pos_opt, "First position returned differs");
+            assert_eq!(
+                fetch_resp.first_position, expected_first_pos_opt,
+                "First position returned differs"
+            );
             let doc_batch = fetch_resp.doc_batch.unwrap();
             let records: Vec<&[u8]> = iter_doc_payloads(&doc_batch).collect();
             assert_eq!(&records, expected);
@@ -326,10 +333,7 @@ mod tests {
         queues.create_queue(TEST_QUEUE_ID).unwrap();
         queues.append(TEST_QUEUE_ID, b"hello").unwrap();
         queues.append(TEST_QUEUE_ID, b"happy").unwrap();
-        queues
-            .suggest_truncate(TEST_QUEUE_ID, 0)
-            .await
-            .unwrap();
+        queues.suggest_truncate(TEST_QUEUE_ID, 0).await.unwrap();
         queues.fetch_test(TEST_QUEUE_ID, None, Some(1), &[&b"happy"[..]]);
     }
 
@@ -342,19 +346,10 @@ mod tests {
         queues.append(TEST_QUEUE_ID, b"hello").unwrap();
         queues.append(TEST_QUEUE_ID, b"happy").unwrap();
         queues.reload().await;
-        queues
-            .suggest_truncate(TEST_QUEUE_ID, 100)
-            .await
-
-            .unwrap();
+        queues.suggest_truncate(TEST_QUEUE_ID, 100).await.unwrap();
         queues.reload().await;
         queues.append(TEST_QUEUE_ID, b"tax").unwrap();
-        queues.fetch_test(
-            TEST_QUEUE_ID,
-            Some(1),
-            Some(2),
-            &[&b"tax"[..]],
-        );
+        queues.fetch_test(TEST_QUEUE_ID, Some(1), Some(2), &[&b"tax"[..]]);
     }
 
     struct Record {

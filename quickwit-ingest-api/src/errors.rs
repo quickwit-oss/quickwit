@@ -38,7 +38,7 @@ pub enum IngestApiError {
     #[error("Read record error. `{0:?}`")]
     ReadRecordError(#[from] ReadRecordError),
     #[error("Io Error")]
-    IoError(String)
+    IoError(String),
 }
 
 impl From<io::Error> for IngestApiError {

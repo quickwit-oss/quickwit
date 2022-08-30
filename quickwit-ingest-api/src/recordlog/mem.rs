@@ -131,10 +131,7 @@ impl MemQueues {
     }
 
     pub fn list_queues(&self) -> Vec<String> {
-        self.queues
-            .keys()
-            .cloned()
-            .collect()
+        self.queues.keys().cloned().collect()
     }
 
     pub fn create_queue(&mut self, queue: &str) -> bool {

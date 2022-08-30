@@ -60,7 +60,9 @@ impl IngestApiService {
             // TODO better error handling.
             // If there is an error, we probably want a transactional behavior.
             let records_it = iter_doc_payloads(doc_batch);
-            self.queues.append_batch(&doc_batch.index_id, records_it).await?;
+            self.queues
+                .append_batch(&doc_batch.index_id, records_it)
+                .await?;
             num_docs += doc_batch.doc_lens.len();
         }
         Ok(IngestResponse {
@@ -78,10 +80,9 @@ impl IngestApiService {
     }
 
     async fn suggest_truncate(&mut self, request: SuggestTruncateRequest) -> crate::Result<()> {
-        self.queues.suggest_truncate(
-            &request.index_id,
-            request.up_to_position_included,
-        ).await?;
+        self.queues
+            .suggest_truncate(&request.index_id, request.up_to_position_included)
+            .await?;
         Ok(())
     }
 }
