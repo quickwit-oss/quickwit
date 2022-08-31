@@ -168,7 +168,6 @@ mod tests {
 
     use super::*;
     use crate::actors::combine_partition_ids;
-
     use crate::merge_policy::MergeOperation;
     use crate::{new_split_id, StableMultitenantWithTimestampMergePolicy};
 

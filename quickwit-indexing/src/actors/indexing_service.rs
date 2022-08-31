@@ -429,11 +429,7 @@ impl Handler<SpawnMergePipeline> for IndexingService {
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self
-            .spawn_merge_pipeline(
-                ctx,
-                message.index_id,
-                message.merge_enabled,
-            )
+            .spawn_merge_pipeline(ctx, message.index_id, message.merge_enabled)
             .await)
     }
 }

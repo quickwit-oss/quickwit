@@ -37,7 +37,6 @@ use quickwit_config::{
 use quickwit_core::{
     clear_cache_directory, remove_indexing_directory, validate_storage_uri, IndexService,
 };
-
 use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
 use quickwit_indexing::models::{
     DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
@@ -594,9 +593,7 @@ pub async fn list_index_cli(args: ListIndexesArgs) -> anyhow::Result<()> {
 }
 
 fn make_list_indexes_table<I>(indexes: I) -> Table
-where
-    I: IntoIterator<Item = IndexMetadata>,
-{
+where I: IntoIterator<Item = IndexMetadata> {
     let rows = indexes
         .into_iter()
         .map(|index| IndexRow {
@@ -866,10 +863,7 @@ pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn merge_cli(
-    args: MergeArgs,
-    merge_enabled: bool,
-) -> anyhow::Result<()> {
+pub async fn merge_cli(args: MergeArgs, merge_enabled: bool) -> anyhow::Result<()> {
     debug!(args=?args, merge_enabled = merge_enabled, "run-merge-operations");
     let config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     run_index_checklist(&config.metastore_uri, &args.index_id, None).await?;

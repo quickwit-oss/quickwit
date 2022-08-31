@@ -320,10 +320,8 @@ impl IndexingPipeline {
             .set_kill_switch(self.kill_switch.clone())
             .spawn();
 
-        let merge_executor = MergeExecutor::new(
-            self.params.pipeline_id.clone(),
-            merge_packager_mailbox,
-        );
+        let merge_executor =
+            MergeExecutor::new(self.params.pipeline_id.clone(), merge_packager_mailbox);
         let (merge_executor_mailbox, merge_executor_handler) = ctx
             .spawn_actor(merge_executor)
             .set_kill_switch(self.kill_switch.clone())

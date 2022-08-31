@@ -28,7 +28,6 @@ use tantivy::query::Query;
 use tantivy::schema::{Cardinality, Field, FieldType, Schema, STORED};
 use tantivy::Document;
 
-
 use super::field_mapping_entry::QuickwitTextTokenizer;
 use super::DefaultDocMapperBuilder;
 use crate::default_doc_mapper::mapping_tree::{build_mapping_tree, MappingNode, MappingTree};
