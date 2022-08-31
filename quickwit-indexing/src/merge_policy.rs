@@ -125,9 +125,6 @@ pub trait MergePolicy: Send + Sync + fmt::Debug {
 /// build a demux operation with it, and loop.
 #[derive(Clone, Debug)]
 pub struct StableMultitenantWithTimestampMergePolicy {
-    pub demux_enabled: bool,
-    pub demux_factor: usize,
-    pub demux_field_name: Option<String>,
     pub min_level_num_docs: usize,
     pub merge_enabled: bool,
     pub merge_factor: usize,
@@ -143,9 +140,6 @@ pub struct StableMultitenantWithTimestampMergePolicy {
 impl Default for StableMultitenantWithTimestampMergePolicy {
     fn default() -> Self {
         StableMultitenantWithTimestampMergePolicy {
-            demux_enabled: false,
-            demux_field_name: None,
-            demux_factor: 6,
             min_level_num_docs: 100_000,
             merge_enabled: true,
             merge_factor: 10,

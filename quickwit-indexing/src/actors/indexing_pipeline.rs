@@ -209,8 +209,6 @@ impl IndexingPipeline {
         self.statistics.num_spawn_attempts += 1;
         self.kill_switch = KillSwitch::default();
         let stable_multitenant_merge_policy = StableMultitenantWithTimestampMergePolicy {
-            demux_enabled: self.params.indexing_settings.demux_enabled,
-            demux_field_name: self.params.indexing_settings.demux_field.clone(),
             merge_enabled: self.params.indexing_settings.merge_enabled,
             merge_factor: self.params.indexing_settings.merge_policy.merge_factor,
             max_merge_factor: self.params.indexing_settings.merge_policy.max_merge_factor,
