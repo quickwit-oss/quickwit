@@ -457,7 +457,6 @@ pub fn build_doc_mapper(
         sort_by,
         field_mappings: doc_mapping.field_mappings.clone(),
         tag_fields: doc_mapping.tag_fields.iter().cloned().collect(),
-        demux_field: indexing_settings.demux_field.clone(),
         mode: doc_mapping.mode,
         dynamic_mapping: doc_mapping.dynamic_mapping.clone(),
         partition_key: doc_mapping.partition_key.clone(),
@@ -726,7 +725,7 @@ mod tests {
         }
         {
             // Add source file params with no filepath.
-            let mut invalid_index_config = index_config.clone();
+            let mut invalid_index_config = index_config;
             invalid_index_config.sources = vec![SourceConfig {
                 source_id: "file_params_1".to_string(),
                 num_pipelines: 1,
@@ -738,17 +737,6 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("must contain a `filepath`"));
-        }
-        {
-            // Add a demux field not declared in the mapping.
-            let mut invalid_index_config = index_config;
-            invalid_index_config.indexing_settings.demux_field = Some("invalid-field".to_string());
-            assert!(invalid_index_config.validate().is_err());
-            assert!(invalid_index_config
-                .validate()
-                .unwrap_err()
-                .to_string()
-                .contains("Unknown demux field"));
         }
     }
 

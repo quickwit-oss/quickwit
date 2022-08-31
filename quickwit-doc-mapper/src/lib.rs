@@ -137,7 +137,7 @@ pub fn default_doc_mapper_for_test() -> DefaultDocMapper {
 
 /// Returns a default `DefaultIndexConfig` for unit tests.
 #[cfg(any(test, feature = "testsuite"))]
-pub fn default_config_with_demux_for_tests() -> DefaultDocMapper {
+pub fn default_config_for_tests() -> DefaultDocMapper {
     const JSON_CONFIG_VALUE: &str = r#"
         {
             "store_source": true,

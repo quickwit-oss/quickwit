@@ -158,7 +158,7 @@ fn belongs_to_pipeline(pipeline_id: &IndexingPipelineId, split: &SplitMetadata) 
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, BTreeSet, HashMap};
+    use std::collections::{BTreeSet, HashMap};
     use std::iter::FromIterator;
     use std::ops::RangeInclusive;
 
@@ -168,7 +168,7 @@ mod tests {
 
     use super::*;
     use crate::actors::combine_partition_ids;
-    use crate::actors::merge_executor::{demux_virtual_split, VirtualSplit};
+    
     use crate::merge_policy::MergeOperation;
     use crate::{new_split_id, StableMultitenantWithTimestampMergePolicy};
 
@@ -216,51 +216,6 @@ mod tests {
         }
     }
 
-    fn fake_demux(splits: &[SplitMetadata]) -> Vec<SplitMetadata> {
-        assert!(!splits.is_empty(), "Split list should not be empty.");
-        let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
-        let size_in_bytes: u64 = splits
-            .iter()
-            .map(|split| split.uncompressed_docs_size_in_bytes)
-            .sum();
-        let time_range = merge_time_range(splits);
-        let tags = merge_tags(splits);
-        let mut demux_values_map = BTreeMap::new();
-        for split in splits {
-            let mut num_docs = split.num_docs;
-            let mut demux_value = 0u64;
-            while num_docs > 0 {
-                let num_docs_to_insert = std::cmp::min(10_000, num_docs);
-                let demux_count = demux_values_map.entry(demux_value).or_insert(0);
-                *demux_count += num_docs_to_insert;
-                demux_value += 1;
-                num_docs -= num_docs_to_insert;
-            }
-        }
-        let input_split = VirtualSplit::new(demux_values_map);
-        let demuxed_splits = demux_virtual_split(input_split, 10_000_000, 20_000_000, splits.len());
-        let mut splits_metadata = Vec::new();
-        for demuxed_split in demuxed_splits {
-            let split_metadata = SplitMetadata {
-                split_id: new_split_id(),
-                source_id: "test-source".to_string(),
-                node_id: "test-node".to_string(),
-                pipeline_ord: 0,
-                partition_id: combine_partition_ids(splits),
-                num_docs: demuxed_split.total_num_docs(),
-                uncompressed_docs_size_in_bytes: (size_in_bytes as f32 / num_docs as f32) as u64
-                    * demuxed_split.total_num_docs() as u64,
-                time_range: time_range.clone(),
-                create_timestamp: 0,
-                tags: tags.clone(),
-                demux_num_ops: 1,
-                footer_offsets: 0..100,
-            };
-            splits_metadata.push(split_metadata);
-        }
-        splits_metadata
-    }
-
     fn apply_merge(
         split_index: &mut HashMap<String, SplitMetadata>,
         merge_op: &MergeOperation,
@@ -272,7 +227,6 @@ mod tests {
             MergeOperation::Merge { splits, .. } => {
                 vec![fake_merge(splits)]
             }
-            MergeOperation::Demux { splits, .. } => fake_demux(splits),
         };
         for split in splits.iter() {
             split_index.insert(split.split_id().to_string(), split.clone());
@@ -377,39 +331,6 @@ mod tests {
             |splits| {
                 let num_docs = splits.iter().map(|split| split.num_docs as u64).sum();
                 splits.len() <= merge_policy.max_num_splits_ideal_case(num_docs)
-            },
-        )
-        .await?;
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_simulate_merge_and_demux() -> anyhow::Result<()> {
-        let merge_policy = StableMultitenantWithTimestampMergePolicy {
-            demux_field_name: Some("tenant_id".to_owned()),
-            demux_enabled: true,
-            ..Default::default()
-        };
-        aux_test_simulate_merge_planner_num_docs(
-            Arc::new(merge_policy.clone()),
-            &vec![1_000_000; 120],
-            |splits| {
-                let num_big_splits = splits
-                    .iter()
-                    .filter(|split| split.num_docs >= 10_000_000)
-                    .count();
-                if num_big_splits > 5 {
-                    let demuxed_num_splits = splits
-                        .iter()
-                        .filter(|split| split.demux_num_ops > 0)
-                        .count();
-                    return demuxed_num_splits > 0 && demuxed_num_splits % 6 == 0;
-                }
-                splits
-                    .iter()
-                    .filter(|split| split.demux_num_ops > 0)
-                    .count()
-                    == 0
             },
         )
         .await?;

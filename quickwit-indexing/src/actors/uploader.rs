@@ -508,8 +508,6 @@ mod tests {
             ]
         );
         assert!(checkpoint_delta_opt.is_none());
-        assert_eq!(new_splits[0].demux_num_ops, 1);
-        assert_eq!(new_splits[1].demux_num_ops, 1);
 
         let mut files = ram_storage.list_files().await;
         files.sort();

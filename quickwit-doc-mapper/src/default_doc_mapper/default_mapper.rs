@@ -27,7 +27,7 @@ use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
 use tantivy::schema::{Cardinality, Field, FieldType, Schema, STORED};
 use tantivy::Document;
-use tracing::info;
+
 
 use super::field_mapping_entry::QuickwitTextTokenizer;
 use super::DefaultDocMapperBuilder;
@@ -120,8 +120,6 @@ pub struct DefaultDocMapper {
     /// The partition key is a DSL used to route documents
     /// into specific splits.
     partition_key: RoutingExpr,
-    /// Demux field name.
-    demux_field_name: Option<String>,
     /// List of required fields. Right now this is the list of fast fields.
     required_fields: Vec<Field>,
     /// Defines how unmapped fields should be handle.
@@ -246,51 +244,6 @@ fn resolve_sort_field(
     Ok(SortBy::DocId)
 }
 
-fn resolve_demux_field(
-    demux_field_name_opt: Option<&String>,
-    schema: &Schema,
-) -> anyhow::Result<()> {
-    if let Some(demux_field_name) = demux_field_name_opt {
-        let demux_field = schema
-            .get_field(demux_field_name)
-            .with_context(|| format!("Unknown demux field: `{}`", demux_field_name))?;
-
-        let demux_field_entry = schema.get_field_entry(demux_field);
-        if !demux_field_entry.is_fast() {
-            bail!(
-                "Demux field must be a fast field, please add the fast property to your field \
-                 `{}`.",
-                demux_field_name
-            )
-        }
-        if !demux_field_entry.is_indexed() {
-            bail!(
-                "Demux field must be indexed, please add the indexed property to your field `{}`.",
-                demux_field_name
-            )
-        }
-        match demux_field_entry.field_type() {
-            FieldType::U64(options) | FieldType::I64(options) => {
-                if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
-                    bail!(
-                        "Demux field cannot be an array, please change your field `{}` from an \
-                         array to a single value.",
-                        demux_field_name
-                    )
-                }
-            }
-            _ => {
-                bail!(
-                    "Demux field must be of type u64 or i64, please change your field type `{}` \
-                     to u64 or i64.",
-                    demux_field_name
-                )
-            }
-        }
-    }
-    Ok(())
-}
-
 impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
     type Error = anyhow::Error;
 
@@ -328,7 +281,6 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         }
 
         resolve_timestamp_field(builder.timestamp_field.as_ref(), &schema)?;
-        resolve_demux_field(builder.demux_field.as_ref(), &schema)?;
         let sort_by = resolve_sort_field(builder.sort_by, &schema)?;
 
         // Resolve tag fields
@@ -341,15 +293,6 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
                 .get_field(tag_field_name)
                 .with_context(|| format!("Unknown tag field: `{}`", tag_field_name))?;
             tag_field_names.insert(tag_field_name.clone());
-        }
-        if let Some(ref demux_field_name) = builder.demux_field {
-            if !tag_field_names.contains(demux_field_name) {
-                info!(
-                    "Demux field name `{}` is not in index config tags, add it automatically.",
-                    demux_field_name
-                );
-                tag_field_names.insert(demux_field_name.clone());
-            }
         }
 
         let required_fields = list_required_fields_for_node(&field_mappings);
@@ -366,7 +309,6 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             tag_field_names,
             required_fields,
             partition_key,
-            demux_field_name: builder.demux_field,
             mode,
         })
     }
@@ -385,7 +327,6 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
                 order: *order,
             }),
         };
-        let demux_field = default_doc_mapper.demux_field_name();
         let mode = default_doc_mapper.mode.mode_type();
         let dynamic_mapping = match &default_doc_mapper.mode {
             Mode::Dynamic(mapping_options) => Some(mapping_options.clone()),
@@ -395,7 +336,6 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
             store_source: default_doc_mapper.source_field.is_some(),
             timestamp_field: default_doc_mapper.timestamp_field_name(),
             field_mappings: default_doc_mapper.field_mappings.into(),
-            demux_field,
             sort_by: sort_by_config,
             tag_fields: default_doc_mapper.tag_field_names.into_iter().collect(),
             default_search_fields: default_doc_mapper.default_search_field_names,
@@ -416,7 +356,6 @@ impl std::fmt::Debug for DefaultDocMapper {
                 &self.default_search_field_names,
             )
             .field("timestamp_field_name", &self.timestamp_field_name())
-            .field("demux_field_name", &self.demux_field_name())
             // TODO: complete it.
             .finish()
     }
@@ -525,10 +464,6 @@ impl DocMapper for DefaultDocMapper {
         self.timestamp_field_name.clone()
     }
 
-    fn demux_field_name(&self) -> Option<String> {
-        self.demux_field_name.clone()
-    }
-
     fn sort_by(&self) -> SortBy {
         self.sort_by.clone()
     }
@@ -602,7 +537,7 @@ mod tests {
 
     #[test]
     fn test_json_serialize() -> anyhow::Result<()> {
-        let mut config = crate::default_config_with_demux_for_tests();
+        let mut config = crate::default_config_for_tests();
         let json_config = serde_json::to_string_pretty(&config)?;
         let mut config_after_serialization =
             serde_json::from_str::<DefaultDocMapper>(&json_config)?;
@@ -618,10 +553,6 @@ mod tests {
         assert_eq!(
             config.timestamp_field_name,
             config_after_serialization.timestamp_field_name
-        );
-        assert_eq!(
-            config.demux_field_name,
-            config_after_serialization.demux_field_name
         );
         assert_eq!(config.sort_by, config_after_serialization.sort_by);
         Ok(())
@@ -1030,114 +961,6 @@ mod tests {
         }"#;
         let default_doc_mapper = serde_json::from_str::<DefaultDocMapper>(doc_mapper).unwrap();
         assert_eq!(default_doc_mapper.sort_by(), SortBy::DocId);
-    }
-
-    #[test]
-    fn test_doc_mapper_with_a_u64_demux_field_is_valid_and_is_added_to_tags() {
-        let doc_mapper = r#"{
-            "default_search_fields": [],
-            "tag_fields": [],
-            "demux_field": "demux",
-            "field_mappings": [
-                {
-                    "name": "demux",
-                    "type": "u64",
-                    "fast": true
-                }
-            ]
-        }"#;
-        let default_doc_mapper: DefaultDocMapper =
-            serde_json::from_str::<DefaultDocMapper>(doc_mapper).unwrap();
-        assert_eq!(default_doc_mapper.tag_field_names().len(), 1);
-        assert!(default_doc_mapper
-            .tag_field_names()
-            .contains(&"demux".to_string()));
-    }
-
-    #[test]
-    fn test_doc_mapper_with_a_i64_demux_field_is_valid() {
-        let doc_mapper = r#"{
-            "default_search_fields": [],
-            "tag_fields": ["demux"],
-            "demux_field": "demux",
-            "field_mappings": [
-                {
-                    "name": "demux",
-                    "type": "i64",
-                    "fast": true
-                }
-            ]
-        }"#;
-        let default_doc_mapper: DefaultDocMapper =
-            serde_json::from_str::<DefaultDocMapper>(doc_mapper).unwrap();
-        assert_eq!(default_doc_mapper.tag_field_names().len(), 1);
-        assert!(default_doc_mapper
-            .tag_field_names()
-            .contains(&"demux".to_string()));
-    }
-
-    #[test]
-    fn test_doc_mapper_with_a_u64_demux_field_is_valid() {
-        let doc_mapper = r#"{
-            "default_search_fields": [],
-            "tag_fields": ["demux"],
-            "demux_field": "demux",
-            "field_mappings": [
-                {
-                    "name": "demux",
-                    "type": "u64",
-                    "fast": true
-                }
-            ]
-        }"#;
-        let default_doc_mapper = serde_json::from_str::<DefaultDocMapper>(doc_mapper).unwrap();
-        assert_eq!(default_doc_mapper.tag_field_names().len(), 1);
-        assert!(default_doc_mapper
-            .tag_field_names()
-            .contains(&"demux".to_string()));
-    }
-
-    #[test]
-    fn test_fail_to_build_doc_mapper_with_non_fast_demux_field() {
-        let doc_mapper = r#"{
-            "default_search_fields": [],
-            "demux_field": "demux",
-            "tag_fields": [],
-            "field_mappings": [
-                {
-                    "name": "demux",
-                    "type": "u64"
-                }
-            ]
-        }"#;
-        let default_doc_mapper = serde_json::from_str::<DefaultDocMapper>(doc_mapper);
-        let expected_msg = "Demux field must be a fast field, please add the fast property to \
-                            your field `demux`."
-            .to_string();
-        assert_eq!(default_doc_mapper.unwrap_err().to_string(), expected_msg);
-    }
-
-    #[test]
-    fn test_fail_to_build_doc_mapper_with_not_indexed_demux_field() -> anyhow::Result<()> {
-        let doc_mapper = r#"{
-            "default_search_fields": [],
-            "demux_field": "demux",
-            "tag_fields": [],
-            "field_mappings": [
-                {
-                    "name": "demux",
-                    "type": "u64",
-                    "indexed": false,
-                    "fast": true
-                }
-            ]
-        }"#;
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
-        let expected_msg = "Demux field must be indexed, please add the indexed property to your \
-                            field `demux`."
-            .to_string();
-        assert_eq!(builder.try_build().unwrap_err().to_string(), expected_msg);
-        Ok(())
     }
 
     // See #1132

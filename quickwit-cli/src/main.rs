@@ -561,28 +561,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_demux_args() -> anyhow::Result<()> {
-        let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from(&[
-            "index",
-            "demux",
-            "--index",
-            "wikipedia",
-            "--config",
-            "quickwit.yaml",
-        ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
-        assert!(matches!(
-            command,
-            CliCommand::Index(IndexCliCommand::Demux(MergeOrDemuxArgs {
-                index_id,
-                ..
-            })) if &index_id == "wikipedia"
-        ));
-        Ok(())
-    }
-
-    #[test]
     fn test_parse_describe_index_args() -> anyhow::Result<()> {
         let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(&[
