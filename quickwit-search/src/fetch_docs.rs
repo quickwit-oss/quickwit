@@ -320,7 +320,7 @@ async fn create_snippet_generator(
         } else {
             continue;
         };
-        let doc_freq = searcher.doc_freq_async(&term).await?;
+        let doc_freq = searcher.doc_freq_async(term).await?;
         if doc_freq > 0 {
             let score = 1.0 / (1.0 + doc_freq as Score);
             terms_text.insert(term_str.to_string(), score);

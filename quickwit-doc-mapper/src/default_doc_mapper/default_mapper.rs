@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::str::FromStr;
+use std::num::NonZeroU64;
 
 use anyhow::{bail, Context};
 use quickwit_proto::SearchRequest;
@@ -136,6 +136,11 @@ impl DefaultDocMapper {
             }
         }
         Ok(())
+    }
+
+    /// Default maximum number of partitions.
+    pub fn default_max_num_partitions() -> NonZeroU64 {
+        NonZeroU64::new(8).unwrap()
     }
 }
 
@@ -295,7 +300,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         }
 
         let required_fields = list_required_fields_for_node(&field_mappings);
-        let partition_key = RoutingExpr::from_str(&builder.partition_key)
+        let partition_key = RoutingExpr::new(&builder.partition_key, builder.max_num_partitions)
             .context("Failed to interpret the partition key.")?;
         Ok(DefaultDocMapper {
             schema,
@@ -341,6 +346,7 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
             mode,
             dynamic_mapping,
             partition_key: default_doc_mapper.partition_key.to_string(),
+            max_num_partitions: default_doc_mapper.partition_key.max_num_partitions(),
         }
     }
 }
