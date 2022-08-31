@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::num::NonZeroU64;
 
 use byte_unit::Byte;
 use quickwit_common::uri::Uri;
@@ -142,7 +143,8 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
         store_source: true,
         mode: ModeType::Dynamic,
         dynamic_mapping: None,
-        partition_key: "".to_string(),
+        partition_key: "tenant".to_string(),
+        max_num_partitions: NonZeroU64::new(20).unwrap(),
     };
     let merge_policy = MergePolicy {
         demux_factor: 7,

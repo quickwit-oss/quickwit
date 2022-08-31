@@ -42,6 +42,7 @@
         "type": "text"
       }
     ],
+    "max_num_partitions": 8,
     "mode": "dynamic",
     "store_source": true,
     "tag_fields": [

@@ -42,8 +42,9 @@
         "type": "text"
       }
     ],
-    "max_num_partitions": 8,
+    "max_num_partitions": 20,
     "mode": "dynamic",
+    "partition_key": "tenant",
     "store_source": true,
     "tag_fields": [
       "log_level",
@@ -79,6 +80,7 @@
   },
   "sources": [
     {
+      "num_pipelines": 2,
       "params": {
         "client_params": {},
         "topic": "kafka-topic"
