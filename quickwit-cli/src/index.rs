@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{VecDeque};
+use std::collections::VecDeque;
 use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -254,7 +254,7 @@ pub struct GarbageCollectIndexArgs {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct MergeOrDemuxArgs {
+pub struct MergeArgs {
     pub config_uri: Uri,
     pub index_id: String,
     pub data_dir: Option<PathBuf>,
@@ -275,7 +275,7 @@ pub enum IndexCliCommand {
     GarbageCollect(GarbageCollectIndexArgs),
     Ingest(IngestDocsArgs),
     List(ListIndexesArgs),
-    Merge(MergeOrDemuxArgs),
+    Merge(MergeArgs),
     Search(SearchIndexArgs),
 }
 
@@ -467,7 +467,7 @@ impl IndexCliCommand {
             .map(Uri::try_new)
             .expect("`config` is a required arg.")?;
         let data_dir = matches.value_of("data-dir").map(PathBuf::from);
-        Ok(Self::Merge(MergeOrDemuxArgs {
+        Ok(Self::Merge(MergeArgs {
             index_id,
             config_uri,
             data_dir,
@@ -526,7 +526,7 @@ impl IndexCliCommand {
             Self::GarbageCollect(args) => garbage_collect_index_cli(args).await,
             Self::Ingest(args) => ingest_docs_cli(args).await,
             Self::List(args) => list_index_cli(args).await,
-            Self::Merge(args) => merge_or_demux_cli(args, true, false).await,
+            Self::Merge(args) => merge_cli(args, true).await,
             Self::Search(args) => search_index_cli(args).await,
         }
     }
@@ -594,7 +594,9 @@ pub async fn list_index_cli(args: ListIndexesArgs) -> anyhow::Result<()> {
 }
 
 fn make_list_indexes_table<I>(indexes: I) -> Table
-where I: IntoIterator<Item = IndexMetadata> {
+where
+    I: IntoIterator<Item = IndexMetadata>,
+{
     let rows = indexes
         .into_iter()
         .map(|index| IndexRow {
@@ -864,12 +866,11 @@ pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn merge_or_demux_cli(
-    args: MergeOrDemuxArgs,
+pub async fn merge_cli(
+    args: MergeArgs,
     merge_enabled: bool,
-    demux_enabled: bool,
 ) -> anyhow::Result<()> {
-    debug!(args=?args, merge_enabled = merge_enabled, demux_enabled = demux_enabled, "run-merge-operations");
+    debug!(args=?args, merge_enabled = merge_enabled, "run-merge-operations");
     let config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     run_index_checklist(&config.metastore_uri, &args.index_id, None).await?;
     let indexer_config = IndexerConfig {
@@ -895,7 +896,6 @@ pub async fn merge_or_demux_cli(
         .ask_for_res(SpawnMergePipeline {
             index_id: args.index_id.clone(),
             merge_enabled,
-            demux_enabled,
         })
         .await?;
     let pipeline_handle = indexing_server_mailbox

@@ -65,5 +65,4 @@ pub struct ObservePipeline {
 pub struct SpawnMergePipeline {
     pub index_id: String,
     pub merge_enabled: bool,
-    pub demux_enabled: bool,
 }

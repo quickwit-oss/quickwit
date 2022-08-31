@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
 use std::path::Path;
 use std::time::Instant;
@@ -28,14 +28,12 @@ use fail::fail_point;
 use itertools::{Itertools};
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::runtimes::RuntimeType;
-use quickwit_common::split_file;
-use quickwit_directories::{BundleDirectory, UnionDirectory};
+use quickwit_directories::UnionDirectory;
 use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
 use quickwit_metastore::SplitMetadata;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
-use tantivy::fastfield::{FastFieldReader};
 use tantivy::{
-    Directory, Index, IndexMeta, Segment, SegmentId,
+    Directory, Index, IndexMeta, SegmentId,
 };
 use tokio::runtime::Handle;
 use tracing::{debug, info, info_span, Span};
@@ -51,10 +49,6 @@ use crate::models::{
 pub struct MergeExecutor {
     pipeline_id: IndexingPipelineId,
     merge_packager_mailbox: Mailbox<Packager>,
-    timestamp_field_name: Option<String>,
-    demux_field_name: Option<String>,
-    min_demuxed_split_num_docs: usize,
-    max_demuxed_split_num_docs: usize,
 }
 
 #[async_trait]
@@ -251,18 +245,10 @@ impl MergeExecutor {
     pub fn new(
         pipeline_id: IndexingPipelineId,
         merge_packager_mailbox: Mailbox<Packager>,
-        timestamp_field_name: Option<String>,
-        demux_field_name: Option<String>,
-        min_demuxed_split_num_docs: usize,
-        max_demuxed_split_num_docs: usize,
     ) -> Self {
         MergeExecutor {
             pipeline_id,
             merge_packager_mailbox,
-            timestamp_field_name,
-            demux_field_name,
-            min_demuxed_split_num_docs,
-            max_demuxed_split_num_docs,
         }
     }
 
@@ -343,108 +329,6 @@ fn open_index<T: Into<Box<dyn Directory>>>(directory: T) -> tantivy::Result<Inde
     Ok(index)
 }
 
-// Open indexes and return metas & segments for each split.
-// Note: only the first segment of each split is taken.
-pub fn load_metas_and_segments(
-    directory_path: &Path,
-    split_ids: &[String],
-) -> anyhow::Result<(Vec<IndexMeta>, Vec<Segment>)> {
-    let mmap_directory = MmapDirectory::open(directory_path)?;
-    let mut replaced_segments = Vec::new();
-    let mut index_metas = Vec::new();
-    for split_id in split_ids.iter() {
-        let split_filename = split_file(split_id);
-        let split_fileslice = mmap_directory.open_read(Path::new(&split_filename))?;
-        let split_directory = BundleDirectory::open_split(split_fileslice)?;
-        let index = open_index(split_directory)?;
-        index_metas.push(index.load_metas()?);
-        let searchable_segments = index.searchable_segments()?;
-        assert_eq!(
-            searchable_segments.len(),
-            1,
-            "Only one segment is expected for a split that is going to be demuxed."
-        );
-        let segment = searchable_segments.into_iter().next().unwrap();
-        replaced_segments.push(segment);
-    }
-    Ok((index_metas, replaced_segments))
-}
-
-// A virtual split is a view on a split that contains only the information of
-// docs count per demux value in the split. The demux algorithm use a virtual
-// split as input and produced demuxed virtual splits. The virtual splits are
-// then used for the real demux that will create real split.
-// Hence the usage of `virtual`.
-#[derive(Clone, Debug)]
-pub struct VirtualSplit(BTreeMap<u64, usize>);
-
-impl VirtualSplit {
-    pub fn new(map: BTreeMap<u64, usize>) -> Self {
-        Self(map)
-    }
-    pub fn total_num_docs(&self) -> usize {
-        self.0.values().sum()
-    }
-
-    pub fn sorted_demux_values(&self) -> Vec<u64> {
-        self.0.keys().cloned().collect_vec()
-    }
-
-    pub fn remove_docs(&mut self, demux_value: &u64, num_docs: usize) {
-        *self
-            .0
-            .get_mut(demux_value)
-            .expect("Cannot remove docs from a missing demux value") -= num_docs;
-    }
-
-    pub fn add_docs(&mut self, demux_value: u64, num_docs: usize) {
-        *self.0.entry(demux_value).or_insert(0) += num_docs;
-    }
-
-    pub fn num_docs(&self, demux_value: u64) -> usize {
-        *self.0.get(&demux_value).unwrap_or(&0usize)
-    }
-}
-
-struct SegmentNumDocs {
-    ordinal: u32,
-    num_docs: usize,
-}
-
-/// Compute split bounds for the current split that is going to be filled
-/// knowing that there are `remaining_num_splits` splits that needs to be filled
-/// and to satisfy [`min_split_num_docs`, `max_split_num_docs`] constraint.
-/// See description of [`demux_virtual_split`] algorithm for more details.
-pub fn compute_current_split_bounds(
-    remaining_num_docs: usize,
-    remaining_num_splits: usize,
-    min_split_num_docs: usize,
-    max_split_num_docs: usize,
-) -> RangeInclusive<usize> {
-    // When there are no more splits to fill, we return `remaining_num_docs` as
-    // the lower bound as we just want to put all remaining docs in the current split.
-    if remaining_num_splits == 0 {
-        return RangeInclusive::new(remaining_num_docs, max_split_num_docs);
-    }
-    let num_docs_lower_bound = if remaining_num_docs > remaining_num_splits * max_split_num_docs {
-        std::cmp::max(
-            min_split_num_docs,
-            remaining_num_docs - remaining_num_splits * max_split_num_docs,
-        )
-    } else {
-        min_split_num_docs
-    };
-    let num_docs_upper_bound = std::cmp::min(
-        max_split_num_docs,
-        remaining_num_docs - remaining_num_splits * min_split_num_docs,
-    );
-    assert!(
-        num_docs_lower_bound <= num_docs_upper_bound,
-        "Num docs lower bound must be <= num docs upper bound."
-    );
-    RangeInclusive::new(num_docs_lower_bound, num_docs_upper_bound)
-}
-
 #[cfg(test)]
 mod tests {
     use quickwit_actors::{create_test_mailbox, Universe};
@@ -515,10 +399,6 @@ mod tests {
         let merge_executor = MergeExecutor::new(
             pipeline_id,
             merge_packager_mailbox,
-            None,
-            None,
-            10_000_000,
-            20_000_000,
         );
         let universe = Universe::new();
         let (merge_executor_mailbox, merge_executor_handle) =
