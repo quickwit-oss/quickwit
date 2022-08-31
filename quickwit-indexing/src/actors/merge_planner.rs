@@ -30,11 +30,11 @@ use crate::actors::MergeSplitDownloader;
 use crate::models::{IndexingPipelineId, NewSplits};
 use crate::MergePolicy;
 
-/// The merge planner decides when to start a merge or a demux task.
+/// The merge planner decides when to start a merge task.
 pub struct MergePlanner {
     pipeline_id: IndexingPipelineId,
     /// A young split is a split that has not reached maturity
-    /// yet and can be candidate to merge and demux operations.
+    /// yet and can be candidate to merge operations.
     partitioned_young_splits: HashMap<u64, Vec<SplitMetadata>>,
     merge_policy: Arc<dyn MergePolicy>,
     merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
@@ -168,7 +168,7 @@ mod tests {
 
     use super::*;
     use crate::actors::combine_partition_ids;
-    
+
     use crate::merge_policy::MergeOperation;
     use crate::{new_split_id, StableMultitenantWithTimestampMergePolicy};
 
@@ -220,14 +220,10 @@ mod tests {
         split_index: &mut HashMap<String, SplitMetadata>,
         merge_op: &MergeOperation,
     ) -> Vec<SplitMetadata> {
-        for split in merge_op.splits() {
+        for split in merge_op.splits_as_slice() {
             assert!(split_index.remove(split.split_id()).is_some());
         }
-        let splits = match merge_op {
-            MergeOperation::Merge { splits, .. } => {
-                vec![fake_merge(splits)]
-            }
-        };
+        let splits = vec![fake_merge(merge_op.splits_as_slice())];
         for split in splits.iter() {
             split_index.insert(split.split_id().to_string(), split.clone());
         }

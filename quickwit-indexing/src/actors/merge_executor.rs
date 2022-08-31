@@ -25,22 +25,19 @@ use std::time::Instant;
 use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
-use itertools::{Itertools};
+use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_directories::UnionDirectory;
 use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
 use quickwit_metastore::SplitMetadata;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
-use tantivy::{
-    Directory, Index, IndexMeta, SegmentId,
-};
+use tantivy::{Directory, Index, IndexMeta, SegmentId};
 use tokio::runtime::Handle;
 use tracing::{debug, info, info_span, Span};
 
 use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
-use crate::merge_policy::MergeOperation;
 use crate::models::{
     IndexedSplit, IndexedSplitBatch, IndexingPipelineId, MergeScratch, PublishLock,
     ScratchDirectory,
@@ -75,25 +72,24 @@ impl Handler<MergeScratch> for MergeExecutor {
     type Reply = ();
 
     fn message_span(&self, msg_id: u64, merge_scratch: &MergeScratch) -> Span {
-        match &merge_scratch.merge_operation {
-            MergeOperation::Merge {
-                merge_split_id,
-                splits,
-            } => {
-                let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
-                let in_merge_split_ids: Vec<String> = splits
-                    .iter()
-                    .map(|split| split.split_id().to_string())
-                    .collect();
-                info_span!("merge",
+        let merge_op = &merge_scratch.merge_operation;
+        let num_docs: usize = merge_op
+            .splits_as_slice()
+            .iter()
+            .map(|split| split.num_docs)
+            .sum();
+        let in_merge_split_ids: Vec<String> = merge_op
+            .splits_as_slice()
+            .iter()
+            .map(|split| split.split_id().to_string())
+            .collect();
+        info_span!("merge",
                     msg_id=&msg_id,
                     dir=%merge_scratch.merge_scratch_directory.path().display(),
-                    merge_split_id=%merge_split_id,
+                    merge_split_id=%merge_op.merge_split_id,
                     in_merge_split_ids=?in_merge_split_ids,
                     num_docs=num_docs,
-                    num_splits=splits.len())
-            }
-        }
+                    num_splits=merge_op.splits_as_slice().len())
     }
 
     async fn handle(
@@ -101,21 +97,15 @@ impl Handler<MergeScratch> for MergeExecutor {
         merge_scratch: MergeScratch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        match merge_scratch.merge_operation {
-            MergeOperation::Merge {
-                merge_split_id: split_id,
-                splits,
-            } => {
-                self.process_merge(
-                    split_id,
-                    splits,
-                    merge_scratch.tantivy_dirs,
-                    merge_scratch.merge_scratch_directory,
-                    ctx,
-                )
-                .await?;
-            }
-        }
+        let merge_op = &merge_scratch.merge_operation;
+        self.process_merge(
+            merge_op.merge_split_id.clone(),
+            merge_op.splits.clone(),
+            merge_scratch.tantivy_dirs,
+            merge_scratch.merge_scratch_directory,
+            ctx,
+        )
+        .await?;
         Ok(())
     }
 }
@@ -242,10 +232,7 @@ fn merge_split_directories(
 }
 
 impl MergeExecutor {
-    pub fn new(
-        pipeline_id: IndexingPipelineId,
-        merge_packager_mailbox: Mailbox<Packager>,
-    ) -> Self {
+    pub fn new(pipeline_id: IndexingPipelineId, merge_packager_mailbox: Mailbox<Packager>) -> Self {
         MergeExecutor {
             pipeline_id,
             merge_packager_mailbox,
@@ -387,7 +374,7 @@ mod tests {
             tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap())
         }
         let merge_scratch = MergeScratch {
-            merge_operation: MergeOperation::Merge {
+            merge_operation: MergeOperation {
                 merge_split_id: crate::new_split_id(),
                 splits: split_metas,
             },
@@ -396,10 +383,7 @@ mod tests {
             downloaded_splits_directory,
         };
         let (merge_packager_mailbox, merge_packager_inbox) = create_test_mailbox();
-        let merge_executor = MergeExecutor::new(
-            pipeline_id,
-            merge_packager_mailbox,
-        );
+        let merge_executor = MergeExecutor::new(pipeline_id, merge_packager_mailbox);
         let universe = Universe::new();
         let (merge_executor_mailbox, merge_executor_handle) =
             universe.spawn_actor(merge_executor).spawn();

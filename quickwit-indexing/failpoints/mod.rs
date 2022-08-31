@@ -294,10 +294,6 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     let merge_executor = MergeExecutor::new(
         pipeline_id,
         merge_packager_mailbox,
-        None,
-        None,
-        10_000_000,
-        20_000_000,
     );
     let universe = Universe::new();
     let (merge_executor_mailbox, merge_executor_handle) =

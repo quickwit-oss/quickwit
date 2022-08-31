@@ -21,62 +21,48 @@ use std::cmp::Reverse;
 use std::fmt;
 use std::ops::Range;
 
-
-
 use quickwit_metastore::SplitMetadata;
 use tracing::debug;
 
 use crate::new_split_id;
 
-pub enum MergeOperation {
-    Merge {
-        merge_split_id: String,
-        splits: Vec<SplitMetadata>,
-    },
+pub struct MergeOperation {
+    pub merge_split_id: String,
+    pub splits: Vec<SplitMetadata>,
 }
 
 impl MergeOperation {
     pub fn new_merge_operation(splits: Vec<SplitMetadata>) -> MergeOperation {
-        MergeOperation::Merge {
+        Self {
             merge_split_id: new_split_id(),
             splits,
         }
     }
 
-    pub fn splits(&self) -> &[SplitMetadata] {
-        match self {
-            MergeOperation::Merge { splits, .. } => splits.as_slice(),
-        }
+    pub fn splits_as_slice(&self) -> &[SplitMetadata] {
+        self.splits.as_slice()
     }
 }
 
 impl fmt::Debug for MergeOperation {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            MergeOperation::Merge {
-                merge_split_id: split_id,
-                splits,
-            } => {
-                write!(f, "Merge(merged_split_id={},splits=[", split_id)?;
-                for split in splits {
-                    write!(f, "{},", split.split_id())?;
-                }
-                write!(f, "])")?;
-            }
+        write!(f, "Merge(merged_split_id={},splits=[", self.merge_split_id)?;
+        for split in &self.splits {
+            write!(f, "{},", split.split_id())?;
         }
+        write!(f, "])")?;
         Ok(())
     }
 }
 
-/// A merge policy wraps the logic that decide what should be merged or demux.
+/// A merge policy wraps the logic that decide what should be merged.
 /// The SplitMetadata must be extracted from the splits `Vec`.
 ///
 /// It is called by the merge planner whenever a new split is added.
 pub trait MergePolicy: Send + Sync + fmt::Debug {
-    /// Returns the list of operations that should be performed either
-    /// merge or demux operations.
+    /// Returns the list of merge operations that should be performed.
     fn operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation>;
-    /// A mature split is a split that won't undergo merge or demux operation in the future.
+    /// A mature split is a split that won't undergo a merge operation in the future.
     fn is_mature(&self, split: &SplitMetadata) -> bool;
 }
 
@@ -88,11 +74,9 @@ pub trait MergePolicy: Send + Sync + fmt::Debug {
 /// The logic goes as follows.
 /// Each splits has
 /// - a number of documents
-/// - a number of demux operations
 /// - an end time
 ///
-/// The policy first build the merge operations and then the demux operations if
-/// a `demux_field_name` is present.
+/// The policy first builds the merge operations
 ///
 /// 1. Build merge operations
 /// We start by sorting the splits by reverse date so that the most recent splits are
@@ -114,15 +98,6 @@ pub trait MergePolicy: Send + Sync + fmt::Debug {
 ///
 /// Because we stop merging splits reaching a size larger than if it would result in a size larger
 /// than `target_num_docs`.
-///
-/// 2. Build demux operations if `demux_field_name` is present
-/// We start by sorting the splits by date so that the oldest splits are first demuxed.
-/// This will avoid leaving an old split alone that will be demuxed with younger splits
-/// in the future.
-///
-/// The logic is simple: as long as we have more than `max_merge_docs * demux_factor` docs in
-/// the splits candidates, we take splits until having `num docs >= max_merge_docs * demux_factor`,
-/// build a demux operation with it, and loop.
 #[derive(Clone, Debug)]
 pub struct StableMultitenantWithTimestampMergePolicy {
     pub min_level_num_docs: usize,
@@ -184,7 +159,11 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
         let operations = self.merge_operations(splits);
         debug_assert_eq!(
             original_num_splits,
-            operations.iter().map(|op| op.splits().len()).sum::<usize>() + splits.len(),
+            operations
+                .iter()
+                .map(|op| op.splits_as_slice().len())
+                .sum::<usize>()
+                + splits.len(),
             "The merge policy is supposed to keep the number of splits."
         );
         operations
@@ -217,8 +196,7 @@ impl StableMultitenantWithTimestampMergePolicy {
         if !self.merge_enabled {
             return true;
         }
-        // Once a split has been demuxed, we don't want to merge it even in the
-        // case where its number of docs is under `max_merge_docs`.
+
         split.num_docs >= self.split_num_docs_target
     }
 
@@ -403,8 +381,7 @@ fn is_sorted(els: &[usize]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    
-    
+
     use std::ops::RangeInclusive;
 
     use super::*;
@@ -437,7 +414,7 @@ mod tests {
     #[test]
     fn test_split_is_mature() {
         let merge_policy = StableMultitenantWithTimestampMergePolicy::default();
-        // Split under max_merge_docs and demux_generation = 0 is not mature.
+        // Split under max_merge_docs is not mature.
         let mut split = create_splits(vec![9_000_000]).into_iter().next().unwrap();
         assert!(!merge_policy.is_mature(&split));
         // All splits are mature when merge is disabled.
@@ -516,12 +493,11 @@ mod tests {
         assert_eq!(merge_ops.len(), 1);
         let merge_op = merge_ops.pop().unwrap();
         let mut merge_segment_ids: Vec<String> = merge_op
-            .splits()
+            .splits_as_slice()
             .iter()
             .map(|split| split.split_id().to_string())
             .collect();
         merge_segment_ids.sort();
-        assert!(matches!(merge_op, MergeOperation::Merge { .. }));
         assert_eq!(
             merge_segment_ids,
             &[
@@ -541,7 +517,7 @@ mod tests {
         assert_eq!(merge_ops.len(), 1);
         let merge_op = merge_ops.pop().unwrap();
         let mut merge_split_ids: Vec<String> = merge_op
-            .splits()
+            .splits_as_slice()
             .iter()
             .map(|split| split.split_id().to_string())
             .collect();
@@ -553,7 +529,6 @@ mod tests {
                 "split_08", "split_09", "split_10", "split_11", "split_12"
             ]
         );
-        assert!(matches!(merge_op, MergeOperation::Merge { .. }));
     }
 
     #[test]
@@ -567,7 +542,7 @@ mod tests {
         assert_eq!(merge_ops.len(), 1);
         let merge_op = merge_ops.pop().unwrap();
         let mut merge_split_ids: Vec<String> = merge_op
-            .splits()
+            .splits_as_slice()
             .iter()
             .map(|split| split.split_id().to_string())
             .collect();
@@ -579,7 +554,6 @@ mod tests {
                 "split_07", "split_08", "split_09"
             ]
         );
-        assert!(matches!(merge_op, MergeOperation::Merge { .. }));
     }
 
     #[test]
@@ -625,8 +599,7 @@ mod tests {
         let merge_ops = merge_policy.operations(&mut splits);
         assert!(splits.is_empty());
         assert_eq!(merge_ops.len(), 1);
-        assert!(matches!(merge_ops[0], MergeOperation::Merge { .. }));
-        assert_eq!(merge_ops[0].splits().len(), 2);
+        assert_eq!(merge_ops[0].splits_as_slice().len(), 2);
     }
 
     #[test]
@@ -637,8 +610,7 @@ mod tests {
         assert_eq!(splits.len(), 1);
         assert_eq!(splits[0].num_docs, 9_999_997);
         assert_eq!(merge_ops.len(), 1);
-        assert!(matches!(merge_ops[0], MergeOperation::Merge { .. }));
-        assert_eq!(merge_ops[0].splits().len(), 2);
+        assert_eq!(merge_ops[0].splits_as_slice().len(), 2);
     }
 
     #[test]
