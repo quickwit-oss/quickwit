@@ -27,9 +27,8 @@ use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, QuickwitConfig};
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_indexing::models::CACHE;
-use quickwit_indexing::{
-    delete_splits_with_files, run_garbage_collect, FileEntry, IndexingSplitStore,
-    SplitDeletionError,
+use quickwit_janitor::{
+    delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
 };
 use quickwit_metastore::{
     quickwit_metastore_uri_resolver, IndexMetadata, Metastore, MetastoreError,
@@ -223,10 +222,9 @@ impl IndexService {
             .map(|metadata| metadata.split_metadata)
             .collect::<Vec<_>>();
 
-        let split_store = IndexingSplitStore::create_with_no_local_store(storage);
         let deleted_entries = delete_splits_with_files(
             index_id,
-            split_store,
+            storage,
             self.metastore.clone(),
             splits_to_delete,
             None,
@@ -249,11 +247,10 @@ impl IndexService {
     ) -> anyhow::Result<Vec<FileEntry>> {
         let index_uri = self.metastore.index_metadata(index_id).await?.index_uri;
         let storage = self.storage_resolver.resolve(&index_uri)?;
-        let split_store = IndexingSplitStore::create_with_no_local_store(storage);
 
         let deleted_entries = run_garbage_collect(
             index_id,
-            split_store,
+            storage,
             self.metastore.clone(),
             grace_period,
             // deletion_grace_period of zero, so that a cli call directly deletes splits after
@@ -288,16 +285,10 @@ impl IndexService {
             .into_iter()
             .map(|split| split.split_metadata)
             .collect();
-        let split_store = IndexingSplitStore::create_with_no_local_store(storage);
         // FIXME: return an error.
-        if let Err(err) = delete_splits_with_files(
-            index_id,
-            split_store,
-            self.metastore.clone(),
-            split_metas,
-            None,
-        )
-        .await
+        if let Err(err) =
+            delete_splits_with_files(index_id, storage, self.metastore.clone(), split_metas, None)
+                .await
         {
             error!(metastore_uri=%self.metastore.uri(), index_id=%index_id, error=?err, "Failed to delete all the split files during garbage collection.");
         }

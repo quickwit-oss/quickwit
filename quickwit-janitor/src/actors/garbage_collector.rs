@@ -23,10 +23,11 @@ use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
+use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_metastore::Metastore;
-use quickwit_storage::StorageUriResolver;
+use quickwit_storage::{Storage, StorageUriResolver};
 use tracing::info;
 
 use crate::garbage_collection::run_garbage_collect;
@@ -44,6 +45,8 @@ const STAGED_GRACE_PERIOD: Duration = Duration::from_secs(60 * 60 * 24); // 24 h
 /// This duration is controlled by `DELETION_GRACE_PERIOD`.
 const DELETION_GRACE_PERIOD: Duration = Duration::from_secs(120); // 2 min
 
+const MAX_CONCURRENT_STORAGE_REQUESTS: usize = if cfg!(test) { 2 } else { 10 };
+
 #[derive(Clone, Debug, Default)]
 pub struct GarbageCollectorCounters {
     /// The number of passes the garbage collector has performed.
@@ -59,20 +62,14 @@ struct Loop;
 
 /// An actor for collecting garbage periodically from an index.
 pub struct GarbageCollector {
-    // params: Vec<IndexGarbageCollectionParams>,
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
     counters: GarbageCollectorCounters,
 }
 
 impl GarbageCollector {
-    pub fn new(
-        // params: Vec<IndexGarbageCollectionParams>,
-        metastore: Arc<dyn Metastore>,
-        storage_resolver: StorageUriResolver,
-    ) -> Self {
+    pub fn new(metastore: Arc<dyn Metastore>, storage_resolver: StorageUriResolver) -> Self {
         Self {
-            // params,
             metastore,
             storage_resolver,
             counters: GarbageCollectorCounters::default(),
@@ -120,36 +117,55 @@ impl Handler<Loop> for GarbageCollector {
             .context("Failed to list indexes.")?;
         info!(index_ids=%index_metadatas.iter().map(|im| &im.index_id).join(", "), "Garbage collecting indexes.");
 
+        let index_ids_to_storage = index_metadatas
+            .into_iter()
+            .map(|index_metadata| {
+                let storage = self
+                    .storage_resolver
+                    .resolve(&index_metadata.index_uri)
+                    .context(format!(
+                        "Failed to resolve the index storage Uri: `{0}`.",
+                        index_metadata.index_uri
+                    ))?;
+                Result::<(String, Arc<dyn Storage>), anyhow::Error>::Ok((
+                    index_metadata.index_id,
+                    storage,
+                ))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
+        let run_gc_tasks: Vec<_> = index_ids_to_storage
+            .into_iter()
+            .map(|(index_id, storage)| {
+                let moved_metastore = self.metastore.clone();
+                async move {
+                    let run_gc_result = run_garbage_collect(
+                        &index_id,
+                        storage,
+                        moved_metastore,
+                        STAGED_GRACE_PERIOD,
+                        DELETION_GRACE_PERIOD,
+                        false,
+                        Some(ctx),
+                    )
+                    .await;
 
-        // TODO run concurrent stream here
-        for index_metadata in index_metadatas {
-            
-            let storage = self
-                .storage_resolver
-                .resolve(&index_metadata.index_uri)
-                .context(format!(
-                    "Failed to resolve the index storage Uri: `{0}`.",
-                    index_metadata.index_uri
-                ))?;
+                    (index_id, run_gc_result)
+                }
+            })
+            .collect();
 
-            let deleted_file_entries = run_garbage_collect(
-                &index_metadata.index_id,
-                storage,
-                self.metastore.clone(),
-                STAGED_GRACE_PERIOD,
-                DELETION_GRACE_PERIOD,
-                false,
-                Some(ctx),
-            )
-            .await?;
+        let mut stream =
+            tokio_stream::iter(run_gc_tasks).buffer_unordered(MAX_CONCURRENT_STORAGE_REQUESTS);
+        while let Some((index_id, run_gc_result)) = stream.next().await {
+            let deleted_file_entries = run_gc_result?;
 
             if !deleted_file_entries.is_empty() {
                 let deleted_files: HashSet<&str> = deleted_file_entries
                     .iter()
                     .map(|deleted_entry| deleted_entry.file_name.as_str())
                     .collect();
-                info!(deleted_files=?deleted_files, "gc-delete");
+                info!(index_id=%index_id, deleted_files=?deleted_files, "gc-delete");
 
                 self.counters.num_deleted_files += deleted_file_entries.len();
                 self.counters.num_deleted_bytes += deleted_file_entries
@@ -169,7 +185,7 @@ mod tests {
     use std::path::Path;
 
     use quickwit_actors::Universe;
-    use quickwit_metastore::{MockMetastore, Split, SplitMetadata, SplitState};
+    use quickwit_metastore::{IndexMetadata, MockMetastore, Split, SplitMetadata, SplitState};
     use quickwit_storage::MockStorage;
 
     use super::*;
@@ -190,8 +206,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_garbage_collect_calls_dependencies_appropriately() {
-        let storage_resolver = StorageUriResolver::for_test();
+    async fn test_run_garbage_collect_calls_dependencies_appropriately() {
         let mut mock_storage = MockStorage::default();
         mock_storage.expect_delete().times(3).returning(|path| {
             assert!(
@@ -203,6 +218,62 @@ mod tests {
         });
 
         let mut mock_metastore = MockMetastore::default();
+        mock_metastore.expect_list_splits().times(2).returning(
+            |index_id, split_state, _time_range, _tags| {
+                assert_eq!(index_id, "test-index");
+                let splits = match split_state {
+                    SplitState::Staged => make_splits(&["a"], SplitState::Staged),
+                    SplitState::MarkedForDeletion => {
+                        make_splits(&["a", "b", "c"], SplitState::MarkedForDeletion)
+                    }
+                    _ => panic!("only Staged and MarkedForDeletion expected."),
+                };
+                Ok(splits)
+            },
+        );
+        mock_metastore
+            .expect_mark_splits_for_deletion()
+            .times(1)
+            .returning(|index_id, split_ids| {
+                assert_eq!(index_id, "test-index");
+                assert_eq!(split_ids, vec!["a"]);
+                Ok(())
+            });
+        mock_metastore
+            .expect_delete_splits()
+            .times(1)
+            .returning(|index_id, split_ids| {
+                assert_eq!(index_id, "test-index");
+                assert_eq!(split_ids, vec!["a", "b", "c"]);
+                Ok(())
+            });
+
+        let result = run_garbage_collect(
+            "test-index",
+            Arc::new(mock_storage),
+            Arc::new(mock_metastore),
+            STAGED_GRACE_PERIOD,
+            DELETION_GRACE_PERIOD,
+            false,
+            None,
+        )
+        .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_garbage_collect_calls_dependencies_appropriately() {
+        let storage_resolver = StorageUriResolver::for_test();
+        let mut mock_metastore = MockMetastore::default();
+        mock_metastore
+            .expect_list_indexes_metadatas()
+            .times(1)
+            .returning(|| {
+                Ok(vec![IndexMetadata::for_test(
+                    "test-index",
+                    "ram://indexes/test-index",
+                )])
+            });
         mock_metastore.expect_list_splits().times(2).returning(
             |index_id, split_state, _time_range, _tags| {
                 assert_eq!(index_id, "test-index");
@@ -247,13 +318,16 @@ mod tests {
     #[tokio::test]
     async fn test_garbage_collect_get_calls_repeatedly() {
         let storage_resolver = StorageUriResolver::for_test();
-        let mut mock_storage = MockStorage::default();
-        mock_storage.expect_delete().times(4).returning(|path| {
-            assert!(path == Path::new("a.split") || path == Path::new("b.split"));
-            Ok(())
-        });
-
         let mut mock_metastore = MockMetastore::default();
+        mock_metastore
+            .expect_list_indexes_metadatas()
+            .times(2)
+            .returning(|| {
+                Ok(vec![IndexMetadata::for_test(
+                    "test-index",
+                    "ram://indexes/test-index",
+                )])
+            });
         mock_metastore.expect_list_splits().times(4).returning(
             |index_id, split_state, _time_range, _tags| {
                 assert_eq!(index_id, "test-index");
