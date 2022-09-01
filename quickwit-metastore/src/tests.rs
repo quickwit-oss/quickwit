@@ -31,7 +31,7 @@ pub mod test_suite {
     use tracing::{error, info};
 
     use crate::checkpoint::{IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint};
-    use crate::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
+    use crate::{DeleteQuery, IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
 
     #[async_trait]
     pub trait DefaultForTest {
@@ -69,6 +69,8 @@ pub mod test_suite {
                 .unwrap();
         }
 
+        // Delete all delete tasks.
+        metastore.delete_delete_tasks(index_id).await.unwrap();
         // Delete index.
         metastore.delete_index(index_id).await.unwrap();
     }
@@ -2170,6 +2172,397 @@ pub mod test_suite {
             .collect_vec();
         assert!(result.is_empty());
     }
+
+    pub async fn test_metastore_create_delete_task<MetastoreToTest: Metastore + DefaultForTest>() {
+        let metastore = MetastoreToTest::default_for_test().await;
+        let index_id = "add-delete-task";
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
+        let delete_query = DeleteQuery {
+            index_id: index_id.to_string(),
+            query: "my_field:my_value".to_string(),
+            start_timestamp: Some(1),
+            end_timestamp: Some(2),
+            search_fields: Vec::new(),
+        };
+        metastore
+            .create_index(index_metadata.clone())
+            .await
+            .unwrap();
+
+        // Create a delete task.
+        let delete_task_1 = metastore
+            .create_delete_task(delete_query.clone())
+            .await
+            .unwrap();
+        assert!(delete_task_1.opstamp > 0);
+        assert_eq!(delete_task_1.delete_query.index_id, delete_query.index_id);
+        assert_eq!(
+            delete_task_1.delete_query.start_timestamp,
+            delete_query.start_timestamp
+        );
+        assert_eq!(
+            delete_task_1.delete_query.end_timestamp,
+            delete_query.end_timestamp
+        );
+        let delete_task_2 = metastore
+            .create_delete_task(delete_query.clone())
+            .await
+            .unwrap();
+        assert!(delete_task_2.opstamp > delete_task_1.opstamp);
+
+        cleanup_index(&metastore, index_id).await;
+    }
+
+    pub async fn test_metastore_last_delete_opstamp<MetastoreToTest: Metastore + DefaultForTest>() {
+        let metastore = MetastoreToTest::default_for_test().await;
+        let index_id_1 = "add-delete-task-1";
+        let index_uri_1 = format!("ram:///indexes/{index_id_1}");
+        let index_metadata_1 = IndexMetadata::for_test(index_id_1, &index_uri_1);
+        let delete_query_index_1 = DeleteQuery {
+            index_id: index_id_1.to_string(),
+            query: "my_field:my_value".to_string(),
+            start_timestamp: Some(1),
+            end_timestamp: Some(2),
+            search_fields: Vec::new(),
+        };
+        let index_id_2 = "add-delete-task-2";
+        let index_uri_2 = format!("ram:///indexes/{index_id_2}");
+        let index_metadata_2 = IndexMetadata::for_test(index_id_2, &index_uri_2);
+        let delete_query_index_2 = DeleteQuery {
+            index_id: index_id_2.to_string(),
+            query: "my_field:my_value".to_string(),
+            start_timestamp: Some(1),
+            end_timestamp: Some(2),
+            search_fields: Vec::new(),
+        };
+        metastore
+            .create_index(index_metadata_1.clone())
+            .await
+            .unwrap();
+        metastore
+            .create_index(index_metadata_2.clone())
+            .await
+            .unwrap();
+
+        // Create a delete task.
+        let _ = metastore
+            .create_delete_task(delete_query_index_1.clone())
+            .await
+            .unwrap();
+        let delete_task_2 = metastore
+            .create_delete_task(delete_query_index_1.clone())
+            .await
+            .unwrap();
+        let delete_task_3 = metastore
+            .create_delete_task(delete_query_index_2.clone())
+            .await
+            .unwrap();
+
+        let last_opstamp_index_1 = metastore.last_delete_opstamp(index_id_1).await.unwrap();
+        let last_opstamp_index_2 = metastore.last_delete_opstamp(index_id_2).await.unwrap();
+        assert_eq!(last_opstamp_index_1, delete_task_2.opstamp);
+        assert_eq!(last_opstamp_index_2, delete_task_3.opstamp);
+        cleanup_index(&metastore, index_id_1).await;
+        cleanup_index(&metastore, index_id_2).await;
+    }
+
+    pub async fn test_metastore_delete_delete_tasks<MetastoreToTest: Metastore + DefaultForTest>() {
+        let metastore = MetastoreToTest::default_for_test().await;
+        let index_id = "delete-delete-tasks";
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
+        let delete_query = DeleteQuery {
+            index_id: index_id.to_string(),
+            query: "my_field:my_value".to_string(),
+            start_timestamp: Some(1),
+            end_timestamp: Some(2),
+            search_fields: Vec::new(),
+        };
+        metastore
+            .create_index(index_metadata.clone())
+            .await
+            .unwrap();
+        let _ = metastore
+            .create_delete_task(delete_query.clone())
+            .await
+            .unwrap();
+        let _ = metastore
+            .create_delete_task(delete_query.clone())
+            .await
+            .unwrap();
+
+        let delete_tasks = metastore.list_delete_tasks(index_id, 0).await.unwrap();
+        assert_eq!(delete_tasks.len(), 2);
+        metastore.delete_delete_tasks(index_id).await.unwrap();
+        let delete_tasks = metastore.list_delete_tasks(index_id, 0).await.unwrap();
+        assert!(delete_tasks.is_empty());
+
+        cleanup_index(&metastore, index_id).await;
+    }
+
+    pub async fn test_metastore_list_delete_tasks<MetastoreToTest: Metastore + DefaultForTest>() {
+        let metastore = MetastoreToTest::default_for_test().await;
+        let index_id_1 = "list_delete_tasks-1";
+        let index_uri_1 = format!("ram:///indexes/{index_id_1}");
+        let index_metadata_1 = IndexMetadata::for_test(index_id_1, &index_uri_1);
+        let delete_query_index_1 = DeleteQuery {
+            index_id: index_id_1.to_string(),
+            query: "my_field:my_value".to_string(),
+            start_timestamp: Some(1),
+            end_timestamp: Some(2),
+            search_fields: Vec::new(),
+        };
+        let index_id_2 = "list_delete_tasks-2";
+        let index_uri_2 = format!("ram:///indexes/{index_id_2}");
+        let index_metadata_2 = IndexMetadata::for_test(index_id_2, &index_uri_2);
+        let delete_query_index_2 = DeleteQuery {
+            index_id: index_id_2.to_string(),
+            query: "my_field:my_value".to_string(),
+            start_timestamp: Some(1),
+            end_timestamp: Some(2),
+            search_fields: Vec::new(),
+        };
+        metastore
+            .create_index(index_metadata_1.clone())
+            .await
+            .unwrap();
+        metastore
+            .create_index(index_metadata_2.clone())
+            .await
+            .unwrap();
+
+        // Create a delete task.
+        let delete_task_1 = metastore
+            .create_delete_task(delete_query_index_1.clone())
+            .await
+            .unwrap();
+        let delete_task_2 = metastore
+            .create_delete_task(delete_query_index_1.clone())
+            .await
+            .unwrap();
+        let _ = metastore
+            .create_delete_task(delete_query_index_2.clone())
+            .await
+            .unwrap();
+
+        let all_index_id_1_delete_tasks = metastore.list_delete_tasks(index_id_1, 0).await.unwrap();
+        assert_eq!(all_index_id_1_delete_tasks.len(), 2);
+
+        let recent_index_id_1_delete_tasks = metastore
+            .list_delete_tasks(index_id_1, delete_task_1.opstamp)
+            .await
+            .unwrap();
+        assert_eq!(recent_index_id_1_delete_tasks.len(), 1);
+        assert_eq!(
+            recent_index_id_1_delete_tasks[0].opstamp,
+            delete_task_2.opstamp
+        );
+        cleanup_index(&metastore, index_id_1).await;
+        cleanup_index(&metastore, index_id_2).await;
+    }
+
+    pub async fn test_metastore_list_stale_splits<MetastoreToTest: Metastore + DefaultForTest>() {
+        let metastore = MetastoreToTest::default_for_test().await;
+        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+        let index_id = "list-stale-splits";
+        let index_uri = format!("ram://indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
+
+        let split_id_1 = "list-stale-splits-one";
+        let split_metadata_1 = SplitMetadata {
+            footer_offsets: 1000..2000,
+            split_id: split_id_1.to_string(),
+            num_docs: 1,
+            uncompressed_docs_size_in_bytes: 2,
+            create_timestamp: current_timestamp,
+            delete_opstamp: 20,
+            ..Default::default()
+        };
+        let split_id_2 = "list-stale-splits-two";
+        let split_metadata_2 = SplitMetadata {
+            footer_offsets: 1000..2000,
+            split_id: split_id_2.to_string(),
+            num_docs: 1,
+            uncompressed_docs_size_in_bytes: 2,
+            create_timestamp: current_timestamp,
+            delete_opstamp: 10,
+            ..Default::default()
+        };
+        let split_id_3 = "list-stale-splits-three";
+        let split_metadata_3 = SplitMetadata {
+            footer_offsets: 1000..2000,
+            split_id: split_id_3.to_string(),
+            num_docs: 1,
+            uncompressed_docs_size_in_bytes: 2,
+            create_timestamp: current_timestamp,
+            delete_opstamp: 0,
+            ..Default::default()
+        };
+
+        {
+            info!("List stale splits on a non-existent index");
+            let metastore_err = metastore
+                .list_stale_splits("non-existent-index", 0, 10)
+                .await
+                .unwrap_err();
+            error!(err=?metastore_err);
+            assert!(matches!(
+                metastore_err,
+                MetastoreError::IndexDoesNotExist { .. }
+            ));
+        }
+
+        {
+            info!("List stale splits on an index");
+            metastore
+                .create_index(index_metadata.clone())
+                .await
+                .unwrap();
+
+            metastore
+                .stage_split(index_id, split_metadata_1.clone())
+                .await
+                .unwrap();
+
+            metastore
+                .stage_split(index_id, split_metadata_2.clone())
+                .await
+                .unwrap();
+
+            metastore
+                .stage_split(index_id, split_metadata_3.clone())
+                .await
+                .unwrap();
+            metastore
+                .publish_splits(index_id, &[split_id_1, split_id_2], &[], None)
+                .await
+                .unwrap();
+
+            let splits = metastore.list_stale_splits(index_id, 100, 1).await.unwrap();
+            assert_eq!(splits.len(), 1);
+            assert_eq!(
+                splits[0].split_metadata.delete_opstamp,
+                split_metadata_2.delete_opstamp
+            );
+
+            let splits = metastore.list_stale_splits(index_id, 100, 2).await.unwrap();
+            assert_eq!(splits.len(), 2);
+            assert_eq!(
+                splits[1].split_metadata.delete_opstamp,
+                split_metadata_1.delete_opstamp
+            );
+
+            let splits = metastore.list_stale_splits(index_id, 20, 2).await.unwrap();
+            assert_eq!(splits.len(), 1);
+            assert_eq!(
+                splits[0].split_metadata.delete_opstamp,
+                split_metadata_2.delete_opstamp
+            );
+
+            let splits = metastore.list_stale_splits(index_id, 10, 2).await.unwrap();
+            assert!(splits.is_empty());
+            cleanup_index(&metastore, index_id).await;
+        }
+    }
+
+    pub async fn test_metastore_update_splits_delete_opstamp<
+        MetastoreToTest: Metastore + DefaultForTest,
+    >() {
+        let metastore = MetastoreToTest::default_for_test().await;
+        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+        let index_id = "udpate-splits-delete-opstamp";
+        let index_uri = format!("ram://indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
+
+        let split_id_1 = "list-stale-splits-one";
+        let split_metadata_1 = SplitMetadata {
+            footer_offsets: 1000..2000,
+            split_id: split_id_1.to_string(),
+            num_docs: 1,
+            uncompressed_docs_size_in_bytes: 2,
+            create_timestamp: current_timestamp,
+            delete_opstamp: 20,
+            ..Default::default()
+        };
+        let split_id_2 = "list-stale-splits-two";
+        let split_metadata_2 = SplitMetadata {
+            footer_offsets: 1000..2000,
+            split_id: split_id_2.to_string(),
+            num_docs: 1,
+            uncompressed_docs_size_in_bytes: 2,
+            create_timestamp: current_timestamp,
+            delete_opstamp: 10,
+            ..Default::default()
+        };
+        let split_id_3 = "list-stale-splits-three";
+        let split_metadata_3 = SplitMetadata {
+            footer_offsets: 1000..2000,
+            split_id: split_id_3.to_string(),
+            num_docs: 1,
+            uncompressed_docs_size_in_bytes: 2,
+            create_timestamp: current_timestamp,
+            delete_opstamp: 0,
+            ..Default::default()
+        };
+
+        {
+            info!("Update splits delete opstamp on a non-existent index.");
+            let metastore_err = metastore
+                .update_splits_delete_opstamp("non-existent-index", &[split_id_1], 10)
+                .await
+                .unwrap_err();
+            error!(err=?metastore_err);
+            assert!(matches!(
+                metastore_err,
+                MetastoreError::IndexDoesNotExist { .. }
+            ));
+        }
+
+        {
+            info!("Update splits delete opstamp on an index.");
+            metastore
+                .create_index(index_metadata.clone())
+                .await
+                .unwrap();
+
+            metastore
+                .stage_split(index_id, split_metadata_1.clone())
+                .await
+                .unwrap();
+
+            metastore
+                .stage_split(index_id, split_metadata_2.clone())
+                .await
+                .unwrap();
+            metastore
+                .stage_split(index_id, split_metadata_3.clone())
+                .await
+                .unwrap();
+            metastore
+                .publish_splits(index_id, &[split_id_1, split_id_2], &[], None)
+                .await
+                .unwrap();
+
+            let splits = metastore.list_stale_splits(index_id, 100, 2).await.unwrap();
+            assert_eq!(splits.len(), 2);
+
+            metastore
+                .update_splits_delete_opstamp(index_id, &[split_id_1, split_id_2], 100)
+                .await
+                .unwrap();
+
+            let splits = metastore.list_stale_splits(index_id, 100, 2).await.unwrap();
+            assert_eq!(splits.len(), 0);
+
+            let splits = metastore.list_stale_splits(index_id, 200, 2).await.unwrap();
+            assert_eq!(splits.len(), 2);
+            assert_eq!(splits[0].split_metadata.delete_opstamp, 100);
+            assert_eq!(splits[1].split_metadata.delete_opstamp, 100);
+
+            cleanup_index(&metastore, index_id).await;
+        }
+    }
 }
 
 macro_rules! metastore_test_suite {
@@ -2272,6 +2665,42 @@ macro_rules! metastore_test_suite {
             async fn test_metastore_reset_checkpoint() {
                 let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_reset_checkpoint::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_create_delete_task() {
+                let _ = tracing_subscriber::fmt::try_init();
+                crate::tests::test_suite::test_metastore_create_delete_task::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_last_delete_opstamp() {
+                let _ = tracing_subscriber::fmt::try_init();
+                crate::tests::test_suite::test_metastore_last_delete_opstamp::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_delete_delete_tasks() {
+                let _ = tracing_subscriber::fmt::try_init();
+                crate::tests::test_suite::test_metastore_delete_delete_tasks::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_list_delete_tasks() {
+                let _ = tracing_subscriber::fmt::try_init();
+                crate::tests::test_suite::test_metastore_list_delete_tasks::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_list_stale_splits() {
+                let _ = tracing_subscriber::fmt::try_init();
+                crate::tests::test_suite::test_metastore_list_stale_splits::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_update_splits_delete_opstamp() {
+                let _ = tracing_subscriber::fmt::try_init();
+                crate::tests::test_suite::test_metastore_update_splits_delete_opstamp::<$metastore_type>().await;
             }
         }
     }

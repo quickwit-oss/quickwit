@@ -161,6 +161,7 @@ pub async fn serve_quickwit(
             &universe,
             &config,
             metastore.clone(),
+            cluster.clone(),
             storage_resolver.clone(),
         )
         .await?;

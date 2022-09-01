@@ -31,6 +31,7 @@ pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineHandle, IndexingPi
 pub use indexing_service::{
     IndexingService, IndexingServiceError, IndexingServiceState, INDEXING_DIR_NAME,
 };
+pub use sequencer::Sequencer;
 use tantivy::schema::{Field, FieldType};
 mod merge_executor;
 mod merge_planner;
@@ -40,11 +41,13 @@ pub use self::indexer::{Indexer, IndexerCounters};
 pub use self::ingest_api_garbage_collector::{
     IngestApiGarbageCollector, IngestApiGarbageCollectorCounters,
 };
-pub use self::merge_executor::{combine_partition_ids, MergeExecutor};
+pub use self::merge_executor::{
+    combine_partition_ids, create_shadowing_meta_json_directory, MergeExecutor,
+};
 pub use self::merge_planner::MergePlanner;
 pub use self::merge_split_downloader::MergeSplitDownloader;
 pub use self::packager::Packager;
-pub use self::publisher::{Publisher, PublisherCounters};
+pub use self::publisher::{Publisher, PublisherCounters, PublisherType};
 pub use self::uploader::{Uploader, UploaderCounters};
 
 /// A struct to wrap a tantivy field with its name.

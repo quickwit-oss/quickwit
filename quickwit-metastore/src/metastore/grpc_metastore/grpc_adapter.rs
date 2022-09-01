@@ -26,16 +26,19 @@ use quickwit_common::extract_time_range;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::metastore_api_service_server::{self as grpc};
 use quickwit_proto::metastore_api::{
-    AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
-    DeleteIndexResponse, DeleteSourceRequest, DeleteSplitsRequest, IndexMetadataRequest,
-    IndexMetadataResponse, ListAllSplitsRequest, ListIndexesMetadatasRequest,
-    ListIndexesMetadatasResponse, ListSplitsRequest, ListSplitsResponse,
-    MarkSplitsForDeletionRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
-    SourceResponse, SplitResponse, StageSplitRequest,
+    AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteDeleteTasksRequest,
+    DeleteIndexRequest, DeleteIndexResponse, DeleteQueryRequest, DeleteSourceRequest,
+    DeleteSplitsRequest, DeleteTaskResponse, DeleteTasksResponse, IndexMetadataRequest,
+    IndexMetadataResponse, LastDeleteOpstampRequest, LastDeleteOpstampResponse,
+    ListAllSplitsRequest, ListDeleteTasksRequest, ListDeleteTasksResponse,
+    ListIndexesMetadatasRequest, ListIndexesMetadatasResponse, ListSplitsRequest,
+    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest,
+    ResetSourceCheckpointRequest, SourceResponse, SplitResponse, StageSplitRequest,
+    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::tonic;
 
-use crate::{IndexMetadata, Metastore, MetastoreError, SplitState};
+use crate::{DeleteQuery, IndexMetadata, Metastore, MetastoreError, SplitState};
 
 #[allow(missing_docs)]
 #[derive(Clone)]
@@ -316,6 +319,102 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
             .reset_source_checkpoint(&request.index_id, &request.source_id)
             .await
             .map(|_| SourceResponse {})?;
+        Ok(tonic::Response::new(reply))
+    }
+
+    async fn last_delete_opstamp(
+        &self,
+        request: tonic::Request<LastDeleteOpstampRequest>,
+    ) -> Result<tonic::Response<LastDeleteOpstampResponse>, tonic::Status> {
+        let request = request.into_inner();
+        let last_delete_opstamp = self.0.last_delete_opstamp(&request.index_id).await?;
+        let last_opstamp_reply = LastDeleteOpstampResponse {
+            last_delete_opstamp,
+        };
+        Ok(tonic::Response::new(last_opstamp_reply))
+    }
+
+    async fn create_delete_task(
+        &self,
+        request: tonic::Request<DeleteQueryRequest>,
+    ) -> Result<tonic::Response<DeleteTaskResponse>, tonic::Status> {
+        let request = request.into_inner();
+        let delete_task = self
+            .0
+            .create_delete_task(DeleteQuery::from(request))
+            .await?;
+        let reply = delete_task.into();
+        Ok(tonic::Response::new(reply))
+    }
+
+    async fn delete_delete_tasks(
+        &self,
+        request: tonic::Request<DeleteDeleteTasksRequest>,
+    ) -> Result<tonic::Response<DeleteTasksResponse>, tonic::Status> {
+        let request = request.into_inner();
+        let reply = self
+            .0
+            .delete_delete_tasks(&request.index_id)
+            .await
+            .map(|_| DeleteTasksResponse {})?;
+        Ok(tonic::Response::new(reply))
+    }
+
+    async fn update_splits_delete_opstamp(
+        &self,
+        request: tonic::Request<UpdateSplitsDeleteOpstampRequest>,
+    ) -> Result<tonic::Response<UpdateSplitsDeleteOpstampResponse>, tonic::Status> {
+        let request = request.into_inner();
+        let split_ids = request
+            .split_ids
+            .iter()
+            .map(|split_id| split_id.as_str())
+            .collect_vec();
+        let reply = self
+            .0
+            .update_splits_delete_opstamp(&request.index_id, &split_ids, request.delete_opstamp)
+            .await
+            .map(|_| UpdateSplitsDeleteOpstampResponse {})?;
+        Ok(tonic::Response::new(reply))
+    }
+
+    async fn list_delete_tasks(
+        &self,
+        request: tonic::Request<ListDeleteTasksRequest>,
+    ) -> Result<tonic::Response<ListDeleteTasksResponse>, tonic::Status> {
+        let request = request.into_inner();
+        let delete_tasks = self
+            .0
+            .list_delete_tasks(&request.index_id, request.opstamp_start)
+            .await?
+            .into_iter()
+            .map(DeleteTaskResponse::from)
+            .collect_vec();
+        let reply = ListDeleteTasksResponse { delete_tasks };
+        Ok(tonic::Response::new(reply))
+    }
+
+    async fn list_stale_splits(
+        &self,
+        request: tonic::Request<ListStaleSplitsRequest>,
+    ) -> Result<tonic::Response<ListSplitsResponse>, tonic::Status> {
+        let request = request.into_inner();
+        let splits = self
+            .0
+            .list_stale_splits(
+                &request.index_id,
+                request.delete_opstamp,
+                request.num_splits as usize,
+            )
+            .await?;
+        let reply = serde_json::to_string(&splits)
+            .map(|splits_serialized_json| ListSplitsResponse {
+                splits_serialized_json,
+            })
+            .map_err(|error| MetastoreError::JsonSerializeError {
+                name: "Vec<Split>".to_string(),
+                message: error.to_string(),
+            })?;
         Ok(tonic::Response::new(reply))
     }
 }

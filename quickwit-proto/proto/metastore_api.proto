@@ -23,44 +23,62 @@ syntax = "proto3";
 package quickwit_metastore_api;
 
 service MetastoreApiService {
-  // Create an index.
+  // Creates an index.
   rpc create_index(CreateIndexRequest) returns (CreateIndexResponse);
 
-  // Get an index metadata.
+  // Gets an index metadata.
   rpc index_metadata(IndexMetadataRequest) returns (IndexMetadataResponse);
 
-  // Get an indexes metadatas.
+  // Gets an indexes metadatas.
   rpc list_indexes_metadatas(ListIndexesMetadatasRequest) returns (ListIndexesMetadatasResponse);
 
-  // Delete an index
+  // Deletes an index
   rpc delete_index(DeleteIndexRequest) returns (DeleteIndexResponse);
 
-  // Get all splits from index.
+  // Gets all splits from index.
   rpc list_all_splits(ListAllSplitsRequest) returns (ListSplitsResponse);
 
-  // Get splits from index.
+  // Gets splits from index.
   rpc list_splits(ListSplitsRequest) returns (ListSplitsResponse);
 
-  // Stage split.
+  // Stages split.
   rpc stage_split(StageSplitRequest) returns (SplitResponse);
 
-  // Publish split.
+  // Publishes split.
   rpc publish_splits(PublishSplitsRequest) returns (SplitResponse);
 
-  // Mark splits for deletion.
+  // Marks splits for deletion.
   rpc mark_splits_for_deletion(MarkSplitsForDeletionRequest) returns (SplitResponse);
 
-  // Delete splits.
+  // Deletes splits.
   rpc delete_splits(DeleteSplitsRequest) returns (SplitResponse);
 
-  // Add source.
+  // Adds source.
   rpc add_source(AddSourceRequest) returns (SourceResponse);
 
-  // Remove source.
+  // Removes source.
   rpc delete_source(DeleteSourceRequest) returns (SourceResponse);
 
   // Resets source checkpoint.
   rpc reset_source_checkpoint(ResetSourceCheckpointRequest) returns (SourceResponse);
+
+  // Gets last opstamp for a given `index_id`.
+  rpc last_delete_opstamp(LastDeleteOpstampRequest) returns (LastDeleteOpstampResponse);
+
+  // Creates a delete task.
+  rpc create_delete_task(DeleteQueryRequest) returns (DeleteTaskResponse);
+
+  // Deletes all delete tasks for a given `index_id`.
+  rpc delete_delete_tasks(DeleteDeleteTasksRequest) returns (DeleteTasksResponse);
+
+  // Updates splits `delete_opstamp`.
+  rpc update_splits_delete_opstamp(UpdateSplitsDeleteOpstampRequest) returns (UpdateSplitsDeleteOpstampResponse);
+
+  // Lists delete tasks with `delete_task.opstamp` > `opstamp_start` for a given `index_id`.
+  rpc list_delete_tasks(ListDeleteTasksRequest) returns (ListDeleteTasksResponse);
+
+  /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
+  rpc list_stale_splits(ListStaleSplitsRequest) returns (ListSplitsResponse);
 }
 
 message CreateIndexRequest {
@@ -78,6 +96,8 @@ message ListIndexesMetadatasResponse {
 message DeleteIndexRequest {
   string index_id = 1;
 }
+
+message DeleteTasksResponse {}
 
 message DeleteIndexResponse {}
 
@@ -145,3 +165,62 @@ message ResetSourceCheckpointRequest {
 }
 
 message SourceResponse {}
+
+///
+/// Delete tasks.
+///
+
+message DeleteTaskResponse {
+  int64 create_timestamp = 1;
+  uint64 opstamp = 2;
+  DeleteQueryRequest delete_query = 3;
+}
+
+message DeleteQueryRequest {
+  /// Index ID.
+  string index_id = 1;
+  /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
+  optional int64 start_timestamp = 2;
+  /// If set, restrict search to documents with a `timestamp < end_timestamp``.
+  optional int64 end_timestamp = 3;
+  /// Query text. The query language is that of tantivy.
+  string query = 4;
+  /// Search fields.
+  repeated string search_fields = 5;
+}
+
+message UpdateSplitsDeleteOpstampRequest {
+  string index_id = 1;
+  repeated string split_ids = 2;
+  uint64 delete_opstamp = 3;
+}
+
+message UpdateSplitsDeleteOpstampResponse {}
+
+message LastDeleteOpstampRequest {
+  string index_id = 1;
+}
+
+message LastDeleteOpstampResponse {
+  uint64 last_delete_opstamp = 1;
+}
+
+message DeleteDeleteTasksRequest {
+  string index_id = 1;
+}
+
+message ListStaleSplitsRequest {
+  string index_id = 1;
+  uint64 delete_opstamp = 2;
+  uint64 num_splits = 3;
+}
+
+message ListDeleteTasksRequest {
+  string index_id = 1;
+  uint64 opstamp_start = 2;
+}
+
+message ListDeleteTasksResponse {
+  repeated DeleteTaskResponse delete_tasks = 1;
+}
+

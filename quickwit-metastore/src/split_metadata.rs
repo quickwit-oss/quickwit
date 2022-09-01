@@ -118,6 +118,9 @@ pub struct SplitMetadata {
     /// The footer offsets
     /// make it possible to download the footer in a single call to `.get_slice(...)`.
     pub footer_offsets: Range<u64>,
+
+    /// Delete opstamp.
+    pub delete_opstamp: u64,
 }
 
 impl SplitMetadata {

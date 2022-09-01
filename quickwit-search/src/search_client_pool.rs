@@ -144,7 +144,8 @@ impl SearchClientPool {
             .clone()
     }
 
-    #[cfg(test)]
+    /// Returns a [`SearchClientPool`] from a list of `SearchService`. Used for tests.
+    #[cfg(any(test, feature = "testsuite"))]
     pub async fn from_mocks(
         mock_services: Vec<Arc<dyn crate::SearchService>>,
     ) -> anyhow::Result<Self> {

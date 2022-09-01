@@ -79,6 +79,7 @@ impl From<SplitMetadataAndFooterV0> for SplitMetadata {
             source_id: "unknown".to_string(),
             node_id: "unknown".to_string(),
             pipeline_ord: 0,
+            delete_opstamp: 0,
             num_docs: v0.split_metadata.num_docs,
             uncompressed_docs_size_in_bytes: v0.split_metadata.size_in_bytes,
             time_range: v0.split_metadata.time_range,
@@ -138,6 +139,10 @@ pub(crate) struct SplitMetadataV1 {
     /// The footer offsets
     /// make it possible to download the footer in a single call to `.get_slice(...)`.
     pub footer_offsets: Range<u64>,
+
+    /// Split delete opstamp.
+    #[serde(default)]
+    pub delete_opstamp: u64,
 }
 
 impl From<SplitMetadataV1> for SplitMetadata {
@@ -164,6 +169,7 @@ impl From<SplitMetadataV1> for SplitMetadata {
             source_id,
             node_id,
             pipeline_ord,
+            delete_opstamp: v1.delete_opstamp,
             num_docs: v1.num_docs,
             uncompressed_docs_size_in_bytes: v1.uncompressed_docs_size_in_bytes,
             time_range: v1.time_range,
@@ -182,6 +188,7 @@ impl From<SplitMetadata> for SplitMetadataV1 {
             partition_id: split.partition_id,
             source_id: Some(split.source_id),
             node_id: Some(format!("{}/{}", split.node_id, split.pipeline_ord)),
+            delete_opstamp: split.delete_opstamp,
             num_docs: split.num_docs,
             uncompressed_docs_size_in_bytes: split.uncompressed_docs_size_in_bytes,
             time_range: split.time_range,

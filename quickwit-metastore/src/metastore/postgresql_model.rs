@@ -22,9 +22,10 @@ use std::str::FromStr;
 
 use tracing::error;
 
+use super::delete_task::DeleteQuery;
 use crate::{
-    IndexMetadata, MetastoreError, MetastoreResult, Split as QuickwitSplit, SplitMetadata,
-    SplitState,
+    DeleteTask as QuickwitDeleteTask, IndexMetadata, MetastoreError, MetastoreResult,
+    Split as QuickwitSplit, SplitMetadata, SplitState,
 };
 
 #[derive(sqlx::FromRow, Debug)]
@@ -88,6 +89,8 @@ pub struct Split {
     pub split_metadata_json: String,
     /// Index ID. It is used as a foreign key in the database.
     pub index_id: String,
+    /// Delete opstamp.
+    pub delete_opstamp: i64,
 }
 
 impl Split {
@@ -133,10 +136,11 @@ impl TryInto<QuickwitSplit> for Split {
 
     fn try_into(self) -> Result<QuickwitSplit, Self::Error> {
         let mut split_metadata = self.split_metadata()?;
-        // `create_timestamp` is duplicated in `SplitMetadata` and needs to be overridden with the
-        // "true" value stored in a column.
+        // `create_timestamp` and `delete_opstamp` are duplicated in `SplitMetadata` and needs to be
+        // overridden with the "true" value stored in a column.
         split_metadata.create_timestamp = self.create_timestamp.assume_utc().unix_timestamp();
         split_metadata.index_id = self.index_id.clone();
+        split_metadata.delete_opstamp = self.delete_opstamp as u64;
         let split_state = self.split_state()?;
         let update_timestamp = self.update_timestamp.assume_utc().unix_timestamp();
         let publish_timestamp = self
@@ -147,6 +151,52 @@ impl TryInto<QuickwitSplit> for Split {
             split_state,
             update_timestamp,
             publish_timestamp,
+        })
+    }
+}
+
+/// A model structure for handling split metadata in a database.
+#[derive(sqlx::FromRow)]
+pub struct DeleteTask {
+    /// Create timestamp.
+    pub create_timestamp: sqlx::types::time::PrimitiveDateTime,
+    /// Monotonic increasing unique opstamp.
+    pub opstamp: i64,
+    /// Index id.
+    pub index_id: String,
+    /// Query serialized as a JSON string.
+    pub delete_query_json: String,
+}
+
+impl DeleteTask {
+    /// Deserializes and returns the split's metadata.
+    fn delete_query(&self) -> MetastoreResult<DeleteQuery> {
+        serde_json::from_str::<DeleteQuery>(&self.delete_query_json).map_err(|err| {
+            error!(
+                opstamp = %self.opstamp,
+                "Failed to deserialize delete query."
+            );
+            let message = format!(
+                "Failed to deserialize delete query. opstamp=`{}`.",
+                self.opstamp
+            );
+            MetastoreError::InternalError {
+                message,
+                cause: err.to_string(),
+            }
+        })
+    }
+}
+
+impl TryInto<QuickwitDeleteTask> for DeleteTask {
+    type Error = MetastoreError;
+
+    fn try_into(self) -> Result<QuickwitDeleteTask, Self::Error> {
+        let delete_query = self.delete_query()?;
+        Ok(QuickwitDeleteTask {
+            create_timestamp: self.create_timestamp.assume_utc().unix_timestamp(),
+            opstamp: self.opstamp as u64,
+            delete_query,
         })
     }
 }

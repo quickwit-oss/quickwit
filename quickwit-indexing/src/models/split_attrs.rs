@@ -50,6 +50,9 @@ pub struct SplitAttrs {
     pub time_range: Option<RangeInclusive<i64>>,
 
     pub replaced_split_ids: Vec<String>,
+
+    /// Delete opstamp.
+    pub delete_opstamp: u64,
 }
 
 impl fmt::Debug for SplitAttrs {

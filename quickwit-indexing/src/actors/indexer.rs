@@ -127,6 +127,7 @@ impl IndexerCounters {
 
 struct IndexerState {
     pipeline_id: IndexingPipelineId,
+    metastore: Arc<dyn Metastore>,
     doc_mapper: Arc<dyn DocMapper>,
     indexing_directory: IndexingDirectory,
     indexing_settings: IndexingSettings,
@@ -150,6 +151,7 @@ impl IndexerState {
     fn create_indexed_split(
         &self,
         partition_id: u64,
+        last_delete_opstamp: u64,
         ctx: &ActorContext<Indexer>,
     ) -> anyhow::Result<IndexedSplit> {
         let index_builder = IndexBuilder::new()
@@ -159,6 +161,7 @@ impl IndexerState {
         let indexed_split = IndexedSplit::new_in_dir(
             self.pipeline_id.clone(),
             partition_id,
+            last_delete_opstamp,
             self.indexing_directory.scratch_directory.clone(),
             self.indexing_settings.resources.clone(),
             index_builder,
@@ -172,19 +175,25 @@ impl IndexerState {
     fn get_or_create_indexed_split<'a>(
         &self,
         partition_id: u64,
+        last_delete_opstamp: u64,
         splits: &'a mut FnvHashMap<u64, IndexedSplit>,
         ctx: &ActorContext<Indexer>,
     ) -> anyhow::Result<&'a mut IndexedSplit> {
         match splits.entry(partition_id) {
             Entry::Occupied(indexed_split) => Ok(indexed_split.into_mut()),
             Entry::Vacant(vacant_entry) => {
-                let indexed_split = self.create_indexed_split(partition_id, ctx)?;
+                let indexed_split =
+                    self.create_indexed_split(partition_id, last_delete_opstamp, ctx)?;
                 Ok(vacant_entry.insert(indexed_split))
             }
         }
     }
 
-    fn create_workbench(&self) -> anyhow::Result<IndexingWorkbench> {
+    async fn create_workbench(&self) -> anyhow::Result<IndexingWorkbench> {
+        let last_delete_opstamp = self
+            .metastore
+            .last_delete_opstamp(&self.pipeline_id.index_id)
+            .await?;
         let workbench = IndexingWorkbench {
             workbench_id: Ulid::new(),
             indexed_splits: FnvHashMap::with_capacity_and_hasher(250, Default::default()),
@@ -194,6 +203,7 @@ impl IndexerState {
             },
             publish_lock: self.publish_lock.clone(),
             date_of_birth: Instant::now(),
+            last_delete_opstamp,
         };
         Ok(workbench)
     }
@@ -208,7 +218,7 @@ impl IndexerState {
         ctx: &'a ActorContext<Indexer>,
     ) -> anyhow::Result<&'a mut IndexingWorkbench> {
         if indexing_workbench_opt.is_none() {
-            let indexing_workbench = self.create_workbench()?;
+            let indexing_workbench = self.create_workbench().await?;
             let commit_timeout_message = CommitTimeout {
                 workbench_id: indexing_workbench.workbench_id,
             };
@@ -278,6 +288,7 @@ impl IndexerState {
             checkpoint_delta,
             indexed_splits,
             publish_lock,
+            last_delete_opstamp,
             ..
         } = self
             .get_or_create_workbench(indexing_workbench_opt, ctx)
@@ -309,8 +320,12 @@ impl IndexerState {
                 } => {
                     counters.record_valid(doc_json_num_bytes);
                     counters.num_docs_in_workbench += 1;
-                    let indexed_split =
-                        self.get_or_create_indexed_split(partition, indexed_splits, ctx)?;
+                    let indexed_split = self.get_or_create_indexed_split(
+                        partition,
+                        *last_delete_opstamp,
+                        indexed_splits,
+                        ctx,
+                    )?;
                     indexed_split.split_attrs.uncompressed_docs_size_in_bytes += doc_json_num_bytes;
                     indexed_split.split_attrs.num_docs += 1;
                     if let Some(timestamp) = timestamp_opt {
@@ -340,6 +355,9 @@ struct IndexingWorkbench {
     // does not include the amount of time a document could have been
     // staying in the indexer queue or in the push api queue.
     date_of_birth: Instant,
+    // On workbench creation, we fetch from the metastore the last delete task opstamp.
+    // We use this value to set the `delete_opstamp` of the workbench splits.
+    last_delete_opstamp: u64,
 }
 
 pub struct Indexer {
@@ -485,6 +503,7 @@ impl Indexer {
         Self {
             indexer_state: IndexerState {
                 pipeline_id,
+                metastore: metastore.clone(),
                 doc_mapper,
                 indexing_directory,
                 indexing_settings,
@@ -626,6 +645,7 @@ mod tests {
             pipeline_ord: 0,
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let last_delete_opstamp = 10;
         let indexing_directory = IndexingDirectory::for_test().await?;
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 3;
@@ -639,6 +659,12 @@ mod tests {
             .returning(move |_, splits, _, _| {
                 assert!(splits.is_empty());
                 Ok(())
+            });
+        metastore
+            .expect_last_delete_opstamp()
+            .returning(move |index_id| {
+                assert_eq!("test-index", index_id);
+                Ok(last_delete_opstamp)
             });
         let indexer = Indexer::new(
             pipeline_id,
@@ -701,6 +727,10 @@ mod tests {
             .downcast_ref::<IndexedSplitBatch>()
             .unwrap();
         assert_eq!(batch.splits[0].split_attrs.num_docs, 3);
+        assert_eq!(
+            batch.splits[0].split_attrs.delete_opstamp,
+            last_delete_opstamp
+        );
         let sort_by_field = batch.splits[0].index.settings().sort_by_field.as_ref();
         assert!(sort_by_field.is_some());
         assert_eq!(sort_by_field.unwrap().field, "timestamp");
@@ -717,6 +747,7 @@ mod tests {
             pipeline_ord: 0,
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let last_delete_opstamp = 10;
         let indexing_directory = IndexingDirectory::for_test().await?;
         let indexing_settings = IndexingSettings::for_test();
         let (packager_mailbox, packager_inbox) = create_test_mailbox();
@@ -726,6 +757,12 @@ mod tests {
             .returning(move |_, splits, _, _| {
                 assert!(splits.is_empty());
                 Ok(())
+            });
+        metastore
+            .expect_last_delete_opstamp()
+            .returning(move |index_id| {
+                assert_eq!("test-index", index_id);
+                Ok(last_delete_opstamp)
             });
         let indexer = Indexer::new(
             pipeline_id,
@@ -778,6 +815,10 @@ mod tests {
             .downcast_ref::<IndexedSplitBatch>()
             .unwrap();
         assert_eq!(indexed_split_batch.splits[0].split_attrs.num_docs, 1);
+        assert_eq!(
+            indexed_split_batch.splits[0].split_attrs.delete_opstamp,
+            last_delete_opstamp
+        );
         Ok(())
     }
 
@@ -799,6 +840,12 @@ mod tests {
             .returning(move |_, splits, _, _| {
                 assert!(splits.is_empty());
                 Ok(())
+            });
+        metastore
+            .expect_last_delete_opstamp()
+            .returning(move |index_id| {
+                assert_eq!("test-index", index_id);
+                Ok(10)
             });
         let indexer = Indexer::new(
             pipeline_id,
@@ -878,7 +925,12 @@ mod tests {
                 assert!(splits.is_empty());
                 Ok(())
             });
-
+        metastore
+            .expect_last_delete_opstamp()
+            .returning(move |index_id| {
+                assert_eq!("test-index", index_id);
+                Ok(10)
+            });
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
@@ -952,6 +1004,12 @@ mod tests {
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 1;
         let mut metastore = MockMetastore::default();
+        metastore
+            .expect_last_delete_opstamp()
+            .returning(move |index_id| {
+                assert_eq!("test-index", index_id);
+                Ok(10)
+            });
         metastore.expect_publish_splits().never();
         let (packager_mailbox, packager_inbox) = create_test_mailbox();
         let indexer = Indexer::new(
@@ -1010,6 +1068,12 @@ mod tests {
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 1;
         let mut metastore = MockMetastore::default();
+        metastore
+            .expect_last_delete_opstamp()
+            .returning(move |index_id| {
+                assert_eq!("test-index", index_id);
+                Ok(10)
+            });
         metastore.expect_publish_splits().never();
         let (packager_mailbox, packager_inbox) = create_test_mailbox();
         let indexer = Indexer::new(
@@ -1062,6 +1126,12 @@ mod tests {
         let indexing_directory = IndexingDirectory::for_test().await.unwrap();
         let indexing_settings = IndexingSettings::for_test();
         let mut metastore = MockMetastore::default();
+        metastore
+            .expect_last_delete_opstamp()
+            .returning(move |index_id| {
+                assert_eq!("test-index", index_id);
+                Ok(10)
+            });
         metastore.expect_publish_splits().never();
         let (packager_mailbox, packager_inbox) = create_test_mailbox();
         let indexer = Indexer::new(

@@ -18,29 +18,22 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_actors::ActorHandle;
-use quickwit_metastore::MetastoreError;
-use quickwit_storage::StorageResolverError;
-use thiserror::Error;
-use tracing::error;
 
-use crate::actors::GarbageCollector;
-
-#[derive(Error, Debug)]
-pub enum JanitorServiceError {
-    #[error("Failed to resolve the storage `{0}`.")]
-    StorageError(#[from] StorageResolverError),
-    #[error("Metastore error `{0}`.")]
-    MetastoreError(#[from] MetastoreError),
-}
+use crate::actors::{DeleteTaskService, GarbageCollector};
 
 pub struct JanitorService {
     _garbage_collector_handle: ActorHandle<GarbageCollector>,
+    _delete_task_service_handle: ActorHandle<DeleteTaskService>,
 }
 
 impl JanitorService {
-    pub fn new(garbage_collector_handle: ActorHandle<GarbageCollector>) -> Self {
+    pub fn new(
+        garbage_collector_handle: ActorHandle<GarbageCollector>,
+        delete_task_service_handle: ActorHandle<DeleteTaskService>,
+    ) -> Self {
         Self {
             _garbage_collector_handle: garbage_collector_handle,
+            _delete_task_service_handle: delete_task_service_handle,
         }
     }
 }

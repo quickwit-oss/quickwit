@@ -20,7 +20,7 @@
 use super::index_metadata::{sample_index_metadata_for_regression, test_index_metadata_eq};
 use super::split_metadata::sample_split_metadata_for_regression;
 use crate::file_backed_metastore::file_backed_index::FileBackedIndex;
-use crate::{Split, SplitState};
+use crate::{DeleteQuery, DeleteTask, Split, SplitState};
 
 fn sample_file_backed_index_for_regression() -> FileBackedIndex {
     let index_metadata = sample_index_metadata_for_regression();
@@ -32,7 +32,18 @@ fn sample_file_backed_index_for_regression() -> FileBackedIndex {
         publish_timestamp: Some(1789),
     };
     let splits = vec![split];
-    FileBackedIndex::new(index_metadata, splits)
+    let delete_task = DeleteTask {
+        create_timestamp: 0,
+        opstamp: 10,
+        delete_query: DeleteQuery {
+            index_id: "index".to_string(),
+            start_timestamp: None,
+            end_timestamp: None,
+            query: "Harry Potter".to_string(),
+            search_fields: Vec::new(),
+        },
+    };
+    FileBackedIndex::new(index_metadata, splits, vec![delete_task])
 }
 
 #[test]

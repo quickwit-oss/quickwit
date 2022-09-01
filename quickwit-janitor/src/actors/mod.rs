@@ -17,6 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod delete_task_pipeline;
+mod delete_task_planner;
+mod delete_task_service;
 mod garbage_collector;
 
+pub use delete_task_service::DeleteTaskService;
 pub use garbage_collector::GarbageCollector;

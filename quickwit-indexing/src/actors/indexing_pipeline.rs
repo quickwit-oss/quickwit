@@ -254,7 +254,7 @@ impl IndexingPipeline {
         let merge_publisher = Publisher::new(
             PublisherType::MergePublisher,
             self.params.metastore.clone(),
-            merge_planner_mailbox.clone(),
+            Some(merge_planner_mailbox.clone()),
             None,
         );
         let (merge_publisher_mailbox, merge_publisher_handler) = ctx
@@ -305,8 +305,11 @@ impl IndexingPipeline {
             .set_kill_switch(self.kill_switch.clone())
             .spawn();
 
-        let merge_executor =
-            MergeExecutor::new(self.params.pipeline_id.clone(), merge_packager_mailbox);
+        let merge_executor = MergeExecutor::new(
+            self.params.pipeline_id.clone(),
+            self.params.metastore.clone(),
+            merge_packager_mailbox,
+        );
         let (merge_executor_mailbox, merge_executor_handler) = ctx
             .spawn_actor(merge_executor)
             .set_kill_switch(self.kill_switch.clone())
@@ -315,7 +318,7 @@ impl IndexingPipeline {
         let merge_split_downloader = MergeSplitDownloader {
             scratch_directory: self.params.indexing_directory.scratch_directory.clone(),
             storage: split_store.clone(),
-            merge_executor_mailbox,
+            executor_mailbox: merge_executor_mailbox,
         };
         let (merge_split_downloader_mailbox, merge_split_downloader_handler) = ctx
             .spawn_actor(merge_split_downloader)
@@ -342,7 +345,7 @@ impl IndexingPipeline {
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
             self.params.metastore.clone(),
-            merge_planner_mailbox,
+            Some(merge_planner_mailbox),
             Some(source_mailbox.clone()),
         );
         let (publisher_mailbox, publisher_handler) = ctx
@@ -674,6 +677,12 @@ mod tests {
                 })
             });
         metastore
+            .expect_last_delete_opstamp()
+            .returning(move |index_id| {
+                assert_eq!("test-index", index_id);
+                Ok(10)
+            });
+        metastore
             .expect_list_splits()
             .returning(|_, _, _, _| Ok(Vec::new()));
         metastore
@@ -759,6 +768,12 @@ mod tests {
                     "test-index",
                     "ram:///indexes/test-index",
                 ))
+            });
+        metastore
+            .expect_last_delete_opstamp()
+            .returning(move |index_id| {
+                assert_eq!("test-index", index_id);
+                Ok(10)
             });
         metastore
             .expect_list_splits()
