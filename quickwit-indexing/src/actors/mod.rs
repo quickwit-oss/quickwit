@@ -45,7 +45,7 @@ pub use self::ingest_api_garbage_collector::{
 pub use self::merge_executor::{combine_partition_ids, MergeExecutor};
 pub use self::merge_planner::MergePlanner;
 pub use self::merge_split_downloader::MergeSplitDownloader;
-pub use self::packager::Packager;
+pub use self::packager::{Packager, PackagerType};
 pub use self::publisher::{Publisher, PublisherCounters};
 pub use self::uploader::{Uploader, UploaderCounters};
 

@@ -53,7 +53,7 @@ impl Default for StorageMetrics {
             object_storage_put_parts: new_counter(
                 "object_storage_puts_parts",
                 "Number of object parts uploaded.",
-                "",
+                "quickwit_storage",
             ),
             object_storage_download_num_bytes: new_counter(
                 "object_storage_download_num_bytes",

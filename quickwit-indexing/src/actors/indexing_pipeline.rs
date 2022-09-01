@@ -35,6 +35,7 @@ use tokio::join;
 use tracing::{debug, error, info, info_span, instrument, Span};
 
 use crate::actors::merge_split_downloader::MergeSplitDownloader;
+use crate::actors::packager::PackagerType;
 use crate::actors::publisher::PublisherType;
 use crate::actors::sequencer::Sequencer;
 use crate::actors::{
@@ -317,7 +318,7 @@ impl IndexingPipeline {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let merge_packager =
-            Packager::new("MergePackager", tag_fields.clone(), merge_uploader_mailbox);
+            Packager::new(PackagerType::MergePackager, tag_fields.clone(), merge_uploader_mailbox);
         let (merge_packager_mailbox, merge_packager_handler) = ctx
             .spawn_actor(merge_packager)
             .set_kill_switch(self.kill_switch.clone())
@@ -394,7 +395,7 @@ impl IndexingPipeline {
             .spawn();
 
         // Packager
-        let packager = Packager::new("Packager", tag_fields, uploader_mailbox);
+        let packager = Packager::new(PackagerType::Packager, tag_fields, uploader_mailbox);
         let (packager_mailbox, packager_handler) = ctx
             .spawn_actor(packager)
             .set_kill_switch(self.kill_switch.clone())

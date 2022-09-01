@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::BTreeSet;
-use std::io;
+use std::{io, fmt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -44,9 +44,24 @@ const MAX_VALUES_PER_TAG_FIELD: usize = if cfg!(any(test, feature = "testsuite")
 
 use super::NamedField;
 use crate::actors::Uploader;
+use crate::metrics::PackagerMetrics;
 use crate::models::{
     IndexedSplit, IndexedSplitBatch, PackagedSplit, PackagedSplitBatch, ScratchDirectory,
 };
+
+
+#[derive(Clone, Copy, Debug)]
+pub enum PackagerType {
+    Packager,
+    MergePackager,
+}
+
+impl fmt::Display for PackagerType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 
 /// The role of the packager is to get an index writer and
 /// produce a split file.
@@ -60,7 +75,8 @@ use crate::models::{
 ///
 /// The split format is described in `internals/split-format.md`
 pub struct Packager {
-    actor_name: &'static str,
+    packager_type: PackagerType,
+    metrics: &'static PackagerMetrics,
     uploader_mailbox: Mailbox<Uploader>,
     /// List of tag fields ([`Vec<NamedField>`]) defined in the index config.
     tag_fields: Vec<NamedField>,
@@ -68,12 +84,14 @@ pub struct Packager {
 
 impl Packager {
     pub fn new(
-        actor_name: &'static str,
+        packager_type: PackagerType,
         tag_fields: Vec<NamedField>,
         uploader_mailbox: Mailbox<Uploader>,
     ) -> Packager {
+        let metrics = crate::metrics::INDEXING_METRICS.get_packager_metrics(packager_type);
         Packager {
-            actor_name,
+            packager_type,
+            metrics,
             uploader_mailbox,
             tag_fields,
         }
@@ -106,7 +124,7 @@ impl Actor for Packager {
     }
 
     fn name(&self) -> String {
-        self.actor_name.to_string()
+        self.packager_type.to_string()
     }
 
     fn runtime_handle(&self) -> Handle {
@@ -127,6 +145,7 @@ impl Handler<IndexedSplitBatch> for Packager {
         batch: IndexedSplitBatch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        let packaging_timer = self.metrics.duration_seconds.start_timer();
         let split_ids: Vec<String> = batch
             .splits
             .iter()
@@ -158,6 +177,7 @@ impl Handler<IndexedSplitBatch> for Packager {
             let packaged_split = self.process_indexed_split(split, ctx).await?;
             packaged_splits.push(packaged_split);
         }
+        packaging_timer.stop_and_record();
         ctx.send_message(
             &self.uploader_mailbox,
             PackagedSplitBatch::new(
