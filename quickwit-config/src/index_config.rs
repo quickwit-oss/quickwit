@@ -169,7 +169,7 @@ pub struct IndexingSettings {
 
 impl PartialEq for IndexingSettings {
     fn eq(&self, other: &Self) -> bool {
-            self.timestamp_field == other.timestamp_field
+        self.timestamp_field == other.timestamp_field
             && self.sort_field == other.sort_field
             && self.sort_order == other.sort_order
             && self.commit_timeout_secs == other.commit_timeout_secs
@@ -485,9 +485,7 @@ pub fn build_doc_mapper(
 
 /// Deserializes and validates a [`Uri`].
 fn deser_and_validate_uri<'de, D>(deserializer: D) -> Result<Option<Uri>, D::Error>
-where
-    D: Deserializer<'de>,
-{
+where D: Deserializer<'de> {
     let uri_opt: Option<String> = Deserialize::deserialize(deserializer)?;
     uri_opt
         .map(|uri| Uri::try_new(&uri))

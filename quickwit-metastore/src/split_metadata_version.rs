@@ -251,9 +251,7 @@ impl From<SplitMetadata> for VersionedSplitMetadata {
 
 impl<'de> Deserialize<'de> for SplitMetadata {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
+    where D: serde::Deserializer<'de> {
         let split_metadata_value = serde_json::Value::deserialize(deserializer)?;
         // Unfortunately, it is not possible to tell serde that in the absence
         // of a tag, a given tag should be considered as the default.
