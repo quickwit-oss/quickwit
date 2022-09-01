@@ -36,7 +36,6 @@ pub struct PackagedSplit {
     pub size_in_bytes: u64,
     pub split_scratch_directory: ScratchDirectory,
     pub num_docs: u64,
-    pub demux_num_ops: usize,
     pub tags: BTreeSet<String>,
     pub split_files: Vec<std::path::PathBuf>,
     pub hotcache_bytes: Vec<u8>,
@@ -52,7 +51,6 @@ impl fmt::Debug for PackagedSplit {
             .field("size_in_bytes", &self.size_in_bytes)
             .field("split_scratch_directory", &self.split_scratch_directory)
             .field("num_docs", &self.num_docs)
-            .field("demux_num_ops", &self.demux_num_ops)
             .field("tags", &self.tags)
             .field("split_files", &self.split_files)
             .finish()

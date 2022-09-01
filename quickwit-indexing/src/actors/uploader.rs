@@ -225,7 +225,6 @@ fn create_split_metadata(split: &PackagedSplit, footer_offsets: Range<u64>) -> S
         uncompressed_docs_size_in_bytes: split.size_in_bytes,
         create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
         tags: split.tags.clone(),
-        demux_num_ops: split.demux_num_ops,
         footer_offsets,
     }
 }
@@ -347,7 +346,6 @@ mod tests {
                     size_in_bytes: 1_000,
                     split_scratch_directory,
                     num_docs: 10,
-                    demux_num_ops: 0,
                     tags: Default::default(),
                     replaced_split_ids: Vec::new(),
                     hotcache_bytes: vec![],
@@ -442,7 +440,6 @@ mod tests {
             size_in_bytes: 1_000,
             split_scratch_directory: split_scratch_directory_1,
             num_docs: 10,
-            demux_num_ops: 1,
             tags: Default::default(),
             split_files: vec![],
             hotcache_bytes: vec![],
@@ -459,7 +456,6 @@ mod tests {
             size_in_bytes: 1_000,
             split_scratch_directory: split_scratch_directory_2,
             num_docs: 10,
-            demux_num_ops: 1,
             tags: Default::default(),
             split_files: vec![],
             hotcache_bytes: vec![],

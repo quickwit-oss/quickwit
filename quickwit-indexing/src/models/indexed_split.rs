@@ -50,9 +50,6 @@ pub struct IndexedSplit {
     // invalid.
     pub docs_size_in_bytes: u64,
 
-    /// Number of demux operations this split has undergone.
-    pub demux_num_ops: usize,
-
     pub index: tantivy::Index,
     pub index_writer: tantivy::IndexWriter,
     pub split_scratch_directory: ScratchDirectory,
@@ -105,7 +102,6 @@ impl IndexedSplit {
             split_id,
             replaced_split_ids: Vec::new(),
             time_range: None,
-            demux_num_ops: 0,
             docs_size_in_bytes: 0,
             num_docs: 0,
             index,

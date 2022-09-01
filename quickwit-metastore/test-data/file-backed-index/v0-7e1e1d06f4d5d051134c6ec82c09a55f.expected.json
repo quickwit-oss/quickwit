@@ -90,7 +90,6 @@
   "splits": [
     {
       "create_timestamp": 3,
-      "demux_num_ops": 1,
       "footer_offsets": {
         "end": 2000,
         "start": 1000

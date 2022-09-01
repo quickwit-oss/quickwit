@@ -368,7 +368,6 @@ fn create_packaged_split(
         replaced_split_ids: split.replaced_split_ids,
         split_scratch_directory: split.split_scratch_directory,
         num_docs,
-        demux_num_ops: split.demux_num_ops,
         time_range: split.time_range,
         size_in_bytes: split.docs_size_in_bytes,
         tags,
@@ -466,7 +465,6 @@ mod tests {
             partition_id: 17u64,
             pipeline_id,
             time_range: timerange_opt,
-            demux_num_ops: 0,
             num_docs,
             docs_size_in_bytes: num_docs * 15, //< bogus number
             index,

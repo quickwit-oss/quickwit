@@ -287,7 +287,6 @@ impl MergeExecutor {
             pipeline_id,
             replaced_split_ids,
             time_range,
-            demux_num_ops: 0,
             num_docs,
             docs_size_in_bytes,
             index: merged_index,

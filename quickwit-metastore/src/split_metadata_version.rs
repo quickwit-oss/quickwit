@@ -20,12 +20,13 @@
 use std::collections::BTreeSet;
 use std::ops::{Range, RangeInclusive};
 
+use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 
 use crate::split_metadata::utc_now_timestamp;
 use crate::{SplitMetadata, SplitState};
 
-#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct SplitMetadataV0 {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
@@ -64,9 +65,24 @@ struct SplitMetadataV0 {
     pub tags: BTreeSet<String>,
 
     /// Number of demux operations this split has undergone.
-    #[serde(default)]
-    pub demux_num_ops: usize,
+    #[serde(default, rename = "demux_num_ops", skip_serializing)]
+    pub __demux_num_ops_deprecated: IgnoredAny,
 }
+
+impl PartialEq for SplitMetadataV0 {
+    fn eq(&self, other: &Self) -> bool {
+        self.split_id == other.split_id
+            && self.num_docs == other.num_docs
+            && self.size_in_bytes == other.size_in_bytes
+            && self.time_range == other.time_range
+            && self.split_state == other.split_state
+            && self.create_timestamp == other.create_timestamp
+            && self.update_timestamp == other.update_timestamp
+            && self.tags == other.tags
+    }
+}
+
+impl Eq for SplitMetadataV0 {}
 
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub(crate) struct SplitMetadataAndFooterV0 {
@@ -88,12 +104,11 @@ impl From<SplitMetadataAndFooterV0> for SplitMetadata {
             time_range: v0.split_metadata.time_range,
             create_timestamp: v0.split_metadata.create_timestamp,
             tags: v0.split_metadata.tags,
-            demux_num_ops: v0.split_metadata.demux_num_ops,
         }
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(crate) struct SplitMetadataV1 {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
@@ -133,8 +148,8 @@ pub(crate) struct SplitMetadataV1 {
     pub tags: BTreeSet<String>,
 
     /// Number of demux operations this split has undergone.
-    #[serde(default)]
-    pub demux_num_ops: usize,
+    #[serde(default, rename = "demux_num_ops", skip_serializing)]
+    pub __demux_num_ops_deprecated: IgnoredAny,
 
     /// Contains the range of bytes of the footer that needs to be downloaded
     /// in order to open a split.
@@ -142,6 +157,21 @@ pub(crate) struct SplitMetadataV1 {
     /// The footer offsets
     /// make it possible to download the footer in a single call to `.get_slice(...)`.
     pub footer_offsets: Range<u64>,
+}
+
+impl PartialEq for SplitMetadataV1 {
+    fn eq(&self, other: &Self) -> bool {
+        self.split_id == other.split_id
+            && self.partition_id == other.partition_id
+            && self.source_id == other.source_id
+            && self.node_id == other.node_id
+            && self.num_docs == other.num_docs
+            && self.uncompressed_docs_size_in_bytes == other.uncompressed_docs_size_in_bytes
+            && self.time_range == other.time_range
+            && self.create_timestamp == other.create_timestamp
+            && self.tags == other.tags
+            && self.footer_offsets == other.footer_offsets
+    }
 }
 
 impl From<SplitMetadataV1> for SplitMetadata {
@@ -172,7 +202,6 @@ impl From<SplitMetadataV1> for SplitMetadata {
             time_range: v1.time_range,
             create_timestamp: v1.create_timestamp,
             tags: v1.tags,
-            demux_num_ops: v1.demux_num_ops,
             footer_offsets: v1.footer_offsets,
         }
     }
@@ -190,8 +219,8 @@ impl From<SplitMetadata> for SplitMetadataV1 {
             time_range: split.time_range,
             create_timestamp: split.create_timestamp,
             tags: split.tags,
-            demux_num_ops: split.demux_num_ops,
             footer_offsets: split.footer_offsets,
+            __demux_num_ops_deprecated: IgnoredAny,
         }
     }
 }
@@ -222,7 +251,9 @@ impl From<SplitMetadata> for VersionedSplitMetadata {
 
 impl<'de> Deserialize<'de> for SplitMetadata {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: serde::Deserializer<'de> {
+    where
+        D: serde::Deserializer<'de>,
+    {
         let split_metadata_value = serde_json::Value::deserialize(deserializer)?;
         // Unfortunately, it is not possible to tell serde that in the absence
         // of a tag, a given tag should be considered as the default.
