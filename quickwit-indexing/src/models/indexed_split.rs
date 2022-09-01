@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
-use std::ops::RangeInclusive;
 use std::path::Path;
 use std::time::Instant;
 
@@ -30,33 +29,14 @@ use tantivy::merge_policy::NoMergePolicy;
 use tantivy::IndexBuilder;
 
 use crate::controlled_directory::ControlledDirectory;
-use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory};
+use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory, SplitInfo};
 use crate::new_split_id;
 
 pub struct IndexedSplit {
-    pub split_id: String,
-    pub partition_id: u64,
-    pub pipeline_id: IndexingPipelineId,
-
-    pub replaced_split_ids: Vec<String>,
-
-    pub time_range: Option<RangeInclusive<i64>>,
-
-    /// Number of valid documents in the split.
-    pub num_docs: u64,
-
-    // Sum of the size of the document that were sent to the indexed.
-    // This includes both documents that are valid or documents that are
-    // invalid.
-    pub docs_size_in_bytes: u64,
-
-    /// Number of demux operations this split has undergone.
-    pub demux_num_ops: usize,
-
+    pub split_info: SplitInfo,
     pub index: tantivy::Index,
     pub index_writer: tantivy::IndexWriter,
     pub split_scratch_directory: ScratchDirectory,
-
     pub controlled_directory_opt: Option<ControlledDirectory>,
 }
 
@@ -64,9 +44,9 @@ impl fmt::Debug for IndexedSplit {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("IndexedSplit")
-            .field("id", &self.split_id)
+            .field("id", &self.split_info.split_id)
             .field("dir", &self.split_scratch_directory.path())
-            .field("num_docs", &self.num_docs)
+            .field("num_docs", &self.split_info.num_docs)
             .finish()
     }
 }
@@ -98,16 +78,19 @@ impl IndexedSplit {
             // This is not something that we want to use in quickwit.
             indexing_resources.heap_size.get_bytes() as usize,
         )?;
-        index_writer.set_merge_policy(Box::new(NoMergePolicy));
-        Ok(IndexedSplit {
-            pipeline_id,
-            partition_id,
+        let split_info = SplitInfo {
             split_id,
-            replaced_split_ids: Vec::new(),
+            partition_id,
+            pipeline_id,
+            num_docs: 0,
+            uncompressed_docs_size_in_bytes: 0,
             time_range: None,
             demux_num_ops: 0,
-            docs_size_in_bytes: 0,
-            num_docs: 0,
+            replaced_split_ids: Vec::new(),
+        };
+        index_writer.set_merge_policy(Box::new(NoMergePolicy));
+        Ok(IndexedSplit {
+            split_info,
             index,
             index_writer,
             split_scratch_directory,
@@ -117,6 +100,10 @@ impl IndexedSplit {
 
     pub fn path(&self) -> &Path {
         self.split_scratch_directory.path()
+    }
+
+    pub fn split_id(&self) -> &str {
+        &self.split_info.split_id
     }
 }
 

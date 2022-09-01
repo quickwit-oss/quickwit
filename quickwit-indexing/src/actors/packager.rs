@@ -130,7 +130,7 @@ impl Handler<IndexedSplitBatch> for Packager {
         let split_ids: Vec<String> = batch
             .splits
             .iter()
-            .map(|split| split.split_id.clone())
+            .map(|split| split.split_id().to_string())
             .collect_vec();
         info!(
             split_ids=?split_ids,
@@ -194,7 +194,7 @@ fn is_merge_required(segment_metas: &[SegmentMeta]) -> bool {
 /// CPU and IO, the longest once being the serialization of
 /// the inverted index. This phase is CPU bound.
 fn commit_split(split: &mut IndexedSplit, ctx: &ActorContext<Packager>) -> anyhow::Result<()> {
-    info!(split_id=%split.split_id, "commit-split");
+    info!(split_id = split.split_id(), "commit-split");
     let _protect_guard = ctx.protect_zone();
     split
         .index_writer
@@ -233,10 +233,7 @@ async fn merge_segments_if_required(
     split: &mut IndexedSplit,
     ctx: &ActorContext<Packager>,
 ) -> anyhow::Result<Vec<SegmentMeta>> {
-    debug!(
-        split_id = split.split_id.as_str(),
-        "merge-segments-if-required"
-    );
+    debug!(split_id = split.split_id(), "merge-segments-if-required");
     let segment_metas_before_merge = split.index.searchable_segment_metas()?;
     if is_merge_required(&segment_metas_before_merge[..]) {
         let segment_ids: Vec<SegmentId> = segment_metas_before_merge
@@ -244,7 +241,7 @@ async fn merge_segments_if_required(
             .map(|segment_meta| segment_meta.id())
             .collect();
 
-        info!(split_id=split.split_id.as_str(), segment_ids=?segment_ids, "merging-segments");
+        info!(split_id=split.split_id(), segment_ids=?segment_ids, "merging-segments");
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
         let _protected_zone_guard = ctx.protect_zone();
         split.index_writer.merge(&segment_ids).await?;
@@ -320,16 +317,12 @@ fn create_packaged_split(
     tag_fields: &[NamedField],
     ctx: &ActorContext<Packager>,
 ) -> anyhow::Result<PackagedSplit> {
-    info!(split_id = split.split_id.as_str(), "create-packaged-split");
+    info!(split_id = split.split_id(), "create-packaged-split");
     let split_files = list_split_files(segment_metas, &split.split_scratch_directory);
-    let num_docs = segment_metas
-        .iter()
-        .map(|segment_meta| segment_meta.num_docs() as u64)
-        .sum();
 
     // Extracts tag values from inverted indexes only when a field cardinality is less
     // than `MAX_VALUES_PER_TAG_FIELD`.
-    debug!(split_id = split.split_id.as_str(), tag_fields =? tag_fields, "extract-tags-values");
+    debug!(split_id = split.split_id(), tag_fields =? tag_fields, "extract-tags-values");
     let index_reader = split
         .index
         .reader_builder()
@@ -356,21 +349,14 @@ fn create_packaged_split(
 
     ctx.record_progress();
 
-    debug!(split_id = split.split_id.as_str(), "build-hotcache");
-    let mut hotcache_bytes = vec![];
+    debug!(split_id = split.split_id(), "build-hotcache");
+    let mut hotcache_bytes = Vec::new();
     build_hotcache(split.split_scratch_directory.path(), &mut hotcache_bytes)?;
     ctx.record_progress();
 
     let packaged_split = PackagedSplit {
-        split_id: split.split_id,
-        partition_id: split.partition_id,
-        pipeline_id: split.pipeline_id,
-        replaced_split_ids: split.replaced_split_ids,
+        split_info: split.split_info,
         split_scratch_directory: split.split_scratch_directory,
-        num_docs,
-        demux_num_ops: split.demux_num_ops,
-        time_range: split.time_range,
-        size_in_bytes: split.docs_size_in_bytes,
         tags,
         split_files,
         hotcache_bytes,
@@ -398,7 +384,7 @@ mod tests {
     use tantivy::{doc, Index};
 
     use super::*;
-    use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory};
+    use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory, SplitInfo};
 
     fn make_indexed_split_for_test(segments_timestamps: &[&[i64]]) -> anyhow::Result<IndexedSplit> {
         let split_scratch_directory = ScratchDirectory::for_test()?;
@@ -462,17 +448,19 @@ mod tests {
         // TODO: In the future we would like that kind of segment flush to emit a new split,
         // but this will require work on tantivy.
         let indexed_split = IndexedSplit {
-            split_id: "test-split".to_string(),
-            partition_id: 17u64,
-            pipeline_id,
-            time_range: timerange_opt,
-            demux_num_ops: 0,
-            num_docs,
-            docs_size_in_bytes: num_docs * 15, //< bogus number
+            split_info: SplitInfo {
+                split_id: "test-split".to_string(),
+                partition_id: 17u64,
+                pipeline_id,
+                num_docs,
+                uncompressed_docs_size_in_bytes: num_docs * 15,
+                time_range: timerange_opt,
+                demux_num_ops: 0, //< bogus number
+                replaced_split_ids: Vec::new(),
+            },
             index,
             index_writer,
             split_scratch_directory,
-            replaced_split_ids: Vec::new(),
             controlled_directory_opt: None,
         };
         Ok(indexed_split)

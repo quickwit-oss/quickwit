@@ -46,7 +46,7 @@ use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeOperation;
 use crate::models::{
     IndexedSplit, IndexedSplitBatch, IndexingPipelineId, MergeScratch, PublishLock,
-    ScratchDirectory,
+    ScratchDirectory, SplitInfo,
 };
 
 pub struct MergeExecutor {
@@ -343,7 +343,7 @@ impl MergeExecutor {
         // This will have the side effect of deleting the directory containing the downloaded
         // splits.
         let time_range = merge_time_range(&splits);
-        let docs_size_in_bytes = sum_doc_sizes_in_bytes(&splits);
+        let uncompressed_docs_size_in_bytes = sum_doc_sizes_in_bytes(&splits);
         let num_docs = sum_num_docs(&splits);
 
         let merged_index = open_index(controlled_directory.clone())?;
@@ -352,14 +352,16 @@ impl MergeExecutor {
         ctx.record_progress();
 
         let indexed_split = IndexedSplit {
-            split_id: merge_split_id,
-            partition_id,
-            pipeline_id,
-            replaced_split_ids,
-            time_range,
-            demux_num_ops: 0,
-            num_docs,
-            docs_size_in_bytes,
+            split_info: SplitInfo {
+                split_id: merge_split_id,
+                partition_id,
+                pipeline_id,
+                replaced_split_ids,
+                time_range,
+                demux_num_ops: 0,
+                num_docs,
+                uncompressed_docs_size_in_bytes,
+            },
             index: merged_index,
             index_writer,
             split_scratch_directory: merge_scratch_directory,
@@ -486,7 +488,7 @@ impl MergeExecutor {
             let segment = searchable_segments.into_iter().next().unwrap();
             let segment_reader = SegmentReader::open(&segment)?;
             let num_docs = segment_reader.num_docs() as usize;
-            let docs_size_in_bytes =
+            let uncompressed_docs_size_in_bytes =
                 (num_docs as f32 * total_docs_size_in_bytes as f32 / total_num_docs as f32) as u64;
             let time_range = if let Some(ref timestamp_field_name) = self.timestamp_field_name {
                 let timestamp_field = segment_reader
@@ -500,14 +502,16 @@ impl MergeExecutor {
             };
             let index_writer = index.writer_with_num_threads(1, 3_000_000)?;
             let indexed_split = IndexedSplit {
-                split_id,
-                partition_id,
-                pipeline_id: pipeline_id.clone(),
-                replaced_split_ids: replaced_split_ids.clone(),
-                time_range,
-                demux_num_ops: initial_demux_num_ops + 1,
-                num_docs: num_docs as u64,
-                docs_size_in_bytes,
+                split_info: SplitInfo {
+                    split_id,
+                    partition_id,
+                    pipeline_id: pipeline_id.clone(),
+                    replaced_split_ids: replaced_split_ids.clone(),
+                    time_range,
+                    demux_num_ops: initial_demux_num_ops + 1,
+                    num_docs: num_docs as u64,
+                    uncompressed_docs_size_in_bytes,
+                },
                 index,
                 index_writer,
                 split_scratch_directory: scratched_directory,
@@ -520,7 +524,7 @@ impl MergeExecutor {
             splits.iter().map(|split| split.num_docs).sum::<usize>() as u64,
             indexed_splits
                 .iter()
-                .map(|split| split.num_docs)
+                .map(|split| split.split_info.num_docs)
                 .sum::<u64>()
         );
         ctx.send_message(
@@ -948,8 +952,13 @@ mod tests {
             .unwrap()
             .downcast::<IndexedSplitBatch>()
             .unwrap();
-        assert_eq!(packager_msg.splits[0].num_docs, 4);
-        assert_eq!(packager_msg.splits[0].docs_size_in_bytes, 136);
+        assert_eq!(packager_msg.splits[0].split_info.num_docs, 4);
+        assert_eq!(
+            packager_msg.splits[0]
+                .split_info
+                .uncompressed_docs_size_in_bytes,
+            136
+        );
         let reader = packager_msg.splits[0].index.reader()?;
         let searcher = reader.searcher();
         assert_eq!(searcher.segment_readers().len(), 1);
