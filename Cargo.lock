@@ -2183,9 +2183,9 @@ dependencies = [
 
 [[package]]
 name = "new_string_template"
-version = "1.3.1"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "427d2a595c488ee51abc942d6b7ebec8467a3edef0d928486ea2ce4f95516637"
+checksum = "d7359c5bee6fe9218ccd4988120a23dc79d291e95486756969112d45efdc97d1"
 dependencies = [
  "lazy_static",
  "regex",
