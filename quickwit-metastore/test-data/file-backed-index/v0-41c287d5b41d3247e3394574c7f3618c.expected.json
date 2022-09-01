@@ -54,13 +54,10 @@
     "index_uri": "s3://quickwit-indexes/my-index",
     "indexing_settings": {
       "commit_timeout_secs": 301,
-      "demux_enabled": true,
-      "demux_field": "tenant_id",
       "docstore_blocksize": 1000000,
       "docstore_compression_level": 8,
       "merge_enabled": true,
       "merge_policy": {
-        "demux_factor": 7,
         "max_merge_factor": 11,
         "merge_factor": 9
       },

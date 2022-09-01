@@ -150,17 +150,15 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
         "daily".to_string(),
     ));
     let merge_policy = MergePolicy {
-        demux_factor: 7,
         merge_factor: 9,
         max_merge_factor: 11,
+        ..Default::default()
     };
     let indexing_resources = IndexingResources {
         __num_threads_deprecated: serde::de::IgnoredAny,
         heap_size: Byte::from_bytes(3),
     };
     let indexing_settings = IndexingSettings {
-        demux_enabled: true,
-        demux_field: Some("tenant_id".to_string()),
         timestamp_field: Some("timestamp".to_string()),
         sort_field: Some("timestamp".to_string()),
         sort_order: Some(SortOrder::Asc),
@@ -171,6 +169,7 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
         resources: indexing_resources,
         docstore_blocksize: IndexingSettings::default_docstore_blocksize(),
         docstore_compression_level: IndexingSettings::default_docstore_compression_level(),
+        ..Default::default()
     };
     let search_settings = SearchSettings {
         default_search_fields: vec!["message".to_string()],

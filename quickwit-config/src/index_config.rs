@@ -36,7 +36,7 @@ use serde::de::{Error, IgnoredAny};
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::source_config::SourceConfig;
-use crate::{is_false, validate_identifier};
+use crate::validate_identifier;
 
 // Note(fmassot): `DocMapping` is a struct only used for
 // serialization/deserialization of `DocMapper` parameters.
@@ -98,22 +98,26 @@ impl Default for IndexingResources {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MergePolicy {
-    #[serde(default = "MergePolicy::default_demux_factor")]
-    pub demux_factor: usize,
+    #[serde(default, rename = "demux_factor", skip_serializing)]
+    pub __demux_factor_deprecated: IgnoredAny, // DEPRECATED
     #[serde(default = "MergePolicy::default_merge_factor")]
     pub merge_factor: usize,
     #[serde(default = "MergePolicy::default_max_merge_factor")]
     pub max_merge_factor: usize,
 }
 
-impl MergePolicy {
-    fn default_demux_factor() -> usize {
-        8
+impl PartialEq for MergePolicy {
+    fn eq(&self, other: &Self) -> bool {
+        self.merge_factor == other.merge_factor && self.max_merge_factor == other.max_merge_factor
     }
+}
 
+impl Eq for MergePolicy {}
+
+impl MergePolicy {
     fn default_merge_factor() -> usize {
         10
     }
@@ -126,20 +130,20 @@ impl MergePolicy {
 impl Default for MergePolicy {
     fn default() -> Self {
         Self {
-            demux_factor: Self::default_demux_factor(),
+            __demux_factor_deprecated: serde::de::IgnoredAny,
             merge_factor: Self::default_merge_factor(),
             max_merge_factor: Self::default_max_merge_factor(),
         }
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IndexingSettings {
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub demux_enabled: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub demux_field: Option<String>,
+    #[serde(default, rename = "demux_enabled", skip_serializing)]
+    pub __demux_enabled_deprecated: IgnoredAny,
+    #[serde(default, rename = "demux_field", skip_serializing)]
+    pub __demux_field_deprecated: IgnoredAny,
     pub timestamp_field: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sort_field: Option<String>,
@@ -161,6 +165,21 @@ pub struct IndexingSettings {
     pub merge_policy: MergePolicy,
     #[serde(default)]
     pub resources: IndexingResources,
+}
+
+impl PartialEq for IndexingSettings {
+    fn eq(&self, other: &Self) -> bool {
+            self.timestamp_field == other.timestamp_field
+            && self.sort_field == other.sort_field
+            && self.sort_order == other.sort_order
+            && self.commit_timeout_secs == other.commit_timeout_secs
+            && self.docstore_compression_level == other.docstore_compression_level
+            && self.docstore_blocksize == other.docstore_blocksize
+            && self.split_num_docs_target == other.split_num_docs_target
+            && self.merge_enabled == other.merge_enabled
+            && self.merge_policy == other.merge_policy
+            && self.resources == other.resources
+    }
 }
 
 impl IndexingSettings {
@@ -208,8 +227,8 @@ impl IndexingSettings {
 impl Default for IndexingSettings {
     fn default() -> Self {
         Self {
-            demux_enabled: false,
-            demux_field: None,
+            __demux_enabled_deprecated: IgnoredAny,
+            __demux_field_deprecated: IgnoredAny,
             timestamp_field: None,
             sort_field: None,
             sort_order: None,
@@ -466,7 +485,9 @@ pub fn build_doc_mapper(
 
 /// Deserializes and validates a [`Uri`].
 fn deser_and_validate_uri<'de, D>(deserializer: D) -> Result<Option<Uri>, D::Error>
-where D: Deserializer<'de> {
+where
+    D: Deserializer<'de>,
+{
     let uri_opt: Option<String> = Deserialize::deserialize(deserializer)?;
     uri_opt
         .map(|uri| Uri::try_new(&uri))
@@ -536,10 +557,6 @@ mod tests {
                 assert_eq!(index_config.doc_mapping.store_source, true);
 
                 assert_eq!(
-                    index_config.indexing_settings.demux_field.unwrap(),
-                    "tenant_id"
-                );
-                assert_eq!(
                     index_config.indexing_settings.timestamp_field.unwrap(),
                     "timestamp"
                 );
@@ -560,9 +577,9 @@ mod tests {
                 assert_eq!(
                     index_config.indexing_settings.merge_policy,
                     MergePolicy {
-                        demux_factor: 7,
                         merge_factor: 9,
                         max_merge_factor: 11,
+                        ..Default::default()
                     }
                 );
                 assert_eq!(
@@ -655,10 +672,7 @@ mod tests {
                 IndexingSettings {
                     sort_field: Some("timestamp".to_string()),
                     commit_timeout_secs: 42,
-                    merge_policy: MergePolicy {
-                        demux_factor: 7,
-                        ..Default::default()
-                    },
+                    merge_policy: MergePolicy::default(),
                     resources: IndexingResources {
                         __num_threads_deprecated: serde::de::IgnoredAny,
                         ..Default::default()
