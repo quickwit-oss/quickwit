@@ -92,5 +92,5 @@ export AWS_ACCESS_KEY_ID=***
 ```
 
 :::note
-We also support Azure storage, however since it is not S3-Compatible, you can refer to our [Azure Setup Guide](/docs/guides/azure-setup) for more info and steps to connect. 
+We also support Azure storage, however since it is not S3-Compatible, you can refer to our [Azure Setup Guide](../guides/azure-setup) for more info and steps to connect. 
 :::
