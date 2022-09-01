@@ -544,7 +544,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ingest_api_source_params_serialization() {
+    fn test_ingest_api_source_params_deserialization() {
         let yaml = r#"
             index_id: wikipedia
             batch_num_bytes_limit: 200000

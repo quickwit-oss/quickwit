@@ -12,7 +12,9 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 anyhow = "1"
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
+cron = "0.11.0"
 derivative = "2.2.0"
+humantime = "2.1.0"
 json_comments = "0.2"
 new_string_template = "1.4.0"
 once_cell = "1.13.0"

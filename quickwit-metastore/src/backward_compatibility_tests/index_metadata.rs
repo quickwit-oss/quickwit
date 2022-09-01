@@ -23,7 +23,7 @@ use byte_unit::Byte;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
     DocMapping, IndexingResources, IndexingSettings, KafkaSourceParams, MergePolicy,
-    SearchSettings, SourceConfig, SourceParams,
+    RetentionPolicy, RetentionPolicyCutoffReference, SearchSettings, SourceConfig, SourceParams,
 };
 use quickwit_doc_mapper::{ModeType, SortOrder};
 
@@ -144,6 +144,11 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
         dynamic_mapping: None,
         partition_key: "".to_string(),
     };
+    let retention_policy = Some(RetentionPolicy::new(
+        "90 days".to_string(),
+        RetentionPolicyCutoffReference::PublishTimestamp,
+        "daily".to_string(),
+    ));
     let merge_policy = MergePolicy {
         demux_factor: 7,
         merge_factor: 9,
@@ -189,6 +194,7 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
         checkpoint,
         doc_mapping,
         indexing_settings,
+        retention_policy,
         search_settings,
         sources,
         create_timestamp: 1789,

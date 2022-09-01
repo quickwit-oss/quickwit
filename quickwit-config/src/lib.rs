@@ -29,7 +29,7 @@ mod templating;
 pub use config::{IndexerConfig, QuickwitConfig, SearcherConfig, DEFAULT_QW_CONFIG_PATH};
 pub use index_config::{
     build_doc_mapper, DocMapping, IndexConfig, IndexingResources, IndexingSettings, MergePolicy,
-    SearchSettings,
+    RetentionPolicy, RetentionPolicyCutoffReference, SearchSettings,
 };
 pub use source_config::{
     FileSourceParams, IngestApiSourceParams, KafkaSourceParams, KinesisSourceParams,
