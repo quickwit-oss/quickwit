@@ -20,13 +20,12 @@
 use std::collections::BTreeSet;
 use std::ops::{Range, RangeInclusive};
 
-use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 
 use crate::split_metadata::utc_now_timestamp;
 use crate::{SplitMetadata, SplitState};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 struct SplitMetadataV0 {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
@@ -63,26 +62,7 @@ struct SplitMetadataV0 {
     /// A set of tags for categorizing and searching group of splits.
     #[serde(default)]
     pub tags: BTreeSet<String>,
-
-    /// Number of demux operations this split has undergone.
-    #[serde(default, rename = "demux_num_ops", skip_serializing)]
-    pub __demux_num_ops_deprecated: IgnoredAny,
 }
-
-impl PartialEq for SplitMetadataV0 {
-    fn eq(&self, other: &Self) -> bool {
-        self.split_id == other.split_id
-            && self.num_docs == other.num_docs
-            && self.size_in_bytes == other.size_in_bytes
-            && self.time_range == other.time_range
-            && self.split_state == other.split_state
-            && self.create_timestamp == other.create_timestamp
-            && self.update_timestamp == other.update_timestamp
-            && self.tags == other.tags
-    }
-}
-
-impl Eq for SplitMetadataV0 {}
 
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub(crate) struct SplitMetadataAndFooterV0 {
@@ -108,7 +88,7 @@ impl From<SplitMetadataAndFooterV0> for SplitMetadata {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub(crate) struct SplitMetadataV1 {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
@@ -147,31 +127,12 @@ pub(crate) struct SplitMetadataV1 {
     #[serde(default)]
     pub tags: BTreeSet<String>,
 
-    /// Number of demux operations this split has undergone.
-    #[serde(default, rename = "demux_num_ops", skip_serializing)]
-    pub __demux_num_ops_deprecated: IgnoredAny,
-
     /// Contains the range of bytes of the footer that needs to be downloaded
     /// in order to open a split.
     ///
     /// The footer offsets
     /// make it possible to download the footer in a single call to `.get_slice(...)`.
     pub footer_offsets: Range<u64>,
-}
-
-impl PartialEq for SplitMetadataV1 {
-    fn eq(&self, other: &Self) -> bool {
-        self.split_id == other.split_id
-            && self.partition_id == other.partition_id
-            && self.source_id == other.source_id
-            && self.node_id == other.node_id
-            && self.num_docs == other.num_docs
-            && self.uncompressed_docs_size_in_bytes == other.uncompressed_docs_size_in_bytes
-            && self.time_range == other.time_range
-            && self.create_timestamp == other.create_timestamp
-            && self.tags == other.tags
-            && self.footer_offsets == other.footer_offsets
-    }
 }
 
 impl From<SplitMetadataV1> for SplitMetadata {
@@ -220,7 +181,6 @@ impl From<SplitMetadata> for SplitMetadataV1 {
             create_timestamp: split.create_timestamp,
             tags: split.tags,
             footer_offsets: split.footer_offsets,
-            __demux_num_ops_deprecated: IgnoredAny,
         }
     }
 }
