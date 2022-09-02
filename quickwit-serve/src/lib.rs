@@ -42,6 +42,7 @@ use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::anyhow;
 use format::Format;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::{Cluster, ClusterMember, QuickwitService};
@@ -57,6 +58,7 @@ use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreGr
 use quickwit_search::{start_searcher_service, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use serde::{Deserialize, Serialize};
+use tracing::error;
 use warp::{Filter, Rejection};
 
 pub use crate::args::ServeArgs;
@@ -112,7 +114,15 @@ pub async fn serve_quickwit(
         // Wait 10 seconds for nodes running a `Metastore` service.
         cluster
             .wait_for_members(has_node_with_metastore_service, Duration::from_secs(10))
-            .await?;
+            .await
+            .map_err(|_| {
+                error!("No metastore service found among cluster members, stopping server.");
+                anyhow!(
+                    "Failed to start server: no metastore service was found among cluster \
+                     members. Try running Quickwit with additional metastore service `quickwit \
+                     run --service metastore`."
+                )
+            })?;
         let metastore_client = MetastoreGrpcClient::create_and_update_from_members(
             &cluster.members(),
             cluster.member_change_watcher(),
