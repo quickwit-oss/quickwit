@@ -276,7 +276,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     }
 
     let merge_scratch = MergeScratch {
-        merge_operation: MergeOperation::Merge {
+        merge_operation: MergeOperation {
             merge_split_id: new_split_id(),
             splits,
         },
