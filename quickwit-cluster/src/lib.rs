@@ -85,7 +85,7 @@ pub async fn start_cluster_service(
         unix_timestamp(),
         quickwit_config.gossip_advertise_addr,
         services.clone(),
-        quickwit_config.grpc_listen_addr,
+        quickwit_config.grpc_advertise_addr,
     );
 
     let cluster = Cluster::join(
