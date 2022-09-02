@@ -85,7 +85,6 @@ impl IndexedSplit {
             num_docs: 0,
             uncompressed_docs_size_in_bytes: 0,
             time_range: None,
-            demux_num_ops: 0,
             replaced_split_ids: Vec::new(),
         };
         index_writer.set_merge_policy(Box::new(NoMergePolicy));

@@ -345,7 +345,6 @@ mod tests {
                         time_range: Some(1_628_203_589i64..=1_628_203_640i64),
                         uncompressed_docs_size_in_bytes: 1_000,
                         num_docs: 10,
-                        demux_num_ops: 0,
                         replaced_split_ids: Vec::new(),
                         split_id: "test-split".to_string(),
                     },
@@ -439,7 +438,6 @@ mod tests {
                 num_docs: 10,
                 uncompressed_docs_size_in_bytes: 1_000,
                 time_range: Some(1_628_203_589i64..=1_628_203_640i64),
-                demux_num_ops: 1,
                 replaced_split_ids: vec![
                     "replaced-split-1".to_string(),
                     "replaced-split-2".to_string(),
@@ -458,7 +456,6 @@ mod tests {
                 num_docs: 10,
                 uncompressed_docs_size_in_bytes: 1_000,
                 time_range: Some(1_628_203_589i64..=1_628_203_640i64),
-                demux_num_ops: 1,
                 replaced_split_ids: vec![
                     "replaced-split-1".to_string(),
                     "replaced-split-2".to_string(),

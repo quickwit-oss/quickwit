@@ -455,7 +455,6 @@ mod tests {
                 num_docs,
                 uncompressed_docs_size_in_bytes: num_docs * 15,
                 time_range: timerange_opt,
-                demux_num_ops: 0, //< bogus number
                 replaced_split_ids: Vec::new(),
             },
             index,
