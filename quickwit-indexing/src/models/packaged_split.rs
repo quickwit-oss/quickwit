@@ -19,40 +19,31 @@
 
 use std::collections::{BTreeSet, HashSet};
 use std::fmt;
-use std::ops::RangeInclusive;
 use std::time::Instant;
 
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 
-use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory};
+use crate::models::{PublishLock, ScratchDirectory, SplitAttrs};
 
 pub struct PackagedSplit {
-    pub split_id: String,
-    pub partition_id: u64,
-    pub pipeline_id: IndexingPipelineId,
-
-    pub replaced_split_ids: Vec<String>,
-    pub time_range: Option<RangeInclusive<i64>>,
-    pub size_in_bytes: u64,
+    pub split_attrs: SplitAttrs,
     pub split_scratch_directory: ScratchDirectory,
-    pub num_docs: u64,
-    pub demux_num_ops: usize,
     pub tags: BTreeSet<String>,
     pub split_files: Vec<std::path::PathBuf>,
     pub hotcache_bytes: Vec<u8>,
 }
 
+impl PackagedSplit {
+    pub fn split_id(&self) -> &str {
+        &self.split_attrs.split_id
+    }
+}
+
 impl fmt::Debug for PackagedSplit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("PackagedSplit")
-            .field("split_id", &self.split_id)
-            .field("partition_id", &self.partition_id)
-            .field("replaced_split_ids", &self.replaced_split_ids)
-            .field("time_range", &self.time_range)
-            .field("size_in_bytes", &self.size_in_bytes)
+            .field("split_attrs", &self.split_attrs)
             .field("split_scratch_directory", &self.split_scratch_directory)
-            .field("num_docs", &self.num_docs)
-            .field("demux_num_ops", &self.demux_num_ops)
             .field("tags", &self.tags)
             .field("split_files", &self.split_files)
             .finish()
@@ -82,7 +73,7 @@ impl PackagedSplitBatch {
         assert_eq!(
             splits
                 .iter()
-                .map(|split| split.pipeline_id.index_id.clone())
+                .map(|split| split.split_attrs.pipeline_id.index_id.clone())
                 .collect::<HashSet<_>>()
                 .len(),
             1,
@@ -99,14 +90,14 @@ impl PackagedSplitBatch {
     pub fn index_id(&self) -> String {
         self.splits
             .get(0)
-            .map(|split| split.pipeline_id.index_id.clone())
+            .map(|split| split.split_attrs.pipeline_id.index_id.clone())
             .unwrap()
     }
 
     pub fn split_ids(&self) -> Vec<String> {
         self.splits
             .iter()
-            .map(|split| split.split_id.clone())
+            .map(|split| split.split_attrs.split_id.clone())
             .collect::<Vec<_>>()
     }
 }
