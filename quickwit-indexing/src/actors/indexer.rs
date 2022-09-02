@@ -279,12 +279,12 @@ impl IndexerState {
                 } => {
                     let indexed_split =
                         self.get_or_create_indexed_split(partition, indexed_splits, ctx)?;
-                    indexed_split.split_info.uncompressed_docs_size_in_bytes += doc_json_num_bytes;
+                    indexed_split.split_attrs.uncompressed_docs_size_in_bytes += doc_json_num_bytes;
                     counters.num_docs_in_workbench += 1;
                     counters.num_valid_docs += 1;
-                    indexed_split.split_info.num_docs += 1;
+                    indexed_split.split_attrs.num_docs += 1;
                     if let Some(timestamp) = timestamp_opt {
-                        record_timestamp(timestamp, &mut indexed_split.split_info.time_range);
+                        record_timestamp(timestamp, &mut indexed_split.split_attrs.time_range);
                     }
                     let _protect_guard = ctx.protect_zone();
                     indexed_split
@@ -670,7 +670,7 @@ mod tests {
         let batch = output_messages[0]
             .downcast_ref::<IndexedSplitBatch>()
             .unwrap();
-        assert_eq!(batch.splits[0].split_info.num_docs, 3);
+        assert_eq!(batch.splits[0].split_attrs.num_docs, 3);
         let sort_by_field = batch.splits[0].index.settings().sort_by_field.as_ref();
         assert!(sort_by_field.is_some());
         assert_eq!(sort_by_field.unwrap().field, "timestamp");
@@ -747,7 +747,7 @@ mod tests {
         let indexed_split_batch = output_messages[0]
             .downcast_ref::<IndexedSplitBatch>()
             .unwrap();
-        assert_eq!(indexed_split_batch.splits[0].split_info.num_docs, 1);
+        assert_eq!(indexed_split_batch.splits[0].split_attrs.num_docs, 1);
         Ok(())
     }
 
@@ -810,7 +810,7 @@ mod tests {
                 .downcast_ref::<IndexedSplitBatch>()
                 .unwrap()
                 .splits[0]
-                .split_info
+                .split_attrs
                 .num_docs,
             1
         );

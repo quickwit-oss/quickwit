@@ -46,7 +46,7 @@ use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeOperation;
 use crate::models::{
     IndexedSplit, IndexedSplitBatch, IndexingPipelineId, MergeScratch, PublishLock,
-    ScratchDirectory, SplitInfo,
+    ScratchDirectory, SplitAttrs,
 };
 
 pub struct MergeExecutor {
@@ -352,7 +352,7 @@ impl MergeExecutor {
         ctx.record_progress();
 
         let indexed_split = IndexedSplit {
-            split_info: SplitInfo {
+            split_attrs: SplitAttrs {
                 split_id: merge_split_id,
                 partition_id,
                 pipeline_id,
@@ -502,7 +502,7 @@ impl MergeExecutor {
             };
             let index_writer = index.writer_with_num_threads(1, 3_000_000)?;
             let indexed_split = IndexedSplit {
-                split_info: SplitInfo {
+                split_attrs: SplitAttrs {
                     split_id,
                     partition_id,
                     pipeline_id: pipeline_id.clone(),
@@ -524,7 +524,7 @@ impl MergeExecutor {
             splits.iter().map(|split| split.num_docs).sum::<usize>() as u64,
             indexed_splits
                 .iter()
-                .map(|split| split.split_info.num_docs)
+                .map(|split| split.split_attrs.num_docs)
                 .sum::<u64>()
         );
         ctx.send_message(
@@ -952,10 +952,10 @@ mod tests {
             .unwrap()
             .downcast::<IndexedSplitBatch>()
             .unwrap();
-        assert_eq!(packager_msg.splits[0].split_info.num_docs, 4);
+        assert_eq!(packager_msg.splits[0].split_attrs.num_docs, 4);
         assert_eq!(
             packager_msg.splits[0]
-                .split_info
+                .split_attrs
                 .uncompressed_docs_size_in_bytes,
             136
         );

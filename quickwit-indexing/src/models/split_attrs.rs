@@ -22,7 +22,7 @@ use std::ops::RangeInclusive;
 
 use crate::models::IndexingPipelineId;
 
-pub struct SplitInfo {
+pub struct SplitAttrs {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
     /// In reality, some information may be implicitly configured
@@ -55,9 +55,9 @@ pub struct SplitInfo {
     pub replaced_split_ids: Vec<String>,
 }
 
-impl fmt::Debug for SplitInfo {
+impl fmt::Debug for SplitAttrs {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("SplitInfo")
+        f.debug_struct("SplitAttrs")
             .field("split_id", &self.split_id)
             .field("partition_id", &self.partition_id)
             .field("replaced_split_ids", &self.replaced_split_ids)

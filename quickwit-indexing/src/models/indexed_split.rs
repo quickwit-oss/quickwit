@@ -29,11 +29,11 @@ use tantivy::merge_policy::NoMergePolicy;
 use tantivy::IndexBuilder;
 
 use crate::controlled_directory::ControlledDirectory;
-use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory, SplitInfo};
+use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory, SplitAttrs};
 use crate::new_split_id;
 
 pub struct IndexedSplit {
-    pub split_info: SplitInfo,
+    pub split_attrs: SplitAttrs,
     pub index: tantivy::Index,
     pub index_writer: tantivy::IndexWriter,
     pub split_scratch_directory: ScratchDirectory,
@@ -44,9 +44,9 @@ impl fmt::Debug for IndexedSplit {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("IndexedSplit")
-            .field("id", &self.split_info.split_id)
+            .field("id", &self.split_attrs.split_id)
             .field("dir", &self.split_scratch_directory.path())
-            .field("num_docs", &self.split_info.num_docs)
+            .field("num_docs", &self.split_attrs.num_docs)
             .finish()
     }
 }
@@ -78,7 +78,7 @@ impl IndexedSplit {
             // This is not something that we want to use in quickwit.
             indexing_resources.heap_size.get_bytes() as usize,
         )?;
-        let split_info = SplitInfo {
+        let split_attrs = SplitAttrs {
             split_id,
             partition_id,
             pipeline_id,
@@ -90,7 +90,7 @@ impl IndexedSplit {
         };
         index_writer.set_merge_policy(Box::new(NoMergePolicy));
         Ok(IndexedSplit {
-            split_info,
+            split_attrs,
             index,
             index_writer,
             split_scratch_directory,
@@ -103,7 +103,7 @@ impl IndexedSplit {
     }
 
     pub fn split_id(&self) -> &str {
-        &self.split_info.split_id
+        &self.split_attrs.split_id
     }
 }
 

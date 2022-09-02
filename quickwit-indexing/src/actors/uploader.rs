@@ -215,17 +215,17 @@ impl Handler<PackagedSplitBatch> for Uploader {
 
 fn create_split_metadata(split: &PackagedSplit, footer_offsets: Range<u64>) -> SplitMetadata {
     SplitMetadata {
-        split_id: split.split_info.split_id.clone(),
-        partition_id: split.split_info.partition_id,
-        source_id: split.split_info.pipeline_id.source_id.clone(),
-        node_id: split.split_info.pipeline_id.node_id.clone(),
-        pipeline_ord: split.split_info.pipeline_id.pipeline_ord,
-        num_docs: split.split_info.num_docs as usize,
-        time_range: split.split_info.time_range.clone(),
-        uncompressed_docs_size_in_bytes: split.split_info.uncompressed_docs_size_in_bytes,
+        split_id: split.split_attrs.split_id.clone(),
+        partition_id: split.split_attrs.partition_id,
+        source_id: split.split_attrs.pipeline_id.source_id.clone(),
+        node_id: split.split_attrs.pipeline_id.node_id.clone(),
+        pipeline_ord: split.split_attrs.pipeline_id.pipeline_ord,
+        num_docs: split.split_attrs.num_docs as usize,
+        time_range: split.split_attrs.time_range.clone(),
+        uncompressed_docs_size_in_bytes: split.split_attrs.uncompressed_docs_size_in_bytes,
         create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
         tags: split.tags.clone(),
-        demux_num_ops: split.split_info.demux_num_ops,
+        demux_num_ops: split.split_attrs.demux_num_ops,
         footer_offsets,
     }
 }
@@ -240,7 +240,7 @@ fn make_publish_operation(
     assert!(!packaged_splits_and_metadatas.is_empty());
     let replaced_split_ids = packaged_splits_and_metadatas
         .iter()
-        .flat_map(|(split, _)| split.split_info.replaced_split_ids.clone())
+        .flat_map(|(split, _)| split.split_attrs.replaced_split_ids.clone())
         .collect::<HashSet<_>>();
     SequencerCommand::Proceed(SplitUpdate {
         index_id,
@@ -269,7 +269,7 @@ async fn stage_and_upload_split(
         packaged_split,
         split_streamer.footer_range.start as u64..split_streamer.footer_range.end as u64,
     );
-    let index_id = &packaged_split.split_info.pipeline_id.index_id.clone();
+    let index_id = &packaged_split.split_attrs.pipeline_id.index_id.clone();
     info!(split_id = packaged_split.split_id(), "staging-split");
     metastore
         .stage_split(index_id, split_metadata.clone())
@@ -300,7 +300,7 @@ mod tests {
     use tokio::sync::oneshot;
 
     use super::*;
-    use crate::models::{IndexingPipelineId, ScratchDirectory, SplitInfo};
+    use crate::models::{IndexingPipelineId, ScratchDirectory, SplitAttrs};
 
     #[tokio::test]
     async fn test_uploader_1() -> anyhow::Result<()> {
@@ -340,7 +340,7 @@ mod tests {
         uploader_mailbox
             .send_message(PackagedSplitBatch::new(
                 vec![PackagedSplit {
-                    split_info: SplitInfo {
+                    split_attrs: SplitAttrs {
                         partition_id: 3u64,
                         pipeline_id,
                         time_range: Some(1_628_203_589i64..=1_628_203_640i64),
@@ -433,7 +433,7 @@ mod tests {
         let split_scratch_directory_1 = ScratchDirectory::for_test()?;
         let split_scratch_directory_2 = ScratchDirectory::for_test()?;
         let packaged_split_1 = PackagedSplit {
-            split_info: SplitInfo {
+            split_attrs: SplitAttrs {
                 split_id: "test-split-1".to_string(),
                 partition_id: 3u64,
                 pipeline_id: pipeline_id.clone(),
@@ -452,7 +452,7 @@ mod tests {
             hotcache_bytes: vec![],
         };
         let package_split_2 = PackagedSplit {
-            split_info: SplitInfo {
+            split_attrs: SplitAttrs {
                 split_id: "test-split-2".to_string(),
                 partition_id: 3u64,
                 pipeline_id,

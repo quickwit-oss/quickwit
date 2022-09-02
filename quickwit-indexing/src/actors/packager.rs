@@ -355,7 +355,7 @@ fn create_packaged_split(
     ctx.record_progress();
 
     let packaged_split = PackagedSplit {
-        split_info: split.split_info,
+        split_attrs: split.split_attrs,
         split_scratch_directory: split.split_scratch_directory,
         tags,
         split_files,
@@ -384,7 +384,7 @@ mod tests {
     use tantivy::{doc, Index};
 
     use super::*;
-    use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory, SplitInfo};
+    use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory, SplitAttrs};
 
     fn make_indexed_split_for_test(segments_timestamps: &[&[i64]]) -> anyhow::Result<IndexedSplit> {
         let split_scratch_directory = ScratchDirectory::for_test()?;
@@ -448,7 +448,7 @@ mod tests {
         // TODO: In the future we would like that kind of segment flush to emit a new split,
         // but this will require work on tantivy.
         let indexed_split = IndexedSplit {
-            split_info: SplitInfo {
+            split_attrs: SplitAttrs {
                 split_id: "test-split".to_string(),
                 partition_id: 17u64,
                 pipeline_id,

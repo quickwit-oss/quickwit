@@ -23,10 +23,10 @@ use std::time::Instant;
 
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 
-use crate::models::{PublishLock, ScratchDirectory, SplitInfo};
+use crate::models::{PublishLock, ScratchDirectory, SplitAttrs};
 
 pub struct PackagedSplit {
-    pub split_info: SplitInfo,
+    pub split_attrs: SplitAttrs,
     pub split_scratch_directory: ScratchDirectory,
     pub tags: BTreeSet<String>,
     pub split_files: Vec<std::path::PathBuf>,
@@ -35,14 +35,14 @@ pub struct PackagedSplit {
 
 impl PackagedSplit {
     pub fn split_id(&self) -> &str {
-        &self.split_info.split_id
+        &self.split_attrs.split_id
     }
 }
 
 impl fmt::Debug for PackagedSplit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("PackagedSplit")
-            .field("split_info", &self.split_info)
+            .field("split_attrs", &self.split_attrs)
             .field("split_scratch_directory", &self.split_scratch_directory)
             .field("tags", &self.tags)
             .field("split_files", &self.split_files)
@@ -73,7 +73,7 @@ impl PackagedSplitBatch {
         assert_eq!(
             splits
                 .iter()
-                .map(|split| split.split_info.pipeline_id.index_id.clone())
+                .map(|split| split.split_attrs.pipeline_id.index_id.clone())
                 .collect::<HashSet<_>>()
                 .len(),
             1,
@@ -90,14 +90,14 @@ impl PackagedSplitBatch {
     pub fn index_id(&self) -> String {
         self.splits
             .get(0)
-            .map(|split| split.split_info.pipeline_id.index_id.clone())
+            .map(|split| split.split_attrs.pipeline_id.index_id.clone())
             .unwrap()
     }
 
     pub fn split_ids(&self) -> Vec<String> {
         self.splits
             .iter()
-            .map(|split| split.split_info.split_id.clone())
+            .map(|split| split.split_attrs.split_id.clone())
             .collect::<Vec<_>>()
     }
 }
