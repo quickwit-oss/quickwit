@@ -535,29 +535,6 @@ mod tests {
     }
 
     #[test]
-    fn test_json_serialize() -> anyhow::Result<()> {
-        let mut config = crate::default_config_for_tests();
-        let json_config = serde_json::to_string_pretty(&config)?;
-        let mut config_after_serialization =
-            serde_json::from_str::<DefaultDocMapper>(&json_config)?;
-        assert_eq!(config.source_field, config_after_serialization.source_field);
-
-        config.default_search_field_names.sort();
-        config_after_serialization.default_search_field_names.sort();
-        assert_eq!(
-            config.default_search_field_names,
-            config_after_serialization.default_search_field_names
-        );
-        assert_eq!(config.schema, config_after_serialization.schema);
-        assert_eq!(
-            config.timestamp_field_name,
-            config_after_serialization.timestamp_field_name
-        );
-        assert_eq!(config.sort_by, config_after_serialization.sort_by);
-        Ok(())
-    }
-
-    #[test]
     fn test_parsing_document() {
         let doc_mapper = crate::default_doc_mapper_for_test();
         let json_doc = example_json_doc_value();
