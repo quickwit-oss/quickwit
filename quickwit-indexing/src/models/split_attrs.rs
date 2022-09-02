@@ -49,9 +49,6 @@ pub struct SplitAttrs {
 
     pub time_range: Option<RangeInclusive<i64>>,
 
-    /// Number of demux operations this split has undergone.
-    pub demux_num_ops: usize,
-
     pub replaced_split_ids: Vec<String>,
 }
 
@@ -67,7 +64,6 @@ impl fmt::Debug for SplitAttrs {
                 &self.uncompressed_docs_size_in_bytes,
             )
             .field("num_docs", &self.num_docs)
-            .field("demux_num_ops", &self.demux_num_ops)
             .finish()
     }
 }

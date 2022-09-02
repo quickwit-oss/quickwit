@@ -225,7 +225,6 @@ fn create_split_metadata(split: &PackagedSplit, footer_offsets: Range<u64>) -> S
         uncompressed_docs_size_in_bytes: split.split_attrs.uncompressed_docs_size_in_bytes,
         create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
         tags: split.tags.clone(),
-        demux_num_ops: split.split_attrs.demux_num_ops,
         footer_offsets,
     }
 }
@@ -346,7 +345,6 @@ mod tests {
                         time_range: Some(1_628_203_589i64..=1_628_203_640i64),
                         uncompressed_docs_size_in_bytes: 1_000,
                         num_docs: 10,
-                        demux_num_ops: 0,
                         replaced_split_ids: Vec::new(),
                         split_id: "test-split".to_string(),
                     },
@@ -440,7 +438,6 @@ mod tests {
                 num_docs: 10,
                 uncompressed_docs_size_in_bytes: 1_000,
                 time_range: Some(1_628_203_589i64..=1_628_203_640i64),
-                demux_num_ops: 1,
                 replaced_split_ids: vec![
                     "replaced-split-1".to_string(),
                     "replaced-split-2".to_string(),
@@ -459,7 +456,6 @@ mod tests {
                 num_docs: 10,
                 uncompressed_docs_size_in_bytes: 1_000,
                 time_range: Some(1_628_203_589i64..=1_628_203_640i64),
-                demux_num_ops: 1,
                 replaced_split_ids: vec![
                     "replaced-split-1".to_string(),
                     "replaced-split-2".to_string(),
@@ -514,8 +510,6 @@ mod tests {
             ]
         );
         assert!(checkpoint_delta_opt.is_none());
-        assert_eq!(new_splits[0].demux_num_ops, 1);
-        assert_eq!(new_splits[1].demux_num_ops, 1);
 
         let mut files = ram_storage.list_files().await;
         files.sort();

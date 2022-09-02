@@ -58,10 +58,6 @@ pub struct DefaultDocMapperBuilder {
     /// into specific splits.
     #[serde(default)]
     pub partition_key: String,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    /// Name of the field to demux by.
-    pub demux_field: Option<String>,
     /// Defines the indexing mode.
     #[serde(default)]
     pub mode: ModeType,
@@ -132,7 +128,6 @@ mod tests {
         assert!(default_mapper_builder.tag_fields.is_empty());
         assert_eq!(default_mapper_builder.mode, ModeType::Lenient);
         assert!(default_mapper_builder.dynamic_mapping.is_none());
-        assert!(default_mapper_builder.demux_field.is_none());
         assert!(default_mapper_builder.sort_by.is_none());
         assert_eq!(default_mapper_builder.store_source, false);
         assert!(default_mapper_builder.timestamp_field.is_none());

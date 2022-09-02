@@ -213,8 +213,7 @@ mod tests {
     use quickwit_cli::cli::{build_cli, CliCommand};
     use quickwit_cli::index::{
         ClearIndexArgs, CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs,
-        GarbageCollectIndexArgs, IndexCliCommand, IngestDocsArgs, MergeOrDemuxArgs,
-        SearchIndexArgs,
+        GarbageCollectIndexArgs, IndexCliCommand, IngestDocsArgs, MergeArgs, SearchIndexArgs,
     };
     use quickwit_cli::split::{DescribeSplitArgs, ExtractSplitArgs, SplitCliCommand};
     use quickwit_common::uri::Uri;
@@ -552,29 +551,7 @@ mod tests {
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
-            CliCommand::Index(IndexCliCommand::Merge(MergeOrDemuxArgs {
-                index_id,
-                ..
-            })) if &index_id == "wikipedia"
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_demux_args() -> anyhow::Result<()> {
-        let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from(&[
-            "index",
-            "demux",
-            "--index",
-            "wikipedia",
-            "--config",
-            "quickwit.yaml",
-        ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
-        assert!(matches!(
-            command,
-            CliCommand::Index(IndexCliCommand::Demux(MergeOrDemuxArgs {
+            CliCommand::Index(IndexCliCommand::Merge(MergeArgs {
                 index_id,
                 ..
             })) if &index_id == "wikipedia"
