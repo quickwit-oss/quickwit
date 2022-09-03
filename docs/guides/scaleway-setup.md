@@ -19,7 +19,7 @@ export AWS_SECRET_ACCESS_KEY=****
    
 2. Set the endpoint URI: 
 ```bash
-export QW_S3_ENDPOINT=https://s3.fr-par.scw.cloud
+export QW_S3_ENDPOINT=https://s3.{your-region}.scw.cloud
 ```
 
 3. Set the region: 
