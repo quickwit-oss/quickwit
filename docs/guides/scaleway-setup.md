@@ -41,5 +41,5 @@ In your [node config file](/docs/configuration/node-config), use `metastore_uri:
 In your [index config file](/docs/configuration/index-config), use `index_uri: s3://{your-bucket}/{your-indexes}`.
 
 :::note
-Note that the URI scheme has still the name `s3` but Quickwit is actually sending HTTP requests to `https://s3.fr-par.scw.cloud`.
+Note that the URI scheme has still the name `s3` but Quickwit is actually sending HTTP requests to `https://s3.{your-region}.scw.cloud`.
 :::
