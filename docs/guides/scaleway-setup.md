@@ -1,5 +1,5 @@
 ---
-title: Object Storage (Scaleway) setup
+title: Scaleway (object storage) setup
 sidebar_position: 6
 ---
 
