@@ -24,7 +24,7 @@ export QW_S3_ENDPOINT=https://s3.fr-par.scw.cloud
 
 3. Set the region: 
 ```bash
-export AWS_REGION=fr-par
+export AWS_REGION={your-region}
 ```
 
 Now you're ready to have your metadata or index data on Scaleway.
