@@ -19,8 +19,7 @@
 
 use std::sync::Arc;
 
-use actors::JanitorService;
-use quickwit_actors::{Mailbox, Universe};
+use quickwit_actors::Universe;
 use quickwit_config::QuickwitConfig;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
@@ -28,23 +27,27 @@ use tracing::info;
 
 pub mod actors;
 mod garbage_collection;
+mod janitor_service;
+
+pub use janitor_service::JanitorService;
 
 pub use self::garbage_collection::{
     delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
 };
+use crate::actors::GarbageCollector;
 
 pub async fn start_janitor_service(
     universe: &Universe,
     config: &QuickwitConfig,
     metastore: Arc<dyn Metastore>,
     storage_uri_resolver: StorageUriResolver,
-) -> anyhow::Result<Mailbox<JanitorService>> {
+) -> anyhow::Result<JanitorService> {
     info!("Starting janitor service.");
-    let janitor_service = JanitorService::new(
+    let garbage_collector = GarbageCollector::new(metastore, storage_uri_resolver);
+    let (_, garbage_collector_handle) = universe.spawn_actor(garbage_collector).spawn();
+
+    Ok(JanitorService::new(
         config.node_id.clone(),
-        metastore.clone(),
-        storage_uri_resolver,
-    );
-    let (janitor_service, _) = universe.spawn_actor(janitor_service).spawn();
-    Ok(janitor_service)
+        garbage_collector_handle,
+    ))
 }
