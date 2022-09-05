@@ -1,15 +1,15 @@
 ---
-title: Scaleway (object storage) setup
-sidebar_position: 6
+title: Scaleway Storage
+sidebar_position: 4
 ---
 
 In this guide, you will learn how to configure a Quickwit [storage](/docs/reference/storage-uri) for Scaleway.
 
-## Get the access and secret keys from Scaleway 
+## Get access and secret keys from Scaleway 
 
 In your Scaleway console, generate a new API key and note the credentials. 
 
-Once you have the keys, you can follow these steps:
+Once you have the keys:
 
 1. Declare the environment variables used by Quickwit to configure the storage:
 ```bash
@@ -17,12 +17,12 @@ export AWS_ACCESS_KEY_ID=****
 export AWS_SECRET_ACCESS_KEY=****
 ```
    
-2. Set the endpoint URI: 
+2. Declare the endpoint URI: 
 ```bash
 export QW_S3_ENDPOINT=https://s3.{your-region}.scw.cloud
 ```
 
-3. Set the region: 
+3. Declare the region: 
 ```bash
 export AWS_REGION={your-region}
 ```
@@ -30,15 +30,21 @@ export AWS_REGION={your-region}
 Now you're ready to have your metadata or index data on Scaleway.
 
 
-## Examples
+## Set the Metastore URI
 
-### Set the Metastore URI
+Here is an example of how to set up your [node config file](/docs/configuration/node-config) with Scaleway:
 
-In your [node config file](/docs/configuration/node-config), use `metastore_uri: s3://{your-bucket}/{your-indexes}`.
+```yaml
+metastore_uri: s3://{my-bucket}/indexes
+default_index_uri: s3://{my-bucket}/indexes
+```
 
-### Set the Index URI
+## Set the Index URI
 
-In your [index config file](/docs/configuration/index-config), use `index_uri: s3://{your-bucket}/{your-indexes}`.
+Here is an example of how to setup your index URI in the [index config file](/docs/configuration/index-config):
+```yaml
+index_uri: s3://{my-bucket}/indexes/{my-index-id}
+```
 
 :::note
 Note that the URI scheme has still the name `s3` but Quickwit is actually sending HTTP requests to `https://s3.{your-region}.scw.cloud`.

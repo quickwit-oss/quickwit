@@ -47,7 +47,7 @@ AWS credentials or Region resolution may take a few seconds, especially if the A
 
 ### Security groups
 
-In order to communicate with each other, nodes must reside in security groups that allow inbound and outbound traffic on one UDP port and two TCP ports. Please, refer to the [ports configuration](../configuration/ports-config.md) page for more details.
+In order to communicate with each other, nodes must reside in security groups that allow inbound and outbound traffic on one UDP port and two TCP ports. Please, refer to the [ports configuration](/configuration/ports-config.md) page for more details.
 
 
 ## Common errors
