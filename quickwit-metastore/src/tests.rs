@@ -1996,6 +1996,7 @@ pub mod test_suite {
             .unwrap();
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
+        assert!(split_meta.publish_timestamp.is_none());
         assert!(
             metastore
                 .index_metadata(index_id)
@@ -2024,6 +2025,10 @@ pub mod test_suite {
             .unwrap();
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
+        assert_eq!(
+            split_meta.publish_timestamp,
+            Some(split_meta.update_timestamp)
+        );
         assert!(
             metastore
                 .index_metadata(index_id)
@@ -2043,6 +2048,7 @@ pub mod test_suite {
             .unwrap();
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
+        assert!(split_meta.publish_timestamp.is_some());
         assert!(
             metastore
                 .index_metadata(index_id)

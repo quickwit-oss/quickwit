@@ -165,6 +165,7 @@ impl FileBackedIndex {
         let metadata = Split {
             split_state: SplitState::Staged,
             update_timestamp: now_timestamp,
+            publish_timestamp: None,
             split_metadata,
         };
 
@@ -252,6 +253,7 @@ impl FileBackedIndex {
                     // The split state needs to be updated.
                     metadata.split_state = SplitState::Published;
                     metadata.update_timestamp = now_timestamp;
+                    metadata.publish_timestamp = Some(now_timestamp);
                 }
                 _ => {
                     split_not_staged_ids.push(split_id.to_string());

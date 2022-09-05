@@ -103,7 +103,7 @@
       "node_id": "node/1",
       "num_docs": 12303,
       "partition_id": 7,
-      "publish_timestamp": null,
+      "publish_timestamp": 1789,
       "source_id": "source",
       "split_id": "split",
       "split_state": "Published",
