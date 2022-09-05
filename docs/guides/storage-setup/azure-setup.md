@@ -7,7 +7,7 @@ In this guide, you will learn how to configure a Quickwit [storage](/docs/refere
 
 ## Get the access key
 
-The access key can be accessed in your `Storage Account` inside the `Access keys` directory. There are 2 keys available and either can be used.
+The access key can be accessed in your `Storage Account` inside the `Access keys` directory. 
 
 Declare the environment variable used by Quickwit to configure the storage:
 ```bash
