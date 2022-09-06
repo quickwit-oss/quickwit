@@ -18,15 +18,16 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::ops::{Bound, RangeBounds};
+use std::sync::Arc;
 
-use tantivy::fastfield::{Column, DynamicFastFieldReader};
+use tantivy::fastfield::Column;
 use tantivy::schema::{Field, Type};
 use tantivy::{DateTime, DocId, SegmentReader, TantivyError};
 
 #[derive(Clone)]
 enum GenericFastFieldReader {
-    I64(DynamicFastFieldReader<i64>),
-    Date(DynamicFastFieldReader<DateTime>),
+    I64(Arc<dyn Column<i64>>),
+    Date(Arc<dyn Column<DateTime>>),
 }
 
 impl GenericFastFieldReader {

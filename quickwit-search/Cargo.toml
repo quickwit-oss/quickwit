@@ -16,6 +16,7 @@ base64 = "0.13"
 bytes = "1"
 futures = "0.3"
 http = "0.2"
+fastfield_codecs = { git="https://github.com/quickwit-oss/tantivy/", rev = "ea72cf3"}
 hyper = { version = "0.14", features = [
   "stream",
   "server",

@@ -19,6 +19,7 @@
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet};
+use std::sync::Arc;
 
 use itertools::Itertools;
 use quickwit_doc_mapper::{DocMapper, SortBy, SortOrder};
@@ -29,7 +30,7 @@ use tantivy::aggregation::agg_req::{
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::aggregation::AggregationSegmentCollector;
 use tantivy::collector::{Collector, SegmentCollector};
-use tantivy::fastfield::{Column, DynamicFastFieldReader};
+use tantivy::fastfield::Column;
 use tantivy::schema::Schema;
 use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader};
 
@@ -40,7 +41,7 @@ use crate::partial_hit_sorting_key;
 /// `SegmentReader`. Its role is to compute the sorting field given a `DocId`.
 enum SortingFieldComputer {
     FastField {
-        fast_field_reader: DynamicFastFieldReader<u64>,
+        fast_field_reader: Arc<dyn Column<u64>>,
         order: SortOrder,
     },
     /// If undefined, we simply sort by DocIds.
