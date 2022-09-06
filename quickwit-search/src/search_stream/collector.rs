@@ -22,7 +22,7 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 
 use tantivy::collector::{Collector, SegmentCollector};
-use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader, FastValue};
+use tantivy::fastfield::{Column, DynamicFastFieldReader, FastValue};
 use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader, TantivyError};
 
 use crate::filters::{TimestampFilter, TimestampFilterBuilder};
@@ -61,7 +61,7 @@ impl<Item: FastValue> SegmentCollector for FastFieldSegmentCollector<Item> {
         if !self.accept_document(doc_id) {
             return;
         }
-        let fast_field_value = self.fast_field_reader.get(doc_id);
+        let fast_field_value = self.fast_field_reader.get_val(doc_id as u64);
         self.fast_field_values.push(fast_field_value);
     }
 
@@ -222,8 +222,8 @@ impl<Item: FastValue, PartitionItem: FastValue + Hash + Eq> SegmentCollector
         if !self.accept_document(doc_id) {
             return;
         }
-        let fast_field_value = self.fast_field_reader.get(doc_id);
-        let fast_field_partition = &self.partition_by_fast_field_reader.get(doc_id);
+        let fast_field_value = self.fast_field_reader.get_val(doc_id as u64);
+        let fast_field_partition = &self.partition_by_fast_field_reader.get_val(doc_id as u64);
         if let Some(values) = self.fast_field_values.get_mut(fast_field_partition) {
             values.push(fast_field_value);
         } else {

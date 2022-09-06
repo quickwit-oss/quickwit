@@ -29,7 +29,7 @@ use tantivy::aggregation::agg_req::{
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::aggregation::AggregationSegmentCollector;
 use tantivy::collector::{Collector, SegmentCollector};
-use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader};
+use tantivy::fastfield::{Column, DynamicFastFieldReader};
 use tantivy::schema::Schema;
 use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader};
 
@@ -58,7 +58,7 @@ impl SortingFieldComputer {
                 fast_field_reader,
                 order,
             } => {
-                let field_val = fast_field_reader.get(doc_id);
+                let field_val = fast_field_reader.get_val(doc_id as u64);
                 match order {
                     // Descending is our most common case.
                     SortOrder::Desc => field_val,

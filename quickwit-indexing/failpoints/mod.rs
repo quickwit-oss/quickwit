@@ -254,8 +254,8 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     }
 
     let metastore = test_index_builder.metastore();
-    let split_infos = metastore.list_all_splits(index_id).await?;
-    let splits: Vec<SplitMetadata> = split_infos
+    let splits = metastore.list_all_splits(index_id).await?;
+    let split_metadatas: Vec<SplitMetadata> = split_attrs
         .into_iter()
         .map(|split| split.split_metadata)
         .collect();
