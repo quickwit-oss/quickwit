@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -38,7 +38,7 @@ use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
 use tantivy::error::AsyncIoError;
 use tantivy::query::Query;
-use tantivy::schema::{Cardinality, FieldType};
+use tantivy::schema::{Cardinality, Field, FieldType};
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
 use tracing::*;
@@ -272,14 +272,16 @@ async fn warm_up_fastfields(
 }
 
 async fn warm_up_terms(searcher: &Searcher, query: &dyn Query) -> anyhow::Result<()> {
-    let mut terms: BTreeMap<Term, bool> = Default::default();
-    query.query_terms(&mut terms);
-    let grouped_terms = terms.iter().group_by(|term| term.0.field());
+    let mut terms_grouped_by_field: HashMap<Field, Vec<(&Term, bool)>> = Default::default();
+    query.query_terms(&mut |term, need_position| {
+        let field = term.field();
+        terms_grouped_by_field
+            .entry(field)
+            .or_default()
+            .push((term, need_position));
+    });
     let mut warm_up_futures = Vec::new();
-    for (field, terms) in grouped_terms.into_iter() {
-        let terms: Vec<(&Term, bool)> = terms
-            .map(|(term, position_needed)| (term, *position_needed))
-            .collect();
+    for (field, terms) in terms_grouped_by_field {
         for segment_reader in searcher.segment_readers() {
             let inv_idx = segment_reader.inverted_index(field)?;
             for (term, position_needed) in terms.iter().cloned() {

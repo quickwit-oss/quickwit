@@ -28,7 +28,7 @@ use quickwit_proto::{FetchDocsResponse, PartialHit, SearchRequest, SplitIdAndFoo
 use quickwit_storage::Storage;
 use tantivy::query::{Query, QueryParserError};
 use tantivy::schema::{Field, Value};
-use tantivy::{ReloadPolicy, Score, Searcher, SnippetGenerator};
+use tantivy::{ReloadPolicy, Score, Searcher, SnippetGenerator, Term};
 use tracing::error;
 
 use crate::leaf::open_index_with_caches;
@@ -307,13 +307,14 @@ async fn create_snippet_generator(
     query: &dyn Query,
     field: Field,
 ) -> anyhow::Result<SnippetGenerator> {
-    let mut terms = BTreeMap::new();
-    query.query_terms(&mut terms);
-    let mut terms_text: BTreeMap<String, Score> = Default::default();
-    for (term, _) in terms {
-        if term.field() != field {
-            continue;
+    let mut terms: Vec<&Term> = Vec::new();
+    query.query_terms(&mut |term, _need_position| {
+        if term.field() == field {
+            terms.push(term);
         }
+    });
+    let mut terms_text: BTreeMap<String, f32> = BTreeMap::default();
+    for term in terms {
         let term_str = if let Some(term_str) = term.as_str() {
             term_str
         } else {
