@@ -5,7 +5,7 @@ ALTER TABLE splits
 -- being is published.
 CREATE OR REPLACE FUNCTION set_split_publish_timestamp_for_split() RETURNS trigger AS $$
 BEGIN
-    IF (TG_OP = 'UPDATE') AND (NEW.split_state = 'Published') THEN
+    IF (TG_OP = 'UPDATE') AND (NEW.split_state = 'Published') AND (OLD.split_state = 'Staged') THEN
         NEW.publish_timestamp := (CURRENT_TIMESTAMP AT TIME ZONE 'UTC');
     END IF;
     RETURN NEW;

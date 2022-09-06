@@ -635,7 +635,6 @@ mod tests {
 
         // gRPC service should send request on the running server.
         let result = metastore_client.index_metadata(index_id).await;
-        println!("result {:?}", result);
         assert!(result.is_ok());
 
         // Send empty vec to signal that there is no more control plane in the cluster.

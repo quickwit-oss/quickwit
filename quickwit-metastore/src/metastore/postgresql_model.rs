@@ -80,7 +80,7 @@ pub struct Split {
     pub create_timestamp: sqlx::types::time::PrimitiveDateTime,
     /// Timestamp for tracking when the split was last updated.
     pub update_timestamp: sqlx::types::time::PrimitiveDateTime,
-    /// Timestamp for tracking when the split was last updated.
+    /// Timestamp for tracking when the split was published.
     pub publish_timestamp: Option<sqlx::types::time::PrimitiveDateTime>,
     /// A list of tags for categorizing and searching group of splits.
     pub tags: Vec<String>,
