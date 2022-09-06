@@ -54,30 +54,16 @@ impl Handler<MergeOperation> for MergeSplitDownloader {
     type Reply = ();
 
     fn message_span(&self, msg_id: u64, merge_operation: &MergeOperation) -> Span {
-        match merge_operation {
-            MergeOperation::Merge {
-                merge_split_id,
-                splits,
-            } => {
-                let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
-                info_span!("merge",
+        let num_docs: usize = merge_operation
+            .splits_as_slice()
+            .iter()
+            .map(|split| split.num_docs)
+            .sum();
+        info_span!("merge",
                     msg_id=&msg_id,
-                    merge_split_id=%merge_split_id,
+                    merge_split_id=%merge_operation.merge_split_id,
                     num_docs=num_docs,
-                    num_splits=splits.len())
-            }
-            MergeOperation::Demux {
-                demux_split_ids,
-                splits,
-            } => {
-                let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
-                info_span!("demux",
-                    msg_id=&msg_id,
-                    demux_split_ids=?demux_split_ids,
-                    num_docs=num_docs,
-                    num_splits=splits.len())
-            }
-        }
+                    num_splits=merge_operation.splits_as_slice().len())
     }
 
     async fn handle(
@@ -95,7 +81,7 @@ impl Handler<MergeOperation> for MergeSplitDownloader {
             .map_err(|error| anyhow::anyhow!(error))?;
         let tantivy_dirs = self
             .download_splits(
-                merge_operation.splits(),
+                merge_operation.splits_as_slice(),
                 downloaded_splits_directory.path(),
                 ctx,
             )
@@ -201,12 +187,8 @@ mod tests {
             .unwrap()
             .downcast::<MergeScratch>()
             .unwrap();
-        assert!(matches!(
-            merge_scratch.merge_operation,
-            MergeOperation::Merge { .. }
-        ));
-        assert_eq!(merge_scratch.merge_operation.splits().len(), 10);
-        for split in merge_scratch.merge_operation.splits() {
+        assert_eq!(merge_scratch.merge_operation.splits_as_slice().len(), 10);
+        for split in merge_scratch.merge_operation.splits_as_slice() {
             let split_filename = split_file(split.split_id());
             let split_filepath = merge_scratch
                 .downloaded_splits_directory

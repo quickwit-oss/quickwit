@@ -58,11 +58,11 @@ pub fn serialize_partitions<TFastValue: FastValue + Display, TPartitionFastValue
         let values_byte_size =
             std::mem::size_of::<TFastValue>() * partition.fast_field_values.len();
 
-        buffer.extend(partition.partition_value.as_u64().to_le_bytes());
+        buffer.extend(partition.partition_value.to_u64().to_le_bytes());
         buffer.extend(values_byte_size.to_le_bytes());
 
         for value in &partition.fast_field_values {
-            buffer.extend(value.as_u64().to_le_bytes());
+            buffer.extend(value.to_u64().to_le_bytes());
         }
     }
     Ok(())
@@ -86,7 +86,7 @@ fn serialize_click_house_row_binary<TFastValue: FastValue + Display>(
     buffer.clear();
     buffer.reserve_exact(std::mem::size_of::<TFastValue>() * values.len());
     for value in values {
-        buffer.extend(value.as_u64().to_le_bytes());
+        buffer.extend(value.to_u64().to_le_bytes());
     }
     Ok(())
 }

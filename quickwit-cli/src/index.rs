@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -37,12 +37,11 @@ use quickwit_config::{
 use quickwit_core::{
     clear_cache_directory, remove_indexing_directory, validate_storage_uri, IndexService,
 };
-use quickwit_doc_mapper::tag_pruning::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
 use quickwit_indexing::models::{
     DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
 };
-use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Split, SplitState};
+use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
@@ -141,16 +140,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
         .subcommand(
             Command::new("merge")
                 .about("Merges an index.")
-                .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
-                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
-                        .env("QW_DATA_DIR")
-                        .required(false),
-                ])
-            )
-        .subcommand(
-            Command::new("demux")
-                .about("Demuxes an index.")
                 .args(&[
                     arg!(--index <INDEX> "ID of the target index"),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
@@ -264,7 +253,7 @@ pub struct GarbageCollectIndexArgs {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct MergeOrDemuxArgs {
+pub struct MergeArgs {
     pub config_uri: Uri,
     pub index_id: String,
     pub data_dir: Option<PathBuf>,
@@ -281,12 +270,11 @@ pub enum IndexCliCommand {
     Clear(ClearIndexArgs),
     Create(CreateIndexArgs),
     Delete(DeleteIndexArgs),
-    Demux(MergeOrDemuxArgs),
     Describe(DescribeIndexArgs),
     GarbageCollect(GarbageCollectIndexArgs),
     Ingest(IngestDocsArgs),
     List(ListIndexesArgs),
-    Merge(MergeOrDemuxArgs),
+    Merge(MergeArgs),
     Search(SearchIndexArgs),
 }
 
@@ -306,7 +294,6 @@ impl IndexCliCommand {
             "clear" => Self::parse_clear_args(submatches),
             "create" => Self::parse_create_args(submatches),
             "delete" => Self::parse_delete_args(submatches),
-            "demux" => Self::parse_demux_args(submatches),
             "describe" => Self::parse_describe_args(submatches),
             "gc" => Self::parse_garbage_collect_args(submatches),
             "ingest" => Self::parse_ingest_args(submatches),
@@ -479,24 +466,7 @@ impl IndexCliCommand {
             .map(Uri::try_new)
             .expect("`config` is a required arg.")?;
         let data_dir = matches.value_of("data-dir").map(PathBuf::from);
-        Ok(Self::Merge(MergeOrDemuxArgs {
-            index_id,
-            config_uri,
-            data_dir,
-        }))
-    }
-
-    fn parse_demux_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let index_id = matches
-            .value_of("index")
-            .context("'index-id' is a required arg.")?
-            .to_string();
-        let config_uri = matches
-            .value_of("config")
-            .map(Uri::try_new)
-            .expect("`config` is a required arg.")?;
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
-        Ok(Self::Demux(MergeOrDemuxArgs {
+        Ok(Self::Merge(MergeArgs {
             index_id,
             config_uri,
             data_dir,
@@ -551,12 +521,11 @@ impl IndexCliCommand {
             Self::Clear(args) => clear_index_cli(args).await,
             Self::Create(args) => create_index_cli(args).await,
             Self::Delete(args) => delete_index_cli(args).await,
-            Self::Demux(args) => merge_or_demux_cli(args, false, true).await,
             Self::Describe(args) => describe_index_cli(args).await,
             Self::GarbageCollect(args) => garbage_collect_index_cli(args).await,
             Self::Ingest(args) => ingest_docs_cli(args).await,
             Self::List(args) => list_index_cli(args).await,
-            Self::Merge(args) => merge_or_demux_cli(args, true, false).await,
+            Self::Merge(args) => merge_cli(args, true).await,
             Self::Search(args) => search_index_cli(args).await,
         }
     }
@@ -735,103 +704,8 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     println!("Size in MB stats:");
     print_descriptive_stats(&splits_bytes);
 
-    if let Some(demux_field_name) = &index_metadata.indexing_settings.demux_field {
-        show_demux_stats(demux_field_name, &splits).await;
-    }
-
     println!();
     Ok(())
-}
-
-pub async fn show_demux_stats(demux_field_name: &str, splits: &[Split]) {
-    println!();
-    println!("3. Demux stats");
-    println!("===============================================================================");
-    let demux_uniq_values: HashSet<String> = splits
-        .iter()
-        .flat_map(|split| {
-            split
-                .split_metadata
-                .tags
-                .iter()
-                .filter(|tag| match_tag_field_name(demux_field_name, tag))
-                .cloned()
-        })
-        .collect();
-    println!(
-        "{:<35} {}",
-        "Demux field name:".color(GREEN_COLOR),
-        demux_field_name
-    );
-    println!(
-        "{:<35} {}",
-        "Demux unique values count:".color(GREEN_COLOR),
-        demux_uniq_values.len()
-    );
-    println!();
-    println!("3.1 Split count per `{}` value", demux_field_name);
-    println!("-------------------------------------------------");
-    let mut split_counts_per_demux_values = Vec::new();
-    for demux_value in demux_uniq_values {
-        let split_count = splits
-            .iter()
-            .filter(|split| split.split_metadata.tags.contains(&demux_value))
-            .count();
-        split_counts_per_demux_values.push(split_count);
-    }
-    print_descriptive_stats(&split_counts_per_demux_values);
-
-    let (non_demuxed_splits, demuxed_splits): (Vec<_>, Vec<_>) = splits
-        .iter()
-        .cloned()
-        .partition(|split| split.split_metadata.demux_num_ops == 0);
-    let non_demuxed_split_demux_values_counts = non_demuxed_splits
-        .iter()
-        .map(|split| {
-            split
-                .split_metadata
-                .tags
-                .iter()
-                .filter(|tag| match_tag_field_name(demux_field_name, tag))
-                .count()
-        })
-        .sorted()
-        .collect_vec();
-    let demuxed_split_demux_values_counts = demuxed_splits
-        .iter()
-        .map(|split| {
-            split
-                .split_metadata
-                .tags
-                .iter()
-                .filter(|tag| match_tag_field_name(demux_field_name, tag))
-                .count()
-        })
-        .sorted()
-        .collect_vec();
-    println!();
-    println!("3.2 Demux unique values count per split");
-    println!("-------------------------------------------------");
-    println!(
-        "{:<35} {}",
-        "Non demux splits count:".color(GREEN_COLOR),
-        non_demuxed_splits.len()
-    );
-    println!(
-        "{:<35} {}",
-        "Demux splits count:".color(GREEN_COLOR),
-        demuxed_splits.len()
-    );
-    if !non_demuxed_splits.is_empty() {
-        println!();
-        println!("Stats on non demuxed splits:");
-        print_descriptive_stats(&non_demuxed_split_demux_values_counts);
-    }
-    if !demuxed_splits.is_empty() {
-        println!();
-        println!("Stats on demuxed splits:");
-        print_descriptive_stats(&demuxed_split_demux_values_counts);
-    }
 }
 
 fn print_descriptive_stats(values: &[usize]) {
@@ -989,12 +863,8 @@ pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn merge_or_demux_cli(
-    args: MergeOrDemuxArgs,
-    merge_enabled: bool,
-    demux_enabled: bool,
-) -> anyhow::Result<()> {
-    debug!(args=?args, merge_enabled = merge_enabled, demux_enabled = demux_enabled, "run-merge-operations");
+pub async fn merge_cli(args: MergeArgs, merge_enabled: bool) -> anyhow::Result<()> {
+    debug!(args=?args, merge_enabled = merge_enabled, "run-merge-operations");
     let config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     run_index_checklist(&config.metastore_uri, &args.index_id, None).await?;
     let indexer_config = IndexerConfig {
@@ -1020,7 +890,6 @@ pub async fn merge_or_demux_cli(
         .ask_for_res(SpawnMergePipeline {
             index_id: args.index_id.clone(),
             merge_enabled,
-            demux_enabled,
         })
         .await?;
     let pipeline_handle = indexing_server_mailbox

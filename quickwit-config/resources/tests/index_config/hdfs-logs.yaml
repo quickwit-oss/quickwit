@@ -26,6 +26,11 @@ doc_mapping:
   tag_fields: [tenant_id]
   store_source: true
 
+retention:
+  period: 90 days
+  cutoff_reference: split_timestamp_field
+  schedule: daily
+
 indexing_settings:
   demux_field: tenant_id
   timestamp_field: timestamp

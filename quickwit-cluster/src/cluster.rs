@@ -23,6 +23,7 @@ use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::anyhow;
 use chitchat::transport::Transport;
 use chitchat::{
     spawn_chitchat, ChitchatConfig, ChitchatHandle, ClusterStateSnapshot, FailureDetectorConfig,
@@ -301,8 +302,7 @@ impl Cluster {
         self.stop.store(true, Ordering::Relaxed);
     }
 
-    /// Convenience method for testing that waits for the predicate to hold true for the cluster's
-    /// members.
+    /// Waiting for the predicate to hold true for the cluster's members.
     pub async fn wait_for_members<F>(
         self: &Cluster,
         mut predicate: F,
@@ -317,7 +317,8 @@ impl Cluster {
                 .skip_while(|members| !predicate(members))
                 .next(),
         )
-        .await?;
+        .await
+        .map_err(|_| anyhow!("Waiting for members deadline has elapsed."))?;
         Ok(())
     }
 

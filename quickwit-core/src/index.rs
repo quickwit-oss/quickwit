@@ -156,6 +156,7 @@ impl IndexService {
             doc_mapping: index_config.doc_mapping,
             indexing_settings: index_config.indexing_settings,
             search_settings: index_config.search_settings,
+            retention_policy: index_config.retention_policy,
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
             update_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
         };

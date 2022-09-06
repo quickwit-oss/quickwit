@@ -134,7 +134,7 @@ impl IndexerState {
             ctx.progress().clone(),
             ctx.kill_switch().clone(),
         )?;
-        info!(split_id = %indexed_split.split_id, "new-split");
+        info!(split_id = indexed_split.split_id(), "new-split");
         Ok(indexed_split)
     }
 
@@ -279,12 +279,12 @@ impl IndexerState {
                 } => {
                     let indexed_split =
                         self.get_or_create_indexed_split(partition, indexed_splits, ctx)?;
-                    indexed_split.docs_size_in_bytes += doc_json_num_bytes;
+                    indexed_split.split_attrs.uncompressed_docs_size_in_bytes += doc_json_num_bytes;
                     counters.num_docs_in_workbench += 1;
                     counters.num_valid_docs += 1;
-                    indexed_split.num_docs += 1;
+                    indexed_split.split_attrs.num_docs += 1;
                     if let Some(timestamp) = timestamp_opt {
-                        record_timestamp(timestamp, &mut indexed_split.time_range);
+                        record_timestamp(timestamp, &mut indexed_split.split_attrs.time_range);
                     }
                     let _protect_guard = ctx.protect_zone();
                     indexed_split
@@ -535,7 +535,7 @@ impl Indexer {
                 })?;
             } else {
                 info!(
-                    split_ids=?splits.iter().map(|split| &split.split_id).join(", "),
+                    split_ids=?splits.iter().map(|split| split.split_id()).join(", "),
                     "Splits' publish lock is dead."
                 );
                 // TODO: Remove the junk right away?
@@ -543,7 +543,7 @@ impl Indexer {
             return Ok(());
         }
         let num_splits = splits.len() as u64;
-        let split_ids = splits.iter().map(|split| &split.split_id).join(",");
+        let split_ids = splits.iter().map(|split| split.split_id()).join(",");
         info!(commit_trigger=?commit_trigger, split_ids=%split_ids, num_docs=self.counters.num_docs_in_workbench, "send-to-packager");
         ctx.send_message(
             &self.packager_mailbox,
@@ -670,7 +670,7 @@ mod tests {
         let batch = output_messages[0]
             .downcast_ref::<IndexedSplitBatch>()
             .unwrap();
-        assert_eq!(batch.splits[0].num_docs, 3);
+        assert_eq!(batch.splits[0].split_attrs.num_docs, 3);
         let sort_by_field = batch.splits[0].index.settings().sort_by_field.as_ref();
         assert!(sort_by_field.is_some());
         assert_eq!(sort_by_field.unwrap().field, "timestamp");
@@ -747,7 +747,7 @@ mod tests {
         let indexed_split_batch = output_messages[0]
             .downcast_ref::<IndexedSplitBatch>()
             .unwrap();
-        assert_eq!(indexed_split_batch.splits[0].num_docs, 1);
+        assert_eq!(indexed_split_batch.splits[0].split_attrs.num_docs, 1);
         Ok(())
     }
 
@@ -810,6 +810,7 @@ mod tests {
                 .downcast_ref::<IndexedSplitBatch>()
                 .unwrap()
                 .splits[0]
+                .split_attrs
                 .num_docs,
             1
         );

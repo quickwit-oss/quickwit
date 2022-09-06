@@ -206,9 +206,6 @@ impl IndexingPipeline {
         self.statistics.num_spawn_attempts += 1;
         self.kill_switch = KillSwitch::default();
         let stable_multitenant_merge_policy = StableMultitenantWithTimestampMergePolicy {
-            demux_enabled: self.params.indexing_settings.demux_enabled,
-            demux_factor: self.params.indexing_settings.merge_policy.demux_factor,
-            demux_field_name: self.params.indexing_settings.demux_field.clone(),
             merge_enabled: self.params.indexing_settings.merge_enabled,
             merge_factor: self.params.indexing_settings.merge_policy.merge_factor,
             max_merge_factor: self.params.indexing_settings.merge_policy.max_merge_factor,
@@ -308,14 +305,8 @@ impl IndexingPipeline {
             .set_kill_switch(self.kill_switch.clone())
             .spawn();
 
-        let merge_executor = MergeExecutor::new(
-            self.params.pipeline_id.clone(),
-            merge_packager_mailbox,
-            self.params.indexing_settings.timestamp_field.clone(),
-            self.params.indexing_settings.demux_field.clone(),
-            self.params.indexing_settings.split_num_docs_target as usize,
-            self.params.indexing_settings.split_num_docs_target as usize * 2,
-        );
+        let merge_executor =
+            MergeExecutor::new(self.params.pipeline_id.clone(), merge_packager_mailbox);
         let (merge_executor_mailbox, merge_executor_handler) = ctx
             .spawn_actor(merge_executor)
             .set_kill_switch(self.kill_switch.clone())

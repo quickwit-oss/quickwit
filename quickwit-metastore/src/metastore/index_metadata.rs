@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
-    DocMapping, IndexingResources, IndexingSettings, SearchSettings, SourceConfig,
+    DocMapping, IndexingResources, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig,
 };
 use quickwit_doc_mapper::SortOrder;
 use serde::{Deserialize, Serialize};
@@ -53,6 +53,8 @@ pub struct IndexMetadata {
     pub search_settings: SearchSettings,
     /// Data sources keyed by their `source_id`.
     pub sources: HashMap<String, SourceConfig>,
+    /// An optional retention policy which will be applied to the splits of the index.
+    pub retention_policy: Option<RetentionPolicy>,
     /// Time at which the index was created.
     pub create_timestamp: i64,
     /// Time at which the index was last updated.
@@ -146,6 +148,7 @@ impl IndexMetadata {
             indexing_settings,
             search_settings,
             sources: Default::default(),
+            retention_policy: None, // TODO
             create_timestamp: now_timestamp,
             update_timestamp: now_timestamp,
         }
@@ -209,6 +212,9 @@ pub(crate) struct IndexMetadataV1 {
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<SourceConfig>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retention_policy: Option<RetentionPolicy>,
     #[serde(default = "utc_now_timestamp")]
     pub create_timestamp: i64,
     #[serde(default = "utc_now_timestamp")]
@@ -230,6 +236,7 @@ impl From<IndexMetadata> for IndexMetadataV1 {
             indexing_settings: index_metadata.indexing_settings,
             search_settings: index_metadata.search_settings,
             sources,
+            retention_policy: index_metadata.retention_policy,
             create_timestamp: index_metadata.create_timestamp,
             update_timestamp: index_metadata.update_timestamp,
         }
@@ -251,6 +258,7 @@ impl From<IndexMetadataV1> for IndexMetadata {
             indexing_settings: v1.indexing_settings,
             search_settings: v1.search_settings,
             sources,
+            retention_policy: v1.retention_policy,
             create_timestamp: v1.create_timestamp,
             update_timestamp: v1.update_timestamp,
         }

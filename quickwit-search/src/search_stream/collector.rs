@@ -20,9 +20,10 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 use tantivy::collector::{Collector, SegmentCollector};
-use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader, FastValue};
+use tantivy::fastfield::{Column, FastValue};
 use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader, TantivyError};
 
 use crate::filters::{TimestampFilter, TimestampFilterBuilder};
@@ -30,13 +31,13 @@ use crate::filters::{TimestampFilter, TimestampFilterBuilder};
 #[derive(Clone)]
 pub struct FastFieldSegmentCollector<Item: FastValue> {
     fast_field_values: Vec<Item>,
-    fast_field_reader: DynamicFastFieldReader<Item>,
+    fast_field_reader: Arc<dyn Column<Item>>,
     timestamp_filter_opt: Option<TimestampFilter>,
 }
 
 impl<Item: FastValue> FastFieldSegmentCollector<Item> {
     pub fn new(
-        fast_field_reader: DynamicFastFieldReader<Item>,
+        fast_field_reader: Arc<dyn Column<Item>>,
         timestamp_filter_opt: Option<TimestampFilter>,
     ) -> Self {
         Self {
@@ -61,7 +62,7 @@ impl<Item: FastValue> SegmentCollector for FastFieldSegmentCollector<Item> {
         if !self.accept_document(doc_id) {
             return;
         }
-        let fast_field_value = self.fast_field_reader.get(doc_id);
+        let fast_field_value = self.fast_field_reader.get_val(doc_id as u64);
         self.fast_field_values.push(fast_field_value);
     }
 
@@ -184,8 +185,8 @@ pub struct PartitionedFastFieldSegmentCollector<
     PartitionItem: FastValue + Eq + Hash,
 > {
     fast_field_values: std::collections::HashMap<PartitionItem, Vec<Item>>,
-    fast_field_reader: DynamicFastFieldReader<Item>,
-    partition_by_fast_field_reader: DynamicFastFieldReader<PartitionItem>,
+    fast_field_reader: Arc<dyn Column<Item>>,
+    partition_by_fast_field_reader: Arc<dyn Column<PartitionItem>>,
     timestamp_filter_opt: Option<TimestampFilter>,
 }
 
@@ -193,8 +194,8 @@ impl<Item: FastValue, PartitionItem: FastValue + Eq + Hash>
     PartitionedFastFieldSegmentCollector<Item, PartitionItem>
 {
     pub fn new(
-        fast_field_reader: DynamicFastFieldReader<Item>,
-        partition_by_fast_field_reader: DynamicFastFieldReader<PartitionItem>,
+        fast_field_reader: Arc<dyn Column<Item>>,
+        partition_by_fast_field_reader: Arc<dyn Column<PartitionItem>>,
         timestamp_filter_opt: Option<TimestampFilter>,
     ) -> Self {
         Self {
@@ -222,8 +223,8 @@ impl<Item: FastValue, PartitionItem: FastValue + Hash + Eq> SegmentCollector
         if !self.accept_document(doc_id) {
             return;
         }
-        let fast_field_value = self.fast_field_reader.get(doc_id);
-        let fast_field_partition = &self.partition_by_fast_field_reader.get(doc_id);
+        let fast_field_value = self.fast_field_reader.get_val(doc_id as u64);
+        let fast_field_partition = &self.partition_by_fast_field_reader.get_val(doc_id as u64);
         if let Some(values) = self.fast_field_values.get_mut(fast_field_partition) {
             values.push(fast_field_value);
         } else {
@@ -238,17 +239,21 @@ impl<Item: FastValue, PartitionItem: FastValue + Hash + Eq> SegmentCollector
 }
 
 mod helpers {
+    use std::sync::Arc;
+
     use super::*;
 
     pub fn make_fast_field_reader<T: FastValue>(
         segment_reader: &SegmentReader,
         fast_field_to_collect: &str,
-    ) -> tantivy::Result<DynamicFastFieldReader<T>> {
+    ) -> tantivy::Result<Arc<dyn Column<T>>> {
         let field = segment_reader
             .schema()
             .get_field(fast_field_to_collect)
             .ok_or_else(|| TantivyError::SchemaError("field does not exist".to_owned()))?;
         let fast_field_slice = segment_reader.fast_fields().fast_field_data(field, 0)?;
-        DynamicFastFieldReader::open(fast_field_slice)
+        let bytes = fast_field_slice.read_bytes()?;
+        let column = fastfield_codecs::open(bytes)?;
+        Ok(column)
     }
 }
