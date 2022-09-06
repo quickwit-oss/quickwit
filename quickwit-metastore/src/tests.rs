@@ -101,6 +101,7 @@ pub mod test_suite {
 
             let split_metadata = SplitMetadata {
                 split_id: split_id.clone(),
+                index_id: index_id.clone(),
                 ..Default::default()
             };
             metastore
@@ -337,6 +338,7 @@ pub mod test_suite {
         let split_id = "stage-split-my-index-one";
         let split_metadata = SplitMetadata {
             split_id: split_id.to_string(),
+            index_id: index_id.to_string(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
@@ -453,6 +455,7 @@ pub mod test_suite {
         let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: split_id_1.to_string(),
+            index_id: index_id.to_string(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
@@ -464,6 +467,7 @@ pub mod test_suite {
         let split_metadata_2 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: split_id_2.to_string(),
+            index_id: index_id.to_string(),
             num_docs: 5,
             uncompressed_docs_size_in_bytes: 6,
             time_range: Some(30..=99),
@@ -892,6 +896,7 @@ pub mod test_suite {
         let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: split_id_1.clone(),
+            index_id: index_id.clone(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: None,
@@ -903,6 +908,7 @@ pub mod test_suite {
         let split_metadata_2 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: split_id_2.clone(),
+            index_id: index_id.clone(),
             num_docs: 5,
             uncompressed_docs_size_in_bytes: 6,
             time_range: None,
@@ -914,6 +920,7 @@ pub mod test_suite {
         let split_metadata_3 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: split_id_3.clone(),
+            index_id: index_id.clone(),
             num_docs: 5,
             uncompressed_docs_size_in_bytes: 6,
             time_range: None,
@@ -1142,6 +1149,7 @@ pub mod test_suite {
         let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: split_id_1.to_string(),
+            index_id: index_id.to_string(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
@@ -1214,6 +1222,7 @@ pub mod test_suite {
         let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: split_id_1.to_string(),
+            index_id: index_id.to_string(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
@@ -1227,7 +1236,6 @@ pub mod test_suite {
                 .delete_splits("non-existent-index", &["non-existent-split"])
                 .await
                 .unwrap_err();
-            println!("{:?}", result);
             assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
         }
 
@@ -1344,6 +1352,7 @@ pub mod test_suite {
         let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: split_id_1.to_string(),
+            index_id: index_id.to_string(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
@@ -1354,6 +1363,7 @@ pub mod test_suite {
         let split_metadata_2 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: "list-all-splits-index-two".to_string(),
+            index_id: index_id.to_string(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(100..=199),
@@ -1364,6 +1374,7 @@ pub mod test_suite {
         let split_metadata_3 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: "list-all-splits-index-three".to_string(),
+            index_id: index_id.to_string(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(200..=299),
@@ -1374,6 +1385,7 @@ pub mod test_suite {
         let split_metadata_4 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: "list-all-splits-index-four".to_string(),
+            index_id: index_id.to_string(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(300..=399),
@@ -1384,6 +1396,7 @@ pub mod test_suite {
         let split_metadata_5 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: "list-all-splits-index-five".to_string(),
+            index_id: index_id.to_string(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: None,
@@ -1461,6 +1474,7 @@ pub mod test_suite {
         let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: split_id_1.to_string(),
+            index_id: index_id.to_string(),
             partition_id: 3u64,
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
@@ -1473,6 +1487,7 @@ pub mod test_suite {
         let split_metadata_2 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: "list-splits-two".to_string(),
+            index_id: index_id.to_string(),
             partition_id: 3u64,
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
@@ -1485,6 +1500,7 @@ pub mod test_suite {
         let split_metadata_3 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: "list-splits-three".to_string(),
+            index_id: index_id.to_string(),
             partition_id: 3u64,
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
@@ -1497,6 +1513,7 @@ pub mod test_suite {
         let split_metadata_4 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: "list-splits-four".to_string(),
+            index_id: index_id.to_string(),
             partition_id: 3u64,
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
@@ -1509,6 +1526,7 @@ pub mod test_suite {
         let split_metadata_5 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: "list-splits-five".to_string(),
+            index_id: index_id.to_string(),
             partition_id: 3u64,
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
@@ -1900,6 +1918,7 @@ pub mod test_suite {
             let split_metadata_6 = SplitMetadata {
                 footer_offsets: 1000..2000,
                 split_id: "list-splits-six".to_string(),
+                index_id: index_id.to_string(),
                 partition_id: 3u64,
                 num_docs: 1,
                 uncompressed_docs_size_in_bytes: 2,
@@ -1975,6 +1994,7 @@ pub mod test_suite {
         let split_metadata = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: split_id.to_string(),
+            index_id: index_id.to_string(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),

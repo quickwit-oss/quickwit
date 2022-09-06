@@ -60,6 +60,9 @@ pub struct SplitMetadata {
     /// in the storage URI resolver: for instance, the Amazon S3 region.
     pub split_id: String,
 
+    /// Id of the index this split belongs to.
+    pub index_id: String,
+
     /// Partition to which the split belongs to.
     ///
     /// Partitions are usually meant to isolate documents based on some field like
@@ -118,6 +121,7 @@ impl SplitMetadata {
     /// Creates a new instance of split metadata.
     pub fn new(
         split_id: String,
+        index_id: String,
         partition_id: u64,
         source_id: String,
         node_id: String,
@@ -125,6 +129,7 @@ impl SplitMetadata {
     ) -> Self {
         Self {
             split_id,
+            index_id,
             partition_id,
             source_id,
             node_id,

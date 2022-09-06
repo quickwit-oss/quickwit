@@ -71,6 +71,11 @@
       "split_num_docs_target": 10000001,
       "timestamp_field": "timestamp"
     },
+    "retention_policy": {
+      "cutoff_reference": "publish_timestamp",
+      "period": "90 days",
+      "schedule": "daily"
+    },
     "search_settings": {
       "default_search_fields": [
         "message"
@@ -97,7 +102,7 @@
         "end": 2000,
         "start": 1000
       },
-      "index_id": "",
+      "index_id": "foo-index",
       "node_id": "node/1",
       "num_docs": 12303,
       "partition_id": 7,

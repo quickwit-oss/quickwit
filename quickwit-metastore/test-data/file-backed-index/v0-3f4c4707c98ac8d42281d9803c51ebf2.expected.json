@@ -102,6 +102,7 @@
         "end": 2000,
         "start": 1000
       },
+      "index_id": "",
       "node_id": "node/1",
       "num_docs": 12303,
       "partition_id": 7,

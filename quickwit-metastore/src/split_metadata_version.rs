@@ -84,6 +84,7 @@ impl From<SplitMetadataAndFooterV0> for SplitMetadata {
             time_range: v0.split_metadata.time_range,
             create_timestamp: v0.split_metadata.create_timestamp,
             tags: v0.split_metadata.tags,
+            index_id: "".to_string(),
         }
     }
 }
@@ -95,6 +96,10 @@ pub(crate) struct SplitMetadataV1 {
     /// In reality, some information may be implicitly configured
     /// in the storage URI resolver: for instance, the Amazon S3 region.
     pub split_id: String,
+
+    /// Id of the index this split belongs to.
+    #[serde(default)]
+    pub index_id: String,
 
     #[serde(default)]
     pub partition_id: u64,
@@ -164,6 +169,7 @@ impl From<SplitMetadataV1> for SplitMetadata {
             create_timestamp: v1.create_timestamp,
             tags: v1.tags,
             footer_offsets: v1.footer_offsets,
+            index_id: v1.index_id,
         }
     }
 }
@@ -181,6 +187,7 @@ impl From<SplitMetadata> for SplitMetadataV1 {
             create_timestamp: split.create_timestamp,
             tags: split.tags,
             footer_offsets: split.footer_offsets,
+            index_id: split.index_id,
         }
     }
 }
