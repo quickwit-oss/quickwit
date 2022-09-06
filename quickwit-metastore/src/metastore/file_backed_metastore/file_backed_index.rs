@@ -101,18 +101,14 @@ impl From<FileBackedIndex> for FileBackedIndexV0 {
 }
 
 impl From<FileBackedIndexV0> for FileBackedIndex {
-    fn from(index: FileBackedIndexV0) -> Self {
+    fn from(mut index: FileBackedIndexV0) -> Self {
         // Override split index_id to support old SplitMetadata format.
-        let index_id = index.metadata.index_id.clone();
-        let splits = index
-            .splits
-            .into_iter()
-            .map(|mut split| {
-                split.split_metadata.index_id = index_id.clone();
-                split
-            })
-            .collect();
-        Self::new(index.metadata, splits)
+        for split in index.splits.iter_mut() {
+            if split.split_metadata.index_id.is_empty() {
+                split.split_metadata.index_id = index.metadata.index_id.clone();
+            }
+        }
+        Self::new(index.metadata, index.splits)
     }
 }
 
