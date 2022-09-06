@@ -34,14 +34,12 @@ pub enum JanitorServiceError {
 }
 
 pub struct JanitorService {
-    _node_id: String,
     _garbage_collector_handle: ActorHandle<GarbageCollector>,
 }
 
 impl JanitorService {
-    pub fn new(node_id: String, garbage_collector_handle: ActorHandle<GarbageCollector>) -> Self {
+    pub fn new(garbage_collector_handle: ActorHandle<GarbageCollector>) -> Self {
         Self {
-            _node_id: node_id,
             _garbage_collector_handle: garbage_collector_handle,
         }
     }

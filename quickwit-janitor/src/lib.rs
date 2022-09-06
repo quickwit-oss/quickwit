@@ -38,7 +38,7 @@ use crate::actors::GarbageCollector;
 
 pub async fn start_janitor_service(
     universe: &Universe,
-    config: &QuickwitConfig,
+    _config: &QuickwitConfig, // kept it for retention policy
     metastore: Arc<dyn Metastore>,
     storage_uri_resolver: StorageUriResolver,
 ) -> anyhow::Result<JanitorService> {
@@ -46,8 +46,5 @@ pub async fn start_janitor_service(
     let garbage_collector = GarbageCollector::new(metastore, storage_uri_resolver);
     let (_, garbage_collector_handle) = universe.spawn_actor(garbage_collector).spawn();
 
-    Ok(JanitorService::new(
-        config.node_id.clone(),
-        garbage_collector_handle,
-    ))
+    Ok(JanitorService::new(garbage_collector_handle))
 }
