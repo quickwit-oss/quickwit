@@ -160,7 +160,7 @@ impl From<SplitMetadataV1> for SplitMetadata {
 
         SplitMetadata {
             split_id: v1.split_id,
-            index_id: index_id,
+            index_id,
             partition_id: v1.partition_id,
             source_id,
             node_id,

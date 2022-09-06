@@ -170,7 +170,7 @@ pub(crate) async fn fetch_index(
             ),
         });
     }
-    Ok(index.into_new_split_format())
+    Ok(index)
 }
 
 pub(crate) async fn index_exists(storage: &dyn Storage, index_id: &str) -> MetastoreResult<bool> {
