@@ -33,11 +33,33 @@ use tantivy::fastfield::FastValue;
 
 use self::collector::PartitionValues;
 
+pub trait ToLittleEndian {
+    fn to_le_bytes(&self) -> [u8; 8];
+}
+
+impl ToLittleEndian for u64 {
+    fn to_le_bytes(&self) -> [u8; 8] {
+        u64::to_le_bytes(*self)
+    }
+}
+
+impl ToLittleEndian for i64 {
+    fn to_le_bytes(&self) -> [u8; 8] {
+        i64::to_le_bytes(*self)
+    }
+}
+
+impl ToLittleEndian for f64 {
+    fn to_le_bytes(&self) -> [u8; 8] {
+        f64::to_le_bytes(*self)
+    }
+}
+
 /// Serialize the values into the `buffer` as bytes.
 ///
 /// Please note that the `buffer` is always cleared.
-pub fn serialize<TFastValue: FastValue + Display>(
-    values: &[TFastValue],
+pub fn serialize<T: ToLittleEndian + Display>(
+    values: &[T],
     buffer: &mut Vec<u8>,
     format: OutputFormat,
 ) -> io::Result<()> {
@@ -68,25 +90,22 @@ pub fn serialize_partitions<TFastValue: FastValue + Display, TPartitionFastValue
     Ok(())
 }
 
-fn serialize_csv<TFastValue: FastValue + Display>(
-    values: &[TFastValue],
-    buffer: &mut Vec<u8>,
-) -> io::Result<()> {
+fn serialize_csv<T: Display>(values: &[T], buffer: &mut Vec<u8>) -> io::Result<()> {
     buffer.clear();
     for value in values {
-        writeln!(buffer, "{}", value)?;
+        writeln!(buffer, "{value}")?;
     }
     Ok(())
 }
 
-fn serialize_click_house_row_binary<TFastValue: FastValue + Display>(
-    values: &[TFastValue],
+fn serialize_click_house_row_binary<T: ToLittleEndian>(
+    values: &[T],
     buffer: &mut Vec<u8>,
 ) -> io::Result<()> {
     buffer.clear();
-    buffer.reserve_exact(std::mem::size_of::<TFastValue>() * values.len());
+    buffer.reserve_exact(8 * values.len());
     for value in values {
-        buffer.extend(value.to_u64().to_le_bytes());
+        buffer.extend(value.to_le_bytes());
     }
     Ok(())
 }
