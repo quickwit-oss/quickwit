@@ -19,7 +19,6 @@
 
 mod indexing_pipeline;
 
-mod garbage_collector;
 mod indexer;
 mod indexing_service;
 mod ingest_api_garbage_collector;
@@ -37,7 +36,6 @@ mod merge_executor;
 mod merge_planner;
 mod merge_split_downloader;
 
-pub use self::garbage_collector::{GarbageCollector, GarbageCollectorCounters};
 pub use self::indexer::{Indexer, IndexerCounters};
 pub use self::ingest_api_garbage_collector::{
     IngestApiGarbageCollector, IngestApiGarbageCollectorCounters,

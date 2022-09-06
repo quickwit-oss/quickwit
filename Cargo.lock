@@ -610,7 +610,7 @@ version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "89eab4d20ce20cea182308bca13088fecea9c05f6776cf287205d41a0ed3c847"
 dependencies = [
- "encode_unicode",
+ "encode_unicode 0.3.6",
  "libc",
  "once_cell",
  "terminal_size",
@@ -1071,6 +1071,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a357d28ed41a50f9c765dbfe56cbc04a64e53e5fc58ba79fbc34c10ef3df831f"
 
 [[package]]
+name = "encode_unicode"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1127,8 +1133,13 @@ checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 [[package]]
 name = "fastfield_codecs"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=8e773ad#8e773ade7715210fb18a9a3b870329eed35dd1ad"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ea72cf3#ea72cf34d60cf5080c609239b7bf935bfe18229f"
 dependencies = [
+ "fastdivide",
+ "log",
+ "ownedbytes",
+ "prettytable-rs",
+ "rand 0.8.5",
  "tantivy-bitpacker",
  "tantivy-common",
 ]
@@ -1346,15 +1357,6 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
-]
-
-[[package]]
-name = "gcd"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f37978dab2ca789938a83b2f8bc1ef32db6633af9051a6cd409eff72cbaaa79a"
-dependencies = [
- "paste",
 ]
 
 [[package]]
@@ -2427,7 +2429,7 @@ dependencies = [
 [[package]]
 name = "ownedbytes"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=8e773ad#8e773ade7715210fb18a9a3b870329eed35dd1ad"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ea72cf3#ea72cf34d60cf5080c609239b7bf935bfe18229f"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -2738,6 +2740,20 @@ checksum = "697ae720ee02011f439e0701db107ffe2916d83f718342d65d7f8bf7b8a5fee9"
 dependencies = [
  "proc-macro2",
  "syn",
+]
+
+[[package]]
+name = "prettytable-rs"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f375cb74c23b51d23937ffdeb48b1fbf5b6409d4b9979c1418c1de58bc8f801"
+dependencies = [
+ "atty",
+ "csv",
+ "encode_unicode 1.0.0",
+ "lazy_static",
+ "term",
+ "unicode-width",
 ]
 
 [[package]]
@@ -3101,6 +3117,7 @@ dependencies = [
  "quickwit-directories",
  "quickwit-doc-mapper",
  "quickwit-indexing",
+ "quickwit-janitor",
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-storage",
@@ -3245,6 +3262,8 @@ version = "0.3.1"
 dependencies = [
  "anyhow",
  "async-trait",
+ "futures",
+ "itertools",
  "quickwit-actors",
  "quickwit-common",
  "quickwit-config",
@@ -3252,7 +3271,10 @@ dependencies = [
  "quickwit-storage",
  "serde",
  "tempfile",
+ "thiserror",
+ "time 0.3.14",
  "tokio",
+ "tokio-stream",
  "tracing",
 ]
 
@@ -3312,6 +3334,7 @@ dependencies = [
  "base64",
  "bytes",
  "chitchat",
+ "fastfield_codecs",
  "futures",
  "http",
  "hyper",
@@ -4573,7 +4596,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.18.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=8e773ad#8e773ade7715210fb18a9a3b870329eed35dd1ad"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ea72cf3#ea72cf34d60cf5080c609239b7bf935bfe18229f"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -4589,7 +4612,6 @@ dependencies = [
  "fastfield_codecs",
  "fnv",
  "fs2",
- "gcd",
  "htmlescape",
  "itertools",
  "levenshtein_automata",
@@ -4627,12 +4649,12 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=8e773ad#8e773ade7715210fb18a9a3b870329eed35dd1ad"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ea72cf3#ea72cf34d60cf5080c609239b7bf935bfe18229f"
 
 [[package]]
 name = "tantivy-common"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=8e773ad#8e773ade7715210fb18a9a3b870329eed35dd1ad"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ea72cf3#ea72cf34d60cf5080c609239b7bf935bfe18229f"
 dependencies = [
  "byteorder",
  "ownedbytes",
@@ -4652,7 +4674,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.18.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=8e773ad#8e773ade7715210fb18a9a3b870329eed35dd1ad"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ea72cf3#ea72cf34d60cf5080c609239b7bf935bfe18229f"
 dependencies = [
  "combine",
  "once_cell",
@@ -4670,6 +4692,17 @@ dependencies = [
  "libc",
  "redox_syscall",
  "remove_dir_all",
+ "winapi 0.3.9",
+]
+
+[[package]]
+name = "term"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c59df8ac95d96ff9bede18eb7300b0fda5e5d8d90960e76f8e14ae765eedbf1f"
+dependencies = [
+ "dirs-next",
+ "rustversion",
  "winapi 0.3.9",
 ]
 

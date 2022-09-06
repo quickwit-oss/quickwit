@@ -12,14 +12,20 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
+futures = "0.3"
+itertools = "0.10.3"
 quickwit-actors = { version = "0.3.1", path = "../quickwit-actors" }
+quickwit-common = { version = "0.3.1", path = "../quickwit-common" }
 quickwit-config = { version = "0.3.1", path = "../quickwit-config", features = [
   "testsuite"
 ] }
 quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore" }
 quickwit-storage = { version = "0.3.1", path = "../quickwit-storage" }
 serde = "1"
+thiserror = "1"
+time = { version = "0.3.9", features = ["std"] }
 tokio = { version = "1", features = ["sync"] }
+tokio-stream = "0.1"
 tracing = "0.1.29"
 
 [dev-dependencies]

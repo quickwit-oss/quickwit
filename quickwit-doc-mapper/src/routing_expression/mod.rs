@@ -19,6 +19,7 @@
 
 use std::fmt::{self, Display};
 use std::hash::{Hash, Hasher};
+use std::num::NonZeroU64;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -83,13 +84,25 @@ impl RoutingExprContext for serde_json::Map<String, serde_json::Value> {
 #[derive(Clone)]
 pub struct RoutingExpr {
     inner: Arc<InnerRoutingExpr>,
+    max_num_partitions: NonZeroU64,
     salted_hasher: SipHasher,
 }
 
-impl FromStr for RoutingExpr {
-    type Err = anyhow::Error;
+impl Default for RoutingExpr {
+    fn default() -> Self {
+        Self {
+            inner: Default::default(),
+            max_num_partitions: NonZeroU64::new(1).unwrap(),
+            salted_hasher: Default::default(),
+        }
+    }
+}
 
-    fn from_str(expr_dsl_str: &str) -> Result<Self, Self::Err> {
+impl RoutingExpr {
+    pub fn new(expr_dsl_str: &str, max_num_partitions: NonZeroU64) -> anyhow::Result<Self> {
+        if max_num_partitions.get() <= 1 {
+            return Ok(RoutingExpr::default());
+        }
         let inner = InnerRoutingExpr::from_str(expr_dsl_str)?;
         let mut salted_hasher: SipHasher = SipHasher::new();
         // We hash the expression tree here instead of hashing the str, or
@@ -101,8 +114,13 @@ impl FromStr for RoutingExpr {
         inner.hash(&mut salted_hasher);
         Ok(RoutingExpr {
             inner: Arc::new(inner),
+            max_num_partitions,
             salted_hasher,
         })
+    }
+
+    pub fn max_num_partitions(&self) -> NonZeroU64 {
+        self.max_num_partitions
     }
 }
 
@@ -157,12 +175,18 @@ impl Hash for InnerRoutingExpr {
     }
 }
 
+impl Default for InnerRoutingExpr {
+    fn default() -> InnerRoutingExpr {
+        InnerRoutingExpr::Composite(Vec::new())
+    }
+}
+
 impl FromStr for InnerRoutingExpr {
     type Err = anyhow::Error;
 
     fn from_str(expr_dsl_str: &str) -> anyhow::Result<Self> {
         if expr_dsl_str.is_empty() {
-            return Ok(InnerRoutingExpr::Composite(Vec::new()));
+            return Ok(Default::default());
         }
         Ok(InnerRoutingExpr::Field(expr_dsl_str.to_string()))
     }
@@ -204,7 +228,7 @@ impl RoutingExpr {
     pub fn eval_hash<Ctx: RoutingExprContext>(&self, ctx: &Ctx) -> u64 {
         let mut hasher = self.salted_hasher;
         self.inner.eval_hash(ctx, &mut hasher);
-        hasher.finish()
+        hasher.finish() % self.max_num_partitions.get()
     }
 }
 
@@ -237,12 +261,14 @@ mod tests {
         );
     }
 
+    const MAX_NUM_PARTITIONS: NonZeroU64 = unsafe { NonZeroU64::new_unchecked(10) };
+
     // This unit test is here to ensure that the routing expr hash depends on
     // the expression itself as well as the expression value.
     #[test]
     fn test_routing_expr_depends_on_both_expr_and_value() {
-        let routing_expr = RoutingExpr::from_str("tenant_id").unwrap();
-        let routing_expr2 = RoutingExpr::from_str("app").unwrap();
+        let routing_expr = RoutingExpr::new("tenant_id", MAX_NUM_PARTITIONS).unwrap();
+        let routing_expr2 = RoutingExpr::new("app", MAX_NUM_PARTITIONS).unwrap();
         let ctx: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(r#"{"tenant_id": "happy", "app": "happy"}"#).unwrap();
         let ctx2: serde_json::Map<String, serde_json::Value> =
@@ -256,9 +282,9 @@ mod tests {
     // Breaking it is not catastrophic but it should not happen too often.
     #[test]
     fn test_routing_expr_change_detection() {
-        let routing_expr = RoutingExpr::from_str("tenant_id").unwrap();
+        let routing_expr = RoutingExpr::new("tenant_id", MAX_NUM_PARTITIONS).unwrap();
         let ctx: serde_json::Map<String, serde_json::Value> =
-            serde_json::from_str(r#"{"tenant_id": "happy", "app": "happy"}"#).unwrap();
-        assert_eq!(routing_expr.eval_hash(&ctx), 8236810766200219304u64);
+            serde_json::from_str(r#"{"tenant_id": "happy-tenant", "app": "happy"}"#).unwrap();
+        assert_eq!(routing_expr.eval_hash(&ctx), 9u64);
     }
 }

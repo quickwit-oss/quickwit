@@ -30,7 +30,8 @@ mod tests {
 
     use quickwit_common::uri::Uri;
     use quickwit_config::{IndexConfig, IndexingSettings, SearchSettings};
-    use quickwit_indexing::{FileEntry, TestSandbox};
+    use quickwit_indexing::TestSandbox;
+    use quickwit_janitor::FileEntry;
     use quickwit_metastore::quickwit_metastore_uri_resolver;
     use quickwit_storage::StorageUriResolver;
 

@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeSet, HashMap};
+use std::num::NonZeroU64;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -29,8 +30,8 @@ use humantime::parse_duration;
 use json_comments::StripComments;
 use quickwit_common::uri::{Extension, Uri};
 use quickwit_doc_mapper::{
-    DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, ModeType, QuickwitJsonOptions, SortBy,
-    SortByConfig, SortOrder,
+    DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, ModeType,
+    QuickwitJsonOptions, SortBy, SortByConfig, SortOrder,
 };
 use serde::de::{Error, IgnoredAny};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -58,6 +59,8 @@ pub struct DocMapping {
     pub dynamic_mapping: Option<QuickwitJsonOptions>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub partition_key: String,
+    #[serde(default = "DefaultDocMapper::default_max_num_partitions")]
+    pub max_num_partitions: NonZeroU64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -479,6 +482,7 @@ pub fn build_doc_mapper(
         mode: doc_mapping.mode,
         dynamic_mapping: doc_mapping.dynamic_mapping.clone(),
         partition_key: doc_mapping.partition_key.clone(),
+        max_num_partitions: doc_mapping.max_num_partitions,
     };
     Ok(Arc::new(builder.try_build()?))
 }

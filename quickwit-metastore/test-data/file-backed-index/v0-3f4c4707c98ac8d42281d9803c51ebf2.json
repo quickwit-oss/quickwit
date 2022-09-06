@@ -43,8 +43,9 @@
           "type": "text"
         }
       ],
-      "max_num_partitions": 8,
-      "mode": "lenient",
+      "max_num_partitions": 20,
+      "mode": "dynamic",
+      "partition_key": "tenant",
       "store_source": true,
       "tag_fields": [
         "log_level",
@@ -70,6 +71,11 @@
       "split_num_docs_target": 10000001,
       "timestamp_field": "timestamp"
     },
+    "retention_policy": {
+      "cutoff_reference": "publish_timestamp",
+      "period": "90 days",
+      "schedule": "daily"
+    },
     "search_settings": {
       "default_search_fields": [
         "message"
@@ -77,6 +83,7 @@
     },
     "sources": [
       {
+        "num_pipelines": 2,
         "params": {
           "client_params": {},
           "topic": "kafka-topic"
@@ -95,11 +102,10 @@
         "end": 2000,
         "start": 1000
       },
-      "node_id": "unknown/0",
+      "node_id": "node/1",
       "num_docs": 12303,
-      "partition_id": 0,
-      "publish_timestamp": null,
-      "source_id": "unknown",
+      "partition_id": 7,
+      "source_id": "source",
       "split_id": "split",
       "split_state": "Published",
       "tags": [

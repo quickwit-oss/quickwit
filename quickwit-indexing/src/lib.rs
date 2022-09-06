@@ -39,7 +39,6 @@ pub use crate::split_store::{
 
 pub mod actors;
 mod controlled_directory;
-mod garbage_collection;
 pub mod merge_policy;
 pub mod models;
 pub mod source;
@@ -50,9 +49,6 @@ mod test_utils;
 #[cfg(any(test, feature = "testsuite"))]
 pub use test_utils::{mock_split, mock_split_meta, TestSandbox};
 
-pub use self::garbage_collection::{
-    delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
-};
 use self::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 pub use self::source::check_source_connectivity;
 

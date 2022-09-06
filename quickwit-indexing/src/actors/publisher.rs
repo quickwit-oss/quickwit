@@ -26,7 +26,7 @@ use quickwit_actors::{Actor, ActorContext, Handler, Mailbox};
 use quickwit_metastore::Metastore;
 use tracing::info;
 
-use crate::actors::{GarbageCollector, MergePlanner};
+use crate::actors::MergePlanner;
 use crate::models::{NewSplits, SplitUpdate};
 use crate::source::{SourceActor, SuggestTruncate};
 
@@ -55,7 +55,6 @@ pub struct Publisher {
     publisher_type: PublisherType,
     metastore: Arc<dyn Metastore>,
     merge_planner_mailbox: Mailbox<MergePlanner>,
-    garbage_collector_mailbox: Mailbox<GarbageCollector>,
     source_mailbox_opt: Option<Mailbox<SourceActor>>,
     counters: PublisherCounters,
 }
@@ -65,14 +64,12 @@ impl Publisher {
         publisher_type: PublisherType,
         metastore: Arc<dyn Metastore>,
         merge_planner_mailbox: Mailbox<MergePlanner>,
-        garbage_collector_mailbox: Mailbox<GarbageCollector>,
         source_mailbox_opt: Option<Mailbox<SourceActor>>,
     ) -> Publisher {
         Publisher {
             publisher_type,
             metastore,
             merge_planner_mailbox,
-            garbage_collector_mailbox,
             source_mailbox_opt,
             counters: PublisherCounters::default(),
         }
@@ -102,10 +99,7 @@ impl Actor for Publisher {
         // The publisher actor being the last standing actor of the pipeline,
         // its end of life should also means the end of life of never stopping actors.
         // After all, when the publisher is stopped, there shouldn't be anything to process.
-        // It's fine if the garbage collector is already dead.
-        let _ = ctx
-            .send_exit_with_success(&self.garbage_collector_mailbox)
-            .await;
+        // It's fine if the merge planner is already dead.
         let _ = ctx
             .send_exit_with_success(&self.merge_planner_mailbox)
             .await;
@@ -221,7 +215,6 @@ mod tests {
             .times(1)
             .returning(|_, _, _, _| Ok(()));
         let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
-        let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
 
         let (source_mailbox, source_inbox) = create_test_mailbox();
 
@@ -229,7 +222,6 @@ mod tests {
             PublisherType::MainPublisher,
             Arc::new(mock_metastore),
             merge_planner_mailbox,
-            garbage_collector_mailbox,
             Some(source_mailbox),
         );
         let universe = Universe::new();
@@ -291,12 +283,10 @@ mod tests {
             .times(1)
             .returning(|_, _, _, _| Ok(()));
         let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
-        let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
             Arc::new(mock_metastore),
             merge_planner_mailbox,
-            garbage_collector_mailbox,
             None,
         );
         let universe = Universe::new();
@@ -329,13 +319,11 @@ mod tests {
         let mut mock_metastore = MockMetastore::default();
         mock_metastore.expect_publish_splits().never();
         let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
-        let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
 
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
             Arc::new(mock_metastore),
             merge_planner_mailbox,
-            garbage_collector_mailbox,
             None,
         );
         let universe = Universe::new();
