@@ -134,6 +134,7 @@ impl TryInto<QuickwitSplit> for Split {
         // `create_timestamp` is duplicated in `SplitMetadata` and needs to be overridden with the
         // "true" value stored in a column.
         split_metadata.create_timestamp = self.create_timestamp.assume_utc().unix_timestamp();
+        split_metadata.index_id = self.index_id.clone();
         let split_state = self.split_state()?;
         let update_timestamp = self.update_timestamp.assume_utc().unix_timestamp();
         Ok(QuickwitSplit {

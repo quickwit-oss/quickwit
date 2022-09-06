@@ -84,7 +84,7 @@ impl From<SplitMetadataAndFooterV0> for SplitMetadata {
             time_range: v0.split_metadata.time_range,
             create_timestamp: v0.split_metadata.create_timestamp,
             tags: v0.split_metadata.tags,
-            index_id: "".to_string(),
+            index_id: "unknown".to_string(),
         }
     }
 }
@@ -99,7 +99,7 @@ pub(crate) struct SplitMetadataV1 {
 
     /// Id of the index this split belongs to.
     #[serde(default)]
-    pub index_id: String,
+    pub index_id: Option<String>,
 
     #[serde(default)]
     pub partition_id: u64,
@@ -143,6 +143,7 @@ pub(crate) struct SplitMetadataV1 {
 impl From<SplitMetadataV1> for SplitMetadata {
     fn from(v1: SplitMetadataV1) -> Self {
         let source_id = v1.source_id.unwrap_or_else(|| "unknown".to_string());
+        let index_id = v1.index_id.unwrap_or_else(|| "unknown".to_string());
 
         let (node_id, pipeline_ord) = if let Some(node_id) = v1.node_id {
             if let Some((node_id, pipeline_ord)) = node_id.rsplit_once('/') {
@@ -159,6 +160,7 @@ impl From<SplitMetadataV1> for SplitMetadata {
 
         SplitMetadata {
             split_id: v1.split_id,
+            index_id: index_id,
             partition_id: v1.partition_id,
             source_id,
             node_id,
@@ -169,7 +171,6 @@ impl From<SplitMetadataV1> for SplitMetadata {
             create_timestamp: v1.create_timestamp,
             tags: v1.tags,
             footer_offsets: v1.footer_offsets,
-            index_id: v1.index_id,
         }
     }
 }
@@ -178,6 +179,7 @@ impl From<SplitMetadata> for SplitMetadataV1 {
     fn from(split: SplitMetadata) -> Self {
         SplitMetadataV1 {
             split_id: split.split_id,
+            index_id: Some(split.index_id),
             partition_id: split.partition_id,
             source_id: Some(split.source_id),
             node_id: Some(format!("{}/{}", split.node_id, split.pipeline_ord)),
@@ -187,7 +189,6 @@ impl From<SplitMetadata> for SplitMetadataV1 {
             create_timestamp: split.create_timestamp,
             tags: split.tags,
             footer_offsets: split.footer_offsets,
-            index_id: split.index_id,
         }
     }
 }

@@ -4,7 +4,7 @@
     "end": 2000,
     "start": 1000
   },
-  "index_id": "",
+  "index_id": "unknown",
   "node_id": "unknown/0",
   "num_docs": 12303,
   "partition_id": 7,

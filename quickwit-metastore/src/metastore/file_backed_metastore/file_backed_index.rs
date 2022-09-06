@@ -102,7 +102,15 @@ impl From<FileBackedIndex> for FileBackedIndexV0 {
 
 impl From<FileBackedIndexV0> for FileBackedIndex {
     fn from(index: FileBackedIndexV0) -> Self {
-        Self::new(index.metadata, index.splits)
+        let index_id = index.metadata.index_id.clone();
+        let splits = index.splits
+            .into_iter()
+            .map(|mut split| {
+                split.split_metadata.index_id = index_id.clone();
+                split
+            })
+            .collect();
+        Self::new(index.metadata, splits)
     }
 }
 
@@ -127,6 +135,22 @@ impl FileBackedIndex {
                 .map(|split| (split.split_id().to_string(), split))
                 .collect(),
             discarded: false,
+        }
+    }
+
+    /// Used to update Split from old metastore format.
+    pub fn into_new_split_format(self) -> Self {
+        let index_id = self.metadata.index_id.clone();
+        let splits = self.splits
+            .into_iter()
+            .map(|(split_id, mut split)|{
+                split.split_metadata.index_id = index_id.clone();
+                (split_id, split)
+            }).collect();
+        FileBackedIndex { 
+            metadata: self.metadata,
+            splits,
+            discarded: self.discarded
         }
     }
 
