@@ -335,7 +335,7 @@ impl IndexCliCommand {
             .expect("`index-config` is a required arg.")?;
         let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         let overwrite = matches.is_present("overwrite");
-        let assume_yes = matches.is_present("assume-yes");
+        let assume_yes = matches.is_present("yes");
 
         Ok(Self::Create(CreateIndexArgs {
             config_uri,
