@@ -34,7 +34,7 @@ use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{MetastoreResult, Split, SplitMetadata, SplitState};
+use crate::{MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
 
 /// Metastore meant to manage Quickwit's indexes and their splits.
 ///
@@ -69,10 +69,13 @@ pub trait Metastore: Send + Sync + 'static {
     /// Checks whether the metastore is available.
     async fn check_connectivity(&self) -> anyhow::Result<()>;
 
-    /// Checks whether the given index is in this metastore.
-    async fn check_index_available(&self, index_id: &str) -> anyhow::Result<()> {
-        self.index_metadata(index_id).await?;
-        Ok(())
+    /// Returns whether an index exists in the metastore.
+    async fn index_exists(&self, index_id: &str) -> MetastoreResult<bool> {
+        match self.index_metadata(index_id).await {
+            Ok(_) => Ok(true),
+            Err(MetastoreError::IndexDoesNotExist { .. }) => Ok(false),
+            Err(error) => Err(error),
+        }
     }
 
     /// Creates an index.
