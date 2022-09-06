@@ -25,13 +25,16 @@ mod indexing_statistics;
 mod merge_planner_message;
 mod merge_scratch;
 mod packaged_split;
+mod prepared_doc;
 mod publish_lock;
 mod publisher_message;
 mod raw_doc_batch;
 mod scratch_directory;
 mod split_attrs;
 
-pub use indexed_split::{IndexedSplit, IndexedSplitBatch};
+pub use indexed_split::{
+    CommitTrigger, IndexedSplit, IndexedSplitBatch, IndexedSplitBatchBuilder, IndexedSplitBuilder,
+};
 pub use indexing_directory::{IndexingDirectory, CACHE};
 pub use indexing_pipeline_id::IndexingPipelineId;
 pub use indexing_service_message::{
@@ -42,6 +45,7 @@ pub use indexing_statistics::IndexingStatistics;
 pub use merge_planner_message::NewSplits;
 pub use merge_scratch::MergeScratch;
 pub use packaged_split::{PackagedSplit, PackagedSplitBatch};
+pub use prepared_doc::{PreparedDoc, PreparedDocBatch};
 pub use publish_lock::{NewPublishLock, PublishLock};
 pub use publisher_message::SplitUpdate;
 pub use raw_doc_batch::RawDocBatch;

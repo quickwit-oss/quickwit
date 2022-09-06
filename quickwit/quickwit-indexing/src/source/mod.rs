@@ -90,7 +90,7 @@ use tracing::error;
 pub use vec_source::{VecSource, VecSourceFactory};
 pub use void_source::{VoidSource, VoidSourceFactory};
 
-use crate::actors::Indexer;
+use crate::actors::DocProcessor;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
 
 /// Reserved source ID used for the ingest API.
@@ -148,7 +148,7 @@ pub trait Source: Send + Sync + 'static {
     /// This method will be called before any calls to `emit_batches`.
     async fn initialize(
         &mut self,
-        _indexer_mailbox: &Mailbox<Indexer>,
+        _doc_processor_mailbox: &Mailbox<DocProcessor>,
         _ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         Ok(())
@@ -163,7 +163,7 @@ pub trait Source: Send + Sync + 'static {
     /// should wait before pooling gain.
     async fn emit_batches(
         &mut self,
-        indexer_mailbox: &Mailbox<Indexer>,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus>;
 
@@ -213,7 +213,7 @@ pub trait Source: Send + Sync + 'static {
 /// It mostly takes care of running a loop calling `emit_batches(...)`.
 pub struct SourceActor {
     pub source: Box<dyn Source>,
-    pub indexer_mailbox: Mailbox<Indexer>,
+    pub doc_processor_mailbox: Mailbox<DocProcessor>,
 }
 
 #[derive(Debug)]
@@ -236,7 +236,9 @@ impl Actor for SourceActor {
     }
 
     async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        self.source.initialize(&self.indexer_mailbox, ctx).await?;
+        self.source
+            .initialize(&self.doc_processor_mailbox, ctx)
+            .await?;
         self.handle(Loop, ctx).await?;
         Ok(())
     }
@@ -256,7 +258,10 @@ impl Handler<Loop> for SourceActor {
     type Reply = ();
 
     async fn handle(&mut self, _message: Loop, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        let wait_for = self.source.emit_batches(&self.indexer_mailbox, ctx).await?;
+        let wait_for = self
+            .source
+            .emit_batches(&self.doc_processor_mailbox, ctx)
+            .await?;
         if wait_for.is_zero() {
             ctx.send_self_message(Loop).await?;
             return Ok(());

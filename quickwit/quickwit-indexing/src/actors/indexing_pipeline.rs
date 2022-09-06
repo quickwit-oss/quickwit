@@ -34,6 +34,8 @@ use quickwit_storage::Storage;
 use tokio::join;
 use tracing::{debug, error, info, info_span, instrument, Span};
 
+use crate::actors::doc_processor::DocProcessor;
+use crate::actors::index_serializer::IndexSerializer;
 use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::publisher::PublisherType;
 use crate::actors::sequencer::Sequencer;
@@ -50,7 +52,9 @@ const MAX_RETRY_DELAY: Duration = Duration::from_secs(600); // 10 min.
 pub struct IndexingPipelineHandle {
     /// Indexing pipeline
     pub source: ActorHandle<SourceActor>,
+    pub doc_processor: ActorHandle<DocProcessor>,
     pub indexer: ActorHandle<Indexer>,
+    pub index_serializer: ActorHandle<IndexSerializer>,
     pub packager: ActorHandle<Packager>,
     pub uploader: ActorHandle<Uploader>,
     pub sequencer: ActorHandle<Sequencer<Publisher>>,
@@ -377,6 +381,14 @@ impl IndexingPipeline {
             .spawn_actor(packager)
             .set_kill_switch(self.kill_switch.clone())
             .spawn();
+
+        // Index Serializer
+        let index_serializer = IndexSerializer::new(packager_mailbox);
+        let (index_serializer_mailbox, index_serializer_handler) = ctx
+            .spawn_actor(index_serializer)
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn();
+
         // Indexer
         let indexer = Indexer::new(
             self.params.pipeline_id.clone(),
@@ -384,10 +396,16 @@ impl IndexingPipeline {
             self.params.metastore.clone(),
             self.params.indexing_directory.clone(),
             self.params.indexing_settings.clone(),
-            packager_mailbox,
+            index_serializer_mailbox,
         );
         let (indexer_mailbox, indexer_handler) = ctx
             .spawn_actor(indexer)
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn();
+
+        let doc_processor = DocProcessor::new(self.params.doc_mapper.clone(), indexer_mailbox);
+        let (doc_processor_mailbox, doc_processor_handler) = ctx
+            .spawn_actor(doc_processor)
             .set_kill_switch(self.kill_switch.clone())
             .spawn();
 
@@ -414,7 +432,7 @@ impl IndexingPipeline {
             .await?;
         let actor_source = SourceActor {
             source,
-            indexer_mailbox,
+            doc_processor_mailbox,
         };
         let (_source_mailbox, source_handler) = ctx
             .spawn_actor(actor_source)
@@ -427,7 +445,9 @@ impl IndexingPipeline {
         self.statistics.generation += 1;
         self.handles = Some(IndexingPipelineHandle {
             source: source_handler,
+            doc_processor: doc_processor_handler,
             indexer: indexer_handler,
+            index_serializer: index_serializer_handler,
             packager: packager_handler,
             uploader: uploader_handler,
             sequencer: sequencer_handler,
@@ -486,7 +506,8 @@ impl Handler<Observe> for IndexingPipeline {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         if let Some(handles) = &self.handles {
-            let (indexer_counters, uploader_counters, publisher_counters) = join!(
+            let (doc_processor_counters, indexer_counters, uploader_counters, publisher_counters) = join!(
+                handles.doc_processor.observe(),
                 handles.indexer.observe(),
                 handles.uploader.observe(),
                 handles.publisher.observe(),
@@ -495,6 +516,7 @@ impl Handler<Observe> for IndexingPipeline {
                 .previous_generations_statistics
                 .clone()
                 .add_actor_counters(
+                    &*doc_processor_counters,
                     &*indexer_counters,
                     &*uploader_counters,
                     &*publisher_counters,
