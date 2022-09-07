@@ -12,6 +12,7 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
+chrono = "0.4.19"
 futures = "0.3"
 itertools = "0.10.3"
 quickwit-actors = { version = "0.3.1", path = "../quickwit-actors" }

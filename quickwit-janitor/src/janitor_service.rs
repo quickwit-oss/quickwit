@@ -23,7 +23,7 @@ use quickwit_storage::StorageResolverError;
 use thiserror::Error;
 use tracing::error;
 
-use crate::actors::GarbageCollector;
+use crate::actors::{GarbageCollector, RetentionPolicyEvaluator};
 
 #[derive(Error, Debug)]
 pub enum JanitorServiceError {
@@ -35,12 +35,17 @@ pub enum JanitorServiceError {
 
 pub struct JanitorService {
     _garbage_collector_handle: ActorHandle<GarbageCollector>,
+    _retention_policy_evaluator_handle: ActorHandle<RetentionPolicyEvaluator>,
 }
 
 impl JanitorService {
-    pub fn new(garbage_collector_handle: ActorHandle<GarbageCollector>) -> Self {
+    pub fn new(
+        garbage_collector_handle: ActorHandle<GarbageCollector>,
+        retention_policy_evaluator_handle: ActorHandle<RetentionPolicyEvaluator>,
+    ) -> Self {
         Self {
             _garbage_collector_handle: garbage_collector_handle,
+            _retention_policy_evaluator_handle: retention_policy_evaluator_handle,
         }
     }
 }

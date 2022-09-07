@@ -34,7 +34,7 @@ pub use janitor_service::JanitorService;
 pub use self::garbage_collection::{
     delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
 };
-use crate::actors::GarbageCollector;
+use crate::actors::{GarbageCollector, RetentionPolicyEvaluator};
 
 pub async fn start_janitor_service(
     universe: &Universe,
@@ -43,8 +43,11 @@ pub async fn start_janitor_service(
     storage_uri_resolver: StorageUriResolver,
 ) -> anyhow::Result<JanitorService> {
     info!("Starting janitor service.");
-    let garbage_collector = GarbageCollector::new(metastore, storage_uri_resolver);
+    let garbage_collector = GarbageCollector::new(metastore.clone(), storage_uri_resolver);
     let (_, garbage_collector_handle) = universe.spawn_actor(garbage_collector).spawn();
 
-    Ok(JanitorService::new(garbage_collector_handle))
+    let retention_policy_evaluator = RetentionPolicyEvaluator::new(metastore);
+    let (_, retention_policy_evaluator_handle) = universe.spawn_actor(retention_policy_evaluator).spawn();
+
+    Ok(JanitorService::new(garbage_collector_handle, retention_policy_evaluator_handle))
 }

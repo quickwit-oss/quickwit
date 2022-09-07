@@ -25,6 +25,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context};
 use byte_unit::Byte;
+use chrono::Utc;
 use cron::Schedule;
 use humantime::parse_duration;
 use json_comments::StripComments;
@@ -318,6 +319,18 @@ impl RetentionPolicy {
                 self.evaluation_schedule
             )
         })
+    }
+
+    pub fn duration_till_next_evaluation(&self) -> anyhow::Result<Duration> {
+        let schedule = self.evaluation_schedule()?;
+        let future_date = schedule
+            .upcoming(Utc)
+            .next()
+            .context("Failed to obtain next evaluation date.")?;
+        let duration = (future_date - Utc::now())
+            .to_std()
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        Ok(duration)
     }
 
     fn requires_timestamp_field(&self) -> bool {
