@@ -58,7 +58,7 @@ impl Default for IndexerMetrics {
                 "quickwit_indexing",
             ),
             valid_num_bytes_total: new_counter(
-                "valid_errors_num_bytes_total",
+                "valid_num_bytes_total",
                 "Sum of bytes of valid documents that have been processed.",
                 "quickwit_indexing",
             ),
