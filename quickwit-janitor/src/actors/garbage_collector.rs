@@ -197,7 +197,9 @@ mod tests {
     use std::path::Path;
 
     use quickwit_actors::Universe;
-    use quickwit_metastore::{IndexMetadata, MockMetastore, Split, SplitMetadata, SplitState};
+    use quickwit_metastore::{
+        IndexMetadata, MetastoreError, MockMetastore, Split, SplitMetadata, SplitState,
+    };
     use quickwit_storage::MockStorage;
 
     use super::*;
@@ -402,5 +404,95 @@ mod tests {
         assert_eq!(counters.num_successful_gc_run_on_index, 2);
         assert_eq!(counters.num_failed_storage_resolution, 0);
         assert_eq!(counters.num_failed_gc_run_on_index, 0);
+    }
+
+    #[tokio::test]
+    async fn test_garbage_collect_fails_to_resolve_storage() {
+        let storage_resolver = StorageUriResolver::for_test();
+        let mut mock_metastore = MockMetastore::default();
+        mock_metastore
+            .expect_list_indexes_metadatas()
+            .times(1)
+            .returning(|| {
+                Ok(vec![IndexMetadata::for_test(
+                    "test-index",
+                    "postgresql://indexes/test-index",
+                )])
+            });
+
+        let garbage_collect_actor =
+            GarbageCollector::new(Arc::new(mock_metastore), storage_resolver);
+        let universe = Universe::new();
+        let (_maibox, handle) = universe.spawn_actor(garbage_collect_actor).spawn();
+
+        let counters = handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.num_passes, 1);
+        assert_eq!(counters.num_deleted_files, 0);
+        assert_eq!(counters.num_deleted_bytes, 0);
+        assert_eq!(counters.num_successful_gc_run_on_index, 0);
+        assert_eq!(counters.num_failed_storage_resolution, 1);
+        assert_eq!(counters.num_failed_gc_run_on_index, 0);
+    }
+
+    #[tokio::test]
+    async fn test_garbage_collect_fails_to_run_gc_on_one_index() {
+        let storage_resolver = StorageUriResolver::for_test();
+        let mut mock_metastore = MockMetastore::default();
+        mock_metastore
+            .expect_list_indexes_metadatas()
+            .times(1)
+            .returning(|| {
+                Ok(vec![
+                    IndexMetadata::for_test("test-index-1", "ram://indexes/test-index-1"),
+                    IndexMetadata::for_test("test-index-2", "ram://indexes/test-index-2"),
+                ])
+            });
+        mock_metastore.expect_list_splits().times(4).returning(
+            |index_id, split_state, _time_range, _tags| {
+                assert!(["test-index-1", "test-index-2"].contains(&index_id));
+                let splits = match split_state {
+                    SplitState::Staged => make_splits(&["a"], SplitState::Staged),
+                    SplitState::MarkedForDeletion => {
+                        make_splits(&["a", "b"], SplitState::MarkedForDeletion)
+                    }
+                    _ => panic!("only Staged and MarkedForDeletion expected."),
+                };
+                Ok(splits)
+            },
+        );
+        mock_metastore
+            .expect_mark_splits_for_deletion()
+            .times(2)
+            .returning(|index_id, split_ids| {
+                assert!(["test-index-1", "test-index-2"].contains(&index_id));
+                assert_eq!(split_ids, vec!["a"]);
+                Ok(())
+            });
+        mock_metastore
+            .expect_delete_splits()
+            .times(2)
+            .returning(|index_id, split_ids| {
+                assert_eq!(split_ids, vec!["a", "b"]);
+                if index_id == "test-index-2" {
+                    Err(MetastoreError::DbError {
+                        message: "fail to delete".to_string(),
+                    })
+                } else {
+                    Ok(())
+                }
+            });
+
+        let garbage_collect_actor =
+            GarbageCollector::new(Arc::new(mock_metastore), storage_resolver);
+        let universe = Universe::new();
+        let (_maibox, handle) = universe.spawn_actor(garbage_collect_actor).spawn();
+
+        let counters = handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.num_passes, 1);
+        assert_eq!(counters.num_deleted_files, 2);
+        assert_eq!(counters.num_deleted_bytes, 40);
+        assert_eq!(counters.num_successful_gc_run_on_index, 1);
+        assert_eq!(counters.num_failed_storage_resolution, 0);
+        assert_eq!(counters.num_failed_gc_run_on_index, 1);
     }
 }
