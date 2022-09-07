@@ -40,6 +40,7 @@ pub use crate::split_store::{
 pub mod actors;
 mod controlled_directory;
 pub mod merge_policy;
+mod metrics;
 pub mod models;
 pub mod source;
 mod split_store;

@@ -126,7 +126,7 @@ async fn test_cmd_create() -> Result<()> {
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
     make_command(
         format!(
-            "index create --index-config {} --config {} --overwrite",
+            "index create --index-config {} --config {} --overwrite -y",
             test_env.resource_files["index_config_without_uri"].display(),
             test_env.resource_files["config"].display(),
         )
@@ -1001,6 +1001,7 @@ async fn test_cmd_all_with_s3_localstack_internal_api() -> Result<()> {
         config_uri: Uri::try_new(&test_env.resource_files["config"].display().to_string()).unwrap(),
         overwrite: false,
         data_dir: None,
+        assume_yes: true,
     };
     create_index_cli(args).await?;
     let index_metadata = test_env
