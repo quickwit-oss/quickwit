@@ -52,8 +52,7 @@ use quickwit_core::IndexService;
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest_api::{start_ingest_api_service, IngestApiService};
-use quickwit_janitor::actors::JanitorService;
-use quickwit_janitor::start_janitor_service;
+use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreGrpcClient};
 use quickwit_search::{start_searcher_service, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
@@ -83,7 +82,7 @@ struct QuickwitServices {
     pub search_service: Arc<dyn SearchService>,
     pub indexer_service: Option<Mailbox<IndexingService>>,
     #[allow(dead_code)] // TODO remove
-    pub janitor_service: Option<Mailbox<JanitorService>>,
+    pub janitor_service: Option<JanitorService>,
     pub ingest_api_service: Option<Mailbox<IngestApiService>>,
     pub index_service: Arc<IndexService>,
     pub services: HashSet<QuickwitService>,

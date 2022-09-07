@@ -17,6 +17,30 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod garbage_collector;
+use quickwit_actors::ActorHandle;
+use quickwit_metastore::MetastoreError;
+use quickwit_storage::StorageResolverError;
+use thiserror::Error;
+use tracing::error;
 
-pub use garbage_collector::GarbageCollector;
+use crate::actors::GarbageCollector;
+
+#[derive(Error, Debug)]
+pub enum JanitorServiceError {
+    #[error("Failed to resolve the storage `{0}`.")]
+    StorageError(#[from] StorageResolverError),
+    #[error("Metastore error `{0}`.")]
+    MetastoreError(#[from] MetastoreError),
+}
+
+pub struct JanitorService {
+    _garbage_collector_handle: ActorHandle<GarbageCollector>,
+}
+
+impl JanitorService {
+    pub fn new(garbage_collector_handle: ActorHandle<GarbageCollector>) -> Self {
+        Self {
+            _garbage_collector_handle: garbage_collector_handle,
+        }
+    }
+}

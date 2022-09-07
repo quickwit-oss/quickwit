@@ -76,7 +76,9 @@ pub fn build_index_command<'a>() -> Command<'a> {
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
                         .required(false),
-                    arg!(--overwrite "Overwrites pre-existing index.")
+                    arg!(--overwrite "Overwrites pre-existing index. This will delete all existing data stored at `index-uri` before creating a new index.")
+                        .required(false),
+                    arg!(-y --"yes" "Assume \"yes\" as an answer to all prompts and run non-interactively.")
                         .required(false),
                 ])
             )
@@ -200,6 +202,7 @@ pub struct CreateIndexArgs {
     pub index_config_uri: Uri,
     pub data_dir: Option<PathBuf>,
     pub overwrite: bool,
+    pub assume_yes: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -332,12 +335,14 @@ impl IndexCliCommand {
             .expect("`index-config` is a required arg.")?;
         let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         let overwrite = matches.is_present("overwrite");
+        let assume_yes = matches.is_present("yes");
 
         Ok(Self::Create(CreateIndexArgs {
             config_uri,
             data_dir,
             index_config_uri,
             overwrite,
+            assume_yes,
         }))
     }
 
@@ -363,7 +368,6 @@ impl IndexCliCommand {
             .value_of("config")
             .map(Uri::try_new)
             .expect("`config` is a required arg.")?;
-
         let metastore_uri = matches
             .value_of("metastore-uri")
             .map(Uri::try_new)
@@ -563,7 +567,27 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         .resolve(&quickwit_config.metastore_uri)
         .await?;
 
-    validate_storage_uri(metastore_uri_resolver, &quickwit_config, &index_config).await?;
+    validate_storage_uri(
+        quickwit_storage_uri_resolver(),
+        &quickwit_config,
+        &index_config,
+    )
+    .await?;
+
+    // On overwrite and index present and `assume_yes` if false, ask the user to confirm the
+    // destructive operation.
+    let index_exists = metastore.index_exists(&index_id).await?;
+    if args.overwrite && index_exists && !args.assume_yes {
+        // Stop if user answers no.
+        let prompt = format!(
+            "This operation will overwrite the index `{}` and delete all its data. Do you want to \
+             proceed?",
+            index_id
+        );
+        if !prompt_confirmation(&prompt, false) {
+            return Ok(());
+        }
+    }
 
     let index_service = IndexService::new(
         metastore,
