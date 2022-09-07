@@ -36,6 +36,9 @@ pub struct Split {
     /// Timestamp for tracking when the split was last updated.
     pub update_timestamp: i64,
 
+    /// Timestamp for tracking when the split was published.
+    pub publish_timestamp: Option<i64>,
+
     /// Immutable part of the split.
     #[serde(flatten)]
     pub split_metadata: SplitMetadata,

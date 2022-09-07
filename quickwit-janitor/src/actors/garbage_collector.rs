@@ -215,6 +215,7 @@ mod tests {
                 },
                 split_state,
                 update_timestamp: 0i64,
+                publish_timestamp: None,
             })
             .collect()
     }

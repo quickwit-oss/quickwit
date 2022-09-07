@@ -2016,6 +2016,7 @@ pub mod test_suite {
             .unwrap();
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
+        assert!(split_meta.publish_timestamp.is_none());
         assert!(
             metastore
                 .index_metadata(index_id)
@@ -2044,6 +2045,10 @@ pub mod test_suite {
             .unwrap();
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
+        assert_eq!(
+            split_meta.publish_timestamp,
+            Some(split_meta.update_timestamp)
+        );
         assert!(
             metastore
                 .index_metadata(index_id)
@@ -2052,6 +2057,25 @@ pub mod test_suite {
                 .update_timestamp
                 > current_timestamp
         );
+
+        // wait a sec & re-publish and check publish_timestamp has not changed
+        let last_publish_timestamp_opt = split_meta.publish_timestamp;
+        sleep(Duration::from_secs(1)).await;
+        metastore
+            .publish_splits(
+                index_id,
+                &[split_id],
+                &[],
+                {
+                    let offsets = 5..12;
+                    IndexCheckpointDelta::for_test(source_id, offsets)
+                }
+                .into(),
+            )
+            .await
+            .unwrap();
+        let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
+        assert_eq!(split_meta.publish_timestamp, last_publish_timestamp_opt);
 
         current_timestamp = split_meta.update_timestamp;
 
@@ -2063,6 +2087,7 @@ pub mod test_suite {
             .unwrap();
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
+        assert!(split_meta.publish_timestamp.is_some());
         assert!(
             metastore
                 .index_metadata(index_id)
