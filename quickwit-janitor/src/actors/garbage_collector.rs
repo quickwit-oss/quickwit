@@ -21,14 +21,13 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Context;
 use async_trait::async_trait;
 use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_metastore::Metastore;
-use quickwit_storage::{Storage, StorageUriResolver};
-use tracing::info;
+use quickwit_storage::StorageUriResolver;
+use tracing::{error, info};
 
 use crate::garbage_collection::run_garbage_collect;
 
@@ -55,6 +54,12 @@ pub struct GarbageCollectorCounters {
     pub num_deleted_files: usize,
     /// The number of bytes deleted.
     pub num_deleted_bytes: usize,
+    /// The number of failed garbage collection run on an index.
+    pub num_failed_gc_run_on_index: usize,
+    /// The number of successful garbage collection run on an index.
+    pub num_successful_gc_run_on_index: usize,
+    /// The number or failed storage resolution.
+    pub num_failed_storage_resolution: usize,
 }
 
 #[derive(Debug)]
@@ -110,32 +115,29 @@ impl Handler<Loop> for GarbageCollector {
         info!("garbage-collect-operation");
         self.counters.num_passes += 1;
 
-        let index_metadatas = self
-            .metastore
-            .list_indexes_metadatas()
-            .await
-            .context("Failed to list indexes.")?;
+        let index_metadatas = match self.metastore.list_indexes_metadatas().await {
+            Ok(metadatas) => metadatas,
+            Err(error) => {
+                error!(error=?error, "Failed to list indexes from the metastore.");
+                return Ok(());
+            }
+        };
         info!(index_ids=%index_metadatas.iter().map(|im| &im.index_id).join(", "), "Garbage collecting indexes.");
 
-        let index_ids_to_storage = index_metadatas
+        let index_ids_to_storage_iter = index_metadatas
             .into_iter()
-            .map(|index_metadata| {
-                let storage = self
-                    .storage_resolver
-                    .resolve(&index_metadata.index_uri)
-                    .context(format!(
-                        "Failed to resolve the index storage Uri: `{0}`.",
-                        index_metadata.index_uri
-                    ))?;
-                Result::<(String, Arc<dyn Storage>), anyhow::Error>::Ok((
-                    index_metadata.index_id,
-                    storage,
-                ))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+            .filter_map(|index_metadata| {
+                match self.storage_resolver.resolve(&index_metadata.index_uri) {
+                    Ok(storage) => Some((index_metadata.index_id, storage)),
+                    Err(error) => {
+                        self.counters.num_failed_storage_resolution += 1;
+                        error!(index=%index_metadata.index_id, error=?error, "Failed to resolve the index storage Uri.");
+                        None
+                    },
+                }
+            });
 
-        let run_gc_tasks: Vec<_> = index_ids_to_storage
-            .into_iter()
+        let run_gc_tasks: Vec<_> = index_ids_to_storage_iter
             .map(|(index_id, storage)| {
                 let moved_metastore = self.metastore.clone();
                 async move {
@@ -158,7 +160,17 @@ impl Handler<Loop> for GarbageCollector {
         let mut stream =
             tokio_stream::iter(run_gc_tasks).buffer_unordered(MAX_CONCURRENT_STORAGE_REQUESTS);
         while let Some((index_id, run_gc_result)) = stream.next().await {
-            let deleted_file_entries = run_gc_result?;
+            let deleted_file_entries = match run_gc_result {
+                Ok(deleted_files) => {
+                    self.counters.num_successful_gc_run_on_index += 1;
+                    deleted_files
+                }
+                Err(error) => {
+                    self.counters.num_failed_gc_run_on_index += 1;
+                    error!(index_id=%index_id, error=?error, "Failed to run garbage collection on index.");
+                    continue;
+                }
+            };
 
             if !deleted_file_entries.is_empty() {
                 let deleted_files: HashSet<&str> = deleted_file_entries
@@ -363,23 +375,32 @@ mod tests {
         let universe = Universe::new();
         let (_maibox, handle) = universe.spawn_actor(garbage_collect_actor).spawn();
 
-        let state_after_initialization = handle.process_pending_and_observe().await.state;
-        assert_eq!(state_after_initialization.num_passes, 1);
-        assert_eq!(state_after_initialization.num_deleted_files, 2);
-        assert_eq!(state_after_initialization.num_deleted_bytes, 40);
+        let counters = handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.num_passes, 1);
+        assert_eq!(counters.num_deleted_files, 2);
+        assert_eq!(counters.num_deleted_bytes, 40);
+        assert_eq!(counters.num_successful_gc_run_on_index, 1);
+        assert_eq!(counters.num_failed_storage_resolution, 0);
+        assert_eq!(counters.num_failed_gc_run_on_index, 0);
 
         // 30 secs later
         universe.simulate_time_shift(Duration::from_secs(30)).await;
-        let state_after_initialization = handle.process_pending_and_observe().await.state;
-        assert_eq!(state_after_initialization.num_passes, 1);
-        assert_eq!(state_after_initialization.num_deleted_files, 2);
-        assert_eq!(state_after_initialization.num_deleted_bytes, 40);
+        let counters = handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.num_passes, 1);
+        assert_eq!(counters.num_deleted_files, 2);
+        assert_eq!(counters.num_deleted_bytes, 40);
+        assert_eq!(counters.num_successful_gc_run_on_index, 1);
+        assert_eq!(counters.num_failed_storage_resolution, 0);
+        assert_eq!(counters.num_failed_gc_run_on_index, 0);
 
         // 60 secs later
         universe.simulate_time_shift(RUN_INTERVAL).await;
-        let state_after_initialization = handle.process_pending_and_observe().await.state;
-        assert_eq!(state_after_initialization.num_passes, 2);
-        assert_eq!(state_after_initialization.num_deleted_files, 4);
-        assert_eq!(state_after_initialization.num_deleted_bytes, 80);
+        let counters = handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.num_passes, 2);
+        assert_eq!(counters.num_deleted_files, 4);
+        assert_eq!(counters.num_deleted_bytes, 80);
+        assert_eq!(counters.num_successful_gc_run_on_index, 2);
+        assert_eq!(counters.num_failed_storage_resolution, 0);
+        assert_eq!(counters.num_failed_gc_run_on_index, 0);
     }
 }
