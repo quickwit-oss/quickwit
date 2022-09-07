@@ -24,6 +24,7 @@ use crate::SplitMetadata;
 pub(crate) fn sample_split_metadata_for_regression() -> SplitMetadata {
     SplitMetadata {
         split_id: "split".to_string(),
+        index_id: "my-index".to_string(),
         source_id: "source".to_string(),
         node_id: "node".to_string(),
         pipeline_ord: 1,
