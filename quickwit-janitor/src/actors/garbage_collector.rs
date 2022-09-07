@@ -119,6 +119,7 @@ impl Handler<Loop> for GarbageCollector {
             Ok(metadatas) => metadatas,
             Err(error) => {
                 error!(error=?error, "Failed to list indexes from the metastore.");
+                ctx.schedule_self_msg(RUN_INTERVAL, Loop).await;
                 return Ok(());
             }
         };
@@ -404,6 +405,36 @@ mod tests {
         assert_eq!(counters.num_successful_gc_run_on_index, 2);
         assert_eq!(counters.num_failed_storage_resolution, 0);
         assert_eq!(counters.num_failed_gc_run_on_index, 0);
+    }
+
+    #[tokio::test]
+    async fn test_garbage_collect_get_called_repeatedly_on_failure() {
+        let storage_resolver = StorageUriResolver::for_test();
+        let mut mock_metastore = MockMetastore::default();
+        mock_metastore
+            .expect_list_indexes_metadatas()
+            .times(3)
+            .returning(|| {
+                Err(MetastoreError::DbError {
+                    message: "Fail to list indexes.".to_string(),
+                })
+            });
+
+        let garbage_collect_actor =
+            GarbageCollector::new(Arc::new(mock_metastore), storage_resolver);
+        let universe = Universe::new();
+        let (_maibox, handle) = universe.spawn_actor(garbage_collect_actor).spawn();
+
+        let counters = handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.num_passes, 1);
+
+        universe.simulate_time_shift(RUN_INTERVAL).await;
+        let counters = handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.num_passes, 2);
+
+        universe.simulate_time_shift(RUN_INTERVAL).await;
+        let counters = handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.num_passes, 3);
     }
 
     #[tokio::test]
