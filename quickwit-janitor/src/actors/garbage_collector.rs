@@ -80,38 +80,10 @@ impl GarbageCollector {
             counters: GarbageCollectorCounters::default(),
         }
     }
-}
 
-#[async_trait]
-impl Actor for GarbageCollector {
-    type ObservableState = GarbageCollectorCounters;
-
-    fn observable_state(&self) -> Self::ObservableState {
-        self.counters.clone()
-    }
-
-    fn name(&self) -> String {
-        "GarbageCollector".to_string()
-    }
-
-    async fn initialize(
-        &mut self,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), quickwit_actors::ActorExitStatus> {
-        self.handle(Loop, ctx).await?;
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Handler<Loop> for GarbageCollector {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        _: Loop,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), quickwit_actors::ActorExitStatus> {
+    /// Gc Loop handler logic.
+    /// Should not return an error to prevent the actor from crashing.
+    async fn handle_inner(&mut self, ctx: &ActorContext<Self>) {
         info!("garbage-collect-operation");
         self.counters.num_passes += 1;
 
@@ -119,8 +91,7 @@ impl Handler<Loop> for GarbageCollector {
             Ok(metadatas) => metadatas,
             Err(error) => {
                 error!(error=?error, "Failed to list indexes from the metastore.");
-                ctx.schedule_self_msg(RUN_INTERVAL, Loop).await;
-                return Ok(());
+                return;
             }
         };
         info!(index_ids=%index_metadatas.iter().map(|im| &im.index_id).join(", "), "Garbage collecting indexes.");
@@ -187,7 +158,40 @@ impl Handler<Loop> for GarbageCollector {
                     .sum::<usize>();
             }
         }
+    }
+}
 
+#[async_trait]
+impl Actor for GarbageCollector {
+    type ObservableState = GarbageCollectorCounters;
+
+    fn observable_state(&self) -> Self::ObservableState {
+        self.counters.clone()
+    }
+
+    fn name(&self) -> String {
+        "GarbageCollector".to_string()
+    }
+
+    async fn initialize(
+        &mut self,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), quickwit_actors::ActorExitStatus> {
+        self.handle(Loop, ctx).await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<Loop> for GarbageCollector {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _: Loop,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), quickwit_actors::ActorExitStatus> {
+        self.handle_inner(ctx).await;
         ctx.schedule_self_msg(RUN_INTERVAL, Loop).await;
         Ok(())
     }

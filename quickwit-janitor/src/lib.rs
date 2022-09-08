@@ -28,6 +28,7 @@ use tracing::info;
 pub mod actors;
 mod garbage_collection;
 mod janitor_service;
+mod retention_policy_evaluation;
 
 pub use janitor_service::JanitorService;
 
@@ -47,7 +48,11 @@ pub async fn start_janitor_service(
     let (_, garbage_collector_handle) = universe.spawn_actor(garbage_collector).spawn();
 
     let retention_policy_evaluator = RetentionPolicyEvaluator::new(metastore);
-    let (_, retention_policy_evaluator_handle) = universe.spawn_actor(retention_policy_evaluator).spawn();
+    let (_, retention_policy_evaluator_handle) =
+        universe.spawn_actor(retention_policy_evaluator).spawn();
 
-    Ok(JanitorService::new(garbage_collector_handle, retention_policy_evaluator_handle))
+    Ok(JanitorService::new(
+        garbage_collector_handle,
+        retention_policy_evaluator_handle,
+    ))
 }
