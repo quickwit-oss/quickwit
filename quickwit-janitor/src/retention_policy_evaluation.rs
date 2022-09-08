@@ -53,6 +53,10 @@ pub async fn run_evaluate_retention_policy(
         ctx.record_progress();
     }
 
+    if discardable_splits.is_empty() {
+        return Ok(discardable_splits);
+    }
+
     // Schedule all discardable splits for delete
     let split_ids: Vec<&str> = discardable_splits
         .iter()

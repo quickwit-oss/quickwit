@@ -283,6 +283,10 @@ mod tests {
 
         let mut sequence = Sequence::new();
         mock_metastore
+            .expect_list_splits()
+            .times(..)
+            .returning(|_, _, _, _| Ok(vec![]));
+        mock_metastore
             .expect_list_indexes_metadatas()
             .times(1)
             .in_sequence(&mut sequence)
@@ -331,7 +335,9 @@ mod tests {
             ]))
             .await?;
 
-        universe.simulate_time_shift(RUN_INTERVAL).await;
+        universe
+            .simulate_time_shift(RUN_INTERVAL + Duration::from_secs(5))
+            .await;
         let counters = handle.process_pending_and_observe().await.state;
         assert_eq!(counters.num_refresh_passes, 2);
         mailbox
@@ -342,7 +348,9 @@ mod tests {
             ]))
             .await?;
 
-        universe.simulate_time_shift(RUN_INTERVAL).await;
+        universe
+            .simulate_time_shift(RUN_INTERVAL + Duration::from_secs(5))
+            .await;
         let counters = handle.process_pending_and_observe().await.state;
         assert_eq!(counters.num_refresh_passes, 3);
         mailbox
