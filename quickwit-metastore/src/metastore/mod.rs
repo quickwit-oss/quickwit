@@ -43,13 +43,11 @@ use crate::{MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
 /// We rely on atomically transitioning the status of splits.
 ///
 /// The split state goes through the following life cycle:
-/// 1. `New`
-///   - Create new split and start indexing.
-/// 2. `Staged`
+/// 1. `Staged`
 ///   - Start uploading the split files.
-/// 3. `Published`
+/// 2. `Published`
 ///   - Uploading the split files is complete and the split is searchable.
-/// 4. `MarkedForDeletion`
+/// 3. `MarkedForDeletion`
 ///   - Mark the split for deletion.
 ///
 /// If a split has a file in the storage, it MUST be registered in the metastore,
