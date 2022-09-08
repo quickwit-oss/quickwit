@@ -42,12 +42,16 @@ pub enum Protocol {
 impl Protocol {
     pub fn as_str(&self) -> &str {
         match &self {
+            Protocol::Azure => "azure",
             Protocol::File => "file",
             Protocol::PostgreSQL => "postgresql",
             Protocol::Ram => "ram",
             Protocol::S3 => "s3",
-            Protocol::Azure => "azure",
         }
+    }
+
+    pub fn is_azure(&self) -> bool {
+        matches!(&self, Protocol::Azure)
     }
 
     pub fn is_file(&self) -> bool {
@@ -64,10 +68,6 @@ impl Protocol {
 
     pub fn is_s3(&self) -> bool {
         matches!(&self, Protocol::S3)
-    }
-
-    pub fn is_azure(&self) -> bool {
-        matches!(&self, Protocol::Azure)
     }
 
     pub fn is_file_storage(&self) -> bool {
