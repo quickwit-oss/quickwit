@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -93,6 +92,8 @@ impl RetentionPolicyEvaluator {
         info!(index_ids=%deleted_indexes.iter().join(", "), "Deleted indexes from cache.");
 
         for index_metadata in index_metadatas.into_iter() {
+            ctx.record_progress();
+
             // Only care about indexes with retention policy.
             let retention_policy = match &index_metadata.retention_policy {
                 Some(policy) => policy,
@@ -104,24 +105,23 @@ impl RetentionPolicyEvaluator {
             };
 
             // Insert or update index
-            match self.index_metadatas.entry(index_metadata.index_id.clone()) {
-                Entry::Occupied(entry) => {
-                    // Update entry in case retention policy has changed
-                    *entry.into_mut() = index_metadata;
-                }
-                Entry::Vacant(entry) => {
-                    let message = Evaluate {
-                        index_id: index_metadata.index_id.clone(),
-                    };
-                    let next_interval = retention_policy
-                        .duration_till_next_evaluation()
-                        .expect("Expected a valid duration from retention policy schedule.");
-
-                    // Inserts & schedule first evaluation
-                    entry.insert(index_metadata);
-                    ctx.schedule_self_msg(next_interval, message).await;
-                }
+            if let Some(value) = self.index_metadatas.get_mut(&index_metadata.index_id) {
+                // Update cache value in case retention policy has changed.
+                *value = index_metadata;
+                continue;
             }
+
+            let message = Evaluate {
+                index_id: index_metadata.index_id.clone(),
+            };
+            let next_interval = retention_policy
+                .duration_till_next_evaluation()
+                .expect("Expected a valid duration from retention policy schedule.");
+
+            // Inserts & schedule first evaluation
+            self.index_metadatas
+                .insert(index_metadata.index_id.clone(), index_metadata);
+            ctx.schedule_self_msg(next_interval, message).await;
         }
     }
 }
@@ -177,7 +177,7 @@ impl Handler<Evaluate> for RetentionPolicyEvaluator {
         let index_metadata = match self.index_metadatas.get(&message.index_id) {
             Some(metadata) => metadata,
             None => {
-                info!(index_id=%message.index_id, "index might have been deleted.");
+                info!(index_id=%message.index_id, "Index might have been deleted.");
                 return Ok(());
             }
         };
@@ -220,10 +220,13 @@ fn compute_deleted_indexes<'a>(
 
 #[cfg(test)]
 mod tests {
+    use std::ops::RangeInclusive;
+
     use mockall::Sequence;
     use quickwit_actors::Universe;
     use quickwit_config::{RetentionPolicy, RetentionPolicyCutoffReference};
-    use quickwit_metastore::{IndexMetadata, MockMetastore};
+    use quickwit_metastore::{IndexMetadata, MockMetastore, Split, SplitMetadata, SplitState};
+    use time::OffsetDateTime;
 
     use super::*;
 
@@ -258,13 +261,15 @@ mod tests {
         }
     }
 
+    const SCHEDULE_EXPR: &str = "hourly";
+
     fn make_index(index_id: &str, retention_period_opt: Option<&str>) -> IndexMetadata {
         let mut index = IndexMetadata::for_test(index_id, &format!("ram://indexes/{}", index_id));
         if let Some(retention_period) = retention_period_opt {
             index.retention_policy = Some(RetentionPolicy::new(
                 retention_period.to_string(),
                 RetentionPolicyCutoffReference::PublishTimestamp,
-                "hourly".to_string(),
+                SCHEDULE_EXPR.to_string(),
             ))
         }
         index
@@ -275,6 +280,35 @@ mod tests {
             .iter()
             .map(|(index_id, retention_period_opt)| make_index(index_id, *retention_period_opt))
             .collect()
+    }
+
+    fn make_split(
+        split_id: &str,
+        publish_ts_opt: Option<i64>,
+        time_range: Option<RangeInclusive<i64>>,
+    ) -> Split {
+        Split {
+            split_metadata: SplitMetadata {
+                split_id: split_id.to_string(),
+                footer_offsets: 5..20,
+                time_range,
+                ..Default::default()
+            },
+            split_state: SplitState::Published,
+            update_timestamp: 0i64,
+            publish_timestamp: publish_ts_opt,
+        }
+    }
+
+    // Uses the retention policy scheduler to calculate
+    // how much time to advance for the evaluation to take place.
+    fn shift_time_by() -> Duration {
+        let scheduler = RetentionPolicy::new(
+            "".to_string(),
+            RetentionPolicyCutoffReference::PublishTimestamp,
+            SCHEDULE_EXPR.to_string(),
+        );
+        scheduler.duration_till_next_evaluation().unwrap() + Duration::from_secs(1)
     }
 
     #[tokio::test]
@@ -359,6 +393,67 @@ mod tests {
                 ("d", Some("1 hour")),
             ]))
             .await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_retention_policy_evaluation() -> anyhow::Result<()> {
+        let mut mock_metastore = MockMetastore::default();
+        mock_metastore
+            .expect_list_indexes_metadatas()
+            .times(..)
+            .returning(|| {
+                Ok(make_indexes(&[
+                    ("a", Some("2 hour")),
+                    ("b", Some("1 hour")),
+                    ("c", None),
+                ]))
+            });
+
+        mock_metastore
+            .expect_list_splits()
+            .times(2)
+            .returning(|index_id, split_state, _, _| {
+                assert_eq!(split_state, SplitState::Published);
+                let now = OffsetDateTime::now_utc().unix_timestamp();
+                let two_hours_ago =
+                    (OffsetDateTime::now_utc() - Duration::from_secs(60 * 60 * 2)).unix_timestamp();
+                let three_hours_ago =
+                    (OffsetDateTime::now_utc() - Duration::from_secs(60 * 60 * 3)).unix_timestamp();
+                let splits = match index_id {
+                    "a" => vec![
+                        make_split("split-1", Some(two_hours_ago), None),
+                        make_split("split-2", Some(three_hours_ago), None),
+                        make_split("split-3", Some(now), None),
+                    ],
+                    "b" => vec![],
+                    unknown => panic!("Unknown index: `{}`.", unknown),
+                };
+                Ok(splits)
+            });
+
+        mock_metastore
+            .expect_mark_splits_for_deletion()
+            .times(1)
+            .returning(|index_id, split_ids| {
+                assert_eq!(index_id, "a");
+                assert_eq!(split_ids, ["split-1", "split-2"]);
+                Ok(())
+            });
+
+        let retention_policy_actor = RetentionPolicyEvaluator::new(Arc::new(mock_metastore));
+        let universe = Universe::new();
+        let (_mailbox, handle) = universe.spawn_actor(retention_policy_actor).spawn();
+
+        let counters = handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.num_evaluation_passes, 0);
+        assert_eq!(counters.num_discarded_splits, 0);
+
+        universe.simulate_time_shift(shift_time_by()).await;
+        let counters = handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.num_evaluation_passes, 2);
+        assert_eq!(counters.num_discarded_splits, 2);
 
         Ok(())
     }
