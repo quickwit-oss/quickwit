@@ -19,11 +19,12 @@
 
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use clap::{arg, ArgMatches, Command};
 use itertools::Itertools;
-use quickwit_common::service::QuickwitService;
 use quickwit_common::uri::Uri;
+use quickwit_config::service::QuickwitService;
 use quickwit_serve::serve_quickwit;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::debug;
@@ -77,7 +78,7 @@ impl RunCliCommand {
             .values_of("service")
             .map(|values| {
                 let services: Result<HashSet<_>, _> =
-                    values.into_iter().map(QuickwitService::try_from).collect();
+                    values.into_iter().map(QuickwitService::from_str).collect();
                 services
             })
             .transpose()?

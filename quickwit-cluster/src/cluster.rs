@@ -19,6 +19,7 @@
 
 use std::collections::HashSet;
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -402,7 +403,7 @@ fn parse_available_services_val(
     }
     let available_services_str = available_services_val.split(',');
     for service_str in available_services_str {
-        if let Ok(service) = QuickwitService::try_from(service_str) {
+        if let Ok(service) = QuickwitService::from_str(service_str) {
             available_services.insert(service);
         } else {
             warn!(
@@ -480,7 +481,7 @@ pub async fn create_cluster_for_test(
     let node_id = NODE_AUTO_INCREMENT.fetch_add(1, Ordering::Relaxed);
     let services = services
         .iter()
-        .map(|service_str| QuickwitService::try_from(*service_str))
+        .map(|service_str| QuickwitService::from_str(*service_str))
         .collect::<Result<HashSet<_>, _>>()?;
     let cluster = create_cluster_for_test_with_id(
         node_id,

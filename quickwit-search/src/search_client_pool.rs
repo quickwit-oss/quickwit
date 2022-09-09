@@ -28,7 +28,7 @@ use anyhow::bail;
 use http::Uri;
 use itertools::Itertools;
 use quickwit_cluster::ClusterMember;
-use quickwit_common::service::QuickwitService;
+use quickwit_config::service::QuickwitService;
 use quickwit_proto::tonic;
 use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt;

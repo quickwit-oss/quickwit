@@ -21,6 +21,7 @@ use std::collections::HashSet;
 use std::env;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use anyhow::{bail, Context};
 use byte_unit::Byte;
@@ -28,11 +29,11 @@ use derivative::Derivative;
 use json_comments::StripComments;
 use quickwit_common::net::{find_private_ip, Host, HostAddr};
 use quickwit_common::new_coolid;
-use quickwit_common::service::QuickwitService;
 use quickwit_common::uri::{Extension, Uri};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
+use crate::service::QuickwitService;
 use crate::templating::render_config;
 use crate::validate_identifier;
 
@@ -80,9 +81,9 @@ fn default_rest_listen_port() -> u16 {
 }
 
 fn default_quickwit_services() -> Vec<String> {
-    vec!["metastore", "searcher", "indexer"]
+    vec!["metastore", "searcher", "indexer", "janitor"]
         .iter()
-        .map(|s| s.to_string())
+        .map(|svc| svc.to_string())
         .collect()
 }
 
@@ -239,10 +240,10 @@ impl QuickwitConfigBuilder {
         serde_yaml::from_slice(bytes).context("Failed to parse YAML config file.")
     }
 
-    fn services_from_vec(&self) -> anyhow::Result<HashSet<QuickwitService>> {
+    fn parse_services(&self) -> anyhow::Result<HashSet<QuickwitService>> {
         self.services
             .iter()
-            .map(|service_string| QuickwitService::try_from(service_string.as_str()))
+            .map(|service_string| QuickwitService::from_str(service_string.as_str()))
             .collect::<Result<HashSet<_>, _>>()
     }
 
@@ -367,7 +368,7 @@ impl QuickwitConfigBuilder {
             grpc_advertise_addr: self.grpc_advertise_addr(&listen_host).await?,
             metastore_uri: self.metastore_uri()?,
             default_index_root_uri: self.default_index_root_uri()?,
-            services: self.services_from_vec()?,
+            services: self.parse_services()?,
             version: self.version,
             cluster_id: self.cluster_id,
             node_id: self.node_id,
@@ -516,11 +517,9 @@ impl QuickwitConfig {
 
         let services = default_quickwit_services()
             .iter()
-            .map(|service_string| {
-                QuickwitService::try_from(service_string.as_str())
-                    .expect("Default services should always get parsed correctly.")
-            })
-            .collect();
+            .map(|svc| svc.parse())
+            .collect::<anyhow::Result<_>>()
+            .expect("Default services should be parsed correctly.");
 
         Self {
             version: 0,

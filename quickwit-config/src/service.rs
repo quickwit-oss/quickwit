@@ -17,10 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::str::FromStr;
+
 use anyhow::bail;
+use enum_iterator::{all, Sequence};
+use itertools::Itertools;
 use serde::Serialize;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Sequence)]
 pub enum QuickwitService {
     Indexer,
     Searcher,
@@ -37,19 +41,28 @@ impl QuickwitService {
             QuickwitService::Metastore => "metastore",
         }
     }
+    fn supported_services() -> Vec<&'static str> {
+        all::<QuickwitService>()
+            .into_iter()
+            .map(|svc| svc.as_str())
+            .collect_vec()
+    }
 }
 
-impl TryFrom<&str> for QuickwitService {
-    type Error = anyhow::Error;
+impl FromStr for QuickwitService {
+    type Err = anyhow::Error;
 
-    fn try_from(service_str: &str) -> Result<Self, Self::Error> {
+    fn from_str(service_str: &str) -> Result<Self, Self::Err> {
         match service_str {
             "indexer" => Ok(QuickwitService::Indexer),
             "searcher" => Ok(QuickwitService::Searcher),
             "janitor" => Ok(QuickwitService::Janitor),
             "metastore" => Ok(QuickwitService::Metastore),
             _ => {
-                bail!("Service `{service_str}` unknown");
+                bail!(
+                    "Failed to parse service `{service_str}`. Supported services are: {}",
+                    QuickwitService::supported_services().join(", ")
+                )
             }
         }
     }

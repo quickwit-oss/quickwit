@@ -25,7 +25,7 @@ use std::sync::Arc;
 
 use chitchat::transport::UdpTransport;
 use chitchat::FailureDetectorConfig;
-use quickwit_common::service::QuickwitService;
+use quickwit_config::service::QuickwitService;
 use quickwit_config::QuickwitConfig;
 
 pub use crate::cluster::{
