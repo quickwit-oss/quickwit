@@ -83,7 +83,7 @@ impl RamStorage {
 
 #[async_trait]
 impl Storage for RamStorage {
-    async fn check(&self) -> anyhow::Result<()> {
+    async fn check_connectivity(&self) -> anyhow::Result<()> {
         Ok(())
     }
 

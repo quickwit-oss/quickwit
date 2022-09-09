@@ -485,9 +485,8 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "chitchat"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63e16bc6492a6744d6e322e22562c3ab89404ba326aedb65a570799d2e042687"
+version = "0.5.0"
+source = "git+https://github.com/quickwit-oss/chitchat?rev=cd568ba#cd568ba2ca4fc83b5dcb079b4606a2c3521b9339"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -603,6 +602,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af4780a44ab5696ea9e28294517f1fffb421a83a25af521333c838635509db9c"
 dependencies = [
  "cache-padded",
+]
+
+[[package]]
+name = "console"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89eab4d20ce20cea182308bca13088fecea9c05f6776cf287205d41a0ed3c847"
+dependencies = [
+ "encode_unicode 0.3.6",
+ "libc",
+ "once_cell",
+ "terminal_size",
+ "unicode-width",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -760,6 +773,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cron"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d76219e9243e100d5a37676005f08379297f8addfebc247613299600625c734d"
+dependencies = [
+ "chrono",
+ "nom",
+ "once_cell",
+]
+
+[[package]]
 name = "crossbeam-channel"
 version = "0.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -893,6 +917,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "dialoguer"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a92e7e37ecef6857fdc0c0c5d42fd5b0938e46590c2183cc92dd310a6d078eb1"
+dependencies = [
+ "console",
+ "tempfile",
+ "zeroize",
 ]
 
 [[package]]
@@ -1030,6 +1065,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90e5c1c8368803113bf0c9584fc495a58b86dc8a29edbf8fe877d21d9507e797"
 
 [[package]]
+name = "encode_unicode"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a357d28ed41a50f9c765dbfe56cbc04a64e53e5fc58ba79fbc34c10ef3df831f"
+
+[[package]]
+name = "encode_unicode"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1053,9 +1100,9 @@ dependencies = [
 
 [[package]]
 name = "erased-serde"
-version = "0.3.22"
+version = "0.3.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "003000e712ad0f95857bd4d2ef8d1890069e06554101697d12050668b2f6f020"
+checksum = "54558e0ba96fbe24280072642eceb9d7d442e32c7ec0ea9e7ecd7b4ea2cf4e11"
 dependencies = [
  "serde",
 ]
@@ -1086,8 +1133,13 @@ checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 [[package]]
 name = "fastfield_codecs"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=8e773ad#8e773ade7715210fb18a9a3b870329eed35dd1ad"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ea72cf3#ea72cf34d60cf5080c609239b7bf935bfe18229f"
 dependencies = [
+ "fastdivide",
+ "log",
+ "ownedbytes",
+ "prettytable-rs",
+ "rand 0.8.5",
  "tantivy-bitpacker",
  "tantivy-common",
 ]
@@ -1305,15 +1357,6 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
-]
-
-[[package]]
-name = "gcd"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f37978dab2ca789938a83b2f8bc1ef32db6633af9051a6cd409eff72cbaaa79a"
-dependencies = [
- "paste",
 ]
 
 [[package]]
@@ -2142,9 +2185,9 @@ dependencies = [
 
 [[package]]
 name = "new_string_template"
-version = "1.3.1"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "427d2a595c488ee51abc942d6b7ebec8467a3edef0d928486ea2ce4f95516637"
+checksum = "d7359c5bee6fe9218ccd4988120a23dc79d291e95486756969112d45efdc97d1"
 dependencies = [
  "lazy_static",
  "regex",
@@ -2234,9 +2277,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.13.1"
+version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "074864da206b4973b84eb91683020dbefd6a8c3f0f38e054d93954e891935e4e"
+checksum = "2f7254b99e31cad77da24b08ebf628882739a608578bb1bcdfc1f9c21260d7c0"
 
 [[package]]
 name = "oneshot"
@@ -2386,7 +2429,7 @@ dependencies = [
 [[package]]
 name = "ownedbytes"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=8e773ad#8e773ade7715210fb18a9a3b870329eed35dd1ad"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ea72cf3#ea72cf34d60cf5080c609239b7bf935bfe18229f"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -2700,6 +2743,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "prettytable-rs"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f375cb74c23b51d23937ffdeb48b1fbf5b6409d4b9979c1418c1de58bc8f801"
+dependencies = [
+ "atty",
+ "csv",
+ "encode_unicode 1.0.0",
+ "lazy_static",
+ "term",
+ "unicode-width",
+]
+
+[[package]]
 name = "proc-macro-crate"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2898,6 +2955,7 @@ dependencies = [
  "flume",
  "futures",
  "quickwit-common",
+ "quickwit-proto",
  "rand 0.8.5",
  "thiserror",
  "tokio",
@@ -2910,6 +2968,7 @@ version = "0.3.1"
 dependencies = [
  "anyhow",
  "async-trait",
+ "ec2_instance_metadata",
  "futures",
  "hyper-rustls",
  "once_cell",
@@ -2934,6 +2993,7 @@ dependencies = [
  "clap 3.1.18",
  "colored",
  "console-subscriber",
+ "dialoguer",
  "futures",
  "humansize",
  "humantime",
@@ -2966,7 +3026,7 @@ dependencies = [
  "thousands",
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
- "time 0.3.13",
+ "time 0.3.14",
  "tokio",
  "tokio-util 0.7.3",
  "toml",
@@ -3024,7 +3084,9 @@ version = "0.3.1"
 dependencies = [
  "anyhow",
  "byte-unit",
+ "cron",
  "derivative",
+ "humantime",
  "json_comments",
  "new_string_template",
  "once_cell",
@@ -3055,7 +3117,9 @@ dependencies = [
  "quickwit-directories",
  "quickwit-doc-mapper",
  "quickwit-indexing",
+ "quickwit-janitor",
  "quickwit-metastore",
+ "quickwit-proto",
  "quickwit-storage",
  "rand 0.8.5",
  "serde",
@@ -3086,7 +3150,7 @@ dependencies = [
  "tantivy",
  "tempfile",
  "thiserror",
- "time 0.3.13",
+ "time 0.3.14",
  "tokio",
  "tracing",
 ]
@@ -3115,7 +3179,7 @@ dependencies = [
  "tantivy",
  "tantivy-query-grammar",
  "thiserror",
- "time 0.3.13",
+ "time 0.3.14",
  "tracing",
  "typetag",
  "unwrap-infallible",
@@ -3139,6 +3203,7 @@ dependencies = [
  "libz-sys",
  "mockall",
  "once_cell",
+ "oneshot",
  "openssl",
  "proptest",
  "quickwit-actors",
@@ -3161,7 +3226,7 @@ dependencies = [
  "tantivy",
  "tempfile",
  "thiserror",
- "time 0.3.13",
+ "time 0.3.14",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -3192,6 +3257,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-janitor"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "futures",
+ "itertools",
+ "quickwit-actors",
+ "quickwit-common",
+ "quickwit-config",
+ "quickwit-metastore",
+ "quickwit-storage",
+ "serde",
+ "tempfile",
+ "thiserror",
+ "time 0.3.14",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+]
+
+[[package]]
 name = "quickwit-metastore"
 version = "0.3.1"
 dependencies = [
@@ -3200,13 +3287,16 @@ dependencies = [
  "byte-unit",
  "dotenv",
  "futures",
+ "http",
  "itertools",
  "md5",
  "mockall",
  "once_cell",
+ "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
  "quickwit-doc-mapper",
+ "quickwit-proto",
  "quickwit-storage",
  "rand 0.8.5",
  "regex",
@@ -3215,8 +3305,10 @@ dependencies = [
  "sqlx",
  "tempfile",
  "thiserror",
- "time 0.3.13",
+ "time 0.3.14",
  "tokio",
+ "tokio-stream",
+ "tower",
  "tracing",
  "tracing-subscriber",
 ]
@@ -3242,6 +3334,7 @@ dependencies = [
  "base64",
  "bytes",
  "chitchat",
+ "fastfield_codecs",
  "futures",
  "http",
  "hyper",
@@ -3281,6 +3374,7 @@ dependencies = [
  "assert-json-diff",
  "async-trait",
  "bytes",
+ "chitchat",
  "futures",
  "futures-util",
  "hyper",
@@ -3298,6 +3392,7 @@ dependencies = [
  "quickwit-doc-mapper",
  "quickwit-indexing",
  "quickwit-ingest-api",
+ "quickwit-janitor",
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-search",
@@ -3329,7 +3424,6 @@ dependencies = [
  "azure_storage_blobs",
  "base64",
  "bytes",
- "ec2_instance_metadata",
  "fnv",
  "futures",
  "lru",
@@ -4244,9 +4338,9 @@ checksum = "2fd0db749597d91ff862fd1d55ea87f7855a744a8425a64695b6fca237d1dad1"
 
 [[package]]
 name = "socket2"
-version = "0.4.4"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66d72b759436ae32898a2af0a14218dbf55efde3feeb170eb623637db85ee1e0"
+checksum = "10c98bba371b9b22a71a9414e420f92ddeb2369239af08200816169d5e2dd7aa"
 dependencies = [
  "libc",
  "winapi 0.3.9",
@@ -4335,7 +4429,7 @@ dependencies = [
  "sqlx-rt",
  "stringprep",
  "thiserror",
- "time 0.3.13",
+ "time 0.3.14",
  "tokio-stream",
  "url",
  "webpki-roots 0.22.4",
@@ -4502,7 +4596,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.18.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=8e773ad#8e773ade7715210fb18a9a3b870329eed35dd1ad"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ea72cf3#ea72cf34d60cf5080c609239b7bf935bfe18229f"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -4518,7 +4612,6 @@ dependencies = [
  "fastfield_codecs",
  "fnv",
  "fs2",
- "gcd",
  "htmlescape",
  "itertools",
  "levenshtein_automata",
@@ -4547,7 +4640,7 @@ dependencies = [
  "tantivy-query-grammar",
  "tempfile",
  "thiserror",
- "time 0.3.13",
+ "time 0.3.14",
  "uuid",
  "winapi 0.3.9",
  "zstd",
@@ -4556,12 +4649,12 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=8e773ad#8e773ade7715210fb18a9a3b870329eed35dd1ad"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ea72cf3#ea72cf34d60cf5080c609239b7bf935bfe18229f"
 
 [[package]]
 name = "tantivy-common"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=8e773ad#8e773ade7715210fb18a9a3b870329eed35dd1ad"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ea72cf3#ea72cf34d60cf5080c609239b7bf935bfe18229f"
 dependencies = [
  "byteorder",
  "ownedbytes",
@@ -4581,7 +4674,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.18.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=8e773ad#8e773ade7715210fb18a9a3b870329eed35dd1ad"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ea72cf3#ea72cf34d60cf5080c609239b7bf935bfe18229f"
 dependencies = [
  "combine",
  "once_cell",
@@ -4603,12 +4696,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "term"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c59df8ac95d96ff9bede18eb7300b0fda5e5d8d90960e76f8e14ae765eedbf1f"
+dependencies = [
+ "dirs-next",
+ "rustversion",
+ "winapi 0.3.9",
+]
+
+[[package]]
 name = "termcolor"
 version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bab24d30b911b2376f3a13cc2cd443142f0c81dda04c118693e35b3835757755"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "terminal_size"
+version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "633c1a546cee861a1a6d0dc69ebeca693bf4296661ba7852b9d21d159e0506df"
+dependencies = [
+ "libc",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -4749,9 +4863,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.13"
+version = "0.3.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db76ff9fa4b1458b3c7f077f3ff9887394058460d21e634355b273aaf11eea45"
+checksum = "3c3f9a28b618c3a6b9251b6908e9c99e04b9e5c02e6581ccbb67d59c34ef7f9b"
 dependencies = [
  "itoa 1.0.3",
  "libc",
@@ -4816,9 +4930,9 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
 name = "tokio"
-version = "1.20.1"
+version = "1.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a8325f63a7d4774dd041e363b2409ed1c5cbbd0f867795e661df066b2b0a581"
+checksum = "89797afd69d206ccd11fb0ea560a44bbb87731d020670e79416d442919257d42"
 dependencies = [
  "autocfg",
  "bytes",
@@ -5122,7 +5236,7 @@ dependencies = [
  "sharded-slab",
  "smallvec",
  "thread_local",
- "time 0.3.13",
+ "time 0.3.14",
  "tracing",
  "tracing-core",
  "tracing-log",

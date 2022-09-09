@@ -71,14 +71,14 @@ fn next_position(db: &DB, queue_id: &str) -> crate::Result<Option<Position>> {
 }
 
 impl Queues {
-    pub fn open(db_dir_path: &Path) -> crate::Result<Queues> {
+    pub fn open(queues_dir_path: &Path) -> crate::Result<Queues> {
         let options = default_rocks_db_options();
-        let queue_ids = if db_dir_path.join("CURRENT").exists() {
-            DB::list_cf(&options, db_dir_path)?
+        let queue_ids = if queues_dir_path.join("CURRENT").exists() {
+            DB::list_cf(&options, queues_dir_path)?
         } else {
             Vec::new()
         };
-        let db = DB::open_cf(&options, db_dir_path, &queue_ids)?;
+        let db = DB::open_cf(&options, queues_dir_path, &queue_ids)?;
         let mut next_position_per_queue = HashMap::default();
         for queue_id in queue_ids {
             let next_position = next_position(&db, &queue_id)?;

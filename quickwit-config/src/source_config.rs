@@ -237,6 +237,10 @@ pub struct KafkaSourceParams {
     #[serde(default = "serde_json::Value::default")]
     #[serde(skip_serializing_if = "serde_json::Value::is_null")]
     pub client_params: serde_json::Value,
+    /// When backfill mode is enabled, the source exits after reaching the end of the topic.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
+    pub enable_backfill_mode: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -252,9 +256,9 @@ pub struct KinesisSourceParams {
     pub stream_name: String,
     #[serde(flatten)]
     pub region_or_endpoint: Option<RegionOrEndpoint>,
-    #[doc(hidden)]
+    /// When backfill mode is enabled, the source exits after reaching the end of the stream.
     #[serde(skip_serializing_if = "is_false")]
-    pub shutdown_at_stream_eof: bool,
+    pub enable_backfill_mode: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
@@ -263,9 +267,8 @@ struct KinesisSourceParamsInner {
     pub stream_name: String,
     pub region: Option<String>,
     pub endpoint: Option<String>,
-    #[doc(hidden)]
     #[serde(default)]
-    pub shutdown_at_stream_eof: bool,
+    pub enable_backfill_mode: bool,
 }
 
 impl TryFrom<KinesisSourceParamsInner> for KinesisSourceParams {
@@ -284,7 +287,7 @@ impl TryFrom<KinesisSourceParamsInner> for KinesisSourceParams {
         Ok(KinesisSourceParams {
             stream_name: value.stream_name,
             region_or_endpoint,
-            shutdown_at_stream_eof: value.shutdown_at_stream_eof,
+            enable_backfill_mode: value.enable_backfill_mode,
         })
     }
 }
@@ -306,8 +309,9 @@ pub struct VoidSourceParams;
 #[serde(deny_unknown_fields)]
 pub struct IngestApiSourceParams {
     pub index_id: String,
+    pub queues_dir_path: PathBuf,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub batch_num_bytes_threshold: Option<u64>,
+    pub batch_num_bytes_limit: Option<u64>,
 }
 
 #[cfg(test)]
@@ -341,11 +345,80 @@ mod tests {
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: "cloudera-cluster-logs".to_string(),
                 client_log_level: None,
-                client_params: json! {{"bootstrap.servers": "host:9092"}},
+                client_params: json! {{"bootstrap.servers": "localhost:9092"}},
+                enable_backfill_mode: false,
             }),
         };
         assert_eq!(source_config, expected_source_config);
         assert_eq!(source_config.num_pipelines().unwrap(), 2);
+    }
+
+    #[test]
+    fn test_kafka_source_params_serialization() {
+        {
+            let params = KafkaSourceParams {
+                topic: "my-topic".to_string(),
+                client_log_level: None,
+                client_params: json!(null),
+                enable_backfill_mode: false,
+            };
+            let params_yaml = serde_yaml::to_string(&params).unwrap();
+
+            assert_eq!(
+                serde_yaml::from_str::<KafkaSourceParams>(&params_yaml).unwrap(),
+                params,
+            )
+        }
+        {
+            let params = KafkaSourceParams {
+                topic: "my-topic".to_string(),
+                client_log_level: Some("info".to_string()),
+                client_params: json! {{"bootstrap.servers": "localhost:9092"}},
+                enable_backfill_mode: false,
+            };
+            let params_yaml = serde_yaml::to_string(&params).unwrap();
+
+            assert_eq!(
+                serde_yaml::from_str::<KafkaSourceParams>(&params_yaml).unwrap(),
+                params,
+            )
+        }
+    }
+
+    #[test]
+    fn test_kafka_source_params_deserialization() {
+        {
+            let yaml = r#"
+                    topic: my-topic
+                "#;
+            assert_eq!(
+                serde_yaml::from_str::<KafkaSourceParams>(yaml).unwrap(),
+                KafkaSourceParams {
+                    topic: "my-topic".to_string(),
+                    client_log_level: None,
+                    client_params: json!(null),
+                    enable_backfill_mode: false,
+                }
+            );
+        }
+        {
+            let yaml = r#"
+                    topic: my-topic
+                    client_log_level: info
+                    client_params:
+                        bootstrap.servers: localhost:9092
+                    enable_backfill_mode: true
+                "#;
+            assert_eq!(
+                serde_yaml::from_str::<KafkaSourceParams>(yaml).unwrap(),
+                KafkaSourceParams {
+                    topic: "my-topic".to_string(),
+                    client_log_level: Some("info".to_string()),
+                    client_params: json! {{"bootstrap.servers": "localhost:9092"}},
+                    enable_backfill_mode: true,
+                }
+            );
+        }
     }
 
     #[tokio::test]
@@ -362,7 +435,7 @@ mod tests {
             source_params: SourceParams::Kinesis(KinesisSourceParams {
                 stream_name: "emr-cluster-logs".to_string(),
                 region_or_endpoint: None,
-                shutdown_at_stream_eof: false,
+                enable_backfill_mode: false,
             }),
         };
         assert_eq!(source_config, expected_source_config);
@@ -390,7 +463,7 @@ mod tests {
             let params = KinesisSourceParams {
                 stream_name: "my-stream".to_string(),
                 region_or_endpoint: None,
-                shutdown_at_stream_eof: false,
+                enable_backfill_mode: false,
             };
             let params_yaml = serde_yaml::to_string(&params).unwrap();
 
@@ -403,7 +476,7 @@ mod tests {
             let params = KinesisSourceParams {
                 stream_name: "my-stream".to_string(),
                 region_or_endpoint: Some(RegionOrEndpoint::Region("us-west-1".to_string())),
-                shutdown_at_stream_eof: false,
+                enable_backfill_mode: false,
             };
             let params_yaml = serde_yaml::to_string(&params).unwrap();
 
@@ -418,7 +491,7 @@ mod tests {
                 region_or_endpoint: Some(RegionOrEndpoint::Endpoint(
                     "https://localhost:4566".to_string(),
                 )),
-                shutdown_at_stream_eof: false,
+                enable_backfill_mode: false,
             };
             let params_yaml = serde_yaml::to_string(&params).unwrap();
 
@@ -432,54 +505,57 @@ mod tests {
     #[test]
     fn test_kinesis_source_params_deserialization() {
         {
-            {
-                let yaml = r#"
+            let yaml = r#"
                     stream_name: my-stream
                 "#;
-                assert_eq!(
-                    serde_yaml::from_str::<KinesisSourceParams>(yaml).unwrap(),
-                    KinesisSourceParams {
-                        stream_name: "my-stream".to_string(),
-                        region_or_endpoint: None,
-                        shutdown_at_stream_eof: false,
-                    }
-                );
-            }
-            {
-                let yaml = r#"
+            assert_eq!(
+                serde_yaml::from_str::<KinesisSourceParams>(yaml).unwrap(),
+                KinesisSourceParams {
+                    stream_name: "my-stream".to_string(),
+                    region_or_endpoint: None,
+                    enable_backfill_mode: false,
+                }
+            );
+        }
+        {
+            let yaml = r#"
                     stream_name: my-stream
                     region: us-west-1
-                    shutdown_at_stream_eof: true
+                    enable_backfill_mode: true
                 "#;
-                assert_eq!(
-                    serde_yaml::from_str::<KinesisSourceParams>(yaml).unwrap(),
-                    KinesisSourceParams {
-                        stream_name: "my-stream".to_string(),
-                        region_or_endpoint: Some(RegionOrEndpoint::Region("us-west-1".to_string())),
-                        shutdown_at_stream_eof: true,
-                    }
-                );
-            }
-            {
-                let yaml = r#"
+            assert_eq!(
+                serde_yaml::from_str::<KinesisSourceParams>(yaml).unwrap(),
+                KinesisSourceParams {
+                    stream_name: "my-stream".to_string(),
+                    region_or_endpoint: Some(RegionOrEndpoint::Region("us-west-1".to_string())),
+                    enable_backfill_mode: true,
+                }
+            );
+        }
+        {
+            let yaml = r#"
                     stream_name: my-stream
                     region: us-west-1
                     endpoint: https://localhost:4566
                 "#;
-                let error = serde_yaml::from_str::<KinesisSourceParams>(yaml).unwrap_err();
-                assert!(error.to_string().starts_with("Kinesis source parameters "));
-            }
+            let error = serde_yaml::from_str::<KinesisSourceParams>(yaml).unwrap_err();
+            assert!(error.to_string().starts_with("Kinesis source parameters "));
         }
     }
 
     #[test]
-    fn test_ingest_api_source_params_serialization() {
+    fn test_ingest_api_source_params_deserialization() {
         let yaml = r#"
             index_id: wikipedia
-            batch_num_bytes_threshold: 200000
+            batch_num_bytes_limit: 200000
+            queues_dir_path: ./qwdata/queues
         "#;
         let ingest_api_params = serde_yaml::from_str::<IngestApiSourceParams>(yaml).unwrap();
         assert_eq!(ingest_api_params.index_id, "wikipedia");
-        assert_eq!(ingest_api_params.batch_num_bytes_threshold, Some(200000))
+        assert_eq!(ingest_api_params.batch_num_bytes_limit, Some(200000));
+        assert_eq!(
+            ingest_api_params.queues_dir_path,
+            Path::new("./qwdata/queues")
+        )
     }
 }

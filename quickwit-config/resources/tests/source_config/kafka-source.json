@@ -5,7 +5,7 @@
     "params": {
         "topic": "cloudera-cluster-logs",
         "client_params": {
-            "bootstrap.servers": "host:9092"
+            "bootstrap.servers": "localhost:9092"
         }
     }
 }

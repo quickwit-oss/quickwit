@@ -53,7 +53,7 @@ impl Index {
         let mut index_metadata = serde_json::from_str::<IndexMetadata>(&self.index_metadata_json)
             .map_err(|err| MetastoreError::InternalError {
             message: "Failed to deserialize index metadata.".to_string(),
-            cause: anyhow::anyhow!(err),
+            cause: err.to_string(),
         })?;
         // `create_timestamp` and `update_timestamp` are stored in dedicated columns but are also
         // duplicated in [`IndexMetadata`]. We must override the duplicates with the authentic
@@ -80,6 +80,8 @@ pub struct Split {
     pub create_timestamp: sqlx::types::time::PrimitiveDateTime,
     /// Timestamp for tracking when the split was last updated.
     pub update_timestamp: sqlx::types::time::PrimitiveDateTime,
+    /// Timestamp for tracking when the split was published.
+    pub publish_timestamp: Option<sqlx::types::time::PrimitiveDateTime>,
     /// A list of tags for categorizing and searching group of splits.
     pub tags: Vec<String>,
     // The split's metadata serialized as a JSON string.
@@ -102,7 +104,7 @@ impl Split {
             );
             MetastoreError::InternalError {
                 message,
-                cause: anyhow::anyhow!(err),
+                cause: err.to_string(),
             }
         })
     }
@@ -120,7 +122,7 @@ impl Split {
             );
             MetastoreError::InternalError {
                 message,
-                cause: anyhow::anyhow!(err)
+                cause: err,
             }
         })
     }
@@ -134,12 +136,17 @@ impl TryInto<QuickwitSplit> for Split {
         // `create_timestamp` is duplicated in `SplitMetadata` and needs to be overridden with the
         // "true" value stored in a column.
         split_metadata.create_timestamp = self.create_timestamp.assume_utc().unix_timestamp();
+        split_metadata.index_id = self.index_id.clone();
         let split_state = self.split_state()?;
         let update_timestamp = self.update_timestamp.assume_utc().unix_timestamp();
+        let publish_timestamp = self
+            .publish_timestamp
+            .map(|publish_timestamp| publish_timestamp.assume_utc().unix_timestamp());
         Ok(QuickwitSplit {
             split_metadata,
             split_state,
             update_timestamp,
+            publish_timestamp,
         })
     }
 }

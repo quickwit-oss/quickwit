@@ -783,6 +783,7 @@ mod tests {
             },
             split_state,
             update_timestamp: 1639997968,
+            publish_timestamp: None,
         }
     }
 

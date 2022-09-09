@@ -42,7 +42,8 @@ use ulid::Ulid;
 
 use crate::actors::Packager;
 use crate::models::{
-    IndexedSplit, IndexedSplitBatch, IndexingDirectory, IndexingPipelineId, RawDocBatch,
+    IndexedSplit, IndexedSplitBatch, IndexingDirectory, IndexingPipelineId, NewPublishLock,
+    PublishLock, RawDocBatch,
 };
 
 #[derive(Debug)]
@@ -91,6 +92,37 @@ impl IndexerCounters {
     pub fn num_invalid_docs(&self) -> u64 {
         self.num_parse_errors + self.num_missing_fields
     }
+
+    pub fn record_parsing_error(&mut self, num_bytes: u64) {
+        self.num_parse_errors += 1;
+        self.overall_num_bytes += num_bytes;
+        crate::metrics::INDEXER_METRICS
+            .parsing_errors_num_docs_total
+            .inc();
+        crate::metrics::INDEXER_METRICS
+            .parsing_errors_num_bytes_total
+            .inc_by(num_bytes);
+    }
+
+    pub fn record_missing_field(&mut self, num_bytes: u64) {
+        self.num_missing_fields += 1;
+        self.overall_num_bytes += num_bytes;
+        crate::metrics::INDEXER_METRICS
+            .missing_field_num_docs_total
+            .inc();
+        crate::metrics::INDEXER_METRICS
+            .missing_field_num_bytes_total
+            .inc_by(num_bytes);
+    }
+
+    pub fn record_valid(&mut self, num_bytes: u64) {
+        self.num_valid_docs += 1;
+        self.overall_num_bytes += num_bytes;
+        crate::metrics::INDEXER_METRICS.valid_num_docs_total.inc();
+        crate::metrics::INDEXER_METRICS
+            .valid_num_bytes_total
+            .inc_by(num_bytes);
+    }
 }
 
 struct IndexerState {
@@ -98,6 +130,7 @@ struct IndexerState {
     doc_mapper: Arc<dyn DocMapper>,
     indexing_directory: IndexingDirectory,
     indexing_settings: IndexingSettings,
+    publish_lock: PublishLock,
     timestamp_field_opt: Option<Field>,
     schema: Schema,
     index_settings: IndexSettings,
@@ -132,7 +165,7 @@ impl IndexerState {
             ctx.progress().clone(),
             ctx.kill_switch().clone(),
         )?;
-        info!(split_id = %indexed_split.split_id, "new-split");
+        info!(split_id = indexed_split.split_id(), "new-split");
         Ok(indexed_split)
     }
 
@@ -153,12 +186,13 @@ impl IndexerState {
 
     fn create_workbench(&self) -> anyhow::Result<IndexingWorkbench> {
         let workbench = IndexingWorkbench {
+            workbench_id: Ulid::new(),
+            indexed_splits: FnvHashMap::with_capacity_and_hasher(250, Default::default()),
             checkpoint_delta: IndexCheckpointDelta {
                 source_id: self.pipeline_id.source_id.clone(),
                 source_delta: SourceCheckpointDelta::default(),
             },
-            indexed_splits: FnvHashMap::with_capacity_and_hasher(250, Default::default()),
-            workbench_id: Ulid::new(),
+            publish_lock: self.publish_lock.clone(),
             date_of_birth: Instant::now(),
         };
         Ok(workbench)
@@ -169,9 +203,9 @@ impl IndexerState {
     ///
     /// This function will then create it, and can hence return an Error.
     async fn get_or_create_workbench<'a>(
-        &self,
+        &'a self,
         indexing_workbench_opt: &'a mut Option<IndexingWorkbench>,
-        ctx: &ActorContext<Indexer>,
+        ctx: &'a ActorContext<Indexer>,
     ) -> anyhow::Result<&'a mut IndexingWorkbench> {
         if indexing_workbench_opt.is_none() {
             let indexing_workbench = self.create_workbench()?;
@@ -185,7 +219,7 @@ impl IndexerState {
             .await;
             *indexing_workbench_opt = Some(indexing_workbench);
         }
-        let current_indexing_workbench: &'a mut IndexingWorkbench = indexing_workbench_opt.as_mut().context(
+        let current_indexing_workbench = indexing_workbench_opt.as_mut().context(
             "No index writer available. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."
         )?;
         Ok(current_indexing_workbench)
@@ -195,7 +229,7 @@ impl IndexerState {
         // Parse the document
         let doc_parsing_result = self.doc_mapper.doc_from_json(doc_json);
         let (partition, document) = match doc_parsing_result {
-            Ok(doc) => doc,
+            Ok((partition, doc)) => (partition, doc),
             Err(doc_parsing_error) => {
                 warn!(err=?doc_parsing_error);
                 return match doc_parsing_error {
@@ -243,41 +277,44 @@ impl IndexerState {
         let IndexingWorkbench {
             checkpoint_delta,
             indexed_splits,
+            publish_lock,
             ..
         } = self
             .get_or_create_workbench(indexing_workbench_opt, ctx)
             .await?;
+        if publish_lock.is_dead() {
+            return Ok(());
+        }
         checkpoint_delta
             .source_delta
             .extend(batch.checkpoint_delta)
             .context("Batch delta does not follow indexer checkpoint")?;
         for doc_json in batch.docs {
             let doc_json_num_bytes = doc_json.len() as u64;
-            counters.overall_num_bytes += doc_json_num_bytes;
             let prepared_doc = {
                 let _protect_zone = ctx.protect_zone();
                 self.prepare_document(doc_json)
             };
             match prepared_doc {
                 PrepareDocumentOutcome::ParsingError => {
-                    counters.num_parse_errors += 1;
+                    counters.record_parsing_error(doc_json_num_bytes);
                 }
                 PrepareDocumentOutcome::MissingField => {
-                    counters.num_missing_fields += 1;
+                    counters.record_missing_field(doc_json_num_bytes);
                 }
                 PrepareDocumentOutcome::Document {
                     document,
                     timestamp_opt,
                     partition,
                 } => {
+                    counters.record_valid(doc_json_num_bytes);
+                    counters.num_docs_in_workbench += 1;
                     let indexed_split =
                         self.get_or_create_indexed_split(partition, indexed_splits, ctx)?;
-                    indexed_split.docs_size_in_bytes += doc_json_num_bytes;
-                    counters.num_docs_in_workbench += 1;
-                    counters.num_valid_docs += 1;
-                    indexed_split.num_docs += 1;
+                    indexed_split.split_attrs.uncompressed_docs_size_in_bytes += doc_json_num_bytes;
+                    indexed_split.split_attrs.num_docs += 1;
                     if let Some(timestamp) = timestamp_opt {
-                        record_timestamp(timestamp, &mut indexed_split.time_range);
+                        record_timestamp(timestamp, &mut indexed_split.split_attrs.time_range);
                     }
                     let _protect_guard = ctx.protect_zone();
                     indexed_split
@@ -294,9 +331,10 @@ impl IndexerState {
 
 /// A workbench hosts the set of `IndexedSplit` that will are being built.
 struct IndexingWorkbench {
-    checkpoint_delta: IndexCheckpointDelta,
-    indexed_splits: FnvHashMap<u64, IndexedSplit>,
     workbench_id: Ulid,
+    indexed_splits: FnvHashMap<u64, IndexedSplit>,
+    checkpoint_delta: IndexCheckpointDelta,
+    publish_lock: PublishLock,
     // TODO create this Instant on the source side to be more accurate.
     // Right now this instant is used to compute time-to-search, but this
     // does not include the amount of time a document could have been
@@ -370,9 +408,8 @@ impl Handler<CommitTimeout> for Indexer {
         commit_timeout: CommitTimeout,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if let Some(indexing_workbench) = self.indexing_workbench_opt.as_ref() {
-            // This is a timeout for a different split.
-            // We can ignore it.
+        if let Some(indexing_workbench) = &self.indexing_workbench_opt {
+            // If this is a timeout for a different workbench, we must ignore it.
             if indexing_workbench.workbench_id != commit_timeout.workbench_id {
                 return Ok(());
             }
@@ -392,6 +429,22 @@ impl Handler<RawDocBatch> for Indexer {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.process_batch(batch, ctx).await
+    }
+}
+
+#[async_trait]
+impl Handler<NewPublishLock> for Indexer {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        message: NewPublishLock,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        let NewPublishLock(publish_lock) = message;
+        self.indexing_workbench_opt = None;
+        self.indexer_state.publish_lock = publish_lock;
+        Ok(())
     }
 }
 
@@ -428,12 +481,14 @@ impl Indexer {
                 compression_level: Some(indexing_settings.docstore_compression_level),
             }),
         };
+        let publish_lock = PublishLock::default();
         Self {
             indexer_state: IndexerState {
                 pipeline_id,
                 doc_mapper,
                 indexing_directory,
                 indexing_settings,
+                publish_lock,
                 timestamp_field_opt,
                 schema,
                 index_settings,
@@ -476,8 +531,9 @@ impl Indexer {
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         let IndexingWorkbench {
-            checkpoint_delta,
             indexed_splits,
+            checkpoint_delta,
+            publish_lock,
             date_of_birth,
             ..
         } = if let Some(indexing_workbench) = self.indexing_workbench_opt.take() {
@@ -491,13 +547,13 @@ impl Indexer {
         // Avoid producing empty split, but still update the checkpoint to avoid
         // reprocessing the same faulty documents.
         if splits.is_empty() {
-            self.metastore
-                .publish_splits(
+            if let Some(_guard) = publish_lock.acquire().await {
+                ctx.protect_future(self.metastore.publish_splits(
                     &self.indexer_state.pipeline_id.index_id,
                     &[],
                     &[],
                     Some(checkpoint_delta),
-                )
+                ))
                 .await
                 .with_context(|| {
                     format!(
@@ -507,17 +563,24 @@ impl Indexer {
                         &self.indexer_state.pipeline_id.source_id
                     )
                 })?;
+            } else {
+                info!(
+                    split_ids=?splits.iter().map(|split| split.split_id()).join(", "),
+                    "Splits' publish lock is dead."
+                );
+                // TODO: Remove the junk right away?
+            }
             return Ok(());
         }
-
         let num_splits = splits.len() as u64;
-        let split_ids = splits.iter().map(|split| &split.split_id).join(",");
+        let split_ids = splits.iter().map(|split| split.split_id()).join(",");
         info!(commit_trigger=?commit_trigger, split_ids=%split_ids, num_docs=self.counters.num_docs_in_workbench, "send-to-packager");
         ctx.send_message(
             &self.packager_mailbox,
             IndexedSplitBatch {
                 splits,
                 checkpoint_delta: Some(checkpoint_delta),
+                publish_lock,
                 date_of_birth,
             },
         )
@@ -535,7 +598,7 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::{create_test_mailbox, Universe};
-    use quickwit_doc_mapper::{DefaultDocMapper, SortOrder};
+    use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper, SortOrder};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_metastore::MockMetastore;
 
@@ -562,7 +625,7 @@ mod tests {
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
         };
-        let doc_mapper = Arc::new(quickwit_doc_mapper::default_doc_mapper_for_tests());
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let indexing_directory = IndexingDirectory::for_test().await?;
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 3;
@@ -608,7 +671,7 @@ mod tests {
                 num_splits_emitted: 0,
                 num_split_batches_emitted: 0,
                 num_docs_in_workbench: 2, //< we have not reached the commit limit yet.
-                overall_num_bytes: 387
+                overall_num_bytes: 387,
             }
         );
         indexer_mailbox
@@ -629,7 +692,7 @@ mod tests {
                 num_splits_emitted: 1,
                 num_split_batches_emitted: 1,
                 num_docs_in_workbench: 0, //< the num docs in split counter has been reset.
-                overall_num_bytes: 525
+                overall_num_bytes: 525,
             }
         );
         let output_messages = packager_inbox.drain_for_test();
@@ -637,7 +700,7 @@ mod tests {
         let batch = output_messages[0]
             .downcast_ref::<IndexedSplitBatch>()
             .unwrap();
-        assert_eq!(batch.splits[0].num_docs, 3);
+        assert_eq!(batch.splits[0].split_attrs.num_docs, 3);
         let sort_by_field = batch.splits[0].index.settings().sort_by_field.as_ref();
         assert!(sort_by_field.is_some());
         assert_eq!(sort_by_field.unwrap().field, "timestamp");
@@ -653,7 +716,7 @@ mod tests {
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
         };
-        let doc_mapper = Arc::new(quickwit_doc_mapper::default_doc_mapper_for_tests());
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let indexing_directory = IndexingDirectory::for_test().await?;
         let indexing_settings = IndexingSettings::for_test();
         let (packager_mailbox, packager_inbox) = create_test_mailbox();
@@ -692,7 +755,7 @@ mod tests {
                 num_splits_emitted: 0,
                 num_split_batches_emitted: 0,
                 num_docs_in_workbench: 1,
-                overall_num_bytes: 137
+                overall_num_bytes: 137,
             }
         );
         universe.simulate_time_shift(Duration::from_secs(61)).await;
@@ -706,7 +769,7 @@ mod tests {
                 num_splits_emitted: 1,
                 num_split_batches_emitted: 1,
                 num_docs_in_workbench: 0,
-                overall_num_bytes: 137
+                overall_num_bytes: 137,
             }
         );
         let output_messages = packager_inbox.drain_for_test();
@@ -714,7 +777,7 @@ mod tests {
         let indexed_split_batch = output_messages[0]
             .downcast_ref::<IndexedSplitBatch>()
             .unwrap();
-        assert_eq!(indexed_split_batch.splits[0].num_docs, 1);
+        assert_eq!(indexed_split_batch.splits[0].split_attrs.num_docs, 1);
         Ok(())
     }
 
@@ -726,7 +789,7 @@ mod tests {
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
         };
-        let doc_mapper = Arc::new(quickwit_doc_mapper::default_doc_mapper_for_tests());
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let indexing_directory = IndexingDirectory::for_test().await?;
         let indexing_settings = IndexingSettings::for_test();
         let (packager_mailbox, packager_inbox) = create_test_mailbox();
@@ -767,7 +830,7 @@ mod tests {
                 num_splits_emitted: 1,
                 num_split_batches_emitted: 1,
                 num_docs_in_workbench: 0,
-                overall_num_bytes: 137
+                overall_num_bytes: 137,
             }
         );
         let output_messages = packager_inbox.drain_for_test();
@@ -777,6 +840,7 @@ mod tests {
                 .downcast_ref::<IndexedSplitBatch>()
                 .unwrap()
                 .splits[0]
+                .split_attrs
                 .num_docs,
             1
         );
@@ -846,7 +910,7 @@ mod tests {
                 num_docs_in_workbench: 3,
                 num_splits_emitted: 0,
                 num_split_batches_emitted: 0,
-                overall_num_bytes: 169
+                overall_num_bytes: 169,
             }
         );
         universe.send_exit_with_success(&indexer_mailbox).await?;
@@ -861,7 +925,7 @@ mod tests {
                 num_docs_in_workbench: 0,
                 num_splits_emitted: 2,
                 num_split_batches_emitted: 1,
-                overall_num_bytes: 169
+                overall_num_bytes: 169,
             }
         );
 
@@ -872,7 +936,172 @@ mod tests {
             .downcast_ref::<IndexedSplitBatch>()
             .unwrap();
         assert_eq!(indexed_split_batch.splits.len(), 2);
-
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_indexer_propagates_publish_lock() {
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let indexing_directory = IndexingDirectory::for_test().await.unwrap();
+        let mut indexing_settings = IndexingSettings::for_test();
+        indexing_settings.split_num_docs_target = 1;
+        let mut metastore = MockMetastore::default();
+        metastore.expect_publish_splits().never();
+        let (packager_mailbox, packager_inbox) = create_test_mailbox();
+        let indexer = Indexer::new(
+            pipeline_id,
+            doc_mapper,
+            Arc::new(metastore),
+            indexing_directory,
+            indexing_settings,
+            packager_mailbox,
+        );
+        let universe = Universe::new();
+        let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
+
+        for id in ["foo-publish-lock", "bar-publish-lock"] {
+            let publish_lock = PublishLock::for_test(true, id);
+
+            indexer_mailbox
+                .send_message(NewPublishLock(publish_lock))
+                .await
+                .unwrap();
+
+            indexer_mailbox
+            .send_message(RawDocBatch {
+                docs: vec![
+                        r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#.to_string(),
+                    ],
+                checkpoint_delta: SourceCheckpointDelta::from(0..1),
+            })
+            .await.unwrap();
+        }
+        universe
+            .send_exit_with_success(&indexer_mailbox)
+            .await
+            .unwrap();
+        let (exit_status, _indexer_counters) = indexer_handle.join().await;
+        assert!(matches!(exit_status, ActorExitStatus::Success));
+
+        let packager_messages: Vec<IndexedSplitBatch> = packager_inbox.drain_for_test_typed();
+        assert_eq!(packager_messages.len(), 2);
+        assert_eq!(packager_messages[0].splits.len(), 1);
+        assert_eq!(packager_messages[0].publish_lock.id, "foo-publish-lock");
+        assert_eq!(packager_messages[1].splits.len(), 1);
+        assert_eq!(packager_messages[1].publish_lock.id, "bar-publish-lock");
+    }
+
+    #[tokio::test]
+    async fn test_indexer_ignores_messages_when_publish_lock_is_dead() {
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let indexing_directory = IndexingDirectory::for_test().await.unwrap();
+        let mut indexing_settings = IndexingSettings::for_test();
+        indexing_settings.split_num_docs_target = 1;
+        let mut metastore = MockMetastore::default();
+        metastore.expect_publish_splits().never();
+        let (packager_mailbox, packager_inbox) = create_test_mailbox();
+        let indexer = Indexer::new(
+            pipeline_id,
+            doc_mapper,
+            Arc::new(metastore),
+            indexing_directory,
+            indexing_settings,
+            packager_mailbox,
+        );
+        let universe = Universe::new();
+        let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
+
+        let publish_lock = PublishLock::for_test(false, "foo-publish-lock");
+
+        indexer_mailbox
+            .send_message(NewPublishLock(publish_lock))
+            .await
+            .unwrap();
+
+        indexer_mailbox
+            .send_message(RawDocBatch {
+                docs: vec![
+                        r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#.to_string(),
+                    ],
+                checkpoint_delta: SourceCheckpointDelta::from(0..1),
+            })
+            .await.unwrap();
+
+        universe
+            .send_exit_with_success(&indexer_mailbox)
+            .await
+            .unwrap();
+        let (exit_status, _indexer_counters) = indexer_handle.join().await;
+        assert!(matches!(exit_status, ActorExitStatus::Success));
+
+        let packager_messages = packager_inbox.drain_for_test();
+        assert!(packager_messages.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_indexer_acquires_publish_lock() {
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let indexing_directory = IndexingDirectory::for_test().await.unwrap();
+        let indexing_settings = IndexingSettings::for_test();
+        let mut metastore = MockMetastore::default();
+        metastore.expect_publish_splits().never();
+        let (packager_mailbox, packager_inbox) = create_test_mailbox();
+        let indexer = Indexer::new(
+            pipeline_id,
+            doc_mapper,
+            Arc::new(metastore),
+            indexing_directory,
+            indexing_settings,
+            packager_mailbox,
+        );
+        let universe = Universe::new();
+        let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
+
+        let publish_lock = PublishLock::for_test(true, "foo-publish-lock");
+
+        indexer_mailbox
+            .send_message(NewPublishLock(publish_lock.clone()))
+            .await
+            .unwrap();
+
+        indexer_mailbox
+            .send_message(RawDocBatch {
+                docs: vec![
+                    "{".to_string(), // Bad JSON
+                ],
+                checkpoint_delta: SourceCheckpointDelta::from(0..1),
+            })
+            .await
+            .unwrap();
+
+        publish_lock.kill().await;
+
+        universe
+            .send_exit_with_success(&indexer_mailbox)
+            .await
+            .unwrap();
+        let (exit_status, _indexer_counters) = indexer_handle.join().await;
+        assert!(matches!(exit_status, ActorExitStatus::Success));
+
+        let packager_messages = packager_inbox.drain_for_test();
+        assert!(packager_messages.is_empty());
     }
 }

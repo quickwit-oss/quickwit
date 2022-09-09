@@ -264,7 +264,7 @@ impl AzureBlobStorage {
 
 #[async_trait]
 impl Storage for AzureBlobStorage {
-    async fn check(&self) -> anyhow::Result<()> {
+    async fn check_connectivity(&self) -> anyhow::Result<()> {
         if let Some(first_blob_result) = self
             .container_client
             .list_blobs()

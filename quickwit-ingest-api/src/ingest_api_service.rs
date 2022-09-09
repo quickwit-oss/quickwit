@@ -37,8 +37,8 @@ pub struct IngestApiService {
 }
 
 impl IngestApiService {
-    pub fn with_queue_path(queue_path: &Path) -> crate::Result<Self> {
-        let queues = Queues::open(queue_path)?;
+    pub fn with_queues_dir(queues_dir_path: &Path) -> crate::Result<Self> {
+        let queues = Queues::open(queues_dir_path)?;
         Ok(IngestApiService { queues })
     }
 

@@ -44,6 +44,14 @@ impl<A: Actor> Envelope<A> {
         self.0.message()
     }
 
+    pub fn message_typed<M: 'static>(&mut self) -> Option<M> {
+        if let Ok(boxed_msg) = self.0.message().downcast::<M>() {
+            Some(*boxed_msg)
+        } else {
+            None
+        }
+    }
+
     /// Execute the captured handle function.
     pub async fn handle_message(
         &mut self,

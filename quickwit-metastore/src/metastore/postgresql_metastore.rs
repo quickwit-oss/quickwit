@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write;
 use std::ops::Range;
 use std::sync::Arc;
 use std::time::Duration;
@@ -81,7 +82,7 @@ async fn run_postgres_migrations(pool: &Pool<Postgres>) -> MetastoreResult<()> {
         error!(err=?migration_err, "Database migrations failed");
         return Err(MetastoreError::InternalError {
             message: "Failed to run migrator on Postgresql database.".to_string(),
-            cause: anyhow::anyhow!(migration_err),
+            cause: migration_err.to_string(),
         });
     }
     tx.commit().await?;
@@ -122,7 +123,9 @@ async fn index_opt<'a>(
     .bind(index_id)
     .fetch_optional(tx)
     .await
-    .map_err(MetastoreError::DbError)?;
+    .map_err(|error| MetastoreError::DbError {
+        message: error.to_string(),
+    })?;
     Ok(index_opt)
 }
 
@@ -218,17 +221,19 @@ async fn list_splits_helper(
     "#
     .to_string();
     if let Some(state) = state_opt {
-        sql.push_str(&format!(" AND split_state = '{}'", state.as_str()));
+        let _ = write!(sql, " AND split_state = '{}'", state.as_str());
     }
     if let Some(time_range) = time_range_opt {
-        sql.push_str(&format!(
+        let _ = write!(
+            sql,
             " AND (time_range_end >= {} OR time_range_end IS NULL) ",
             time_range.start
-        ));
-        sql.push_str(&format!(
+        );
+        let _ = write!(
+            sql,
             " AND (time_range_start < {} OR time_range_start IS NULL) ",
             time_range.end
-        ));
+        );
     }
 
     if let Some(tags) = tags_opt {
@@ -351,14 +356,18 @@ fn convert_sqlx_err(index_id: &str, sqlx_err: sqlx::Error) -> MetastoreError {
                 },
                 pg_error_code::UNIQUE_VIOLATION => MetastoreError::InternalError {
                     message: "Unique key violation.".to_string(),
-                    cause: anyhow::anyhow!("DB error {:?}", boxed_db_err),
+                    cause: format!("DB error {:?}", boxed_db_err),
                 },
-                _ => MetastoreError::DbError(sqlx_err),
+                _ => MetastoreError::DbError {
+                    message: boxed_db_err.to_string(),
+                },
             }
         }
         _ => {
             error!(err=?sqlx_err, "An error has occurred in the database operation.");
-            MetastoreError::DbError(sqlx_err)
+            MetastoreError::DbError {
+                message: sqlx_err.to_string(),
+            }
         }
     }
 }
@@ -401,7 +410,7 @@ where
     let index_metadata_json =
         serde_json::to_string(&index_metadata).map_err(|err| MetastoreError::InternalError {
             message: "Failed to serialize index metadata.".to_string(),
-            cause: anyhow::anyhow!(err),
+            cause: err.to_string(),
         })?;
     let update_index_res = sqlx::query(
         r#"
@@ -449,7 +458,7 @@ impl Metastore for PostgresqlMetastore {
             let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|err| {
                 MetastoreError::InternalError {
                     message: "Failed to serialize index metadata.".to_string(),
-                    cause: anyhow::anyhow!(err),
+                    cause: err.to_string(),
                 }
             })?;
             // Create index.
@@ -492,7 +501,7 @@ impl Metastore for PostgresqlMetastore {
             let split_metadata_json =
                 serde_json::to_string(&metadata).map_err(|err| MetastoreError::InternalError {
                     message: "Failed to serialize split metadata and footer offsets".to_string(),
-                    cause: anyhow::anyhow!(err),
+                    cause: err.to_string(),
                 })?;
 
             let tags: Vec<String> = metadata.tags.into_iter().collect();
@@ -630,10 +639,9 @@ impl Metastore for PostgresqlMetastore {
             get_splits_with_invalid_state(tx, index_id, split_ids, &marked_split_ids).await?;
 
             let err_msg = format!("Failed to mark splits for deletion for index {index_id}.");
-            let cause = anyhow::anyhow!(err_msg.clone());
             Err(MetastoreError::InternalError {
                 message: err_msg,
-                cause,
+                cause: "".to_string(),
             })
         })
     }
@@ -701,6 +709,21 @@ impl Metastore for PostgresqlMetastore {
         run_with_tx!(self.connection_pool, tx, {
             mutate_index_metadata(tx, index_id, |index_metadata| {
                 index_metadata.delete_source(source_id)
+            })
+            .await
+        })
+    }
+
+    #[instrument(skip(self))]
+    async fn reset_source_checkpoint(
+        &self,
+        index_id: &str,
+        source_id: &str,
+    ) -> MetastoreResult<()> {
+        run_with_tx!(self.connection_pool, tx, {
+            mutate_index_metadata(tx, index_id, |index_metadata| {
+                index_metadata.checkpoint.reset_source(source_id);
+                Ok::<_, MetastoreError>(())
             })
             .await
         })

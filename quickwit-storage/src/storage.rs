@@ -40,7 +40,7 @@ use crate::{OwnedBytes, PutPayload, StorageErrorKind, StorageResult};
 #[async_trait]
 pub trait Storage: Send + Sync + 'static {
     /// Check storage connection if applicable
-    async fn check(&self) -> anyhow::Result<()>;
+    async fn check_connectivity(&self) -> anyhow::Result<()>;
 
     /// Saves a file into the storage.
     async fn put(&self, path: &Path, payload: Box<dyn PutPayload>) -> StorageResult<()>;

@@ -36,6 +36,9 @@ pub struct Split {
     /// Timestamp for tracking when the split was last updated.
     pub update_timestamp: i64,
 
+    /// Timestamp for tracking when the split was published.
+    pub publish_timestamp: Option<i64>,
+
     /// Immutable part of the split.
     #[serde(flatten)]
     pub split_metadata: SplitMetadata,
@@ -59,6 +62,9 @@ pub struct SplitMetadata {
     /// In reality, some information may be implicitly configured
     /// in the storage URI resolver: for instance, the Amazon S3 region.
     pub split_id: String,
+
+    /// Id of the index this split belongs to.
+    pub index_id: String,
 
     /// Partition to which the split belongs to.
     ///
@@ -106,9 +112,6 @@ pub struct SplitMetadata {
     /// [`MAX_VALUES_PER_TAG_FIELD`]: https://github.com/quickwit-oss/quickwit/blob/main/quickwit-indexing/src/actors/packager.rs#L36
     pub tags: BTreeSet<String>,
 
-    /// Number of demux operations this split has undergone.
-    pub demux_num_ops: usize,
-
     /// Contains the range of bytes of the footer that needs to be downloaded
     /// in order to open a split.
     ///
@@ -121,6 +124,7 @@ impl SplitMetadata {
     /// Creates a new instance of split metadata.
     pub fn new(
         split_id: String,
+        index_id: String,
         partition_id: u64,
         source_id: String,
         node_id: String,
@@ -128,6 +132,7 @@ impl SplitMetadata {
     ) -> Self {
         Self {
             split_id,
+            index_id,
             partition_id,
             source_id,
             node_id,
@@ -140,6 +145,15 @@ impl SplitMetadata {
     /// Returns the split_id.
     pub fn split_id(&self) -> &str {
         &self.split_id
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    /// Returns an instance of `SplitMetadata` for testing.
+    pub fn for_test(split_id: String) -> Self {
+        Self {
+            split_id,
+            ..Default::default()
+        }
     }
 }
 

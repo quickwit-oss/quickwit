@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: janitor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: quickwit
+      service: janitor
+  template:
+    metadata:
+      labels:
+        app: quickwit
+        service: janitor
+    spec:
+      containers:
+        - name: quickwit
+          image: quickwit/quickwit:edge
+          args: ["run", "--service", "janitor"]
+          ports:
+            - containerPort: 7280
+              name: rest
+            - containerPort: 7281
+              name: grpc
+            - containerPort: 7282
+              protocol: UDP
+              name: discovery
+          volumeMounts:
+            - name: config-volume
+              mountPath: /quickwit/node.yaml
+              subPath: node.yaml
+            - name: qwdata-volume
+              mountPath: /quickwit/qwdata
+            - name: indexes-volume
+              mountPath: /quickwit/indexes
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: POSTGRES_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: quickwit-config
+                  key: postgres.host
+            - name: POSTGRES_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: quickwit-config
+                  key: postgres.port
+            - name: POSTGRES_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: quickwit-config
+                  key: postgres.username
+            - name: POSTGRES_DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: quickwit-config
+                  key: postgres.database
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: quickwit-secrets
+                  key: postgres.password
+            - name: QW_CONFIG
+              value: node.yaml
+            - name: QW_METASTORE_URI
+              value: "postgres://$(POSTGRES_USERNAME):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DATABASE)"
+            - name: QW_NODE_ID
+              value: "$(POD_NAME)"
+            - name: QW_PEER_SEEDS
+              value: "discovery.$(NAMESPACE).svc.cluster.local"
+            - name: QW_ADVERTISE_ADDRESS
+              value: "$(POD_IP)"
+          # readinessProbe:
+          #   httpGet:
+          #     path: /healthz/indexer/readyz
+          #     port: rest
+          # livenessProbe:
+          #   httpGet:
+          #     path: /healthz/indexer/livez
+          #     port: rest
+      volumes:
+        - name: config-volume
+          configMap:
+            name: quickwit-config
+        - name: qwdata-volume
+          emptyDir: {}
+        - name: indexes-volume
+          persistentVolumeClaim:
+            claimName: indexes-pv-claim

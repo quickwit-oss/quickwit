@@ -19,12 +19,14 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_aws::region::sniff_aws_region_and_cache;
 use quickwit_aws::retry::RetryParams;
 use quickwit_config::{KinesisSourceParams, RegionOrEndpoint};
 use quickwit_metastore::checkpoint::{
@@ -41,7 +43,7 @@ use super::api::list_shards;
 use super::shard_consumer::{ShardConsumer, ShardConsumerHandle, ShardConsumerMessage};
 use crate::models::RawDocBatch;
 use crate::source::kinesis::helpers::get_kinesis_client;
-use crate::source::{Indexer, Source, SourceContext, TypedSourceFactory};
+use crate::source::{Indexer, Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
 
 const TARGET_BATCH_NUM_BYTES: u64 = 5_000_000;
 
@@ -56,11 +58,11 @@ impl TypedSourceFactory for KinesisSourceFactory {
     type Params = KinesisSourceParams;
 
     async fn typed_create_source(
-        source_id: String,
+        ctx: Arc<SourceExecutionContext>,
         params: KinesisSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
-        KinesisSource::try_new(source_id, params, checkpoint).await
+        KinesisSource::try_new(ctx.source_config.source_id.clone(), params, checkpoint).await
     }
 }
 
@@ -98,7 +100,7 @@ pub struct KinesisSource {
     // Receiver for the communication channel between the source and the shard consumers.
     shard_consumers_rx: mpsc::Receiver<ShardConsumerMessage>,
     state: KinesisSourceState,
-    shutdown_at_stream_eof: bool,
+    backfill_mode_enabled: bool,
 }
 
 impl fmt::Debug for KinesisSource {
@@ -119,7 +121,7 @@ impl KinesisSource {
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
         let stream_name = params.stream_name;
-        let shutdown_at_stream_eof = params.shutdown_at_stream_eof;
+        let backfill_mode_enabled = params.enable_backfill_mode;
         let region = get_region(params.region_or_endpoint)?;
         let kinesis_client = get_kinesis_client(region)?;
         let (shard_consumers_tx, shard_consumers_rx) = mpsc::channel(1_000);
@@ -133,7 +135,7 @@ impl KinesisSource {
             shard_consumers_tx,
             shard_consumers_rx,
             state,
-            shutdown_at_stream_eof,
+            backfill_mode_enabled,
             retry_params,
         })
     }
@@ -155,7 +157,7 @@ impl KinesisSource {
             self.stream_name.clone(),
             shard_id.clone(),
             from_sequence_number_exclusive,
-            self.shutdown_at_stream_eof,
+            self.backfill_mode_enabled,
             self.kinesis_client.clone(),
             self.shard_consumers_tx.clone(),
             self.retry_params.clone(),
@@ -175,7 +177,11 @@ impl KinesisSource {
 
 #[async_trait]
 impl Source for KinesisSource {
-    async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
+    async fn initialize(
+        &mut self,
+        _indexer_maibox: &Mailbox<Indexer>,
+        ctx: &SourceContext,
+    ) -> Result<(), ActorExitStatus> {
         let shards = ctx
             .protect_future(list_shards(
                 &self.kinesis_client,
@@ -197,7 +203,7 @@ impl Source for KinesisSource {
 
     async fn emit_batches(
         &mut self,
-        batch_sink: &Mailbox<Indexer>,
+        indexer_mailbox: &Mailbox<Indexer>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_num_bytes = 0;
@@ -305,11 +311,11 @@ impl Source for KinesisSource {
                 docs,
                 checkpoint_delta,
             };
-            ctx.send_message(batch_sink, batch).await?;
+            ctx.send_message(indexer_mailbox, batch).await?;
         }
         if self.state.shard_consumers.is_empty() {
             info!(stream_name = %self.stream_name, "Reached end of stream.");
-            ctx.send_exit_with_success(batch_sink).await?;
+            ctx.send_exit_with_success(indexer_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
         Ok(Duration::default())
@@ -340,16 +346,20 @@ impl Source for KinesisSource {
 }
 
 pub(super) fn get_region(region_or_endpoint: Option<RegionOrEndpoint>) -> anyhow::Result<Region> {
-    match region_or_endpoint {
-        Some(RegionOrEndpoint::Endpoint(endpoint)) => Ok(Region::Custom {
+    if let Some(RegionOrEndpoint::Endpoint(endpoint)) = region_or_endpoint {
+        return Ok(Region::Custom {
             name: "Custom".to_string(),
             endpoint,
-        }),
-        Some(RegionOrEndpoint::Region(region)) => region
-            .parse()
-            .with_context(|| format!("Failed to parse region: `{}`", region)),
-        None => Ok(Region::default()),
+        });
     }
+
+    if let Some(RegionOrEndpoint::Region(region)) = region_or_endpoint {
+        return region
+            .parse()
+            .with_context(|| format!("Failed to parse region: `{}`", region));
+    }
+
+    sniff_aws_region_and_cache() //< We fallback to AWS region if `region_or_endpoint` is `None`
 }
 
 #[cfg(all(test, feature = "kinesis-localstack-tests"))]
@@ -377,6 +387,34 @@ mod tests {
         Ok(merged_batch)
     }
 
+    #[test]
+    fn test_kinesis_region_resolution() {
+        {
+            let region_or_endpoint = Some(RegionOrEndpoint::Endpoint(
+                "mycustomendpoint.quickwit".to_string(),
+            ));
+            let region = get_region(region_or_endpoint).unwrap();
+            assert_eq!(
+                Region::Custom {
+                    name: "Custom".to_string(),
+                    endpoint: "mycustomendpoint.quickwit".to_string()
+                },
+                region
+            );
+        }
+
+        {
+            let region_or_endpoint = Some(RegionOrEndpoint::Region("us-east-1".to_string()));
+            let region = get_region(region_or_endpoint).unwrap();
+            assert_eq!(Region::UsEast1, region);
+        }
+
+        {
+            let region_or_endpoint = Some(RegionOrEndpoint::Region("quickwit-hq-1".to_string()));
+            get_region(region_or_endpoint).unwrap_err();
+        }
+    }
+
     #[tokio::test]
     async fn test_kinesis_source() {
         let universe = Universe::new();
@@ -387,7 +425,7 @@ mod tests {
             region_or_endpoint: Some(RegionOrEndpoint::Endpoint(
                 "http://localhost:4566".to_string(),
             )),
-            shutdown_at_stream_eof: true,
+            enable_backfill_mode: true,
         };
         {
             let checkpoint = SourceCheckpoint::default();
@@ -397,19 +435,19 @@ mod tests {
                     .unwrap();
             let actor = SourceActor {
                 source: Box::new(kinesis_source),
-                batch_sink: mailbox.clone(),
+                indexer_mailbox: mailbox.clone(),
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages: Vec<RawDocBatch> = inbox
+            let next_message = inbox
                 .drain_for_test()
                 .into_iter()
                 .flat_map(|box_any| box_any.downcast::<RawDocBatch>().ok())
                 .map(|box_raw_doc_batch| *box_raw_doc_batch)
-                .collect();
-            assert!(messages.is_empty());
+                .next();
+            assert!(next_message.is_none());
 
             let expected_shard_consumer_positions: Vec<(ShardId, SeqNo)> = Vec::new();
             let expected_state = json!({
@@ -437,11 +475,11 @@ mod tests {
         .unwrap();
         let shard_sequence_numbers: HashMap<usize, SeqNo> = sequence_numbers
             .iter()
-            .map(|(shard_id, records)| (shard_id.clone(), records.last().unwrap().clone()))
+            .map(|(shard_id, records)| (*shard_id, records.last().unwrap().clone()))
             .collect();
         let shard_positions: HashMap<usize, Position> = shard_sequence_numbers
             .iter()
-            .map(|(shard_id, seqno)| (shard_id.clone(), Position::from(seqno.clone())))
+            .map(|(shard_id, seqno)| (*shard_id, Position::from(seqno.clone())))
             .collect();
         {
             let checkpoint = SourceCheckpoint::default();
@@ -451,7 +489,7 @@ mod tests {
                     .unwrap();
             let actor = SourceActor {
                 source: Box::new(kinesis_source),
-                batch_sink: mailbox.clone(),
+                indexer_mailbox: mailbox.clone(),
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;
@@ -463,7 +501,7 @@ mod tests {
                 .flat_map(|box_any| box_any.downcast::<RawDocBatch>().ok())
                 .map(|box_raw_doc_batch| *box_raw_doc_batch)
                 .collect();
-            assert!(messages.len() >= 1);
+            assert!(!messages.is_empty());
 
             let batch = merge_doc_batches(messages).unwrap();
             let expected_docs = vec![
@@ -522,7 +560,7 @@ mod tests {
                     .unwrap();
             let actor = SourceActor {
                 source: Box::new(kinesis_source),
-                batch_sink: mailbox,
+                indexer_mailbox: mailbox,
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;
@@ -534,7 +572,7 @@ mod tests {
                 .flat_map(|box_any| box_any.downcast::<RawDocBatch>().ok())
                 .map(|box_raw_doc_batch| *box_raw_doc_batch)
                 .collect();
-            assert!(messages.len() >= 1);
+            assert!(!messages.is_empty());
 
             let batch = merge_doc_batches(messages).unwrap();
             let expected_docs = vec!["Record #00", "Record #01", "Record #11"];

@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 pub mod file_backed_metastore;
+pub mod grpc_metastore;
 mod index_metadata;
 #[cfg(feature = "postgres")]
 pub mod postgresql_metastore;
@@ -33,7 +34,7 @@ use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{MetastoreResult, Split, SplitMetadata, SplitState};
+use crate::{MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
 
 /// Metastore meant to manage Quickwit's indexes and their splits.
 ///
@@ -42,13 +43,11 @@ use crate::{MetastoreResult, Split, SplitMetadata, SplitState};
 /// We rely on atomically transitioning the status of splits.
 ///
 /// The split state goes through the following life cycle:
-/// 1. `New`
-///   - Create new split and start indexing.
-/// 2. `Staged`
+/// 1. `Staged`
 ///   - Start uploading the split files.
-/// 3. `Published`
+/// 2. `Published`
 ///   - Uploading the split files is complete and the split is searchable.
-/// 4. `MarkedForDeletion`
+/// 3. `MarkedForDeletion`
 ///   - Mark the split for deletion.
 ///
 /// If a split has a file in the storage, it MUST be registered in the metastore,
@@ -68,10 +67,13 @@ pub trait Metastore: Send + Sync + 'static {
     /// Checks whether the metastore is available.
     async fn check_connectivity(&self) -> anyhow::Result<()>;
 
-    /// Checks whether the given index is in this metastore.
-    async fn check_index_available(&self, index_id: &str) -> anyhow::Result<()> {
-        self.index_metadata(index_id).await?;
-        Ok(())
+    /// Returns whether an index exists in the metastore.
+    async fn index_exists(&self, index_id: &str) -> MetastoreResult<bool> {
+        match self.index_metadata(index_id).await {
+            Ok(_) => Ok(true),
+            Err(MetastoreError::IndexDoesNotExist { .. }) => Ok(false),
+            Err(error) => Err(error),
+        }
     }
 
     /// Creates an index.
@@ -177,6 +179,10 @@ pub trait Metastore: Send + Sync + 'static {
     /// The checkpoint associated to the source is deleted as well.
     /// If the checkpoint is missing, this does not trigger an error.
     async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()>;
+
+    /// Resets the checkpoint of a source identified by `index_id` and `source_id`.
+    async fn reset_source_checkpoint(&self, index_id: &str, source_id: &str)
+        -> MetastoreResult<()>;
 
     /// Returns the metastore uri.
     fn uri(&self) -> &Uri;

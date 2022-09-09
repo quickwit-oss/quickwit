@@ -20,5 +20,5 @@
 mod cluster_sandbox;
 mod rest_client;
 
-pub use cluster_sandbox::ClusterSandbox;
+pub use cluster_sandbox::{build_node_configs, ClusterSandbox};
 pub use rest_client::QuickwitRestClient;

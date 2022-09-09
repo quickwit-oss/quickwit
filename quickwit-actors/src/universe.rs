@@ -29,10 +29,10 @@ use crate::{Actor, Command, KillSwitch, Mailbox, QueueCapacity, Scheduler};
 ///
 /// In particular, unit test all have their own universe and hence can be executed in parallel.
 pub struct Universe {
-    scheduler_mailbox: Mailbox<Scheduler>,
+    pub(crate) scheduler_mailbox: Mailbox<Scheduler>,
     // This killswitch is used for the scheduler, and will be used by default for all spawned
     // actors.
-    kill_switch: KillSwitch,
+    pub(crate) kill_switch: KillSwitch,
 }
 
 impl Universe {

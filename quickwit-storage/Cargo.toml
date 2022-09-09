@@ -14,7 +14,6 @@ anyhow = "1"
 async-trait = "0.1"
 base64 = "0.13"
 bytes = "1"
-ec2_instance_metadata = "0.3"
 fnv = "1.0.7"
 futures = "0.3"
 lru = "0.7"
@@ -34,7 +33,7 @@ rusoto_s3 = { version = "0.48", default-features = false, features = [
 ] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "8e773ad", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "ea72cf3", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",

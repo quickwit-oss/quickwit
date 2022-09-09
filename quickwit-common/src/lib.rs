@@ -79,6 +79,27 @@ pub fn truncate_str(text: &str, max_len: usize) -> &str {
     &text[..truncation_index]
 }
 
+pub fn extract_time_range(
+    start_timestamp_opt: Option<i64>,
+    end_timestamp_opt: Option<i64>,
+) -> Option<Range<i64>> {
+    match (start_timestamp_opt, end_timestamp_opt) {
+        (Some(start_timestamp), Some(end_timestamp)) => Some(Range {
+            start: start_timestamp,
+            end: end_timestamp,
+        }),
+        (_, Some(end_timestamp)) => Some(Range {
+            start: i64::MIN,
+            end: end_timestamp,
+        }),
+        (Some(start_timestamp), _) => Some(Range {
+            start: start_timestamp,
+            end: i64::MAX,
+        }),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::truncate_str;

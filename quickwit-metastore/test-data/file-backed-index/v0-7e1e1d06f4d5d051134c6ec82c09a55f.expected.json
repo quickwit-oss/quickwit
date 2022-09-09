@@ -43,6 +43,7 @@
           "type": "text"
         }
       ],
+      "max_num_partitions": 8,
       "mode": "dynamic",
       "store_source": true,
       "tag_fields": [
@@ -54,13 +55,10 @@
     "index_uri": "s3://quickwit-indexes/my-index",
     "indexing_settings": {
       "commit_timeout_secs": 301,
-      "demux_enabled": true,
-      "demux_field": "tenant_id",
       "docstore_blocksize": 1000000,
       "docstore_compression_level": 8,
       "merge_enabled": true,
       "merge_policy": {
-        "demux_factor": 7,
         "max_merge_factor": 11,
         "merge_factor": 9
       },
@@ -93,14 +91,15 @@
   "splits": [
     {
       "create_timestamp": 3,
-      "demux_num_ops": 1,
       "footer_offsets": {
         "end": 2000,
         "start": 1000
       },
+      "index_id": "my-index",
       "node_id": "unknown/0",
       "num_docs": 12303,
       "partition_id": 0,
+      "publish_timestamp": null,
       "source_id": "unknown",
       "split_id": "split",
       "split_state": "Published",

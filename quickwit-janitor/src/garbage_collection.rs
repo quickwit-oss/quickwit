@@ -17,20 +17,20 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use futures::StreamExt;
 use quickwit_actors::ActorContext;
 use quickwit_metastore::{Metastore, MetastoreError, SplitMetadata, SplitState};
-use quickwit_storage::StorageError;
+use quickwit_storage::{Storage, StorageError};
 use serde::Serialize;
 use thiserror::Error;
 use time::OffsetDateTime;
 use tracing::error;
 
 use crate::actors::GarbageCollector;
-use crate::split_store::IndexingSplitStore;
 
 const MAX_CONCURRENT_STORAGE_REQUESTS: usize = if cfg!(test) { 2 } else { 10 };
 
@@ -76,7 +76,7 @@ impl From<&SplitMetadata> for FileEntry {
 /// * `ctx_opt` - A context for reporting progress (only useful within quickwit actor).
 pub async fn run_garbage_collect(
     index_id: &str,
-    split_store: IndexingSplitStore,
+    storage: Arc<dyn Storage>,
     metastore: Arc<dyn Metastore>,
     staged_grace_period: Duration,
     deletion_grace_period: Duration,
@@ -138,7 +138,7 @@ pub async fn run_garbage_collect(
 
     let deleted_files = delete_splits_with_files(
         index_id,
-        split_store.clone(),
+        storage.clone(),
         metastore.clone(),
         splits_to_delete,
         ctx_opt,
@@ -158,7 +158,7 @@ pub async fn run_garbage_collect(
 /// * `ctx_opt` - A context for reporting progress (only useful within quickwit actor).
 pub async fn delete_splits_with_files(
     index_id: &str,
-    indexing_split_store: IndexingSplitStore,
+    storage: Arc<dyn Storage>,
     metastore: Arc<dyn Metastore>,
     splits: Vec<SplitMetadata>,
     ctx_opt: Option<&ActorContext<GarbageCollector>>,
@@ -169,10 +169,12 @@ pub async fn delete_splits_with_files(
 
     let mut delete_splits_results_stream = tokio_stream::iter(splits.into_iter())
         .map(|split| {
-            let moved_indexing_split_store = indexing_split_store.clone();
+            let moved_storage = storage.clone();
             async move {
                 let file_entry = FileEntry::from(&split);
-                let delete_result = moved_indexing_split_store.delete(split.split_id()).await;
+                let split_filename = quickwit_common::split_file(split.split_id());
+                let split_path = Path::new(&split_filename);
+                let delete_result = moved_storage.delete(split_path).await;
                 if let Some(ctx) = ctx_opt {
                     ctx.record_progress();
                 }

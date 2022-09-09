@@ -163,8 +163,7 @@ fn generate_markdown_from_clap(command: &Command) {
         }
 
         for subcommand in command.get_subcommands().filter(|subcommand| {
-            subcommand.get_name() != "demux"
-                && subcommand.get_name() != "merge"
+            subcommand.get_name() != "merge"
                 && subcommand.get_name() != "extract"
                 && !(subcommand.get_name() == "describe" && command_name == "split")
         }) {

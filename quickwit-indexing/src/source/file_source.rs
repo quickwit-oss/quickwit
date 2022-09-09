@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::io::SeekFrom;
+use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt, io};
 
@@ -25,7 +26,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::FileSourceParams;
-use quickwit_metastore::checkpoint::{PartitionId, Position};
+use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
 use serde::Serialize;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncSeekExt, BufReader};
@@ -33,10 +34,10 @@ use tracing::info;
 
 use crate::actors::Indexer;
 use crate::models::RawDocBatch;
-use crate::source::{Source, SourceContext, TypedSourceFactory};
+use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
 
-/// Cut a new batch as soon as we have read BATCH_NUM_BYTES_THRESHOLD.
-pub(crate) const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
+/// Number of bytes after which a new batch is cut.
+pub(crate) const BATCH_NUM_BYTES_LIMIT: u64 = 500_000u64;
 
 #[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FileSourceCounters {
@@ -66,7 +67,7 @@ impl Source for FileSource {
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         // We collect batches of documents before sending them to the indexer.
-        let limit_num_bytes = self.counters.previous_offset + BATCH_NUM_BYTES_THRESHOLD;
+        let limit_num_bytes = self.counters.previous_offset + BATCH_NUM_BYTES_LIMIT;
         let mut reached_eof = false;
         let mut doc_batch = RawDocBatch::default();
         while self.counters.current_offset < limit_num_bytes {
@@ -129,9 +130,9 @@ impl TypedSourceFactory for FileSourceFactory {
 
     // TODO handle checkpoint for files.
     async fn typed_create_source(
-        source_id: String,
+        ctx: Arc<SourceExecutionContext>,
         params: FileSourceParams,
-        checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
+        checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<FileSource> {
         let mut offset = 0;
         let reader: Box<dyn AsyncRead + Send + Sync + Unpin> =
@@ -152,7 +153,7 @@ impl TypedSourceFactory for FileSourceFactory {
                 Box::new(tokio::io::stdin())
             };
         let file_source = FileSource {
-            source_id,
+            source_id: ctx.source_config.source_id.clone(),
             counters: FileSourceCounters {
                 previous_offset: offset,
                 current_offset: offset,
@@ -170,26 +171,37 @@ mod tests {
     use std::io::Write;
 
     use quickwit_actors::{create_test_mailbox, Command, Universe};
+    use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
+    use quickwit_metastore::metastore_for_test;
 
     use super::*;
     use crate::source::SourceActor;
 
     #[tokio::test]
     async fn test_file_source() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
-        let (mailbox, inbox) = create_test_mailbox();
+        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
         let params = FileSourceParams::file("data/test_corpus.json");
+
+        let metastore = metastore_for_test();
         let file_source = FileSourceFactory::typed_create_source(
-            "my-file-source".to_string(),
+            SourceExecutionContext::for_test(
+                metastore,
+                "test-index",
+                SourceConfig {
+                    source_id: "test-file-source".to_string(),
+                    num_pipelines: 1,
+                    source_params: SourceParams::File(params.clone()),
+                },
+            ),
             params,
             SourceCheckpoint::default(),
         )
         .await?;
         let file_source_actor = SourceActor {
             source: Box::new(file_source),
-            batch_sink: mailbox,
+            indexer_mailbox,
         };
         let (_file_source_mailbox, file_source_handle) =
             universe.spawn_actor(file_source_actor).spawn();
@@ -203,7 +215,7 @@ mod tests {
                 "num_lines_processed": 4u32
             })
         );
-        let batch = inbox.drain_for_test();
+        let batch = indexer_inbox.drain_for_test();
         assert_eq!(batch.len(), 2);
         assert!(matches!(
             batch[1].downcast_ref::<Command>().unwrap(),
@@ -232,15 +244,25 @@ mod tests {
             .unwrap()
             .to_string_lossy()
             .to_string();
+
+        let metastore = metastore_for_test();
         let source = FileSourceFactory::typed_create_source(
-            "my-file-source".to_string(),
+            SourceExecutionContext::for_test(
+                metastore,
+                "test-index",
+                SourceConfig {
+                    source_id: "test-file-source".to_string(),
+                    num_pipelines: 1,
+                    source_params: SourceParams::File(params.clone()),
+                },
+            ),
             params,
             SourceCheckpoint::default(),
         )
         .await?;
         let file_source_actor = SourceActor {
             source: Box::new(source),
-            batch_sink: mailbox,
+            indexer_mailbox: mailbox,
         };
         let (_file_source_mailbox, file_source_handle) =
             universe.spawn_actor(file_source_actor).spawn();
@@ -306,15 +328,25 @@ mod tests {
             Position::from(4u64),
         );
         checkpoint.try_apply_delta(checkpoint_delta)?;
+
+        let metastore = metastore_for_test();
         let source = FileSourceFactory::typed_create_source(
-            "my-file-source".to_string(),
+            SourceExecutionContext::for_test(
+                metastore,
+                "test-index",
+                SourceConfig {
+                    source_id: "test-file-source".to_string(),
+                    num_pipelines: 1,
+                    source_params: SourceParams::File(params.clone()),
+                },
+            ),
             params,
             checkpoint,
         )
         .await?;
         let file_source_actor = SourceActor {
             source: Box::new(source),
-            batch_sink: mailbox,
+            indexer_mailbox: mailbox,
         };
         let (_file_source_mailbox, file_source_handle) =
             universe.spawn_actor(file_source_actor).spawn();
@@ -328,9 +360,8 @@ mod tests {
                 "num_lines_processed": 98u64
             })
         );
-        let indexer_msgs = inbox.drain_for_test();
-        let received_batch = indexer_msgs[0].downcast_ref::<RawDocBatch>().unwrap();
-        assert!(received_batch.docs[0].starts_with("2\n"));
+        let indexer_messages: Vec<RawDocBatch> = inbox.drain_for_test_typed();
+        assert!(indexer_messages[0].docs[0].starts_with("2\n"));
         Ok(())
     }
 }

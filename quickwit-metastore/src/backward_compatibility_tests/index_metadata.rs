@@ -18,12 +18,13 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::num::NonZeroU64;
 
 use byte_unit::Byte;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
     DocMapping, IndexingResources, IndexingSettings, KafkaSourceParams, MergePolicy,
-    SearchSettings, SourceConfig, SourceParams,
+    RetentionPolicy, RetentionPolicyCutoffReference, SearchSettings, SourceConfig, SourceParams,
 };
 use quickwit_doc_mapper::{ModeType, SortOrder};
 
@@ -142,20 +143,24 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
         store_source: true,
         mode: ModeType::Dynamic,
         dynamic_mapping: None,
-        partition_key: "".to_string(),
+        partition_key: "tenant".to_string(),
+        max_num_partitions: NonZeroU64::new(20).unwrap(),
     };
+    let retention_policy = Some(RetentionPolicy::new(
+        "90 days".to_string(),
+        RetentionPolicyCutoffReference::PublishTimestamp,
+        "daily".to_string(),
+    ));
     let merge_policy = MergePolicy {
-        demux_factor: 7,
         merge_factor: 9,
         max_merge_factor: 11,
+        ..Default::default()
     };
     let indexing_resources = IndexingResources {
         __num_threads_deprecated: serde::de::IgnoredAny,
         heap_size: Byte::from_bytes(3),
     };
     let indexing_settings = IndexingSettings {
-        demux_enabled: true,
-        demux_field: Some("tenant_id".to_string()),
         timestamp_field: Some("timestamp".to_string()),
         sort_field: Some("timestamp".to_string()),
         sort_order: Some(SortOrder::Asc),
@@ -166,6 +171,7 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
         resources: indexing_resources,
         docstore_blocksize: IndexingSettings::default_docstore_blocksize(),
         docstore_compression_level: IndexingSettings::default_docstore_compression_level(),
+        ..Default::default()
     };
     let search_settings = SearchSettings {
         default_search_fields: vec!["message".to_string()],
@@ -177,6 +183,7 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
             topic: "kafka-topic".to_string(),
             client_log_level: None,
             client_params: serde_json::json!({}),
+            enable_backfill_mode: false,
         }),
     };
     let mut sources = HashMap::default();
@@ -188,6 +195,7 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
         checkpoint,
         doc_mapping,
         indexing_settings,
+        retention_policy,
         search_settings,
         sources,
         create_timestamp: 1789,

@@ -45,7 +45,7 @@ $ docker-compose down
 This sqlx-cli can be useful (but is not necessary) to work with migrations.
 
 ```
-cargo install sqlx
+cargo install sqlx-cli
 ```
 
 You can then use the following commands to apply/revert your postgresql migrations.

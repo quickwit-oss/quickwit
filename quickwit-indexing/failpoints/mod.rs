@@ -47,7 +47,7 @@ use quickwit_indexing::actors::MergeExecutor;
 use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_indexing::models::{IndexingPipelineId, MergeScratch, ScratchDirectory};
 use quickwit_indexing::{get_tantivy_directory_from_split_bundle, new_split_id, TestSandbox};
-use quickwit_metastore::{SplitMetadata, SplitState};
+use quickwit_metastore::{Split, SplitMetadata, SplitState};
 use tantivy::Directory;
 
 #[tokio::test]
@@ -254,8 +254,8 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     }
 
     let metastore = test_index_builder.metastore();
-    let split_infos = metastore.list_all_splits(index_id).await?;
-    let splits: Vec<SplitMetadata> = split_infos
+    let splits: Vec<Split> = metastore.list_all_splits(index_id).await?;
+    let split_metadatas: Vec<SplitMetadata> = splits
         .into_iter()
         .map(|split| split.split_metadata)
         .collect();
@@ -265,7 +265,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         merge_scratch_directory.named_temp_child("downloaded-splits-")?;
     let storage = test_index_builder.storage();
     let mut tantivy_dirs: Vec<Box<dyn Directory>> = vec![];
-    for split in &splits {
+    for split in &split_metadatas {
         let split_filename = split_file(split.split_id());
         let dest_filepath = downloaded_splits_directory.path().join(&split_filename);
         storage
@@ -276,9 +276,9 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     }
 
     let merge_scratch = MergeScratch {
-        merge_operation: MergeOperation::Merge {
+        merge_operation: MergeOperation {
             merge_split_id: new_split_id(),
-            splits,
+            splits: split_metadatas,
         },
         merge_scratch_directory,
         downloaded_splits_directory,
@@ -291,14 +291,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         pipeline_ord: 0,
     };
     let (merge_packager_mailbox, _merge_packager_inbox) = create_test_mailbox();
-    let merge_executor = MergeExecutor::new(
-        pipeline_id,
-        merge_packager_mailbox,
-        None,
-        None,
-        10_000_000,
-        20_000_000,
-    );
+    let merge_executor = MergeExecutor::new(pipeline_id, merge_packager_mailbox);
     let universe = Universe::new();
     let (merge_executor_mailbox, merge_executor_handle) =
         universe.spawn_actor(merge_executor).spawn();

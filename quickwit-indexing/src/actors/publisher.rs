@@ -26,7 +26,7 @@ use quickwit_actors::{Actor, ActorContext, Handler, Mailbox};
 use quickwit_metastore::Metastore;
 use tracing::info;
 
-use crate::actors::{GarbageCollector, MergePlanner};
+use crate::actors::MergePlanner;
 use crate::models::{NewSplits, SplitUpdate};
 use crate::source::{SourceActor, SuggestTruncate};
 
@@ -55,7 +55,6 @@ pub struct Publisher {
     publisher_type: PublisherType,
     metastore: Arc<dyn Metastore>,
     merge_planner_mailbox: Mailbox<MergePlanner>,
-    garbage_collector_mailbox: Mailbox<GarbageCollector>,
     source_mailbox_opt: Option<Mailbox<SourceActor>>,
     counters: PublisherCounters,
 }
@@ -65,14 +64,12 @@ impl Publisher {
         publisher_type: PublisherType,
         metastore: Arc<dyn Metastore>,
         merge_planner_mailbox: Mailbox<MergePlanner>,
-        garbage_collector_mailbox: Mailbox<GarbageCollector>,
         source_mailbox_opt: Option<Mailbox<SourceActor>>,
     ) -> Publisher {
         Publisher {
             publisher_type,
             metastore,
             merge_planner_mailbox,
-            garbage_collector_mailbox,
             source_mailbox_opt,
             counters: PublisherCounters::default(),
         }
@@ -102,10 +99,7 @@ impl Actor for Publisher {
         // The publisher actor being the last standing actor of the pipeline,
         // its end of life should also means the end of life of never stopping actors.
         // After all, when the publisher is stopped, there shouldn't be anything to process.
-        // It's fine if the garbage collector is already dead.
-        let _ = ctx
-            .send_exit_with_success(&self.garbage_collector_mailbox)
-            .await;
+        // It's fine if the merge planner is already dead.
         let _ = ctx
             .send_exit_with_success(&self.merge_planner_mailbox)
             .await;
@@ -128,8 +122,9 @@ impl Handler<SplitUpdate> for Publisher {
             index_id,
             new_splits,
             replaced_split_ids,
-            date_of_birth,
             checkpoint_delta_opt,
+            publish_lock,
+            date_of_birth,
         } = split_update;
 
         let split_ids: Vec<&str> = new_splits.iter().map(|split| split.split_id()).collect();
@@ -137,16 +132,23 @@ impl Handler<SplitUpdate> for Publisher {
         let replaced_split_ids_ref_vec: Vec<&str> =
             replaced_split_ids.iter().map(String::as_str).collect();
 
-        self.metastore
-            .publish_splits(
+        if let Some(_guard) = publish_lock.acquire().await {
+            ctx.protect_future(self.metastore.publish_splits(
                 &index_id,
                 &split_ids[..],
                 &replaced_split_ids_ref_vec,
                 checkpoint_delta_opt.clone(),
-            )
+            ))
             .await
             .context("Failed to publish splits.")?;
-
+        } else {
+            // TODO: Remove the junk right away?
+            info!(
+                split_ids=?split_ids,
+                "Splits' publish lock is dead."
+            );
+            return Ok(());
+        }
         info!(new_splits=?split_ids, tts=%date_of_birth.elapsed().as_secs_f32(), checkpoint_delta=?checkpoint_delta_opt, "publish-new-splits");
         if let Some(source_mailbox) = self.source_mailbox_opt.as_ref() {
             if let Some(checkpoint) = checkpoint_delta_opt {
@@ -193,10 +195,10 @@ mod tests {
     use quickwit_metastore::{MockMetastore, SplitMetadata};
 
     use super::*;
+    use crate::models::PublishLock;
 
     #[tokio::test]
     async fn test_publisher_publish_operation() {
-        quickwit_common::setup_logging_for_tests();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_publish_splits()
@@ -213,7 +215,6 @@ mod tests {
             .times(1)
             .returning(|_, _, _, _| Ok(()));
         let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
-        let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
 
         let (source_mailbox, source_inbox) = create_test_mailbox();
 
@@ -221,7 +222,6 @@ mod tests {
             PublisherType::MainPublisher,
             Arc::new(mock_metastore),
             merge_planner_mailbox,
-            garbage_collector_mailbox,
             Some(source_mailbox),
         );
         let universe = Universe::new();
@@ -239,6 +239,7 @@ mod tests {
                     source_id: "source".to_string(),
                     source_delta: SourceCheckpointDelta::from(1..3),
                 }),
+                publish_lock: PublishLock::default(),
                 date_of_birth: Instant::now(),
             })
             .await
@@ -268,7 +269,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_publisher_replace_operation() {
-        quickwit_common::setup_logging_for_tests();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_publish_splits()
@@ -283,12 +283,10 @@ mod tests {
             .times(1)
             .returning(|_, _, _, _| Ok(()));
         let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
-        let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
             Arc::new(mock_metastore),
             merge_planner_mailbox,
-            garbage_collector_mailbox,
             None,
         );
         let universe = Universe::new();
@@ -301,6 +299,7 @@ mod tests {
             }],
             replaced_split_ids: vec!["split1".to_string(), "split2".to_string()],
             checkpoint_delta_opt: None,
+            publish_lock: PublishLock::default(),
             date_of_birth: Instant::now(),
         };
         assert!(publisher_mailbox
@@ -313,5 +312,42 @@ mod tests {
         let merge_planner_msgs = merge_planner_inbox.drain_for_test_typed::<NewSplits>();
         assert_eq!(merge_planner_msgs.len(), 1);
         assert_eq!(merge_planner_msgs[0].new_splits.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn publisher_acquires_publish_lock() {
+        let mut mock_metastore = MockMetastore::default();
+        mock_metastore.expect_publish_splits().never();
+        let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
+
+        let publisher = Publisher::new(
+            PublisherType::MainPublisher,
+            Arc::new(mock_metastore),
+            merge_planner_mailbox,
+            None,
+        );
+        let universe = Universe::new();
+        let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
+
+        let publish_lock = PublishLock::default();
+        publish_lock.kill().await;
+
+        publisher_mailbox
+            .send_message(SplitUpdate {
+                index_id: "test-index".to_string(),
+                new_splits: vec![SplitMetadata::for_test("test-split".to_string())],
+                replaced_split_ids: Vec::new(),
+                checkpoint_delta_opt: None,
+                publish_lock,
+                date_of_birth: Instant::now(),
+            })
+            .await
+            .unwrap();
+
+        let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
+        assert_eq!(publisher_observation.num_published_splits, 0);
+
+        let merger_messages = merge_planner_inbox.drain_for_test();
+        assert!(merger_messages.is_empty());
     }
 }

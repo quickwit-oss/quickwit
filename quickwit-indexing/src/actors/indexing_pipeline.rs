@@ -38,11 +38,10 @@ use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::publisher::PublisherType;
 use crate::actors::sequencer::Sequencer;
 use crate::actors::{
-    GarbageCollector, Indexer, MergeExecutor, MergePlanner, NamedField, Packager, Publisher,
-    Uploader,
+    Indexer, MergeExecutor, MergePlanner, NamedField, Packager, Publisher, Uploader,
 };
 use crate::models::{IndexingDirectory, IndexingPipelineId, IndexingStatistics, Observe};
-use crate::source::{quickwit_supported_sources, SourceActor};
+use crate::source::{quickwit_supported_sources, SourceActor, SourceExecutionContext};
 use crate::split_store::{IndexingSplitStore, IndexingSplitStoreParams};
 use crate::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 
@@ -56,7 +55,6 @@ pub struct IndexingPipelineHandle {
     pub uploader: ActorHandle<Uploader>,
     pub sequencer: ActorHandle<Sequencer<Publisher>>,
     pub publisher: ActorHandle<Publisher>,
-    pub garbage_collector: ActorHandle<GarbageCollector>,
 
     /// Merging pipeline subpipeline
     pub merge_planner: ActorHandle<MergePlanner>,
@@ -131,7 +129,6 @@ impl IndexingPipeline {
                 &handles.uploader,
                 &handles.sequencer,
                 &handles.publisher,
-                &handles.garbage_collector,
                 &handles.merge_planner,
                 &handles.merge_split_downloader,
                 &handles.merge_executor,
@@ -209,9 +206,6 @@ impl IndexingPipeline {
         self.statistics.num_spawn_attempts += 1;
         self.kill_switch = KillSwitch::default();
         let stable_multitenant_merge_policy = StableMultitenantWithTimestampMergePolicy {
-            demux_enabled: self.params.indexing_settings.demux_enabled,
-            demux_factor: self.params.indexing_settings.merge_policy.demux_factor,
-            demux_field_name: self.params.indexing_settings.demux_field.clone(),
             merge_enabled: self.params.indexing_settings.merge_enabled,
             merge_factor: self.params.indexing_settings.merge_policy.merge_factor,
             max_merge_factor: self.params.indexing_settings.merge_policy.max_merge_factor,
@@ -256,23 +250,11 @@ impl IndexingPipeline {
         let (merge_planner_mailbox, merge_planner_inbox) =
             create_mailbox::<MergePlanner>("MergePlanner".to_string(), QueueCapacity::Unbounded);
 
-        // Garbage colletor
-        let garbage_collector = GarbageCollector::new(
-            self.params.pipeline_id.clone(),
-            split_store.clone(),
-            self.params.metastore.clone(),
-        );
-        let (garbage_collector_mailbox, garbage_collector_handler) = ctx
-            .spawn_actor(garbage_collector)
-            .set_kill_switch(self.kill_switch.clone())
-            .spawn();
-
         // Merge publisher
         let merge_publisher = Publisher::new(
             PublisherType::MergePublisher,
             self.params.metastore.clone(),
             merge_planner_mailbox.clone(),
-            garbage_collector_mailbox.clone(),
             None,
         );
         let (merge_publisher_mailbox, merge_publisher_handler) = ctx
@@ -323,14 +305,8 @@ impl IndexingPipeline {
             .set_kill_switch(self.kill_switch.clone())
             .spawn();
 
-        let merge_executor = MergeExecutor::new(
-            self.params.pipeline_id.clone(),
-            merge_packager_mailbox,
-            self.params.indexing_settings.timestamp_field.clone(),
-            self.params.indexing_settings.demux_field.clone(),
-            self.params.indexing_settings.split_num_docs_target as usize,
-            self.params.indexing_settings.split_num_docs_target as usize * 2,
-        );
+        let merge_executor =
+            MergeExecutor::new(self.params.pipeline_id.clone(), merge_packager_mailbox);
         let (merge_executor_mailbox, merge_executor_handler) = ctx
             .spawn_actor(merge_executor)
             .set_kill_switch(self.kill_switch.clone())
@@ -367,7 +343,6 @@ impl IndexingPipeline {
             PublisherType::MainPublisher,
             self.params.metastore.clone(),
             merge_planner_mailbox,
-            garbage_collector_mailbox,
             Some(source_mailbox.clone()),
         );
         let (publisher_mailbox, publisher_handler) = ctx
@@ -425,11 +400,18 @@ impl IndexingPipeline {
             .cloned()
             .unwrap_or_default(); // TODO Have a stricter check.
         let source = quickwit_supported_sources()
-            .load_source(self.params.source_config.clone(), source_checkpoint)
+            .load_source(
+                Arc::new(SourceExecutionContext {
+                    metastore: self.params.metastore.clone(),
+                    index_id: self.params.pipeline_id.index_id.clone(),
+                    source_config: self.params.source_config.clone(),
+                }),
+                source_checkpoint,
+            )
             .await?;
         let actor_source = SourceActor {
             source,
-            batch_sink: indexer_mailbox,
+            indexer_mailbox,
         };
         let (_source_mailbox, source_handler) = ctx
             .spawn_actor(actor_source)
@@ -447,7 +429,6 @@ impl IndexingPipeline {
             uploader: uploader_handler,
             sequencer: sequencer_handler,
             publisher: publisher_handler,
-            garbage_collector: garbage_collector_handler,
 
             merge_planner: merge_planner_handler,
             merge_split_downloader: merge_split_downloader_handler,
@@ -482,7 +463,6 @@ impl IndexingPipeline {
                 handlers.packager.kill(),
                 handlers.uploader.kill(),
                 handlers.publisher.kill(),
-                handlers.garbage_collector.kill(),
                 handlers.merge_planner.kill(),
                 handlers.merge_split_downloader.kill(),
                 handlers.merge_executor.kill(),
@@ -640,7 +620,7 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_config::{IndexingSettings, SourceParams};
-    use quickwit_doc_mapper::default_doc_mapper_for_tests;
+    use quickwit_doc_mapper::default_doc_mapper_for_test;
     use quickwit_metastore::{IndexMetadata, MetastoreError, MockMetastore};
     use quickwit_storage::RamStorage;
 
@@ -733,7 +713,7 @@ mod tests {
         };
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
-            doc_mapper: Arc::new(default_doc_mapper_for_tests()),
+            doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             indexing_directory: IndexingDirectory::for_test().await?,
             indexing_settings: IndexingSettings::for_test(),
@@ -782,12 +762,8 @@ mod tests {
             });
         metastore
             .expect_list_splits()
-            .times(3)
-            .returning(|_, _, _, _| Ok(Vec::new()));
-        metastore
-            .expect_mark_splits_for_deletion()
             .times(1)
-            .returning(|_, _| Ok(()));
+            .returning(|_, _, _, _| Ok(Vec::new()));
         metastore
             .expect_stage_split()
             .withf(|index_id, _metadata| index_id == "test-index")
@@ -822,7 +798,7 @@ mod tests {
         };
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
-            doc_mapper: Arc::new(default_doc_mapper_for_tests()),
+            doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             indexing_directory: IndexingDirectory::for_test().await?,
             indexing_settings: IndexingSettings::for_test(),

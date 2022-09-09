@@ -101,7 +101,13 @@ impl From<FileBackedIndex> for FileBackedIndexV0 {
 }
 
 impl From<FileBackedIndexV0> for FileBackedIndex {
-    fn from(index: FileBackedIndexV0) -> Self {
+    fn from(mut index: FileBackedIndexV0) -> Self {
+        // Override split index_id to support old SplitMetadata format.
+        for split in index.splits.iter_mut() {
+            if split.split_metadata.index_id.is_empty() {
+                split.split_metadata.index_id = index.metadata.index_id.clone();
+            }
+        }
         Self::new(index.metadata, index.splits)
     }
 }
@@ -157,7 +163,7 @@ impl FileBackedIndex {
                     "Failed to stage split  `{}`: split already exists.",
                     split_metadata.split_id()
                 ),
-                cause: anyhow::anyhow!(""),
+                cause: "".to_string(),
             });
         }
 
@@ -165,6 +171,7 @@ impl FileBackedIndex {
         let metadata = Split {
             split_state: SplitState::Staged,
             update_timestamp: now_timestamp,
+            publish_timestamp: None,
             split_metadata,
         };
 
@@ -252,6 +259,7 @@ impl FileBackedIndex {
                     // The split state needs to be updated.
                     metadata.split_state = SplitState::Published;
                     metadata.update_timestamp = now_timestamp;
+                    metadata.publish_timestamp = Some(now_timestamp);
                 }
                 _ => {
                     split_not_staged_ids.push(split_id.to_string());
@@ -377,5 +385,10 @@ impl FileBackedIndex {
     pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<bool> {
         self.metadata.delete_source(source_id)?;
         Ok(true)
+    }
+
+    /// Resets the checkpoint of a source. Returns whether a mutation occurred.
+    pub(crate) fn reset_source_checkpoint(&mut self, source_id: &str) -> MetastoreResult<bool> {
+        Ok(self.metadata.checkpoint.reset_source(source_id))
     }
 }
