@@ -29,6 +29,7 @@ fn sample_file_backed_index_for_regression() -> FileBackedIndex {
         split_state: SplitState::Published,
         split_metadata,
         update_timestamp: 1789,
+        publish_timestamp: Some(1789),
     };
     let splits = vec![split];
     FileBackedIndex::new(index_metadata, splits)

@@ -304,7 +304,6 @@ impl IndexingService {
         ctx: &ActorContext<Self>,
         index_id: String,
         merge_enabled: bool,
-        demux_enabled: bool,
     ) -> Result<IndexingPipelineId, IndexingServiceError> {
         let pipeline_id = IndexingPipelineId {
             index_id: index_id.clone(),
@@ -314,7 +313,6 @@ impl IndexingService {
         };
         let mut index_metadata = self.index_metadata(ctx, &pipeline_id.index_id).await?;
         index_metadata.indexing_settings.merge_enabled = merge_enabled;
-        index_metadata.indexing_settings.demux_enabled = demux_enabled;
         let source_config = SourceConfig {
             source_id: pipeline_id.source_id.clone(),
             num_pipelines: 1,
@@ -431,12 +429,7 @@ impl Handler<SpawnMergePipeline> for IndexingService {
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self
-            .spawn_merge_pipeline(
-                ctx,
-                message.index_id,
-                message.merge_enabled,
-                message.demux_enabled,
-            )
+            .spawn_merge_pipeline(ctx, message.index_id, message.merge_enabled)
             .await)
     }
 }
@@ -731,7 +724,6 @@ mod tests {
             .ask_for_res(SpawnMergePipeline {
                 index_id: index_id.clone(),
                 merge_enabled: true,
-                demux_enabled: false,
             })
             .await
             .unwrap();

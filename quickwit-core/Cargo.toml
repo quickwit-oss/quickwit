@@ -21,13 +21,14 @@ quickwit-config = { version = "0.3.1", path = "../quickwit-config" }
 quickwit-directories = { version = "0.3.1", path = "../quickwit-directories" }
 quickwit-doc-mapper = { version = "0.3.1", path = "../quickwit-doc-mapper" }
 quickwit-indexing = { version = "0.3.1", path = "../quickwit-indexing" }
+quickwit-janitor = { version = "0.3.1", path = "../quickwit-janitor" }
 quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore" }
 quickwit-proto = { version = "0.3.1", path = "../quickwit-proto" }
 quickwit-storage = { version = "0.3.1", path = "../quickwit-storage" }
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "8e773ad", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "ea72cf3", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",

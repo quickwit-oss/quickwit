@@ -42,22 +42,22 @@ use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::anyhow;
 use format::Format;
+use itertools::Itertools;
 use quickwit_actors::{Mailbox, Universe};
-use quickwit_cluster::{Cluster, ClusterMember};
-use quickwit_common::service::QuickwitService;
-use quickwit_common::uri::Uri;
+use quickwit_cluster::{Cluster, ClusterMember, QuickwitService};
 use quickwit_config::QuickwitConfig;
 use quickwit_core::IndexService;
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest_api::{start_ingest_api_service, IngestApiService};
-use quickwit_janitor::actors::JanitorService;
-use quickwit_janitor::start_janitor_service;
+use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreGrpcClient};
 use quickwit_search::{start_searcher_service, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use serde::{Deserialize, Serialize};
+use tracing::{error, warn};
 use warp::{Filter, Rejection};
 
 pub use crate::args::ServeArgs;
@@ -82,7 +82,7 @@ struct QuickwitServices {
     pub search_service: Arc<dyn SearchService>,
     pub indexer_service: Option<Mailbox<IndexingService>>,
     #[allow(dead_code)] // TODO remove
-    pub janitor_service: Option<Mailbox<JanitorService>>,
+    pub janitor_service: Option<JanitorService>,
     pub ingest_api_service: Option<Mailbox<IngestApiService>>,
     pub index_service: Arc<IndexService>,
     pub services: HashSet<QuickwitService>,
@@ -113,7 +113,15 @@ pub async fn serve_quickwit(
         // Wait 10 seconds for nodes running a `Metastore` service.
         cluster
             .wait_for_members(has_node_with_metastore_service, Duration::from_secs(10))
-            .await?;
+            .await
+            .map_err(|_| {
+                error!("No metastore service found among cluster members, stopping server.");
+                anyhow!(
+                    "Failed to start server: no metastore service was found among cluster \
+                     members. Try running Quickwit with additional metastore service `quickwit \
+                     run --service metastore`."
+                )
+            })?;
         let metastore_client = MetastoreGrpcClient::create_and_update_from_members(
             &cluster.members(),
             cluster.member_change_watcher(),
@@ -122,13 +130,7 @@ pub async fn serve_quickwit(
         Arc::new(metastore_client)
     };
 
-    let indexes = metastore
-        .list_indexes_metadatas()
-        .await?
-        .into_iter()
-        .map(|index| (index.index_id, index.index_uri));
-
-    check_is_configured_for_cluster(&config.peer_seeds, &config.metastore_uri, indexes)?;
+    check_cluster_configuration(services, &config.peer_seeds, metastore.clone()).await?;
 
     tokio::spawn(node_readyness_reporting_task(
         cluster.clone(),
@@ -232,32 +234,41 @@ async fn node_readyness_reporting_task(cluster: Arc<Cluster>, metastore: Arc<dyn
     }
 }
 
-/// Checks if the conditions required to smoothly run a Quickwit cluster are met.
-/// Currently we don't allow cluster feature upon using:
-/// - A FileBacked metastore
-/// - A FileStorage
-fn check_is_configured_for_cluster(
+/// Displays some warnings if the cluster runs a file-backed metastore or serves file-backed
+/// indexes.
+async fn check_cluster_configuration(
+    services: &HashSet<QuickwitService>,
     peer_seeds: &[String],
-    metastore_uri: &Uri,
-    mut indexes: impl Iterator<Item = (String, Uri)>,
+    metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<()> {
-    if peer_seeds.is_empty() {
+    if !services.contains(&QuickwitService::Metastore) || peer_seeds.is_empty() {
         return Ok(());
     }
-    if metastore_uri.protocol().is_file() || metastore_uri.protocol().is_s3() {
-        anyhow::bail!(
-            "Quickwit cannot run in cluster mode with a file-backed metastore. Please, use a \
-             PostgreSQL metastore instead."
+    if !metastore.uri().protocol().is_database() {
+        warn!(
+            metastore_uri=%metastore.uri(),
+            "Using a file-backed metastore in cluster mode is not recommended for production use. Running multiple file-backed metastores simultaneously can lead to data loss."
         );
     }
-    if let Some((index_id, index_uri)) =
-        indexes.find(|(_, index_uri)| index_uri.protocol().is_file())
-    {
-        anyhow::bail!(
-            "Quickwit cannot run in cluster mode with an index whose data is stored on a local \
-             file system. Index URI for index `{}` is `{}`.",
-            index_id,
-            index_uri,
+    let file_backed_indexes = metastore
+        .list_indexes_metadatas()
+        .await?
+        .into_iter()
+        .filter(|index_metadata| index_metadata.index_uri.protocol().is_file_storage())
+        .collect::<Vec<_>>();
+    if !file_backed_indexes.is_empty() {
+        let index_ids = file_backed_indexes
+            .iter()
+            .map(|index_metadata| &index_metadata.index_id)
+            .join(", ");
+        let index_uris = file_backed_indexes
+            .iter()
+            .map(|index_metadata| &index_metadata.index_uri)
+            .join(", ");
+        warn!(
+            index_ids=%index_ids,
+            index_uris=%index_uris,
+            "Found some file-backed indexes in the metastore. Some nodes in the cluster may not have access to all index files."
         );
     }
     Ok(())

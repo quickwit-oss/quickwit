@@ -92,6 +92,37 @@ impl IndexerCounters {
     pub fn num_invalid_docs(&self) -> u64 {
         self.num_parse_errors + self.num_missing_fields
     }
+
+    pub fn record_parsing_error(&mut self, num_bytes: u64) {
+        self.num_parse_errors += 1;
+        self.overall_num_bytes += num_bytes;
+        crate::metrics::INDEXER_METRICS
+            .parsing_errors_num_docs_total
+            .inc();
+        crate::metrics::INDEXER_METRICS
+            .parsing_errors_num_bytes_total
+            .inc_by(num_bytes);
+    }
+
+    pub fn record_missing_field(&mut self, num_bytes: u64) {
+        self.num_missing_fields += 1;
+        self.overall_num_bytes += num_bytes;
+        crate::metrics::INDEXER_METRICS
+            .missing_field_num_docs_total
+            .inc();
+        crate::metrics::INDEXER_METRICS
+            .missing_field_num_bytes_total
+            .inc_by(num_bytes);
+    }
+
+    pub fn record_valid(&mut self, num_bytes: u64) {
+        self.num_valid_docs += 1;
+        self.overall_num_bytes += num_bytes;
+        crate::metrics::INDEXER_METRICS.valid_num_docs_total.inc();
+        crate::metrics::INDEXER_METRICS
+            .valid_num_bytes_total
+            .inc_by(num_bytes);
+    }
 }
 
 struct IndexerState {
@@ -134,7 +165,7 @@ impl IndexerState {
             ctx.progress().clone(),
             ctx.kill_switch().clone(),
         )?;
-        info!(split_id = %indexed_split.split_id, "new-split");
+        info!(split_id = indexed_split.split_id(), "new-split");
         Ok(indexed_split)
     }
 
@@ -198,7 +229,7 @@ impl IndexerState {
         // Parse the document
         let doc_parsing_result = self.doc_mapper.doc_from_json(doc_json);
         let (partition, document) = match doc_parsing_result {
-            Ok(doc) => doc,
+            Ok((partition, doc)) => (partition, doc),
             Err(doc_parsing_error) => {
                 warn!(err=?doc_parsing_error);
                 return match doc_parsing_error {
@@ -260,31 +291,30 @@ impl IndexerState {
             .context("Batch delta does not follow indexer checkpoint")?;
         for doc_json in batch.docs {
             let doc_json_num_bytes = doc_json.len() as u64;
-            counters.overall_num_bytes += doc_json_num_bytes;
             let prepared_doc = {
                 let _protect_zone = ctx.protect_zone();
                 self.prepare_document(doc_json)
             };
             match prepared_doc {
                 PrepareDocumentOutcome::ParsingError => {
-                    counters.num_parse_errors += 1;
+                    counters.record_parsing_error(doc_json_num_bytes);
                 }
                 PrepareDocumentOutcome::MissingField => {
-                    counters.num_missing_fields += 1;
+                    counters.record_missing_field(doc_json_num_bytes);
                 }
                 PrepareDocumentOutcome::Document {
                     document,
                     timestamp_opt,
                     partition,
                 } => {
+                    counters.record_valid(doc_json_num_bytes);
+                    counters.num_docs_in_workbench += 1;
                     let indexed_split =
                         self.get_or_create_indexed_split(partition, indexed_splits, ctx)?;
-                    indexed_split.docs_size_in_bytes += doc_json_num_bytes;
-                    counters.num_docs_in_workbench += 1;
-                    counters.num_valid_docs += 1;
-                    indexed_split.num_docs += 1;
+                    indexed_split.split_attrs.uncompressed_docs_size_in_bytes += doc_json_num_bytes;
+                    indexed_split.split_attrs.num_docs += 1;
                     if let Some(timestamp) = timestamp_opt {
-                        record_timestamp(timestamp, &mut indexed_split.time_range);
+                        record_timestamp(timestamp, &mut indexed_split.split_attrs.time_range);
                     }
                     let _protect_guard = ctx.protect_zone();
                     indexed_split
@@ -535,7 +565,7 @@ impl Indexer {
                 })?;
             } else {
                 info!(
-                    split_ids=?splits.iter().map(|split| &split.split_id).join(", "),
+                    split_ids=?splits.iter().map(|split| split.split_id()).join(", "),
                     "Splits' publish lock is dead."
                 );
                 // TODO: Remove the junk right away?
@@ -543,7 +573,7 @@ impl Indexer {
             return Ok(());
         }
         let num_splits = splits.len() as u64;
-        let split_ids = splits.iter().map(|split| &split.split_id).join(",");
+        let split_ids = splits.iter().map(|split| split.split_id()).join(",");
         info!(commit_trigger=?commit_trigger, split_ids=%split_ids, num_docs=self.counters.num_docs_in_workbench, "send-to-packager");
         ctx.send_message(
             &self.packager_mailbox,
@@ -641,7 +671,7 @@ mod tests {
                 num_splits_emitted: 0,
                 num_split_batches_emitted: 0,
                 num_docs_in_workbench: 2, //< we have not reached the commit limit yet.
-                overall_num_bytes: 387
+                overall_num_bytes: 387,
             }
         );
         indexer_mailbox
@@ -662,7 +692,7 @@ mod tests {
                 num_splits_emitted: 1,
                 num_split_batches_emitted: 1,
                 num_docs_in_workbench: 0, //< the num docs in split counter has been reset.
-                overall_num_bytes: 525
+                overall_num_bytes: 525,
             }
         );
         let output_messages = packager_inbox.drain_for_test();
@@ -670,7 +700,7 @@ mod tests {
         let batch = output_messages[0]
             .downcast_ref::<IndexedSplitBatch>()
             .unwrap();
-        assert_eq!(batch.splits[0].num_docs, 3);
+        assert_eq!(batch.splits[0].split_attrs.num_docs, 3);
         let sort_by_field = batch.splits[0].index.settings().sort_by_field.as_ref();
         assert!(sort_by_field.is_some());
         assert_eq!(sort_by_field.unwrap().field, "timestamp");
@@ -725,7 +755,7 @@ mod tests {
                 num_splits_emitted: 0,
                 num_split_batches_emitted: 0,
                 num_docs_in_workbench: 1,
-                overall_num_bytes: 137
+                overall_num_bytes: 137,
             }
         );
         universe.simulate_time_shift(Duration::from_secs(61)).await;
@@ -739,7 +769,7 @@ mod tests {
                 num_splits_emitted: 1,
                 num_split_batches_emitted: 1,
                 num_docs_in_workbench: 0,
-                overall_num_bytes: 137
+                overall_num_bytes: 137,
             }
         );
         let output_messages = packager_inbox.drain_for_test();
@@ -747,7 +777,7 @@ mod tests {
         let indexed_split_batch = output_messages[0]
             .downcast_ref::<IndexedSplitBatch>()
             .unwrap();
-        assert_eq!(indexed_split_batch.splits[0].num_docs, 1);
+        assert_eq!(indexed_split_batch.splits[0].split_attrs.num_docs, 1);
         Ok(())
     }
 
@@ -800,7 +830,7 @@ mod tests {
                 num_splits_emitted: 1,
                 num_split_batches_emitted: 1,
                 num_docs_in_workbench: 0,
-                overall_num_bytes: 137
+                overall_num_bytes: 137,
             }
         );
         let output_messages = packager_inbox.drain_for_test();
@@ -810,6 +840,7 @@ mod tests {
                 .downcast_ref::<IndexedSplitBatch>()
                 .unwrap()
                 .splits[0]
+                .split_attrs
                 .num_docs,
             1
         );
@@ -879,7 +910,7 @@ mod tests {
                 num_docs_in_workbench: 3,
                 num_splits_emitted: 0,
                 num_split_batches_emitted: 0,
-                overall_num_bytes: 169
+                overall_num_bytes: 169,
             }
         );
         universe.send_exit_with_success(&indexer_mailbox).await?;
@@ -894,7 +925,7 @@ mod tests {
                 num_docs_in_workbench: 0,
                 num_splits_emitted: 2,
                 num_split_batches_emitted: 1,
-                overall_num_bytes: 169
+                overall_num_bytes: 169,
             }
         );
 

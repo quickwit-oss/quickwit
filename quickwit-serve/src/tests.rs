@@ -25,24 +25,32 @@ use chitchat::transport::ChannelTransport;
 use quickwit_cluster::create_cluster_for_test;
 use quickwit_common::service::QuickwitService;
 use quickwit_common::uri::Uri;
-use quickwit_metastore::MockMetastore;
+use quickwit_metastore::{IndexMetadata, MockMetastore};
 use quickwit_proto::SearchRequest;
 
 use crate::test_utils::ClusterSandbox;
-use crate::{check_is_configured_for_cluster, node_readyness_reporting_task};
+use crate::{check_cluster_configuration, node_readyness_reporting_task};
 
-#[test]
-fn test_check_is_configured_for_cluster_on_single_node() {
-    check_is_configured_for_cluster(
-        &[],
-        &Uri::new("file://qwdata/indexes".to_string()),
-        [(
-            "foo-index".to_string(),
-            Uri::new("file:///qwdata/indexes/foo-index".to_string()),
-        )]
-        .into_iter(),
-    )
-    .unwrap();
+#[tokio::test]
+async fn test_check_cluster_configuration() {
+    let services = HashSet::from_iter([QuickwitService::Metastore]);
+    let peer_seeds = ["192.168.0.12:7280".to_string()];
+    let mut metastore = MockMetastore::new();
+
+    metastore
+        .expect_uri()
+        .return_const(Uri::for_test("file:///qwdata/indexes"));
+
+    metastore.expect_list_indexes_metadatas().return_once(|| {
+        Ok(vec![IndexMetadata::for_test(
+            "test-index",
+            "file:///qwdata/indexes/test-index",
+        )])
+    });
+
+    check_cluster_configuration(&services, &peer_seeds, Arc::new(metastore))
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

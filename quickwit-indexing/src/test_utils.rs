@@ -184,6 +184,7 @@ pub fn mock_split(split_id: &str) -> Split {
         split_state: SplitState::Published,
         split_metadata: mock_split_meta(split_id),
         update_timestamp: 0,
+        publish_timestamp: None,
     }
 }
 

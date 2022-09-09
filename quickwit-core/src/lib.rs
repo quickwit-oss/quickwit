@@ -30,7 +30,8 @@ mod tests {
 
     use quickwit_common::uri::Uri;
     use quickwit_config::{IndexConfig, IndexingSettings, SearchSettings};
-    use quickwit_indexing::{FileEntry, TestSandbox};
+    use quickwit_indexing::TestSandbox;
+    use quickwit_janitor::FileEntry;
     use quickwit_metastore::quickwit_metastore_uri_resolver;
     use quickwit_storage::StorageUriResolver;
 
@@ -93,6 +94,7 @@ mod tests {
             index_id: index_id.to_string(),
             index_uri: None,
             doc_mapping: serde_yaml::from_str(doc_mapping_yaml)?,
+            retention_policy: None,
             indexing_settings: IndexingSettings::default(),
             search_settings: SearchSettings::default(),
             sources: Vec::new(),

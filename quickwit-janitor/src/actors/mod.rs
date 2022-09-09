@@ -17,6 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod janitor_service;
+mod garbage_collector;
 
-pub use janitor_service::JanitorService;
+pub use garbage_collector::GarbageCollector;

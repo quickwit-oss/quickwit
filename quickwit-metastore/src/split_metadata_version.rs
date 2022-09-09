@@ -62,10 +62,6 @@ struct SplitMetadataV0 {
     /// A set of tags for categorizing and searching group of splits.
     #[serde(default)]
     pub tags: BTreeSet<String>,
-
-    /// Number of demux operations this split has undergone.
-    #[serde(default)]
-    pub demux_num_ops: usize,
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
@@ -88,7 +84,7 @@ impl From<SplitMetadataAndFooterV0> for SplitMetadata {
             time_range: v0.split_metadata.time_range,
             create_timestamp: v0.split_metadata.create_timestamp,
             tags: v0.split_metadata.tags,
-            demux_num_ops: v0.split_metadata.demux_num_ops,
+            index_id: "".to_string(),
         }
     }
 }
@@ -100,6 +96,10 @@ pub(crate) struct SplitMetadataV1 {
     /// In reality, some information may be implicitly configured
     /// in the storage URI resolver: for instance, the Amazon S3 region.
     pub split_id: String,
+
+    /// Id of the index this split belongs to.
+    #[serde(default)]
+    pub index_id: String,
 
     #[serde(default)]
     pub partition_id: u64,
@@ -132,10 +132,6 @@ pub(crate) struct SplitMetadataV1 {
     #[serde(default)]
     pub tags: BTreeSet<String>,
 
-    /// Number of demux operations this split has undergone.
-    #[serde(default)]
-    pub demux_num_ops: usize,
-
     /// Contains the range of bytes of the footer that needs to be downloaded
     /// in order to open a split.
     ///
@@ -163,6 +159,7 @@ impl From<SplitMetadataV1> for SplitMetadata {
 
         SplitMetadata {
             split_id: v1.split_id,
+            index_id: v1.index_id,
             partition_id: v1.partition_id,
             source_id,
             node_id,
@@ -172,7 +169,6 @@ impl From<SplitMetadataV1> for SplitMetadata {
             time_range: v1.time_range,
             create_timestamp: v1.create_timestamp,
             tags: v1.tags,
-            demux_num_ops: v1.demux_num_ops,
             footer_offsets: v1.footer_offsets,
         }
     }
@@ -182,6 +178,7 @@ impl From<SplitMetadata> for SplitMetadataV1 {
     fn from(split: SplitMetadata) -> Self {
         SplitMetadataV1 {
             split_id: split.split_id,
+            index_id: split.index_id,
             partition_id: split.partition_id,
             source_id: Some(split.source_id),
             node_id: Some(format!("{}/{}", split.node_id, split.pipeline_ord)),
@@ -190,7 +187,6 @@ impl From<SplitMetadata> for SplitMetadataV1 {
             time_range: split.time_range,
             create_timestamp: split.create_timestamp,
             tags: split.tags,
-            demux_num_ops: split.demux_num_ops,
             footer_offsets: split.footer_offsets,
         }
     }

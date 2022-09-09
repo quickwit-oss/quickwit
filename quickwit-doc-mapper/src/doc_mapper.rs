@@ -99,11 +99,6 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     fn tag_field_names(&self) -> BTreeSet<String> {
         Default::default()
     }
-
-    /// Returns the demux field name.
-    fn demux_field_name(&self) -> Option<String> {
-        None
-    }
 }
 
 clone_trait_object!(DocMapper);
