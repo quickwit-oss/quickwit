@@ -37,6 +37,7 @@ use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
+use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use quickwit_storage::Storage;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 
@@ -47,11 +48,9 @@ use self::store_operations::{
     delete_index, fetch_and_build_indexes_states, fetch_index, index_exists, put_index,
     put_indexes_states,
 };
-use super::delete_task::DeleteTask;
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    DeleteQuery, IndexMetadata, Metastore, MetastoreError, MetastoreResult, Split, SplitMetadata,
-    SplitState,
+    IndexMetadata, Metastore, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState,
 };
 
 /// State of an index tracked by the metastore.
@@ -544,13 +543,8 @@ impl Metastore for FileBackedMetastore {
         Ok(DeleteTask {
             create_timestamp,
             opstamp,
-            delete_query,
+            delete_query: Some(delete_query),
         })
-    }
-
-    async fn delete_delete_tasks(&self, index_id: &str) -> MetastoreResult<()> {
-        self.mutate(index_id, |index| index.delete_delete_tasks())
-            .await
     }
 
     async fn update_splits_delete_opstamp<'a>(
@@ -619,6 +613,7 @@ mod tests {
     use std::sync::Arc;
 
     use futures::executor::block_on;
+    use quickwit_proto::metastore_api::DeleteQuery;
     use quickwit_storage::{MockStorage, RamStorage, Storage, StorageErrorKind};
     use rand::Rng;
     use time::OffsetDateTime;
@@ -630,7 +625,7 @@ mod tests {
     };
     use super::{FileBackedIndex, FileBackedMetastore, IndexState};
     use crate::tests::test_suite::DefaultForTest;
-    use crate::{DeleteQuery, IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
+    use crate::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
 
     #[tokio::test]
     async fn test_file_backed_metastore_index_exists() {

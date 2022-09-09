@@ -32,7 +32,8 @@ use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::build_doc_mapper;
 use quickwit_directories::UnionDirectory;
 use quickwit_doc_mapper::{DocMapper, QUICKWIT_TOKENIZER_MANAGER};
-use quickwit_metastore::{DeleteTask, Metastore, SplitMetadata};
+use quickwit_metastore::{Metastore, SplitMetadata};
+use quickwit_proto::metastore_api::DeleteTask;
 use quickwit_proto::SearchRequest;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
 use tantivy::{Directory, Index, IndexMeta, SegmentId, SegmentReader, TantivyError};
@@ -103,7 +104,6 @@ impl Handler<MergeScratch> for MergeExecutor {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         let merge_op = &merge_scratch.merge_operation;
-
         match merge_op.operation_type {
             MergeOperationType::Merge => {
                 self.process_merge(
@@ -155,7 +155,7 @@ fn open_split_directories(
 }
 
 /// Creates a directory with a single `meta.json` file describe in `index_meta`
-pub fn create_shadowing_meta_json_directory(index_meta: IndexMeta) -> anyhow::Result<RamDirectory> {
+fn create_shadowing_meta_json_directory(index_meta: IndexMeta) -> anyhow::Result<RamDirectory> {
     let union_index_meta_json = serde_json::to_string_pretty(&index_meta)?;
     let ram_directory = RamDirectory::default();
     ram_directory.atomic_write(Path::new("meta.json"), union_index_meta_json.as_bytes())?;
@@ -181,22 +181,6 @@ fn sum_doc_sizes_in_bytes(splits: &[SplitMetadata]) -> u64 {
 
 fn sum_num_docs(splits: &[SplitMetadata]) -> u64 {
     splits.iter().map(|split| split.num_docs as u64).sum()
-}
-
-fn merge_all_segments(index: &Index) -> anyhow::Result<()> {
-    let segment_ids: Vec<SegmentId> = index
-        .searchable_segment_metas()?
-        .into_iter()
-        .map(|segment_meta| segment_meta.id())
-        .collect();
-    if segment_ids.len() <= 1 {
-        return Ok(());
-    }
-    debug!(segment_ids=?segment_ids,"merging-segments");
-    let mut index_writer = index.writer_with_num_threads(1, 10_000_000)?;
-    // TODO it would be nice if tantivy could let us run the merge in the current thread.
-    index_writer.merge(&segment_ids).wait()?;
-    Ok(())
 }
 
 /// Following Boost's hash_combine.
@@ -225,9 +209,11 @@ pub fn combine_partition_ids(splits: &[SplitMetadata]) -> u64 {
     combine_partition_ids_aux(splits.iter().map(|split| split.partition_id))
 }
 
-fn merge_split_directories(
+async fn merge_split_directories(
     union_index_meta: IndexMeta,
     split_directories: Vec<Box<dyn Directory>>,
+    delete_tasks: Vec<DeleteTask>,
+    doc_mapper_opt: Option<Arc<dyn DocMapper>>,
     output_path: &Path,
     ctx: &ActorContext<MergeExecutor>,
 ) -> anyhow::Result<ControlledDirectory> {
@@ -245,67 +231,57 @@ fn merge_split_directories(
     directory_stack.extend(split_directories.into_iter());
     let union_directory = UnionDirectory::union_of(directory_stack);
     let union_index = open_index(union_directory)?;
+
     ctx.record_progress();
     let _protect_guard = ctx.protect_zone();
-    merge_all_segments(&union_index)?;
-    Ok(output_directory)
-}
 
-/// Applies delete tasks on the directory stack, commit, and merge to rebuild the split
-/// without the deleted documents.
-/// The directory stack is made of:
-/// - The output directory that is a `MmapDirectory` on `output_path`. This directory receives all
-///   writes.
-/// - The current split directory which is expected to be a `BundleDirectory` as the split has just
-///   been downloaded. This `BundleDirectory` is read-only.
-fn apply_deletes_and_merge_split(
-    doc_mapper: Arc<dyn DocMapper>,
-    delete_tasks: Vec<DeleteTask>,
-    split_directory: Box<dyn Directory>,
-    output_path: &Path,
-    ctx: &ActorContext<MergeExecutor>,
-) -> anyhow::Result<ControlledDirectory> {
-    let output_directory = ControlledDirectory::new(
-        Box::new(MmapDirectory::open(output_path)?),
-        ctx.progress().clone(),
-        ctx.kill_switch().clone(),
-    );
-    let directory_stack: Vec<Box<dyn Directory>> =
-        vec![output_directory.box_clone(), split_directory];
-    let union_directory = UnionDirectory::union_of(directory_stack);
-    let union_index = open_index(union_directory)?;
-    ctx.record_progress();
-    let _protect_guard = ctx.protect_zone();
-    let mut index_writer = union_index.writer_with_num_threads(1, 10_000_000)?;
-
-    for delete_task in delete_tasks {
-        // TODO: currently tantivy only support deletes with a term query.
-        // Until tantivy supports a delete on the `Query` trait, we delete all terms
-        // present in the query so we can test simple queries.
-        // WARNING: this is broken by design and should not go in production.
-        let search_request = SearchRequest {
-            index_id: delete_task.delete_query.index_id,
-            query: delete_task.delete_query.query,
-            start_timestamp: delete_task.delete_query.start_timestamp,
-            end_timestamp: delete_task.delete_query.end_timestamp,
-            search_fields: delete_task.delete_query.search_fields,
-            ..Default::default()
-        };
-        debug!(
-            "Delete all documents matched by query `{:?}`",
-            search_request
-        );
-        let query = doc_mapper.query(union_index.schema(), &search_request)?;
-        query.query_terms(&mut |term, _need_position| {
-            index_writer.delete_term(term.clone());
-        });
+    let mut index_writer = union_index.writer_with_num_threads(1, 3_000_000)?;
+    let num_delete_tasks = delete_tasks.len();
+    if num_delete_tasks > 0 {
+        let doc_mapper = doc_mapper_opt
+            .ok_or_else(|| anyhow!("Doc mapper must be present if there are delete tasks."))?;
+        for delete_task in delete_tasks {
+            // TODO: currently tantivy only support deletes with a term query.
+            // Until tantivy supports a delete on the `Query` trait, we delete all terms
+            // present in the query so we can test simple queries.
+            // WARNING: this is broken by design and should not go in production.
+            let delete_query = delete_task
+                .delete_query
+                .expect("A delete task must have a delete query.");
+            let search_request = SearchRequest {
+                index_id: delete_query.index_id,
+                query: delete_query.query,
+                start_timestamp: delete_query.start_timestamp,
+                end_timestamp: delete_query.end_timestamp,
+                search_fields: delete_query.search_fields,
+                ..Default::default()
+            };
+            debug!(
+                "Delete all documents matched by query `{:?}`",
+                search_request
+            );
+            let query = doc_mapper.query(union_index.schema(), &search_request)?;
+            query.query_terms(&mut |term, _need_position| {
+                index_writer.delete_term(term.clone());
+            });
+        }
+        debug!("commit-delete-operations");
+        index_writer.commit()?;
     }
-    index_writer.commit()?;
+
     let segment_ids: Vec<SegmentId> = union_index
         .searchable_segment_metas()?
         .into_iter()
         .map(|segment_meta| segment_meta.id())
         .collect();
+
+    // A merge is useless if there is no delete and only one segment.
+    if num_delete_tasks == 0 && segment_ids.len() <= 1 {
+        return Ok(output_directory);
+    }
+
+    debug!(segment_ids=?segment_ids,"merging-segments");
+    // TODO it would be nice if tantivy could let us run the merge in the current thread.
     index_writer.merge(&segment_ids).wait()?;
 
     Ok(output_directory)
@@ -346,9 +322,12 @@ impl MergeExecutor {
         let controlled_directory = merge_split_directories(
             union_index_meta,
             split_directories,
+            Vec::new(),
+            None,
             merge_scratch_directory.path(),
             ctx,
-        )?;
+        )
+        .await?;
         fail_point!("after-merge-split");
         info!(
             elapsed_secs = start.elapsed().as_secs_f32(),
@@ -405,7 +384,7 @@ impl MergeExecutor {
         &mut self,
         merge_split_id: String,
         mut splits: Vec<SplitMetadata>,
-        mut tantivy_dirs: Vec<Box<dyn Directory>>,
+        tantivy_dirs: Vec<Box<dyn Directory>>,
         merge_scratch_directory: ScratchDirectory,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
@@ -414,21 +393,18 @@ impl MergeExecutor {
             1,
             "Delete tasks can be applied only on one split."
         );
-        let split = splits.pop().unwrap();
         assert_eq!(tantivy_dirs.len(), 1);
-        let tantivy_dir = tantivy_dirs.pop().unwrap();
+        let split = splits.pop().unwrap();
         let index_metadata = self.metastore.index_metadata(&split.index_id).await?;
         let doc_mapper = build_doc_mapper(
             &index_metadata.doc_mapping,
             &index_metadata.search_settings,
             &index_metadata.indexing_settings,
         )?;
-
         let delete_tasks = self
             .metastore
             .list_delete_tasks(&split.index_id, split.delete_opstamp)
             .await?;
-
         if delete_tasks.is_empty() {
             warn!(
                 "No delete task found for split `{}` with `delete_optamp` = `{}`.",
@@ -441,7 +417,7 @@ impl MergeExecutor {
             .iter()
             .map(|delete_task| delete_task.opstamp)
             .max()
-            .expect("There is at least one delete task");
+            .expect("There is at least one delete task.");
         info!(
             delete_opstamp_start = split.delete_opstamp,
             num_delete_tasks = delete_tasks.len()
@@ -449,13 +425,16 @@ impl MergeExecutor {
 
         info!("delete-task-start");
         let start = Instant::now();
-        let controlled_directory = apply_deletes_and_merge_split(
-            doc_mapper.clone(),
+        let (union_index_meta, split_directories) = open_split_directories(&tantivy_dirs)?;
+        let controlled_directory = merge_split_directories(
+            union_index_meta,
+            split_directories,
             delete_tasks,
-            tantivy_dir,
+            Some(doc_mapper.clone()),
             merge_scratch_directory.path(),
             ctx,
-        )?;
+        )
+        .await?;
         info!(
             elapsed_secs = start.elapsed().as_secs_f32(),
             "delete-task-success"
@@ -543,7 +522,8 @@ fn open_index<T: Into<Box<dyn Directory>>>(directory: T) -> tantivy::Result<Inde
 mod tests {
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_common::split_file;
-    use quickwit_metastore::{DeleteQuery, SplitMetadata};
+    use quickwit_metastore::SplitMetadata;
+    use quickwit_proto::metastore_api::DeleteQuery;
 
     use super::*;
     use crate::merge_policy::MergeOperation;
@@ -666,6 +646,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_and_merge_executor() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
         let index_id = "test-delete-and-merge-index";
         let doc_mapping_yaml = r#"
             field_mappings:
@@ -702,20 +683,37 @@ mod tests {
             .unwrap();
         let expected_uncompressed_docs_size_in_bytes =
             (2_f32 * split_meta.uncompressed_docs_size_in_bytes as f32 / 3_f32) as u64;
+        // let mut tantivy_dirs: Vec<Box<dyn Directory>> = vec![];
+        // for split_meta in &split_metas {
+        //     let split_filename = split_file(split_meta.split_id());
+        //     let dest_filepath = downloaded_splits_directory.path().join(&split_filename);
+        //     test_sandbox
+        //         .storage()
+        //         .copy_to_file(Path::new(&split_filename), &dest_filepath)
+        //         .await?;
+
+        //     tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap())
+        // }
+        // let merge_scratch = MergeScratch {
+        //     merge_operation: MergeOperation::new_merge_operation(split_metas),
+        //     tantivy_dirs,
+        //     merge_scratch_directory,
+        //     downloaded_splits_directory,
+        // };
         let merge_scratch_directory = ScratchDirectory::for_test()?;
         let downloaded_splits_directory =
             merge_scratch_directory.named_temp_child("downloaded-splits-")?;
         let split_filename = split_file(split_meta.split_id());
         let dest_filepath = downloaded_splits_directory.path().join(&split_filename);
+        println!("dest_filepath {:?}", dest_filepath);
         test_sandbox
             .storage()
             .copy_to_file(Path::new(&split_filename), &dest_filepath)
             .await?;
         let tantivy_dir = get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap();
-        let tantivy_dirs: Vec<Box<dyn Directory>> = vec![tantivy_dir];
         let merge_scratch = MergeScratch {
             merge_operation: MergeOperation::new_delete_and_merge_operation(split_meta),
-            tantivy_dirs,
+            tantivy_dirs: vec![tantivy_dir],
             merge_scratch_directory,
             downloaded_splits_directory,
         };

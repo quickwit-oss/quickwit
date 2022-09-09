@@ -24,19 +24,18 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::Range;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 
 use itertools::Itertools;
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
+use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    split_tag_filter, split_time_range_filter, DeleteQuery, DeleteTask, IndexMetadata,
-    MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState,
+    split_tag_filter, split_time_range_filter, IndexMetadata, MetastoreError, MetastoreResult,
+    Split, SplitMetadata, SplitState,
 };
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
@@ -303,6 +302,7 @@ impl FileBackedIndex {
         Ok(())
     }
 
+    /// Publishes splits.
     pub(crate) fn publish_splits<'a>(
         &mut self,
         split_ids: &[&'a str],
@@ -317,6 +317,7 @@ impl FileBackedIndex {
         Ok(())
     }
 
+    /// Lists splits.
     pub(crate) fn list_splits(
         &self,
         state: SplitState,
@@ -343,11 +344,13 @@ impl FileBackedIndex {
         Ok(splits)
     }
 
+    /// Lists all splits.
     pub(crate) fn list_all_splits(&self) -> MetastoreResult<Vec<Split>> {
         let splits = self.splits.values().cloned().collect();
         Ok(splits)
     }
 
+    /// Deletes a split.
     fn delete_split(&mut self, split_id: &str) -> DeleteSplitOutcome {
         match self.splits.get(split_id).map(|split| split.split_state) {
             // Only `Staged` and `MarkedForDeletion` splits can be deleted
@@ -390,20 +393,24 @@ impl FileBackedIndex {
         Ok(())
     }
 
+    /// Adds a source. Returns that a mutation occurred (true).
     pub(crate) fn add_source(&mut self, source: SourceConfig) -> MetastoreResult<bool> {
         self.metadata.add_source(source)?;
         Ok(true)
     }
 
+    /// Deletes the source. Returns that a mutation occurred (true).
     pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<bool> {
         self.metadata.delete_source(source_id)?;
         Ok(true)
     }
 
+    /// Resets the checkpoint of a source. Returns whether a mutation occurred.
     pub(crate) fn reset_source_checkpoint(&mut self, source_id: &str) -> MetastoreResult<bool> {
         Ok(self.metadata.checkpoint.reset_source(source_id))
     }
 
+    /// Creates [`DeleteTask`] from a [`DeleteQuery`].
     pub(crate) fn create_delete_task(
         &mut self,
         delete_query: DeleteQuery,
@@ -412,12 +419,13 @@ impl FileBackedIndex {
         let delete_task = DeleteTask {
             create_timestamp: now_timestamp,
             opstamp: self.stamper.stamp() as u64,
-            delete_query,
+            delete_query: Some(delete_query),
         };
         self.delete_tasks.push(delete_task.clone());
         Ok(delete_task)
     }
 
+    /// Returns index last delete opstamp.
     pub(crate) fn last_delete_opstamp(&self) -> u64 {
         self.delete_tasks
             .iter()
@@ -426,11 +434,7 @@ impl FileBackedIndex {
             .unwrap_or(0)
     }
 
-    pub(crate) fn delete_delete_tasks(&mut self) -> MetastoreResult<bool> {
-        self.delete_tasks.clear();
-        Ok(true)
-    }
-
+    /// Updates splits delete opstamp. Returns that a mutation occurred (true).
     pub(crate) fn update_splits_delete_opstamp(
         &mut self,
         split_ids: &[&str],
@@ -448,6 +452,7 @@ impl FileBackedIndex {
         Ok(true)
     }
 
+    /// Lists delete tasks with opstamp > `opstamp_start`.
     pub(crate) fn list_delete_tasks(&self, opstamp_start: u64) -> MetastoreResult<Vec<DeleteTask>> {
         let delete_tasks = self
             .delete_tasks
@@ -461,32 +466,24 @@ impl FileBackedIndex {
 
 /// Stamper provides Opstamps, which is just an auto-increment id to label
 /// a delete operation.
-/// Copy-pasted from tantivy with an `AtomicUsize` to have a broader support.
 #[derive(Clone, Default)]
-pub struct Stamper(Arc<AtomicUsize>);
+struct Stamper(usize);
 
 impl Stamper {
     /// Creates a [`Stamper`].
     pub fn new(first_opstamp: usize) -> Self {
-        Self(Arc::new(AtomicUsize::new(first_opstamp)))
+        Self(first_opstamp)
     }
 
     /// Increments the stamper by 1 and returns the incremented value.
-    pub fn stamp(&self) -> usize {
-        (self.0.fetch_add(1usize, Ordering::SeqCst) + 1) as usize
-    }
-
-    /// Reverts the stamper to a given `Opstamp` value and returns it
-    pub fn revert(&self, to_opstamp: usize) -> usize {
-        self.0.store(to_opstamp, Ordering::SeqCst);
-        to_opstamp
+    pub fn stamp(&mut self) -> usize {
+        self.0 += 1;
+        self.0
     }
 }
 
 impl Debug for Stamper {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        fmt.debug_struct("Stamper")
-            .field("stamp", &self.0.load(Ordering::Relaxed))
-            .finish()
+        fmt.debug_struct("Stamper").field("stamp", &self.0).finish()
     }
 }

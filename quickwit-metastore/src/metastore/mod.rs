@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod delete_task;
 pub mod file_backed_metastore;
 pub mod grpc_metastore;
 mod index_metadata;
@@ -29,11 +28,11 @@ mod postgresql_model;
 use std::ops::Range;
 
 use async_trait::async_trait;
-pub use delete_task::{DeleteQuery, DeleteTask};
 pub use index_metadata::IndexMetadata;
 use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
+use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
@@ -215,9 +214,6 @@ pub trait Metastore: Send + Sync + 'static {
 
     /// Creates a [`DeleteTask`] from a [`DeleteQuery`].
     async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask>;
-
-    /// Deletes all [`DeleteTask`] for a given `index_id`.
-    async fn delete_delete_tasks(&self, index_id: &str) -> MetastoreResult<()>;
 
     /// Updates splits `split_metadata.delete_opstamp` to the value `delete_opstamp`.
     async fn update_splits_delete_opstamp<'a>(

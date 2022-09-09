@@ -30,8 +30,9 @@ use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_indexing::actors::MergeSplitDownloader;
 use quickwit_indexing::merge_policy::{MergeOperation, MergePolicy};
 use quickwit_metastore::{
-    split_tag_filter, split_time_range_filter, DeleteTask, Metastore, MetastoreResult, Split,
+    split_tag_filter, split_time_range_filter, Metastore, MetastoreResult, Split,
 };
+use quickwit_proto::metastore_api::DeleteTask;
 use quickwit_proto::SearchRequest;
 use quickwit_search::{jobs_to_leaf_request, SearchClientPool, SearchJob};
 use tracing::{debug, info};
@@ -214,17 +215,19 @@ impl DeleteTaskPlanner {
             let pending_and_matching_metadata_tasks = pending_tasks
                 .into_iter()
                 .filter(|delete_task| {
+                    let delete_query = delete_task
+                        .delete_query
+                        .as_ref()
+                        .expect("Delete task must have a delete query.");
                     let time_range = extract_time_range(
-                        delete_task.delete_query.start_timestamp,
-                        delete_task.delete_query.end_timestamp,
+                        delete_query.start_timestamp,
+                        delete_query.end_timestamp,
                     );
-                    split_time_range_filter(stale_split, time_range.as_ref())
-                })
-                .filter(|delete_task| {
                     // TODO: validate the query at the beginning and return an appropriate error.
-                    let tags_filter = extract_tags_from_query(&delete_task.delete_query.query)
+                    let tags_filter = extract_tags_from_query(&delete_query.query)
                         .expect("Delete query must have been validated upfront.");
-                    split_tag_filter(stale_split, tags_filter.as_ref())
+                    split_time_range_filter(stale_split, time_range.as_ref())
+                        && split_tag_filter(stale_split, tags_filter.as_ref())
                 })
                 .collect_vec();
 
@@ -271,12 +274,16 @@ impl DeleteTaskPlanner {
             .search_client_pool
             .assign_job(search_job.clone(), &HashSet::new())?;
         for delete_task in delete_tasks {
+            let delete_query = delete_task
+                .delete_query
+                .as_ref()
+                .expect("Delete task must have a delete query.");
             let search_request = SearchRequest {
-                index_id: delete_task.delete_query.index_id.clone(),
-                query: delete_task.delete_query.query.clone(),
-                start_timestamp: delete_task.delete_query.start_timestamp,
-                end_timestamp: delete_task.delete_query.end_timestamp,
-                search_fields: delete_task.delete_query.search_fields.clone(),
+                index_id: delete_query.index_id.clone(),
+                query: delete_query.query.clone(),
+                start_timestamp: delete_query.start_timestamp,
+                end_timestamp: delete_query.end_timestamp,
+                search_fields: delete_query.search_fields.clone(),
                 max_hits: 0,
                 ..Default::default()
             };
@@ -361,7 +368,8 @@ mod tests {
         MergeOperation, StableMultitenantWithTimestampMergePolicy,
     };
     use quickwit_indexing::TestSandbox;
-    use quickwit_metastore::{DeleteQuery, SplitMetadata};
+    use quickwit_metastore::SplitMetadata;
+    use quickwit_proto::metastore_api::DeleteQuery;
     use quickwit_proto::{LeafSearchRequest, LeafSearchResponse};
     use quickwit_search::MockSearchService;
 

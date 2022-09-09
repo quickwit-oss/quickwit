@@ -291,7 +291,8 @@ mod tests {
     use quickwit_actors::{Health, Universe};
     use quickwit_config::IndexingSettings;
     use quickwit_indexing::TestSandbox;
-    use quickwit_metastore::{DeleteQuery, SplitState};
+    use quickwit_metastore::SplitState;
+    use quickwit_proto::metastore_api::DeleteQuery;
     use quickwit_proto::{LeafSearchRequest, LeafSearchResponse};
     use quickwit_search::{MockSearchService, SearchClientPool};
 

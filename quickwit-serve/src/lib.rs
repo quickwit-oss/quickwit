@@ -54,7 +54,7 @@ use quickwit_indexing::start_indexing_service;
 use quickwit_ingest_api::{start_ingest_api_service, IngestApiService};
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreGrpcClient};
-use quickwit_search::{start_searcher_service, SearchService};
+use quickwit_search::{start_searcher_service, SearchClientPool, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use serde::{Deserialize, Serialize};
 use tracing::{error, warn};
@@ -156,12 +156,18 @@ pub async fn serve_quickwit(
         (None, None)
     };
 
+    let search_client_pool = SearchClientPool::create_and_keep_updated(
+        &cluster.members(),
+        cluster.member_change_watcher(),
+    )
+    .await?;
+
     let janitor_service = if services.contains(&QuickwitService::Janitor) {
         let janitor_service = start_janitor_service(
             &universe,
             &config,
             metastore.clone(),
-            cluster.clone(),
+            search_client_pool.clone(),
             storage_resolver.clone(),
         )
         .await?;
@@ -174,7 +180,7 @@ pub async fn serve_quickwit(
         &config,
         metastore.clone(),
         storage_resolver.clone(),
-        cluster.clone(),
+        search_client_pool,
     )
     .await?;
 

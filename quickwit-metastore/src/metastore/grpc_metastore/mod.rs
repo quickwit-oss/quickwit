@@ -35,12 +35,11 @@ use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::metastore_api_service_client::MetastoreApiServiceClient;
 use quickwit_proto::metastore_api::{
-    AddSourceRequest, CreateIndexRequest, DeleteDeleteTasksRequest, DeleteIndexRequest,
-    DeleteQueryRequest, DeleteSourceRequest, DeleteSplitsRequest, IndexMetadataRequest,
-    LastDeleteOpstampRequest, ListAllSplitsRequest, ListDeleteTasksRequest,
-    ListIndexesMetadatasRequest, ListSplitsRequest, ListStaleSplitsRequest,
-    MarkSplitsForDeletionRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
-    StageSplitRequest, UpdateSplitsDeleteOpstampRequest,
+    AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, DeleteQuery, DeleteSourceRequest,
+    DeleteSplitsRequest, DeleteTask, IndexMetadataRequest, LastDeleteOpstampRequest,
+    ListAllSplitsRequest, ListDeleteTasksRequest, ListIndexesMetadatasRequest, ListSplitsRequest,
+    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest,
+    ResetSourceCheckpointRequest, StageSplitRequest, UpdateSplitsDeleteOpstampRequest,
 };
 use quickwit_proto::tonic::transport::{Channel, Endpoint};
 use quickwit_proto::tonic::Status;
@@ -53,11 +52,9 @@ use tower::timeout::error::Elapsed;
 use tower::timeout::Timeout;
 use tracing::{debug, error, info};
 
-use super::delete_task::DeleteTask;
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    DeleteQuery, IndexMetadata, Metastore, MetastoreError, MetastoreResult, Split, SplitMetadata,
-    SplitState,
+    IndexMetadata, Metastore, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState,
 };
 
 const CLIENT_TIMEOUT_DURATION: Duration = if cfg!(test) {
@@ -447,28 +444,14 @@ impl Metastore for MetastoreGrpcClient {
     }
 
     async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask> {
-        let request = DeleteQueryRequest::from(delete_query);
         let response = self
             .0
             .clone()
-            .create_delete_task(request)
+            .create_delete_task(delete_query)
             .await
             .map(|tonic_response| tonic_response.into_inner())
             .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        Ok(DeleteTask::from(response))
-    }
-
-    async fn delete_delete_tasks(&self, index_id: &str) -> MetastoreResult<()> {
-        let request = DeleteDeleteTasksRequest {
-            index_id: index_id.to_string(),
-        };
-        self.0
-            .clone()
-            .delete_delete_tasks(request)
-            .await
-            .map(|tonic_response| tonic_response.into_inner())
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        Ok(())
+        Ok(response)
     }
 
     async fn update_splits_delete_opstamp<'a>(

@@ -144,17 +144,17 @@ pub struct SourceResponse {
 
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeleteTaskResponse {
+pub struct DeleteTask {
     #[prost(int64, tag="1")]
     pub create_timestamp: i64,
     #[prost(uint64, tag="2")]
     pub opstamp: u64,
     #[prost(message, optional, tag="3")]
-    pub delete_query: ::core::option::Option<DeleteQueryRequest>,
+    pub delete_query: ::core::option::Option<DeleteQuery>,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeleteQueryRequest {
+pub struct DeleteQuery {
     /// / Index ID.
     #[prost(string, tag="1")]
     pub index_id: ::prost::alloc::string::String,
@@ -199,12 +199,6 @@ pub struct LastDeleteOpstampResponse {
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeleteDeleteTasksRequest {
-    #[prost(string, tag="1")]
-    pub index_id: ::prost::alloc::string::String,
-}
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListStaleSplitsRequest {
     #[prost(string, tag="1")]
     pub index_id: ::prost::alloc::string::String,
@@ -225,7 +219,7 @@ pub struct ListDeleteTasksRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListDeleteTasksResponse {
     #[prost(message, repeated, tag="1")]
-    pub delete_tasks: ::prost::alloc::vec::Vec<DeleteTaskResponse>,
+    pub delete_tasks: ::prost::alloc::vec::Vec<DeleteTask>,
 }
 /// Generated client implementations.
 pub mod metastore_api_service_client {
@@ -582,8 +576,8 @@ pub mod metastore_api_service_client {
         /// Creates a delete task.
         pub async fn create_delete_task(
             &mut self,
-            request: impl tonic::IntoRequest<super::DeleteQueryRequest>,
-        ) -> Result<tonic::Response<super::DeleteTaskResponse>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::DeleteQuery>,
+        ) -> Result<tonic::Response<super::DeleteTask>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -596,26 +590,6 @@ pub mod metastore_api_service_client {
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_metastore_api.MetastoreApiService/create_delete_task",
-            );
-            self.inner.unary(request.into_request(), path, codec).await
-        }
-        /// Deletes all delete tasks for a given `index_id`.
-        pub async fn delete_delete_tasks(
-            &mut self,
-            request: impl tonic::IntoRequest<super::DeleteDeleteTasksRequest>,
-        ) -> Result<tonic::Response<super::DeleteTasksResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/quickwit_metastore_api.MetastoreApiService/delete_delete_tasks",
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
@@ -764,13 +738,8 @@ pub mod metastore_api_service_server {
         /// Creates a delete task.
         async fn create_delete_task(
             &self,
-            request: tonic::Request<super::DeleteQueryRequest>,
-        ) -> Result<tonic::Response<super::DeleteTaskResponse>, tonic::Status>;
-        /// Deletes all delete tasks for a given `index_id`.
-        async fn delete_delete_tasks(
-            &self,
-            request: tonic::Request<super::DeleteDeleteTasksRequest>,
-        ) -> Result<tonic::Response<super::DeleteTasksResponse>, tonic::Status>;
+            request: tonic::Request<super::DeleteQuery>,
+        ) -> Result<tonic::Response<super::DeleteTask>, tonic::Status>;
         /// Updates splits `delete_opstamp`.
         async fn update_splits_delete_opstamp(
             &self,
@@ -1412,16 +1381,16 @@ pub mod metastore_api_service_server {
                     struct create_delete_taskSvc<T: MetastoreApiService>(pub Arc<T>);
                     impl<
                         T: MetastoreApiService,
-                    > tonic::server::UnaryService<super::DeleteQueryRequest>
+                    > tonic::server::UnaryService<super::DeleteQuery>
                     for create_delete_taskSvc<T> {
-                        type Response = super::DeleteTaskResponse;
+                        type Response = super::DeleteTask;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::DeleteQueryRequest>,
+                            request: tonic::Request<super::DeleteQuery>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
                             let fut = async move {
@@ -1436,46 +1405,6 @@ pub mod metastore_api_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = create_delete_taskSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/quickwit_metastore_api.MetastoreApiService/delete_delete_tasks" => {
-                    #[allow(non_camel_case_types)]
-                    struct delete_delete_tasksSvc<T: MetastoreApiService>(pub Arc<T>);
-                    impl<
-                        T: MetastoreApiService,
-                    > tonic::server::UnaryService<super::DeleteDeleteTasksRequest>
-                    for delete_delete_tasksSvc<T> {
-                        type Response = super::DeleteTasksResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::DeleteDeleteTasksRequest>,
-                        ) -> Self::Future {
-                            let inner = self.0.clone();
-                            let fut = async move {
-                                (*inner).delete_delete_tasks(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = delete_delete_tasksSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

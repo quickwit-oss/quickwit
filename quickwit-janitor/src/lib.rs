@@ -20,7 +20,6 @@
 use std::sync::Arc;
 
 use quickwit_actors::Universe;
-use quickwit_cluster::Cluster;
 use quickwit_config::QuickwitConfig;
 use quickwit_metastore::Metastore;
 use quickwit_search::SearchClientPool;
@@ -42,17 +41,12 @@ pub async fn start_janitor_service(
     universe: &Universe,
     config: &QuickwitConfig, // kept it for retention policy
     metastore: Arc<dyn Metastore>,
-    cluster: Arc<Cluster>,
+    search_client_pool: SearchClientPool,
     storage_uri_resolver: StorageUriResolver,
 ) -> anyhow::Result<JanitorService> {
     info!("Starting janitor service.");
     let garbage_collector = GarbageCollector::new(metastore.clone(), storage_uri_resolver.clone());
     let (_, garbage_collector_handle) = universe.spawn_actor(garbage_collector).spawn();
-    let search_client_pool = SearchClientPool::create_and_keep_updated(
-        &cluster.members(),
-        cluster.member_change_watcher(),
-    )
-    .await?;
     let delete_task_service = DeleteTaskService::new(
         metastore,
         search_client_pool,

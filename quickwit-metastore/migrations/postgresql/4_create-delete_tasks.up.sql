@@ -4,5 +4,5 @@ CREATE TABLE IF NOT EXISTS delete_tasks (
     index_id VARCHAR(50) NOT NULL,
     delete_query_json TEXT NOT NULL,
 
-    FOREIGN KEY(index_id) REFERENCES indexes(index_id)
+    FOREIGN KEY(index_id) REFERENCES indexes(index_id) ON DELETE CASCADE
 );

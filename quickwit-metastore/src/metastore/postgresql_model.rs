@@ -20,12 +20,12 @@
 use std::convert::TryInto;
 use std::str::FromStr;
 
+use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask as QuickwitDeleteTask};
 use tracing::error;
 
-use super::delete_task::DeleteQuery;
 use crate::{
-    DeleteTask as QuickwitDeleteTask, IndexMetadata, MetastoreError, MetastoreResult,
-    Split as QuickwitSplit, SplitMetadata, SplitState,
+    IndexMetadata, MetastoreError, MetastoreResult, Split as QuickwitSplit, SplitMetadata,
+    SplitState,
 };
 
 #[derive(sqlx::FromRow, Debug)]
@@ -196,7 +196,7 @@ impl TryInto<QuickwitDeleteTask> for DeleteTask {
         Ok(QuickwitDeleteTask {
             create_timestamp: self.create_timestamp.assume_utc().unix_timestamp(),
             opstamp: self.opstamp as u64,
-            delete_query,
+            delete_query: Some(delete_query),
         })
     }
 }

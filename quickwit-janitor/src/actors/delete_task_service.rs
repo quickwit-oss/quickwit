@@ -26,14 +26,13 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler
 use quickwit_metastore::{IndexMetadata, Metastore};
 use quickwit_search::SearchClientPool;
 use quickwit_storage::StorageUriResolver;
-use serde::{Deserialize, Serialize};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use super::delete_task_pipeline::DeleteTaskPipeline;
 
 pub const DELETE_SERVICE_TASK_DIR_NAME: &str = "delete_task_service";
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct DeleteTaskServiceState {
     pub num_running_pipelines: usize,
 }
@@ -44,7 +43,6 @@ pub struct DeleteTaskService {
     storage_resolver: StorageUriResolver,
     data_dir_path: PathBuf,
     pipeline_handles_by_index_id: HashMap<String, ActorHandle<DeleteTaskPipeline>>,
-    state: DeleteTaskServiceState,
 }
 
 impl DeleteTaskService {
@@ -60,7 +58,6 @@ impl DeleteTaskService {
             storage_resolver,
             data_dir_path,
             pipeline_handles_by_index_id: Default::default(),
-            state: DeleteTaskServiceState::default(),
         }
     }
 }
@@ -70,7 +67,9 @@ impl Actor for DeleteTaskService {
     type ObservableState = DeleteTaskServiceState;
 
     fn observable_state(&self) -> Self::ObservableState {
-        self.state.clone()
+        DeleteTaskServiceState {
+            num_running_pipelines: self.pipeline_handles_by_index_id.len(),
+        }
     }
 
     fn name(&self) -> String {
@@ -110,7 +109,6 @@ impl DeleteTaskService {
                 .remove(deleted_index_id)
                 .expect("Handle must be present.");
             pipeline_handle.quit().await;
-            self.state.num_running_pipelines -= 1;
         }
 
         // Start new pipelines and add them to the handles hashmap.
@@ -118,8 +116,8 @@ impl DeleteTaskService {
             let index_metadata = index_metadata_by_index_id
                 .remove(index_id)
                 .expect("Index metadata must be present.");
-            if self.spawn_pipeline(index_metadata, ctx).await.is_ok() {
-                self.state.num_running_pipelines += 1;
+            if self.spawn_pipeline(index_metadata, ctx).await.is_err() {
+                warn!("Failed to spawn delete pipeline for {index_id}");
             }
         }
 

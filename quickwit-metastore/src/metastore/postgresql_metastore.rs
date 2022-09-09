@@ -28,6 +28,7 @@ use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
+use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgDatabaseError, PgPoolOptions};
 use sqlx::{ConnectOptions, Pool, Postgres, Row, Transaction};
@@ -35,12 +36,11 @@ use tokio::sync::Mutex;
 use tracing::log::LevelFilter;
 use tracing::{debug, error, instrument, warn};
 
-use super::delete_task::DeleteTask;
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::metastore::postgresql_model::{self, Index, IndexIdSplitIdRow};
 use crate::{
-    DeleteQuery, IndexMetadata, Metastore, MetastoreError, MetastoreFactory,
-    MetastoreResolverError, MetastoreResult, Split, SplitMetadata, SplitState,
+    IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
+    MetastoreResult, Split, SplitMetadata, SplitState,
 };
 
 static MIGRATOR: Migrator = sqlx::migrate!("migrations/postgresql");
@@ -787,20 +787,8 @@ impl Metastore for PostgresqlMetastore {
             Ok(DeleteTask {
                 create_timestamp: create_timestamp.assume_utc().unix_timestamp(),
                 opstamp: opstamp as u64,
-                delete_query,
+                delete_query: Some(delete_query),
             })
-        })
-    }
-
-    /// Deletes delete tasks of a given index.
-    #[instrument(skip(self))]
-    async fn delete_delete_tasks(&self, index_id: &str) -> MetastoreResult<()> {
-        run_with_tx!(self.connection_pool, tx, {
-            sqlx::query("DELETE FROM delete_tasks WHERE index_id = $1")
-                .bind(index_id)
-                .execute(tx)
-                .await?;
-            Ok(())
         })
     }
 
@@ -816,27 +804,23 @@ impl Metastore for PostgresqlMetastore {
             return Ok(());
         }
         run_with_tx!(self.connection_pool, tx, {
-            let updated_split_ids: Vec<String> = sqlx::query(
+            let sqlx_result = sqlx::query(
                 r#"
                 UPDATE splits
                 SET delete_opstamp = $1
                 WHERE
                     index_id = $2
                     AND split_id = ANY($3)
-                    AND split_state = $4
-                RETURNING split_id
             "#,
             )
             .bind(delete_opstamp as i64)
             .bind(index_id)
             .bind(split_ids)
-            .bind(SplitState::Published.as_str())
-            .map(|row| row.get(0))
-            .fetch_all(&mut *tx)
+            .execute(&mut *tx)
             .await?;
-            // If no splits were returned, maybe the index itself does not exist
+            // If no splits is affected, maybe the index itself does not exist
             // in the first place.
-            if updated_split_ids.is_empty() && index_opt(tx, index_id).await?.is_none() {
+            if sqlx_result.rows_affected() == 0 && index_opt(tx, index_id).await?.is_none() {
                 return Err(MetastoreError::IndexDoesNotExist {
                     index_id: index_id.to_string(),
                 });

@@ -26,12 +26,13 @@ pub mod test_suite {
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
+    use quickwit_proto::metastore_api::DeleteQuery;
     use time::OffsetDateTime;
     use tokio::time::{sleep, Duration};
     use tracing::{error, info};
 
     use crate::checkpoint::{IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint};
-    use crate::{DeleteQuery, IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
+    use crate::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
 
     #[async_trait]
     pub trait DefaultForTest {
@@ -69,8 +70,6 @@ pub mod test_suite {
                 .unwrap();
         }
 
-        // Delete all delete tasks.
-        metastore.delete_delete_tasks(index_id).await.unwrap();
         // Delete index.
         metastore.delete_index(index_id).await.unwrap();
     }
@@ -2196,15 +2195,10 @@ pub mod test_suite {
             .await
             .unwrap();
         assert!(delete_task_1.opstamp > 0);
-        assert_eq!(delete_task_1.delete_query.index_id, delete_query.index_id);
-        assert_eq!(
-            delete_task_1.delete_query.start_timestamp,
-            delete_query.start_timestamp
-        );
-        assert_eq!(
-            delete_task_1.delete_query.end_timestamp,
-            delete_query.end_timestamp
-        );
+        let delete_query_1 = delete_task_1.delete_query.unwrap();
+        assert_eq!(delete_query_1.index_id, delete_query.index_id);
+        assert_eq!(delete_query_1.start_timestamp, delete_query.start_timestamp);
+        assert_eq!(delete_query_1.end_timestamp, delete_query.end_timestamp);
         let delete_task_2 = metastore
             .create_delete_task(delete_query.clone())
             .await
@@ -2267,7 +2261,9 @@ pub mod test_suite {
         cleanup_index(&metastore, index_id_2).await;
     }
 
-    pub async fn test_metastore_delete_delete_tasks<MetastoreToTest: Metastore + DefaultForTest>() {
+    pub async fn test_metastore_delete_index_with_tasks<
+        MetastoreToTest: Metastore + DefaultForTest,
+    >() {
         let metastore = MetastoreToTest::default_for_test().await;
         let index_id = "delete-delete-tasks";
         let index_uri = format!("ram:///indexes/{index_id}");
@@ -2292,13 +2288,7 @@ pub mod test_suite {
             .await
             .unwrap();
 
-        let delete_tasks = metastore.list_delete_tasks(index_id, 0).await.unwrap();
-        assert_eq!(delete_tasks.len(), 2);
-        metastore.delete_delete_tasks(index_id).await.unwrap();
-        let delete_tasks = metastore.list_delete_tasks(index_id, 0).await.unwrap();
-        assert!(delete_tasks.is_empty());
-
-        cleanup_index(&metastore, index_id).await;
+        metastore.delete_index(index_id).await.unwrap();
     }
 
     pub async fn test_metastore_list_delete_tasks<MetastoreToTest: Metastore + DefaultForTest>() {
@@ -2680,9 +2670,9 @@ macro_rules! metastore_test_suite {
             }
 
             #[tokio::test]
-            async fn test_metastore_delete_delete_tasks() {
+            async fn test_metastore_delete_index_with_tasks() {
                 let _ = tracing_subscriber::fmt::try_init();
-                crate::tests::test_suite::test_metastore_delete_delete_tasks::<$metastore_type>().await;
+                crate::tests::test_suite::test_metastore_delete_index_with_tasks::<$metastore_type>().await;
             }
 
             #[tokio::test]

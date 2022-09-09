@@ -26,19 +26,18 @@ use quickwit_common::extract_time_range;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::metastore_api_service_server::{self as grpc};
 use quickwit_proto::metastore_api::{
-    AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteDeleteTasksRequest,
-    DeleteIndexRequest, DeleteIndexResponse, DeleteQueryRequest, DeleteSourceRequest,
-    DeleteSplitsRequest, DeleteTaskResponse, DeleteTasksResponse, IndexMetadataRequest,
-    IndexMetadataResponse, LastDeleteOpstampRequest, LastDeleteOpstampResponse,
-    ListAllSplitsRequest, ListDeleteTasksRequest, ListDeleteTasksResponse,
-    ListIndexesMetadatasRequest, ListIndexesMetadatasResponse, ListSplitsRequest,
-    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest,
-    ResetSourceCheckpointRequest, SourceResponse, SplitResponse, StageSplitRequest,
-    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
+    DeleteIndexResponse, DeleteQuery, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask,
+    IndexMetadataRequest, IndexMetadataResponse, LastDeleteOpstampRequest,
+    LastDeleteOpstampResponse, ListAllSplitsRequest, ListDeleteTasksRequest,
+    ListDeleteTasksResponse, ListIndexesMetadatasRequest, ListIndexesMetadatasResponse,
+    ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
+    PublishSplitsRequest, ResetSourceCheckpointRequest, SourceResponse, SplitResponse,
+    StageSplitRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::tonic;
 
-use crate::{DeleteQuery, IndexMetadata, Metastore, MetastoreError, SplitState};
+use crate::{IndexMetadata, Metastore, MetastoreError, SplitState};
 
 #[allow(missing_docs)]
 #[derive(Clone)]
@@ -336,28 +335,11 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
 
     async fn create_delete_task(
         &self,
-        request: tonic::Request<DeleteQueryRequest>,
-    ) -> Result<tonic::Response<DeleteTaskResponse>, tonic::Status> {
+        request: tonic::Request<DeleteQuery>,
+    ) -> Result<tonic::Response<DeleteTask>, tonic::Status> {
         let request = request.into_inner();
-        let delete_task = self
-            .0
-            .create_delete_task(DeleteQuery::from(request))
-            .await?;
-        let reply = delete_task.into();
-        Ok(tonic::Response::new(reply))
-    }
-
-    async fn delete_delete_tasks(
-        &self,
-        request: tonic::Request<DeleteDeleteTasksRequest>,
-    ) -> Result<tonic::Response<DeleteTasksResponse>, tonic::Status> {
-        let request = request.into_inner();
-        let reply = self
-            .0
-            .delete_delete_tasks(&request.index_id)
-            .await
-            .map(|_| DeleteTasksResponse {})?;
-        Ok(tonic::Response::new(reply))
+        let delete_task = self.0.create_delete_task(request).await?;
+        Ok(tonic::Response::new(delete_task))
     }
 
     async fn update_splits_delete_opstamp(
@@ -388,7 +370,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
             .list_delete_tasks(&request.index_id, request.opstamp_start)
             .await?
             .into_iter()
-            .map(DeleteTaskResponse::from)
+            .map(DeleteTask::from)
             .collect_vec();
         let reply = ListDeleteTasksResponse { delete_tasks };
         Ok(tonic::Response::new(reply))

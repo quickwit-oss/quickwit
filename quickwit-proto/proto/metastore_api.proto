@@ -66,10 +66,7 @@ service MetastoreApiService {
   rpc last_delete_opstamp(LastDeleteOpstampRequest) returns (LastDeleteOpstampResponse);
 
   // Creates a delete task.
-  rpc create_delete_task(DeleteQueryRequest) returns (DeleteTaskResponse);
-
-  // Deletes all delete tasks for a given `index_id`.
-  rpc delete_delete_tasks(DeleteDeleteTasksRequest) returns (DeleteTasksResponse);
+  rpc create_delete_task(DeleteQuery) returns (DeleteTask);
 
   // Updates splits `delete_opstamp`.
   rpc update_splits_delete_opstamp(UpdateSplitsDeleteOpstampRequest) returns (UpdateSplitsDeleteOpstampResponse);
@@ -170,13 +167,13 @@ message SourceResponse {}
 /// Delete tasks.
 ///
 
-message DeleteTaskResponse {
+message DeleteTask {
   int64 create_timestamp = 1;
   uint64 opstamp = 2;
-  DeleteQueryRequest delete_query = 3;
+  DeleteQuery delete_query = 3;
 }
 
-message DeleteQueryRequest {
+message DeleteQuery {
   /// Index ID.
   string index_id = 1;
   /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
@@ -205,10 +202,6 @@ message LastDeleteOpstampResponse {
   uint64 last_delete_opstamp = 1;
 }
 
-message DeleteDeleteTasksRequest {
-  string index_id = 1;
-}
-
 message ListStaleSplitsRequest {
   string index_id = 1;
   uint64 delete_opstamp = 2;
@@ -221,6 +214,6 @@ message ListDeleteTasksRequest {
 }
 
 message ListDeleteTasksResponse {
-  repeated DeleteTaskResponse delete_tasks = 1;
+  repeated DeleteTask delete_tasks = 1;
 }
 
