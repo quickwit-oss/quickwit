@@ -56,10 +56,6 @@ impl IngestApiService {
             return Err(IngestApiError::IndexDoesNotExist { index_id });
         }
 
-        INGEST_METRICS
-            .num_docs_in
-            .inc_by(request.doc_batches.len() as u64);
-
         let mut num_docs = 0usize;
         for doc_batch in &request.doc_batches {
             // TODO better error handling.
@@ -68,7 +64,7 @@ impl IngestApiService {
             self.queues.append_batch(&doc_batch.index_id, records_it)?;
             num_docs += doc_batch.doc_lens.len();
             INGEST_METRICS
-                .num_docs_out
+                .ingested_num_docs
                 .inc_by(doc_batch.doc_lens.len() as u64);
         }
         Ok(IngestResponse {
