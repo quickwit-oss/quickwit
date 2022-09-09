@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt::Display;
 use std::str::FromStr;
 
 use anyhow::bail;
@@ -41,11 +42,14 @@ impl QuickwitService {
             QuickwitService::Metastore => "metastore",
         }
     }
-    fn supported_services() -> Vec<&'static str> {
-        all::<QuickwitService>()
-            .into_iter()
-            .map(|svc| svc.as_str())
-            .collect_vec()
+    pub fn supported_services() -> Vec<QuickwitService> {
+        all::<QuickwitService>().into_iter().collect_vec()
+    }
+}
+
+impl Display for QuickwitService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -61,7 +65,7 @@ impl FromStr for QuickwitService {
             _ => {
                 bail!(
                     "Failed to parse service `{service_str}`. Supported services are: {}",
-                    QuickwitService::supported_services().join(", ")
+                    QuickwitService::supported_services().iter().join(", ")
                 )
             }
         }

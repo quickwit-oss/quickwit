@@ -81,7 +81,7 @@ fn default_rest_listen_port() -> u16 {
 }
 
 fn default_quickwit_services() -> Vec<String> {
-    vec!["metastore", "searcher", "indexer", "janitor"]
+    ["metastore", "searcher", "indexer", "janitor"]
         .iter()
         .map(|svc| svc.to_string())
         .collect()
