@@ -23,6 +23,7 @@ use quickwit_actors::ActorContext;
 use quickwit_config::{RetentionPolicy, RetentionPolicyCutoffReference};
 use quickwit_metastore::{Metastore, Split, SplitMetadata, SplitState};
 use time::OffsetDateTime;
+use tracing::warn;
 
 use crate::actors::RetentionPolicyExecutor;
 
@@ -90,9 +91,8 @@ fn is_split_expired(
                 let time_range_end = OffsetDateTime::from_unix_timestamp(*time_range.end())?;
                 (current_date_time - time_range_end) >= retention_period
             } else {
-                // TODO: warn!(index_id=%split.split_metadata.index_id, split_id=%split.split_id(),
-                // "Retention policy evaluation expected a `time_range` on the split, but none
-                // exist.");
+                warn!(index_id=%split.split_metadata.index_id, split_id=%split.split_id(),
+                "Retention policy evaluation expected a `time_range` on the split, but none exist.");
                 false
             }
         }
