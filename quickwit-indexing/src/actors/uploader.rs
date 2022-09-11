@@ -216,6 +216,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
 fn create_split_metadata(split: &PackagedSplit, footer_offsets: Range<u64>) -> SplitMetadata {
     SplitMetadata {
         split_id: split.split_attrs.split_id.clone(),
+        index_id: split.split_attrs.pipeline_id.index_id.clone(),
         partition_id: split.split_attrs.partition_id,
         source_id: split.split_attrs.pipeline_id.source_id.clone(),
         node_id: split.split_attrs.pipeline_id.node_id.clone(),

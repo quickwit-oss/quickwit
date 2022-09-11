@@ -23,6 +23,7 @@ hyper = { version = "0.14", features = [
   "tcp",
   "client"
 ] }
+itertools = "0.10"
 mime_guess = { version = "2.0.4" }
 once_cell = "1"
 opentelemetry = "0.17"
