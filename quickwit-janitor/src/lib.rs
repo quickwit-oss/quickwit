@@ -28,14 +28,14 @@ use tracing::info;
 pub mod actors;
 mod garbage_collection;
 mod janitor_service;
-mod retention_policy_evaluation;
+mod retention_policy_execution;
 
 pub use janitor_service::JanitorService;
 
 pub use self::garbage_collection::{
     delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
 };
-use crate::actors::{GarbageCollector, RetentionPolicyEvaluator};
+use crate::actors::{GarbageCollector, RetentionPolicyExecutor};
 
 pub async fn start_janitor_service(
     universe: &Universe,
@@ -47,7 +47,7 @@ pub async fn start_janitor_service(
     let garbage_collector = GarbageCollector::new(metastore.clone(), storage_uri_resolver);
     let (_, garbage_collector_handle) = universe.spawn_actor(garbage_collector).spawn();
 
-    let retention_policy_evaluator = RetentionPolicyEvaluator::new(metastore);
+    let retention_policy_evaluator = RetentionPolicyExecutor::new(metastore);
     let (_, retention_policy_evaluator_handle) =
         universe.spawn_actor(retention_policy_evaluator).spawn();
 

@@ -25,14 +25,14 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_metastore::{IndexMetadata, Metastore};
-use tracing::{error, info};
+use tracing::{debug, error};
 
-use crate::retention_policy_evaluation::run_evaluate_retention_policy;
+use crate::retention_policy_execution::run_execute_retention_policy;
 
 const RUN_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hours
 
 #[derive(Clone, Debug, Default)]
-pub struct RetentionPolicyEvaluatorCounters {
+pub struct RetentionPolicyExecutorCounters {
     /// The number of refresh the config passes.
     pub num_refresh_passes: usize,
 
@@ -51,26 +51,33 @@ struct Evaluate {
     index_id: String,
 }
 
-/// An actor for collecting garbage periodically from an index.
-pub struct RetentionPolicyEvaluator {
+/// An actor for scheduling retention policy execution
+/// on all indexes.
+/// It keeps a list of indexes that have retention policy configure
+/// in a cache and periodically update this list for index deletion
+/// or change of configuration .
+pub struct RetentionPolicyExecutor {
     metastore: Arc<dyn Metastore>,
+    /// A map of index_id to index metadata that are managed by this executor.
+    /// This act as local cache that is periodically updated while taking into
+    /// account deleted indexes, updated or removed retention policy on indexes.
     index_metadatas: HashMap<String, IndexMetadata>,
-    counters: RetentionPolicyEvaluatorCounters,
+    counters: RetentionPolicyExecutorCounters,
 }
 
-impl RetentionPolicyEvaluator {
+impl RetentionPolicyExecutor {
     pub fn new(metastore: Arc<dyn Metastore>) -> Self {
         Self {
             metastore,
             index_metadatas: HashMap::new(),
-            counters: RetentionPolicyEvaluatorCounters::default(),
+            counters: RetentionPolicyExecutorCounters::default(),
         }
     }
 
-    /// Refresh Loop handler logic.
+    /// Indexes refresh Loop handler logic.
     /// Should not return an error to prevent the actor from crashing.
     async fn handle_refresh_loop(&mut self, ctx: &ActorContext<Self>) {
-        info!("retention-policy-refresh-indexes-operation");
+        debug!("retention-policy-refresh-indexes-operation");
         self.counters.num_refresh_passes += 1;
 
         let index_metadatas = match self.metastore.list_indexes_metadatas().await {
@@ -80,7 +87,7 @@ impl RetentionPolicyEvaluator {
                 return;
             }
         };
-        info!(index_ids=%index_metadatas.iter().map(|im| &im.index_id).join(", "), "Retention policy refresh.");
+        debug!(index_ids=%index_metadatas.iter().map(|im| &im.index_id).join(", "), "Retention policy refresh.");
 
         let deleted_indexes = compute_deleted_indexes(
             self.index_metadatas.keys(),
@@ -89,11 +96,9 @@ impl RetentionPolicyEvaluator {
         for index_id in &deleted_indexes {
             self.index_metadatas.remove(index_id);
         }
-        info!(index_ids=%deleted_indexes.iter().join(", "), "Deleted indexes from cache.");
+        debug!(index_ids=%deleted_indexes.iter().join(", "), "Deleted indexes from cache.");
 
         for index_metadata in index_metadatas.into_iter() {
-            ctx.record_progress();
-
             // Only care about indexes with retention policy.
             let retention_policy = match &index_metadata.retention_policy {
                 Some(policy) => policy,
@@ -111,31 +116,31 @@ impl RetentionPolicyEvaluator {
                 continue;
             }
 
-            let message = Evaluate {
-                index_id: index_metadata.index_id.clone(),
-            };
-            let next_interval = retention_policy
-                .duration_till_next_evaluation()
-                .expect("Expected a valid duration from retention policy schedule.");
-
-            // Inserts & schedule first evaluation
-            self.index_metadatas
-                .insert(index_metadata.index_id.clone(), index_metadata);
-            ctx.schedule_self_msg(next_interval, message).await;
+            if let Ok(next_interval) = retention_policy.duration_until_next_evaluation() {
+                let message = Evaluate {
+                    index_id: index_metadata.index_id.clone(),
+                };
+                // Inserts & schedule first evaluation
+                self.index_metadatas
+                    .insert(index_metadata.index_id.clone(), index_metadata);
+                ctx.schedule_self_msg(next_interval, message).await;
+            } else {
+                error!(index_id=%index_metadata.index_id, "Couldn't extract the index next schedule time.")
+            }
         }
     }
 }
 
 #[async_trait]
-impl Actor for RetentionPolicyEvaluator {
-    type ObservableState = RetentionPolicyEvaluatorCounters;
+impl Actor for RetentionPolicyExecutor {
+    type ObservableState = RetentionPolicyExecutorCounters;
 
     fn observable_state(&self) -> Self::ObservableState {
         self.counters.clone()
     }
 
     fn name(&self) -> String {
-        "RetentionPolicyEvaluator".to_string()
+        "RetentionPolicyExecutor".to_string()
     }
 
     async fn initialize(
@@ -148,7 +153,7 @@ impl Actor for RetentionPolicyEvaluator {
 }
 
 #[async_trait]
-impl Handler<Loop> for RetentionPolicyEvaluator {
+impl Handler<Loop> for RetentionPolicyExecutor {
     type Reply = ();
 
     async fn handle(
@@ -163,7 +168,7 @@ impl Handler<Loop> for RetentionPolicyEvaluator {
 }
 
 #[async_trait]
-impl Handler<Evaluate> for RetentionPolicyEvaluator {
+impl Handler<Evaluate> for RetentionPolicyExecutor {
     type Reply = ();
 
     async fn handle(
@@ -171,13 +176,13 @@ impl Handler<Evaluate> for RetentionPolicyEvaluator {
         message: Evaluate,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
-        info!(index_id=%message.index_id, "retention-policy-evaluation-operation");
+        debug!(index_id=%message.index_id, "retention-policy-evaluation-operation");
         self.counters.num_evaluation_passes += 1;
 
         let index_metadata = match self.index_metadatas.get(&message.index_id) {
             Some(metadata) => metadata,
             None => {
-                info!(index_id=%message.index_id, "Index might have been deleted.");
+                debug!(index_id=%message.index_id, "Index might have been deleted.");
                 return Ok(());
             }
         };
@@ -187,24 +192,29 @@ impl Handler<Evaluate> for RetentionPolicyEvaluator {
             .as_ref()
             .expect("Expected index to have retention policy configure.");
 
-        let evaluation_result = run_evaluate_retention_policy(
+        let execution_result = run_execute_retention_policy(
             &message.index_id,
             self.metastore.clone(),
             retention_policy,
             Some(ctx),
         )
         .await;
-        match evaluation_result {
+        match execution_result {
             Ok(splits) => self.counters.num_discarded_splits += splits.len(),
             Err(error) => {
-                error!(index_id=%message.index_id, error=?error, "Failed to evaluate retention on index.")
+                error!(index_id=%message.index_id, error=?error, "Failed to execute retention policy on index.")
             }
         }
 
-        let next_interval = retention_policy
-            .duration_till_next_evaluation()
-            .expect("Expected a valid duration from retention policy schedule.");
-        ctx.schedule_self_msg(next_interval, message).await;
+        if let Ok(next_interval) = retention_policy.duration_until_next_evaluation() {
+            ctx.schedule_self_msg(next_interval, message).await;
+        } else {
+            // Since we have failed to schedule next execution for this index,
+            // we remove it from the cache for it to be retried next time it gets
+            // added back by the cache refresh loop.
+            self.index_metadatas.remove(&message.index_id);
+            error!(index_id=%message.index_id, "Couldn't extract the index next schedule time.");
+        }
         Ok(())
     }
 }
@@ -234,7 +244,7 @@ mod tests {
     struct AssertState(Vec<(&'static str, Option<&'static str>)>);
 
     #[async_trait]
-    impl Handler<AssertState> for RetentionPolicyEvaluator {
+    impl Handler<AssertState> for RetentionPolicyExecutor {
         type Reply = ();
 
         async fn handle(
@@ -308,11 +318,11 @@ mod tests {
             RetentionPolicyCutoffReference::PublishTimestamp,
             SCHEDULE_EXPR.to_string(),
         );
-        scheduler.duration_till_next_evaluation().unwrap() + Duration::from_secs(1)
+        scheduler.duration_until_next_evaluation().unwrap() + Duration::from_secs(1)
     }
 
     #[tokio::test]
-    async fn test_retention_evaluator_refresh() -> anyhow::Result<()> {
+    async fn test_retention_executor_refresh() -> anyhow::Result<()> {
         let mut mock_metastore = MockMetastore::default();
 
         let mut sequence = Sequence::new();
@@ -356,7 +366,7 @@ mod tests {
                 ]))
             });
 
-        let retention_policy_actor = RetentionPolicyEvaluator::new(Arc::new(mock_metastore));
+        let retention_policy_actor = RetentionPolicyExecutor::new(Arc::new(mock_metastore));
         let universe = Universe::new();
         let (mailbox, handle) = universe.spawn_actor(retention_policy_actor).spawn();
 
@@ -398,7 +408,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_retention_policy_evaluation() -> anyhow::Result<()> {
+    async fn test_retention_policy_execution() -> anyhow::Result<()> {
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_list_indexes_metadatas()
@@ -442,7 +452,7 @@ mod tests {
                 Ok(())
             });
 
-        let retention_policy_actor = RetentionPolicyEvaluator::new(Arc::new(mock_metastore));
+        let retention_policy_actor = RetentionPolicyExecutor::new(Arc::new(mock_metastore));
         let universe = Universe::new();
         let (_mailbox, handle) = universe.spawn_actor(retention_policy_actor).spawn();
 

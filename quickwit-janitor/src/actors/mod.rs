@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod garbage_collector;
-mod retention_policy_evaluator;
+mod retention_policy_executor;
 
 pub use garbage_collector::GarbageCollector;
-pub use retention_policy_evaluator::RetentionPolicyEvaluator;
+pub use retention_policy_executor::RetentionPolicyExecutor;
