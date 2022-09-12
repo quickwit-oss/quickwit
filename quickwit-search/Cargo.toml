@@ -66,3 +66,6 @@ quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore", featur
 proptest = "1.0"
 serde_json = "1"
 tempfile = "3.3"
+
+[features]
+testsuite = []

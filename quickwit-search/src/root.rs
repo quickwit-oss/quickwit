@@ -44,8 +44,9 @@ use crate::{
     SearchServiceClient,
 };
 
-#[derive(Debug, PartialEq)]
-pub(crate) struct SearchJob {
+/// SearchJob to be assigned to search clients by the [`SearchClientPool`].
+#[derive(Debug, PartialEq, Clone)]
+pub struct SearchJob {
     cost: u32,
     offsets: SplitIdAndFooterOffsets,
 }
@@ -352,7 +353,8 @@ fn compute_split_cost(_split_metadata: &SplitMetadata) -> u32 {
     1
 }
 
-fn jobs_to_leaf_request(
+/// Builds a [`LeafSearchRequest`] from a list of [`SearchJob`].
+pub fn jobs_to_leaf_request(
     request: &SearchRequest,
     doc_mapper_str: &str,
     index_uri: &str,

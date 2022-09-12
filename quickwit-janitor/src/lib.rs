@@ -22,6 +22,7 @@ use std::sync::Arc;
 use quickwit_actors::Universe;
 use quickwit_config::QuickwitConfig;
 use quickwit_metastore::Metastore;
+use quickwit_search::SearchClientPool;
 use quickwit_storage::StorageUriResolver;
 use tracing::info;
 
@@ -34,17 +35,28 @@ pub use janitor_service::JanitorService;
 pub use self::garbage_collection::{
     delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
 };
-use crate::actors::GarbageCollector;
+use crate::actors::{DeleteTaskService, GarbageCollector};
 
 pub async fn start_janitor_service(
     universe: &Universe,
-    _config: &QuickwitConfig, // kept it for retention policy
+    config: &QuickwitConfig, // kept it for retention policy
     metastore: Arc<dyn Metastore>,
+    search_client_pool: SearchClientPool,
     storage_uri_resolver: StorageUriResolver,
 ) -> anyhow::Result<JanitorService> {
     info!("Starting janitor service.");
-    let garbage_collector = GarbageCollector::new(metastore, storage_uri_resolver);
+    let garbage_collector = GarbageCollector::new(metastore.clone(), storage_uri_resolver.clone());
     let (_, garbage_collector_handle) = universe.spawn_actor(garbage_collector).spawn();
+    let delete_task_service = DeleteTaskService::new(
+        metastore,
+        search_client_pool,
+        storage_uri_resolver,
+        config.data_dir_path.clone(),
+    );
+    let (_, delete_task_service_handle) = universe.spawn_actor(delete_task_service).spawn();
 
-    Ok(JanitorService::new(garbage_collector_handle))
+    Ok(JanitorService::new(
+        garbage_collector_handle,
+        delete_task_service_handle,
+    ))
 }

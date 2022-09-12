@@ -38,7 +38,7 @@ pub struct ActorHandle<A: Actor> {
 }
 
 /// Describes the health of a given actor.
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub enum Health {
     /// The actor is running and behaving as expected.
     Healthy,

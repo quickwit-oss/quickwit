@@ -52,9 +52,11 @@ impl fmt::Debug for IndexedSplit {
 }
 
 impl IndexedSplit {
+    #[allow(clippy::too_many_arguments)]
     pub fn new_in_dir(
         pipeline_id: IndexingPipelineId,
         partition_id: u64,
+        last_delete_opstamp: u64,
         scratch_directory: ScratchDirectory,
         indexing_resources: IndexingResources,
         index_builder: IndexBuilder,
@@ -86,6 +88,7 @@ impl IndexedSplit {
             uncompressed_docs_size_in_bytes: 0,
             time_range: None,
             replaced_split_ids: Vec::new(),
+            delete_opstamp: last_delete_opstamp,
         };
         index_writer.set_merge_policy(Box::new(NoMergePolicy));
         Ok(IndexedSplit {

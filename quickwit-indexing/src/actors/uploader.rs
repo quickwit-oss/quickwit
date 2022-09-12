@@ -227,6 +227,7 @@ fn create_split_metadata(split: &PackagedSplit, footer_offsets: Range<u64>) -> S
         create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
         tags: split.tags.clone(),
         footer_offsets,
+        delete_opstamp: split.split_attrs.delete_opstamp,
     }
 }
 
@@ -348,6 +349,7 @@ mod tests {
                         num_docs: 10,
                         replaced_split_ids: Vec::new(),
                         split_id: "test-split".to_string(),
+                        delete_opstamp: 10,
                     },
                     split_scratch_directory,
                     tags: Default::default(),
@@ -443,6 +445,7 @@ mod tests {
                     "replaced-split-1".to_string(),
                     "replaced-split-2".to_string(),
                 ],
+                delete_opstamp: 0,
             },
             split_scratch_directory: split_scratch_directory_1,
             tags: Default::default(),
@@ -461,6 +464,7 @@ mod tests {
                     "replaced-split-1".to_string(),
                     "replaced-split-2".to_string(),
                 ],
+                delete_opstamp: 0,
             },
             split_scratch_directory: split_scratch_directory_2,
             tags: Default::default(),

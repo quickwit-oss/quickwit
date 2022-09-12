@@ -54,7 +54,7 @@ impl PublisherType {
 pub struct Publisher {
     publisher_type: PublisherType,
     metastore: Arc<dyn Metastore>,
-    merge_planner_mailbox: Mailbox<MergePlanner>,
+    merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
     source_mailbox_opt: Option<Mailbox<SourceActor>>,
     counters: PublisherCounters,
 }
@@ -63,13 +63,13 @@ impl Publisher {
     pub fn new(
         publisher_type: PublisherType,
         metastore: Arc<dyn Metastore>,
-        merge_planner_mailbox: Mailbox<MergePlanner>,
+        merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
         source_mailbox_opt: Option<Mailbox<SourceActor>>,
     ) -> Publisher {
         Publisher {
             publisher_type,
             metastore,
-            merge_planner_mailbox,
+            merge_planner_mailbox_opt,
             source_mailbox_opt,
             counters: PublisherCounters::default(),
         }
@@ -100,9 +100,9 @@ impl Actor for Publisher {
         // its end of life should also means the end of life of never stopping actors.
         // After all, when the publisher is stopped, there shouldn't be anything to process.
         // It's fine if the merge planner is already dead.
-        let _ = ctx
-            .send_exit_with_success(&self.merge_planner_mailbox)
-            .await;
+        if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
+            let _ = ctx.send_exit_with_success(merge_planner_mailbox).await;
+        }
         Ok(())
     }
 }
@@ -171,9 +171,12 @@ impl Handler<SplitUpdate> for Publisher {
         // For instance, when a source reaches its end, and the last "new" split
         // has been packaged, the packager finalizer sends a message to the merge
         // planner in order to stop it.
-        let _ = ctx
-            .send_message(&self.merge_planner_mailbox, NewSplits { new_splits })
-            .await;
+        if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
+            let _ = ctx
+                .send_message(merge_planner_mailbox, NewSplits { new_splits })
+                .await;
+        }
+
         if replaced_split_ids.is_empty() {
             self.counters.num_published_splits += 1;
         } else {
@@ -221,7 +224,7 @@ mod tests {
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
             Arc::new(mock_metastore),
-            merge_planner_mailbox,
+            Some(merge_planner_mailbox),
             Some(source_mailbox),
         );
         let universe = Universe::new();
@@ -286,7 +289,7 @@ mod tests {
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
             Arc::new(mock_metastore),
-            merge_planner_mailbox,
+            Some(merge_planner_mailbox),
             None,
         );
         let universe = Universe::new();
@@ -323,7 +326,7 @@ mod tests {
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
             Arc::new(mock_metastore),
-            merge_planner_mailbox,
+            Some(merge_planner_mailbox),
             None,
         );
         let universe = Universe::new();

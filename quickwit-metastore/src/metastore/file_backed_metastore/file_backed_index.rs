@@ -22,16 +22,21 @@
 //! anything from here directly.
 
 use std::collections::HashMap;
-use std::ops::{Range, RangeInclusive};
+use std::fmt::Debug;
+use std::ops::Range;
 
 use itertools::Itertools;
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
+use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{IndexMetadata, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
+use crate::{
+    split_tag_filter, split_time_range_filter, IndexMetadata, MetastoreError, MetastoreResult,
+    Split, SplitMetadata, SplitState,
+};
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
 // This struct is meant to be used only within the [`FileBackedMetastore`]. The public visibility is
@@ -43,6 +48,10 @@ pub struct FileBackedIndex {
     metadata: IndexMetadata,
     /// List of splits belonging to the index.
     splits: HashMap<String, Split>,
+    /// Delete tasks.
+    delete_tasks: Vec<DeleteTask>,
+    /// Stamper.
+    stamper: Stamper,
     /// Has been discarded. This field exists to make
     /// it possible to discard this entry if there is an error
     /// while mutating the Index.
@@ -54,6 +63,8 @@ impl From<IndexMetadata> for FileBackedIndex {
         Self {
             metadata: index_metadata,
             splits: Default::default(),
+            delete_tasks: Default::default(),
+            stamper: Default::default(),
             discarded: false,
         }
     }
@@ -85,6 +96,8 @@ pub(crate) struct FileBackedIndexV0 {
     #[serde(rename = "index")]
     metadata: IndexMetadata,
     splits: Vec<Split>,
+    #[serde(default)]
+    delete_tasks: Vec<DeleteTask>,
 }
 
 impl From<FileBackedIndex> for FileBackedIndexV0 {
@@ -95,6 +108,11 @@ impl From<FileBackedIndex> for FileBackedIndexV0 {
                 .splits
                 .into_values()
                 .sorted_by_key(|split| split.update_timestamp)
+                .collect(),
+            delete_tasks: index
+                .delete_tasks
+                .into_iter()
+                .sorted_by_key(|delete_task| delete_task.opstamp)
                 .collect(),
         }
     }
@@ -108,7 +126,7 @@ impl From<FileBackedIndexV0> for FileBackedIndex {
                 split.split_metadata.index_id = index.metadata.index_id.clone();
             }
         }
-        Self::new(index.metadata, index.splits)
+        Self::new(index.metadata, index.splits, index.delete_tasks)
     }
 }
 
@@ -118,20 +136,22 @@ enum DeleteSplitOutcome {
     ForbiddenBecausePublished,
 }
 
-/// Takes 2 intervals and returns true iff their intersection is empty
-fn is_disjoint(left: &Range<i64>, right: &RangeInclusive<i64>) -> bool {
-    left.end <= *right.start() || *right.end() < left.start
-}
-
 impl FileBackedIndex {
     /// Constructor.
-    pub fn new(metadata: IndexMetadata, splits: Vec<Split>) -> Self {
+    pub fn new(metadata: IndexMetadata, splits: Vec<Split>, delete_tasks: Vec<DeleteTask>) -> Self {
+        let last_opstamp = delete_tasks
+            .iter()
+            .map(|delete_task| delete_task.opstamp)
+            .max()
+            .unwrap_or(0) as usize;
         Self {
             metadata,
             splits: splits
                 .into_iter()
                 .map(|split| (split.split_id().to_string(), split))
                 .collect(),
+            delete_tasks,
+            stamper: Stamper::new(last_opstamp),
             discarded: false,
         }
     }
@@ -177,7 +197,6 @@ impl FileBackedIndex {
 
         self.splits
             .insert(metadata.split_id().to_string(), metadata);
-
         self.metadata.update_timestamp = now_timestamp;
         Ok(())
     }
@@ -283,6 +302,7 @@ impl FileBackedIndex {
         Ok(())
     }
 
+    /// Publishes splits.
     pub(crate) fn publish_splits<'a>(
         &mut self,
         split_ids: &[&'a str],
@@ -297,44 +317,40 @@ impl FileBackedIndex {
         Ok(())
     }
 
+    /// Lists splits.
     pub(crate) fn list_splits(
         &self,
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
         tags_filter: Option<TagFilterAst>,
+        delete_opstamp_opt: Option<u64>,
     ) -> MetastoreResult<Vec<Split>> {
-        let time_range_filter = |split: &&Split| match (
-            time_range_opt.as_ref(),
-            split.split_metadata.time_range.as_ref(),
-        ) {
-            (Some(filter_time_range), Some(split_time_range)) => {
-                !is_disjoint(filter_time_range, split_time_range)
-            }
-            _ => true, // Return `true` if `time_range` is omitted or the split has no time range.
-        };
-
-        let tag_filter = |split: &&Split| {
-            tags_filter
-                .as_ref()
-                .map(|tags_filter_ast| tags_filter_ast.evaluate(&split.split_metadata.tags))
+        let delete_opstamp_filter = |split: &&Split| {
+            delete_opstamp_opt
+                .map(|delete_opstamp| split.split_metadata.delete_opstamp < delete_opstamp)
                 .unwrap_or(true)
         };
+
         let splits = self
             .splits
             .values()
             .filter(|&split| split.split_state == state)
-            .filter(time_range_filter)
-            .filter(tag_filter)
+            .filter(|split| split_time_range_filter(split, time_range_opt.as_ref()))
+            .filter(|split| split_tag_filter(split, tags_filter.as_ref()))
+            .filter(delete_opstamp_filter)
             .cloned()
             .collect();
+
         Ok(splits)
     }
 
+    /// Lists all splits.
     pub(crate) fn list_all_splits(&self) -> MetastoreResult<Vec<Split>> {
         let splits = self.splits.values().cloned().collect();
         Ok(splits)
     }
 
+    /// Deletes a split.
     fn delete_split(&mut self, split_id: &str) -> DeleteSplitOutcome {
         match self.splits.get(split_id).map(|split| split.split_state) {
             // Only `Staged` and `MarkedForDeletion` splits can be deleted
@@ -377,11 +393,13 @@ impl FileBackedIndex {
         Ok(())
     }
 
+    /// Adds a source. Returns that a mutation occurred (true).
     pub(crate) fn add_source(&mut self, source: SourceConfig) -> MetastoreResult<bool> {
         self.metadata.add_source(source)?;
         Ok(true)
     }
 
+    /// Deletes the source. Returns that a mutation occurred (true).
     pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<bool> {
         self.metadata.delete_source(source_id)?;
         Ok(true)
@@ -390,5 +408,82 @@ impl FileBackedIndex {
     /// Resets the checkpoint of a source. Returns whether a mutation occurred.
     pub(crate) fn reset_source_checkpoint(&mut self, source_id: &str) -> MetastoreResult<bool> {
         Ok(self.metadata.checkpoint.reset_source(source_id))
+    }
+
+    /// Creates [`DeleteTask`] from a [`DeleteQuery`].
+    pub(crate) fn create_delete_task(
+        &mut self,
+        delete_query: DeleteQuery,
+    ) -> MetastoreResult<DeleteTask> {
+        let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+        let delete_task = DeleteTask {
+            create_timestamp: now_timestamp,
+            opstamp: self.stamper.stamp() as u64,
+            delete_query: Some(delete_query),
+        };
+        self.delete_tasks.push(delete_task.clone());
+        Ok(delete_task)
+    }
+
+    /// Returns index last delete opstamp.
+    pub(crate) fn last_delete_opstamp(&self) -> u64 {
+        self.delete_tasks
+            .iter()
+            .map(|delete_task| delete_task.opstamp)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Updates splits delete opstamp. Returns that a mutation occurred (true).
+    pub(crate) fn update_splits_delete_opstamp(
+        &mut self,
+        split_ids: &[&str],
+        delete_opstamp: u64,
+    ) -> MetastoreResult<bool> {
+        for split_id in split_ids {
+            let split =
+                self.splits
+                    .get_mut(*split_id)
+                    .ok_or_else(|| MetastoreError::SplitsDoNotExist {
+                        split_ids: vec![split_id.to_string()],
+                    })?;
+            split.split_metadata.delete_opstamp = delete_opstamp;
+        }
+        Ok(true)
+    }
+
+    /// Lists delete tasks with opstamp > `opstamp_start`.
+    pub(crate) fn list_delete_tasks(&self, opstamp_start: u64) -> MetastoreResult<Vec<DeleteTask>> {
+        let delete_tasks = self
+            .delete_tasks
+            .iter()
+            .filter(|delete_task| delete_task.opstamp > opstamp_start)
+            .cloned()
+            .collect_vec();
+        Ok(delete_tasks)
+    }
+}
+
+/// Stamper provides Opstamps, which is just an auto-increment id to label
+/// a delete operation.
+#[derive(Clone, Default)]
+struct Stamper(usize);
+
+impl Stamper {
+    /// Creates a [`Stamper`].
+    pub fn new(first_opstamp: usize) -> Self {
+        Self(first_opstamp)
+    }
+
+    /// Increments the stamper by 1 and returns the incremented value.
+    pub fn stamp(&mut self) -> usize {
+        self.0 += 1;
+        self.0
+    }
+}
+
+impl Debug for Stamper {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        fmt.debug_struct("Stamper").field("stamp", &self.0).finish()
     }
 }

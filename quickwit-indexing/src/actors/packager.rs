@@ -456,6 +456,7 @@ mod tests {
                 uncompressed_docs_size_in_bytes: num_docs * 15,
                 time_range: timerange_opt,
                 replaced_split_ids: Vec::new(),
+                delete_opstamp: 0,
             },
             index,
             index_writer,

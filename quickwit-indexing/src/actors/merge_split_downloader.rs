@@ -25,7 +25,7 @@ use quickwit_metastore::SplitMetadata;
 use tantivy::Directory;
 use tracing::{info, info_span, warn, Span};
 
-use crate::actors::MergeExecutor;
+use super::MergeExecutor;
 use crate::merge_policy::MergeOperation;
 use crate::models::{MergeScratch, ScratchDirectory};
 use crate::split_store::IndexingSplitStore;
@@ -33,7 +33,7 @@ use crate::split_store::IndexingSplitStore;
 pub struct MergeSplitDownloader {
     pub scratch_directory: ScratchDirectory,
     pub storage: IndexingSplitStore,
-    pub merge_executor_mailbox: Mailbox<MergeExecutor>,
+    pub executor_mailbox: Mailbox<MergeExecutor>,
 }
 
 impl Actor for MergeSplitDownloader {
@@ -92,7 +92,7 @@ impl Handler<MergeOperation> for MergeSplitDownloader {
             downloaded_splits_directory,
             tantivy_dirs,
         };
-        ctx.send_message(&self.merge_executor_mailbox, msg).await?;
+        ctx.send_message(&self.executor_mailbox, msg).await?;
         Ok(())
     }
 }
@@ -168,7 +168,7 @@ mod tests {
         let merge_split_downloader = MergeSplitDownloader {
             scratch_directory,
             storage,
-            merge_executor_mailbox,
+            executor_mailbox: merge_executor_mailbox,
         };
         let (merge_split_downloader_mailbox, merge_split_downloader_handler) =
             universe.spawn_actor(merge_split_downloader).spawn();

@@ -1,0 +1,1 @@
+ALTER TABLE splits DROP COLUMN delete_opstamp;

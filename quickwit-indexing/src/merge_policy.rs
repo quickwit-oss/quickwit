@@ -26,16 +26,39 @@ use tracing::debug;
 
 use crate::new_split_id;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MergeOperationType {
+    Merge,
+    DeleteAndMerge,
+}
+
+impl fmt::Display for MergeOperationType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+#[derive(Clone)]
 pub struct MergeOperation {
     pub merge_split_id: String,
     pub splits: Vec<SplitMetadata>,
+    pub operation_type: MergeOperationType,
 }
 
 impl MergeOperation {
-    pub fn new_merge_operation(splits: Vec<SplitMetadata>) -> MergeOperation {
+    pub fn new_merge_operation(splits: Vec<SplitMetadata>) -> Self {
         Self {
             merge_split_id: new_split_id(),
             splits,
+            operation_type: MergeOperationType::Merge,
+        }
+    }
+
+    pub fn new_delete_and_merge_operation(split: SplitMetadata) -> Self {
+        Self {
+            merge_split_id: new_split_id(),
+            splits: vec![split],
+            operation_type: MergeOperationType::DeleteAndMerge,
         }
     }
 
@@ -46,7 +69,11 @@ impl MergeOperation {
 
 impl fmt::Debug for MergeOperation {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Merge(merged_split_id={},splits=[", self.merge_split_id)?;
+        write!(
+            f,
+            "Merge(operation_type={}, merged_split_id={},splits=[",
+            self.operation_type, self.merge_split_id
+        )?;
         for split in &self.splits {
             write!(f, "{},", split.split_id())?;
         }

@@ -1,6 +1,6 @@
 {
   "create_timestamp": 3,
-  "delete_opstamp": 0,
+  "delete_opstamp": 10,
   "footer_offsets": {
     "end": 2000,
     "start": 1000
