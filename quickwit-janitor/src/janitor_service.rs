@@ -21,14 +21,6 @@ use quickwit_actors::ActorHandle;
 
 use crate::actors::{DeleteTaskService, GarbageCollector, RetentionPolicyExecutor};
 
-#[derive(Error, Debug)]
-pub enum JanitorServiceError {
-    #[error("Failed to resolve the storage `{0}`.")]
-    StorageError(#[from] StorageResolverError),
-    #[error("Metastore error `{0}`.")]
-    MetastoreError(#[from] MetastoreError),
-}
-
 pub struct JanitorService {
     _garbage_collector_handle: ActorHandle<GarbageCollector>,
     _retention_policy_executor_handle: ActorHandle<RetentionPolicyExecutor>,

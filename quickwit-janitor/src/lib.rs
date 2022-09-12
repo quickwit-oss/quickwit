@@ -20,6 +20,7 @@
 use std::sync::Arc;
 
 use quickwit_actors::Universe;
+use quickwit_config::QuickwitConfig;
 use quickwit_metastore::Metastore;
 use quickwit_search::SearchClientPool;
 use quickwit_storage::StorageUriResolver;
@@ -39,7 +40,7 @@ use crate::actors::{DeleteTaskService, GarbageCollector, RetentionPolicyExecutor
 
 pub async fn start_janitor_service(
     universe: &Universe,
-    config: &QuickwitConfig, // kept it for retention policy
+    config: &QuickwitConfig,
     metastore: Arc<dyn Metastore>,
     search_client_pool: SearchClientPool,
     storage_uri_resolver: StorageUriResolver,
@@ -47,6 +48,11 @@ pub async fn start_janitor_service(
     info!("Starting janitor service.");
     let garbage_collector = GarbageCollector::new(metastore.clone(), storage_uri_resolver.clone());
     let (_, garbage_collector_handle) = universe.spawn_actor(garbage_collector).spawn();
+
+    let retention_policy_executor = RetentionPolicyExecutor::new(metastore.clone());
+    let (_, retention_policy_executor_handle) =
+        universe.spawn_actor(retention_policy_executor).spawn();
+
     let delete_task_service = DeleteTaskService::new(
         metastore,
         search_client_pool,
@@ -54,9 +60,6 @@ pub async fn start_janitor_service(
         config.data_dir_path.clone(),
     );
     let (_, delete_task_service_handle) = universe.spawn_actor(delete_task_service).spawn();
-    let retention_policy_executor = RetentionPolicyExecutor::new(metastore);
-    let (_, retention_policy_executor_handle) =
-        universe.spawn_actor(retention_policy_executor).spawn();
 
     Ok(JanitorService::new(
         garbage_collector_handle,
