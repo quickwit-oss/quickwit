@@ -33,9 +33,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::try_join_all;
+use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
+use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use quickwit_storage::Storage;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 
@@ -463,7 +465,7 @@ impl Metastore for FileBackedMetastore {
         tags: Option<TagFilterAst>,
     ) -> MetastoreResult<Vec<Split>> {
         self.read(index_id, |index| {
-            index.list_splits(state, time_range_opt, tags)
+            index.list_splits(state, time_range_opt, tags, None)
         })
         .await
     }
@@ -491,6 +493,24 @@ impl Metastore for FileBackedMetastore {
         .await
     }
 
+    async fn list_stale_splits(
+        &self,
+        index_id: &str,
+        delete_opstamp: u64,
+        num_splits: usize,
+    ) -> MetastoreResult<Vec<Split>> {
+        self.read(index_id, |index| {
+            let splits = index
+                .list_splits(SplitState::Published, None, None, Some(delete_opstamp))?
+                .into_iter()
+                .sorted_by_key(|split| split.split_metadata.delete_opstamp)
+                .take(num_splits)
+                .collect_vec();
+            Ok(splits)
+        })
+        .await
+    }
+
     fn uri(&self) -> &Uri {
         self.storage.uri()
     }
@@ -498,6 +518,56 @@ impl Metastore for FileBackedMetastore {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
         self.storage.check_connectivity().await?;
         Ok(())
+    }
+
+    /// -------------------------------------------------------------------------------
+    /// Delete tasks
+
+    async fn last_delete_opstamp(&self, index_id: &str) -> MetastoreResult<u64> {
+        self.read(index_id, |index| Ok(index.last_delete_opstamp()))
+            .await
+    }
+
+    async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask> {
+        // Ugly hack to get opstamp and create timestamp as `mutate` callback only returns a boolean
+        // and not an actual struct.
+        let mut opstamp: u64 = 0;
+        let mut create_timestamp: i64 = 0;
+        self.mutate(&delete_query.index_id, |index| {
+            let delete_task = index.create_delete_task(delete_query.clone())?;
+            opstamp = delete_task.opstamp;
+            create_timestamp = delete_task.create_timestamp;
+            Ok(true)
+        })
+        .await?;
+        Ok(DeleteTask {
+            create_timestamp,
+            opstamp,
+            delete_query: Some(delete_query),
+        })
+    }
+
+    async fn update_splits_delete_opstamp<'a>(
+        &self,
+        index_id: &str,
+        split_ids: &[&'a str],
+        delete_opstamp: u64,
+    ) -> MetastoreResult<()> {
+        self.mutate(index_id, |index| {
+            index.update_splits_delete_opstamp(split_ids, delete_opstamp)
+        })
+        .await
+    }
+
+    async fn list_delete_tasks(
+        &self,
+        index_id: &str,
+        opstamp_start: u64,
+    ) -> MetastoreResult<Vec<DeleteTask>> {
+        let delete_tasks = self
+            .read(index_id, |index| Ok(index.list_delete_tasks(opstamp_start)))
+            .await??;
+        Ok(delete_tasks)
     }
 }
 
@@ -543,6 +613,7 @@ mod tests {
     use std::sync::Arc;
 
     use futures::executor::block_on;
+    use quickwit_proto::metastore_api::DeleteQuery;
     use quickwit_storage::{MockStorage, RamStorage, Storage, StorageErrorKind};
     use rand::Rng;
     use time::OffsetDateTime;
@@ -1152,5 +1223,67 @@ mod tests {
         assert!(no_more_indexes.is_empty());
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_monotically_increasing_stamps_by_index() {
+        let storage = RamStorage::default();
+        let metastore = FileBackedMetastore::try_new(Arc::new(storage.clone()), None)
+            .await
+            .unwrap();
+        let index_id = "test-index-increasing-stamps-by-index";
+        let index_metadata = IndexMetadata::for_test(
+            index_id,
+            "ram:///indexes/test-index-increasing-stamps-by-index",
+        );
+        metastore.create_index(index_metadata).await.unwrap();
+        let delete_query = DeleteQuery {
+            start_timestamp: None,
+            end_timestamp: None,
+            index_id: index_id.to_string(),
+            query: "harry potter".to_string(),
+            search_fields: Vec::new(),
+        };
+
+        let delete_task_1 = metastore
+            .create_delete_task(delete_query.clone())
+            .await
+            .unwrap();
+        assert_eq!(delete_task_1.opstamp, 1);
+        let delete_task_2 = metastore
+            .create_delete_task(delete_query.clone())
+            .await
+            .unwrap();
+        assert_eq!(delete_task_2.opstamp, 2);
+
+        // Create metastore with data already in the storage.
+        let new_metastore = FileBackedMetastore::try_new(Arc::new(storage), None)
+            .await
+            .unwrap();
+        let delete_task_3 = new_metastore
+            .create_delete_task(delete_query.clone())
+            .await
+            .unwrap();
+        assert_eq!(delete_task_3.opstamp, 3);
+
+        // Create delete tasks on new index.
+        let index_id_2 = "test-index-increasing-stamps-by-index-2";
+        let index_metadata = IndexMetadata::for_test(
+            index_id_2,
+            "ram:///indexes/test-index-increasing-stamps-by-index-2",
+        );
+        metastore.create_index(index_metadata).await.unwrap();
+        let delete_query = DeleteQuery {
+            start_timestamp: None,
+            end_timestamp: None,
+            index_id: index_id_2.to_string(),
+            query: "harry potter".to_string(),
+            search_fields: Vec::new(),
+        };
+        let delete_task_4 = metastore
+            .create_delete_task(delete_query.clone())
+            .await
+            .unwrap();
+        assert_eq!(delete_task_4.opstamp, 1);
     }
 }

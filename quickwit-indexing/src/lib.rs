@@ -29,8 +29,9 @@ use tracing::info;
 
 pub use crate::actors::{
     IndexingPipeline, IndexingPipelineParams, IndexingService, IndexingServiceError,
-    IngestApiGarbageCollector,
+    IngestApiGarbageCollector, PublisherType, Sequencer,
 };
+pub use crate::controlled_directory::ControlledDirectory;
 use crate::models::{IndexingStatistics, SpawnPipelines};
 pub use crate::split_store::{
     get_tantivy_directory_from_split_bundle, IndexingSplitStore, IndexingSplitStoreParams,

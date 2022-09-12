@@ -28,7 +28,7 @@ pub mod runtimes;
 pub mod uri;
 
 use std::fmt::Debug;
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
 pub use checklist::{print_checklist, run_checklist, BLUE_COLOR, GREEN_COLOR, RED_COLOR};
@@ -79,6 +79,7 @@ pub fn truncate_str(text: &str, max_len: usize) -> &str {
     &text[..truncation_index]
 }
 
+/// Extracts time range from optional start and end timestamps.
 pub fn extract_time_range(
     start_timestamp_opt: Option<i64>,
     end_timestamp_opt: Option<i64>,
@@ -98,6 +99,11 @@ pub fn extract_time_range(
         }),
         _ => None,
     }
+}
+
+/// Takes 2 intervals and returns true iff their intersection is empty
+pub fn is_disjoint(left: &Range<i64>, right: &RangeInclusive<i64>) -> bool {
+    left.end <= *right.start() || *right.end() < left.start
 }
 
 #[cfg(test)]

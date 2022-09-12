@@ -461,6 +461,7 @@ mod tests {
             doc_mapping_yaml,
             indexing_settings_yaml,
             &["body"],
+            None,
         )
         .await?;
 
@@ -534,6 +535,7 @@ mod tests {
             doc_mapping_yaml,
             indexing_settings_yaml,
             &["body"],
+            None,
         )
         .await?;
         let mut docs = vec![];
@@ -605,7 +607,8 @@ mod tests {
                 tokenizer: raw
                 fast: true
         "#;
-        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
+        let test_sandbox =
+            TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"], None).await?;
 
         test_sandbox
             .add_documents(vec![json!({"body": "body", "app": "my-app"})])
@@ -675,6 +678,7 @@ mod tests {
             doc_mapping_yaml,
             indexing_settings_yaml,
             &["body"],
+            None,
         )
         .await?;
 

@@ -65,6 +65,7 @@ impl TestSandbox {
         doc_mapping_yaml: &str,
         indexing_settings_yaml: &str,
         search_fields: &[&str],
+        metastore_uri: Option<&str>,
     ) -> anyhow::Result<Self> {
         let node_id = append_random_suffix("test-node");
         let index_uri = index_uri(index_id);
@@ -83,8 +84,9 @@ impl TestSandbox {
         let temp_dir = tempfile::tempdir()?;
         let indexer_config = IndexerConfig::for_test()?;
         let metastore_uri_resolver = quickwit_metastore_uri_resolver();
+        let metastore_uri = metastore_uri.unwrap_or(METASTORE_URI);
         let metastore = metastore_uri_resolver
-            .resolve(&Uri::new(METASTORE_URI.to_string()))
+            .resolve(&Uri::new(metastore_uri.to_string()))
             .await?;
         metastore.create_index(index_meta.clone()).await?;
         let storage_resolver = StorageUriResolver::for_test();
@@ -219,7 +221,7 @@ mod tests {
                 type: text
         "#;
         let test_sandbox =
-            TestSandbox::create("test_index", doc_mapping_yaml, "{}", &["body"]).await?;
+            TestSandbox::create("test_index", doc_mapping_yaml, "{}", &["body"], None).await?;
         let statistics = test_sandbox.add_documents(vec![
             serde_json::json!({"title": "Hurricane Fay", "body": "...", "url": "http://hurricane-fay"}),
             serde_json::json!({"title": "Ganimede", "body": "...", "url": "http://ganimede"}),

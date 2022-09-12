@@ -32,11 +32,14 @@ pub use index_metadata::IndexMetadata;
 use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
+use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
 
-/// Metastore meant to manage Quickwit's indexes and their splits.
+/// Metastore meant to manage Quickwit's indexes, their splits and delete tasks.
+///
+/// I. Index and splits management.
 ///
 /// Quickwit needs a way to ensure that we can cleanup unused files,
 /// and this process needs to be resilient to any fail-stop failures.
@@ -61,6 +64,25 @@ use crate::{MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
 /// storage right after marking it for deletion. A CLI client may delete files right away, but a
 /// more serious deployment should probably only delete those files after a grace period so that the
 /// running search queries can complete.
+///
+/// II. Delete tasks management.
+///
+/// A delete task is defined on a given index and by a search query. It can be
+/// applied to all the splits of the index.
+///
+/// Quickwit needs a way to track that a delete task has been applied to a split. This is ensured
+/// by two mecanisms:
+/// - On creation of a delete task, we give to the task a monotically increasing opstamp (uniqueness
+///   and monotonically increasing must be true at the index level).
+/// - When a delete task is executed on a split, that is when the documents matched by the search
+///   query are removed from the splits, we update the split's `delete_opstamp` to the value of the
+///   task's opstamp. This marks the split as "up-to-date" regarding this delete task. If new delete
+///   tasks are added, we will know that we need to run these delete tasks on the splits as its
+///   `delete_optstamp` will be inferior to the `opstamp` of the new tasks.
+///
+/// For splits created after a given delete task, Quickwit's indexing ensures that these splits
+/// are created with a `delete_optstamp` equal the lastest opstamp of the tasks of the
+/// corresponding index.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait Metastore: Send + Sync + 'static {
@@ -186,4 +208,35 @@ pub trait Metastore: Send + Sync + 'static {
 
     /// Returns the metastore uri.
     fn uri(&self) -> &Uri;
+
+    /// Gets the last delete opstamp for a given `index_id`.
+    async fn last_delete_opstamp(&self, index_id: &str) -> MetastoreResult<u64>;
+
+    /// Creates a [`DeleteTask`] from a [`DeleteQuery`].
+    async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask>;
+
+    /// Updates splits `split_metadata.delete_opstamp` to the value `delete_opstamp`.
+    async fn update_splits_delete_opstamp<'a>(
+        &self,
+        index_id: &str,
+        split_ids: &[&'a str],
+        delete_opstamp: u64,
+    ) -> MetastoreResult<()>;
+
+    /// Lists [`DeleteTask`] with `delete_task.opstamp` > `opstamp_start` for a given `index_id`.
+    async fn list_delete_tasks(
+        &self,
+        index_id: &str,
+        opstamp_start: u64,
+    ) -> MetastoreResult<Vec<DeleteTask>>;
+
+    /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
+    /// These splits are called "stale" as they have an `delete_opstamp` strictly inferior
+    /// to the given `delete_opstamp`.
+    async fn list_stale_splits(
+        &self,
+        index_id: &str,
+        delete_opstamp: u64,
+        num_splits: usize,
+    ) -> MetastoreResult<Vec<Split>>;
 }

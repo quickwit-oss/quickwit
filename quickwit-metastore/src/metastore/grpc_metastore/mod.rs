@@ -28,16 +28,18 @@ use std::time::Duration;
 use async_trait::async_trait;
 pub use grpc_adapter::GrpcMetastoreAdapter;
 use http::Uri;
+use itertools::Itertools;
 use quickwit_cluster::{ClusterMember, QuickwitService};
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::metastore_api_service_client::MetastoreApiServiceClient;
 use quickwit_proto::metastore_api::{
-    AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, DeleteSourceRequest,
-    DeleteSplitsRequest, IndexMetadataRequest, ListAllSplitsRequest, ListIndexesMetadatasRequest,
-    ListSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest,
-    ResetSourceCheckpointRequest, StageSplitRequest,
+    AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, DeleteQuery, DeleteSourceRequest,
+    DeleteSplitsRequest, DeleteTask, IndexMetadataRequest, LastDeleteOpstampRequest,
+    ListAllSplitsRequest, ListDeleteTasksRequest, ListIndexesMetadatasRequest, ListSplitsRequest,
+    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest,
+    ResetSourceCheckpointRequest, StageSplitRequest, UpdateSplitsDeleteOpstampRequest,
 };
 use quickwit_proto::tonic::transport::{Channel, Endpoint};
 use quickwit_proto::tonic::Status;
@@ -425,6 +427,107 @@ impl Metastore for MetastoreGrpcClient {
             .map(|tonic_response| tonic_response.into_inner())
             .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
         Ok(())
+    }
+
+    async fn last_delete_opstamp(&self, index_id: &str) -> MetastoreResult<u64> {
+        let request = LastDeleteOpstampRequest {
+            index_id: index_id.to_string(),
+        };
+        let response = self
+            .0
+            .clone()
+            .last_delete_opstamp(request)
+            .await
+            .map(|tonic_response| tonic_response.into_inner())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+        Ok(response.last_delete_opstamp)
+    }
+
+    async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask> {
+        let response = self
+            .0
+            .clone()
+            .create_delete_task(delete_query)
+            .await
+            .map(|tonic_response| tonic_response.into_inner())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+        Ok(response)
+    }
+
+    async fn update_splits_delete_opstamp<'a>(
+        &self,
+        index_id: &str,
+        split_ids: &[&'a str],
+        delete_opstamp: u64,
+    ) -> MetastoreResult<()> {
+        let split_ids_vec: Vec<String> = split_ids
+            .iter()
+            .map(|split_id| split_id.to_string())
+            .collect();
+        let request = UpdateSplitsDeleteOpstampRequest {
+            index_id: index_id.to_string(),
+            split_ids: split_ids_vec,
+            delete_opstamp,
+        };
+        self.0
+            .clone()
+            .update_splits_delete_opstamp(request)
+            .await
+            .map(|tonic_response| tonic_response.into_inner())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+        Ok(())
+    }
+
+    async fn list_delete_tasks(
+        &self,
+        index_id: &str,
+        opstamp_start: u64,
+    ) -> MetastoreResult<Vec<DeleteTask>> {
+        let request = ListDeleteTasksRequest {
+            index_id: index_id.to_string(),
+            opstamp_start,
+        };
+        let response = self
+            .0
+            .clone()
+            .list_delete_tasks(request)
+            .await
+            .map(|tonic_response| tonic_response.into_inner())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+        let delete_tasks: Vec<DeleteTask> = response
+            .delete_tasks
+            .into_iter()
+            .map(DeleteTask::from)
+            .collect_vec();
+        Ok(delete_tasks)
+    }
+
+    async fn list_stale_splits(
+        &self,
+        index_id: &str,
+        delete_opstamp: u64,
+        num_splits: usize,
+    ) -> MetastoreResult<Vec<Split>> {
+        let request = ListStaleSplitsRequest {
+            index_id: index_id.to_string(),
+            delete_opstamp,
+            num_splits: num_splits as u64,
+        };
+        let response = self
+            .0
+            .clone()
+            .list_stale_splits(request)
+            .await
+            .map(|tonic_response| tonic_response.into_inner())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+        let splits: Vec<Split> =
+            serde_json::from_str(&response.splits_serialized_json).map_err(|error| {
+                MetastoreError::JsonDeserializeError {
+                    name: "Vec<Split>".to_string(),
+                    message: error.to_string(),
+                }
+            })?;
+        Ok(splits)
     }
 }
 
