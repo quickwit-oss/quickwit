@@ -157,13 +157,8 @@ pub async fn serve_quickwit(
     };
 
     let janitor_service = if services.contains(&QuickwitService::Janitor) {
-        let janitor_service = start_janitor_service(
-            &universe,
-            &config,
-            metastore.clone(),
-            storage_resolver.clone(),
-        )
-        .await?;
+        let janitor_service =
+            start_janitor_service(&universe, metastore.clone(), storage_resolver.clone()).await?;
         Some(janitor_service)
     } else {
         None

@@ -20,7 +20,6 @@
 use std::sync::Arc;
 
 use quickwit_actors::Universe;
-use quickwit_config::QuickwitConfig;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
 use tracing::info;
@@ -39,7 +38,6 @@ use crate::actors::{GarbageCollector, RetentionPolicyExecutor};
 
 pub async fn start_janitor_service(
     universe: &Universe,
-    _config: &QuickwitConfig, // kept it for retention policy
     metastore: Arc<dyn Metastore>,
     storage_uri_resolver: StorageUriResolver,
 ) -> anyhow::Result<JanitorService> {
@@ -47,12 +45,12 @@ pub async fn start_janitor_service(
     let garbage_collector = GarbageCollector::new(metastore.clone(), storage_uri_resolver);
     let (_, garbage_collector_handle) = universe.spawn_actor(garbage_collector).spawn();
 
-    let retention_policy_evaluator = RetentionPolicyExecutor::new(metastore);
-    let (_, retention_policy_evaluator_handle) =
-        universe.spawn_actor(retention_policy_evaluator).spawn();
+    let retention_policy_executor = RetentionPolicyExecutor::new(metastore);
+    let (_, retention_policy_executor_handle) =
+        universe.spawn_actor(retention_policy_executor).spawn();
 
     Ok(JanitorService::new(
         garbage_collector_handle,
-        retention_policy_evaluator_handle,
+        retention_policy_executor_handle,
     ))
 }

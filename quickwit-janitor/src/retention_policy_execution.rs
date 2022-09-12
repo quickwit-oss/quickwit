@@ -28,7 +28,8 @@ use tracing::warn;
 use crate::actors::RetentionPolicyExecutor;
 
 /// Detect all expired splits based a retention policy and
-/// mark them as MarkedForDeletion.
+/// only mark them as `MarkedForDeletion`. Actual split deletion
+/// is taken care of by the garbage collector.
 ///
 /// * `index_id` - The target index id.
 /// * `metastore` - The metastore managing the target index.
@@ -61,7 +62,6 @@ pub async fn run_execute_retention_policy(
     }
 
     // Change all expired splits state to MarkedForDeletion.
-    // The actual deletion will be taken care of by the garbage collection.
     let split_ids: Vec<&str> = expired_splits.iter().map(|meta| meta.split_id()).collect();
     metastore
         .mark_splits_for_deletion(index_id, &split_ids)
@@ -70,14 +70,14 @@ pub async fn run_execute_retention_policy(
     Ok(expired_splits)
 }
 
-/// Checks to see if a split is expired based on retention policy.
+/// Checks to see if a split is expired based on a retention policy.
 fn is_split_expired(
     current_date_time: OffsetDateTime,
     split: &Split,
     retention_policy: &RetentionPolicy,
 ) -> anyhow::Result<bool> {
     let retention_period = retention_policy.retention_period()?;
-    // The split `publish_timestamp` field does not exist in previous version of Quickwit < v0.4.
+    // The split `publish_timestamp` field does not exist in previous versions of Quickwit (< v0.4).
     // In order to stay backward compatible, we will use the `updated_timestamp` field
     // for splits generated from older version of Quickwit.
     let publish_timestamp = split.publish_timestamp.unwrap_or(split.update_timestamp);
@@ -88,11 +88,12 @@ fn is_split_expired(
         }
         RetentionPolicyCutoffReference::SplitTimestampField => {
             if let Some(time_range) = &split.split_metadata.time_range {
-                let time_range_end = OffsetDateTime::from_unix_timestamp(*time_range.end())?;
-                (current_date_time - time_range_end) >= retention_period
+                let time_range_end_date_time =
+                    OffsetDateTime::from_unix_timestamp(*time_range.end())?;
+                (current_date_time - time_range_end_date_time) >= retention_period
             } else {
                 warn!(index_id=%split.split_metadata.index_id, split_id=%split.split_id(),
-                "Retention policy evaluation expected a `time_range` on the split, but none exist.");
+                "Retention policy execution expected a `time_range` on the split, but none exist.");
                 false
             }
         }
@@ -137,7 +138,7 @@ mod tests {
             "hourly".to_string(),
         );
 
-        // newly created split
+        // A newly created split.
         let now_timestamp = Utc::now().timestamp();
         let split = make_split(now_timestamp, Some(now_timestamp), None);
         assert!(!is_split_expired(
@@ -149,7 +150,7 @@ mod tests {
 
         let two_hours_ago_timestamp = (Utc::now() - Duration::hours(2)).timestamp();
 
-        // A two hours old split
+        // A two hours old split.
         let split = make_split(two_hours_ago_timestamp, Some(two_hours_ago_timestamp), None);
         assert!(is_split_expired(
             OffsetDateTime::now_utc(),
@@ -176,7 +177,7 @@ mod tests {
             "hourly".to_string(),
         );
 
-        // newly created split
+        // A newly created split.
         let now_timestamp = Utc::now().timestamp();
         let split = make_split(now_timestamp, None, Some(10..=now_timestamp));
         assert!(!is_split_expired(
@@ -188,7 +189,7 @@ mod tests {
 
         let two_hours_ago_timestamp = (Utc::now() - Duration::hours(2)).timestamp();
 
-        // A two hours old split
+        // A two hours old split.
         let split = make_split(
             two_hours_ago_timestamp,
             None,
