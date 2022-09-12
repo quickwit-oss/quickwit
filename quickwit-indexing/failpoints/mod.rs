@@ -46,7 +46,7 @@ use quickwit_common::split_file;
 use quickwit_indexing::actors::MergeExecutor;
 use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_indexing::models::{IndexingPipelineId, MergeScratch, ScratchDirectory};
-use quickwit_indexing::{get_tantivy_directory_from_split_bundle, new_split_id, TestSandbox};
+use quickwit_indexing::{get_tantivy_directory_from_split_bundle, TestSandbox};
 use quickwit_metastore::{Split, SplitMetadata, SplitState};
 use tantivy::Directory;
 
@@ -172,6 +172,7 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
         doc_mapper_yaml,
         indexing_setting_yaml,
         &search_fields,
+        None,
     )
     .await?;
     let batch_1: Vec<serde_json::Value> = vec![
@@ -242,6 +243,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         doc_mapper_yaml,
         indexing_setting_yaml,
         &search_fields,
+        None,
     )
     .await?;
 
@@ -276,10 +278,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     }
 
     let merge_scratch = MergeScratch {
-        merge_operation: MergeOperation {
-            merge_split_id: new_split_id(),
-            splits: split_metadatas,
-        },
+        merge_operation: MergeOperation::new_merge_operation(split_metadatas),
         merge_scratch_directory,
         downloaded_splits_directory,
         tantivy_dirs,
@@ -291,7 +290,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         pipeline_ord: 0,
     };
     let (merge_packager_mailbox, _merge_packager_inbox) = create_test_mailbox();
-    let merge_executor = MergeExecutor::new(pipeline_id, merge_packager_mailbox);
+    let merge_executor = MergeExecutor::new(pipeline_id, metastore, merge_packager_mailbox);
     let universe = Universe::new();
     let (merge_executor_mailbox, merge_executor_handle) =
         universe.spawn_actor(merge_executor).spawn();
