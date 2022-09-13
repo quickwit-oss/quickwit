@@ -91,10 +91,12 @@ impl RetentionPolicyExecutor {
             self.index_metadatas.keys(),
             index_metadatas.iter().map(|metadata| &metadata.index_id),
         );
-        for index_id in &deleted_indexes {
-            self.index_metadatas.remove(index_id);
+        if !deleted_indexes.is_empty() {
+            debug!(index_ids=%deleted_indexes.iter().join(", "), "Deleting indexes from cache.");
+            for index_id in &deleted_indexes {
+                self.index_metadatas.remove(index_id);
+            }
         }
-        debug!(index_ids=%deleted_indexes.iter().join(", "), "Deleted indexes from cache.");
 
         for index_metadata in index_metadatas.into_iter() {
             // We only care about indexes with a retention policy configured.
