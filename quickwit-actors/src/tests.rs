@@ -23,6 +23,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use crate::observation::ObservationType;
+use crate::supervisor::spawn_supervised_actor;
 use crate::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Command, Handler, Health,
     Mailbox, Observation, Supervisable, Universe,
@@ -682,4 +683,81 @@ async fn test_drain_is_called() {
             drain_calls_count: 2
         }
     );
+}
+
+struct InnerActor {}
+
+impl Actor for InnerActor {
+    type ObservableState = ();
+
+    fn name(&self) -> String {
+        "InnerActor".to_string()
+    }
+
+    fn observable_state(&self) {}
+}
+
+struct ActorToSupervise {
+    mailbox: Mailbox<InnerActor>,
+}
+
+impl Actor for ActorToSupervise {
+    type ObservableState = ();
+
+    fn name(&self) -> String {
+        "ActorToSupervise".to_string()
+    }
+
+    fn observable_state(&self) {}
+}
+
+#[derive(Clone, Debug)]
+struct Fail {}
+
+#[async_trait]
+impl Handler<Fail> for ActorToSupervise {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _message: Fail,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        Err(ActorExitStatus::Panicked)
+    }
+}
+
+#[tokio::test]
+async fn test_supervisor_actor() {
+    quickwit_common::setup_logging_for_tests();
+    let universe = Universe::new();
+
+    let (inner_mailbox, _) = universe.spawn_actor(InnerActor {}).spawn();
+    let inner_mailbox_clone = inner_mailbox.clone();
+    let create_inner_actor_fn = move || {
+        Ok(ActorToSupervise {
+            mailbox: inner_mailbox_clone.clone(),
+        })
+    };
+    let (actor_to_supervise_mailbox, supervisor_handle) = spawn_supervised_actor(
+        universe.scheduler_mailbox.clone(),
+        universe.kill_switch.clone(),
+        Box::new(create_inner_actor_fn),
+    )
+    .unwrap();
+    assert_eq!(supervisor_handle.observe().await.state.num_failure, 0);
+    let result = actor_to_supervise_mailbox
+        .send_message(Fail {})
+        .await
+        .unwrap()
+        .await;
+    assert!(result.is_err());
+    tokio::time::sleep(crate::HEARTBEAT * 2).await;
+    assert_eq!(supervisor_handle.observe().await.state.num_failure, 1);
+    assert!(actor_to_supervise_mailbox
+        .send_message(Fail {})
+        .await
+        .is_ok());
+    tokio::time::sleep(crate::HEARTBEAT * 2).await;
+    assert_eq!(supervisor_handle.observe().await.state.num_failure, 2);
 }

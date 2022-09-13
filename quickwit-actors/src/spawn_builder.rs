@@ -89,6 +89,7 @@ impl<A: Actor> SpawnBuilder<A> {
         let (state_tx, state_rx) = watch::channel(obs_state);
         let ctx = ActorContext::new(
             mailbox,
+            inbox.clone(),
             self.kill_switch.clone(),
             self.scheduler_mailbox.clone(),
             state_tx,

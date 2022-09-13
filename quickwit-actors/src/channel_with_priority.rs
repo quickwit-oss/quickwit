@@ -221,6 +221,15 @@ impl<T> Receiver<T> {
         }
         messages
     }
+
+    pub(crate) fn clone(&self) -> Self {
+        Self {
+            low_priority_rx: self.low_priority_rx.clone(),
+            high_priority_rx: self.high_priority_rx.clone(),
+            _high_priority_tx: self._high_priority_tx.clone(),
+            pending_low_priority_message: None,
+        }
+    }
 }
 
 #[cfg(test)]

@@ -244,6 +244,12 @@ impl<A: Actor> Inbox<A> {
             .flat_map(|mut envelope| envelope.message_typed())
             .collect()
     }
+
+    pub(crate) fn clone(&self) -> Self {
+        Self {
+            rx: self.rx.clone(),
+        }
+    }
 }
 
 pub fn create_mailbox<A: Actor>(

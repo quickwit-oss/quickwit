@@ -32,6 +32,7 @@ use tokio::sync::{oneshot, watch};
 use tracing::{debug, error, info_span, Span};
 
 use crate::actor_state::{ActorState, AtomicState};
+use crate::mailbox::Inbox;
 use crate::progress::{Progress, ProtectedZoneGuard};
 use crate::scheduler::{Callback, ScheduleEvent, Scheduler};
 use crate::spawn_builder::SpawnBuilder;
@@ -224,6 +225,7 @@ impl<A: Actor> Deref for ActorContext<A> {
 
 pub struct ActorContextInner<A: Actor> {
     self_mailbox: Mailbox<A>,
+    self_inbox: Inbox<A>,
     progress: Progress,
     kill_switch: KillSwitch,
     scheduler_mailbox: Mailbox<Scheduler>,
@@ -264,6 +266,7 @@ impl<A: Actor> Handler<WakeUp> for A {
 impl<A: Actor> ActorContext<A> {
     pub(crate) fn new(
         self_mailbox: Mailbox<A>,
+        self_inbox: Inbox<A>,
         kill_switch: KillSwitch,
         scheduler_mailbox: Mailbox<Scheduler>,
         observable_state_tx: watch::Sender<A::ObservableState>,
@@ -271,6 +274,7 @@ impl<A: Actor> ActorContext<A> {
         ActorContext {
             inner: ActorContextInner {
                 self_mailbox,
+                self_inbox,
                 progress: Progress::default(),
                 kill_switch,
                 scheduler_mailbox,
@@ -286,10 +290,12 @@ impl<A: Actor> ActorContext<A> {
     pub fn for_test(
         universe: &Universe,
         actor_mailbox: Mailbox<A>,
+        actor_inbox: Inbox<A>,
         observable_state_tx: watch::Sender<A::ObservableState>,
     ) -> Self {
         Self::new(
             actor_mailbox,
+            actor_inbox,
             universe.kill_switch.clone(),
             universe.scheduler_mailbox.clone(),
             observable_state_tx,
@@ -302,6 +308,10 @@ impl<A: Actor> ActorContext<A> {
 
     pub fn mailbox(&self) -> &Mailbox<A> {
         &self.self_mailbox
+    }
+
+    pub(crate) fn inbox(&self) -> &Inbox<A> {
+        &self.self_inbox
     }
 
     pub fn actor_instance_id(&self) -> &str {

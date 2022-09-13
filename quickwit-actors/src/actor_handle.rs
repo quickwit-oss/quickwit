@@ -27,6 +27,7 @@ use tokio::time::timeout;
 use tracing::error;
 
 use crate::actor_state::ActorState;
+use crate::mailbox::Inbox;
 use crate::observation::ObservationType;
 use crate::{Actor, ActorContext, ActorExitStatus, Command, Mailbox, Observation};
 
@@ -256,6 +257,10 @@ impl<A: Actor> ActorHandle<A> {
 
     pub fn mailbox(&self) -> &Mailbox<A> {
         self.actor_context.mailbox()
+    }
+
+    pub(crate) fn inbox(&self) -> &Inbox<A> {
+        self.actor_context.inbox()
     }
 }
 

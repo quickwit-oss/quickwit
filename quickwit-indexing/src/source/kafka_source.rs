@@ -1051,10 +1051,10 @@ mod kafka_broker_tests {
         kafka_source.state.num_inactive_partitions = 1;
 
         let universe = Universe::new();
-        let (source_mailbox, _source_inbox) = create_test_mailbox();
+        let (source_mailbox, source_inbox) = create_test_mailbox();
         let (observable_state_tx, _observable_state_rx) = watch::channel(json!({}));
         let ctx: ActorContext<SourceActor> =
-            ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
+            ActorContext::for_test(&universe, source_mailbox, source_inbox, observable_state_tx);
         let (assignment_tx, assignment_rx) = oneshot::channel();
 
         kafka_source
@@ -1105,11 +1105,11 @@ mod kafka_broker_tests {
             .unwrap();
 
         let universe = Universe::new();
-        let (source_mailbox, _source_inbox) = create_test_mailbox();
+        let (source_mailbox, source_inbox) = create_test_mailbox();
         let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
         let (observable_state_tx, _observable_state_rx) = watch::channel(json!({}));
         let ctx: ActorContext<SourceActor> =
-            ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
+            ActorContext::for_test(&universe, source_mailbox, source_inbox, observable_state_tx);
         let (ack_tx, ack_rx) = oneshot::channel();
 
         let mut batch = BatchBuilder::default();
