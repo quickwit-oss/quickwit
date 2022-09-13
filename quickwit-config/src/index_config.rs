@@ -25,6 +25,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context};
 use byte_unit::Byte;
+use chrono::Utc;
 use cron::Schedule;
 use humantime::parse_duration;
 use json_comments::StripComments;
@@ -318,6 +319,18 @@ impl RetentionPolicy {
                 self.evaluation_schedule
             )
         })
+    }
+
+    pub fn duration_until_next_evaluation(&self) -> anyhow::Result<Duration> {
+        let schedule = self.evaluation_schedule()?;
+        let future_date = schedule
+            .upcoming(Utc)
+            .next()
+            .expect("Failed to obtain next evaluation date.");
+        let duration = (future_date - Utc::now())
+            .to_std()
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        Ok(duration)
     }
 
     fn requires_timestamp_field(&self) -> bool {
@@ -926,5 +939,33 @@ mod tests {
             };
             retention_policy.validate().unwrap_err();
         }
+    }
+
+    #[test]
+    fn test_retention_schedule_duration() {
+        let schedule_test_helper_fn = |schedule_str: &str| {
+            let hourly_schedule = Schedule::from_str(&prepend_at_char(schedule_str)).unwrap();
+            let retention_policy = RetentionPolicy {
+                retention_period: "1 hour".to_string(),
+                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                evaluation_schedule: schedule_str.to_string(),
+            };
+
+            let next_evaluation_duration = chrono::Duration::nanoseconds(
+                retention_policy
+                    .duration_until_next_evaluation()
+                    .unwrap()
+                    .as_nanos() as i64,
+            );
+            let next_evaluation_date = Utc::now() + next_evaluation_duration;
+            let expected_date = hourly_schedule.upcoming(Utc).next().unwrap();
+            assert_eq!(next_evaluation_date.timestamp(), expected_date.timestamp());
+        };
+
+        schedule_test_helper_fn("hourly");
+        schedule_test_helper_fn("daily");
+        schedule_test_helper_fn("weekly");
+        schedule_test_helper_fn("monthly");
+        schedule_test_helper_fn("* * * ? * ?");
     }
 }

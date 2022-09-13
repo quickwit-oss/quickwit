@@ -29,17 +29,18 @@ use tracing::info;
 pub mod actors;
 mod garbage_collection;
 mod janitor_service;
+mod retention_policy_execution;
 
 pub use janitor_service::JanitorService;
 
 pub use self::garbage_collection::{
     delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
 };
-use crate::actors::{DeleteTaskService, GarbageCollector};
+use crate::actors::{DeleteTaskService, GarbageCollector, RetentionPolicyExecutor};
 
 pub async fn start_janitor_service(
     universe: &Universe,
-    config: &QuickwitConfig, // kept it for retention policy
+    config: &QuickwitConfig,
     metastore: Arc<dyn Metastore>,
     search_client_pool: SearchClientPool,
     storage_uri_resolver: StorageUriResolver,
@@ -47,6 +48,11 @@ pub async fn start_janitor_service(
     info!("Starting janitor service.");
     let garbage_collector = GarbageCollector::new(metastore.clone(), storage_uri_resolver.clone());
     let (_, garbage_collector_handle) = universe.spawn_actor(garbage_collector).spawn();
+
+    let retention_policy_executor = RetentionPolicyExecutor::new(metastore.clone());
+    let (_, retention_policy_executor_handle) =
+        universe.spawn_actor(retention_policy_executor).spawn();
+
     let delete_task_service = DeleteTaskService::new(
         metastore,
         search_client_pool,
@@ -57,6 +63,7 @@ pub async fn start_janitor_service(
 
     Ok(JanitorService::new(
         garbage_collector_handle,
+        retention_policy_executor_handle,
         delete_task_service_handle,
     ))
 }

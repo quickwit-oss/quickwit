@@ -3115,6 +3115,7 @@ version = "0.3.1"
 dependencies = [
  "anyhow",
  "byte-unit",
+ "chrono",
  "cron",
  "derivative",
  "humantime",
@@ -3293,8 +3294,10 @@ version = "0.3.1"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
  "futures",
  "itertools",
+ "mockall",
  "quickwit-actors",
  "quickwit-cluster",
  "quickwit-common",

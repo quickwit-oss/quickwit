@@ -12,6 +12,7 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 anyhow = "1"
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
+chrono = "0.4.19"
 cron = "0.11.0"
 derivative = "2.2.0"
 humantime = "2.1.0"

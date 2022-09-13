@@ -19,20 +19,23 @@
 
 use quickwit_actors::ActorHandle;
 
-use crate::actors::{DeleteTaskService, GarbageCollector};
+use crate::actors::{DeleteTaskService, GarbageCollector, RetentionPolicyExecutor};
 
 pub struct JanitorService {
     _garbage_collector_handle: ActorHandle<GarbageCollector>,
+    _retention_policy_executor_handle: ActorHandle<RetentionPolicyExecutor>,
     _delete_task_service_handle: ActorHandle<DeleteTaskService>,
 }
 
 impl JanitorService {
     pub fn new(
         garbage_collector_handle: ActorHandle<GarbageCollector>,
+        retention_policy_executor_handle: ActorHandle<RetentionPolicyExecutor>,
         delete_task_service_handle: ActorHandle<DeleteTaskService>,
     ) -> Self {
         Self {
             _garbage_collector_handle: garbage_collector_handle,
+            _retention_policy_executor_handle: retention_policy_executor_handle,
             _delete_task_service_handle: delete_task_service_handle,
         }
     }
