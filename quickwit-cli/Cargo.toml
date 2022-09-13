@@ -34,7 +34,7 @@ itertools = "0.10.3"
 once_cell = "1"
 openssl-probe = { version = "0.1.4", optional = true }
 opentelemetry = { version = "0.17", features = ["rt-tokio"] }
-opentelemetry-jaeger = { version = "0.16", features = ["rt-tokio"] }
+opentelemetry-jaeger = { version = "0.17", features = ["rt-tokio"] }
 quickwit-actors = { version = "0.3.1", path = "../quickwit-actors" }
 quickwit-cluster = { version = "0.3.1", path = "../quickwit-cluster" }
 quickwit-common = { version = "0.3.1", path = "../quickwit-common" }
