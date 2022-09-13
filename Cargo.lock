@@ -54,6 +54,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anes"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
+
+[[package]]
 name = "ansi_term"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -521,6 +527,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fff857943da45f546682664a79488be82e69e43c1a7a2307679ab9afb3a66d2e"
 
 [[package]]
+name = "ciborium"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0c137568cc60b904a7724001b35ce2630fd00d5d84805fbb608ab89509d788f"
+dependencies = [
+ "ciborium-io",
+ "ciborium-ll",
+ "serde",
+]
+
+[[package]]
+name = "ciborium-io"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "346de753af073cc87b52b2083a506b38ac176a44cfb05497b622e27be899b369"
+
+[[package]]
+name = "ciborium-ll"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "213030a2b5a4e0c0892b6652260cf6ccac84827b83a85a534e178e3906c4cf1b"
+dependencies = [
+ "ciborium-io",
+ "half",
+]
+
+[[package]]
 name = "clang-sys"
 version = "1.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -529,17 +562,6 @@ dependencies = [
  "glob",
  "libc",
  "libloading",
-]
-
-[[package]]
-name = "clap"
-version = "2.34.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0610544180c38b88101fecf2dd634b174a62eef6946f84dfc6a7127512b381c"
-dependencies = [
- "bitflags",
- "textwrap 0.11.0",
- "unicode-width",
 ]
 
 [[package]]
@@ -554,7 +576,7 @@ dependencies = [
  "indexmap",
  "strsim",
  "termcolor",
- "textwrap 0.15.0",
+ "textwrap",
 ]
 
 [[package]]
@@ -738,15 +760,16 @@ dependencies = [
 
 [[package]]
 name = "criterion"
-version = "0.3.6"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b01d6de93b2b6c65e17c634a26653a29d107b3c98c607c765bf38d041531cd8f"
+checksum = "e7c76e09c1aae2bc52b3d2f29e13c6572553b30c4aa1b8a49fd70de6412654cb"
 dependencies = [
+ "anes",
  "atty",
  "cast",
- "clap 2.34.0",
+ "ciborium",
+ "clap",
  "criterion-plot",
- "csv",
  "itertools",
  "lazy_static",
  "num-traits",
@@ -755,7 +778,6 @@ dependencies = [
  "rayon",
  "regex",
  "serde",
- "serde_cbor",
  "serde_derive",
  "serde_json",
  "tinytemplate",
@@ -764,9 +786,9 @@ dependencies = [
 
 [[package]]
 name = "criterion-plot"
-version = "0.4.5"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2673cc8207403546f45f5fd319a974b1e6983ad1a3ee7e6041650013be041876"
+checksum = "6b50826342786a51a89e2da3a28f1c32b06e387201bc2d19791f622c673706b1"
 dependencies = [
  "cast",
  "itertools",
@@ -1961,6 +1983,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lru"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "936d98d2ddd79c18641c6709e7bb09981449694e402d1a0f0f657ea8d61f4a51"
+dependencies = [
+ "hashbrown",
+]
+
+[[package]]
 name = "lz4_flex"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2990,7 +3021,7 @@ dependencies = [
  "async-trait",
  "atty",
  "byte-unit",
- "clap 3.1.18",
+ "clap",
  "colored",
  "console-subscriber",
  "dialoguer",
@@ -3350,7 +3381,7 @@ dependencies = [
  "http",
  "hyper",
  "itertools",
- "lru",
+ "lru 0.8.0",
  "mockall",
  "once_cell",
  "opentelemetry",
@@ -3437,7 +3468,7 @@ dependencies = [
  "bytes",
  "fnv",
  "futures",
- "lru",
+ "lru 0.8.0",
  "md5",
  "mockall",
  "once_cell",
@@ -4627,7 +4658,7 @@ dependencies = [
  "itertools",
  "levenshtein_automata",
  "log",
- "lru",
+ "lru 0.7.8",
  "lz4_flex",
  "measure_time",
  "memmap2",
@@ -4741,15 +4772,6 @@ name = "termtree"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "507e9898683b6c43a9aa55b64259b721b52ba226e0f3779137e50ad114a4c90b"
-
-[[package]]
-name = "textwrap"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d326610f408c7a4eb6f51c37c330e496b08506c9457c9d34287ecc38809fb060"
-dependencies = [
- "unicode-width",
-]
 
 [[package]]
 name = "textwrap"

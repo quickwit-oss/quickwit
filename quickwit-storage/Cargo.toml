@@ -16,7 +16,7 @@ base64 = "0.13"
 bytes = "1"
 fnv = "1.0.7"
 futures = "0.3"
-lru = "0.7"
+lru = "0.8"
 md5 = "0.7"
 mockall = { version = "0.11", optional = true }
 once_cell = "1"

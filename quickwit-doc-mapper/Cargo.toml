@@ -40,7 +40,7 @@ unwrap-infallible = "0.1.5"
 
 
 [dev-dependencies]
-criterion = "0.3"
+criterion = "0.4"
 matches = "0.1.8"
 
 [features]
