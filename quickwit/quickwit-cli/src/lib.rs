@@ -37,6 +37,8 @@ use tracing::info;
 
 pub mod cli;
 pub mod index;
+#[cfg(feature = "jemalloc")]
+pub mod jemalloc;
 pub mod service;
 pub mod source;
 pub mod split;

@@ -54,8 +54,8 @@ serde_json = "1.0"
 tabled = "0.8"
 tempfile = "3"
 thousands = "0.2.0"
-tikv-jemalloc-ctl = "0.5"
-tikv-jemallocator = "0.5"
+tikv-jemalloc-ctl = { version = "0.5", optional = true }
+tikv-jemallocator = { version = "0.5", optional = true }
 time = { version = "0.3.5", features = ["macros"] }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["full"] }
@@ -78,6 +78,7 @@ reqwest = { version = "0.11", default-features = false, features = [
 serial_test = "0.9.0"
 
 [features]
+jemalloc = ["dep:tikv-jemalloc-ctl", "dep:tikv-jemallocator"]
 ci-test = []
 openssl-support = ["openssl-probe"]
 tokio-console = ["console-subscriber"]
@@ -86,12 +87,14 @@ release-feature-set = [
   "quickwit-metastore/azure",
   "quickwit-indexing/kafka",
   "quickwit-indexing/kinesis",
-  "openssl-support"
+  "openssl-support",
+  "jemalloc"
 ]
 release-feature-vendored-set = [
   "quickwit-metastore/postgres",
   "quickwit-metastore/azure",
   "quickwit-indexing/vendored-kafka",
   "quickwit-indexing/kinesis",
-  "openssl-support"
+  "openssl-support",
+  "jemalloc"
 ]

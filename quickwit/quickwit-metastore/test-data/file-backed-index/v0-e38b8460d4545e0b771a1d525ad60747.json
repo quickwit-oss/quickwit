@@ -1,4 +1,5 @@
 {
+  "delete_tasks": [],
   "index": {
     "checkpoint": {
       "kafka-source": {
@@ -43,6 +44,7 @@
           "type": "text"
         }
       ],
+      "max_num_partitions": 8,
       "mode": "dynamic",
       "store_source": true,
       "tag_fields": [
@@ -96,13 +98,16 @@
   "splits": [
     {
       "create_timestamp": 3,
+      "delete_opstamp": 0,
       "footer_offsets": {
         "end": 2000,
         "start": 1000
       },
+      "index_id": "my-index",
       "node_id": "node/1",
       "num_docs": 12303,
       "partition_id": 7,
+      "publish_timestamp": null,
       "source_id": "source",
       "split_id": "split",
       "split_state": "Published",
