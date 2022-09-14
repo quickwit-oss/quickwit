@@ -20,7 +20,7 @@ RUN apt-get -y update \
 RUN rustup component add rustfmt
 
 # Build UI
-COPY quickwit-ui /quickwit/quickwit-ui
+COPY quickwit/quickwit-ui /quickwit/quickwit-ui
 
 WORKDIR /quickwit/quickwit-ui
 
@@ -29,7 +29,7 @@ RUN echo "Building Quickwit UI" \
     && make install build
 
 # Build workspace
-COPY . /quickwit
+COPY quickwit /quickwit
 
 WORKDIR /quickwit
 
@@ -43,8 +43,8 @@ RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CAR
 
 # Change the default configuration file in order to make the REST,
 # gRPC, and gossip services accessible outside of Docker container.
-COPY ./config/quickwit.yaml ./config/quickwit.yaml
-RUN sed -i 's/#[ ]*listen_address: 127.0.0.1/listen_address: 0.0.0.0/g' ./config/quickwit.yaml
+COPY config/quickwit.yaml /quickwit/config/quickwit.yaml
+RUN sed -i 's/#[ ]*listen_address: 127.0.0.1/listen_address: 0.0.0.0/g' config/quickwit.yaml
 
 
 FROM debian:bullseye-slim AS quickwit
