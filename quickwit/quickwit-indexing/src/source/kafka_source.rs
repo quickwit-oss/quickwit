@@ -483,7 +483,7 @@ impl Source for KafkaSource {
                     let event = event_opt.ok_or_else(|| ActorExitStatus::from(anyhow!("Consumer was dropped.")))?;
                     match event {
                         KafkaEvent::Message(message) => self.process_message(message, &mut batch).await?,
-                        KafkaEvent::AssignPartitions { partitions, assignment_tx} => self.process_assign_partitions(ctx, &partitions, assignment_tx).await?,
+                        KafkaEvent::AssignPartitions { partitions, assignment_tx } => self.process_assign_partitions(ctx, &partitions, assignment_tx).await?,
                         KafkaEvent::RevokePartitions { ack_tx } => self.process_revoke_partitions(ctx, doc_processor_mailbox, &mut batch, ack_tx).await?,
                         KafkaEvent::PartitionEOF(partition) => self.process_partition_eof(partition),
                         KafkaEvent::Error(error) => Err(ActorExitStatus::from(error))?,

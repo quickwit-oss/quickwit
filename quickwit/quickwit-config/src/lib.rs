@@ -22,9 +22,10 @@ use once_cell::sync::OnceCell;
 use regex::Regex;
 
 mod config;
+mod config_value;
 mod index_config;
+mod qw_env_vars;
 mod source_config;
-mod templating;
 
 pub use config::{IndexerConfig, QuickwitConfig, SearcherConfig, DEFAULT_QW_CONFIG_PATH};
 pub use index_config::{
