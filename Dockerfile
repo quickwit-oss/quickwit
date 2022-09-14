@@ -25,6 +25,7 @@ COPY quickwit/quickwit-ui /quickwit/quickwit-ui
 WORKDIR /quickwit/quickwit-ui
 
 RUN echo "Building Quickwit UI" \
+    && touch .gitignore_for_build_directory \
     && npm install --location=global yarn \
     && make install build
 
