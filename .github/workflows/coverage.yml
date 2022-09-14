@@ -7,9 +7,9 @@ on:
       - main
       - trigger-coverage-workflow
     paths:
-      - Cargo.lock
-      - Cargo.toml
-      - quickwit-*/**
+      - quickwit/Cargo.toml
+      - quickwit/Cargo.lock
+      - quickwit/quickwit-*/**
 
 env:
   QW_S3_ENDPOINT: "http://localhost:4566" # Services are exposed as localhost because we are not running coverage in a container.
@@ -110,6 +110,7 @@ jobs:
 
       - name: Prepare LocalStack S3
         run: ./quickwit-cli/tests/prepare_tests.sh
+        working-directory: ./quickwit
 
       # GitHub Actions does not allow services to be started with a custom command,
       # so we are running Azurite as a container manually.
@@ -134,6 +135,7 @@ jobs:
           cargo llvm-cov --test failpoints --no-report --features fail/failpoints
           cargo llvm-cov --no-report --all-features
           cargo llvm-cov --no-run --lcov --output-path lcov.info
+        working-directory: ./quickwit
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
@@ -141,3 +143,4 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
           files: lcov.info
           fail_ci_if_error: true
+        working-directory: ./quickwit

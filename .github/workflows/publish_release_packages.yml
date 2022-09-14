@@ -66,3 +66,4 @@ jobs:
           target: ${{ matrix.target }}
           version: ${{ env.ASSET_VERSION }}
           token: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: ./quickwit
