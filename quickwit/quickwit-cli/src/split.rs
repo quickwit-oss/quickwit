@@ -21,7 +21,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Context};
 use clap::{arg, Arg, ArgMatches, Command};
-use humansize::{file_size_opts, FileSize};
+use humansize::{format_size, DECIMAL};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_directories::{
@@ -406,34 +406,30 @@ async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
     let stats = BundleDirectory::get_stats_split(split_footer.clone())?;
     let hotcache_bytes = get_hotcache_from_split(split_footer)?;
 
-    let mut file_rows = vec![];
+    let mut file_rows = Vec::new();
 
     for (path, size) in stats {
-        let readable_size = size.file_size(file_size_opts::DECIMAL).unwrap();
         file_rows.push(FileRow {
             file_name: path.to_str().unwrap().to_string(),
-            size: readable_size.to_string(),
+            size: format_size(size, DECIMAL),
         });
     }
     println!(
         "{}",
         make_table("Files in Split", file_rows.into_iter(), false)
     );
-
     if args.verbose {
-        let mut file_in_hotcache = vec![];
+        let mut hotcache_files = Vec::new();
         let hotcache_stats = HotDirectory::get_stats_per_file(hotcache_bytes)?;
         for (path, size) in hotcache_stats {
-            let readable_size = size.file_size(file_size_opts::DECIMAL).unwrap();
-            file_in_hotcache.push(FileRow {
+            hotcache_files.push(FileRow {
                 file_name: path.to_str().unwrap().to_string(),
-                size: readable_size.to_string(),
+                size: format_size(size, DECIMAL),
             });
         }
-        let hotcache_table = make_table("Files in Hotcache", file_in_hotcache.into_iter(), false);
+        let hotcache_table = make_table("Files in Hotcache", hotcache_files.into_iter(), false);
         println!("{hotcache_table}");
     }
-
     Ok(())
 }
 
