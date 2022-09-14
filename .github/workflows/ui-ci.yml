@@ -3,6 +3,8 @@ name: UI CI
 on:
   workflow_dispatch:
   pull_request:
+    paths:
+      - "quickwit/quickwit-ui/**"
   push:
     branches:
       - main
