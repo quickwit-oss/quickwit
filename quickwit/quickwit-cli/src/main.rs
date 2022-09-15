@@ -90,7 +90,9 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
 fn runtime_configuration_for_cmd(command: &CliCommand) -> Option<RuntimesConfiguration> {
     match command {
         CliCommand::Run(run_cli_command) => {
-            if run_cli_command.services.contains(&QuickwitService::Indexer) {
+            if run_cli_command.services.contains(&QuickwitService::Indexer)
+                || run_cli_command.services.contains(&QuickwitService::Janitor)
+            {
                 Some(RuntimesConfiguration::default())
             } else {
                 None
