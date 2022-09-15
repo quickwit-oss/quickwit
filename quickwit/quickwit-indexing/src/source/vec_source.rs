@@ -29,7 +29,7 @@ use quickwit_metastore::checkpoint::{
 };
 use tracing::info;
 
-use crate::actors::Indexer;
+use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
 use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
 
@@ -82,7 +82,7 @@ fn position_from_offset(offset: usize) -> Position {
 impl Source for VecSource {
     async fn emit_batches(
         &mut self,
-        batch_sink: &Mailbox<Indexer>,
+        batch_sink: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let mut doc_batch = RawDocBatch::default();
@@ -133,7 +133,7 @@ mod tests {
     #[tokio::test]
     async fn test_vec_source() -> anyhow::Result<()> {
         let universe = Universe::new();
-        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
         let docs = std::iter::repeat_with(|| "{}".to_string())
             .take(100)
             .collect();
@@ -159,7 +159,7 @@ mod tests {
         .await?;
         let vec_source_actor = SourceActor {
             source: Box::new(vec_source),
-            indexer_mailbox,
+            doc_processor_mailbox,
         };
         assert_eq!(
             vec_source_actor.name(),
@@ -170,7 +170,7 @@ mod tests {
         let (actor_termination, last_observation) = vec_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(last_observation, json!({"next_item_idx": 100u64}));
-        let batches = indexer_inbox.drain_for_test();
+        let batches = doc_processor_inbox.drain_for_test();
         assert_eq!(batches.len(), 35);
         let raw_batch = batches[1].downcast_ref::<RawDocBatch>().unwrap();
         assert_eq!(
@@ -187,7 +187,7 @@ mod tests {
     #[tokio::test]
     async fn test_vec_source_from_checkpoint() -> anyhow::Result<()> {
         let universe = Universe::new();
-        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
         let docs = (0..10).map(|i| format!("{}", i)).collect();
         let params = VecSourceParams {
             docs,
@@ -214,14 +214,14 @@ mod tests {
         .await?;
         let vec_source_actor = SourceActor {
             source: Box::new(vec_source),
-            indexer_mailbox,
+            doc_processor_mailbox,
         };
         let (_vec_source_mailbox, vec_source_handle) =
             universe.spawn_actor(vec_source_actor).spawn();
         let (actor_termination, last_observation) = vec_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(last_observation, json!({"next_item_idx": 10}));
-        let messages = indexer_inbox.drain_for_test();
+        let messages = doc_processor_inbox.drain_for_test();
         let batch = messages[0].downcast_ref::<RawDocBatch>().unwrap();
         assert_eq!(&batch.docs[0], "2");
         Ok(())

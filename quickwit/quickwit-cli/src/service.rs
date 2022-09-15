@@ -86,6 +86,7 @@ impl RunCliCommand {
                     QuickwitService::Metastore,
                     QuickwitService::Indexer,
                     QuickwitService::Searcher,
+                    QuickwitService::Janitor,
                 ])
             });
         let metastore_uri = matches
@@ -165,7 +166,7 @@ mod tests {
                 services,
                 ..
             })
-            if config_uri == expected_config_uri && services.len() == 3
+            if config_uri == expected_config_uri && services.len() == 4
         ));
         Ok(())
     }

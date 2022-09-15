@@ -45,7 +45,7 @@ use tokio::task::{spawn_blocking, JoinHandle};
 use tokio::time;
 use tracing::{debug, info, warn};
 
-use crate::actors::Indexer;
+use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, PublishLock, RawDocBatch};
 use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
 
@@ -388,7 +388,7 @@ impl KafkaSource {
     async fn process_revoke_partitions(
         &mut self,
         ctx: &SourceContext,
-        indexer_mailbox: &Mailbox<Indexer>,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         batch: &mut BatchBuilder,
         ack_tx: oneshot::Sender<()>,
     ) -> anyhow::Result<()> {
@@ -400,8 +400,11 @@ impl KafkaSource {
         batch.clear();
         self.publish_lock = PublishLock::default();
         self.state.num_rebalances += 1;
-        ctx.send_message(indexer_mailbox, NewPublishLock(self.publish_lock.clone()))
-            .await?;
+        ctx.send_message(
+            doc_processor_mailbox,
+            NewPublishLock(self.publish_lock.clone()),
+        )
+        .await?;
         Ok(())
     }
 
@@ -455,18 +458,18 @@ impl BatchBuilder {
 impl Source for KafkaSource {
     async fn initialize(
         &mut self,
-        indexer_mailbox: &Mailbox<Indexer>,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         let publish_lock = self.publish_lock.clone();
-        ctx.send_message(indexer_mailbox, NewPublishLock(publish_lock))
+        ctx.send_message(doc_processor_mailbox, NewPublishLock(publish_lock))
             .await?;
         Ok(())
     }
 
     async fn emit_batches(
         &mut self,
-        indexer_mailbox: &Mailbox<Indexer>,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
@@ -481,7 +484,7 @@ impl Source for KafkaSource {
                     match event {
                         KafkaEvent::Message(message) => self.process_message(message, &mut batch).await?,
                         KafkaEvent::AssignPartitions { partitions, assignment_tx} => self.process_assign_partitions(ctx, &partitions, assignment_tx).await?,
-                        KafkaEvent::RevokePartitions { ack_tx } => self.process_revoke_partitions(ctx, indexer_mailbox, &mut batch, ack_tx).await?,
+                        KafkaEvent::RevokePartitions { ack_tx } => self.process_revoke_partitions(ctx, doc_processor_mailbox, &mut batch, ack_tx).await?,
                         KafkaEvent::PartitionEOF(partition) => self.process_partition_eof(partition),
                         KafkaEvent::Error(error) => Err(ActorExitStatus::from(error))?,
                     }
@@ -502,11 +505,11 @@ impl Source for KafkaSource {
                 num_millis=%now.elapsed().as_millis(),
                 "Sending doc batch to indexer.");
             let message = batch.build();
-            ctx.send_message(indexer_mailbox, message).await?;
+            ctx.send_message(doc_processor_mailbox, message).await?;
         }
         if self.should_exit() {
             info!(topic = %self.topic, "Reached end of topic.");
-            ctx.send_exit_with_success(indexer_mailbox).await?;
+            ctx.send_exit_with_success(doc_processor_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
         Ok(Duration::default())
@@ -1193,16 +1196,16 @@ mod kafka_broker_tests {
 
             setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
 
-            let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
+            let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
             let source_actor = SourceActor {
                 source,
-                indexer_mailbox: indexer_mailbox.clone(),
+                doc_processor_mailbox: doc_processor_mailbox.clone(),
             };
             let (_source_mailbox, source_handle) = universe.spawn_actor(source_actor).spawn();
             let (exit_status, exit_state) = source_handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages: Vec<RawDocBatch> = indexer_inbox.drain_for_test_typed();
+            let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
             assert!(messages.is_empty());
 
             let expected_state = json!({
@@ -1254,16 +1257,16 @@ mod kafka_broker_tests {
 
             setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
 
-            let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
+            let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
             let source_actor = SourceActor {
                 source,
-                indexer_mailbox: indexer_mailbox.clone(),
+                doc_processor_mailbox: doc_processor_mailbox.clone(),
             };
             let (_source_mailbox, source_handle) = universe.spawn_actor(source_actor).spawn();
             let (exit_status, exit_state) = source_handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages: Vec<RawDocBatch> = indexer_inbox.drain_for_test_typed();
+            let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
             assert!(!messages.is_empty());
 
             let batch = merge_doc_batches(messages)?;
@@ -1325,16 +1328,16 @@ mod kafka_broker_tests {
             )
             .await;
 
-            let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
+            let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
             let source_actor = SourceActor {
                 source,
-                indexer_mailbox: indexer_mailbox.clone(),
+                doc_processor_mailbox: doc_processor_mailbox.clone(),
             };
             let (_source_mailbox, source_handle) = universe.spawn_actor(source_actor).spawn();
             let (exit_status, exit_state) = source_handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages: Vec<RawDocBatch> = indexer_inbox.drain_for_test_typed();
+            let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
             assert!(!messages.is_empty());
 
             let batch = merge_doc_batches(messages)?;
