@@ -105,7 +105,7 @@ services:
     image: prom/prometheus
     container_name: prometheus
     volumes:
-      - ${PWD}/scripts/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ${PWD}/quickwit/scripts/prometheus.yml:/etc/prometheus/prometheus.yml
     network_mode: host
 
   jaeger:
