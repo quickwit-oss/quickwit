@@ -25,7 +25,7 @@ use quickwit_actors::{ActorExitStatus, Mailbox, HEARTBEAT};
 use quickwit_config::VoidSourceParams;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 
-use crate::actors::Indexer;
+use crate::actors::DocProcessor;
 use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
 
 pub struct VoidSource;
@@ -34,7 +34,7 @@ pub struct VoidSource;
 impl Source for VoidSource {
     async fn emit_batches(
         &mut self,
-        _: &Mailbox<Indexer>,
+        _: &Mailbox<DocProcessor>,
         _: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         tokio::time::sleep(HEARTBEAT / 2).await;
@@ -112,10 +112,10 @@ mod tests {
             SourceCheckpoint::default(),
         )
         .await?;
-        let (indexer_mailbox, _) = create_test_mailbox();
+        let (doc_processor_mailbox, _) = create_test_mailbox();
         let void_source_actor = SourceActor {
             source: Box::new(void_source),
-            indexer_mailbox,
+            doc_processor_mailbox,
         };
         let universe = Universe::new();
         let (_, void_source_handle) = universe.spawn_actor(void_source_actor).spawn();

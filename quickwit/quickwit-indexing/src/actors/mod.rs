@@ -19,6 +19,8 @@
 
 mod indexing_pipeline;
 
+mod doc_processor;
+mod index_serializer;
 mod indexer;
 mod indexing_service;
 mod ingest_api_garbage_collector;
@@ -37,6 +39,8 @@ mod merge_executor;
 mod merge_planner;
 mod merge_split_downloader;
 
+pub use self::doc_processor::{DocProcessor, DocProcessorCounters};
+pub use self::index_serializer::IndexSerializer;
 pub use self::indexer::{Indexer, IndexerCounters};
 pub use self::ingest_api_garbage_collector::{
     IngestApiGarbageCollector, IngestApiGarbageCollectorCounters,
