@@ -128,6 +128,17 @@ impl Handler<AddPeer> for PingerSenderActor {
 }
 
 #[tokio::test]
+async fn test_actor_stops_when_last_mailbox_is_dropped() {
+    quickwit_common::setup_logging_for_tests();
+    let universe = Universe::new();
+    let (ping_recv_mailbox, ping_recv_handle) =
+        universe.spawn_actor(PingReceiverActor::default()).spawn();
+    drop(ping_recv_mailbox);
+    let (exit_status, _) = ping_recv_handle.join().await;
+    assert!(exit_status.is_success());
+}
+
+#[tokio::test]
 async fn test_ping_actor() {
     quickwit_common::setup_logging_for_tests();
     let universe = Universe::new();

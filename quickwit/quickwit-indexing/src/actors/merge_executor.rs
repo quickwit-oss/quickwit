@@ -347,8 +347,6 @@ impl MergeExecutor {
 
         let merged_index = open_index(controlled_directory.clone())?;
         ctx.record_progress();
-        let index_writer = merged_index.writer_with_num_threads(1, 3_000_000)?;
-        ctx.record_progress();
 
         let indexed_split = IndexedSplit {
             split_attrs: SplitAttrs {
@@ -362,7 +360,6 @@ impl MergeExecutor {
                 delete_opstamp,
             },
             index: merged_index,
-            index_writer,
             split_scratch_directory: merge_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),
         };
@@ -445,7 +442,6 @@ impl MergeExecutor {
         ctx.record_progress();
         merged_index.set_tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
 
-        let index_writer = merged_index.writer_with_num_threads(1, 3_000_000)?;
         ctx.record_progress();
 
         // Compute merged split attributes.
@@ -493,7 +489,6 @@ impl MergeExecutor {
                 delete_opstamp: last_delete_opstamp,
             },
             index: merged_index,
-            index_writer,
             split_scratch_directory: merge_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),
         };

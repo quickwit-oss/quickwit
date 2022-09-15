@@ -41,9 +41,10 @@ use tracing::{info, warn};
 
 use super::api::list_shards;
 use super::shard_consumer::{ShardConsumer, ShardConsumerHandle, ShardConsumerMessage};
+use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
 use crate::source::kinesis::helpers::get_kinesis_client;
-use crate::source::{Indexer, Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
+use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
 
 const TARGET_BATCH_NUM_BYTES: u64 = 5_000_000;
 
@@ -179,7 +180,7 @@ impl KinesisSource {
 impl Source for KinesisSource {
     async fn initialize(
         &mut self,
-        _indexer_maibox: &Mailbox<Indexer>,
+        _doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         let shards = ctx
@@ -203,7 +204,7 @@ impl Source for KinesisSource {
 
     async fn emit_batches(
         &mut self,
-        indexer_mailbox: &Mailbox<Indexer>,
+        indexer_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_num_bytes = 0;
@@ -418,7 +419,7 @@ mod tests {
     #[tokio::test]
     async fn test_kinesis_source() {
         let universe = Universe::new();
-        let (mailbox, inbox) = create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
         let (kinesis_client, stream_name) = setup("test-kinesis-source", 3).await.unwrap();
         let params = KinesisSourceParams {
             stream_name: stream_name.clone(),
@@ -435,13 +436,13 @@ mod tests {
                     .unwrap();
             let actor = SourceActor {
                 source: Box::new(kinesis_source),
-                indexer_mailbox: mailbox.clone(),
+                doc_processor_mailbox: doc_processor_mailbox.clone(),
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let next_message = inbox
+            let next_message = doc_processor_inbox
                 .drain_for_test()
                 .into_iter()
                 .flat_map(|box_any| box_any.downcast::<RawDocBatch>().ok())
@@ -489,13 +490,13 @@ mod tests {
                     .unwrap();
             let actor = SourceActor {
                 source: Box::new(kinesis_source),
-                indexer_mailbox: mailbox.clone(),
+                doc_processor_mailbox: doc_processor_mailbox.clone(),
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages: Vec<RawDocBatch> = inbox
+            let messages: Vec<RawDocBatch> = doc_processor_inbox
                 .drain_for_test()
                 .into_iter()
                 .flat_map(|box_any| box_any.downcast::<RawDocBatch>().ok())
@@ -560,13 +561,13 @@ mod tests {
                     .unwrap();
             let actor = SourceActor {
                 source: Box::new(kinesis_source),
-                indexer_mailbox: mailbox,
+                doc_processor_mailbox: doc_processor_mailbox.clone(),
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let messages: Vec<RawDocBatch> = inbox
+            let messages: Vec<RawDocBatch> = doc_processor_inbox
                 .drain_for_test()
                 .into_iter()
                 .flat_map(|box_any| box_any.downcast::<RawDocBatch>().ok())

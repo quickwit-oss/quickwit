@@ -31,7 +31,7 @@ use serde::Serialize;
 
 use super::file_source::BATCH_NUM_BYTES_LIMIT;
 use super::{Source, SourceActor, SourceContext, TypedSourceFactory};
-use crate::actors::Indexer;
+use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
 use crate::source::SourceExecutionContext;
 
@@ -108,7 +108,7 @@ impl IngestApiSource {
 impl Source for IngestApiSource {
     async fn emit_batches(
         &mut self,
-        batch_sink: &Mailbox<Indexer>,
+        batch_sink: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let fetch_req = FetchRequest {
@@ -258,7 +258,7 @@ mod tests {
             .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
 
-        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
         let params = IngestApiSourceParams {
             queues_dir_path: queues_dir_path.to_path_buf(),
             index_id,
@@ -268,7 +268,7 @@ mod tests {
             IngestApiSource::new(source_id, params, SourceCheckpoint::default()).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
-            indexer_mailbox,
+            doc_processor_mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_actor(ingest_api_source_actor).spawn();
@@ -286,7 +286,7 @@ mod tests {
                 "num_docs_processed": 2000u64
             })
         );
-        let doc_batches: Vec<RawDocBatch> = indexer_inbox.drain_for_test_typed();
+        let doc_batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert_eq!(doc_batches.len(), 4);
         assert!(doc_batches[1].docs[0].starts_with("0501"));
         Ok(())
@@ -304,7 +304,7 @@ mod tests {
         let ingest_req = make_ingest_request(index_id.clone(), 2, 1000);
         assert!(ingest_api_service.ask_for_res(ingest_req).await.is_err());
 
-        let (indexer_mailbox, _inbox) = create_test_mailbox();
+        let (doc_processor_mailbox, _doc_processor_inbox) = create_test_mailbox();
         let params = IngestApiSourceParams {
             queues_dir_path: queues_dir_path.to_path_buf(),
             index_id,
@@ -314,7 +314,7 @@ mod tests {
             IngestApiSource::new(source_id, params, SourceCheckpoint::default()).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
-            indexer_mailbox,
+            doc_processor_mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_actor(ingest_api_source_actor).spawn();
@@ -344,7 +344,7 @@ mod tests {
             .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
 
-        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
         let params = IngestApiSourceParams {
             queues_dir_path: queues_dir_path.to_path_buf(),
             index_id,
@@ -362,7 +362,7 @@ mod tests {
         let ingest_api_source = IngestApiSource::new(source_id, params, checkpoint).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
-            indexer_mailbox,
+            doc_processor_mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_actor(ingest_api_source_actor).spawn();
@@ -380,7 +380,7 @@ mod tests {
                 "num_docs_processed": 2799u64
             })
         );
-        let doc_batches: Vec<RawDocBatch> = indexer_inbox.drain_for_test_typed();
+        let doc_batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert_eq!(doc_batches.len(), 1);
         assert!(doc_batches[0].docs[0].starts_with("1201"));
         Ok(())
@@ -408,7 +408,7 @@ mod tests {
             .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
 
-        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
         let params = IngestApiSourceParams {
             queues_dir_path: queues_dir_path.to_path_buf(),
             index_id,
@@ -418,7 +418,7 @@ mod tests {
             IngestApiSource::new(source_id, params, SourceCheckpoint::default()).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
-            indexer_mailbox,
+            doc_processor_mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_actor(ingest_api_source_actor).spawn();
@@ -436,7 +436,7 @@ mod tests {
                 "num_docs_processed": 1u64
             })
         );
-        let doc_batches: Vec<RawDocBatch> = indexer_inbox.drain_for_test_typed();
+        let doc_batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert_eq!(doc_batches.len(), 1);
         assert!(doc_batches[0].docs[0].starts_with("0000"));
         Ok(())

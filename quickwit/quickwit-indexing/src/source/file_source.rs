@@ -32,7 +32,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncSeekExt, BufReader};
 use tracing::info;
 
-use crate::actors::Indexer;
+use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
 use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
 
@@ -63,7 +63,7 @@ impl fmt::Debug for FileSource {
 impl Source for FileSource {
     async fn emit_batches(
         &mut self,
-        batch_sink: &Mailbox<Indexer>,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         // We collect batches of documents before sending them to the indexer.
@@ -102,11 +102,11 @@ impl Source for FileSource {
                     .unwrap();
             }
             self.counters.previous_offset = self.counters.current_offset;
-            ctx.send_message(batch_sink, doc_batch).await?;
+            ctx.send_message(doc_processor_mailbox, doc_batch).await?;
         }
         if reached_eof {
             info!("EOF");
-            ctx.send_exit_with_success(batch_sink).await?;
+            ctx.send_exit_with_success(doc_processor_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
         Ok(Duration::default())
@@ -181,7 +181,7 @@ mod tests {
     #[tokio::test]
     async fn test_file_source() -> anyhow::Result<()> {
         let universe = Universe::new();
-        let (indexer_mailbox, indexer_inbox) = create_test_mailbox();
+        let (doc_processor_mailbox, indexer_inbox) = create_test_mailbox();
         let params = FileSourceParams::file("data/test_corpus.json");
 
         let metastore = metastore_for_test();
@@ -201,7 +201,7 @@ mod tests {
         .await?;
         let file_source_actor = SourceActor {
             source: Box::new(file_source),
-            indexer_mailbox,
+            doc_processor_mailbox,
         };
         let (_file_source_mailbox, file_source_handle) =
             universe.spawn_actor(file_source_actor).spawn();
@@ -228,7 +228,7 @@ mod tests {
     async fn test_file_source_several_batch() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
-        let (mailbox, inbox) = create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
         use tempfile::NamedTempFile;
         let mut temp_file = NamedTempFile::new()?;
         let temp_path = temp_file.path().to_path_buf();
@@ -262,7 +262,7 @@ mod tests {
         .await?;
         let file_source_actor = SourceActor {
             source: Box::new(source),
-            indexer_mailbox: mailbox,
+            doc_processor_mailbox,
         };
         let (_file_source_mailbox, file_source_handle) =
             universe.spawn_actor(file_source_actor).spawn();
@@ -276,7 +276,7 @@ mod tests {
                 "num_lines_processed": 20_000u64
             })
         );
-        let indexer_msgs = inbox.drain_for_test();
+        let indexer_msgs = doc_processor_inbox.drain_for_test();
         assert_eq!(indexer_msgs.len(), 3);
         let batch1 = indexer_msgs[0].downcast_ref::<RawDocBatch>().unwrap();
         let batch2 = indexer_msgs[1].downcast_ref::<RawDocBatch>().unwrap();
@@ -311,7 +311,7 @@ mod tests {
     async fn test_file_source_resume_from_checkpoint() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
-        let (mailbox, inbox) = create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
         use tempfile::NamedTempFile;
         let mut temp_file = NamedTempFile::new()?;
         for i in 0..100 {
@@ -346,7 +346,7 @@ mod tests {
         .await?;
         let file_source_actor = SourceActor {
             source: Box::new(source),
-            indexer_mailbox: mailbox,
+            doc_processor_mailbox,
         };
         let (_file_source_mailbox, file_source_handle) =
             universe.spawn_actor(file_source_actor).spawn();
@@ -360,7 +360,7 @@ mod tests {
                 "num_lines_processed": 98u64
             })
         );
-        let indexer_messages: Vec<RawDocBatch> = inbox.drain_for_test_typed();
+        let indexer_messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert!(indexer_messages[0].docs[0].starts_with("2\n"));
         Ok(())
     }

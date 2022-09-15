@@ -31,7 +31,7 @@ use quickwit_common::runtimes::RuntimeType;
 use quickwit_directories::write_hotcache;
 use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
 use tantivy::schema::FieldType;
-use tantivy::{InvertedIndexReader, ReloadPolicy, SegmentId, SegmentMeta};
+use tantivy::{InvertedIndexReader, ReloadPolicy, SegmentMeta};
 use tokio::runtime::Handle;
 use tracing::{debug, info, info_span, warn, Span};
 
@@ -81,11 +81,11 @@ impl Packager {
 
     pub async fn process_indexed_split(
         &self,
-        mut split: IndexedSplit,
+        split: IndexedSplit,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<PackagedSplit> {
-        commit_split(&mut split, ctx)?;
-        let segment_metas = merge_segments_if_required(&mut split, ctx).await?;
+        let segment_metas = split.index.searchable_segment_metas()?;
+        assert_eq!(segment_metas.len(), 1);
         let packaged_split =
             create_packaged_split(&segment_metas[..], split, &self.tag_fields, ctx)?;
         Ok(packaged_split)
@@ -174,35 +174,6 @@ impl Handler<IndexedSplitBatch> for Packager {
 }
 
 /// returns true iff merge is required to reach a state where
-/// we have zero, or a single segment with no deletes segment.
-fn is_merge_required(segment_metas: &[SegmentMeta]) -> bool {
-    match &segment_metas {
-        // there are no segment to merge
-        [] => false,
-        // if there is only segment but it has deletes, it
-        // still makes sense to merge it alone in order to remove deleted documents.
-        [segment_meta] => segment_meta.has_deletes(),
-        _ => true,
-    }
-}
-
-/// Commits the tantivy Index.
-/// Tantivy will serialize all of its remaining internal in RAM
-/// datastructure and write them on disk.
-///
-/// It consists in several sequentials phases mixing both
-/// CPU and IO, the longest once being the serialization of
-/// the inverted index. This phase is CPU bound.
-fn commit_split(split: &mut IndexedSplit, ctx: &ActorContext<Packager>) -> anyhow::Result<()> {
-    info!(split_id = split.split_id(), "commit-split");
-    let _protect_guard = ctx.protect_zone();
-    split
-        .index_writer
-        .commit()
-        .with_context(|| format!("Commit split `{:?}` failed", &split))?;
-    Ok(())
-}
-
 fn list_split_files(
     segment_metas: &[SegmentMeta],
     scratch_directory: &ScratchDirectory,
@@ -223,31 +194,6 @@ fn list_split_files(
     }
     index_files.sort();
     index_files
-}
-
-/// If necessary, merge all segments and returns a PackagedSplit.
-///
-/// Note this function implicitly drops the IndexWriter
-/// which potentially olds a lot of RAM.
-async fn merge_segments_if_required(
-    split: &mut IndexedSplit,
-    ctx: &ActorContext<Packager>,
-) -> anyhow::Result<Vec<SegmentMeta>> {
-    debug!(split_id = split.split_id(), "merge-segments-if-required");
-    let segment_metas_before_merge = split.index.searchable_segment_metas()?;
-    if is_merge_required(&segment_metas_before_merge[..]) {
-        let segment_ids: Vec<SegmentId> = segment_metas_before_merge
-            .into_iter()
-            .map(|segment_meta| segment_meta.id())
-            .collect();
-
-        info!(split_id=split.split_id(), segment_ids=?segment_ids, "merging-segments");
-        // TODO it would be nice if tantivy could let us run the merge in the current thread.
-        let _protected_zone_guard = ctx.protect_zone();
-        split.index_writer.merge(&segment_ids).await?;
-    }
-    let segment_metas_after_merge: Vec<SegmentMeta> = split.index.searchable_segment_metas()?;
-    Ok(segment_metas_after_merge)
 }
 
 fn build_hotcache<W: io::Write>(split_path: &Path, out: &mut W) -> anyhow::Result<()> {
@@ -386,7 +332,7 @@ mod tests {
     use super::*;
     use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory, SplitAttrs};
 
-    fn make_indexed_split_for_test(segments_timestamps: &[&[i64]]) -> anyhow::Result<IndexedSplit> {
+    fn make_indexed_split_for_test(segment_timestamps: &[i64]) -> anyhow::Result<IndexedSplit> {
         let split_scratch_directory = ScratchDirectory::for_test()?;
         let mut schema_builder = Schema::builder();
         let text_field = schema_builder.add_text_field("text", TEXT);
@@ -407,44 +353,39 @@ mod tests {
         let mut index_writer = index.writer_with_num_threads(1, 10_000_000)?;
         let mut timerange_opt: Option<RangeInclusive<i64>> = None;
         let mut num_docs = 0;
-        for (segment_num, segment_timestamps) in segments_timestamps.iter().enumerate() {
-            if segment_num > 0 {
-                index_writer.commit()?;
-            }
-            for &timestamp in segment_timestamps.iter() {
-                for num in 1..10 {
-                    let doc = doc!(
-                        text_field => format!("timestamp is {}", timestamp),
-                        timestamp_field => timestamp,
-                        tag_str => "value",
-                        tag_many => format!("many-{}", num),
-                        tag_u64 => 42u64,
-                        tag_i64 => -42i64,
-                        tag_f64 => -42.02f64,
-                        tag_bool => true,
-                    );
-                    index_writer.add_document(doc)?;
-                    num_docs += 1;
-                    timerange_opt = Some(
-                        timerange_opt
-                            .map(|timestamp_range| {
-                                let start = timestamp.min(*timestamp_range.start());
-                                let end = timestamp.max(*timestamp_range.end());
-                                RangeInclusive::new(start, end)
-                            })
-                            .unwrap_or_else(|| RangeInclusive::new(timestamp, timestamp)),
-                    )
-                }
+        for &timestamp in segment_timestamps {
+            for num in 1..10 {
+                let doc = doc!(
+                    text_field => format!("timestamp is {}", timestamp),
+                    timestamp_field => timestamp,
+                    tag_str => "value",
+                    tag_many => format!("many-{}", num),
+                    tag_u64 => 42u64,
+                    tag_i64 => -42i64,
+                    tag_f64 => -42.02f64,
+                    tag_bool => true,
+                );
+                index_writer.add_document(doc)?;
+                num_docs += 1;
+                timerange_opt = Some(
+                    timerange_opt
+                        .map(|timestamp_range| {
+                            let start = timestamp.min(*timestamp_range.start());
+                            let end = timestamp.max(*timestamp_range.end());
+                            RangeInclusive::new(start, end)
+                        })
+                        .unwrap_or_else(|| RangeInclusive::new(timestamp, timestamp)),
+                )
             }
         }
+        index_writer.commit()?;
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
         };
-        // We don't commit, that's the job of the packager.
-        //
+
         // TODO: In the future we would like that kind of segment flush to emit a new split,
         // but this will require work on tantivy.
         let indexed_split = IndexedSplit {
@@ -459,7 +400,6 @@ mod tests {
                 delete_opstamp: 0,
             },
             index,
-            index_writer,
             split_scratch_directory,
             controlled_directory_opt: None,
         };
@@ -482,11 +422,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_packager_no_merge_required() -> anyhow::Result<()> {
+    async fn test_packager_simple() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
-        let indexed_split = make_indexed_split_for_test(&[&[1628203589, 1628203640]])?;
+        let indexed_split = make_indexed_split_for_test(&[1628203589, 1628203640])?;
         let tag_fields = get_tag_fields(
             indexed_split.index.schema(),
             &[
@@ -528,67 +468,7 @@ mod tests {
                 "tag_u64:42"
             ]
         );
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_packager_merge_required() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
-        let universe = Universe::new();
-        let (mailbox, inbox) = create_test_mailbox();
-        let indexed_split = make_indexed_split_for_test(&[&[1628203589], &[1628203640]])?;
-        let tag_fields = get_tag_fields(indexed_split.index.schema(), &[]);
-        let packager = Packager::new("TestPackager", tag_fields, mailbox);
-        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn();
-        packager_mailbox
-            .send_message(IndexedSplitBatch {
-                splits: vec![indexed_split],
-                checkpoint_delta: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
-                publish_lock: PublishLock::default(),
-                date_of_birth: Instant::now(),
-            })
-            .await?;
-        assert_eq!(
-            packager_handle.process_pending_and_observe().await.obs_type,
-            ObservationType::Alive
-        );
-        let packaged_splits = inbox.drain_for_test();
-        assert_eq!(packaged_splits.len(), 1);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_package_two_indexed_split_and_merge_required() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
-        let universe = Universe::new();
-        let (mailbox, inbox) = create_test_mailbox();
-        let indexed_split_1 = make_indexed_split_for_test(&[&[1628203589], &[1628203640]])?;
-        let indexed_split_2 = make_indexed_split_for_test(&[&[1628204589], &[1629203640]])?;
-        let tag_fields = get_tag_fields(indexed_split_1.index.schema(), &[]);
-        let packager = Packager::new("TestPackager", tag_fields, mailbox);
-        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn();
-        packager_mailbox
-            .send_message(IndexedSplitBatch {
-                splits: vec![indexed_split_1, indexed_split_2],
-                checkpoint_delta: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
-                publish_lock: PublishLock::default(),
-                date_of_birth: Instant::now(),
-            })
-            .await?;
-        assert_eq!(
-            packager_handle.process_pending_and_observe().await.obs_type,
-            ObservationType::Alive
-        );
-        let packaged_splits = inbox.drain_for_test();
-        assert_eq!(packaged_splits.len(), 1);
-        assert_eq!(
-            packaged_splits[0]
-                .downcast_ref::<PackagedSplitBatch>()
-                .unwrap()
-                .splits
-                .len(),
-            2
-        );
+        assert_eq!(split.split_attrs.time_range, Some(1628203589..=1628203640));
         Ok(())
     }
 }

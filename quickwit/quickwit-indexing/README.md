@@ -2,8 +2,10 @@
 flowchart LR
     subgraph Indexing pipeline
         direction LR
-        source[Source] --> indexer
-        indexer[Indexer] --> packager
+        source[Source] --> doc_processor
+        doc_processor[DocProcessor] --> indexer
+        indexer[Indexer] --> serializer
+        serializer[IndexSerializer] --> packager
         packager[Packager] --> uploader
         uploader[Uploader] --> publisher
     end

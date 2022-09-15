@@ -166,11 +166,8 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
         sort_order: Some(SortOrder::Asc),
         commit_timeout_secs: 301,
         split_num_docs_target: 10_000_001,
-        merge_enabled: true,
         merge_policy,
         resources: indexing_resources,
-        docstore_blocksize: IndexingSettings::default_docstore_blocksize(),
-        docstore_compression_level: IndexingSettings::default_docstore_compression_level(),
         ..Default::default()
     };
     let search_settings = SearchSettings {
