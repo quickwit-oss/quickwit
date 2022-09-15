@@ -1,5 +1,6 @@
 // Copyright (C) 2022 Quickwit, Inc.
 //
+//
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
 //
