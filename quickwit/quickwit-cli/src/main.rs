@@ -26,8 +26,8 @@ use quickwit_cli::cli::{build_cli, CliCommand};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::QW_JAEGER_ENABLED_ENV_KEY;
-use quickwit_config::service::QuickwitService;
 use quickwit_common::runtimes::RuntimesConfiguration;
+use quickwit_config::service::QuickwitService;
 use quickwit_serve::build_quickwit_build_info;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::{info, Level};

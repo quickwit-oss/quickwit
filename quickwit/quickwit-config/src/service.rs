@@ -43,7 +43,7 @@ impl QuickwitService {
         }
     }
     pub fn supported_services() -> Vec<QuickwitService> {
-        all::<QuickwitService>().into_iter().collect_vec()
+        all::<QuickwitService>().into_iter().collect()
     }
 }
 

@@ -403,7 +403,7 @@ fn parse_available_services_val(
     }
     let available_services_str = available_services_val.split(',');
     for service_str in available_services_str {
-        if let Ok(service) = QuickwitService::from_str(service_str) {
+        if let Ok(service) = service_str.parse() {
             available_services.insert(service);
         } else {
             warn!(

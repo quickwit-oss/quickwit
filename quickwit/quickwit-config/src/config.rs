@@ -21,7 +21,6 @@ use std::collections::HashSet;
 use std::env;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
 use anyhow::{bail, Context};
 use byte_unit::Byte;
@@ -243,7 +242,7 @@ impl QuickwitConfigBuilder {
     fn parse_services(&self) -> anyhow::Result<HashSet<QuickwitService>> {
         self.enabled_services
             .iter()
-            .map(|service_string| QuickwitService::from_str(service_string.as_str()))
+            .map(|service_string| service_string.parse())
             .collect::<Result<HashSet<_>, _>>()
     }
 
