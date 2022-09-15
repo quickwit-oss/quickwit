@@ -38,9 +38,9 @@ use thiserror::Error;
 use tracing::{error, info};
 
 use crate::models::{
-    DetachPipeline, IndexingPipelineId, Observe, ObservePipeline, SharedResource,
-    SharedResourceManager, ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline, SpawnPipeline,
-    SpawnPipelines,
+    DetachPipeline, IndexingPipelineId, IndexingSharedResource, IndexingSharedResourceManager,
+    Observe, ObservePipeline, ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline,
+    SpawnPipeline, SpawnPipelines,
 };
 use crate::source::INGEST_API_SOURCE_ID;
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingStatistics};
@@ -99,7 +99,7 @@ pub struct IndexingService {
     pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     state: IndexingServiceState,
     enable_ingest_api: bool,
-    shared_resource_manager: SharedResourceManager,
+    shared_resource_manager: IndexingSharedResourceManager,
 }
 
 impl IndexingService {
@@ -127,7 +127,7 @@ impl IndexingService {
             pipeline_handles: Default::default(),
             state: Default::default(),
             enable_ingest_api,
-            shared_resource_manager: SharedResourceManager::new(),
+            shared_resource_manager: IndexingSharedResourceManager::new(),
         }
     }
 
@@ -235,7 +235,7 @@ impl IndexingService {
 
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let indexing_dir_path = self.data_dir_path.join(INDEXING_DIR_NAME);
-        let SharedResource {
+        let IndexingSharedResource {
             split_store,
             indexing_directory,
         } = self

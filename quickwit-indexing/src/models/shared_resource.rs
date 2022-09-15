@@ -28,23 +28,31 @@ use crate::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy
 use crate::models::{IndexingDirectory, IndexingPipelineId};
 use crate::{IndexingServiceError, IndexingSplitStore, IndexingSplitStoreParams};
 
+/// A struct owning instances of resources that can be shared
+/// among indexing pipelines.
 #[derive(Clone)]
-pub(crate) struct SharedResource {
+pub(crate) struct IndexingSharedResource {
     pub(crate) split_store: IndexingSplitStore,
     pub(crate) indexing_directory: IndexingDirectory,
 }
 
-pub(crate) struct SharedResourceManager {
-    shared_resources: HashMap<String, SharedResource>,
+/// A repository of resources that can be shared among
+/// indexing pipelines of the same (index_id, source_id).
+pub(crate) struct IndexingSharedResourceManager {
+    /// A map of string to SharedResource. The key is
+    /// a concatenation of both (index_id, source_id).
+    shared_resources: HashMap<String, IndexingSharedResource>,
 }
 
-impl SharedResourceManager {
+impl IndexingSharedResourceManager {
     pub fn new() -> Self {
         Self {
             shared_resources: HashMap::new(),
         }
     }
 
+    /// Get an initialized resource or initializes a new
+    /// one and returns it.
     pub async fn get_or_init_resource(
         &mut self,
         pipeline_id: &IndexingPipelineId,
@@ -53,7 +61,7 @@ impl SharedResourceManager {
         index_metadata: &IndexMetadata,
         max_num_bytes: usize,
         max_num_splits: usize,
-    ) -> Result<SharedResource, IndexingServiceError> {
+    ) -> Result<IndexingSharedResource, IndexingServiceError> {
         let key = self.resource_key(pipeline_id);
         if let Some(resource) = self.shared_resources.get(&key) {
             return Ok(resource.clone());
@@ -90,7 +98,7 @@ impl SharedResourceManager {
 
         self.shared_resources.insert(
             key.clone(),
-            SharedResource {
+            IndexingSharedResource {
                 indexing_directory,
                 split_store,
             },
@@ -98,6 +106,7 @@ impl SharedResourceManager {
         Ok(self.shared_resources.get(&key).unwrap().clone())
     }
 
+    /// Get rid of not needed resources.
     pub fn retain_only<'a>(
         &mut self,
         active_pipeline_ids: impl Iterator<Item = &'a IndexingPipelineId>,
@@ -136,7 +145,7 @@ mod tests {
     use quickwit_storage::RamStorage;
     use tempfile::TempDir;
 
-    use super::{SharedResource, SharedResourceManager};
+    use super::{IndexingSharedResource, IndexingSharedResourceManager};
     use crate::models::IndexingPipelineId;
     use crate::IndexingServiceError;
 
@@ -150,10 +159,10 @@ mod tests {
     }
 
     async fn get_or_init_resource<'a>(
-        manager: &mut SharedResourceManager,
+        manager: &mut IndexingSharedResourceManager,
         pipeline_id: &IndexingPipelineId,
         temp_dir: &TempDir,
-    ) -> Result<SharedResource, IndexingServiceError> {
+    ) -> Result<IndexingSharedResource, IndexingServiceError> {
         let indexing_dir_path = temp_dir
             .path()
             .join(&pipeline_id.index_id)
@@ -176,7 +185,7 @@ mod tests {
     #[tokio::test]
     async fn test_shared_resource_manager() -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        let mut manager = SharedResourceManager::new();
+        let mut manager = IndexingSharedResourceManager::new();
         assert_eq!(manager.get_keys(), HashSet::new());
 
         get_or_init_resource(&mut manager, &pipeline_id("foo", "source-1"), &temp_dir).await?;

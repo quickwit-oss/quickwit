@@ -51,7 +51,7 @@ pub use publish_lock::{NewPublishLock, PublishLock};
 pub use publisher_message::SplitUpdate;
 pub use raw_doc_batch::RawDocBatch;
 pub use scratch_directory::ScratchDirectory;
-pub(crate) use shared_resource::{SharedResource, SharedResourceManager};
+pub(crate) use shared_resource::{IndexingSharedResource, IndexingSharedResourceManager};
 pub use split_attrs::SplitAttrs;
 
 #[derive(Clone, Copy, Debug)]
