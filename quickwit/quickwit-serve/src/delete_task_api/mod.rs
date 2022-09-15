@@ -17,12 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod delete_task_pipeline;
-mod delete_task_planner;
-mod delete_task_service;
-mod garbage_collector;
-mod retention_policy_executor;
+mod handler;
 
-pub use delete_task_service::{DeleteTaskService, NewDeleteTask};
-pub use garbage_collector::GarbageCollector;
-pub use retention_policy_executor::RetentionPolicyExecutor;
+pub use handler::delete_task_api_handlers;

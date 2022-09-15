@@ -25,6 +25,7 @@ mod grpc;
 mod rest;
 
 mod cluster_api;
+mod delete_task_api;
 mod health_check_api;
 mod index_api;
 mod indexing_api;

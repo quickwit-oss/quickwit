@@ -17,14 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_actors::ActorHandle;
+use quickwit_actors::{ActorHandle, Mailbox};
 
 use crate::actors::{DeleteTaskService, GarbageCollector, RetentionPolicyExecutor};
 
 pub struct JanitorService {
     _garbage_collector_handle: ActorHandle<GarbageCollector>,
     _retention_policy_executor_handle: ActorHandle<RetentionPolicyExecutor>,
-    _delete_task_service_handle: ActorHandle<DeleteTaskService>,
+    delete_task_service_handle: ActorHandle<DeleteTaskService>,
 }
 
 impl JanitorService {
@@ -36,7 +36,11 @@ impl JanitorService {
         Self {
             _garbage_collector_handle: garbage_collector_handle,
             _retention_policy_executor_handle: retention_policy_executor_handle,
-            _delete_task_service_handle: delete_task_service_handle,
+            delete_task_service_handle,
         }
+    }
+
+    pub fn delete_task_service_mailbox(&self) -> &Mailbox<DeleteTaskService> {
+        self.delete_task_service_handle.mailbox()
     }
 }
