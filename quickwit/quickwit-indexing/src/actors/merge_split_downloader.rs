@@ -131,7 +131,7 @@ mod tests {
     use std::iter;
     use std::sync::Arc;
 
-    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_actors::{create_test_mailbox, SpawnContext, Universe};
     use quickwit_common::split_file;
     use quickwit_storage::{PutPayload, RamStorageBuilder, SplitPayloadBuilder};
 

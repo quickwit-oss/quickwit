@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use crate::observation::ObservationType;
 use crate::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Command, Handler, Health,
-    Mailbox, Observation, Supervisable, Universe,
+    Mailbox, Observation, SpawnContext, Supervisable, Universe,
 };
 
 // An actor that receives ping messages.

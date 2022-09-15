@@ -20,7 +20,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use quickwit_actors::{Mailbox, Universe};
+use quickwit_actors::{Mailbox, SpawnContext, Universe};
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_config::{

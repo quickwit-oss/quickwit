@@ -304,7 +304,7 @@ mod tests {
 
     use super::{Callback, Scheduler};
     use crate::scheduler::{ScheduleEvent, SchedulerCounters, SimulateAdvanceTime, TimeShift};
-    use crate::Universe;
+    use crate::{SpawnContext, Universe};
 
     fn create_test_callback() -> (Arc<AtomicBool>, Callback) {
         let cb_called = Arc::new(AtomicBool::default());

@@ -25,7 +25,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{
     create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, KillSwitch,
-    QueueCapacity, Supervisable,
+    QueueCapacity, SpawnContext, Supervisable,
 };
 use quickwit_config::{build_doc_mapper, IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;

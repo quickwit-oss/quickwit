@@ -163,7 +163,7 @@ mod tests {
     use std::ops::RangeInclusive;
 
     use proptest::sample::select;
-    use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
+    use quickwit_actors::{create_test_mailbox, ObservationType, SpawnContext, Universe};
     use tokio::runtime::Runtime;
 
     use super::*;

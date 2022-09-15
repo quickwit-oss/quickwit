@@ -362,7 +362,7 @@ impl Handler<PlanDeleteOperationsLoop> for DeleteTaskPlanner {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::{create_test_mailbox, ActorState, Universe};
+    use quickwit_actors::{create_test_mailbox, ActorState, SpawnContext, Universe};
     use quickwit_config::build_doc_mapper;
     use quickwit_indexing::merge_policy::{
         MergeOperation, StableMultitenantWithTimestampMergePolicy,

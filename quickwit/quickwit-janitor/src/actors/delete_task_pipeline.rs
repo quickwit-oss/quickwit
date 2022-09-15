@@ -25,8 +25,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, KillSwitch, Supervisable,
-    HEARTBEAT,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, KillSwitch, SpawnContext,
+    Supervisable, HEARTBEAT,
 };
 use quickwit_config::{build_doc_mapper, IndexingSettings};
 use quickwit_indexing::actors::{
@@ -288,7 +288,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use quickwit_actors::{Health, Universe};
+    use quickwit_actors::{Health, SpawnContext, Universe};
     use quickwit_config::IndexingSettings;
     use quickwit_indexing::TestSandbox;
     use quickwit_metastore::SplitState;

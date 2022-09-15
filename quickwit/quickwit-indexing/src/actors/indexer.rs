@@ -501,7 +501,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_actors::{create_test_mailbox, SpawnContext, Universe};
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper, SortOrder};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_metastore::MockMetastore;

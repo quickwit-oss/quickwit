@@ -191,7 +191,7 @@ impl Handler<SplitUpdate> for Publisher {
 mod tests {
     use std::time::Instant;
 
-    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_actors::{create_test_mailbox, SpawnContext, Universe};
     use quickwit_metastore::checkpoint::{
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
     };

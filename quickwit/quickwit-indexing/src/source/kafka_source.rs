@@ -735,7 +735,7 @@ fn parse_message_payload(message: &BorrowedMessage) -> Option<String> {
 
 #[cfg(all(test, feature = "kafka-broker-tests"))]
 mod kafka_broker_tests {
-    use quickwit_actors::{create_test_mailbox, ActorContext, Universe};
+    use quickwit_actors::{create_test_mailbox, ActorContext, SpawnContext, Universe};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};

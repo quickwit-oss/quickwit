@@ -176,7 +176,7 @@ impl Handler<Loop> for IngestApiGarbageCollector {
 mod tests {
     use std::time::Duration;
 
-    use quickwit_actors::Universe;
+    use quickwit_actors::{SpawnContext, Universe};
     use quickwit_common::uri::Uri;
     use quickwit_config::IndexerConfig;
     use quickwit_ingest_api::{init_ingest_api, QUEUES_DIR_NAME};

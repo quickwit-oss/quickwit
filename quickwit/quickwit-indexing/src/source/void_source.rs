@@ -70,7 +70,7 @@ impl TypedSourceFactory for VoidSourceFactory {
 #[cfg(test)]
 mod tests {
 
-    use quickwit_actors::{create_test_mailbox, Health, Supervisable, Universe};
+    use quickwit_actors::{create_test_mailbox, Health, SpawnContext, Supervisable, Universe};
     use quickwit_config::SourceParams;
     use quickwit_metastore::checkpoint::SourceCheckpoint;
     use quickwit_metastore::metastore_for_test;

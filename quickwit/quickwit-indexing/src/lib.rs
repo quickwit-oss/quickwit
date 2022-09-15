@@ -20,7 +20,7 @@
 use std::sync::Arc;
 
 use itertools::Itertools;
-use quickwit_actors::{Mailbox, Universe};
+use quickwit_actors::{Mailbox, SpawnContext, Universe};
 use quickwit_config::QuickwitConfig;
 use quickwit_ingest_api::{get_ingest_api_service, QUEUES_DIR_NAME};
 use quickwit_metastore::Metastore;

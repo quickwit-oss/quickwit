@@ -365,7 +365,7 @@ pub(super) fn get_region(region_or_endpoint: Option<RegionOrEndpoint>) -> anyhow
 
 #[cfg(all(test, feature = "kinesis-localstack-tests"))]
 mod tests {
-    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_actors::{create_test_mailbox, SpawnContext, Universe};
 
     use super::*;
     use crate::source::kinesis::helpers::tests::{

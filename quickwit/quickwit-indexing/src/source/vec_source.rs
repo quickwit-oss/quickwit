@@ -122,7 +122,7 @@ impl Source for VecSource {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::{create_test_mailbox, Actor, Command, Universe};
+    use quickwit_actors::{create_test_mailbox, Actor, Command, SpawnContext, Universe};
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::metastore_for_test;
     use serde_json::json;

@@ -210,7 +210,7 @@ impl TypedSourceFactory for IngestApiSourceFactory {
 mod tests {
     use std::time::Duration;
 
-    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_actors::{create_test_mailbox, SpawnContext, Universe};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_ingest_api::{add_doc, init_ingest_api, Queues};
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};

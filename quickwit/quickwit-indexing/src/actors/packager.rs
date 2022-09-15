@@ -323,7 +323,7 @@ mod tests {
     use std::ops::RangeInclusive;
     use std::time::Instant;
 
-    use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
+    use quickwit_actors::{create_test_mailbox, ObservationType, SpawnContext, Universe};
     use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};

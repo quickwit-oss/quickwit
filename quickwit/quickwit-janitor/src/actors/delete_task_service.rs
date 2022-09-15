@@ -22,7 +22,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, HEARTBEAT};
+use quickwit_actors::{
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, SpawnContext, HEARTBEAT,
+};
 use quickwit_metastore::{IndexMetadata, Metastore};
 use quickwit_search::SearchClientPool;
 use quickwit_storage::StorageUriResolver;
@@ -171,7 +173,7 @@ impl Handler<SuperviseLoop> for DeleteTaskService {
 mod tests {
     use std::sync::Arc;
 
-    use quickwit_actors::{Universe, HEARTBEAT};
+    use quickwit_actors::{SpawnContext, Universe, HEARTBEAT};
     use quickwit_indexing::TestSandbox;
     use quickwit_search::{MockSearchService, SearchClientPool};
     use quickwit_storage::StorageUriResolver;

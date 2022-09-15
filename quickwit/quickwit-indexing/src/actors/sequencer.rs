@@ -89,7 +89,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::Universe;
+    use quickwit_actors::{SpawnContext, Universe};
 
     use super::*;
 

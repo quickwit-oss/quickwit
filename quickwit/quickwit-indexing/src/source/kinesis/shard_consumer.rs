@@ -21,7 +21,9 @@ use std::fmt;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox};
+use quickwit_actors::{
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox, SpawnContext,
+};
 use quickwit_aws::retry::RetryParams;
 use rusoto_kinesis::{KinesisClient, Record};
 use serde_json::json;

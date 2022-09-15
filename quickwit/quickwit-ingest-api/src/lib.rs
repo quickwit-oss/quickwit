@@ -32,7 +32,7 @@ pub use ingest_api_service::IngestApiService;
 use once_cell::sync::OnceCell;
 pub use position::Position;
 pub use queue::Queues;
-use quickwit_actors::{Mailbox, Universe};
+use quickwit_actors::{Mailbox, SpawnContext, Universe};
 use quickwit_proto::ingest_api::DocBatch;
 use tokio::sync::Mutex;
 

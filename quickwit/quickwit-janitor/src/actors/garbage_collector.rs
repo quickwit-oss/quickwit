@@ -201,7 +201,7 @@ impl Handler<Loop> for GarbageCollector {
 mod tests {
     use std::path::Path;
 
-    use quickwit_actors::Universe;
+    use quickwit_actors::{SpawnContext, Universe};
     use quickwit_metastore::{
         IndexMetadata, MetastoreError, MockMetastore, Split, SplitMetadata, SplitState,
     };

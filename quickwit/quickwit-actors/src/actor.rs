@@ -35,6 +35,7 @@ use crate::actor_state::{ActorState, AtomicState};
 use crate::progress::{Progress, ProtectedZoneGuard};
 use crate::scheduler::{Callback, ScheduleEvent, Scheduler};
 use crate::spawn_builder::SpawnBuilder;
+use crate::spawn_context::SpawnContext;
 #[cfg(any(test, feature = "testsuite"))]
 use crate::Universe;
 use crate::{AskError, Command, KillSwitch, Mailbox, QueueCapacity, SendError};
@@ -339,17 +340,6 @@ impl<A: Actor> ActorContext<A> {
         &self.progress
     }
 
-    pub fn spawn_actor<SpawnedActor: Actor>(
-        &self,
-        actor: SpawnedActor,
-    ) -> SpawnBuilder<SpawnedActor> {
-        SpawnBuilder::new(
-            actor,
-            self.scheduler_mailbox.clone(),
-            self.kill_switch.clone(),
-        )
-    }
-
     /// Records some progress.
     /// This function is only useful when implementing actors that may take more than
     /// `HEARTBEAT` to process a single message.
@@ -413,6 +403,16 @@ impl<A: Actor> ActorContext<A> {
             error!(actor=%self.actor_instance_id(), exit_status=?exit_status, "exit activating-kill-switch");
             self.kill_switch().kill();
         }
+    }
+}
+
+impl<A: Actor> SpawnContext for ActorContext<A> {
+    fn spawn_actor<SpawnedActor: Actor>(&self, actor: SpawnedActor) -> SpawnBuilder<SpawnedActor> {
+        SpawnBuilder::new(
+            actor,
+            self.scheduler_mailbox.clone(),
+            self.kill_switch.clone(),
+        )
     }
 }
 

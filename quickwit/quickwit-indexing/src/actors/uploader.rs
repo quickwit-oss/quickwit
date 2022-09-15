@@ -294,7 +294,7 @@ mod tests {
     use std::path::PathBuf;
     use std::time::Instant;
 
-    use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
+    use quickwit_actors::{create_test_mailbox, ObservationType, SpawnContext, Universe};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::RamStorage;

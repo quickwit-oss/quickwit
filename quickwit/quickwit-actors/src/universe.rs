@@ -21,6 +21,7 @@ use std::time::Duration;
 
 use crate::scheduler::{SimulateAdvanceTime, TimeShift};
 use crate::spawn_builder::SpawnBuilder;
+use crate::spawn_context::SpawnContext;
 use crate::{Actor, Command, KillSwitch, Mailbox, QueueCapacity, Scheduler};
 
 /// Universe serves as the top-level context in which Actor can be spawned.
@@ -74,14 +75,6 @@ impl Universe {
         let _ = rx.await;
     }
 
-    pub fn spawn_actor<A: Actor>(&self, actor: A) -> SpawnBuilder<A> {
-        SpawnBuilder::new(
-            actor,
-            self.scheduler_mailbox.clone(),
-            self.kill_switch.clone(),
-        )
-    }
-
     /// Inform an actor to process pending message and then stop processing new messages
     /// and exit successfully.
     pub async fn send_exit_with_success<A: Actor>(
@@ -99,13 +92,23 @@ impl Drop for Universe {
     }
 }
 
+impl SpawnContext for Universe {
+    fn spawn_actor<SpawnedActor: Actor>(&self, actor: SpawnedActor) -> SpawnBuilder<SpawnedActor> {
+        SpawnBuilder::new(
+            actor,
+            self.scheduler_mailbox.clone(),
+            self.kill_switch.clone(),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
     use async_trait::async_trait;
 
-    use crate::{Actor, ActorContext, ActorExitStatus, Handler, Universe};
+    use crate::{Actor, ActorContext, ActorExitStatus, Handler, SpawnContext, Universe};
 
     #[derive(Default)]
     pub struct ActorWithSchedule {

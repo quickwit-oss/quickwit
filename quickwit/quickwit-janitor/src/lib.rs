@@ -19,7 +19,7 @@
 
 use std::sync::Arc;
 
-use quickwit_actors::Universe;
+use quickwit_actors::{SpawnContext, Universe};
 use quickwit_config::QuickwitConfig;
 use quickwit_metastore::Metastore;
 use quickwit_search::SearchClientPool;

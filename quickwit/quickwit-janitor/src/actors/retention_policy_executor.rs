@@ -236,7 +236,7 @@ mod tests {
     use std::ops::RangeInclusive;
 
     use mockall::Sequence;
-    use quickwit_actors::Universe;
+    use quickwit_actors::{SpawnContext, Universe};
     use quickwit_config::{RetentionPolicy, RetentionPolicyCutoffReference};
     use quickwit_metastore::{IndexMetadata, MockMetastore, Split, SplitMetadata, SplitState};
     use time::OffsetDateTime;
