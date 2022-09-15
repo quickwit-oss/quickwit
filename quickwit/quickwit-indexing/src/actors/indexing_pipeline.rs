@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -44,8 +43,7 @@ use crate::actors::{
 };
 use crate::models::{IndexingDirectory, IndexingPipelineId, IndexingStatistics, Observe};
 use crate::source::{quickwit_supported_sources, SourceActor, SourceExecutionContext};
-use crate::split_store::{IndexingSplitStore, IndexingSplitStoreParams};
-use crate::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
+use crate::split_store::IndexingSplitStore;
 
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(600); // 10 min.
 
@@ -209,14 +207,9 @@ impl IndexingPipeline {
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         self.statistics.num_spawn_attempts += 1;
         self.kill_switch = KillSwitch::default();
-        let stable_multitenant_merge_policy = StableMultitenantWithTimestampMergePolicy {
-            merge_enabled: self.params.indexing_settings.merge_enabled,
-            merge_factor: self.params.indexing_settings.merge_policy.merge_factor,
-            max_merge_factor: self.params.indexing_settings.merge_policy.max_merge_factor,
-            split_num_docs_target: self.params.indexing_settings.split_num_docs_target,
-            ..Default::default()
-        };
-        let merge_policy: Arc<dyn MergePolicy> = Arc::new(stable_multitenant_merge_policy);
+
+        let split_store = self.params.split_store.clone();
+        let merge_policy = split_store.get_merge_policy();
         info!(
             index_id=%self.params.pipeline_id.index_id,
             source_id=%self.params.pipeline_id.source_id,
@@ -225,15 +218,6 @@ impl IndexingPipeline {
             merge_policy=?merge_policy,
             "Spawning indexing pipeline.",
         );
-        let split_store = IndexingSplitStore::create_with_local_store(
-            self.params.storage.clone(),
-            self.params.indexing_directory.cache_directory.as_path(),
-            IndexingSplitStoreParams {
-                max_num_bytes: self.params.split_store_max_num_bytes,
-                max_num_splits: self.params.split_store_max_num_splits,
-            },
-            merge_policy.clone(),
-        )?;
         let published_splits = self
             .params
             .metastore
@@ -597,21 +581,19 @@ pub struct IndexingPipelineParams {
     pub indexing_directory: IndexingDirectory,
     pub indexing_settings: IndexingSettings,
     pub source_config: SourceConfig,
-    pub split_store_max_num_bytes: usize,
-    pub split_store_max_num_splits: usize,
     pub metastore: Arc<dyn Metastore>,
     pub storage: Arc<dyn Storage>,
+    pub split_store: IndexingSplitStore,
 }
 
 impl IndexingPipelineParams {
     #[allow(clippy::too_many_arguments)]
-    pub async fn try_new(
+    pub fn try_new(
         pipeline_id: IndexingPipelineId,
         index_metadata: IndexMetadata,
         source_config: SourceConfig,
-        indexing_dir_path: PathBuf,
-        split_store_max_num_bytes: usize,
-        split_store_max_num_splits: usize,
+        indexing_directory: IndexingDirectory,
+        split_store: IndexingSplitStore,
         metastore: Arc<dyn Metastore>,
         storage: Arc<dyn Storage>,
     ) -> anyhow::Result<Self> {
@@ -620,20 +602,15 @@ impl IndexingPipelineParams {
             &index_metadata.search_settings,
             &index_metadata.indexing_settings,
         )?;
-        let indexing_directory_path = indexing_dir_path
-            .join(&pipeline_id.index_id)
-            .join(&pipeline_id.source_id);
-        let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path).await?;
         Ok(Self {
             pipeline_id,
             doc_mapper,
             indexing_directory,
             indexing_settings: index_metadata.indexing_settings,
             source_config,
-            split_store_max_num_bytes,
-            split_store_max_num_splits,
             metastore,
             storage,
+            split_store,
         })
     }
 }
@@ -742,16 +719,17 @@ mod tests {
             num_pipelines: 1,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
         };
+        let storage = Arc::new(RamStorage::default());
+        let split_store = IndexingSplitStore::create_with_no_local_store(storage.clone());
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             indexing_directory: IndexingDirectory::for_test().await?,
             indexing_settings: IndexingSettings::for_test(),
-            split_store_max_num_bytes: 10_000_000,
-            split_store_max_num_splits: 100,
             metastore: Arc::new(metastore),
-            storage: Arc::new(RamStorage::default()),
+            storage,
+            split_store,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_actor(pipeline).spawn();
@@ -833,16 +811,17 @@ mod tests {
             num_pipelines: 1,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
         };
+        let storage = Arc::new(RamStorage::default());
+        let split_store = IndexingSplitStore::create_with_no_local_store(storage.clone());
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             indexing_directory: IndexingDirectory::for_test().await?,
             indexing_settings: IndexingSettings::for_test(),
-            split_store_max_num_bytes: 10_000_000,
-            split_store_max_num_splits: 100,
             metastore: Arc::new(metastore),
-            storage: Arc::new(RamStorage::default()),
+            storage,
+            split_store,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_actor(pipeline).spawn();

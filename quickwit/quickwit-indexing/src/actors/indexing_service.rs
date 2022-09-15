@@ -32,14 +32,15 @@ use quickwit_ingest_api::{get_ingest_api_service, QUEUES_DIR_NAME};
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
-use quickwit_storage::{StorageResolverError, StorageUriResolver};
+use quickwit_storage::{StorageError, StorageResolverError, StorageUriResolver};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{error, info};
 
 use crate::models::{
-    DetachPipeline, IndexingPipelineId, Observe, ObservePipeline, ShutdownPipeline,
-    ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
+    DetachPipeline, IndexingPipelineId, Observe, ObservePipeline, SharedResource,
+    SharedResourceManager, ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline, SpawnPipeline,
+    SpawnPipelines,
 };
 use crate::source::INGEST_API_SOURCE_ID;
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingStatistics};
@@ -60,7 +61,9 @@ pub enum IndexingServiceError {
         pipeline_ord: usize,
     },
     #[error("Failed to resolve the storage `{0}`.")]
-    StorageError(#[from] StorageResolverError),
+    StorageResolverError(#[from] StorageResolverError),
+    #[error("Storage error `{0}`.")]
+    StorageError(#[from] StorageError),
     #[error("Metastore error `{0}`.")]
     MetastoreError(#[from] MetastoreError),
     #[error("Invalid params `{0}`.")]
@@ -72,7 +75,7 @@ impl ServiceError for IndexingServiceError {
         match self {
             Self::MissingPipeline { .. } => ServiceErrorCode::NotFound,
             Self::PipelineAlreadyExists { .. } => ServiceErrorCode::BadRequest,
-            Self::StorageError(_) => ServiceErrorCode::Internal,
+            Self::StorageResolverError(_) | Self::StorageError(_) => ServiceErrorCode::Internal,
             Self::MetastoreError(_) => ServiceErrorCode::Internal,
             Self::InvalidParams(_) => ServiceErrorCode::BadRequest,
         }
@@ -96,6 +99,7 @@ pub struct IndexingService {
     pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     state: IndexingServiceState,
     enable_ingest_api: bool,
+    shared_resource_manager: SharedResourceManager,
 }
 
 impl IndexingService {
@@ -123,6 +127,7 @@ impl IndexingService {
             pipeline_handles: Default::default(),
             state: Default::default(),
             enable_ingest_api,
+            shared_resource_manager: SharedResourceManager::new(),
         }
     }
 
@@ -227,19 +232,33 @@ impl IndexingService {
                 pipeline_ord: pipeline_id.pipeline_ord,
             });
         }
-        let indexing_dir_path = self.data_dir_path.join(INDEXING_DIR_NAME);
+
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
+        let indexing_dir_path = self.data_dir_path.join(INDEXING_DIR_NAME);
+        let SharedResource {
+            split_store,
+            indexing_directory,
+        } = self
+            .shared_resource_manager
+            .get_or_init_resource(
+                &pipeline_id,
+                indexing_dir_path,
+                storage.clone(),
+                &index_metadata,
+                self.split_store_max_num_bytes,
+                self.split_store_max_num_splits,
+            )
+            .await?;
+
         let pipeline_params = IndexingPipelineParams::try_new(
             pipeline_id.clone(),
             index_metadata,
             source_config,
-            indexing_dir_path,
-            self.split_store_max_num_bytes,
-            self.split_store_max_num_splits,
+            indexing_directory,
+            split_store,
             self.metastore.clone(),
             storage,
         )
-        .await
         .map_err(IndexingServiceError::InvalidParams)?;
 
         let pipeline = IndexingPipeline::new(pipeline_params);
@@ -401,6 +420,10 @@ impl Handler<SuperviseLoop> for IndexingService {
                     }
                 },
             );
+
+        let active_pipeline_ids = self.pipeline_handles.keys();
+        self.shared_resource_manager
+            .retain_only(active_pipeline_ids);
         ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, SuperviseLoop)
             .await;
         Ok(())
