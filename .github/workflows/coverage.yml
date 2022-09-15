@@ -2,7 +2,6 @@ name: Code coverage
 
 on:
   workflow_dispatch:
-  pull_request:
   push:
     branches:
       - main
@@ -22,7 +21,7 @@ env:
 
 jobs:
   test:
-    name: coverage
+    name: Coverage
     runs-on: ubuntu-latest
     # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
     # container: ---
