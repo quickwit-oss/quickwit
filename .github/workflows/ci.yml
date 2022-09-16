@@ -3,83 +3,51 @@ name: CI
 on:
   workflow_dispatch:
   pull_request:
+    paths:
+      - "quickwit/**"
+      - "!quickwit/quickwit-ui/**"
   push:
     branches:
       - main
       - trigger-ci-workflow
     paths:
-      - "Cargo.lock"
-      - "Cargo.toml"
-      - "quickwit-*/**"
-
+      - "quickwit/**"
+      - "!quickwit/quickwit-ui/**"
 env:
   CARGO_INCREMENTAL: 0
   RUST_BACKTRACE: 1
   RUSTFLAGS: -Dwarnings
   RUSTDOCFLAGS: -Dwarnings -Arustdoc::private_intra_doc_links
+  TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@postgres:5432/quickwit-metastore-dev
 
 jobs:
-  ci-passes:
-    name: CI passes
-    runs-on: ubuntu-latest
-    # See https://github.com/quickwit-inc/quickwit-builder
+  tests:
+    name: ${{ matrix.task.name }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        task:
+          - name: cargo clippy
+            command: cargo clippy --workspace --tests --all-features
+            cache: true
+          - name: cargo deny
+            command: cargo deny check licenses
+            cache: false
+          - name: cargo doc
+            command: cargo doc --no-deps --all-features --document-private-items
+            cache: true
+          - name: cargo nextest
+            command: cargo nextest run --features=postgres --profile ci
+            cache: true
+          - name: License headers check
+            command: bash scripts/check_license_headers.sh
+            cache: false
+          - name: rustfmt
+            command: cargo +nightly fmt --all -- --check
+            cache: false
     container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
-    needs:
-      - lint
-      - test
-    steps:
-      - run: exit 0
-
-  lint:
-    name: Lint (fmt, dependency check, clippy)
-    runs-on: ubuntu-latest
-    container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: dorny/paths-filter@v2
-        id: filter
-        with:
-          filters: |
-            js:
-              - 'quickwit-ui/**'
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-      - uses: Swatinem/rust-cache@v1
-      - name: rustfmt
-        run: cargo +nightly fmt --all -- --check
-      - name: license-headers-check
-        run: bash scripts/check_license_headers.sh
-      - uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --workspace --tests --all-features
-      - uses: actions-rs/cargo@v1
-        name: cargo deny
-        with:
-          command: deny
-          args: check licenses # check that all of deps have an ok license.
-      - name: cargo doc
-        uses: actions-rs/cargo@v1
-        with:
-          command: doc
-          args: --no-deps --all-features --document-private-items
-      - uses: c-hive/gha-yarn-cache@v2
-        with:
-          directory: quickwit-ui
-      - name: Install JS dependencies
-        if: ${{ steps.filter.outputs.js == 'true' }}
-        run: yarn --cwd quickwit-ui install
-      - name: Lint react app
-        if: ${{ steps.filter.outputs.js == 'true' }}
-        run: yarn --cwd quickwit-ui lint
-
-  test:
-    name: Run unit tests (no [ignored])
-    runs-on: ubuntu-latest
-    container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
-
     services:
       # PostgreSQL service container
       postgres:
@@ -96,75 +64,40 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
     steps:
       - uses: actions/checkout@v3
-      - uses: dorny/paths-filter@v2
-        id: filter
+      - name: Setup nightly Rust Toolchain
+        uses: actions-rs/toolchain@v1
         with:
-          filters: |
-            js:
-              - 'quickwit-ui/**'
-      - uses: actions-rs/toolchain@v1
+          toolchain: nightly
+          components: rustfmt, clippy
+      - name: Setup stable Rust Toolchain
+        uses: actions-rs/toolchain@v1
         with:
-          profile: minimal
           toolchain: stable
-      - uses: Swatinem/rust-cache@v1
-      - name: Compile tests
-        run: cargo test --features=postgres --no-run --locked
-      - name: Run tests
-        run: cargo test --features=postgres -- --nocapture --quiet
-        env:
-          TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@postgres:5432/quickwit-metastore-dev
-      - uses: c-hive/gha-yarn-cache@v2
+          override: true
+          components: rustfmt, clippy
+      - name: Setup cache
+        if: matrix.task.cache == true
+        uses: Swatinem/rust-cache@v2
         with:
-          directory: quickwit-ui
-      - name: Install JS dependencies
-        if: ${{ steps.filter.outputs.js == 'true' }}
-        run: yarn --cwd quickwit-ui install
-      - name: Run react tests
-        if: ${{ steps.filter.outputs.js == 'true' }}
-        run: yarn --cwd quickwit-ui test
-      - name: Cypress run
-        if: ${{ steps.filter.outputs.js == 'true' }}
-        run: |
-          CI=false yarn --cwd quickwit-ui build
-          cargo build --features=postgres
-          mkdir qwdata
-          target/debug/quickwit run --service searcher --config config/quickwit.yaml &
-          yarn --cwd quickwit-ui cypress run
-
-      # See #473 #472
-      # - uses: actions-rs/cargo@v1
-      #   name: cargo test failpoints
-      #   with:
-      #     command: test
-      #     args: --features fail/failpoints test_failpoint -- --test-threads 1
-
-  # test:
-  #   name: Run tests
-  #   runs-on: ubuntu-latest
-  #   container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
-  #   services:
-  #     localstack:
-  #       image: localstack/localstack:latest
-  #       ports:
-  #         - "4566:4566"
-  #       env:
-  #         SERVICES: s3
-  #         HOSTNAME_EXTERNAL: localstack
-  #   env:
-  #     AWS_ACCESS_KEY_ID   : "placeholder"
-  #     AWS_SECRET_ACCESS_KEY: "placeholder"
-  #     AWS_DEFAULT_REGION  : "localhost"
-  #   container:
-  #       image: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
-  #   steps:
-  #     - uses: actions/checkout@v3
-  #     - name: Create bucket in localstack
-  #       run: /usr/local/bin/aws --endpoint-url=http://localstack:4566 s3 mb s3://quickwit-integration-tests
-  #     - name: Run all tests.
-  #       env:
-  #         AWS_ACCESS_KEY_ID: dummy-access-key
-  #         AWS_SECRET_ACCESS_KEY: dummy-secret-key
-  #       run: cargo test --all-features
+          key: "v1-${{ matrix.task.name }}"
+          workspaces: "./quickwit -> target"
+      - name: Install mold deps
+        run: | 
+          apt update
+          apt install wget -y
+          apt install jq -y
+      - name: Install mold
+        run: | 
+          version=latest
+          test $version = latest && version=$(wget -q -O- https://api.github.com/repos/rui314/mold/releases/latest | jq -r .tag_name | sed 's/^v//'); true
+          echo "mold $version"
+          wget -q -O- https://github.com/rui314/mold/releases/download/v$version/mold-$version-$(uname -m)-linux.tar.gz | tar -C /usr/local --strip-components=1 -xzf -
+          ln -sf /usr/local/bin/mold $(realpath /usr/bin/ld);
+      - name: Install nextest
+        if: matrix.task.name == 'cargo nextest'
+        uses: taiki-e/install-action@nextest
+      - name: ${{ matrix.task.name }}
+        run: ${{ matrix.task.command }}
+        working-directory: ./quickwit

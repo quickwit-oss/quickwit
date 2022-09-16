@@ -1,0 +1,74 @@
+name: UI CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "quickwit/quickwit-ui/**"
+  push:
+    branches:
+      - main
+      - trigger-ci-workflow
+    paths:
+      - "quickwit/quickwit-ui/**"
+
+jobs:
+  tests:
+    name: ${{ matrix.task.name }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        task:
+          - name: Cypress run
+            command: |
+              CI=false yarn --cwd quickwit-ui build
+              cargo build --features=postgres
+              mkdir qwdata
+              cargo run --features=postgres -- run --service searcher --service metastore --config ../config/quickwit.yaml &
+              yarn --cwd quickwit-ui cypress run
+          - name: Lint
+            command: yarn --cwd quickwit-ui lint
+          - name: Unit Test
+            command: yarn --cwd quickwit-ui test
+    container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
+    services:
+      # PostgreSQL service container
+      postgres:
+        image: postgres:latest
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: quickwit-dev
+          POSTGRES_PASSWORD: quickwit-dev
+          POSTGRES_DB: quickwit-metastore-dev
+        # Set health checks to wait until postgres has started
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      CARGO_INCREMENTAL: 0
+      RUST_BACKTRACE: 1
+      RUSTFLAGS: -Dwarnings -C lto=off
+      RUSTDOCFLAGS: -Dwarnings -Arustdoc::private_intra_doc_links
+      TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@postgres:5432/quickwit-metastore-dev
+    steps:
+      - uses: actions/checkout@v3
+      - uses: c-hive/gha-yarn-cache@v2
+        with:
+          directory: ./quickwit/quickwit-ui
+      - name: Install JS dependencies
+        run: yarn --cwd quickwit-ui install
+        working-directory: ./quickwit
+      - name: Setup cache
+        if: matrix.task.name == 'Cypress run'
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: "v1-${{ matrix.task.name }}"
+          workspaces: "./quickwit -> target"
+      - name: ${{ matrix.task.name }}
+        run: ${{ matrix.task.command }}
+        working-directory: ./quickwit
