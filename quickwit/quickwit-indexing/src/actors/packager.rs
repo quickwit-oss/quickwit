@@ -30,6 +30,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_directories::write_hotcache;
 use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
+use quickwit_doc_mapper::NamedField;
 use tantivy::schema::FieldType;
 use tantivy::{InvertedIndexReader, ReloadPolicy, SegmentMeta};
 use tokio::runtime::Handle;
@@ -42,7 +43,6 @@ const MAX_VALUES_PER_TAG_FIELD: usize = if cfg!(any(test, feature = "testsuite")
     1000
 };
 
-use super::NamedField;
 use crate::actors::Uploader;
 use crate::models::{
     IndexedSplit, IndexedSplitBatch, PackagedSplit, PackagedSplitBatch, ScratchDirectory,

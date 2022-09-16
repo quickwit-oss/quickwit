@@ -144,7 +144,7 @@ impl DeleteTaskPipeline {
         let split_store =
             IndexingSplitStore::create_with_no_local_store(self.index_storage.clone());
         let uploader = Uploader::new(
-            "Uploader",
+            "MergeUploader",
             self.metastore.clone(),
             split_store.clone(),
             sequencer_mailbox,
@@ -153,8 +153,13 @@ impl DeleteTaskPipeline {
             .spawn_actor(uploader)
             .set_kill_switch(KillSwitch::default())
             .spawn();
-        // TODO: Add tag fields.
-        let packager = Packager::new("Packager", Vec::new(), uploader_mailbox);
+        let doc_mapper = build_doc_mapper(
+            &index_metadata.doc_mapping,
+            &index_metadata.search_settings,
+            &index_metadata.indexing_settings,
+        )?;
+        let tag_fields = doc_mapper.tag_named_fields()?;
+        let packager = Packager::new("MergePackager", tag_fields, uploader_mailbox);
         let (packager_mailbox, packager_handler) = ctx
             .spawn_actor(packager)
             .set_kill_switch(KillSwitch::default())
@@ -190,11 +195,6 @@ impl DeleteTaskPipeline {
             ..Default::default()
         };
         let merge_policy: Arc<dyn MergePolicy> = Arc::new(stable_multitenant_merge_policy);
-        let doc_mapper = build_doc_mapper(
-            &index_metadata.doc_mapping,
-            &index_metadata.search_settings,
-            &index_metadata.indexing_settings,
-        )?;
         let doc_mapper_str = serde_json::to_string(&doc_mapper)?;
         let task_planner = DeleteTaskPlanner::new(
             self.index_id.clone(),
