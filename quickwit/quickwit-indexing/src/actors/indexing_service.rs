@@ -17,9 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use async_trait::async_trait;
 use quickwit_actors::{
@@ -103,11 +103,11 @@ pub struct IndexingService {
     state: IndexingServiceState,
     enable_ingest_api: bool,
     // Hashmap of of index_id to merge policy.
-    merge_policies: HashMap<String, Arc<dyn MergePolicy>>,
+    merge_policies: HashMap<String, Weak<dyn MergePolicy>>,
     // Hashmap of (index_id, source_id) to indexing directory.
-    indexing_directories: HashMap<String, IndexingDirectory>,
+    indexing_directories: HashMap<String, Weak<IndexingDirectory>>,
     // Hashmap of (index_id, source_id) to indexing split store.
-    split_stores: HashMap<String, IndexingSplitStore>,
+    split_stores: HashMap<String, Weak<IndexingSplitStore>>,
 }
 
 impl IndexingService {
@@ -363,8 +363,10 @@ impl IndexingService {
         pipeline_id: &IndexingPipelineId,
         index_metadata: &IndexMetadata,
     ) -> Arc<dyn MergePolicy> {
-        if let Some(merge_policy) = self.merge_policies.get(&pipeline_id.index_id) {
-            return merge_policy.clone();
+        if let Some(merge_policy_ref) = self.merge_policies.get(&pipeline_id.index_id) {
+            if let Some(merge_policy) = merge_policy_ref.upgrade() {
+                return merge_policy;
+            }
         }
 
         let stable_multitenant_merge_policy = StableMultitenantWithTimestampMergePolicy {
@@ -380,7 +382,7 @@ impl IndexingService {
         let merge_policy: Arc<dyn MergePolicy> = Arc::new(stable_multitenant_merge_policy);
 
         self.merge_policies
-            .insert(pipeline_id.index_id.clone(), merge_policy.clone());
+            .insert(pipeline_id.index_id.clone(), Arc::downgrade(&merge_policy));
         merge_policy
     }
 
@@ -388,21 +390,25 @@ impl IndexingService {
         &mut self,
         pipeline_id: &IndexingPipelineId,
         indexing_dir_path: PathBuf,
-    ) -> Result<IndexingDirectory, IndexingServiceError> {
+    ) -> Result<Arc<IndexingDirectory>, IndexingServiceError> {
         let key = self.index_source_key(pipeline_id);
-        if let Some(indexing_directory) = self.indexing_directories.get(&key) {
-            return Ok(indexing_directory.clone());
+        if let Some(indexing_directory_ref) = self.indexing_directories.get(&key) {
+            if let Some(indexing_directory) = indexing_directory_ref.upgrade() {
+                return Ok(indexing_directory);
+            }
         }
 
         let indexing_directory_path = indexing_dir_path
             .join(&pipeline_id.index_id)
             .join(&pipeline_id.source_id);
-        let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path)
-            .await
-            .map_err(IndexingServiceError::InvalidParams)?;
+        let indexing_directory = Arc::new(
+            IndexingDirectory::create_in_dir(indexing_directory_path)
+                .await
+                .map_err(IndexingServiceError::InvalidParams)?,
+        );
 
         self.indexing_directories
-            .insert(key, indexing_directory.clone());
+            .insert(key, Arc::downgrade(&indexing_directory));
         Ok(indexing_directory)
     }
 
@@ -412,13 +418,15 @@ impl IndexingService {
         cache_directory: &Path,
         storage: Arc<dyn Storage>,
         merge_policy: Arc<dyn MergePolicy>,
-    ) -> Result<IndexingSplitStore, IndexingServiceError> {
+    ) -> Result<Arc<IndexingSplitStore>, IndexingServiceError> {
         let key = self.index_source_key(pipeline_id);
-        if let Some(split_store) = self.split_stores.get(&key) {
-            return Ok(split_store.clone());
+        if let Some(split_store_ref) = self.split_stores.get(&key) {
+            if let Some(split_store) = split_store_ref.upgrade() {
+                return Ok(split_store);
+            }
         }
 
-        let split_store = IndexingSplitStore::create_with_local_store(
+        let split_store = Arc::new(IndexingSplitStore::create_with_local_store(
             storage.clone(),
             cache_directory,
             IndexingSplitStoreParams {
@@ -426,37 +434,10 @@ impl IndexingService {
                 max_num_splits: self.split_store_max_num_splits,
             },
             merge_policy,
-        )?;
+        )?);
 
-        self.split_stores.insert(key, split_store.clone());
+        self.split_stores.insert(key, Arc::downgrade(&split_store));
         Ok(split_store)
-    }
-
-    fn retain_merge_policies(&mut self, running_pipeline_ids: &[IndexingPipelineId]) {
-        let running_merge_policies: HashSet<&String> = running_pipeline_ids
-            .iter()
-            .map(|pipeline_id| &pipeline_id.index_id)
-            .collect();
-        self.merge_policies
-            .retain(|index_id, _| running_merge_policies.contains(index_id));
-    }
-
-    fn retain_indexing_directories(&mut self, running_pipeline_ids: &[IndexingPipelineId]) {
-        let running_indexing_directories: HashSet<String> = running_pipeline_ids
-            .iter()
-            .map(|pipeline_id| self.index_source_key(pipeline_id))
-            .collect();
-        self.indexing_directories
-            .retain(|key, _| running_indexing_directories.contains(key));
-    }
-
-    fn retain_split_stores(&mut self, running_pipeline_ids: &[IndexingPipelineId]) {
-        let running_split_stores: HashSet<String> = running_pipeline_ids
-            .iter()
-            .map(|pipeline_id| self.index_source_key(pipeline_id))
-            .collect();
-        self.split_stores
-            .retain(|key, _| running_split_stores.contains(key));
     }
 
     fn index_source_key(&self, pipeline_id: &IndexingPipelineId) -> String {
@@ -531,11 +512,6 @@ impl Handler<SuperviseLoop> for IndexingService {
                     }
                 },
             );
-
-        let running_pipeline_ids: Vec<_> = self.pipeline_handles.keys().cloned().collect();
-        self.retain_merge_policies(&running_pipeline_ids);
-        self.retain_indexing_directories(&running_pipeline_ids);
-        self.retain_split_stores(&running_pipeline_ids);
         ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, SuperviseLoop)
             .await;
         Ok(())
@@ -665,7 +641,7 @@ impl Handler<ShutdownPipeline> for IndexingService {
 mod tests {
     use std::time::Duration;
 
-    use quickwit_actors::{ObservationType, Universe, HEARTBEAT};
+    use quickwit_actors::{ObservationType, Universe};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
     use quickwit_config::{SourceConfig, VecSourceParams};
@@ -673,36 +649,6 @@ mod tests {
     use quickwit_metastore::quickwit_metastore_uri_resolver;
 
     use super::*;
-
-    #[derive(Debug)]
-    struct AssertState(usize, usize, usize);
-
-    #[async_trait]
-    impl Handler<AssertState> for IndexingService {
-        type Reply = ();
-        async fn handle(
-            &mut self,
-            message: AssertState,
-            _ctx: &ActorContext<Self>,
-        ) -> Result<(), ActorExitStatus> {
-            assert_eq!(
-                message.0,
-                self.merge_policies.len(),
-                "Number of merge policies."
-            );
-            assert_eq!(
-                message.1,
-                self.indexing_directories.len(),
-                "Number of indexing directories."
-            );
-            assert_eq!(
-                message.2,
-                self.split_stores.len(),
-                "Number of split stores."
-            );
-            Ok(())
-        }
-    }
 
     #[tokio::test]
     async fn test_indexing_service() {
@@ -842,11 +788,6 @@ mod tests {
             indexing_server_handle.observe().await.num_running_pipelines,
             5
         );
-        universe.simulate_time_shift(HEARTBEAT).await;
-        indexing_server_mailbox
-            .ask(AssertState(1, 4, 4))
-            .await
-            .unwrap();
 
         // Test `shutdown_pipeline`
         indexing_server_mailbox
@@ -888,11 +829,6 @@ mod tests {
             indexing_server_handle.observe().await.num_running_pipelines,
             0
         );
-        universe.simulate_time_shift(HEARTBEAT).await;
-        indexing_server_mailbox
-            .ask(AssertState(0, 0, 0))
-            .await
-            .unwrap();
 
         // Test `spawn_merge_pipeline`.
         indexing_server_mailbox

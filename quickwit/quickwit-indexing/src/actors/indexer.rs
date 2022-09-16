@@ -68,7 +68,7 @@ pub struct IndexerCounters {
 struct IndexerState {
     pipeline_id: IndexingPipelineId,
     metastore: Arc<dyn Metastore>,
-    indexing_directory: IndexingDirectory,
+    indexing_directory: Arc<IndexingDirectory>,
     indexing_settings: IndexingSettings,
     publish_lock: PublishLock,
     schema: Schema,
@@ -351,7 +351,7 @@ impl Indexer {
         pipeline_id: IndexingPipelineId,
         doc_mapper: Arc<dyn DocMapper>,
         metastore: Arc<dyn Metastore>,
-        indexing_directory: IndexingDirectory,
+        indexing_directory: Arc<IndexingDirectory>,
         indexing_settings: IndexingSettings,
         index_serializer_mailbox: Mailbox<IndexSerializer>,
     ) -> Self {
@@ -535,7 +535,7 @@ mod tests {
         let schema = doc_mapper.schema();
         let body_field = schema.get_field("body").unwrap();
         let timestamp_field = schema.get_field("timestamp").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await?;
+        let indexing_directory = Arc::new(IndexingDirectory::for_test().await?);
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 3;
         indexing_settings.sort_field = Some("timestamp".to_string());
@@ -673,7 +673,7 @@ mod tests {
         let last_delete_opstamp = 10;
         let schema = doc_mapper.schema();
         let body_field = schema.get_field("body").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await?;
+        let indexing_directory = Arc::new(IndexingDirectory::for_test().await?);
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.resources.heap_size = Byte::from_bytes(5_000_000);
         let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
@@ -751,7 +751,7 @@ mod tests {
         let schema = doc_mapper.schema();
         let body_field = schema.get_field("body").unwrap();
         let timestamp_field = schema.get_field("timestamp").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await?;
+        let indexing_directory = Arc::new(IndexingDirectory::for_test().await?);
         let indexing_settings = IndexingSettings::for_test();
         let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
         let mut metastore = MockMetastore::default();
@@ -840,7 +840,7 @@ mod tests {
         let schema = doc_mapper.schema();
         let body_field = schema.get_field("body").unwrap();
         let timestamp_field = schema.get_field("timestamp").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await?;
+        let indexing_directory = Arc::new(IndexingDirectory::for_test().await?);
         let indexing_settings = IndexingSettings::for_test();
         let (index_serializer_mailbox, index_serializer_inbox) = create_test_mailbox();
         let mut metastore = MockMetastore::default();
@@ -924,7 +924,7 @@ mod tests {
         let tenant_field = schema.get_field("tenant").unwrap();
         let body_field = schema.get_field("body").unwrap();
 
-        let indexing_directory = IndexingDirectory::for_test().await?;
+        let indexing_directory = Arc::new(IndexingDirectory::for_test().await?);
         let indexing_settings = IndexingSettings::for_test();
         let (packager_mailbox, packager_inbox) = create_test_mailbox();
         let mut metastore = MockMetastore::default();
@@ -1017,7 +1017,7 @@ mod tests {
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await.unwrap();
+        let indexing_directory = Arc::new(IndexingDirectory::for_test().await.unwrap());
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 1;
         let mut metastore = MockMetastore::default();
@@ -1088,7 +1088,7 @@ mod tests {
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
-        let indexing_directory = IndexingDirectory::for_test().await.unwrap();
+        let indexing_directory = Arc::new(IndexingDirectory::for_test().await.unwrap());
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 1;
         let mut metastore = MockMetastore::default();
