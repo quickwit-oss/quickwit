@@ -44,7 +44,9 @@ impl Universe {
         let (mailbox, _inbox) =
             crate::create_mailbox("fake-mailbox".to_string(), QueueCapacity::Unbounded);
         let (scheduler_mailbox, _scheduler_inbox) =
-            SpawnBuilder::new(scheduler, mailbox, kill_switch.clone()).spawn();
+            SpawnBuilder::new(scheduler, mailbox)
+                .set_kill_switch(kill_switch.clone())
+                .spawn();
         Universe {
             scheduler_mailbox,
             kill_switch,
@@ -78,7 +80,6 @@ impl Universe {
         SpawnBuilder::new(
             actor,
             self.scheduler_mailbox.clone(),
-            self.kill_switch.clone(),
         )
     }
 

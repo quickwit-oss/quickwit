@@ -346,7 +346,6 @@ impl<A: Actor> ActorContext<A> {
         SpawnBuilder::new(
             actor,
             self.scheduler_mailbox.clone(),
-            self.kill_switch.clone(),
         )
     }
 
