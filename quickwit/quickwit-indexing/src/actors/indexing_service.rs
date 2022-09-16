@@ -17,8 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -32,18 +32,21 @@ use quickwit_ingest_api::{get_ingest_api_service, QUEUES_DIR_NAME};
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
-use quickwit_storage::{StorageError, StorageResolverError, StorageUriResolver};
+use quickwit_storage::{Storage, StorageError, StorageResolverError, StorageUriResolver};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{error, info};
 
+use crate::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 use crate::models::{
-    DetachPipeline, IndexingPipelineId, IndexingSharedResource, IndexingSharedResourceManager,
-    Observe, ObservePipeline, ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline,
-    SpawnPipeline, SpawnPipelines,
+    DetachPipeline, IndexingDirectory, IndexingPipelineId, Observe, ObservePipeline,
+    ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
 };
 use crate::source::INGEST_API_SOURCE_ID;
-use crate::{IndexingPipeline, IndexingPipelineParams, IndexingStatistics};
+use crate::{
+    IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingSplitStoreParams,
+    IndexingStatistics,
+};
 
 /// Name of the indexing directory, usually located at `<data_dir_path>/indexing`.
 pub const INDEXING_DIR_NAME: &str = "indexing";
@@ -87,6 +90,9 @@ pub struct IndexingServiceState {
     pub num_running_pipelines: usize,
     pub num_successful_pipelines: usize,
     pub num_failed_pipelines: usize,
+    pub num_merge_policies: usize,
+    pub num_indexing_directories: usize,
+    pub num_split_stores: usize,
 }
 
 pub struct IndexingService {
@@ -99,7 +105,12 @@ pub struct IndexingService {
     pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     state: IndexingServiceState,
     enable_ingest_api: bool,
-    shared_resource_manager: IndexingSharedResourceManager,
+    // Hashmap of of index_id to merge policy.
+    merge_policies: HashMap<String, Arc<dyn MergePolicy>>,
+    // Hashmap of (index_id, source_id) to indexing directory.
+    indexing_directories: HashMap<String, IndexingDirectory>,
+    // Hashmap of (index_id, source_id) to indexing split store.
+    split_stores: HashMap<String, IndexingSplitStore>,
 }
 
 impl IndexingService {
@@ -127,7 +138,9 @@ impl IndexingService {
             pipeline_handles: Default::default(),
             state: Default::default(),
             enable_ingest_api,
-            shared_resource_manager: IndexingSharedResourceManager::new(),
+            merge_policies: HashMap::new(),
+            indexing_directories: HashMap::new(),
+            split_stores: HashMap::new(),
         }
     }
 
@@ -233,22 +246,18 @@ impl IndexingService {
             });
         }
 
-        let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let indexing_dir_path = self.data_dir_path.join(INDEXING_DIR_NAME);
-        let IndexingSharedResource {
-            split_store,
-            indexing_directory,
-        } = self
-            .shared_resource_manager
-            .get_or_init_resource(
-                &pipeline_id,
-                indexing_dir_path,
-                storage.clone(),
-                &index_metadata,
-                self.split_store_max_num_bytes,
-                self.split_store_max_num_splits,
-            )
+        let indexing_directory = self
+            .get_or_init_indexing_directory(&pipeline_id, indexing_dir_path)
             .await?;
+        let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
+        let merge_policy = self.get_or_init_merge_policy(&pipeline_id, &index_metadata);
+        let split_store = self.get_or_init_split_store(
+            &pipeline_id,
+            &indexing_directory.cache_directory,
+            storage.clone(),
+            merge_policy,
+        )?;
 
         let pipeline_params = IndexingPipelineParams::try_new(
             pipeline_id.clone(),
@@ -351,6 +360,120 @@ impl IndexingService {
         let index_metadata = self.metastore.index_metadata(index_id).await?;
         Ok(index_metadata)
     }
+
+    fn get_or_init_merge_policy(
+        &mut self,
+        pipeline_id: &IndexingPipelineId,
+        index_metadata: &IndexMetadata,
+    ) -> Arc<dyn MergePolicy> {
+        let key = pipeline_id.index_id.clone();
+        if let Some(merge_policy) = self.merge_policies.get(&key) {
+            return merge_policy.clone();
+        }
+
+        let stable_multitenant_merge_policy = StableMultitenantWithTimestampMergePolicy {
+            merge_enabled: index_metadata.indexing_settings.merge_enabled,
+            merge_factor: index_metadata.indexing_settings.merge_policy.merge_factor,
+            max_merge_factor: index_metadata
+                .indexing_settings
+                .merge_policy
+                .max_merge_factor,
+            split_num_docs_target: index_metadata.indexing_settings.split_num_docs_target,
+            ..Default::default()
+        };
+        let merge_policy: Arc<dyn MergePolicy> = Arc::new(stable_multitenant_merge_policy);
+
+        self.merge_policies.insert(key.clone(), merge_policy);
+        self.merge_policies.get(&key).unwrap().clone()
+    }
+
+    async fn get_or_init_indexing_directory(
+        &mut self,
+        pipeline_id: &IndexingPipelineId,
+        indexing_dir_path: PathBuf,
+    ) -> Result<IndexingDirectory, IndexingServiceError> {
+        let key = self.index_source_key(pipeline_id);
+        if let Some(indexing_directory) = self.indexing_directories.get(&key) {
+            return Ok(indexing_directory.clone());
+        }
+
+        let indexing_directory_path = indexing_dir_path
+            .join(&pipeline_id.index_id)
+            .join(&pipeline_id.source_id);
+        let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path)
+            .await
+            .map_err(IndexingServiceError::InvalidParams)?;
+
+        self.indexing_directories
+            .insert(key.clone(), indexing_directory);
+        Ok(self.indexing_directories.get(&key).unwrap().clone())
+    }
+
+    fn get_or_init_split_store(
+        &mut self,
+        pipeline_id: &IndexingPipelineId,
+        cache_directory: &Path,
+        storage: Arc<dyn Storage>,
+        merge_policy: Arc<dyn MergePolicy>,
+    ) -> Result<IndexingSplitStore, IndexingServiceError> {
+        let key = self.index_source_key(pipeline_id);
+        if let Some(split_store) = self.split_stores.get(&key) {
+            return Ok(split_store.clone());
+        }
+
+        let split_store = IndexingSplitStore::create_with_local_store(
+            storage.clone(),
+            cache_directory,
+            IndexingSplitStoreParams {
+                max_num_bytes: self.split_store_max_num_bytes,
+                max_num_splits: self.split_store_max_num_splits,
+            },
+            merge_policy,
+        )?;
+
+        self.split_stores.insert(key.clone(), split_store);
+        Ok(self.split_stores.get(&key).unwrap().clone())
+    }
+
+    fn retain_merge_policies(&mut self, running_pipeline_ids: &[IndexingPipelineId]) {
+        let running_keys: HashSet<String> = running_pipeline_ids
+            .iter()
+            .map(|pipeline_id| pipeline_id.index_id.clone())
+            .collect();
+        let current_keys: HashSet<String> = self.merge_policies.keys().cloned().collect();
+        let deleted_keys = &current_keys - &running_keys;
+        for key in deleted_keys {
+            self.merge_policies.remove(&key);
+        }
+    }
+
+    fn retain_indexing_directories(&mut self, running_pipeline_ids: &[IndexingPipelineId]) {
+        let running_keys: HashSet<String> = running_pipeline_ids
+            .iter()
+            .map(|pipeline_id| self.index_source_key(pipeline_id))
+            .collect();
+        let current_keys: HashSet<String> = self.indexing_directories.keys().cloned().collect();
+        let deleted_keys = &current_keys - &running_keys;
+        for key in deleted_keys {
+            self.indexing_directories.remove(&key);
+        }
+    }
+
+    fn retain_split_stores(&mut self, running_pipeline_ids: &[IndexingPipelineId]) {
+        let running_keys: HashSet<String> = running_pipeline_ids
+            .iter()
+            .map(|pipeline_id| self.index_source_key(pipeline_id))
+            .collect();
+        let current_keys: HashSet<String> = self.split_stores.keys().cloned().collect();
+        let deleted_keys = &current_keys - &running_keys;
+        for key in deleted_keys {
+            self.split_stores.remove(&key);
+        }
+    }
+
+    fn index_source_key(&self, pipeline_id: &IndexingPipelineId) -> String {
+        format!("{}_{}", pipeline_id.index_id, pipeline_id.source_id)
+    }
 }
 
 #[async_trait]
@@ -421,9 +544,10 @@ impl Handler<SuperviseLoop> for IndexingService {
                 },
             );
 
-        let active_pipeline_ids = self.pipeline_handles.keys();
-        self.shared_resource_manager
-            .retain_only(active_pipeline_ids);
+        let running_pipeline_ids: Vec<_> = self.pipeline_handles.keys().cloned().collect();
+        self.retain_merge_policies(&running_pipeline_ids);
+        self.retain_indexing_directories(&running_pipeline_ids);
+        self.retain_split_stores(&running_pipeline_ids);
         ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, SuperviseLoop)
             .await;
         Ok(())
@@ -435,7 +559,11 @@ impl Actor for IndexingService {
     type ObservableState = IndexingServiceState;
 
     fn observable_state(&self) -> Self::ObservableState {
-        self.state.clone()
+        let mut state = self.state.clone();
+        state.num_merge_policies = self.merge_policies.len();
+        state.num_indexing_directories = self.indexing_directories.len();
+        state.num_split_stores = self.split_stores.len();
+        state
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
@@ -595,10 +723,13 @@ mod tests {
         );
         let (indexing_server_mailbox, indexing_server_handle) =
             universe.spawn_actor(indexing_server).spawn();
-        let observation = indexing_server_handle.observe().await;
+        let observation = indexing_server_handle.process_pending_and_observe().await;
         assert_eq!(observation.num_running_pipelines, 0);
         assert_eq!(observation.num_failed_pipelines, 0);
         assert_eq!(observation.num_successful_pipelines, 0);
+        assert_eq!(observation.num_merge_policies, 0);
+        assert_eq!(observation.num_indexing_directories, 0);
+        assert_eq!(observation.num_split_stores, 0);
 
         // Test `spawn_pipeline`.
         let source_config_0 = SourceConfig {
@@ -623,10 +754,11 @@ mod tests {
         assert_eq!(pipeline_id_0.source_id, source_config_0.source_id);
         assert_eq!(pipeline_id_0.node_id, "test-node");
         assert_eq!(pipeline_id_0.pipeline_ord, 0);
-        assert_eq!(
-            indexing_server_handle.observe().await.num_running_pipelines,
-            1
-        );
+        let observation = indexing_server_handle.process_pending_and_observe().await;
+        assert_eq!(observation.num_running_pipelines, 1);
+        assert_eq!(observation.num_merge_policies, 1);
+        assert_eq!(observation.num_indexing_directories, 1);
+        assert_eq!(observation.num_split_stores, 1);
 
         // Test `observe_pipeline`.
         let observation = indexing_server_mailbox
@@ -646,10 +778,12 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!(
-            indexing_server_handle.observe().await.num_running_pipelines,
-            0
-        );
+        universe.simulate_time_shift(Duration::from_secs(3)).await;
+        let observation = indexing_server_handle.process_pending_and_observe().await;
+        assert_eq!(observation.num_running_pipelines, 0);
+        assert_eq!(observation.num_merge_policies, 0);
+        assert_eq!(observation.num_indexing_directories, 0);
+        assert_eq!(observation.num_split_stores, 0);
         let observation = pipeline_handle.observe().await;
         assert_eq!(observation.obs_type, ObservationType::Alive);
 
@@ -675,10 +809,12 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!(
-            indexing_server_handle.observe().await.num_running_pipelines,
-            3
-        );
+        universe.simulate_time_shift(Duration::from_secs(3)).await;
+        let observation = indexing_server_handle.process_pending_and_observe().await;
+        assert_eq!(observation.num_running_pipelines, 3);
+        assert_eq!(observation.num_merge_policies, 1);
+        assert_eq!(observation.num_indexing_directories, 3);
+        assert_eq!(observation.num_split_stores, 3);
 
         let source_config_2 = SourceConfig {
             source_id: "test-indexing-service--source-2".to_string(),
@@ -696,10 +832,12 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!(
-            indexing_server_handle.observe().await.num_running_pipelines,
-            5
-        );
+        universe.simulate_time_shift(Duration::from_secs(3)).await;
+        let observation = indexing_server_handle.process_pending_and_observe().await;
+        assert_eq!(observation.num_running_pipelines, 5);
+        assert_eq!(observation.num_merge_policies, 1);
+        assert_eq!(observation.num_indexing_directories, 4);
+        assert_eq!(observation.num_split_stores, 4);
 
         // Test `shutdown_pipeline`
         indexing_server_mailbox
@@ -737,10 +875,12 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!(
-            indexing_server_handle.observe().await.num_running_pipelines,
-            0
-        );
+        universe.simulate_time_shift(Duration::from_secs(3)).await;
+        let observation = indexing_server_handle.process_pending_and_observe().await;
+        assert_eq!(observation.num_running_pipelines, 0);
+        assert_eq!(observation.num_merge_policies, 0);
+        assert_eq!(observation.num_indexing_directories, 0);
+        assert_eq!(observation.num_split_stores, 0);
 
         // Test `spawn_merge_pipeline`.
         indexing_server_mailbox

@@ -244,6 +244,7 @@ impl IndexingSplitStore {
         Ok(())
     }
 
+    // TODO: remove when merge_pipeline is refactored
     pub fn get_merge_policy(&self) -> Arc<dyn MergePolicy> {
         self.merge_policy.clone()
     }

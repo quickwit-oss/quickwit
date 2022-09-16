@@ -209,6 +209,8 @@ impl IndexingPipeline {
         self.kill_switch = KillSwitch::default();
 
         let split_store = self.params.split_store.clone();
+        // TODO: We should not depend on split store when merge pipeline is refactored.
+        // merge pipeline should have been spawned at this point, we only get the handles.
         let merge_policy = split_store.get_merge_policy();
         info!(
             index_id=%self.params.pipeline_id.index_id,
