@@ -69,7 +69,7 @@ impl IngestApiService {
                 .inc_by(ingested_docs_count as u64);
             INGEST_METRICS
                 .num_docs_in_flight
-                .add(ingested_docs_count as i64);
+                .add(ingested_docs_count as u64);
         }
         Ok(IngestResponse {
             num_docs_for_processing: num_docs as u64,
@@ -90,9 +90,6 @@ impl IngestApiService {
             &request.index_id,
             Position::from(request.up_to_position_included),
         )?;
-        INGEST_METRICS
-            .num_docs_in_flight
-            .sub(request.up_to_position_included as i64);
         Ok(())
     }
 }

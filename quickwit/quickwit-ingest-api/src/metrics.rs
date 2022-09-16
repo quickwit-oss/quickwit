@@ -23,8 +23,37 @@ use quickwit_common::metrics::{new_counter, new_gauge, IntCounter, IntGauge};
 pub struct IngestMetrics {
     pub ingested_num_bytes: IntCounter,
     pub ingested_num_docs: IntCounter,
-    pub num_docs_in_flight: IntGauge,
     pub queue_count: IntGauge,
+    pub num_docs_in_flight: InFlightMetric,
+}
+
+pub struct InFlightMetric {
+    num_docs_in_flight: IntGauge,
+}
+
+impl InFlightMetric {
+    pub fn add(&self, doc_count: u64) {
+        self.num_docs_in_flight.add(doc_count as i64);
+    }
+
+    pub fn sub_up_to_position_included(&self, position: u64, last_position: &mut u64) {
+        // Position always increases so last position is always smaller than position
+        let truncated_doc_count = position - *last_position;
+        self.num_docs_in_flight.sub(truncated_doc_count as i64);
+        *last_position = position
+    }
+}
+
+impl Default for InFlightMetric {
+    fn default() -> Self {
+        Self {
+            num_docs_in_flight: new_gauge(
+                "num_docs_in_flight",
+                "Number of docs currently being processed",
+                "quickwit_ingest",
+            ),
+        }
+    }
 }
 
 impl Default for IngestMetrics {
@@ -40,16 +69,12 @@ impl Default for IngestMetrics {
                 "Number of docs recieved to be ingested",
                 "quickwit_ingest",
             ),
-            num_docs_in_flight: new_gauge(
-                "num_docs_in_flight",
-                "Number of docs currently being processed",
-                "quickwit_ingest",
-            ),
             queue_count: new_gauge(
                 "queue_count",
                 "Number of queues currently active",
                 "quickwit_ingest",
             ),
+            num_docs_in_flight: InFlightMetric::default(),
         }
     }
 }
