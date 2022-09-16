@@ -141,8 +141,9 @@ impl DeleteTaskPipeline {
             .spawn_actor(sequencer)
             .set_kill_switch(KillSwitch::default())
             .spawn();
-        let split_store =
-            IndexingSplitStore::create_with_no_local_store(self.index_storage.clone());
+        let split_store = Arc::new(IndexingSplitStore::create_with_no_local_store(
+            self.index_storage.clone(),
+        ));
         let uploader = Uploader::new(
             "MergeUploader",
             self.metastore.clone(),
