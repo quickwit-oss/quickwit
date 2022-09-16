@@ -20,11 +20,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
+use anyhow::Context;
 use dyn_clone::{clone_trait_object, DynClone};
 use quickwit_proto::SearchRequest;
 use serde_json::Value as JsonValue;
 use tantivy::query::Query;
-use tantivy::schema::{Field, Schema};
+use tantivy::schema::{Field, FieldType, Schema};
 use tantivy::Document;
 
 pub type Partition = u64;
@@ -99,6 +100,36 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     fn tag_field_names(&self) -> BTreeSet<String> {
         Default::default()
     }
+
+    /// Returns the tag `NameField`s on the current schema.
+    /// Returns an error if a tag field is not found in this schema.
+    fn tag_named_fields(&self) -> anyhow::Result<Vec<NamedField>> {
+        let index_schema = self.schema();
+        self.tag_field_names()
+            .iter()
+            .map(|field_name| {
+                index_schema
+                    .get_field(field_name)
+                    .context(format!("Field `{}` must exist in the schema.", field_name))
+                    .map(|field| NamedField {
+                        name: field_name.clone(),
+                        field,
+                        field_type: index_schema.get_field_entry(field).field_type().clone(),
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()
+    }
+}
+
+/// A struct to wrap a tantivy field with its name.
+#[derive(Clone, Debug)]
+pub struct NamedField {
+    /// Name of the field.
+    pub name: String,
+    /// Tantivy schema field.
+    pub field: Field,
+    /// Tantivy schema field type.
+    pub field_type: FieldType,
 }
 
 clone_trait_object!(DocMapper);
