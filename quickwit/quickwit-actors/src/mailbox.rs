@@ -197,25 +197,33 @@ impl<A: Actor> Mailbox<A> {
 }
 
 pub struct Inbox<A: Actor> {
-    rx: Receiver<Envelope<A>>,
+    rx: Arc<Receiver<Envelope<A>>>,
+}
+
+impl<A: Actor> Clone for Inbox<A> {
+    fn clone(&self) -> Self {
+        Inbox {
+            rx: self.rx.clone(),
+        }
+    }
 }
 
 impl<A: Actor> Inbox<A> {
-    pub(crate) async fn recv(&mut self) -> Result<Envelope<A>, RecvError> {
+    pub(crate) async fn recv(&self) -> Result<Envelope<A>, RecvError> {
         self.rx.recv().await
     }
 
-    pub(crate) async fn recv_cmd_and_scheduled_msg_only(&mut self) -> Envelope<A> {
+    pub(crate) async fn recv_cmd_and_scheduled_msg_only(&self) -> Envelope<A> {
         self.rx.recv_high_priority().await
     }
 
     #[allow(dead_code)] // temporary
-    pub(crate) fn try_recv(&mut self) -> Result<Envelope<A>, RecvError> {
+    pub(crate) fn try_recv(&self) -> Result<Envelope<A>, RecvError> {
         self.rx.try_recv()
     }
 
     #[allow(dead_code)] // temporary
-    pub(crate) fn try_recv_cmd_and_scheduled_msg_only(&mut self) -> Result<Envelope<A>, RecvError> {
+    pub(crate) fn try_recv_cmd_and_scheduled_msg_only(&self) -> Result<Envelope<A>, RecvError> {
         self.rx.try_recv_high_priority_message()
     }
 
@@ -259,7 +267,7 @@ pub fn create_mailbox<A: Actor>(
         }),
         ref_count,
     };
-    let inbox = Inbox { rx };
+    let inbox = Inbox { rx: Arc::new(rx) };
     (mailbox, inbox)
 }
 

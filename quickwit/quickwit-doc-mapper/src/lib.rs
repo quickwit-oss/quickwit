@@ -39,7 +39,7 @@ pub use default_doc_mapper::{
     DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry, ModeType, QuickwitJsonOptions,
     SortByConfig,
 };
-pub use doc_mapper::DocMapper;
+pub use doc_mapper::{DocMapper, NamedField};
 pub use error::{DocParsingError, QueryParserError};
 pub use sort_by::{SortBy, SortByField, SortOrder};
 pub use tokenizers::QUICKWIT_TOKENIZER_MANAGER;
