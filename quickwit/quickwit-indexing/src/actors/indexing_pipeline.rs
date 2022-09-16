@@ -21,7 +21,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{
     create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, KillSwitch,
@@ -39,9 +38,7 @@ use crate::actors::index_serializer::IndexSerializer;
 use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::publisher::PublisherType;
 use crate::actors::sequencer::Sequencer;
-use crate::actors::{
-    Indexer, MergeExecutor, MergePlanner, NamedField, Packager, Publisher, Uploader,
-};
+use crate::actors::{Indexer, MergeExecutor, MergePlanner, Packager, Publisher, Uploader};
 use crate::models::{IndexingDirectory, IndexingPipelineId, IndexingStatistics, Observe};
 use crate::source::{quickwit_supported_sources, SourceActor, SourceExecutionContext};
 use crate::split_store::{IndexingSplitStore, IndexingSplitStoreParams};
@@ -285,23 +282,7 @@ impl IndexingPipeline {
             .spawn();
 
         // Merge Packager
-        let index_schema = self.params.doc_mapper.schema();
-        let tag_fields = self
-            .params
-            .doc_mapper
-            .tag_field_names()
-            .iter()
-            .map(|field_name| {
-                index_schema
-                    .get_field(field_name)
-                    .context(format!("Field `{}` must exist in the schema.", field_name))
-                    .map(|field| NamedField {
-                        name: field_name.clone(),
-                        field,
-                        field_type: index_schema.get_field_entry(field).field_type().clone(),
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let tag_fields = self.params.doc_mapper.tag_named_fields()?;
         let merge_packager =
             Packager::new("MergePackager", tag_fields.clone(), merge_uploader_mailbox);
         let (merge_packager_mailbox, merge_packager_handler) = ctx
