@@ -40,6 +40,7 @@ mod kill_switch;
 mod mailbox;
 mod observation;
 mod progress;
+mod registry;
 mod scheduler;
 mod spawn_builder;
 mod supervisor;
@@ -62,6 +63,7 @@ pub use self::actor::ActorContext;
 pub use self::actor_state::ActorState;
 pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError};
 pub use self::mailbox::{create_mailbox, create_test_mailbox, Inbox, Mailbox};
+pub use self::registry::ActorObservation;
 pub use self::supervisor::Supervisor;
 
 /// Heartbeat used to verify that actors are progressing.
@@ -89,5 +91,15 @@ impl<E: fmt::Debug + ServiceError> ServiceError for AskError<E> {
             AskError::ProcessMessageError => ServiceErrorCode::Internal,
             AskError::ErrorReply(err) => err.status_code(),
         }
+    }
+}
+
+struct TestActor;
+
+impl Actor for TestActor {
+    type ObservableState = usize;
+
+    fn observable_state(&self) -> Self::ObservableState {
+        0
     }
 }
