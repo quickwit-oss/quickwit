@@ -37,7 +37,7 @@ enum ScratchDirectoryType {
 /// life of the directories.
 #[derive(Clone)]
 pub struct ScratchDirectory {
-    inner: Arc<Inner>,
+    inner: Arc<InnerScratchDirectory>,
 }
 
 impl fmt::Debug for ScratchDirectory {
@@ -49,17 +49,17 @@ impl fmt::Debug for ScratchDirectory {
     }
 }
 
-struct Inner {
+struct InnerScratchDirectory {
     // The goal of this handle to _parent is just to ensure that it does not get deleted before
     // its child.
-    _parent: Option<Arc<Inner>>,
+    _parent: Option<Arc<InnerScratchDirectory>>,
     dir: ScratchDirectoryType,
 }
 
 impl ScratchDirectory {
     /// Creates a new ScratchDirectory in an existing directory.
     pub fn new_in_dir(dir_path: PathBuf) -> ScratchDirectory {
-        let inner = Inner {
+        let inner = InnerScratchDirectory {
             _parent: None,
             dir: ScratchDirectoryType::Path(dir_path),
         };
@@ -72,7 +72,7 @@ impl ScratchDirectory {
     /// The directory location will depend on the OS settings.
     pub fn for_test() -> io::Result<ScratchDirectory> {
         let tempdir = tempfile::tempdir()?;
-        let inner = Inner {
+        let inner = InnerScratchDirectory {
             _parent: None,
             dir: ScratchDirectoryType::TempDir(tempdir),
         };
@@ -96,7 +96,7 @@ impl ScratchDirectory {
         let temp_dir = tempfile::Builder::new()
             .prefix(prefix.as_ref())
             .tempdir_in(self.path())?;
-        let inner = Inner {
+        let inner = InnerScratchDirectory {
             _parent: Some(self.inner.clone()),
             dir: ScratchDirectoryType::TempDir(temp_dir),
         };

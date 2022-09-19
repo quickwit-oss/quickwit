@@ -287,8 +287,8 @@ impl IndexingPipeline {
             .spawn(merge_executor);
 
         let merge_split_downloader = MergeSplitDownloader {
-            scratch_directory: self.params.indexing_directory.scratch_directory.clone(),
-            storage: split_store.clone(),
+            scratch_directory: self.params.indexing_directory.scratch_directory().clone(),
+            split_store: split_store.clone(),
             executor_mailbox: merge_executor_mailbox,
         };
         let (merge_split_downloader_mailbox, merge_split_downloader_handler) = ctx
@@ -561,12 +561,12 @@ impl Handler<Spawn> for IndexingPipeline {
 pub struct IndexingPipelineParams {
     pub pipeline_id: IndexingPipelineId,
     pub doc_mapper: Arc<dyn DocMapper>,
-    pub indexing_directory: Arc<IndexingDirectory>,
+    pub indexing_directory: IndexingDirectory,
     pub indexing_settings: IndexingSettings,
     pub source_config: SourceConfig,
     pub metastore: Arc<dyn Metastore>,
     pub storage: Arc<dyn Storage>,
-    pub split_store: Arc<IndexingSplitStore>,
+    pub split_store: IndexingSplitStore,
 }
 
 impl IndexingPipelineParams {
@@ -575,8 +575,8 @@ impl IndexingPipelineParams {
         pipeline_id: IndexingPipelineId,
         index_metadata: IndexMetadata,
         source_config: SourceConfig,
-        indexing_directory: Arc<IndexingDirectory>,
-        split_store: Arc<IndexingSplitStore>,
+        indexing_directory: IndexingDirectory,
+        split_store: IndexingSplitStore,
         metastore: Arc<dyn Metastore>,
         storage: Arc<dyn Storage>,
     ) -> anyhow::Result<Self> {
@@ -703,14 +703,12 @@ mod tests {
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
         };
         let storage = Arc::new(RamStorage::default());
-        let split_store = Arc::new(IndexingSplitStore::create_with_no_local_store(
-            storage.clone(),
-        ));
+        let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
-            indexing_directory: Arc::new(IndexingDirectory::for_test().await?),
+            indexing_directory: IndexingDirectory::for_test().await,
             indexing_settings: IndexingSettings::for_test(),
             metastore: Arc::new(metastore),
             storage,
@@ -797,14 +795,12 @@ mod tests {
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
         };
         let storage = Arc::new(RamStorage::default());
-        let split_store = Arc::new(IndexingSplitStore::create_with_no_local_store(
-            storage.clone(),
-        ));
+        let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
-            indexing_directory: Arc::new(IndexingDirectory::for_test().await?),
+            indexing_directory: IndexingDirectory::for_test().await,
             indexing_settings: IndexingSettings::for_test(),
             metastore: Arc::new(metastore),
             storage,

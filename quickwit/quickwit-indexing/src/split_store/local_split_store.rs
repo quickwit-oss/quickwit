@@ -174,7 +174,7 @@ impl LocalSplitStore {
         Ok(())
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testsuite"))]
     pub fn inspect(&self) -> HashMap<String, usize> {
         self.split_files
             .iter()
