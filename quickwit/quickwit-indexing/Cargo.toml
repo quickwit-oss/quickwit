@@ -95,4 +95,4 @@ tempfile = "3"
 [[test]]
 name = "failpoints"
 path = "failpoints/mod.rs"
-required-features = ["fail/failpoints"]
+required-features = ["fail/failpoints", "testsuite"]
