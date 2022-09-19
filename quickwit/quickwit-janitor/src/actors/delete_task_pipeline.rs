@@ -141,9 +141,8 @@ impl DeleteTaskPipeline {
             .spawn_actor()
             .set_kill_switch(KillSwitch::default())
             .spawn(sequencer);
-        let split_store = Arc::new(IndexingSplitStore::create_with_no_local_store(
-            self.index_storage.clone(),
-        ));
+        let split_store =
+            IndexingSplitStore::create_without_local_store(self.index_storage.clone());
         let uploader = Uploader::new(
             "MergeUploader",
             self.metastore.clone(),
@@ -181,8 +180,8 @@ impl DeleteTaskPipeline {
         let indexing_directory_path = self.delete_service_dir_path.join(&self.index_id);
         let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path).await?;
         let merge_split_downloader = MergeSplitDownloader {
-            scratch_directory: indexing_directory.scratch_directory,
-            storage: split_store.clone(),
+            scratch_directory: indexing_directory.scratch_directory().clone(),
+            split_store: split_store.clone(),
             executor_mailbox: delete_executor_mailbox,
         };
         let (downloader_mailbox, downloader_handler) = ctx
