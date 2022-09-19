@@ -26,7 +26,7 @@ use quickwit_metastore::SplitMetadata;
 
 use crate::models::PublishLock;
 
-pub struct SplitUpdate {
+pub struct SplitsUpdate {
     pub index_id: String,
     pub new_splits: Vec<SplitMetadata>,
     pub replaced_split_ids: Vec<String>,
@@ -35,14 +35,14 @@ pub struct SplitUpdate {
     pub date_of_birth: Instant, // for logging
 }
 
-impl fmt::Debug for SplitUpdate {
+impl fmt::Debug for SplitsUpdate {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let new_split_ids: String = self
             .new_splits
             .iter()
             .map(|split| split.split_id())
             .join(",");
-        f.debug_struct("SplitUpdate")
+        f.debug_struct("SplitsUpdate")
             .field("index_id", &self.index_id)
             .field("new_splits", &new_split_ids)
             .field("checkpoint_delta", &self.checkpoint_delta_opt)
