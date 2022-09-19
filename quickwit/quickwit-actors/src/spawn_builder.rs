@@ -123,14 +123,13 @@ impl<A: Actor> SpawnBuilder<A> {
         let child_kill_switch = kill_switch.child();
         let scheduler_mailbox = self.scheduler_mailbox.clone();
         let (mailbox, actor_handle) = self.set_kill_switch(child_kill_switch).spawn(actor);
-        let supervisor = Supervisor {
-            handle_opt: Some(actor_handle),
+        let supervisor = Supervisor::new(
             actor_name,
-            actor_factory: Box::new(actor_factory),
+            Box::new(actor_factory),
             inbox,
-            mailbox: mailbox.clone(),
-            state: Default::default(),
-        };
+            mailbox.clone(),
+            actor_handle,
+        );
         let (_superviser_mailbox, supervisor_handle) =
             SpawnBuilder::new(scheduler_mailbox, kill_switch).spawn(supervisor);
         (mailbox, supervisor_handle)

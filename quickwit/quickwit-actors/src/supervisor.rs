@@ -93,6 +93,24 @@ impl<A: Actor> Actor for Supervisor<A> {
 }
 
 impl<A: Actor> Supervisor<A> {
+    pub(crate) fn new(
+        actor_name: String,
+        actor_factory: Box<dyn Fn() -> A + Sync + Send>,
+        inbox: Inbox<A>,
+        mailbox: Mailbox<A>,
+        handle: ActorHandle<A>,
+    ) -> Self {
+        let state = Default::default();
+        Supervisor {
+            actor_name,
+            actor_factory,
+            inbox,
+            mailbox,
+            handle_opt: Some(handle),
+            state,
+        }
+    }
+
     async fn supervise(
         &mut self,
         ctx: &ActorContext<Supervisor<A>>,
