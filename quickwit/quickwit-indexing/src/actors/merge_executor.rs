@@ -587,7 +587,7 @@ mod tests {
         let merge_executor = MergeExecutor::new(pipeline_id, metastore, merge_packager_mailbox);
         let universe = Universe::new();
         let (merge_executor_mailbox, merge_executor_handle) =
-            universe.spawn_actor(merge_executor).spawn();
+            universe.spawn_builder().spawn(merge_executor);
         merge_executor_mailbox.send_message(merge_scratch).await?;
         merge_executor_handle.process_pending_and_observe().await;
         let mut packager_msgs = merge_packager_inbox.drain_for_test();
@@ -723,7 +723,7 @@ mod tests {
             MergeExecutor::new(index_pipeline_id, metastore, merge_packager_mailbox);
         let universe = Universe::new();
         let (delete_task_executor_mailbox, delete_task_executor_handle) =
-            universe.spawn_actor(delete_task_executor).spawn();
+            universe.spawn_builder().spawn(delete_task_executor);
         delete_task_executor_mailbox
             .send_message(merge_scratch)
             .await?;

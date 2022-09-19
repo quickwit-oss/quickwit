@@ -17,18 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::time::Duration;
-
 use async_trait::async_trait;
 use tracing::{info, warn};
 
 use crate::mailbox::Inbox;
 use crate::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Health, Mailbox,
-    Supervisable, KillSwitch,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Health, KillSwitch,
+    Mailbox, Supervisable,
 };
-
-const SUPERVISE_PERIOD: Duration = crate::HEARTBEAT;
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
 pub struct SupervisorState {
@@ -37,8 +33,9 @@ pub struct SupervisorState {
     num_kills: usize,
 }
 
-pub struct Supervisor<A: Actor + Clone> {
-    pub(crate) actor: A,
+pub struct Supervisor<A: Actor> {
+    pub(crate) actor_name: String,
+    pub(crate) actor_factory: Box<dyn Fn() -> A + Sync + Send>,
     pub(crate) inbox: Inbox<A>,
     pub(crate) mailbox: Mailbox<A>,
     pub(crate) handle_opt: Option<ActorHandle<A>>,
@@ -49,7 +46,7 @@ pub struct Supervisor<A: Actor + Clone> {
 pub struct SuperviseLoop;
 
 #[async_trait]
-impl<A: Actor + Clone> Actor for Supervisor<A> {
+impl<A: Actor> Actor for Supervisor<A> {
     type ObservableState = SupervisorState;
 
     fn observable_state(&self) -> Self::ObservableState {
@@ -57,7 +54,7 @@ impl<A: Actor + Clone> Actor for Supervisor<A> {
     }
 
     fn name(&self) -> String {
-        format!("Supervisor({})", self.actor.name())
+        format!("Supervisor({})", self.actor_name)
     }
 
     fn queue_capacity(&self) -> crate::QueueCapacity {
@@ -65,7 +62,7 @@ impl<A: Actor + Clone> Actor for Supervisor<A> {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        ctx.schedule_self_msg(SUPERVISE_PERIOD, SuperviseLoop).await;
+        ctx.schedule_self_msg(crate::HEARTBEAT, SuperviseLoop).await;
         Ok(())
     }
 
@@ -95,7 +92,7 @@ impl<A: Actor + Clone> Actor for Supervisor<A> {
     }
 }
 
-impl<A: Actor + Clone> Supervisor<A> {
+impl<A: Actor> Supervisor<A> {
     async fn supervise(
         &mut self,
         ctx: &ActorContext<Supervisor<A>>,
@@ -142,17 +139,17 @@ impl<A: Actor + Clone> Supervisor<A> {
         }
         info!("respawning-actor");
         let (_, actor_handle) = ctx
-            .spawn_actor(self.actor.clone())
+            .spawn_actor()
             .set_mailboxes(self.mailbox.clone(), self.inbox.clone())
             .set_kill_switch(KillSwitch::default())
-            .spawn();
+            .spawn((*self.actor_factory)());
         self.handle_opt = Some(actor_handle);
         Ok(())
     }
 }
 
 #[async_trait]
-impl<A: Actor + Clone> Handler<SuperviseLoop> for Supervisor<A> {
+impl<A: Actor> Handler<SuperviseLoop> for Supervisor<A> {
     type Reply = ();
 
     async fn handle(
@@ -161,7 +158,7 @@ impl<A: Actor + Clone> Handler<SuperviseLoop> for Supervisor<A> {
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         self.supervise(ctx).await?;
-        ctx.schedule_self_msg(SUPERVISE_PERIOD, SuperviseLoop).await;
+        ctx.schedule_self_msg(crate::HEARTBEAT, SuperviseLoop).await;
         Ok(())
     }
 }
@@ -245,7 +242,7 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let actor = FailingActor::default();
-        let (mailbox, supervisor_handle) = universe.spawn_actor(actor).supervise();
+        let (mailbox, supervisor_handle) = universe.spawn_builder().supervise(actor);
         assert_eq!(
             mailbox.ask(FailingActorMessage::Increment).await.unwrap(),
             1
@@ -273,7 +270,7 @@ mod tests {
     async fn test_supervisor_restart_on_error() {
         let universe = Universe::new();
         let actor = FailingActor::default();
-        let (mailbox, supervisor_handle) = universe.spawn_actor(actor).supervise();
+        let (mailbox, supervisor_handle) = universe.spawn_builder().supervise(actor);
         assert_eq!(
             mailbox.ask(FailingActorMessage::Increment).await.unwrap(),
             1
@@ -301,7 +298,7 @@ mod tests {
     async fn test_supervisor_kills_and_restart_frozen_actor() {
         let universe = Universe::new();
         let actor = FailingActor::default();
-        let (mailbox, supervisor_handle) = universe.spawn_actor(actor).supervise();
+        let (mailbox, supervisor_handle) = universe.spawn_builder().supervise(actor);
         assert_eq!(
             mailbox.ask(FailingActorMessage::Increment).await.unwrap(),
             1
@@ -344,7 +341,7 @@ mod tests {
     async fn test_supervisor_forwards_quit_commands() {
         let universe = Universe::new();
         let actor = FailingActor::default();
-        let (mailbox, supervisor_handle) = universe.spawn_actor(actor).supervise();
+        let (mailbox, supervisor_handle) = universe.spawn_builder().supervise(actor);
         assert_eq!(
             mailbox.ask(FailingActorMessage::Increment).await.unwrap(),
             1
@@ -365,16 +362,13 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let actor = FailingActor::default();
-        let (mailbox, supervisor_handle) = universe.spawn_actor(actor).supervise();
+        let (mailbox, supervisor_handle) = universe.spawn_builder().supervise(actor);
         assert_eq!(
             mailbox.ask(FailingActorMessage::Increment).await.unwrap(),
             1
         );
         let (exit_status, _state) = supervisor_handle.kill().await;
-        assert!(mailbox
-            .ask(FailingActorMessage::Increment)
-            .await
-            .is_err());
+        assert!(mailbox.ask(FailingActorMessage::Increment).await.is_err());
         assert!(matches!(
             mailbox
                 .ask(FailingActorMessage::Increment)

@@ -44,9 +44,7 @@ impl Universe {
         let (mailbox, _inbox) =
             crate::create_mailbox("fake-mailbox".to_string(), QueueCapacity::Unbounded);
         let (scheduler_mailbox, _scheduler_inbox) =
-            SpawnBuilder::new(scheduler, mailbox)
-                .set_kill_switch(kill_switch.clone())
-                .spawn();
+            SpawnBuilder::new(mailbox, kill_switch.clone()).spawn(scheduler);
         Universe {
             scheduler_mailbox,
             kill_switch,
@@ -76,11 +74,8 @@ impl Universe {
         let _ = rx.await;
     }
 
-    pub fn spawn_actor<A: Actor>(&self, actor: A) -> SpawnBuilder<A> {
-        SpawnBuilder::new(
-            actor,
-            self.scheduler_mailbox.clone(),
-        )
+    pub fn spawn_builder<A: Actor>(&self) -> SpawnBuilder<A> {
+        SpawnBuilder::new(self.scheduler_mailbox.clone(), self.kill_switch.child())
     }
 
     /// Inform an actor to process pending message and then stop processing new messages
@@ -147,7 +142,7 @@ mod tests {
     async fn test_schedule_for_actor() {
         let universe = Universe::new();
         let actor_with_schedule = ActorWithSchedule::default();
-        let (_maibox, handler) = universe.spawn_actor(actor_with_schedule).spawn();
+        let (_maibox, handler) = universe.spawn_builder().spawn(actor_with_schedule);
         let count_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(count_after_initialization, 1);
         universe.simulate_time_shift(Duration::from_secs(200)).await;

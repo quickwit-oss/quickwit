@@ -271,7 +271,7 @@ mod tests {
             doc_processor_mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
-            universe.spawn_actor(ingest_api_source_actor).spawn();
+            universe.spawn_builder().spawn(ingest_api_source_actor);
 
         tokio::time::sleep(Duration::from_secs(1)).await;
         let counters = ingest_api_source_handle
@@ -317,7 +317,7 @@ mod tests {
             doc_processor_mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
-            universe.spawn_actor(ingest_api_source_actor).spawn();
+            universe.spawn_builder().spawn(ingest_api_source_actor);
         let (exit_status, _state) = ingest_api_source_handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Failure(_)));
         Ok(())
@@ -365,7 +365,7 @@ mod tests {
             doc_processor_mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
-            universe.spawn_actor(ingest_api_source_actor).spawn();
+            universe.spawn_builder().spawn(ingest_api_source_actor);
 
         tokio::time::sleep(Duration::from_secs(1)).await;
         let counters = ingest_api_source_handle
@@ -421,7 +421,7 @@ mod tests {
             doc_processor_mailbox,
         };
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
-            universe.spawn_actor(ingest_api_source_actor).spawn();
+            universe.spawn_builder().spawn(ingest_api_source_actor);
 
         tokio::time::sleep(Duration::from_secs(1)).await;
         let counters = ingest_api_source_handle
