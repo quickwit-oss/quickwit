@@ -244,11 +244,6 @@ impl IndexingSplitStore {
         Ok(())
     }
 
-    // TODO: remove when merge_pipeline is refactored
-    pub fn get_merge_policy(&self) -> Arc<dyn MergePolicy> {
-        self.merge_policy.clone()
-    }
-
     /// Takes a snapshot of the cache view (only used for testing).
     #[cfg(test)]
     async fn inspect_local_store(&self) -> HashMap<String, usize> {

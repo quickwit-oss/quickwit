@@ -24,3 +24,9 @@ pub struct IndexingPipelineId {
     pub node_id: String,
     pub pipeline_ord: usize,
 }
+
+impl IndexingPipelineId {
+    pub fn index_source_key(&self) -> String {
+        format!("{}_{}", self.index_id, self.source_id)
+    }
+}

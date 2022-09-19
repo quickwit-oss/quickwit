@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod indexing_pipeline;
+mod merging_pipeline;
 
 mod doc_processor;
 mod index_serializer;
