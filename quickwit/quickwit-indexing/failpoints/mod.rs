@@ -293,7 +293,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     let merge_executor = MergeExecutor::new(pipeline_id, metastore, merge_packager_mailbox);
     let universe = Universe::new();
     let (merge_executor_mailbox, merge_executor_handle) =
-        universe.spawn_actor(merge_executor).spawn();
+        universe.spawn_builder(merge_executor).spawn();
 
     // We want to make sure that the processing of the message gets
     // aborted not by the actor framework, before the message is being processed.

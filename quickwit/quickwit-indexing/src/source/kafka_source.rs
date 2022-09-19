@@ -1201,7 +1201,7 @@ mod kafka_broker_tests {
                 source,
                 doc_processor_mailbox: doc_processor_mailbox.clone(),
             };
-            let (_source_mailbox, source_handle) = universe.spawn_actor(source_actor).spawn();
+            let (_source_mailbox, source_handle) = universe.spawn_builder(source_actor).spawn();
             let (exit_status, exit_state) = source_handle.join().await;
             assert!(exit_status.is_success());
 
@@ -1262,7 +1262,7 @@ mod kafka_broker_tests {
                 source,
                 doc_processor_mailbox: doc_processor_mailbox.clone(),
             };
-            let (_source_mailbox, source_handle) = universe.spawn_actor(source_actor).spawn();
+            let (_source_mailbox, source_handle) = universe.spawn_builder(source_actor).spawn();
             let (exit_status, exit_state) = source_handle.join().await;
             assert!(exit_status.is_success());
 
@@ -1333,7 +1333,7 @@ mod kafka_broker_tests {
                 source,
                 doc_processor_mailbox: doc_processor_mailbox.clone(),
             };
-            let (_source_mailbox, source_handle) = universe.spawn_actor(source_actor).spawn();
+            let (_source_mailbox, source_handle) = universe.spawn_builder(source_actor).spawn();
             let (exit_status, exit_state) = source_handle.join().await;
             assert!(exit_status.is_success());
 

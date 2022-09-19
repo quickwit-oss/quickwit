@@ -804,7 +804,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         quickwit_storage_uri_resolver().clone(),
         enable_ingest_api,
     );
-    let (indexing_server_mailbox, _) = universe.spawn_actor(indexing_server).spawn();
+    let (indexing_server_mailbox, _) = universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_server_mailbox
         .ask_for_res(SpawnPipeline {
             index_id: args.index_id.clone(),
@@ -909,7 +909,7 @@ pub async fn merge_cli(args: MergeArgs, merge_enabled: bool) -> anyhow::Result<(
         enable_ingest_api,
     );
     let universe = Universe::new();
-    let (indexing_server_mailbox, _) = universe.spawn_actor(indexing_server).spawn();
+    let (indexing_server_mailbox, _) = universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_server_mailbox
         .ask_for_res(SpawnMergePipeline {
             index_id: args.index_id.clone(),

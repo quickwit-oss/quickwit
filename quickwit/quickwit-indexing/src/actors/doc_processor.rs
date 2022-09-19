@@ -271,7 +271,7 @@ mod tests {
         let doc_processor = DocProcessor::new(doc_mapper.clone(), indexer_mailbox);
         let universe = Universe::new();
         let (doc_processor_mailbox, doc_processor_handle) =
-            universe.spawn_actor(doc_processor).spawn();
+            universe.spawn_builder().spawn(doc_processor);
         let checkpoint_delta = SourceCheckpointDelta::from(0..4);
         doc_processor_mailbox
             .send_message(RawDocBatch {
@@ -350,7 +350,7 @@ mod tests {
         let doc_processor = DocProcessor::new(doc_mapper, indexer_mailbox);
         let universe = Universe::new();
         let (doc_processor_mailbox, doc_processor_handle) =
-            universe.spawn_actor(doc_processor).spawn();
+            universe.spawn_builder().spawn(doc_processor);
         doc_processor_mailbox
             .send_message(RawDocBatch {
                 docs: vec![
@@ -388,7 +388,7 @@ mod tests {
         let universe = Universe::new();
         let doc_processor = DocProcessor::new(doc_mapper, indexer_mailbox);
         let (doc_processor_mailbox, doc_processor_handle) =
-            universe.spawn_actor(doc_processor).spawn();
+            universe.spawn_builder().spawn(doc_processor);
         let publish_lock = PublishLock::default();
         doc_processor_mailbox
             .send_message(NewPublishLock(publish_lock.clone()))
@@ -411,7 +411,7 @@ mod tests {
         let doc_processor = DocProcessor::new(doc_mapper, indexer_mailbox);
         let universe = Universe::new();
         let (doc_processor_mailbox, doc_processor_handle) =
-            universe.spawn_actor(doc_processor).spawn();
+            universe.spawn_builder().spawn(doc_processor);
         let publish_lock = PublishLock::default();
         doc_processor_mailbox
             .send_message(NewPublishLock(publish_lock.clone()))

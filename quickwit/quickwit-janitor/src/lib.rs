@@ -47,11 +47,11 @@ pub async fn start_janitor_service(
 ) -> anyhow::Result<JanitorService> {
     info!("Starting janitor service.");
     let garbage_collector = GarbageCollector::new(metastore.clone(), storage_uri_resolver.clone());
-    let (_, garbage_collector_handle) = universe.spawn_actor(garbage_collector).spawn();
+    let (_, garbage_collector_handle) = universe.spawn_builder().spawn(garbage_collector);
 
     let retention_policy_executor = RetentionPolicyExecutor::new(metastore.clone());
     let (_, retention_policy_executor_handle) =
-        universe.spawn_actor(retention_policy_executor).spawn();
+        universe.spawn_builder().spawn(retention_policy_executor);
 
     let delete_task_service = DeleteTaskService::new(
         metastore,
@@ -59,7 +59,7 @@ pub async fn start_janitor_service(
         storage_uri_resolver,
         config.data_dir_path.clone(),
     );
-    let (_, delete_task_service_handle) = universe.spawn_actor(delete_task_service).spawn();
+    let (_, delete_task_service_handle) = universe.spawn_builder().spawn(delete_task_service);
 
     Ok(JanitorService::new(
         garbage_collector_handle,

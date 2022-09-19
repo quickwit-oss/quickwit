@@ -245,15 +245,15 @@ impl IndexingPipeline {
             None,
         );
         let (merge_publisher_mailbox, merge_publisher_handler) = ctx
-            .spawn_actor(merge_publisher)
+            .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .spawn();
+            .spawn(merge_publisher);
 
         let merge_sequencer = Sequencer::new(merge_publisher_mailbox);
         let (merge_sequencer_mailbox, merge_sequencer_handler) = ctx
-            .spawn_actor(merge_sequencer)
+            .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .spawn();
+            .spawn(merge_sequencer);
 
         // Merge uploader
         let merge_uploader = Uploader::new(
@@ -263,18 +263,18 @@ impl IndexingPipeline {
             merge_sequencer_mailbox,
         );
         let (merge_uploader_mailbox, merge_uploader_handler) = ctx
-            .spawn_actor(merge_uploader)
+            .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .spawn();
+            .spawn(merge_uploader);
 
         // Merge Packager
         let tag_fields = self.params.doc_mapper.tag_named_fields()?;
         let merge_packager =
             Packager::new("MergePackager", tag_fields.clone(), merge_uploader_mailbox);
         let (merge_packager_mailbox, merge_packager_handler) = ctx
-            .spawn_actor(merge_packager)
+            .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .spawn();
+            .spawn(merge_packager);
 
         let merge_executor = MergeExecutor::new(
             self.params.pipeline_id.clone(),
@@ -282,9 +282,9 @@ impl IndexingPipeline {
             merge_packager_mailbox,
         );
         let (merge_executor_mailbox, merge_executor_handler) = ctx
-            .spawn_actor(merge_executor)
+            .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .spawn();
+            .spawn(merge_executor);
 
         let merge_split_downloader = MergeSplitDownloader {
             scratch_directory: self.params.indexing_directory.scratch_directory.clone(),
@@ -292,9 +292,9 @@ impl IndexingPipeline {
             executor_mailbox: merge_executor_mailbox,
         };
         let (merge_split_downloader_mailbox, merge_split_downloader_handler) = ctx
-            .spawn_actor(merge_split_downloader)
+            .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .spawn();
+            .spawn(merge_split_downloader);
 
         // Merge planner
         let merge_planner = MergePlanner::new(
@@ -304,10 +304,10 @@ impl IndexingPipeline {
             merge_split_downloader_mailbox,
         );
         let (merge_planner_mailbox, merge_planner_handler) = ctx
-            .spawn_actor(merge_planner)
+            .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
             .set_mailboxes(merge_planner_mailbox, merge_planner_inbox)
-            .spawn();
+            .spawn(merge_planner);
 
         let (source_mailbox, source_inbox) =
             create_mailbox::<SourceActor>("SourceActor".to_string(), QueueCapacity::Unbounded);
@@ -320,15 +320,15 @@ impl IndexingPipeline {
             Some(source_mailbox.clone()),
         );
         let (publisher_mailbox, publisher_handler) = ctx
-            .spawn_actor(publisher)
+            .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .spawn();
+            .spawn(publisher);
 
         let sequencer = Sequencer::new(publisher_mailbox);
         let (sequencer_mailbox, sequencer_handler) = ctx
-            .spawn_actor(sequencer)
+            .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .spawn();
+            .spawn(sequencer);
 
         // Uploader
         let uploader = Uploader::new(
@@ -338,23 +338,23 @@ impl IndexingPipeline {
             sequencer_mailbox,
         );
         let (uploader_mailbox, uploader_handler) = ctx
-            .spawn_actor(uploader)
+            .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .spawn();
+            .spawn(uploader);
 
         // Packager
         let packager = Packager::new("Packager", tag_fields, uploader_mailbox);
         let (packager_mailbox, packager_handler) = ctx
-            .spawn_actor(packager)
+            .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .spawn();
+            .spawn(packager);
 
         // Index Serializer
         let index_serializer = IndexSerializer::new(packager_mailbox);
         let (index_serializer_mailbox, index_serializer_handler) = ctx
-            .spawn_actor(index_serializer)
+            .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .spawn();
+            .spawn(index_serializer);
 
         // Indexer
         let indexer = Indexer::new(
@@ -366,15 +366,15 @@ impl IndexingPipeline {
             index_serializer_mailbox,
         );
         let (indexer_mailbox, indexer_handler) = ctx
-            .spawn_actor(indexer)
+            .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .spawn();
+            .spawn(indexer);
 
         let doc_processor = DocProcessor::new(self.params.doc_mapper.clone(), indexer_mailbox);
         let (doc_processor_mailbox, doc_processor_handler) = ctx
-            .spawn_actor(doc_processor)
+            .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .spawn();
+            .spawn(doc_processor);
 
         // Fetch index_metadata to be sure to have the last updated checkpoint.
         let index_metadata = self
@@ -402,10 +402,10 @@ impl IndexingPipeline {
             doc_processor_mailbox,
         };
         let (_source_mailbox, source_handler) = ctx
-            .spawn_actor(actor_source)
+            .spawn_actor()
             .set_mailboxes(source_mailbox, source_inbox)
             .set_kill_switch(self.kill_switch.clone())
-            .spawn();
+            .spawn(actor_source);
 
         // Increment generation once we are sure there will be no spawning error.
         self.previous_generations_statistics = self.statistics.clone();
@@ -717,7 +717,7 @@ mod tests {
             split_store,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
-        let (_pipeline_mailbox, pipeline_handler) = universe.spawn_actor(pipeline).spawn();
+        let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
         let (pipeline_exit_status, pipeline_statistics) = pipeline_handler.join().await;
         assert_eq!(pipeline_statistics.generation, 1);
         assert_eq!(pipeline_statistics.num_spawn_attempts, 1 + num_fails);
@@ -811,7 +811,7 @@ mod tests {
             split_store,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
-        let (_pipeline_mailbox, pipeline_handler) = universe.spawn_actor(pipeline).spawn();
+        let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
         let (pipeline_exit_status, pipeline_statistics) = pipeline_handler.join().await;
         assert!(pipeline_exit_status.is_success());
         assert_eq!(pipeline_statistics.generation, 1);

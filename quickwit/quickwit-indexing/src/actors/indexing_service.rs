@@ -268,7 +268,7 @@ impl IndexingService {
         .map_err(IndexingServiceError::InvalidParams)?;
 
         let pipeline = IndexingPipeline::new(pipeline_params);
-        let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor(pipeline).spawn();
+        let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
         self.pipeline_handles.insert(pipeline_id, pipeline_handle);
         self.state.num_running_pipelines += 1;
         Ok(())
@@ -682,7 +682,7 @@ mod tests {
             enable_ingest_api,
         );
         let (indexing_server_mailbox, indexing_server_handle) =
-            universe.spawn_actor(indexing_server).spawn();
+            universe.spawn_builder().spawn(indexing_server);
         let observation = indexing_server_handle.observe().await;
         assert_eq!(observation.num_running_pipelines, 0);
         assert_eq!(observation.num_failed_pipelines, 0);
