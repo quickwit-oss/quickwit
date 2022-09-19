@@ -109,7 +109,7 @@ impl ShardConsumer {
     }
 
     pub fn spawn(self, ctx: &SourceContext) -> ShardConsumerHandle {
-        let (_mailbox, _actor_handle) = ctx.spawn_actor(self).spawn();
+        let (_mailbox, _actor_handle) = ctx.spawn_actor().spawn(self);
         ShardConsumerHandle {
             _mailbox,
             _actor_handle,
@@ -271,7 +271,7 @@ mod tests {
             sink_tx,
             DEFAULT_RETRY_PARAMS.clone(),
         );
-        let (_mailbox, handle) = universe.spawn_builder(shard_consumer).spawn();
+        let (_mailbox, handle) = universe.spawn_builder().spawn(shard_consumer);
         let (exit_status, exit_state) = handle.join().await;
         assert!(exit_status.is_success());
 
@@ -317,7 +317,7 @@ mod tests {
             sink_tx,
             DEFAULT_RETRY_PARAMS.clone(),
         );
-        let (_mailbox, handle) = universe.spawn_builder(shard_consumer).spawn();
+        let (_mailbox, handle) = universe.spawn_builder().spawn(shard_consumer);
         let (exit_status, exit_state) = handle.join().await;
         assert!(exit_status.is_success());
 
@@ -375,7 +375,7 @@ mod tests {
             sink_tx,
             DEFAULT_RETRY_PARAMS.clone(),
         );
-        let (_mailbox, handle) = universe.spawn_builder(shard_consumer).spawn();
+        let (_mailbox, handle) = universe.spawn_builder().spawn(shard_consumer);
         let (exit_status, exit_state) = handle.join().await;
         assert!(exit_status.is_success());
 
@@ -429,7 +429,7 @@ mod tests {
                 sink_tx.clone(),
                 DEFAULT_RETRY_PARAMS.clone(),
             );
-            let (_mailbox, handle) = universe.spawn_builder(shard_consumer_0).spawn();
+            let (_mailbox, handle) = universe.spawn_builder().spawn(shard_consumer_0);
             let (exit_status, _exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
@@ -455,7 +455,7 @@ mod tests {
                 sink_tx,
                 DEFAULT_RETRY_PARAMS.clone(),
             );
-            let (_mailbox, handle) = universe.spawn_builder(shard_consumer_1).spawn();
+            let (_mailbox, handle) = universe.spawn_builder().spawn(shard_consumer_1);
             let (exit_status, _exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
@@ -491,7 +491,7 @@ mod tests {
             sink_tx,
             DEFAULT_RETRY_PARAMS.clone(),
         );
-        let (_mailbox, handle) = universe.spawn_builder(shard_consumer).spawn();
+        let (_mailbox, handle) = universe.spawn_builder().spawn(shard_consumer);
         let (exit_status, _exit_state) = handle.join().await;
         assert!(exit_status.is_success());
 
