@@ -41,7 +41,7 @@ impl Default for Inner {
     }
 }
 
-fn gc(children: &mut Vec<Weak<Inner>>) {
+fn garbage_collect(children: &mut Vec<Weak<Inner>>) {
     let mut i = 0;
     while i < children.len() {
         if Weak::strong_count(&children[i]) == 0 {
@@ -74,7 +74,7 @@ impl KillSwitch {
             alive: AtomicBool::new(self.is_alive()),
             ..Default::default()
         };
-        gc(&mut *lock);
+        garbage_collect(&mut *lock);
         let child_inner_arc = Arc::new(child_inner);
         lock.push(Arc::downgrade(&child_inner_arc));
         KillSwitch {

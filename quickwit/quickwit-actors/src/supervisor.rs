@@ -22,8 +22,8 @@ use tracing::{info, warn};
 
 use crate::mailbox::Inbox;
 use crate::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Health, KillSwitch,
-    Mailbox, Supervisable,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Health, Mailbox,
+    Supervisable,
 };
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
@@ -141,7 +141,7 @@ impl<A: Actor> Supervisor<A> {
         let (_, actor_handle) = ctx
             .spawn_actor()
             .set_mailboxes(self.mailbox.clone(), self.inbox.clone())
-            .set_kill_switch(KillSwitch::default())
+            .set_kill_switch(ctx.kill_switch().child())
             .spawn((*self.actor_factory)());
         self.handle_opt = Some(actor_handle);
         Ok(())
