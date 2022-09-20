@@ -37,6 +37,7 @@ quickwit-indexing = { version = "0.3.1", path = "../quickwit-indexing" }
 quickwit-ingest-api = { version = "0.3.1", path = "../quickwit-ingest-api" }
 quickwit-janitor = { version = "0.3.1", path = "../quickwit-janitor" }
 quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore" }
+quickwit-opentelemetry = { version = "0.3.1", path = "../quickwit-opentelemetry" }
 quickwit-proto = { version = "0.3.1", path = "../quickwit-proto" }
 quickwit-search = { version = "0.3.1", path = "../quickwit-search" }
 quickwit-storage = { version = "0.3.1", path = "../quickwit-storage" }
