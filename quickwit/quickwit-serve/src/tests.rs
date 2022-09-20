@@ -74,7 +74,7 @@ async fn test_standalone_server() -> anyhow::Result<()> {
         })
         .await;
     assert!(search_result.is_ok());
-    let cluster_result = sandbox.rest_client.cluster_state().await;
+    let cluster_result = sandbox.rest_client.cluster_snapshot().await;
     assert!(cluster_result.is_ok());
     let is_ready_result = sandbox.rest_client.is_ready().await.unwrap();
     assert!(is_ready_result);
@@ -94,7 +94,7 @@ async fn test_multi_nodes_cluster() -> anyhow::Result<()> {
     let sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services)
         .await
         .unwrap();
-    sandbox.wait_for_cluster_num_live_nodes(2).await.unwrap();
+    sandbox.wait_for_cluster_num_ready_nodes(2).await.unwrap();
     let mut search_client = sandbox.get_random_search_client();
     let search_result = search_client
         .root_search(SearchRequest {

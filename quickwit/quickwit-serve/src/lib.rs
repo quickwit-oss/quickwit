@@ -124,8 +124,7 @@ pub async fn serve_quickwit(
                 )
             })?;
         let metastore_client = MetastoreGrpcClient::create_and_update_from_members(
-            &cluster.members(),
-            cluster.member_change_watcher(),
+            cluster.ready_member_change_watcher(),
         )
         .await?;
         Arc::new(metastore_client)
@@ -157,11 +156,8 @@ pub async fn serve_quickwit(
         (None, None)
     };
 
-    let search_client_pool = SearchClientPool::create_and_keep_updated(
-        &cluster.members(),
-        cluster.member_change_watcher(),
-    )
-    .await?;
+    let search_client_pool =
+        SearchClientPool::create_and_keep_updated(cluster.ready_member_change_watcher()).await?;
 
     let janitor_service = if services.contains(&QuickwitService::Janitor) {
         let janitor_service = start_janitor_service(
