@@ -264,8 +264,8 @@ impl MergingPipeline {
             .spawn(merge_executor);
 
         let merge_split_downloader = MergeSplitDownloader {
-            scratch_directory: self.params.indexing_directory.scratch_directory.clone(),
-            storage: self.params.split_store.clone(),
+            scratch_directory: self.params.indexing_directory.scratch_directory().clone(),
+            split_store: self.params.split_store.clone(),
             executor_mailbox: merge_executor_mailbox,
         };
         let (merge_split_downloader_mailbox, merge_split_downloader_handler) = ctx
@@ -422,9 +422,9 @@ impl Handler<GetMergePlannerMailbox> for MergingPipeline {
 pub struct MergingPipelineParams {
     pub pipeline_id: IndexingPipelineId,
     pub doc_mapper: Arc<dyn DocMapper>,
-    pub indexing_directory: Arc<IndexingDirectory>,
+    pub indexing_directory: IndexingDirectory,
     pub metastore: Arc<dyn Metastore>,
-    pub split_store: Arc<IndexingSplitStore>,
+    pub split_store: IndexingSplitStore,
     pub merge_policy: Arc<dyn MergePolicy>,
 }
 
@@ -433,9 +433,9 @@ impl MergingPipelineParams {
     pub fn new(
         pipeline_id: IndexingPipelineId,
         doc_mapper: Arc<dyn DocMapper>,
-        indexing_directory: Arc<IndexingDirectory>,
+        indexing_directory: IndexingDirectory,
         metastore: Arc<dyn Metastore>,
-        split_store: Arc<IndexingSplitStore>,
+        split_store: IndexingSplitStore,
         merge_policy: Arc<dyn MergePolicy>,
     ) -> Self {
         Self {
@@ -479,13 +479,11 @@ mod tests {
             pipeline_ord: 0,
         };
         let storage = Arc::new(RamStorage::default());
-        let split_store = Arc::new(IndexingSplitStore::create_with_no_local_store(
-            storage.clone(),
-        ));
+        let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
         let pipeline_params = MergingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
-            indexing_directory: Arc::new(IndexingDirectory::for_test().await?),
+            indexing_directory: IndexingDirectory::for_test().await,
             metastore: Arc::new(metastore),
             split_store,
             merge_policy: Arc::new(StableMultitenantWithTimestampMergePolicy::default()),

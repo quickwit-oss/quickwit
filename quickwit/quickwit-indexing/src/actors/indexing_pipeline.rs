@@ -585,7 +585,6 @@ mod tests {
             )
             .times(1)
             .returning(|_, _, _, _| Ok(()));
-
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir()?;
         let node_id = "test-node";
@@ -614,7 +613,6 @@ mod tests {
         );
         let (indexing_service, _indexing_service_handle) =
             universe.spawn_builder().spawn(indexing_service_actor);
-
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
@@ -695,7 +693,6 @@ mod tests {
             )
             .times(1)
             .returning(|_, _, _, _| Ok(()));
-
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir()?;
         let node_id = "test-node";

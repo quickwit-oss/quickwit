@@ -116,7 +116,8 @@ pub struct IndexingService {
     merge_policies: HashMap<IndexId, Weak<dyn MergePolicy>>,
     indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
     split_stores: HashMap<(IndexId, SourceId), WeakIndexingSplitStore>,
-    merge_pipeline_handles: HashMap<(IndexId, SourceId), (Mailbox<MergePlanner>, ActorHandle<MergingPipeline>)>,
+    merge_pipeline_handles:
+        HashMap<(IndexId, SourceId), (Mailbox<MergePlanner>, ActorHandle<MergingPipeline>)>,
 }
 
 impl IndexingService {
@@ -466,11 +467,11 @@ impl IndexingService {
         ctx: &ActorContext<Self>,
         pipeline_id: &IndexingPipelineId,
         doc_mapper: Arc<dyn DocMapper>,
-        indexing_directory: Arc<IndexingDirectory>,
-        split_store: Arc<IndexingSplitStore>,
+        indexing_directory: IndexingDirectory,
+        split_store: IndexingSplitStore,
         merge_policy: Arc<dyn MergePolicy>,
     ) -> anyhow::Result<Mailbox<MergePlanner>> {
-        let key = pipeline_id.index_source_key();
+        let key = (pipeline_id.index_id.clone(), pipeline_id.source_id.clone());
         if let Some((merge_planner_mailbox, _)) = self.merge_pipeline_handles.get(&key) {
             return Ok(merge_planner_mailbox.clone());
         }
@@ -569,10 +570,10 @@ impl Handler<SuperviseLoop> for IndexingService {
                 },
             );
         // Evict merge pipelines that are not needed or failing.
-        let needed_merge_pipeline_ids: HashSet<String> = self
-            .pipeline_handles
+        let needed_merge_pipeline_ids: HashSet<(String, String)> = self
+            .indexing_pipeline_handles
             .keys()
-            .map(|pipeline_id| pipeline_id.index_source_key())
+            .map(|pipeline_id| (pipeline_id.index_id.clone(), pipeline_id.source_id.clone()))
             .collect();
         self.merge_pipeline_handles
             .retain(|index_source_key, (_, handle)| match handle.health() {
@@ -708,8 +709,8 @@ impl Handler<ShutdownPipeline> for IndexingService {
 pub struct GetOrInitMergePipeline {
     pub pipeline_id: IndexingPipelineId,
     pub doc_mapper: Arc<dyn DocMapper>,
-    pub indexing_directory: Arc<IndexingDirectory>,
-    pub split_store: Arc<IndexingSplitStore>,
+    pub indexing_directory: IndexingDirectory,
+    pub split_store: IndexingSplitStore,
     pub merge_policy: Arc<dyn MergePolicy>,
 }
 
