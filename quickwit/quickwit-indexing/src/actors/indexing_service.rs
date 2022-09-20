@@ -483,7 +483,7 @@ impl IndexingService {
             merge_policy,
         );
         let pipeline = MergingPipeline::new(merging_pipeline_params);
-        let (pipeline_mailbox, pipeline_handle) = ctx.spawn_actor(pipeline).spawn();
+        let (pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
         let merge_planner_mailbox = pipeline_mailbox
             .ask(GetMergePlannerMailbox)
             .await?

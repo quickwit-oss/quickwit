@@ -616,7 +616,7 @@ mod tests {
             false,
         );
         let (indexing_service, _indexing_service_handle) =
-            universe.spawn_actor(indexing_service_actor).spawn();
+            universe.spawn_builder().spawn(indexing_service_actor);
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
@@ -727,7 +727,7 @@ mod tests {
             false,
         );
         let (indexing_service, _indexing_service_handle) =
-            universe.spawn_actor(indexing_service_actor).spawn();
+            universe.spawn_builder().spawn(indexing_service_actor);
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
