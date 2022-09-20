@@ -55,7 +55,7 @@ static CONCURRENT_UPLOAD_PERMITS: Semaphore = Semaphore::const_new(MAX_CONCURREN
 pub struct Uploader {
     actor_name: &'static str,
     metastore: Arc<dyn Metastore>,
-    index_storage: Arc<IndexingSplitStore>,
+    split_store: IndexingSplitStore,
     sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
     counters: UploaderCounters,
 }
@@ -64,13 +64,13 @@ impl Uploader {
     pub fn new(
         actor_name: &'static str,
         metastore: Arc<dyn Metastore>,
-        index_storage: Arc<IndexingSplitStore>,
+        split_store: IndexingSplitStore,
         sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
     ) -> Uploader {
         Uploader {
             actor_name,
             metastore,
-            index_storage,
+            split_store,
             sequencer_mailbox,
             counters: Default::default(),
         }
@@ -158,7 +158,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
             return Err(ActorExitStatus::Killed);
         }
         let metastore = self.metastore.clone();
-        let index_storage = self.index_storage.clone();
+        let split_store = self.split_store.clone();
         let counters = self.counters.clone();
         let index_id = batch.index_id();
         let span = Span::current();
@@ -181,7 +181,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     }
                     let upload_result = stage_and_upload_split(
                         &split,
-                        &index_storage,
+                        &split_store,
                         &*metastore,
                         counters.clone(),
                     )
@@ -324,13 +324,12 @@ mod tests {
             .times(1)
             .returning(|_, _| Ok(()));
         let ram_storage = RamStorage::default();
-        let index_storage = Arc::new(IndexingSplitStore::create_with_no_local_store(Arc::new(
-            ram_storage.clone(),
-        )));
+        let split_store =
+            IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
         let uploader = Uploader::new(
             "TestUploader",
             Arc::new(mock_metastore),
-            index_storage,
+            split_store,
             sequencer_mailbox,
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
@@ -423,13 +422,12 @@ mod tests {
             .times(2)
             .returning(|_, _| Ok(()));
         let ram_storage = RamStorage::default();
-        let index_storage = Arc::new(IndexingSplitStore::create_with_no_local_store(Arc::new(
-            ram_storage.clone(),
-        )));
+        let split_store =
+            IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
         let uploader = Uploader::new(
             "TestUploader",
             Arc::new(mock_metastore),
-            index_storage,
+            split_store,
             sequencer_mailbox,
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);

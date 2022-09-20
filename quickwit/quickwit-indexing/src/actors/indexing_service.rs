@@ -48,11 +48,12 @@ use crate::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy
 use crate::models::{
     DetachPipeline, IndexingDirectory, IndexingPipelineId, Observe, ObservePipeline,
     ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
+    WeakIndexingDirectory,
 };
 use crate::source::INGEST_API_SOURCE_ID;
 use crate::{
     IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingSplitStoreParams,
-    IndexingStatistics,
+    IndexingStatistics, WeakIndexingSplitStore,
 };
 
 /// Name of the indexing directory, usually located at `<data_dir_path>/indexing`.
@@ -99,6 +100,9 @@ pub struct IndexingServiceState {
     pub num_failed_pipelines: usize,
 }
 
+type IndexId = String;
+type SourceId = String;
+
 pub struct IndexingService {
     node_id: String,
     data_dir_path: PathBuf,
@@ -106,19 +110,13 @@ pub struct IndexingService {
     split_store_max_num_splits: usize,
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
-    pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
-
+    indexing_pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     state: IndexingServiceState,
     enable_ingest_api: bool,
-    // Hashmap of of index_id to merge policy.
-    merge_policies: HashMap<String, Weak<dyn MergePolicy>>,
-    // Hashmap of (index_id, source_id) to indexing directory.
-    indexing_directories: HashMap<String, Weak<IndexingDirectory>>,
-    // Hashmap of (index_id, source_id) to indexing split store.
-    split_stores: HashMap<String, Weak<IndexingSplitStore>>,
-    // Hashmap of (index_id, source_id) to a tuple of MergePlanner mailbox and merge
-    // pipeline handle.
-    merge_pipeline_handles: HashMap<String, (Mailbox<MergePlanner>, ActorHandle<MergingPipeline>)>,
+    merge_policies: HashMap<IndexId, Weak<dyn MergePolicy>>,
+    indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
+    split_stores: HashMap<(IndexId, SourceId), WeakIndexingSplitStore>,
+    merge_pipeline_handles: HashMap<(IndexId, SourceId), (Mailbox<MergePlanner>, ActorHandle<MergingPipeline>)>,
 }
 
 impl IndexingService {
@@ -143,7 +141,7 @@ impl IndexingService {
             split_store_max_num_splits: indexer_config.split_store_max_num_splits,
             metastore,
             storage_resolver,
-            pipeline_handles: Default::default(),
+            indexing_pipeline_handles: Default::default(),
             state: Default::default(),
             enable_ingest_api,
             merge_policies: HashMap::new(),
@@ -157,12 +155,13 @@ impl IndexingService {
         &mut self,
         pipeline_id: &IndexingPipelineId,
     ) -> Result<ActorHandle<IndexingPipeline>, IndexingServiceError> {
-        let pipeline_handle = self.pipeline_handles.remove(pipeline_id).ok_or_else(|| {
-            IndexingServiceError::MissingPipeline {
+        let pipeline_handle = self
+            .indexing_pipeline_handles
+            .remove(pipeline_id)
+            .ok_or_else(|| IndexingServiceError::MissingPipeline {
                 index_id: pipeline_id.index_id.clone(),
                 source_id: pipeline_id.source_id.clone(),
-            }
-        })?;
+            })?;
         self.state.num_running_pipelines -= 1;
         Ok(pipeline_handle)
     }
@@ -171,12 +170,13 @@ impl IndexingService {
         &mut self,
         pipeline_id: &IndexingPipelineId,
     ) -> Result<Observation<IndexingStatistics>, IndexingServiceError> {
-        let pipeline_handle = self.pipeline_handles.get(pipeline_id).ok_or_else(|| {
-            IndexingServiceError::MissingPipeline {
+        let pipeline_handle = self
+            .indexing_pipeline_handles
+            .get(pipeline_id)
+            .ok_or_else(|| IndexingServiceError::MissingPipeline {
                 index_id: pipeline_id.index_id.clone(),
                 source_id: pipeline_id.source_id.clone(),
-            }
-        })?;
+            })?;
         let observation = pipeline_handle.observe().await;
         Ok(observation)
     }
@@ -218,7 +218,7 @@ impl IndexingService {
                     node_id: self.node_id.clone(),
                     pipeline_ord,
                 };
-                if self.pipeline_handles.contains_key(&pipeline_id) {
+                if self.indexing_pipeline_handles.contains_key(&pipeline_id) {
                     continue;
                 }
                 self.spawn_pipeline_inner(
@@ -247,7 +247,7 @@ impl IndexingService {
         index_metadata: IndexMetadata,
         source_config: SourceConfig,
     ) -> Result<(), IndexingServiceError> {
-        if self.pipeline_handles.contains_key(&pipeline_id) {
+        if self.indexing_pipeline_handles.contains_key(&pipeline_id) {
             return Err(IndexingServiceError::PipelineAlreadyExists {
                 index_id: pipeline_id.index_id,
                 source_id: pipeline_id.source_id,
@@ -257,13 +257,13 @@ impl IndexingService {
 
         let indexing_dir_path = self.data_dir_path.join(INDEXING_DIR_NAME);
         let indexing_directory = self
-            .get_or_init_indexing_directory(&pipeline_id, indexing_dir_path)
+            .get_or_create_indexing_directory(&pipeline_id, indexing_dir_path)
             .await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
-        let merge_policy = self.get_or_init_merge_policy(&pipeline_id, &index_metadata);
+        let merge_policy = self.get_or_create_merge_policy(&pipeline_id, &index_metadata);
         let split_store = self.get_or_init_split_store(
             &pipeline_id,
-            &indexing_directory.cache_directory,
+            indexing_directory.cache_directory(),
             storage.clone(),
             merge_policy.clone(),
         )?;
@@ -289,7 +289,8 @@ impl IndexingService {
         );
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
-        self.pipeline_handles.insert(pipeline_id, pipeline_handle);
+        self.indexing_pipeline_handles
+            .insert(pipeline_id, pipeline_handle);
         self.state.num_running_pipelines += 1;
         Ok(())
     }
@@ -308,7 +309,7 @@ impl IndexingService {
             node_id: self.node_id.clone(),
             pipeline_ord: 0,
         };
-        if self.pipeline_handles.contains_key(&pipeline_id) {
+        if self.indexing_pipeline_handles.contains_key(&pipeline_id) {
             return Ok(pipeline_id);
         }
         let queues_dir_path = self.data_dir_path.join(QUEUES_DIR_NAME);
@@ -378,7 +379,7 @@ impl IndexingService {
         Ok(index_metadata)
     }
 
-    fn get_or_init_merge_policy(
+    fn get_or_create_merge_policy(
         &mut self,
         pipeline_id: &IndexingPipelineId,
         index_metadata: &IndexMetadata,
@@ -406,29 +407,28 @@ impl IndexingService {
         merge_policy
     }
 
-    async fn get_or_init_indexing_directory(
+    async fn get_or_create_indexing_directory(
         &mut self,
         pipeline_id: &IndexingPipelineId,
         indexing_dir_path: PathBuf,
-    ) -> Result<Arc<IndexingDirectory>, IndexingServiceError> {
-        let key = pipeline_id.index_source_key();
-        if let Some(indexing_directory_ref) = self.indexing_directories.get(&key) {
-            if let Some(indexing_directory) = indexing_directory_ref.upgrade() {
-                return Ok(indexing_directory);
-            }
+    ) -> Result<IndexingDirectory, IndexingServiceError> {
+        let key = (pipeline_id.index_id.clone(), pipeline_id.source_id.clone());
+        if let Some(indexing_directory) = self
+            .indexing_directories
+            .get(&key)
+            .and_then(WeakIndexingDirectory::upgrade)
+        {
+            return Ok(indexing_directory);
         }
-
         let indexing_directory_path = indexing_dir_path
             .join(&pipeline_id.index_id)
             .join(&pipeline_id.source_id);
-        let indexing_directory = Arc::new(
-            IndexingDirectory::create_in_dir(indexing_directory_path)
-                .await
-                .map_err(IndexingServiceError::InvalidParams)?,
-        );
+        let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path)
+            .await
+            .map_err(IndexingServiceError::InvalidParams)?;
 
         self.indexing_directories
-            .insert(key, Arc::downgrade(&indexing_directory));
+            .insert(key, indexing_directory.downgrade());
         Ok(indexing_directory)
     }
 
@@ -438,15 +438,16 @@ impl IndexingService {
         cache_directory: &Path,
         storage: Arc<dyn Storage>,
         merge_policy: Arc<dyn MergePolicy>,
-    ) -> Result<Arc<IndexingSplitStore>, IndexingServiceError> {
-        let key = pipeline_id.index_source_key();
-        if let Some(split_store_ref) = self.split_stores.get(&key) {
-            if let Some(split_store) = split_store_ref.upgrade() {
-                return Ok(split_store);
-            }
+    ) -> Result<IndexingSplitStore, IndexingServiceError> {
+        let key = (pipeline_id.index_id.clone(), pipeline_id.source_id.clone());
+        if let Some(split_store) = self
+            .split_stores
+            .get(&key)
+            .and_then(WeakIndexingSplitStore::upgrade)
+        {
+            return Ok(split_store);
         }
-
-        let split_store = Arc::new(IndexingSplitStore::create_with_local_store(
+        let split_store = IndexingSplitStore::create_with_local_store(
             storage.clone(),
             cache_directory,
             IndexingSplitStoreParams {
@@ -454,9 +455,9 @@ impl IndexingService {
                 max_num_splits: self.split_store_max_num_splits,
             },
             merge_policy,
-        )?);
+        )?;
 
-        self.split_stores.insert(key, Arc::downgrade(&split_store));
+        self.split_stores.insert(key, split_store.downgrade());
         Ok(split_store)
     }
 
@@ -539,7 +540,7 @@ impl Handler<SuperviseLoop> for IndexingService {
         _message: SuperviseLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        self.pipeline_handles
+        self.indexing_pipeline_handles
             .retain(
                 |pipeline_id, pipeline_handle| match pipeline_handle.health() {
                     Health::Healthy => true,
@@ -670,7 +671,7 @@ impl Handler<ShutdownPipelines> for IndexingService {
                 .unwrap_or(true)
         };
         let pipelines_to_shutdown: Vec<IndexingPipelineId> = self
-            .pipeline_handles
+            .indexing_pipeline_handles
             .keys()
             .filter(|pipeline_id| {
                 pipeline_id.index_id == message.index_id && source_filter_fn(pipeline_id)
@@ -678,7 +679,7 @@ impl Handler<ShutdownPipelines> for IndexingService {
             .cloned()
             .collect();
         for pipeline_id in pipelines_to_shutdown {
-            if let Some(pipeline_handle) = self.pipeline_handles.remove(&pipeline_id) {
+            if let Some(pipeline_handle) = self.indexing_pipeline_handles.remove(&pipeline_id) {
                 pipeline_handle.quit().await;
                 self.state.num_running_pipelines -= 1;
             }
@@ -695,7 +696,7 @@ impl Handler<ShutdownPipeline> for IndexingService {
         message: ShutdownPipeline,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        if let Some(pipeline_handle) = self.pipeline_handles.remove(&message.pipeline_id) {
+        if let Some(pipeline_handle) = self.indexing_pipeline_handles.remove(&message.pipeline_id) {
             pipeline_handle.quit().await;
             self.state.num_running_pipelines -= 1;
         }
