@@ -22,8 +22,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=proto/metastore_api.proto");
     println!("cargo:rerun-if-changed=proto/search_api.proto");
 
-    println!("cargo:rerun-if-changed=otlp/opentelemetry/proto/collector/logs/v1/logs_service.proto");
-    println!("cargo:rerun-if-changed=otlp/opentelemetry/proto/collector/trace/v1/trace_service.proto");
+    println!(
+        "cargo:rerun-if-changed=otlp/opentelemetry/proto/collector/logs/v1/logs_service.proto"
+    );
+    println!(
+        "cargo:rerun-if-changed=otlp/opentelemetry/proto/collector/trace/v1/trace_service.proto"
+    );
     println!("cargo:rerun-if-changed=otlp/opentelemetry/proto/common/v1/common.proto");
     println!("cargo:rerun-if-changed=otlp/opentelemetry/proto/logs/v1/logs.proto");
     println!("cargo:rerun-if-changed=otlp/opentelemetry/proto/resource/v1/resource.proto");
@@ -45,16 +49,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ],
             &["./proto"],
         )?;
-        tonic_build::configure().out_dir("src/").compile(
-            &[
-                "./otlp/opentelemetry/proto/common/v1/common.proto", // Must be compiled first.
-                "./otlp/opentelemetry/proto/resource/v1/resource.proto", // Must be compiled second.
-                "./otlp/opentelemetry/proto/logs/v1/logs.proto",
-                "./otlp/opentelemetry/proto/trace/v1/trace.proto",
-                "./otlp/opentelemetry/proto/collector/logs/v1/logs_service.proto",
-                "./otlp/opentelemetry/proto/collector/trace/v1/trace_service.proto",
-            ],
-            &["./otlp"],
-        )?;
+    tonic_build::configure().out_dir("src/").compile(
+        &[
+            "./otlp/opentelemetry/proto/common/v1/common.proto", // Must be compiled first.
+            "./otlp/opentelemetry/proto/resource/v1/resource.proto", // Must be compiled second.
+            "./otlp/opentelemetry/proto/logs/v1/logs.proto",
+            "./otlp/opentelemetry/proto/trace/v1/trace.proto",
+            "./otlp/opentelemetry/proto/collector/logs/v1/logs_service.proto",
+            "./otlp/opentelemetry/proto/collector/trace/v1/trace_service.proto",
+        ],
+        &["./otlp"],
+    )?;
     Ok(())
 }
