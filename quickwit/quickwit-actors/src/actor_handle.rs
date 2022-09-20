@@ -158,11 +158,11 @@ impl<A: Actor> ActorHandle<A> {
     /// as the finalize logic may behave differently depending on the exit status.
     pub async fn kill(self) -> (ActorExitStatus, A::ObservableState) {
         self.actor_context.kill_switch().kill();
+        let _ = self
+            .actor_context
+            .mailbox()
+            .send_message_with_high_priority(Command::Nudge);
         self.join().await
-    }
-
-    pub(crate) fn activate_kill_switch(self) {
-        self.actor_context.kill_switch().kill();
     }
 
     /// Gracefully quit the actor, regardless of whether there are pending messages or not.
