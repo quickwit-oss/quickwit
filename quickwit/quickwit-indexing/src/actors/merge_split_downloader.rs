@@ -174,7 +174,7 @@ mod tests {
             executor_mailbox: merge_executor_mailbox,
         };
         let (merge_split_downloader_mailbox, merge_split_downloader_handler) =
-            universe.spawn_actor(merge_split_downloader).spawn();
+            universe.spawn_builder().spawn(merge_split_downloader);
         let merge_operation = MergeOperation::new_merge_operation(splits_to_merge);
         merge_split_downloader_mailbox
             .send_message(merge_operation)

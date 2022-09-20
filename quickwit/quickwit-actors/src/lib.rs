@@ -41,6 +41,7 @@ mod observation;
 mod progress;
 mod scheduler;
 mod spawn_builder;
+mod supervisor;
 
 #[cfg(test)]
 mod tests;

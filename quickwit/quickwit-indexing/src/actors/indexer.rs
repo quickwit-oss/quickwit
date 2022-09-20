@@ -564,7 +564,7 @@ mod tests {
             index_serializer_mailbox,
         );
         let universe = Universe::new();
-        let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
             .send_message(PreparedDocBatch {
                 docs: vec![
@@ -699,7 +699,7 @@ mod tests {
             index_serializer_mailbox,
         );
         let universe = Universe::new();
-        let (indexer_mailbox, _indexer_handle) = universe.spawn_actor(indexer).spawn();
+        let (indexer_mailbox, _indexer_handle) = universe.spawn_builder().spawn(indexer);
 
         let make_doc = |i: u64| {
             let mut body = String::new();
@@ -776,7 +776,7 @@ mod tests {
             index_serializer_mailbox,
         );
         let universe = Universe::new();
-        let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
             .send_message(PreparedDocBatch {
                 docs: vec![PreparedDoc {
@@ -865,7 +865,7 @@ mod tests {
             index_serializer_mailbox,
         );
         let universe = Universe::new();
-        let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
             .send_message(PreparedDocBatch {
                 docs: vec![PreparedDoc {
@@ -949,7 +949,7 @@ mod tests {
             packager_mailbox,
         );
         let universe = Universe::new();
-        let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
             .send_message(PreparedDocBatch {
                 docs: vec![
@@ -1038,7 +1038,7 @@ mod tests {
             packager_mailbox,
         );
         let universe = Universe::new();
-        let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
 
         let first_lock = PublishLock::default();
         let second_lock = PublishLock::default();
@@ -1109,7 +1109,7 @@ mod tests {
             packager_mailbox,
         );
         let universe = Universe::new();
-        let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn();
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
 
         let publish_lock = PublishLock::default();
         indexer_mailbox

@@ -166,7 +166,7 @@ mod tests {
             "VecSource { source_id=test-vec-source }"
         );
         let (_vec_source_mailbox, vec_source_handle) =
-            universe.spawn_actor(vec_source_actor).spawn();
+            universe.spawn_builder().spawn(vec_source_actor);
         let (actor_termination, last_observation) = vec_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(last_observation, json!({"next_item_idx": 100u64}));
@@ -217,7 +217,7 @@ mod tests {
             doc_processor_mailbox,
         };
         let (_vec_source_mailbox, vec_source_handle) =
-            universe.spawn_actor(vec_source_actor).spawn();
+            universe.spawn_builder().spawn(vec_source_actor);
         let (actor_termination, last_observation) = vec_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(last_observation, json!({"next_item_idx": 10}));

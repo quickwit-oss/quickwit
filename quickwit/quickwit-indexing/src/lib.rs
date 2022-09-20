@@ -75,7 +75,7 @@ pub async fn start_indexing_service(
         storage_resolver,
         enable_ingest_api,
     );
-    let (indexing_service, _) = universe.spawn_actor(indexing_service).spawn();
+    let (indexing_service, _) = universe.spawn_builder().spawn(indexing_service);
 
     // List indexes and spawn indexing pipeline(s) for each of them.
     let index_metadatas = metastore.list_indexes_metadatas().await?;
@@ -94,7 +94,7 @@ pub async fn start_indexing_service(
         let ingest_api_service = get_ingest_api_service(&queues_dir_path).await?;
         let ingest_api_garbage_collector =
             IngestApiGarbageCollector::new(metastore, ingest_api_service, indexing_service.clone());
-        universe.spawn_actor(ingest_api_garbage_collector).spawn();
+        universe.spawn_builder().spawn(ingest_api_garbage_collector);
     }
     Ok(indexing_service)
 }

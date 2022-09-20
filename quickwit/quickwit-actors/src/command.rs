@@ -79,16 +79,27 @@ pub enum Command {
     /// This is the equivalent of sending SIGINT/Ctrl-C to a process.
     Quit,
 
-    /// Kill the actor. The behavior is the same as if an actor detected that its kill switch
-    /// was pushed.
+    /// Nudging is a No-op message.
     ///
-    /// It is similar to Quit, except the `ActorExitState` is different.
+    /// Its only effect is to wake-up actors that are stuck waiting
+    /// for a message.
     ///
-    /// It can have important side effect, as the actor `.finalize` method
-    /// may have different behavior depending on the exit state.
+    /// This is useful to kill actors properly or for tests.
+    /// Actors stuck waiting for a message do not have any timeout to
+    /// check for their killswitch signal.
     ///
-    /// This is the equivalent of sending SIGKILL to a process.
-    Kill,
+    ///
+    /// Note: Historically, actors used to have a timeout, then
+    /// the wake up logic worked using a Kill command.
+    /// However, after the introduction of supervision, it became common
+    /// to recycle a mailbox.
+    ///
+    /// After a panic for instance, the supervisor of an actor might kill
+    /// it by activating its killswitch and sending a Kill message.
+    ///
+    /// The respawned actor would receive its predecessor mailbox and
+    /// possibly end up process a Kill message as its first message.
+    Nudge,
 }
 
 impl fmt::Debug for Command {
@@ -99,7 +110,7 @@ impl fmt::Debug for Command {
             Command::Observe(_) => write!(f, "Observe"),
             Command::ExitWithSuccess => write!(f, "Success"),
             Command::Quit => write!(f, "Quit"),
-            Command::Kill => write!(f, "Kill"),
+            Command::Nudge => write!(f, "Nudge"),
         }
     }
 }
@@ -121,7 +132,7 @@ impl<A: Actor> Handler<Command> for A {
             }
             Command::ExitWithSuccess => Err(ActorExitStatus::Success),
             Command::Quit => Err(ActorExitStatus::Quit),
-            Command::Kill => Err(ActorExitStatus::Killed),
+            Command::Nudge => Ok(()),
             Command::Resume => {
                 ctx.resume();
                 Ok(())

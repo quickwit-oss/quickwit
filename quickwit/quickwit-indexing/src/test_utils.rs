@@ -102,7 +102,7 @@ impl TestSandbox {
             enable_ingest_api,
         );
         let (indexing_service, _indexing_service_handle) =
-            universe.spawn_actor(indexing_service_actor).spawn();
+            universe.spawn_builder().spawn(indexing_service_actor);
         Ok(TestSandbox {
             index_id: index_id.to_string(),
             indexing_service,

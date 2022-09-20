@@ -134,15 +134,15 @@ async fn main() {
     let universe = Universe::new();
 
     let (roger_mailbox, _) = universe
-        .spawn_actor(PingReceiver::with_name("Roger"))
-        .spawn();
+        .spawn_builder()
+        .spawn(PingReceiver::with_name("Roger"));
 
     let (myriam_mailbox, _) = universe
-        .spawn_actor(PingReceiver::with_name("Myriam"))
-        .spawn();
+        .spawn_builder()
+        .spawn(PingReceiver::with_name("Myriam"));
 
     let (ping_sender_mailbox, ping_sender_handler) =
-        universe.spawn_actor(PingSender::default()).spawn();
+        universe.spawn_builder().spawn(PingSender::default());
 
     ping_sender_mailbox
         .send_message(AddPeer(roger_mailbox))
