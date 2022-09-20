@@ -64,7 +64,7 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
         );
     if std::env::var_os(QW_JAEGER_ENABLED_ENV_KEY).is_some() {
         // TODO: use install_batch once this issue is fixed: https://github.com/open-telemetry/opentelemetry-rust/issues/545
-        let tracer = opentelemetry_jaeger::new_pipeline()
+        let tracer = opentelemetry_jaeger::new_agent_pipeline()
             .with_service_name("quickwit")
             //.install_batch(opentelemetry::runtime::Tokio)
             .install_simple()
