@@ -51,15 +51,15 @@ pub struct MergingPipelineHandle {
 
 // Messages
 #[derive(Clone, Copy, Debug)]
-pub struct Supervise;
+struct Supervise;
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Spawn {
+struct Spawn {
     retry_count: usize,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct GetMergePlannerMailbox;
+pub(crate) struct GetMergePlannerMailbox;
 
 pub struct MergingPipeline {
     params: MergingPipelineParams,
@@ -151,7 +151,7 @@ impl MergingPipeline {
                 healthy_actors=?healthy_actors,
                 failed_or_unhealthy_actors=?failure_or_unhealthy_actors,
                 success_actors=?success_actors,
-                "Indexing pipeline failure."
+                "Merging pipeline failure."
             );
             return Health::FailureOrUnhealthy;
         }
@@ -160,7 +160,7 @@ impl MergingPipeline {
             info!(
                 pipeline_id=?self.params.pipeline_id,
                 generation=self.generation(),
-                "Indexing pipeline success."
+                "Merging pipeline success."
             );
             return Health::Success;
         }
@@ -171,7 +171,7 @@ impl MergingPipeline {
             healthy_actors=?healthy_actors,
             failed_or_unhealthy_actors=?failure_or_unhealthy_actors,
             success_actors=?success_actors,
-            "Indexing pipeline running."
+            "Merging pipeline running."
         );
         Health::Healthy
     }
@@ -180,7 +180,7 @@ impl MergingPipeline {
         self.statistics.generation
     }
 
-    // TODO: This should return an error saying whether we can retry or not.
+    // TODO: Should return an error saying whether we can retry or not.
     #[instrument(name="", level="info", skip_all, fields(index=%self.params.pipeline_id.index_id, gen=self.generation()))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         self.statistics.num_spawn_attempts += 1;
@@ -355,8 +355,11 @@ impl Handler<Supervise> for MergingPipeline {
                 Health::Healthy => {}
                 Health::FailureOrUnhealthy => {
                     self.terminate().await;
-                    ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, Spawn { retry_count: 0 })
-                        .await;
+                    // We don't re-spawn because the indexing pipeline
+                    // will re-spawn it if needed.
+                    return Err(ActorExitStatus::Failure(Arc::new(anyhow::anyhow!(
+                        "MergePipeline failed."
+                    ))));
                 }
                 Health::Success => {
                     return Err(ActorExitStatus::Success);

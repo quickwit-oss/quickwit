@@ -26,6 +26,7 @@ pub struct IndexingPipelineId {
 }
 
 impl IndexingPipelineId {
+    /// Combines index_id and source_id into one single key.
     pub fn index_source_key(&self) -> String {
         format!("{}_{}", self.index_id, self.source_id)
     }

@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 
@@ -115,7 +116,8 @@ pub struct IndexingService {
     indexing_directories: HashMap<String, Weak<IndexingDirectory>>,
     // Hashmap of (index_id, source_id) to indexing split store.
     split_stores: HashMap<String, Weak<IndexingSplitStore>>,
-
+    // Hashmap of (index_id, source_id) to a tuple of MergePlanner mailbox and merge
+    // pipeline handle.
     merge_pipeline_handles: HashMap<String, (Mailbox<MergePlanner>, ActorHandle<MergingPipeline>)>,
 }
 
@@ -147,7 +149,7 @@ impl IndexingService {
             merge_policies: HashMap::new(),
             indexing_directories: HashMap::new(),
             split_stores: HashMap::new(),
-            merge_pipeline_handles: Default::default(),
+            merge_pipeline_handles: HashMap::new(),
         }
     }
 
@@ -273,17 +275,6 @@ impl IndexingService {
         )
         .map_err(IndexingServiceError::InvalidParams)?;
 
-        let merge_planner_mailbox = self
-            .get_or_init_merge_pipeline(
-                ctx,
-                &pipeline_id,
-                doc_mapper.clone(),
-                indexing_directory.clone(),
-                split_store.clone(),
-                merge_policy,
-            )
-            .await
-            .map_err(IndexingServiceError::InvalidParams)?;
         let pipeline_params = IndexingPipelineParams::new(
             pipeline_id.clone(),
             doc_mapper,
@@ -293,7 +284,8 @@ impl IndexingService {
             self.metastore.clone(),
             storage,
             split_store,
-            merge_planner_mailbox,
+            merge_policy,
+            ctx.mailbox().clone(),
         );
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor(pipeline).spawn();
@@ -575,13 +567,17 @@ impl Handler<SuperviseLoop> for IndexingService {
                     }
                 },
             );
+        // Evict merge pipelines that are not needed or failing.
         let needed_merge_pipeline_ids: HashSet<String> = self
             .pipeline_handles
             .keys()
             .map(|pipeline_id| pipeline_id.index_source_key())
             .collect();
         self.merge_pipeline_handles
-            .retain(|index_source_key, _| needed_merge_pipeline_ids.contains(index_source_key));
+            .retain(|index_source_key, (_, handle)| match handle.health() {
+                Health::Healthy => needed_merge_pipeline_ids.contains(index_source_key),
+                Health::FailureOrUnhealthy | Health::Success => false,
+            });
         ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, SuperviseLoop)
             .await;
         Ok(())
@@ -704,6 +700,46 @@ impl Handler<ShutdownPipeline> for IndexingService {
             self.state.num_running_pipelines -= 1;
         }
         Ok(Ok(()))
+    }
+}
+
+#[derive(Clone)]
+pub struct GetOrInitMergePipeline {
+    pub pipeline_id: IndexingPipelineId,
+    pub doc_mapper: Arc<dyn DocMapper>,
+    pub indexing_directory: Arc<IndexingDirectory>,
+    pub split_store: Arc<IndexingSplitStore>,
+    pub merge_policy: Arc<dyn MergePolicy>,
+}
+
+impl fmt::Debug for GetOrInitMergePipeline {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt.debug_struct("GetOrInitMergePipeline")
+            .field("pipeline_id", &self.pipeline_id)
+            .finish()
+    }
+}
+
+#[async_trait]
+impl Handler<GetOrInitMergePipeline> for IndexingService {
+    type Reply = anyhow::Result<Mailbox<MergePlanner>>;
+
+    async fn handle(
+        &mut self,
+        message: GetOrInitMergePipeline,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        let result = self
+            .get_or_init_merge_pipeline(
+                ctx,
+                &message.pipeline_id,
+                message.doc_mapper,
+                message.indexing_directory,
+                message.split_store,
+                message.merge_policy,
+            )
+            .await;
+        Ok(result)
     }
 }
 

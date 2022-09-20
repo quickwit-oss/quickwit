@@ -21,25 +21,13 @@ use std::sync::atomic::Ordering;
 
 use crate::actors::{PublisherCounters, UploaderCounters};
 
-/// A Struct that holds all statistical data about indexing
+/// A Struct to hold all merging statistical data.
 #[derive(Clone, Debug, Default)]
 pub struct MergingStatistics {
-    // /// Number of document processed (valid or not)
-    // pub num_docs: u64,
-    // /// Number of document parse error, or missing timestamps
-    // pub num_invalid_docs: u64,
-    // /// Number of created split
-    // pub num_local_splits: u64,
-    // /// Number of staged splits
-    // pub num_staged_splits: u64,
     /// Number of uploaded splits
     pub num_uploaded_splits: u64,
     /// Number of published splits
     pub num_published_splits: u64,
-    // /// Size in byte of document processed
-    // pub total_bytes_processed: u64,
-    // /// Size in bytes of resulting split
-    // pub total_size_splits: u64,
     /// Pipeline generation.
     pub generation: usize,
     /// Number of successive pipeline spawn attempts.

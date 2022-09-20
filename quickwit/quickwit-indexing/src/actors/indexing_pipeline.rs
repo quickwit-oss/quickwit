@@ -34,15 +34,19 @@ use tracing::{debug, error, info, info_span, instrument, Span};
 
 use crate::actors::doc_processor::DocProcessor;
 use crate::actors::index_serializer::IndexSerializer;
+use crate::actors::indexing_service::GetOrInitMergePipeline;
 use crate::actors::publisher::PublisherType;
 use crate::actors::sequencer::Sequencer;
-use crate::actors::{Indexer, MergePlanner, Packager, Publisher, Uploader};
+use crate::actors::{Indexer, Packager, Publisher, Uploader};
+use crate::merge_policy::MergePolicy;
 use crate::models::{IndexingDirectory, IndexingPipelineId, IndexingStatistics, Observe};
 use crate::source::{quickwit_supported_sources, SourceActor, SourceExecutionContext};
 use crate::split_store::IndexingSplitStore;
+use crate::IndexingService;
 
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(600); // 10 min.
 
+/// Calculates the wait time based on retry count.
 // retry_count, wait_time
 // 0   2s
 // 1   4s
@@ -57,7 +61,6 @@ pub(crate) fn wait_duration_before_retry(retry_count: usize) -> Duration {
 }
 
 pub struct IndexingPipelineHandle {
-    /// Indexing pipeline
     pub source: ActorHandle<SourceActor>,
     pub doc_processor: ActorHandle<DocProcessor>,
     pub indexer: ActorHandle<Indexer>,
@@ -205,8 +208,25 @@ impl IndexingPipeline {
             source_id=%self.params.pipeline_id.source_id,
             pipeline_ord=%self.params.pipeline_id.pipeline_ord,
             root_dir=%self.params.indexing_directory.path().display(),
+            merge_policy=?self.params.merge_policy,
             "Spawning indexing pipeline.",
         );
+
+        let merge_planner_mailbox = self
+            .params
+            .indexing_service
+            .ask_for_res(GetOrInitMergePipeline {
+                pipeline_id: self.params.pipeline_id.clone(),
+                doc_mapper: self.params.doc_mapper.clone(),
+                indexing_directory: self.params.indexing_directory.clone(),
+                split_store: self.params.split_store.clone(),
+                merge_policy: self.params.merge_policy.clone(),
+            })
+            .await
+            .map_err(|err| {
+                anyhow::anyhow!("Failed to get a merge pipeline: {}.", err.to_string())
+            })?;
+
         let published_splits = self
             .params
             .metastore
@@ -232,7 +252,7 @@ impl IndexingPipeline {
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
             self.params.metastore.clone(),
-            Some(self.params.merge_planner_mailbox.clone()),
+            Some(merge_planner_mailbox.clone()),
             Some(source_mailbox.clone()),
         );
         let (publisher_mailbox, publisher_handler) = ctx
@@ -457,7 +477,8 @@ pub struct IndexingPipelineParams {
     pub metastore: Arc<dyn Metastore>,
     pub storage: Arc<dyn Storage>,
     pub split_store: Arc<IndexingSplitStore>,
-    pub merge_planner_mailbox: Mailbox<MergePlanner>,
+    pub merge_policy: Arc<dyn MergePolicy>,
+    pub indexing_service: Mailbox<IndexingService>,
 }
 
 impl IndexingPipelineParams {
@@ -471,7 +492,8 @@ impl IndexingPipelineParams {
         metastore: Arc<dyn Metastore>,
         storage: Arc<dyn Storage>,
         split_store: Arc<IndexingSplitStore>,
-        merge_planner_mailbox: Mailbox<MergePlanner>,
+        merge_policy: Arc<dyn MergePolicy>,
+        indexing_service: Mailbox<IndexingService>,
     ) -> Self {
         Self {
             pipeline_id,
@@ -482,7 +504,8 @@ impl IndexingPipelineParams {
             metastore,
             storage,
             split_store,
-            merge_planner_mailbox,
+            merge_policy,
+            indexing_service,
         }
     }
 }
@@ -493,12 +516,13 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::Universe;
-    use quickwit_config::{IndexingSettings, SourceParams};
+    use quickwit_config::{IndexingSettings, QuickwitConfig, SourceParams};
     use quickwit_doc_mapper::default_doc_mapper_for_test;
     use quickwit_metastore::{IndexMetadata, MetastoreError, MockMetastore};
-    use quickwit_storage::RamStorage;
+    use quickwit_storage::{RamStorage, StorageUriResolver};
 
     use super::{IndexingPipeline, *};
+    use crate::merge_policy::StableMultitenantWithTimestampMergePolicy;
     use crate::models::IndexingDirectory;
 
     #[test]
@@ -561,11 +585,16 @@ mod tests {
             )
             .times(1)
             .returning(|_, _, _, _| Ok(()));
+
         let universe = Universe::new();
+        let temp_dir = tempfile::tempdir()?;
+        let node_id = "test-node";
+        let config = QuickwitConfig::for_test();
+        let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
+            node_id: node_id.to_string(),
             pipeline_ord: 0,
         };
         let source_config = SourceConfig {
@@ -577,18 +606,28 @@ mod tests {
         let split_store = Arc::new(IndexingSplitStore::create_with_no_local_store(
             storage.clone(),
         ));
-        let (merge_planner_mailbox, _) =
-            create_mailbox::<MergePlanner>("MergePlanner".to_string(), QueueCapacity::Unbounded);
+
+        let indexing_service_actor = IndexingService::new(
+            node_id.to_string(),
+            temp_dir.path().to_path_buf(),
+            config.indexer_config,
+            metastore.clone(),
+            StorageUriResolver::for_test(),
+            false,
+        );
+        let (indexing_service, _indexing_service_handle) =
+            universe.spawn_actor(indexing_service_actor).spawn();
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             indexing_directory: Arc::new(IndexingDirectory::for_test().await?),
             indexing_settings: IndexingSettings::for_test(),
-            metastore: Arc::new(metastore),
+            metastore: metastore.clone(),
             storage,
             split_store,
-            merge_planner_mailbox,
+            merge_policy: Arc::new(StableMultitenantWithTimestampMergePolicy::default()),
+            indexing_service,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_actor(pipeline).spawn();
@@ -636,7 +675,7 @@ mod tests {
             });
         metastore
             .expect_list_splits()
-            .times(1)
+            .times(2)
             .returning(|_, _, _, _| Ok(Vec::new()));
         metastore
             .expect_stage_split()
@@ -658,11 +697,16 @@ mod tests {
             )
             .times(1)
             .returning(|_, _, _, _| Ok(()));
+
         let universe = Universe::new();
+        let temp_dir = tempfile::tempdir()?;
+        let node_id = "test-node";
+        let config = QuickwitConfig::for_test();
+        let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
+            node_id: node_id.to_string(),
             pipeline_ord: 0,
         };
         let source_config = SourceConfig {
@@ -674,18 +718,27 @@ mod tests {
         let split_store = Arc::new(IndexingSplitStore::create_with_no_local_store(
             storage.clone(),
         ));
-        let (merge_planner_mailbox, _) =
-            create_mailbox::<MergePlanner>("MergePlanner".to_string(), QueueCapacity::Unbounded);
+        let indexing_service_actor = IndexingService::new(
+            node_id.to_string(),
+            temp_dir.path().to_path_buf(),
+            config.indexer_config,
+            metastore.clone(),
+            StorageUriResolver::for_test(),
+            false,
+        );
+        let (indexing_service, _indexing_service_handle) =
+            universe.spawn_actor(indexing_service_actor).spawn();
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             indexing_directory: Arc::new(IndexingDirectory::for_test().await?),
             indexing_settings: IndexingSettings::for_test(),
-            metastore: Arc::new(metastore),
+            metastore: metastore.clone(),
             storage,
             split_store,
-            merge_planner_mailbox,
+            merge_policy: Arc::new(StableMultitenantWithTimestampMergePolicy::default()),
+            indexing_service,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_actor(pipeline).spawn();
