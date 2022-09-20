@@ -157,6 +157,10 @@ impl Actor for ShardConsumer {
         Ok(())
     }
 
+    fn yield_after_each_message(&self) -> bool {
+        false
+    }
+
     fn observable_state(&self) -> Self::ObservableState {
         json!({
             "stream_name": self.stream_name,

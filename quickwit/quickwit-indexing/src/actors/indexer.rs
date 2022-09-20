@@ -268,6 +268,11 @@ impl Actor for Indexer {
         RuntimeType::Blocking.get_runtime_handle()
     }
 
+    #[inline]
+    fn yield_after_each_message(&self) -> bool {
+        false
+    }
+
     async fn finalize(
         &mut self,
         exit_status: &ActorExitStatus,
