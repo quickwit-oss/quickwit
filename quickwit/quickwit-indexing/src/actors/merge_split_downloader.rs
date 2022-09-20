@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
@@ -32,7 +33,7 @@ use crate::split_store::IndexingSplitStore;
 
 pub struct MergeSplitDownloader {
     pub scratch_directory: ScratchDirectory,
-    pub storage: IndexingSplitStore,
+    pub storage: Arc<IndexingSplitStore>,
     pub executor_mailbox: Mailbox<MergeExecutor>,
 }
 
@@ -160,7 +161,9 @@ mod tests {
                 storage_builder = storage_builder.put(&split_file(split.split_id()), &buffer);
             }
             let ram_storage = storage_builder.build();
-            IndexingSplitStore::create_with_no_local_store(Arc::new(ram_storage))
+            Arc::new(IndexingSplitStore::create_with_no_local_store(Arc::new(
+                ram_storage,
+            )))
         };
 
         let universe = Universe::new();
@@ -171,7 +174,7 @@ mod tests {
             executor_mailbox: merge_executor_mailbox,
         };
         let (merge_split_downloader_mailbox, merge_split_downloader_handler) =
-            universe.spawn_actor(merge_split_downloader).spawn();
+            universe.spawn_builder().spawn(merge_split_downloader);
         let merge_operation = MergeOperation::new_merge_operation(splits_to_merge);
         merge_split_downloader_mailbox
             .send_message(merge_operation)

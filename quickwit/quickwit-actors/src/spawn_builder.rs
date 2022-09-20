@@ -24,13 +24,13 @@ use tracing::{debug, error, info, Instrument};
 use crate::envelope::Envelope;
 use crate::mailbox::Inbox;
 use crate::scheduler::Scheduler;
+use crate::supervisor::Supervisor;
 use crate::{
     create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, KillSwitch, Mailbox,
 };
 
 /// `SpawnBuilder` makes it possible to configure misc parameters before spawning an actor.
 pub struct SpawnBuilder<A: Actor> {
-    actor: A,
     scheduler_mailbox: Mailbox<Scheduler>,
     kill_switch: KillSwitch,
     #[allow(clippy::type_complexity)]
@@ -38,13 +38,8 @@ pub struct SpawnBuilder<A: Actor> {
 }
 
 impl<A: Actor> SpawnBuilder<A> {
-    pub(crate) fn new(
-        actor: A,
-        scheduler_mailbox: Mailbox<Scheduler>,
-        kill_switch: KillSwitch,
-    ) -> Self {
+    pub(crate) fn new(scheduler_mailbox: Mailbox<Scheduler>, kill_switch: KillSwitch) -> Self {
         SpawnBuilder {
-            actor,
             scheduler_mailbox,
             kill_switch,
             mailboxes: None,
@@ -72,20 +67,25 @@ impl<A: Actor> SpawnBuilder<A> {
         self
     }
 
+    fn take_or_create_mailboxes(&mut self, actor: &A) -> (Mailbox<A>, Inbox<A>) {
+        if let Some((mailbox, inbox)) = self.mailboxes.take() {
+            return (mailbox, inbox);
+        }
+        let actor_name = actor.name();
+        let queue_capacity = actor.queue_capacity();
+        create_mailbox(actor_name, queue_capacity)
+    }
+
     fn create_actor_context_and_inbox(
         mut self,
+        actor: &A,
     ) -> (
-        A,
         ActorContext<A>,
         Inbox<A>,
         watch::Receiver<A::ObservableState>,
     ) {
-        let (mailbox, inbox) = self.mailboxes.take().unwrap_or_else(|| {
-            let actor_name = self.actor.name();
-            let queue_capacity = self.actor.queue_capacity();
-            create_mailbox(actor_name, queue_capacity)
-        });
-        let obs_state = self.actor.observable_state();
+        let (mailbox, inbox) = self.take_or_create_mailboxes(actor);
+        let obs_state = actor.observable_state();
         let (state_tx, state_rx) = watch::channel(obs_state);
         let ctx = ActorContext::new(
             mailbox,
@@ -93,15 +93,13 @@ impl<A: Actor> SpawnBuilder<A> {
             self.scheduler_mailbox.clone(),
             state_tx,
         );
-        (self.actor, ctx, inbox, state_rx)
+        (ctx, inbox, state_rx)
     }
-}
 
-impl<A: Actor> SpawnBuilder<A> {
     /// Spawns an async actor.
-    pub fn spawn(self) -> (Mailbox<A>, ActorHandle<A>) {
-        let runtime_handle = self.actor.runtime_handle();
-        let (actor, ctx, inbox, state_rx) = self.create_actor_context_and_inbox();
+    pub fn spawn(self, actor: A) -> (Mailbox<A>, ActorHandle<A>) {
+        let runtime_handle = actor.runtime_handle();
+        let (ctx, inbox, state_rx) = self.create_actor_context_and_inbox(&actor);
         debug!(actor_id = %ctx.actor_instance_id(), "spawn-actor");
         let mailbox = ctx.mailbox().clone();
         let ctx_clone = ctx.clone();
@@ -111,6 +109,42 @@ impl<A: Actor> SpawnBuilder<A> {
         let join_handle = runtime_handle.spawn(loop_async_actor_future);
         let actor_handle = ActorHandle::new(state_rx, join_handle, ctx_clone);
         (mailbox, actor_handle)
+    }
+
+    pub fn supervise_fn<F: Fn() -> A + Send + Sync + 'static>(
+        mut self,
+        actor_factory: F,
+    ) -> (Mailbox<A>, ActorHandle<Supervisor<A>>) {
+        let actor = actor_factory();
+        let actor_name = actor.name();
+        let (mailbox, inbox) = self.take_or_create_mailboxes(&actor);
+        self.mailboxes = Some((mailbox, inbox.clone()));
+        let kill_switch = self.kill_switch.clone();
+        let child_kill_switch = kill_switch.child();
+        let scheduler_mailbox = self.scheduler_mailbox.clone();
+        let (mailbox, actor_handle) = self.set_kill_switch(child_kill_switch).spawn(actor);
+        let supervisor = Supervisor::new(
+            actor_name,
+            Box::new(actor_factory),
+            inbox,
+            mailbox.clone(),
+            actor_handle,
+        );
+        let (_superviser_mailbox, supervisor_handle) =
+            SpawnBuilder::new(scheduler_mailbox, kill_switch).spawn(supervisor);
+        (mailbox, supervisor_handle)
+    }
+}
+
+impl<A: Actor + Clone> SpawnBuilder<A> {
+    pub fn supervise(self, actor: A) -> (Mailbox<A>, ActorHandle<Supervisor<A>>) {
+        self.supervise_fn(move || actor.clone())
+    }
+}
+
+impl<A: Actor + Default> SpawnBuilder<A> {
+    pub fn supervise_default(self) -> (Mailbox<A>, ActorHandle<Supervisor<A>>) {
+        self.supervise_fn(Default::default)
     }
 }
 

@@ -55,7 +55,7 @@ static CONCURRENT_UPLOAD_PERMITS: Semaphore = Semaphore::const_new(MAX_CONCURREN
 pub struct Uploader {
     actor_name: &'static str,
     metastore: Arc<dyn Metastore>,
-    index_storage: IndexingSplitStore,
+    index_storage: Arc<IndexingSplitStore>,
     sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
     counters: UploaderCounters,
 }
@@ -64,7 +64,7 @@ impl Uploader {
     pub fn new(
         actor_name: &'static str,
         metastore: Arc<dyn Metastore>,
-        index_storage: IndexingSplitStore,
+        index_storage: Arc<IndexingSplitStore>,
         sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
     ) -> Uploader {
         Uploader {
@@ -324,15 +324,16 @@ mod tests {
             .times(1)
             .returning(|_, _| Ok(()));
         let ram_storage = RamStorage::default();
-        let index_storage: IndexingSplitStore =
-            IndexingSplitStore::create_with_no_local_store(Arc::new(ram_storage.clone()));
+        let index_storage = Arc::new(IndexingSplitStore::create_with_no_local_store(Arc::new(
+            ram_storage.clone(),
+        )));
         let uploader = Uploader::new(
             "TestUploader",
             Arc::new(mock_metastore),
             index_storage,
             sequencer_mailbox,
         );
-        let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn();
+        let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
         let split_scratch_directory = ScratchDirectory::for_test()?;
         let checkpoint_delta_opt: Option<IndexCheckpointDelta> = Some(IndexCheckpointDelta {
             source_id: "test-source".to_string(),
@@ -422,15 +423,16 @@ mod tests {
             .times(2)
             .returning(|_, _| Ok(()));
         let ram_storage = RamStorage::default();
-        let index_storage: IndexingSplitStore =
-            IndexingSplitStore::create_with_no_local_store(Arc::new(ram_storage.clone()));
+        let index_storage = Arc::new(IndexingSplitStore::create_with_no_local_store(Arc::new(
+            ram_storage.clone(),
+        )));
         let uploader = Uploader::new(
             "TestUploader",
             Arc::new(mock_metastore),
             index_storage,
             sequencer_mailbox,
         );
-        let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn();
+        let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
         let split_scratch_directory_1 = ScratchDirectory::for_test()?;
         let split_scratch_directory_2 = ScratchDirectory::for_test()?;
         let packaged_split_1 = PackagedSplit {

@@ -18,8 +18,8 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Weak};
 
 use async_trait::async_trait;
 use quickwit_actors::{
@@ -32,17 +32,21 @@ use quickwit_ingest_api::{get_ingest_api_service, QUEUES_DIR_NAME};
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
-use quickwit_storage::{StorageResolverError, StorageUriResolver};
+use quickwit_storage::{Storage, StorageError, StorageResolverError, StorageUriResolver};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{error, info};
 
+use crate::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 use crate::models::{
-    DetachPipeline, IndexingPipelineId, Observe, ObservePipeline, ShutdownPipeline,
-    ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
+    DetachPipeline, IndexingDirectory, IndexingPipelineId, Observe, ObservePipeline,
+    ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
 };
 use crate::source::INGEST_API_SOURCE_ID;
-use crate::{IndexingPipeline, IndexingPipelineParams, IndexingStatistics};
+use crate::{
+    IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingSplitStoreParams,
+    IndexingStatistics,
+};
 
 /// Name of the indexing directory, usually located at `<data_dir_path>/indexing`.
 pub const INDEXING_DIR_NAME: &str = "indexing";
@@ -60,7 +64,9 @@ pub enum IndexingServiceError {
         pipeline_ord: usize,
     },
     #[error("Failed to resolve the storage `{0}`.")]
-    StorageError(#[from] StorageResolverError),
+    StorageResolverError(#[from] StorageResolverError),
+    #[error("Storage error `{0}`.")]
+    StorageError(#[from] StorageError),
     #[error("Metastore error `{0}`.")]
     MetastoreError(#[from] MetastoreError),
     #[error("Invalid params `{0}`.")]
@@ -72,7 +78,7 @@ impl ServiceError for IndexingServiceError {
         match self {
             Self::MissingPipeline { .. } => ServiceErrorCode::NotFound,
             Self::PipelineAlreadyExists { .. } => ServiceErrorCode::BadRequest,
-            Self::StorageError(_) => ServiceErrorCode::Internal,
+            Self::StorageResolverError(_) | Self::StorageError(_) => ServiceErrorCode::Internal,
             Self::MetastoreError(_) => ServiceErrorCode::Internal,
             Self::InvalidParams(_) => ServiceErrorCode::BadRequest,
         }
@@ -96,6 +102,12 @@ pub struct IndexingService {
     pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     state: IndexingServiceState,
     enable_ingest_api: bool,
+    // Hashmap of of index_id to merge policy.
+    merge_policies: HashMap<String, Weak<dyn MergePolicy>>,
+    // Hashmap of (index_id, source_id) to indexing directory.
+    indexing_directories: HashMap<String, Weak<IndexingDirectory>>,
+    // Hashmap of (index_id, source_id) to indexing split store.
+    split_stores: HashMap<String, Weak<IndexingSplitStore>>,
 }
 
 impl IndexingService {
@@ -123,6 +135,9 @@ impl IndexingService {
             pipeline_handles: Default::default(),
             state: Default::default(),
             enable_ingest_api,
+            merge_policies: HashMap::new(),
+            indexing_directories: HashMap::new(),
+            split_stores: HashMap::new(),
         }
     }
 
@@ -227,23 +242,33 @@ impl IndexingService {
                 pipeline_ord: pipeline_id.pipeline_ord,
             });
         }
+
         let indexing_dir_path = self.data_dir_path.join(INDEXING_DIR_NAME);
+        let indexing_directory = self
+            .get_or_init_indexing_directory(&pipeline_id, indexing_dir_path)
+            .await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
+        let merge_policy = self.get_or_init_merge_policy(&pipeline_id, &index_metadata);
+        let split_store = self.get_or_init_split_store(
+            &pipeline_id,
+            &indexing_directory.cache_directory,
+            storage.clone(),
+            merge_policy,
+        )?;
+
         let pipeline_params = IndexingPipelineParams::try_new(
             pipeline_id.clone(),
             index_metadata,
             source_config,
-            indexing_dir_path,
-            self.split_store_max_num_bytes,
-            self.split_store_max_num_splits,
+            indexing_directory,
+            split_store,
             self.metastore.clone(),
             storage,
         )
-        .await
         .map_err(IndexingServiceError::InvalidParams)?;
 
         let pipeline = IndexingPipeline::new(pipeline_params);
-        let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor(pipeline).spawn();
+        let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
         self.pipeline_handles.insert(pipeline_id, pipeline_handle);
         self.state.num_running_pipelines += 1;
         Ok(())
@@ -331,6 +356,92 @@ impl IndexingService {
         let _protect_guard = ctx.protect_zone();
         let index_metadata = self.metastore.index_metadata(index_id).await?;
         Ok(index_metadata)
+    }
+
+    fn get_or_init_merge_policy(
+        &mut self,
+        pipeline_id: &IndexingPipelineId,
+        index_metadata: &IndexMetadata,
+    ) -> Arc<dyn MergePolicy> {
+        if let Some(merge_policy_ref) = self.merge_policies.get(&pipeline_id.index_id) {
+            if let Some(merge_policy) = merge_policy_ref.upgrade() {
+                return merge_policy;
+            }
+        }
+
+        let stable_multitenant_merge_policy = StableMultitenantWithTimestampMergePolicy {
+            merge_enabled: index_metadata.indexing_settings.merge_enabled,
+            merge_factor: index_metadata.indexing_settings.merge_policy.merge_factor,
+            max_merge_factor: index_metadata
+                .indexing_settings
+                .merge_policy
+                .max_merge_factor,
+            split_num_docs_target: index_metadata.indexing_settings.split_num_docs_target,
+            ..Default::default()
+        };
+        let merge_policy: Arc<dyn MergePolicy> = Arc::new(stable_multitenant_merge_policy);
+
+        self.merge_policies
+            .insert(pipeline_id.index_id.clone(), Arc::downgrade(&merge_policy));
+        merge_policy
+    }
+
+    async fn get_or_init_indexing_directory(
+        &mut self,
+        pipeline_id: &IndexingPipelineId,
+        indexing_dir_path: PathBuf,
+    ) -> Result<Arc<IndexingDirectory>, IndexingServiceError> {
+        let key = self.index_source_key(pipeline_id);
+        if let Some(indexing_directory_ref) = self.indexing_directories.get(&key) {
+            if let Some(indexing_directory) = indexing_directory_ref.upgrade() {
+                return Ok(indexing_directory);
+            }
+        }
+
+        let indexing_directory_path = indexing_dir_path
+            .join(&pipeline_id.index_id)
+            .join(&pipeline_id.source_id);
+        let indexing_directory = Arc::new(
+            IndexingDirectory::create_in_dir(indexing_directory_path)
+                .await
+                .map_err(IndexingServiceError::InvalidParams)?,
+        );
+
+        self.indexing_directories
+            .insert(key, Arc::downgrade(&indexing_directory));
+        Ok(indexing_directory)
+    }
+
+    fn get_or_init_split_store(
+        &mut self,
+        pipeline_id: &IndexingPipelineId,
+        cache_directory: &Path,
+        storage: Arc<dyn Storage>,
+        merge_policy: Arc<dyn MergePolicy>,
+    ) -> Result<Arc<IndexingSplitStore>, IndexingServiceError> {
+        let key = self.index_source_key(pipeline_id);
+        if let Some(split_store_ref) = self.split_stores.get(&key) {
+            if let Some(split_store) = split_store_ref.upgrade() {
+                return Ok(split_store);
+            }
+        }
+
+        let split_store = Arc::new(IndexingSplitStore::create_with_local_store(
+            storage.clone(),
+            cache_directory,
+            IndexingSplitStoreParams {
+                max_num_bytes: self.split_store_max_num_bytes,
+                max_num_splits: self.split_store_max_num_splits,
+            },
+            merge_policy,
+        )?);
+
+        self.split_stores.insert(key, Arc::downgrade(&split_store));
+        Ok(split_store)
+    }
+
+    fn index_source_key(&self, pipeline_id: &IndexingPipelineId) -> String {
+        format!("{}_{}", pipeline_id.index_id, pipeline_id.source_id)
     }
 }
 
@@ -571,7 +682,7 @@ mod tests {
             enable_ingest_api,
         );
         let (indexing_server_mailbox, indexing_server_handle) =
-            universe.spawn_actor(indexing_server).spawn();
+            universe.spawn_builder().spawn(indexing_server);
         let observation = indexing_server_handle.observe().await;
         assert_eq!(observation.num_running_pipelines, 0);
         assert_eq!(observation.num_failed_pipelines, 0);

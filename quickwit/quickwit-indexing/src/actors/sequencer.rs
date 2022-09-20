@@ -124,9 +124,9 @@ mod tests {
     async fn test_sequencer() {
         let universe = Universe::new();
         let test_actor = SequencerTestActor::default();
-        let (test_mailbox, test_handle) = universe.spawn_actor(test_actor).spawn();
+        let (test_mailbox, test_handle) = universe.spawn_builder().spawn(test_actor);
         let sequencer = Sequencer::new(test_mailbox);
-        let (sequencer_mailbox, sequencer_handle) = universe.spawn_actor(sequencer).spawn();
+        let (sequencer_mailbox, sequencer_handle) = universe.spawn_builder().spawn(sequencer);
         let (fut_tx_1, fut_rx_1) = oneshot::channel();
         let (fut_tx_2, fut_rx_2) = oneshot::channel();
         let (fut_tx_3, fut_rx_3) = oneshot::channel();

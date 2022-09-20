@@ -158,11 +158,11 @@ impl<A: Actor> ActorHandle<A> {
     /// as the finalize logic may behave differently depending on the exit status.
     pub async fn kill(self) -> (ActorExitStatus, A::ObservableState) {
         self.actor_context.kill_switch().kill();
-        let _ = self
-            .actor_context
-            .mailbox()
-            .send_message_with_high_priority(Command::Kill);
         self.join().await
+    }
+
+    pub(crate) fn activate_kill_switch(self) {
+        self.actor_context.kill_switch().kill();
     }
 
     /// Gracefully quit the actor, regardless of whether there are pending messages or not.
@@ -326,7 +326,7 @@ mod tests {
     #[tokio::test]
     async fn test_panic_in_actor() -> anyhow::Result<()> {
         let universe = Universe::new();
-        let (mailbox, handle) = universe.spawn_actor(PanickingActor::default()).spawn();
+        let (mailbox, handle) = universe.spawn_builder().spawn(PanickingActor::default());
         mailbox.send_message(Panic).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Panicked));
@@ -337,7 +337,7 @@ mod tests {
     #[tokio::test]
     async fn test_exit() -> anyhow::Result<()> {
         let universe = Universe::new();
-        let (mailbox, handle) = universe.spawn_actor(ExitActor::default()).spawn();
+        let (mailbox, handle) = universe.spawn_builder().spawn(ExitActor::default());
         mailbox.send_message(Exit).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::DownstreamClosed));

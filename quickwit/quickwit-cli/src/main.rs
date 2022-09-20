@@ -26,8 +26,8 @@ use quickwit_cli::cli::{build_cli, CliCommand};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::QW_JAEGER_ENABLED_ENV_KEY;
-use quickwit_cluster::QuickwitService;
 use quickwit_common::runtimes::RuntimesConfiguration;
+use quickwit_config::service::QuickwitService;
 use quickwit_serve::build_quickwit_build_info;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::{info, Level};
@@ -90,7 +90,9 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
 fn runtime_configuration_for_cmd(command: &CliCommand) -> Option<RuntimesConfiguration> {
     match command {
         CliCommand::Run(run_cli_command) => {
-            if run_cli_command.services.contains(&QuickwitService::Indexer) {
+            if run_cli_command.services.contains(&QuickwitService::Indexer)
+                || run_cli_command.services.contains(&QuickwitService::Janitor)
+            {
                 Some(RuntimesConfiguration::default())
             } else {
                 None

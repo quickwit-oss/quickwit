@@ -132,7 +132,7 @@ async fn test_actor_stops_when_last_mailbox_is_dropped() {
     quickwit_common::setup_logging_for_tests();
     let universe = Universe::new();
     let (ping_recv_mailbox, ping_recv_handle) =
-        universe.spawn_actor(PingReceiverActor::default()).spawn();
+        universe.spawn_builder().spawn(PingReceiverActor::default());
     drop(ping_recv_mailbox);
     let (exit_status, _) = ping_recv_handle.join().await;
     assert!(exit_status.is_success());
@@ -143,9 +143,9 @@ async fn test_ping_actor() {
     quickwit_common::setup_logging_for_tests();
     let universe = Universe::new();
     let (ping_recv_mailbox, ping_recv_handle) =
-        universe.spawn_actor(PingReceiverActor::default()).spawn();
+        universe.spawn_builder().spawn(PingReceiverActor::default());
     let (ping_sender_mailbox, ping_sender_handle) =
-        universe.spawn_actor(PingerSenderActor::default()).spawn();
+        universe.spawn_builder().spawn(PingerSenderActor::default());
     assert_eq!(
         ping_recv_handle.observe().await,
         Observation {
@@ -261,7 +261,7 @@ impl Handler<Block> for BuggyActor {
 #[tokio::test]
 async fn test_timeouting_actor() {
     let universe = Universe::new();
-    let (buggy_mailbox, buggy_handle) = universe.spawn_actor(BuggyActor).spawn();
+    let (buggy_mailbox, buggy_handle) = universe.spawn_builder().spawn(BuggyActor);
     let buggy_mailbox = buggy_mailbox;
     assert_eq!(
         buggy_handle.observe().await.obs_type,
@@ -289,7 +289,7 @@ async fn test_timeouting_actor() {
 async fn test_pause_actor() {
     quickwit_common::setup_logging_for_tests();
     let universe = Universe::new();
-    let (ping_mailbox, ping_handle) = universe.spawn_actor(PingReceiverActor::default()).spawn();
+    let (ping_mailbox, ping_handle) = universe.spawn_builder().spawn(PingReceiverActor::default());
     for _ in 0u32..1000u32 {
         assert!(ping_mailbox.send_message(Ping).await.is_ok());
     }
@@ -311,7 +311,7 @@ async fn test_pause_actor() {
 async fn test_actor_running_states() {
     quickwit_common::setup_logging_for_tests();
     let universe = Universe::new();
-    let (ping_mailbox, ping_handle) = universe.spawn_actor(PingReceiverActor::default()).spawn();
+    let (ping_mailbox, ping_handle) = universe.spawn_builder().spawn(PingReceiverActor::default());
     assert!(ping_handle.state() == ActorState::Processing);
     for _ in 0u32..10u32 {
         assert!(ping_mailbox.send_message(Ping).await.is_ok());
@@ -378,7 +378,8 @@ impl Handler<SingleShot> for LoopingActor {
 async fn test_looping() -> anyhow::Result<()> {
     let universe = Universe::new();
     let looping_actor = LoopingActor::default();
-    let (looping_actor_mailbox, looping_actor_handle) = universe.spawn_actor(looping_actor).spawn();
+    let (looping_actor_mailbox, looping_actor_handle) =
+        universe.spawn_builder().spawn(looping_actor);
     assert!(looping_actor_mailbox.send_message(SingleShot).await.is_ok());
     looping_actor_handle.process_pending_and_observe().await;
     let (exit_status, state) = looping_actor_handle.quit().await;
@@ -449,7 +450,7 @@ impl Handler<u64> for SpawningActor {
     ) -> Result<(), ActorExitStatus> {
         let (mailbox, _) = self
             .handle_opt
-            .get_or_insert_with(|| ctx.spawn_actor(SummingActor::default()).spawn());
+            .get_or_insert_with(|| ctx.spawn_actor().spawn(SummingActor::default()));
         ctx.send_message(mailbox, message).await?;
         Ok(())
     }
@@ -458,7 +459,7 @@ impl Handler<u64> for SpawningActor {
 #[tokio::test]
 async fn test_actor_spawning_actor() -> anyhow::Result<()> {
     let universe = Universe::new();
-    let (mailbox, handle) = universe.spawn_actor(SpawningActor::default()).spawn();
+    let (mailbox, handle) = universe.spawn_builder().spawn(SpawningActor::default());
     mailbox.send_message(1).await?;
     mailbox.send_message(2).await?;
     mailbox.send_message(3).await?;
@@ -493,7 +494,7 @@ impl Actor for BuggyFinalizeActor {
 #[tokio::test]
 async fn test_actor_finalize_error_set_exit_status_to_panicked() -> anyhow::Result<()> {
     let universe = Universe::new();
-    let (mailbox, handle) = universe.spawn_actor(BuggyFinalizeActor).spawn();
+    let (mailbox, handle) = universe.spawn_builder().spawn(BuggyFinalizeActor);
     assert!(matches!(handle.state(), ActorState::Processing));
     drop(mailbox);
     let (exit, _) = handle.join().await;
@@ -536,7 +537,7 @@ struct Sleep(Duration);
 async fn test_actor_return_response() -> anyhow::Result<()> {
     let universe = Universe::new();
     let adder = Adder::default();
-    let (mailbox, _handle) = universe.spawn_actor(adder).spawn();
+    let (mailbox, _handle) = universe.spawn_builder().spawn(adder);
     let plus_two = mailbox.send_message(AddOperand(2)).await?;
     let plus_two_plus_four = mailbox.send_message(AddOperand(4)).await?;
     assert_eq!(plus_two.await.unwrap(), 2);
@@ -563,7 +564,7 @@ async fn test_actor_simple_sleep() -> anyhow::Result<()> {
     quickwit_common::setup_logging_for_tests();
     let universe = Universe::new();
     let adder = Adder::default();
-    let (mailbox, handle) = universe.spawn_actor(adder).spawn();
+    let (mailbox, handle) = universe.spawn_builder().spawn(adder);
     mailbox.send_message(AddOperand(2)).await?;
     let total = *handle.process_pending_and_observe().await;
     assert_eq!(total, 2);
@@ -582,7 +583,7 @@ async fn test_actor_sleep_and_resume() -> anyhow::Result<()> {
     quickwit_common::setup_logging_for_tests();
     let universe = Universe::new();
     let adder = Adder::default();
-    let (mailbox, handle) = universe.spawn_actor(adder).spawn();
+    let (mailbox, handle) = universe.spawn_builder().spawn(adder);
     mailbox.send_message(AddOperand(2)).await?;
     let total = *handle.process_pending_and_observe().await;
     assert_eq!(total, 2);
@@ -600,7 +601,7 @@ async fn test_actor_sleep_resume_sleep() -> anyhow::Result<()> {
     quickwit_common::setup_logging_for_tests();
     let universe = Universe::new();
     let adder = Adder::default();
-    let (mailbox, handle) = universe.spawn_actor(adder).spawn();
+    let (mailbox, handle) = universe.spawn_builder().spawn(adder);
     mailbox.ask(Sleep(Duration::from_secs(3))).await?;
     mailbox.send_message(AddOperand(3)).await?;
     mailbox.send_message_with_high_priority(Command::Resume)?;
@@ -665,7 +666,7 @@ async fn test_drain_is_called() {
     quickwit_common::setup_logging_for_tests();
     let universe = Universe::new();
     let test_actor_with_drain = TestActorWithDrain::default();
-    let (mailbox, handle) = universe.spawn_actor(test_actor_with_drain).spawn();
+    let (mailbox, handle) = universe.spawn_builder().spawn(test_actor_with_drain);
     assert_eq!(
         *handle.process_pending_and_observe().await,
         ProcessAndDrainCounts {

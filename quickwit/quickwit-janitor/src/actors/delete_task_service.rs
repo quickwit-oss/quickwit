@@ -139,7 +139,7 @@ impl DeleteTaskService {
             index_storage,
             delete_task_service_dir,
         );
-        let (_pipeline_mailbox, pipeline_handler) = ctx.spawn_actor(pipeline).spawn();
+        let (_pipeline_mailbox, pipeline_handler) = ctx.spawn_actor().spawn(pipeline);
         self.pipeline_handles_by_index_id
             .insert(index_metadata.index_id, pipeline_handler);
         Ok(())
@@ -212,7 +212,7 @@ mod tests {
         );
         let universe = Universe::new();
         let (_delete_task_service_mailbox, delete_task_service_handler) =
-            universe.spawn_actor(delete_task_service).spawn();
+            universe.spawn_builder().spawn(delete_task_service);
         let state = delete_task_service_handler
             .process_pending_and_observe()
             .await;

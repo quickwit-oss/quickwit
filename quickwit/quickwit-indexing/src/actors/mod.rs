@@ -34,7 +34,6 @@ pub use indexing_service::{
     IndexingService, IndexingServiceError, IndexingServiceState, INDEXING_DIR_NAME,
 };
 pub use sequencer::Sequencer;
-use tantivy::schema::{Field, FieldType};
 mod merge_executor;
 mod merge_planner;
 mod merge_split_downloader;
@@ -51,14 +50,3 @@ pub use self::merge_split_downloader::MergeSplitDownloader;
 pub use self::packager::Packager;
 pub use self::publisher::{Publisher, PublisherCounters, PublisherType};
 pub use self::uploader::{Uploader, UploaderCounters};
-
-/// A struct to wrap a tantivy field with its name.
-#[derive(Clone, Debug)]
-pub struct NamedField {
-    /// Name of the field.
-    pub name: String,
-    /// Tantivy schema field.
-    pub field: Field,
-    /// Tantivy schema field type.
-    pub field_type: FieldType,
-}

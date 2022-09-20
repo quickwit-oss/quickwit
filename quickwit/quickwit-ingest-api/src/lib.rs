@@ -62,7 +62,7 @@ pub async fn init_ingest_api(
                 queues_dir_path.display()
             )
         })?;
-    let (ingest_api_service, _ingest_api_handle) = universe.spawn_actor(ingest_api_actor).spawn();
+    let (ingest_api_service, _ingest_api_handle) = universe.spawn_builder().spawn(ingest_api_actor);
     guard.insert(queues_dir_path.to_path_buf(), ingest_api_service.clone());
     Ok(ingest_api_service)
 }
