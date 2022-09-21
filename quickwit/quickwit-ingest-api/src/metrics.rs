@@ -26,7 +26,6 @@ pub struct IngestMetrics {
     pub queue_count: IntGauge,
 }
 
-
 impl Default for IngestMetrics {
     fn default() -> Self {
         Self {
