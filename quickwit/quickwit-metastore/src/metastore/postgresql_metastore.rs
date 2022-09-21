@@ -741,22 +741,22 @@ impl Metastore for PostgresqlMetastore {
         run_with_tx!(self.connection_pool, tx, {
             let max_opstamp: u64 = sqlx::query(
                 r#"
-                    SELECT MAX(opstamp)
+                    SELECT COALESCE(MAX(opstamp), 0)
                     FROM delete_tasks
                     WHERE index_id = $1
                 "#,
             )
             .bind(index_id)
-            .fetch_optional(tx)
+            .fetch_one(tx)
             .await
-            .map_err(|error| MetastoreError::DbError {
-                message: error.to_string(),
-            })?
             .map(|row| {
                 let opstamp: i64 = row.get(0);
                 opstamp as u64
             })
-            .unwrap_or(0);
+            .map_err(|error| MetastoreError::DbError {
+                message: error.to_string(),
+            })?;
+
             Ok(max_opstamp)
         })
     }
