@@ -166,7 +166,7 @@ fn test_cmd_create_on_existing_index() -> Result<()> {
 
 #[test]
 fn test_cmd_ingest_on_non_existing_index() -> Result<()> {
-    let index_id = append_random_suffix("index-does-not exist");
+    let index_id = append_random_suffix("index-does-not-exist");
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
     make_command(
         format!(

@@ -18,8 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::VecDeque;
+use std::fmt::Display;
 use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
@@ -41,7 +43,7 @@ use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
 use quickwit_indexing::models::{
     DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
 };
-use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, SplitState};
+use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Metastore, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
@@ -643,122 +645,199 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri)
         .await?;
-    let index_metadata = metastore.index_metadata(&args.index_id).await?;
-    let splits = metastore
-        .list_splits(&args.index_id, SplitState::Published, None, None)
-        .await?;
-
-    let splits_num_docs = splits
-        .iter()
-        .map(|split| split.split_metadata.num_docs)
-        .sorted()
-        .collect_vec();
-    let total_num_docs = splits_num_docs.iter().sum::<usize>();
-    let splits_bytes = splits
-        .iter()
-        .map(|split| (split.split_metadata.footer_offsets.end / 1_000_000) as usize)
-        .sorted()
-        .collect_vec();
-    let total_bytes = splits_bytes.iter().sum::<usize>();
-
-    println!();
-    println!("1. General information");
-    println!("===============================================================================");
-    println!(
-        "{:<35} {}",
-        "Index ID:".color(GREEN_COLOR),
-        index_metadata.index_id
-    );
-    println!(
-        "{:<35} {}",
-        "Index URI:".color(GREEN_COLOR),
-        index_metadata.index_uri
-    );
-    println!(
-        "{:<35} {}",
-        "Number of published splits:".color(GREEN_COLOR),
-        splits.len()
-    );
-    println!(
-        "{:<35} {}",
-        "Number of published documents:".color(GREEN_COLOR),
-        total_num_docs
-    );
-    println!(
-        "{:<35} {} MB",
-        "Size of published splits:".color(GREEN_COLOR),
-        total_bytes
-    );
-    if let Some(timestamp_field_name) = &index_metadata.indexing_settings.timestamp_field {
-        println!(
-            "{:<35} {}",
-            "Timestamp field:".color(GREEN_COLOR),
-            timestamp_field_name
-        );
-        let time_min = splits
-            .iter()
-            .map(|split| split.split_metadata.time_range.clone())
-            .filter(|time_range| time_range.is_some())
-            .map(|time_range| *time_range.unwrap().start())
-            .min();
-        let time_max = splits
-            .iter()
-            .map(|split| split.split_metadata.time_range.clone())
-            .filter(|time_range| time_range.is_some())
-            .map(|time_range| *time_range.unwrap().start())
-            .max();
-        println!(
-            "{:<35} {:?} -> {:?}",
-            "Timestamp range:".color(GREEN_COLOR),
-            time_min,
-            time_max
-        );
-    }
-
-    if splits.is_empty() {
-        return Ok(());
-    }
-
-    println!();
-    println!("2. Split statistics");
-    println!("===============================================================================");
-    println!("Document count stats:");
-    print_descriptive_stats(&splits_num_docs);
-    println!();
-    println!("Size in MB stats:");
-    print_descriptive_stats(&splits_bytes);
-
-    println!();
+    let index_stats = IndexStats::from_metastore(metastore, &args.index_id).await?;
+    println!("{index_stats}");
     Ok(())
 }
 
-fn print_descriptive_stats(values: &[usize]) {
-    let mean_val = mean(values);
-    let std_val = std_deviation(values);
-    let min_val = values.iter().min().unwrap();
-    let max_val = values.iter().max().unwrap();
-    println!(
-        "{:<35} {:>2} ± {} in [{} … {}]",
-        "Mean ± σ in [min … max]:".color(GREEN_COLOR),
-        mean_val,
-        std_val,
-        min_val,
-        max_val,
-    );
-    let q1 = percentile(values, 1);
-    let q25 = percentile(values, 50);
-    let q50 = percentile(values, 50);
-    let q75 = percentile(values, 75);
-    let q99 = percentile(values, 75);
-    println!(
-        "{:<35} [{}, {}, {}, {}, {}]",
-        "Quantiles [1%, 25%, 50%, 75%, 99%]:".color(GREEN_COLOR),
-        q1,
-        q25,
-        q50,
-        q75,
-        q99,
-    );
+struct IndexStats {
+    index_id: String,
+    index_uri: Uri,
+    num_published_splits: usize,
+    num_published_docs: usize,
+    size_published_docs: usize,
+    timestamp_field_name: Option<String>,
+    timestamp_range_min: Option<i64>,
+    timestamp_range_max: Option<i64>,
+    num_docs_descriptive: Option<DescriptiveStats>,
+    num_bytes_descriptive: Option<DescriptiveStats>,
+}
+
+impl Display for IndexStats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut output = Vec::new();
+        output.push("\n1. General information".to_string());
+        output.push(format!("{:=<80}", ""));
+        output.push(format!(
+            "{:<35} {}",
+            "Index ID:".color(GREEN_COLOR),
+            self.index_id
+        ));
+        output.push(format!(
+            "{:<35} {}",
+            "Index URI:".color(GREEN_COLOR),
+            self.index_uri
+        ));
+        output.push(format!(
+            "{:<35} {}",
+            "Number of published splits:".color(GREEN_COLOR),
+            self.num_published_splits
+        ));
+        output.push(format!(
+            "{:<35} {}",
+            "Number of published documents:".color(GREEN_COLOR),
+            self.num_published_docs
+        ));
+        output.push(format!(
+            "{:<35} {} MB",
+            "Size of published splits:".color(GREEN_COLOR),
+            self.size_published_docs
+        ));
+        if let Some(timestamp_field_name) = &self.timestamp_field_name {
+            output.push(format!(
+                "{:<35} {}",
+                "Timestamp field:".color(GREEN_COLOR),
+                timestamp_field_name
+            ));
+            output.push(format!(
+                "{:<35} {:?} -> {:?}",
+                "Timestamp range:".color(GREEN_COLOR),
+                self.timestamp_range_min,
+                self.timestamp_range_max
+            ));
+        }
+
+        if let Some(num_docs_descriptive) = &self.num_docs_descriptive {
+            output.push("2. Split statistics".to_string());
+            output.push(format!("{:=<80}", ""));
+            output.push("Document count stats:".to_string());
+            output.push(format!("{num_docs_descriptive}"));
+        }
+        if let Some(num_bytes_descriptive) = &self.num_bytes_descriptive {
+            output.push(String::new());
+            output.push("Size in MB stats:".to_string());
+            output.push(format!("{num_bytes_descriptive}"));
+            output.push(String::new());
+        }
+        write!(f, "{}", output.join("\n"))
+    }
+}
+
+impl IndexStats {
+    async fn from_metastore(metastore: Arc<dyn Metastore>, index_id: &str) -> anyhow::Result<Self> {
+        let index_metadata = metastore.index_metadata(index_id).await?;
+        let splits = metastore
+            .list_splits(index_id, SplitState::Published, None, None)
+            .await?;
+
+        let splits_num_docs = splits
+            .iter()
+            .map(|split| split.split_metadata.num_docs)
+            .sorted()
+            .collect_vec();
+
+        let total_num_docs = splits_num_docs.iter().sum::<usize>();
+
+        let splits_bytes = splits
+            .iter()
+            .map(|split| (split.split_metadata.footer_offsets.end / 1_000_000) as usize)
+            .sorted()
+            .collect_vec();
+        let total_bytes = splits_bytes.iter().sum::<usize>();
+
+        let (timestamp_min, timestamp_max) =
+            if index_metadata.indexing_settings.timestamp_field.is_some() {
+                let time_min = splits
+                    .iter()
+                    .map(|split| split.split_metadata.time_range.clone())
+                    .filter(|time_range| time_range.is_some())
+                    .map(|time_range| *time_range.unwrap().start())
+                    .min();
+                let time_max = splits
+                    .iter()
+                    .map(|split| split.split_metadata.time_range.clone())
+                    .filter(|time_range| time_range.is_some())
+                    .map(|time_range| *time_range.unwrap().start())
+                    .max();
+                (time_min, time_max)
+            } else {
+                (None, None)
+            };
+
+        let (num_docs_descriptive, num_bytes_descriptive) = if !splits.is_empty() {
+            (
+                Some(DescriptiveStats::new(&splits_num_docs)),
+                Some(DescriptiveStats::new(&splits_bytes)),
+            )
+        } else {
+            (None, None)
+        };
+
+        Ok(Self {
+            index_id: index_metadata.index_id,
+            index_uri: index_metadata.index_uri,
+            num_published_splits: splits.len(),
+            num_published_docs: total_num_docs,
+            size_published_docs: total_bytes,
+            timestamp_field_name: index_metadata.indexing_settings.timestamp_field,
+            timestamp_range_min: timestamp_min,
+            timestamp_range_max: timestamp_max,
+            num_docs_descriptive,
+            num_bytes_descriptive,
+        })
+    }
+}
+
+struct DescriptiveStats {
+    mean_val: f32,
+    std_val: f32,
+    min_val: usize,
+    max_val: usize,
+    q1: f32,
+    q25: f32,
+    q50: f32,
+    q75: f32,
+    q99: f32,
+}
+
+impl Display for DescriptiveStats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut output = Vec::new();
+        output.push(format!(
+            "{:<35} {:>2} ± {} in [{} … {}]",
+            "Mean ± σ in [min … max]:".color(GREEN_COLOR),
+            self.mean_val,
+            self.std_val,
+            self.min_val,
+            self.max_val,
+        ));
+        output.push(format!(
+            "{:<35} [{}, {}, {}, {}, {}]",
+            "Quantiles [1%, 25%, 50%, 75%, 99%]:".color(GREEN_COLOR),
+            self.q1,
+            self.q25,
+            self.q50,
+            self.q75,
+            self.q99,
+        ));
+        write!(f, "{}", output.join("\n"))
+    }
+}
+
+impl DescriptiveStats {
+    fn new(values: &[usize]) -> DescriptiveStats {
+        DescriptiveStats {
+            mean_val: mean(values),
+            std_val: std_deviation(values),
+            min_val: *values.iter().min().unwrap(),
+            max_val: *values.iter().max().unwrap(),
+            q1: percentile(values, 1),
+            q25: percentile(values, 50),
+            q50: percentile(values, 50),
+            q75: percentile(values, 75),
+            q99: percentile(values, 75),
+        }
+    }
 }
 
 pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
