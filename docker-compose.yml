@@ -53,7 +53,7 @@ services:
       test: ["CMD", "pg_isready"]
 
   kafka-broker:
-    image: confluentinc/cp-kafka:6.2.0
+    image: confluentinc/cp-kafka:7.2.1
     container_name: kafka-broker
     depends_on:
       - zookeeper
@@ -78,7 +78,7 @@ services:
       test: ["CMD", "cub", "kafka-ready", "-b", "localhost:9092", "1", "30"]
 
   zookeeper:
-    image: confluentinc/cp-zookeeper:6.2.0
+    image: confluentinc/cp-zookeeper:7.2.1
     container_name: zookeeper
     ports:
       - "2181:2181"

@@ -32,7 +32,7 @@ use crate::split_store::IndexingSplitStore;
 
 pub struct MergeSplitDownloader {
     pub scratch_directory: ScratchDirectory,
-    pub storage: IndexingSplitStore,
+    pub split_store: IndexingSplitStore,
     pub executor_mailbox: Mailbox<MergeExecutor>,
 }
 
@@ -113,7 +113,7 @@ impl MergeSplitDownloader {
             }
             let _protect_guard = ctx.protect_zone();
             let tantivy_dir = self
-                .storage
+                .split_store
                 .fetch_split(split.split_id(), download_directory)
                 .await
                 .map_err(|error| {
@@ -151,7 +151,7 @@ mod tests {
         .take(10)
         .collect();
 
-        let storage = {
+        let split_store = {
             let mut storage_builder = RamStorageBuilder::default();
             for split in &splits_to_merge {
                 let buffer = SplitPayloadBuilder::get_split_payload(&[], &[1, 2, 3])?
@@ -160,18 +160,18 @@ mod tests {
                 storage_builder = storage_builder.put(&split_file(split.split_id()), &buffer);
             }
             let ram_storage = storage_builder.build();
-            IndexingSplitStore::create_with_no_local_store(Arc::new(ram_storage))
+            IndexingSplitStore::create_without_local_store(Arc::new(ram_storage))
         };
 
         let universe = Universe::new();
         let (merge_executor_mailbox, merge_executor_inbox) = create_test_mailbox();
         let merge_split_downloader = MergeSplitDownloader {
             scratch_directory,
-            storage,
+            split_store,
             executor_mailbox: merge_executor_mailbox,
         };
         let (merge_split_downloader_mailbox, merge_split_downloader_handler) =
-            universe.spawn_actor(merge_split_downloader).spawn();
+            universe.spawn_builder().spawn(merge_split_downloader);
         let merge_operation = MergeOperation::new_merge_operation(splits_to_merge);
         merge_split_downloader_mailbox
             .send_message(merge_operation)

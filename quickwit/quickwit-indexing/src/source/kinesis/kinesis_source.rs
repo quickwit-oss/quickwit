@@ -438,7 +438,7 @@ mod tests {
                 source: Box::new(kinesis_source),
                 doc_processor_mailbox: doc_processor_mailbox.clone(),
             };
-            let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
+            let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
@@ -492,7 +492,7 @@ mod tests {
                 source: Box::new(kinesis_source),
                 doc_processor_mailbox: doc_processor_mailbox.clone(),
             };
-            let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
+            let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
@@ -563,7 +563,7 @@ mod tests {
                 source: Box::new(kinesis_source),
                 doc_processor_mailbox: doc_processor_mailbox.clone(),
             };
-            let (_mailbox, handle) = universe.spawn_actor(actor).spawn();
+            let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 

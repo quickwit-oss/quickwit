@@ -339,15 +339,8 @@ impl<A: Actor> ActorContext<A> {
         &self.progress
     }
 
-    pub fn spawn_actor<SpawnedActor: Actor>(
-        &self,
-        actor: SpawnedActor,
-    ) -> SpawnBuilder<SpawnedActor> {
-        SpawnBuilder::new(
-            actor,
-            self.scheduler_mailbox.clone(),
-            self.kill_switch.clone(),
-        )
+    pub fn spawn_actor<SpawnedActor: Actor>(&self) -> SpawnBuilder<SpawnedActor> {
+        SpawnBuilder::new(self.scheduler_mailbox.clone(), self.kill_switch.child())
     }
 
     /// Records some progress.

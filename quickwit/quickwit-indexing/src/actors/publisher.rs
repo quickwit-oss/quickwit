@@ -228,7 +228,7 @@ mod tests {
             Some(source_mailbox),
         );
         let universe = Universe::new();
-        let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
+        let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
         assert!(publisher_mailbox
             .send_message(SplitUpdate {
@@ -293,7 +293,7 @@ mod tests {
             None,
         );
         let universe = Universe::new();
-        let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
+        let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
         let publisher_message = SplitUpdate {
             index_id: "index".to_string(),
             new_splits: vec![SplitMetadata {
@@ -330,7 +330,7 @@ mod tests {
             None,
         );
         let universe = Universe::new();
-        let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn();
+        let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
         let publish_lock = PublishLock::default();
         publish_lock.kill().await;

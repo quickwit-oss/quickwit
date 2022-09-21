@@ -133,16 +133,16 @@ impl DeleteTaskPipeline {
             None,
         );
         let (publisher_mailbox, publisher_handler) = ctx
-            .spawn_actor(publisher)
+            .spawn_actor()
             .set_kill_switch(KillSwitch::default())
-            .spawn();
+            .spawn(publisher);
         let sequencer = Sequencer::new(publisher_mailbox);
         let (sequencer_mailbox, sequencer_handler) = ctx
-            .spawn_actor(sequencer)
+            .spawn_actor()
             .set_kill_switch(KillSwitch::default())
-            .spawn();
+            .spawn(sequencer);
         let split_store =
-            IndexingSplitStore::create_with_no_local_store(self.index_storage.clone());
+            IndexingSplitStore::create_without_local_store(self.index_storage.clone());
         let uploader = Uploader::new(
             "MergeUploader",
             self.metastore.clone(),
@@ -150,9 +150,10 @@ impl DeleteTaskPipeline {
             sequencer_mailbox,
         );
         let (uploader_mailbox, uploader_handler) = ctx
-            .spawn_actor(uploader)
+            .spawn_actor()
             .set_kill_switch(KillSwitch::default())
-            .spawn();
+            .spawn(uploader);
+
         let doc_mapper = build_doc_mapper(
             &index_metadata.doc_mapping,
             &index_metadata.search_settings,
@@ -161,9 +162,9 @@ impl DeleteTaskPipeline {
         let tag_fields = doc_mapper.tag_named_fields()?;
         let packager = Packager::new("MergePackager", tag_fields, uploader_mailbox);
         let (packager_mailbox, packager_handler) = ctx
-            .spawn_actor(packager)
+            .spawn_actor()
             .set_kill_switch(KillSwitch::default())
-            .spawn();
+            .spawn(packager);
         let index_pipeline_id = IndexingPipelineId {
             index_id: self.index_id.to_string(),
             node_id: "unknown".to_string(),
@@ -173,20 +174,20 @@ impl DeleteTaskPipeline {
         let delete_executor =
             MergeExecutor::new(index_pipeline_id, self.metastore.clone(), packager_mailbox);
         let (delete_executor_mailbox, task_executor_handler) = ctx
-            .spawn_actor(delete_executor)
+            .spawn_actor()
             .set_kill_switch(KillSwitch::default())
-            .spawn();
+            .spawn(delete_executor);
         let indexing_directory_path = self.delete_service_dir_path.join(&self.index_id);
         let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path).await?;
         let merge_split_downloader = MergeSplitDownloader {
-            scratch_directory: indexing_directory.scratch_directory,
-            storage: split_store.clone(),
+            scratch_directory: indexing_directory.scratch_directory().clone(),
+            split_store: split_store.clone(),
             executor_mailbox: delete_executor_mailbox,
         };
         let (downloader_mailbox, downloader_handler) = ctx
-            .spawn_actor(merge_split_downloader)
+            .spawn_actor()
             .set_kill_switch(KillSwitch::default())
-            .spawn();
+            .spawn(merge_split_downloader);
         let stable_multitenant_merge_policy = StableMultitenantWithTimestampMergePolicy {
             merge_enabled: true,
             merge_factor: self.indexing_settings.merge_policy.merge_factor,
@@ -206,9 +207,9 @@ impl DeleteTaskPipeline {
             downloader_mailbox,
         );
         let (_, task_planner_handler) = ctx
-            .spawn_actor(task_planner)
+            .spawn_actor()
             .set_kill_switch(KillSwitch::default())
-            .spawn();
+            .spawn(task_planner);
         self.handles = Some(DeletePipelineHandle {
             delete_task_planner: task_planner_handler,
             downloader: downloader_handler,
@@ -365,7 +366,7 @@ mod tests {
         );
         let universe = Universe::new();
 
-        let (_pipeline_mailbox, pipeline_handler) = universe.spawn_actor(pipeline).spawn();
+        let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
         tokio::time::sleep(Duration::from_secs(1)).await;
         let state = pipeline_handler.process_pending_and_observe().await;
         let all_healthy = state

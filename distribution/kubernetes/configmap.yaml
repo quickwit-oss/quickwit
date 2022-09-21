@@ -5,7 +5,7 @@ metadata:
   labels:
     app: quickwit
 data:
-  postgres.host: metastore-postgresql.quickwit.svc.cluster.local
+  postgres.host: postgresql-metastore.quickwit.svc.cluster.local
   postgres.port: "5432"
   postgres.username: quickwit
   postgres.database: metastore

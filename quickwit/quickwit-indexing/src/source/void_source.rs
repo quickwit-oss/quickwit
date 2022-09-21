@@ -118,7 +118,7 @@ mod tests {
             doc_processor_mailbox,
         };
         let universe = Universe::new();
-        let (_, void_source_handle) = universe.spawn_actor(void_source_actor).spawn();
+        let (_, void_source_handle) = universe.spawn_builder().spawn(void_source_actor);
         matches!(void_source_handle.health(), Health::Healthy);
         let (actor_termination, observed_state) = void_source_handle.quit().await;
         assert_eq!(observed_state, json!({}));

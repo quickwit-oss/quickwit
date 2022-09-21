@@ -369,9 +369,9 @@ mod tests {
                 ]))
             });
 
-        let retention_policy_actor = RetentionPolicyExecutor::new(Arc::new(mock_metastore));
+        let retention_policy_executor = RetentionPolicyExecutor::new(Arc::new(mock_metastore));
         let universe = Universe::new();
-        let (mailbox, handle) = universe.spawn_actor(retention_policy_actor).spawn();
+        let (mailbox, handle) = universe.spawn_builder().spawn(retention_policy_executor);
 
         let counters = handle.process_pending_and_observe().await.state;
         assert_eq!(counters.num_refresh_passes, 1);
@@ -453,9 +453,9 @@ mod tests {
                 Ok(())
             });
 
-        let retention_policy_actor = RetentionPolicyExecutor::new(Arc::new(mock_metastore));
+        let retention_policy_executor = RetentionPolicyExecutor::new(Arc::new(mock_metastore));
         let universe = Universe::new();
-        let (_mailbox, handle) = universe.spawn_actor(retention_policy_actor).spawn();
+        let (_mailbox, handle) = universe.spawn_builder().spawn(retention_policy_executor);
 
         let counters = handle.process_pending_and_observe().await.state;
         assert_eq!(counters.num_execution_passes, 0);

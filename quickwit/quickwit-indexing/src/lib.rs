@@ -35,7 +35,7 @@ pub use crate::controlled_directory::ControlledDirectory;
 use crate::models::{IndexingStatistics, SpawnPipelines};
 pub use crate::split_store::{
     get_tantivy_directory_from_split_bundle, IndexingSplitStore, IndexingSplitStoreParams,
-    SplitFolder,
+    SplitFolder, WeakIndexingSplitStore,
 };
 
 pub mod actors;
@@ -51,7 +51,7 @@ mod test_utils;
 #[cfg(any(test, feature = "testsuite"))]
 pub use test_utils::{mock_split, mock_split_meta, TestSandbox};
 
-use self::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
+use self::merge_policy::MergePolicy;
 pub use self::source::check_source_connectivity;
 
 pub fn new_split_id() -> String {
@@ -75,7 +75,7 @@ pub async fn start_indexing_service(
         storage_resolver,
         enable_ingest_api,
     );
-    let (indexing_service, _) = universe.spawn_actor(indexing_service).spawn();
+    let (indexing_service, _) = universe.spawn_builder().spawn(indexing_service);
 
     // List indexes and spawn indexing pipeline(s) for each of them.
     let index_metadatas = metastore.list_indexes_metadatas().await?;
@@ -94,7 +94,7 @@ pub async fn start_indexing_service(
         let ingest_api_service = get_ingest_api_service(&queues_dir_path).await?;
         let ingest_api_garbage_collector =
             IngestApiGarbageCollector::new(metastore, ingest_api_service, indexing_service.clone());
-        universe.spawn_actor(ingest_api_garbage_collector).spawn();
+        universe.spawn_builder().spawn(ingest_api_garbage_collector);
     }
     Ok(indexing_service)
 }

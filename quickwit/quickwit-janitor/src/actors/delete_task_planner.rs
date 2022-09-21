@@ -475,7 +475,7 @@ mod tests {
         );
         let universe = Universe::new();
         let (_, delete_planner_executor_handle) =
-            universe.spawn_actor(delete_planner_executor).spawn();
+            universe.spawn_builder().spawn(delete_planner_executor);
         delete_planner_executor_handle
             .process_pending_and_observe()
             .await;

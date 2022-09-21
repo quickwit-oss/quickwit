@@ -18,24 +18,25 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use anyhow::Context;
 use quickwit_common::fs::empty_dir;
-use tempfile::TempDir;
 use tokio::fs;
 
 use super::ScratchDirectory;
 
 pub const CACHE: &str = "cache";
 
+pub const SCRATCH: &str = "scratch";
+
 /// Root of an [`IndexingDirectory`].
-#[derive(Clone)]
 enum Root {
     /// The root of the indexing directory.
     Dir(PathBuf),
     // A temporary directory created for the duration of a test.
-    TempDir(Arc<TempDir>),
+    #[cfg(any(test, feature = "testsuite"))]
+    TempDir(tempfile::TempDir),
 }
 
 /// An indexing directory is created in the data directory on the local file system for each index
@@ -48,9 +49,26 @@ enum Root {
 /// that they write to it.
 #[derive(Clone)]
 pub struct IndexingDirectory {
+    inner: Arc<InnerIndexingDirectory>,
+}
+
+struct InnerIndexingDirectory {
     root: Root,
     pub cache_directory: PathBuf,
     pub scratch_directory: ScratchDirectory,
+}
+
+/// A weak reference to an [`IndexingDirectory`].
+pub struct WeakIndexingDirectory {
+    inner: Weak<InnerIndexingDirectory>,
+}
+
+impl WeakIndexingDirectory {
+    pub fn upgrade(&self) -> Option<IndexingDirectory> {
+        self.inner
+            .upgrade()
+            .map(|inner| IndexingDirectory { inner })
+    }
 }
 
 impl IndexingDirectory {
@@ -66,7 +84,7 @@ impl IndexingDirectory {
                 )
             })?;
         // Create scratch directory if does not exist.
-        let scratch_directory_path = dir_path.as_ref().join("scratch");
+        let scratch_directory_path = dir_path.as_ref().join(SCRATCH);
         fs::create_dir_all(&scratch_directory_path)
             .await
             .with_context(|| {
@@ -84,26 +102,59 @@ impl IndexingDirectory {
         })?;
         let scratch_directory = ScratchDirectory::new_in_dir(scratch_directory_path);
 
-        let indexing_directory = Self {
+        let inner = InnerIndexingDirectory {
             root: Root::Dir(dir_path.as_ref().to_path_buf()),
             cache_directory: cache_directory_path,
             scratch_directory,
         };
+        let indexing_directory = IndexingDirectory {
+            inner: Arc::new(inner),
+        };
         Ok(indexing_directory)
     }
 
+    pub fn cache_directory(&self) -> &Path {
+        &self.inner.cache_directory
+    }
+
+    pub fn scratch_directory(&self) -> &ScratchDirectory {
+        &self.inner.scratch_directory
+    }
+
     pub fn path(&self) -> &Path {
-        match &self.root {
+        match &self.inner.root {
             Root::Dir(root) => root,
+            #[cfg(any(test, feature = "testsuite"))]
             Root::TempDir(tempdir) => tempdir.path(),
         }
     }
 
-    pub async fn for_test() -> anyhow::Result<Self> {
-        let tempdir = tempfile::tempdir()?;
-        let mut indexing_directory = IndexingDirectory::create_in_dir(tempdir.path()).await?;
-        indexing_directory.root = Root::TempDir(Arc::new(tempdir));
-        Ok(indexing_directory)
+    #[cfg(any(test, feature = "testsuite"))]
+    pub async fn for_test() -> Self {
+        let tempdir = tempfile::tempdir().unwrap();
+
+        let cache_directory_path = tempdir.path().join(CACHE);
+        fs::create_dir_all(&cache_directory_path).await.unwrap();
+
+        let scratch_directory_path = tempdir.path().join(SCRATCH);
+        fs::create_dir_all(&scratch_directory_path).await.unwrap();
+
+        let scratch_directory = ScratchDirectory::new_in_dir(scratch_directory_path);
+
+        let inner = InnerIndexingDirectory {
+            root: Root::TempDir(tempdir),
+            cache_directory: cache_directory_path,
+            scratch_directory,
+        };
+        IndexingDirectory {
+            inner: Arc::new(inner),
+        }
+    }
+
+    pub fn downgrade(&self) -> WeakIndexingDirectory {
+        WeakIndexingDirectory {
+            inner: Arc::downgrade(&self.inner),
+        }
     }
 }
 
@@ -120,12 +171,12 @@ mod tests {
 
         let cache_directory_path = indexing_directory_path.join("cache");
         assert!(cache_directory_path.exists());
-        assert_eq!(indexing_directory.cache_directory, cache_directory_path);
+        assert_eq!(indexing_directory.cache_directory(), cache_directory_path);
 
         let scratch_directory_path = indexing_directory_path.join("scratch");
         assert!(scratch_directory_path.exists());
         assert_eq!(
-            indexing_directory.scratch_directory.path(),
+            indexing_directory.scratch_directory().path(),
             scratch_directory_path
         );
         {
@@ -140,7 +191,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexing_directory_for_test() -> anyhow::Result<()> {
-        let indexing_directory = IndexingDirectory::for_test().await?;
+        let indexing_directory = IndexingDirectory::for_test().await;
         let indexing_directory_path = indexing_directory.path().to_path_buf();
         drop(indexing_directory);
         assert!(!indexing_directory_path.exists());

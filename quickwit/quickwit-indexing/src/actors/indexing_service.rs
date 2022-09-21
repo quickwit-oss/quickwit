@@ -18,8 +18,8 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Weak};
 
 use async_trait::async_trait;
 use quickwit_actors::{
@@ -32,17 +32,22 @@ use quickwit_ingest_api::{get_ingest_api_service, QUEUES_DIR_NAME};
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
-use quickwit_storage::{StorageResolverError, StorageUriResolver};
+use quickwit_storage::{Storage, StorageError, StorageResolverError, StorageUriResolver};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{error, info};
 
+use crate::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 use crate::models::{
-    DetachPipeline, IndexingPipelineId, Observe, ObservePipeline, ShutdownPipeline,
-    ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
+    DetachPipeline, IndexingDirectory, IndexingPipelineId, Observe, ObservePipeline,
+    ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
+    WeakIndexingDirectory,
 };
 use crate::source::INGEST_API_SOURCE_ID;
-use crate::{IndexingPipeline, IndexingPipelineParams, IndexingStatistics};
+use crate::{
+    IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingSplitStoreParams,
+    IndexingStatistics, WeakIndexingSplitStore,
+};
 
 /// Name of the indexing directory, usually located at `<data_dir_path>/indexing`.
 pub const INDEXING_DIR_NAME: &str = "indexing";
@@ -60,7 +65,9 @@ pub enum IndexingServiceError {
         pipeline_ord: usize,
     },
     #[error("Failed to resolve the storage `{0}`.")]
-    StorageError(#[from] StorageResolverError),
+    StorageResolverError(#[from] StorageResolverError),
+    #[error("Storage error `{0}`.")]
+    StorageError(#[from] StorageError),
     #[error("Metastore error `{0}`.")]
     MetastoreError(#[from] MetastoreError),
     #[error("Invalid params `{0}`.")]
@@ -72,7 +79,7 @@ impl ServiceError for IndexingServiceError {
         match self {
             Self::MissingPipeline { .. } => ServiceErrorCode::NotFound,
             Self::PipelineAlreadyExists { .. } => ServiceErrorCode::BadRequest,
-            Self::StorageError(_) => ServiceErrorCode::Internal,
+            Self::StorageResolverError(_) | Self::StorageError(_) => ServiceErrorCode::Internal,
             Self::MetastoreError(_) => ServiceErrorCode::Internal,
             Self::InvalidParams(_) => ServiceErrorCode::BadRequest,
         }
@@ -86,6 +93,9 @@ pub struct IndexingServiceState {
     pub num_failed_pipelines: usize,
 }
 
+type IndexId = String;
+type SourceId = String;
+
 pub struct IndexingService {
     node_id: String,
     data_dir_path: PathBuf,
@@ -93,9 +103,12 @@ pub struct IndexingService {
     split_store_max_num_splits: usize,
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
-    pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
+    indexing_pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     state: IndexingServiceState,
     enable_ingest_api: bool,
+    merge_policies: HashMap<IndexId, Weak<dyn MergePolicy>>,
+    indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
+    split_stores: HashMap<(IndexId, SourceId), WeakIndexingSplitStore>,
 }
 
 impl IndexingService {
@@ -120,9 +133,12 @@ impl IndexingService {
             split_store_max_num_splits: indexer_config.split_store_max_num_splits,
             metastore,
             storage_resolver,
-            pipeline_handles: Default::default(),
+            indexing_pipeline_handles: Default::default(),
             state: Default::default(),
             enable_ingest_api,
+            merge_policies: HashMap::new(),
+            indexing_directories: HashMap::new(),
+            split_stores: HashMap::new(),
         }
     }
 
@@ -130,12 +146,13 @@ impl IndexingService {
         &mut self,
         pipeline_id: &IndexingPipelineId,
     ) -> Result<ActorHandle<IndexingPipeline>, IndexingServiceError> {
-        let pipeline_handle = self.pipeline_handles.remove(pipeline_id).ok_or_else(|| {
-            IndexingServiceError::MissingPipeline {
+        let pipeline_handle = self
+            .indexing_pipeline_handles
+            .remove(pipeline_id)
+            .ok_or_else(|| IndexingServiceError::MissingPipeline {
                 index_id: pipeline_id.index_id.clone(),
                 source_id: pipeline_id.source_id.clone(),
-            }
-        })?;
+            })?;
         self.state.num_running_pipelines -= 1;
         Ok(pipeline_handle)
     }
@@ -144,12 +161,13 @@ impl IndexingService {
         &mut self,
         pipeline_id: &IndexingPipelineId,
     ) -> Result<Observation<IndexingStatistics>, IndexingServiceError> {
-        let pipeline_handle = self.pipeline_handles.get(pipeline_id).ok_or_else(|| {
-            IndexingServiceError::MissingPipeline {
+        let pipeline_handle = self
+            .indexing_pipeline_handles
+            .get(pipeline_id)
+            .ok_or_else(|| IndexingServiceError::MissingPipeline {
                 index_id: pipeline_id.index_id.clone(),
                 source_id: pipeline_id.source_id.clone(),
-            }
-        })?;
+            })?;
         let observation = pipeline_handle.observe().await;
         Ok(observation)
     }
@@ -191,7 +209,7 @@ impl IndexingService {
                     node_id: self.node_id.clone(),
                     pipeline_ord,
                 };
-                if self.pipeline_handles.contains_key(&pipeline_id) {
+                if self.indexing_pipeline_handles.contains_key(&pipeline_id) {
                     continue;
                 }
                 self.spawn_pipeline_inner(
@@ -220,31 +238,42 @@ impl IndexingService {
         index_metadata: IndexMetadata,
         source_config: SourceConfig,
     ) -> Result<(), IndexingServiceError> {
-        if self.pipeline_handles.contains_key(&pipeline_id) {
+        if self.indexing_pipeline_handles.contains_key(&pipeline_id) {
             return Err(IndexingServiceError::PipelineAlreadyExists {
                 index_id: pipeline_id.index_id,
                 source_id: pipeline_id.source_id,
                 pipeline_ord: pipeline_id.pipeline_ord,
             });
         }
+
         let indexing_dir_path = self.data_dir_path.join(INDEXING_DIR_NAME);
+        let indexing_directory = self
+            .get_or_create_indexing_directory(&pipeline_id, indexing_dir_path)
+            .await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
+        let merge_policy = self.get_or_create_merge_policy(&pipeline_id, &index_metadata);
+        let split_store = self.get_or_init_split_store(
+            &pipeline_id,
+            indexing_directory.cache_directory(),
+            storage.clone(),
+            merge_policy,
+        )?;
+
         let pipeline_params = IndexingPipelineParams::try_new(
             pipeline_id.clone(),
             index_metadata,
             source_config,
-            indexing_dir_path,
-            self.split_store_max_num_bytes,
-            self.split_store_max_num_splits,
+            indexing_directory,
+            split_store,
             self.metastore.clone(),
             storage,
         )
-        .await
         .map_err(IndexingServiceError::InvalidParams)?;
 
         let pipeline = IndexingPipeline::new(pipeline_params);
-        let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor(pipeline).spawn();
-        self.pipeline_handles.insert(pipeline_id, pipeline_handle);
+        let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
+        self.indexing_pipeline_handles
+            .insert(pipeline_id, pipeline_handle);
         self.state.num_running_pipelines += 1;
         Ok(())
     }
@@ -263,7 +292,7 @@ impl IndexingService {
             node_id: self.node_id.clone(),
             pipeline_ord: 0,
         };
-        if self.pipeline_handles.contains_key(&pipeline_id) {
+        if self.indexing_pipeline_handles.contains_key(&pipeline_id) {
             return Ok(pipeline_id);
         }
         let queues_dir_path = self.data_dir_path.join(QUEUES_DIR_NAME);
@@ -332,6 +361,88 @@ impl IndexingService {
         let index_metadata = self.metastore.index_metadata(index_id).await?;
         Ok(index_metadata)
     }
+
+    fn get_or_create_merge_policy(
+        &mut self,
+        pipeline_id: &IndexingPipelineId,
+        index_metadata: &IndexMetadata,
+    ) -> Arc<dyn MergePolicy> {
+        if let Some(merge_policy_ref) = self.merge_policies.get(&pipeline_id.index_id) {
+            if let Some(merge_policy) = merge_policy_ref.upgrade() {
+                return merge_policy;
+            }
+        }
+
+        let stable_multitenant_merge_policy = StableMultitenantWithTimestampMergePolicy {
+            merge_enabled: index_metadata.indexing_settings.merge_enabled,
+            merge_factor: index_metadata.indexing_settings.merge_policy.merge_factor,
+            max_merge_factor: index_metadata
+                .indexing_settings
+                .merge_policy
+                .max_merge_factor,
+            split_num_docs_target: index_metadata.indexing_settings.split_num_docs_target,
+            ..Default::default()
+        };
+        let merge_policy: Arc<dyn MergePolicy> = Arc::new(stable_multitenant_merge_policy);
+
+        self.merge_policies
+            .insert(pipeline_id.index_id.clone(), Arc::downgrade(&merge_policy));
+        merge_policy
+    }
+
+    async fn get_or_create_indexing_directory(
+        &mut self,
+        pipeline_id: &IndexingPipelineId,
+        indexing_dir_path: PathBuf,
+    ) -> Result<IndexingDirectory, IndexingServiceError> {
+        let key = (pipeline_id.index_id.clone(), pipeline_id.source_id.clone());
+        if let Some(indexing_directory) = self
+            .indexing_directories
+            .get(&key)
+            .and_then(WeakIndexingDirectory::upgrade)
+        {
+            return Ok(indexing_directory);
+        }
+        let indexing_directory_path = indexing_dir_path
+            .join(&pipeline_id.index_id)
+            .join(&pipeline_id.source_id);
+        let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path)
+            .await
+            .map_err(IndexingServiceError::InvalidParams)?;
+
+        self.indexing_directories
+            .insert(key, indexing_directory.downgrade());
+        Ok(indexing_directory)
+    }
+
+    fn get_or_init_split_store(
+        &mut self,
+        pipeline_id: &IndexingPipelineId,
+        cache_directory: &Path,
+        storage: Arc<dyn Storage>,
+        merge_policy: Arc<dyn MergePolicy>,
+    ) -> Result<IndexingSplitStore, IndexingServiceError> {
+        let key = (pipeline_id.index_id.clone(), pipeline_id.source_id.clone());
+        if let Some(split_store) = self
+            .split_stores
+            .get(&key)
+            .and_then(WeakIndexingSplitStore::upgrade)
+        {
+            return Ok(split_store);
+        }
+        let split_store = IndexingSplitStore::create_with_local_store(
+            storage.clone(),
+            cache_directory,
+            IndexingSplitStoreParams {
+                max_num_bytes: self.split_store_max_num_bytes,
+                max_num_splits: self.split_store_max_num_splits,
+            },
+            merge_policy,
+        )?;
+
+        self.split_stores.insert(key, split_store.downgrade());
+        Ok(split_store)
+    }
 }
 
 #[async_trait]
@@ -373,7 +484,7 @@ impl Handler<SuperviseLoop> for IndexingService {
         _message: SuperviseLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        self.pipeline_handles
+        self.indexing_pipeline_handles
             .retain(
                 |pipeline_id, pipeline_handle| match pipeline_handle.health() {
                     Health::Healthy => true,
@@ -493,7 +604,7 @@ impl Handler<ShutdownPipelines> for IndexingService {
                 .unwrap_or(true)
         };
         let pipelines_to_shutdown: Vec<IndexingPipelineId> = self
-            .pipeline_handles
+            .indexing_pipeline_handles
             .keys()
             .filter(|pipeline_id| {
                 pipeline_id.index_id == message.index_id && source_filter_fn(pipeline_id)
@@ -501,7 +612,7 @@ impl Handler<ShutdownPipelines> for IndexingService {
             .cloned()
             .collect();
         for pipeline_id in pipelines_to_shutdown {
-            if let Some(pipeline_handle) = self.pipeline_handles.remove(&pipeline_id) {
+            if let Some(pipeline_handle) = self.indexing_pipeline_handles.remove(&pipeline_id) {
                 pipeline_handle.quit().await;
                 self.state.num_running_pipelines -= 1;
             }
@@ -518,7 +629,7 @@ impl Handler<ShutdownPipeline> for IndexingService {
         message: ShutdownPipeline,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        if let Some(pipeline_handle) = self.pipeline_handles.remove(&message.pipeline_id) {
+        if let Some(pipeline_handle) = self.indexing_pipeline_handles.remove(&message.pipeline_id) {
             pipeline_handle.quit().await;
             self.state.num_running_pipelines -= 1;
         }
@@ -571,7 +682,7 @@ mod tests {
             enable_ingest_api,
         );
         let (indexing_server_mailbox, indexing_server_handle) =
-            universe.spawn_actor(indexing_server).spawn();
+            universe.spawn_builder().spawn(indexing_server);
         let observation = indexing_server_handle.observe().await;
         assert_eq!(observation.num_running_pipelines, 0);
         assert_eq!(observation.num_failed_pipelines, 0);

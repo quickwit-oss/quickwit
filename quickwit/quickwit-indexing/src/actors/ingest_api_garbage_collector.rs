@@ -226,14 +226,14 @@ mod tests {
             enable_ingest_api,
         );
         let (indexing_server_mailbox, _indexing_server_handle) =
-            universe.spawn_actor(indexing_server).spawn();
+            universe.spawn_builder().spawn(indexing_server);
 
         let ingest_api_garbage_collector = IngestApiGarbageCollector::new(
             metastore.clone(),
             ingest_api_service,
             indexing_server_mailbox,
         );
-        let (_maibox, handler) = universe.spawn_actor(ingest_api_garbage_collector).spawn();
+        let (_maibox, handler) = universe.spawn_builder().spawn(ingest_api_garbage_collector);
 
         let state_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(state_after_initialization.num_passes, 1);

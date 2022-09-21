@@ -434,7 +434,7 @@ mod tests {
             ],
         );
         let packager = Packager::new("TestPackager", tag_fields, mailbox);
-        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn();
+        let (packager_mailbox, packager_handle) = universe.spawn_builder().spawn(packager);
         packager_mailbox
             .send_message(IndexedSplitBatch {
                 splits: vec![indexed_split],

@@ -168,8 +168,8 @@ mod tests {
 
     use super::*;
     use crate::actors::combine_partition_ids;
-    use crate::merge_policy::MergeOperation;
-    use crate::{new_split_id, StableMultitenantWithTimestampMergePolicy};
+    use crate::merge_policy::{MergeOperation, StableMultitenantWithTimestampMergePolicy};
+    use crate::new_split_id;
 
     fn merge_time_range(splits: &[SplitMetadata]) -> Option<RangeInclusive<i64>> {
         let time_range_start = splits
@@ -246,7 +246,7 @@ mod tests {
         let universe = Universe::new();
         let mut split_index: HashMap<String, SplitMetadata> = HashMap::default();
         let (merge_planner_mailbox, merge_planner_handler) =
-            universe.spawn_actor(merge_planner).spawn();
+            universe.spawn_builder().spawn(merge_planner);
         for split in incoming_splits {
             split_index.insert(split.split_id().to_string(), split.clone());
             merge_planner_mailbox
