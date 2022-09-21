@@ -20,6 +20,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::DirEntry;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::{fs, io};
 
 use quickwit_common::split_file;
@@ -27,9 +28,10 @@ use quickwit_directories::BundleDirectory;
 use quickwit_storage::{PutPayload, SplitPayloadBuilder, StorageErrorKind, StorageResult};
 use tantivy::directory::MmapDirectory;
 use tantivy::Directory;
-use tracing::{error, warn};
+use tokio::sync::Mutex;
+use tracing::error;
 
-use super::IndexingSplitStoreParams;
+use super::CacheSizeChecker;
 
 pub fn get_tantivy_directory_from_split_bundle(
     split_file: &Path,
@@ -96,29 +98,23 @@ fn split_id_from_split_folder(dir_entry: &DirEntry) -> Option<String> {
         .map(ToString::to_string)
 }
 
-#[derive(Debug, Eq, PartialEq)]
-struct SizeInCache {
-    pub num_splits: usize,
-    pub size_in_bytes: usize,
-}
-
 pub struct LocalSplitStore {
-    /// The parameters of the cache.
-    params: IndexingSplitStoreParams,
     /// Splits owned by the local split store, which reside in the split_store_folder.
     /// SplitId -> (Split Num Bytes, BundledSplitFile)
     split_files: HashMap<String, (usize, SplitFolder)>,
     /// The root folder where all data is moved into.
     split_store_folder: PathBuf,
+    /// The cache size checker shared among all indexing split stores.
+    cache_size_checker: Arc<Mutex<CacheSizeChecker>>,
 }
 
 impl LocalSplitStore {
     /// Try to open an existing local split directory.
     ///
     /// All files finishing by .split will be considered to be part of the directory.
-    pub fn open(
+    pub async fn open(
         local_storage_root: PathBuf,
-        params: IndexingSplitStoreParams,
+        cache_size_checker: Arc<Mutex<CacheSizeChecker>>,
     ) -> StorageResult<LocalSplitStore> {
         let mut split_files: HashMap<String, (usize, SplitFolder)> = HashMap::new();
         let mut total_size_in_bytes: usize = 0;
@@ -138,22 +134,17 @@ impl LocalSplitStore {
             }
         }
 
-        if split_files.len() > params.max_num_splits {
-            return Err(StorageErrorKind::InternalError.with_error(anyhow::anyhow!(
-                "Initial number of files exceeds the maximum number of files allowed.",
-            )));
-        }
-
-        if total_size_in_bytes > params.max_num_bytes {
-            return Err(StorageErrorKind::InternalError.with_error(anyhow::anyhow!(
-                "Initial cache size exceeds the maximum size in bytes allowed.",
-            )));
-        }
-
+        let mut cache_size_checker_lock = cache_size_checker.lock().await;
+        cache_size_checker_lock.add_initial_splits(
+            &local_storage_root,
+            split_files.len(),
+            total_size_in_bytes,
+        )?;
+        drop(cache_size_checker_lock);
         Ok(LocalSplitStore {
             split_store_folder: local_storage_root,
-            params,
             split_files,
+            cache_size_checker,
         })
     }
 
@@ -221,7 +212,7 @@ impl LocalSplitStore {
         Ok(split_file)
     }
 
-    /// Retuns a cached split.
+    /// Returns a cached split.
     pub async fn get_cached_split(
         &mut self,
         split_id: &str,
@@ -245,19 +236,6 @@ impl LocalSplitStore {
         }
     }
 
-    fn size_in_store(&self) -> SizeInCache {
-        let size_in_bytes = self
-            .split_files
-            .values()
-            .map(|(size, _)| size)
-            .cloned()
-            .sum::<usize>();
-        SizeInCache {
-            num_splits: self.split_files.len(),
-            size_in_bytes,
-        }
-    }
-
     /// Tries to move a `split_folder` file into the cache.
     ///
     /// Move is not an image here. We are litterally moving the directory.
@@ -273,17 +251,8 @@ impl LocalSplitStore {
         split_num_bytes: usize,
     ) -> io::Result<bool> {
         assert!(split_folder.path().is_dir());
-        let size_in_cache = self.size_in_store();
-
-        // Avoid storing in the cache when the maximum number of cached files is reached.
-        if size_in_cache.num_splits + 1 > self.params.max_num_splits {
-            warn!("Failed to cache file: maximum number of files exceeded.");
-            return Ok(false);
-        }
-
-        // Ignore storing a file that cannot fit in remaining space in the cache.
-        if split_num_bytes + size_in_cache.size_in_bytes > self.params.max_num_bytes {
-            warn!("Failed to cache file: maximum size in bytes of cache exceeded.");
+        let mut cache_size_checker_lock = self.cache_size_checker.lock().await;
+        if !cache_size_checker_lock.can_fit_split(split_num_bytes) {
             return Ok(false);
         }
 
@@ -292,6 +261,7 @@ impl LocalSplitStore {
 
         self.split_files
             .insert(split_id.to_string(), (split_num_bytes, split_folder));
+        cache_size_checker_lock.add_split(split_num_bytes);
         Ok(true)
     }
 }
@@ -301,6 +271,7 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
 
+    use anyhow::Ok;
     use quickwit_storage::PutPayload;
     use tantivy::directory::FileSlice;
 
@@ -318,19 +289,74 @@ mod tests {
         tokio::fs::write(&temp_dir.path().join("different-file"), b"split-content").await?;
         tokio::fs::create_dir(&temp_dir.path().join("split1.split")).await?;
         tokio::fs::create_dir(&temp_dir.path().join("split2.split")).await?;
-        let params = IndexingSplitStoreParams::default();
-        let split_store = LocalSplitStore::open(temp_dir.path().to_path_buf(), params)?;
+        let cache_size_checker = Arc::new(Mutex::new(CacheSizeChecker::default()));
+        let split_store =
+            LocalSplitStore::open(temp_dir.path().to_path_buf(), cache_size_checker).await?;
         let cache_content = split_store.inspect();
         assert_eq!(cache_content.len(), 2);
         assert_eq!(cache_content.get("split1").cloned(), Some(28));
         assert_eq!(cache_content.get("split2").cloned(), Some(28));
         assert_eq!(
-            split_store.size_in_store(),
-            SizeInCache {
-                num_splits: 2,
-                size_in_bytes: 28 * 2
-            }
+            split_store
+                .split_files
+                .values()
+                .map(|(size, _)| size)
+                .cloned()
+                .sum::<usize>(),
+            28 * 2
         );
+        assert_eq!(split_store.split_files.len(), 2);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_local_split_stores_with_shared_cache_size_checker() -> anyhow::Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let split_store_1_path = temp_dir.path().join("store1");
+        let split_store_2_path = temp_dir.path().join("store2");
+
+        tokio::fs::create_dir_all(&split_store_1_path.join("split1.split")).await?;
+        tokio::fs::create_dir_all(&split_store_1_path.join("split2.split")).await?;
+        tokio::fs::create_dir_all(&split_store_2_path).await?;
+        let cache_size_checker = Arc::new(Mutex::new(CacheSizeChecker::new(4, 120)));
+        let mut split_store1 =
+            LocalSplitStore::open(split_store_1_path, cache_size_checker.clone()).await?;
+        let mut split_store2 =
+            LocalSplitStore::open(split_store_2_path, cache_size_checker.clone()).await?;
+
+        let task1 = async {
+            let split_path = temp_dir.path().join("split3.split");
+            tokio::fs::create_dir_all(&split_path).await.unwrap();
+            let is_accepted = split_store1
+                .move_into_cache("split3", SplitFolder::new(split_path), 28)
+                .await
+                .unwrap();
+            assert!(is_accepted);
+        };
+        let task2 = async {
+            let split_path = temp_dir.path().join("split1.split");
+            tokio::fs::create_dir_all(&split_path).await.unwrap();
+            let is_accepted = split_store2
+                .move_into_cache("split1", SplitFolder::new(split_path), 28)
+                .await
+                .unwrap();
+            assert!(is_accepted);
+        };
+        tokio::join!(task1, task2);
+
+        let cache_size_checker_guard = cache_size_checker.lock().await;
+        assert_eq!(cache_size_checker_guard.get_num_splits(), 4);
+        assert_eq!(cache_size_checker_guard.get_size_in_bytes(), 28 * 4);
+        drop(cache_size_checker_guard);
+
+        // Check we cannot store anymore items.
+        let split_path = temp_dir.path().join("split2.split");
+        tokio::fs::create_dir_all(&split_path).await.unwrap();
+        let is_not_accepted = !split_store2
+            .move_into_cache("split2", SplitFolder::new(split_path), 28)
+            .await
+            .unwrap();
+        assert!(is_not_accepted);
         Ok(())
     }
 
