@@ -45,7 +45,7 @@ use crate::models::{
     WeakIndexingDirectory,
 };
 use crate::source::INGEST_API_SOURCE_ID;
-use crate::split_store::CacheSizeChecker;
+use crate::split_store::SplitStoreSpaceQuota;
 use crate::{
     IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics,
     WeakIndexingSplitStore,
@@ -109,7 +109,7 @@ pub struct IndexingService {
     merge_policies: HashMap<IndexId, Weak<dyn MergePolicy>>,
     indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
     split_stores: HashMap<(IndexId, SourceId), WeakIndexingSplitStore>,
-    split_stores_cache_size_checker: Arc<Mutex<CacheSizeChecker>>,
+    split_stores_cache_size_checker: Arc<Mutex<SplitStoreSpaceQuota>>,
 }
 
 impl IndexingService {
@@ -137,7 +137,7 @@ impl IndexingService {
             merge_policies: HashMap::new(),
             indexing_directories: HashMap::new(),
             split_stores: HashMap::new(),
-            split_stores_cache_size_checker: Arc::new(Mutex::new(CacheSizeChecker::new(
+            split_stores_cache_size_checker: Arc::new(Mutex::new(SplitStoreSpaceQuota::new(
                 indexer_config.split_store_max_num_splits,
                 indexer_config.split_store_max_num_bytes.get_bytes() as usize,
             ))),

@@ -31,7 +31,7 @@ use tantivy::Directory;
 use tokio::sync::Mutex;
 use tracing::error;
 
-use super::CacheSizeChecker;
+use super::SplitStoreSpaceQuota;
 
 pub fn get_tantivy_directory_from_split_bundle(
     split_file: &Path,
@@ -105,7 +105,7 @@ pub struct LocalSplitStore {
     /// The root folder where all data is moved into.
     split_store_folder: PathBuf,
     /// The cache size checker shared among all indexing split stores.
-    cache_size_checker: Arc<Mutex<CacheSizeChecker>>,
+    cache_size_checker: Arc<Mutex<SplitStoreSpaceQuota>>,
 }
 
 impl LocalSplitStore {
@@ -114,7 +114,7 @@ impl LocalSplitStore {
     /// All files finishing by .split will be considered to be part of the directory.
     pub async fn open(
         local_storage_root: PathBuf,
-        cache_size_checker: Arc<Mutex<CacheSizeChecker>>,
+        cache_size_checker: Arc<Mutex<SplitStoreSpaceQuota>>,
     ) -> StorageResult<LocalSplitStore> {
         let mut split_files: HashMap<String, (usize, SplitFolder)> = HashMap::new();
         let mut total_size_in_bytes: usize = 0;
@@ -136,7 +136,7 @@ impl LocalSplitStore {
 
         let mut cache_size_checker_lock = cache_size_checker.lock().await;
         cache_size_checker_lock.add_initial_splits(
-            &local_storage_root,
+            local_storage_root.as_path(),
             split_files.len(),
             total_size_in_bytes,
         )?;
@@ -159,9 +159,15 @@ impl LocalSplitStore {
             .collect();
         let to_remove_ids_set = &stored_ids_set - &to_retain_ids_set;
 
+        let total_num_splits = to_remove_ids_set.len();
+        let mut total_size_splits = 0usize;
         for split_id in to_remove_ids_set {
-            self.remove_split(&split_id).await?;
+            total_size_splits += self.remove_split(&split_id).await?;
         }
+        self.cache_size_checker
+            .lock()
+            .await
+            .remove_splits(total_num_splits, total_size_splits);
         Ok(())
     }
 
@@ -173,14 +179,15 @@ impl LocalSplitStore {
             .collect()
     }
 
-    pub async fn remove_split(&mut self, split_id: &str) -> StorageResult<()> {
+    pub async fn remove_split(&mut self, split_id: &str) -> StorageResult<usize> {
         if !self.split_files.contains_key(split_id) {
-            return Ok(());
+            return Ok(0);
         }
-        if let Some((_, split_file)) = self.split_files.remove(split_id) {
+        if let Some((split_size, split_file)) = self.split_files.remove(split_id) {
             split_file.delete().await?;
+            return Ok(split_size);
         }
-        Ok(())
+        Ok(0)
     }
 
     /// Moves a split into the store.
@@ -289,7 +296,7 @@ mod tests {
         tokio::fs::write(&temp_dir.path().join("different-file"), b"split-content").await?;
         tokio::fs::create_dir(&temp_dir.path().join("split1.split")).await?;
         tokio::fs::create_dir(&temp_dir.path().join("split2.split")).await?;
-        let cache_size_checker = Arc::new(Mutex::new(CacheSizeChecker::default()));
+        let cache_size_checker = Arc::new(Mutex::new(SplitStoreSpaceQuota::default()));
         let split_store =
             LocalSplitStore::open(temp_dir.path().to_path_buf(), cache_size_checker).await?;
         let cache_content = split_store.inspect();
@@ -318,7 +325,7 @@ mod tests {
         tokio::fs::create_dir_all(&split_store_1_path.join("split1.split")).await?;
         tokio::fs::create_dir_all(&split_store_1_path.join("split2.split")).await?;
         tokio::fs::create_dir_all(&split_store_2_path).await?;
-        let cache_size_checker = Arc::new(Mutex::new(CacheSizeChecker::new(4, 120)));
+        let cache_size_checker = Arc::new(Mutex::new(SplitStoreSpaceQuota::new(4, 120)));
         let mut split_store1 =
             LocalSplitStore::open(split_store_1_path, cache_size_checker.clone()).await?;
         let mut split_store2 =
@@ -345,8 +352,8 @@ mod tests {
         tokio::join!(task1, task2);
 
         let cache_size_checker_guard = cache_size_checker.lock().await;
-        assert_eq!(cache_size_checker_guard.get_num_splits(), 4);
-        assert_eq!(cache_size_checker_guard.get_size_in_bytes(), 28 * 4);
+        assert_eq!(cache_size_checker_guard.num_splits(), 4);
+        assert_eq!(cache_size_checker_guard.size_in_bytes(), 28 * 4);
         drop(cache_size_checker_guard);
 
         // Check we cannot store anymore items.

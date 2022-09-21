@@ -20,9 +20,7 @@
 mod indexing_split_store;
 mod local_split_store;
 
-pub use indexing_split_store::{
-    CacheSizeChecker, IndexingSplitStore, IndexingSplitStoreParams, WeakIndexingSplitStore,
-};
+pub use indexing_split_store::{IndexingSplitStore, SplitStoreSpaceQuota, WeakIndexingSplitStore};
 use local_split_store::LocalSplitStore;
 pub use local_split_store::{get_tantivy_directory_from_split_bundle, SplitFolder};
 
