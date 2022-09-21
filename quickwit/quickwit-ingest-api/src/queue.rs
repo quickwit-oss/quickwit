@@ -89,15 +89,6 @@ impl Queues {
         })
     }
 
-    pub fn get_all_last_positions(
-        last_position_per_queue: HashMap<String, Option<Position>>,
-    ) -> HashMap<String, u64> {
-        last_position_per_queue
-            .iter()
-            .map(|(queue_id, position)| (queue_id.clone(), position.map_or(0, |pos| pos.pos_val())))
-            .collect()
-    }
-
     pub fn queue_exists(&self, queue_id: &str) -> bool {
         let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
         self.db.cf_handle(&real_queue_id).is_some()
