@@ -67,9 +67,6 @@ impl IngestApiService {
             INGEST_METRICS
                 .ingested_num_docs
                 .inc_by(ingested_docs_count as u64);
-            INGEST_METRICS
-                .num_docs_in_flight
-                .add(ingested_docs_count as u64);
         }
         Ok(IngestResponse {
             num_docs_for_processing: num_docs as u64,

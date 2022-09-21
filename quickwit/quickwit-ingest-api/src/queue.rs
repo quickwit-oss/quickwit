@@ -24,7 +24,6 @@ use quickwit_proto::ingest_api::{DocBatch, FetchResponse, ListQueuesResponse};
 use rocksdb::{Direction, IteratorMode, WriteBatch, WriteOptions, DB};
 use tracing::warn;
 
-use crate::metrics::INGEST_METRICS;
 use crate::{add_doc, Position};
 
 const FETCH_PAYLOAD_LIMIT: usize = 2_000_000; // 2MB
@@ -33,7 +32,6 @@ const QUICKWIT_CF_PREFIX: &str = ".queue_";
 
 pub struct Queues {
     db: DB,
-    last_position_on_last_truncate: HashMap<String, u64>,
     last_position_per_queue: HashMap<String, Option<Position>>,
 }
 
@@ -87,9 +85,6 @@ impl Queues {
         }
         Ok(Queues {
             db,
-            last_position_on_last_truncate: Queues::get_all_last_positions(
-                next_position_per_queue.clone(),
-            ),
             last_position_per_queue: next_position_per_queue,
         })
     }
@@ -119,8 +114,6 @@ impl Queues {
         self.db.create_cf(&real_queue_id, &cf_opts)?;
         self.last_position_per_queue
             .insert(real_queue_id.clone(), None);
-        self.last_position_on_last_truncate.insert(real_queue_id, 0);
-        INGEST_METRICS.queue_count.inc();
         Ok(())
     }
 
@@ -128,8 +121,6 @@ impl Queues {
         let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
         self.db.drop_cf(&real_queue_id)?;
         self.last_position_per_queue.remove(&real_queue_id);
-        self.last_position_on_last_truncate.remove(&real_queue_id);
-        INGEST_METRICS.queue_count.dec();
         Ok(())
     }
 
@@ -160,17 +151,6 @@ impl Queues {
             .ok_or_else(|| crate::IngestApiError::IndexDoesNotExist {
                 index_id: queue_id.to_string(),
             })?;
-
-        let last_pos_before = self
-            .last_position_on_last_truncate
-            .get_mut(&real_queue_id)
-            .ok_or_else(|| crate::IngestApiError::IndexDoesNotExist {
-                index_id: queue_id.to_string(),
-            })?;
-
-        INGEST_METRICS
-            .num_docs_in_flight
-            .sub_up_to_position_included(up_to_offset_included.pos_val(), last_pos_before);
 
         let last_position = if let Some(last_position) = last_position_opt {
             last_position

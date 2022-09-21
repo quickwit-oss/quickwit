@@ -52,5 +52,4 @@ Currently Quickwit exposes metrics for three caches: `fastfields`, `shortlived`,
 | --------- | ----------- | ----------- | ---- |
 | `quickwit_ingest` | `ingested_num_bytes` | Total size of the docs ingested in bytes | `counter` |
 | `quickwit_ingest` | `ingested_num_docs` | Number of docs recieved to be ingested | `counter` |
-| `quickwit_ingest` | `num_docs_in_flight` | Number of docs currently being processed | `gauge` |
 | `quickwit_ingest` | `queue_count` | Number of queues currently active | `counter` |
