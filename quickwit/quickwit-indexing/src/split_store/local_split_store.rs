@@ -276,7 +276,6 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
 
-    use anyhow::Ok;
     use quickwit_storage::PutPayload;
     use tantivy::directory::FileSlice;
 
@@ -349,10 +348,13 @@ mod tests {
         };
         tokio::join!(task1, task2);
 
-        let split_store_space_quota_guard = split_store_space_quota.lock().await;
-        assert_eq!(split_store_space_quota_guard.num_splits(), 4);
-        assert_eq!(split_store_space_quota_guard.size_in_bytes(), 28 * 4);
-        drop(split_store_space_quota_guard);
+        // We need this block to drop the `split_store_space_quota_guard`
+        // as we cannot make progress while holding it.
+        {
+            let split_store_space_quota_guard = split_store_space_quota.lock().await;
+            assert_eq!(split_store_space_quota_guard.num_splits(), 4);
+            assert_eq!(split_store_space_quota_guard.size_in_bytes(), 28 * 4);
+        }
 
         // Check we cannot store anymore items.
         let split_path = temp_dir.path().join("split2.split");
