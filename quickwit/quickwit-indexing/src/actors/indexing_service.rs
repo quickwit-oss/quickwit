@@ -37,6 +37,7 @@ use quickwit_storage::{Storage, StorageError, StorageResolverError, StorageUriRe
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::fs;
+use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
 use crate::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
@@ -46,10 +47,10 @@ use crate::models::{
     WeakIndexingDirectory, CACHE,
 };
 use crate::source::INGEST_API_SOURCE_ID;
-use crate::split_store::{LocalSplitStore, SPLIT_CACHE_DIR_NAME};
+use crate::split_store::{LocalSplitStore, SPLIT_CACHE_DIR_NAME, SplitStoreSpaceQuota};
 use crate::{
-    IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingSplitStoreParams,
-    IndexingStatistics, WeakIndexingSplitStore,
+    IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics,
+    WeakIndexingSplitStore,
 };
 
 /// Name of the indexing directory, usually located at `<data_dir_path>/indexing`.
@@ -102,8 +103,6 @@ type SourceId = String;
 pub struct IndexingService {
     node_id: String,
     data_dir_path: PathBuf,
-    split_store_max_num_bytes: usize,
-    split_store_max_num_splits: usize,
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
     indexing_pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
@@ -112,6 +111,7 @@ pub struct IndexingService {
     merge_policies: HashMap<IndexId, Weak<dyn MergePolicy>>,
     indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
     split_stores: HashMap<(IndexId, SourceId), WeakIndexingSplitStore>,
+    split_store_space_quota: Arc<Mutex<SplitStoreSpaceQuota>>,
 }
 
 impl IndexingService {
@@ -131,9 +131,6 @@ impl IndexingService {
         Self {
             node_id,
             data_dir_path,
-            split_store_max_num_bytes: indexer_config.split_store_max_num_bytes.get_bytes()
-                as usize,
-            split_store_max_num_splits: indexer_config.split_store_max_num_splits,
             metastore,
             storage_resolver,
             indexing_pipeline_handles: Default::default(),
@@ -142,6 +139,10 @@ impl IndexingService {
             merge_policies: HashMap::new(),
             indexing_directories: HashMap::new(),
             split_stores: HashMap::new(),
+            split_store_space_quota: Arc::new(Mutex::new(SplitStoreSpaceQuota::new(
+                indexer_config.split_store_max_num_splits,
+                indexer_config.split_store_max_num_bytes.get_bytes() as usize,
+            ))),
         }
     }
 
@@ -255,12 +256,14 @@ impl IndexingService {
             .await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let merge_policy = self.get_or_create_merge_policy(&pipeline_id, &index_metadata);
-        let split_store = self.get_or_init_split_store(
-            &pipeline_id,
-            indexing_directory.cache_directory(),
-            storage.clone(),
-            merge_policy,
-        )?;
+        let split_store = self
+            .get_or_init_split_store(
+                &pipeline_id,
+                indexing_directory.cache_directory(),
+                storage.clone(),
+                merge_policy,
+            )
+            .await?;
 
         let pipeline_params = IndexingPipelineParams::try_new(
             pipeline_id.clone(),
@@ -418,7 +421,7 @@ impl IndexingService {
         Ok(indexing_directory)
     }
 
-    fn get_or_init_split_store(
+    async fn get_or_init_split_store(
         &mut self,
         pipeline_id: &IndexingPipelineId,
         cache_directory: &Path,
@@ -436,12 +439,10 @@ impl IndexingService {
         let split_store = IndexingSplitStore::create_with_local_store(
             storage.clone(),
             cache_directory,
-            IndexingSplitStoreParams {
-                max_num_bytes: self.split_store_max_num_bytes,
-                max_num_splits: self.split_store_max_num_splits,
-            },
             merge_policy,
-        )?;
+            self.split_store_space_quota.clone(),
+        )
+        .await?;
 
         self.split_stores.insert(key, split_store.downgrade());
         Ok(split_store)

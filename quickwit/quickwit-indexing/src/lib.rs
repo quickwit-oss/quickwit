@@ -34,8 +34,8 @@ pub use crate::actors::{
 pub use crate::controlled_directory::ControlledDirectory;
 use crate::models::{IndexingStatistics, SpawnPipelines};
 pub use crate::split_store::{
-    get_tantivy_directory_from_split_bundle, IndexingSplitStore, IndexingSplitStoreParams,
-    SplitFolder, WeakIndexingSplitStore,
+    get_tantivy_directory_from_split_bundle, IndexingSplitStore, SplitFolder,
+    WeakIndexingSplitStore,
 };
 
 pub mod actors;
