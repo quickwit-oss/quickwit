@@ -204,10 +204,16 @@ impl<A: Actor> ActorExecutionEnv<A> {
     }
 
     async fn yield_and_check_if_killed(&self) -> Result<(), ActorExitStatus> {
-        self.ctx.protect_future(tokio::task::yield_now()).await;
         if self.ctx.kill_switch().is_dead() {
             return Err(ActorExitStatus::Killed);
         }
+        if self.actor.yield_after_each_message() {
+            self.ctx.protect_future(tokio::task::yield_now()).await;
+            if self.ctx.kill_switch().is_dead() {
+                return Err(ActorExitStatus::Killed);
+            }
+        }
+
         Ok(())
     }
 

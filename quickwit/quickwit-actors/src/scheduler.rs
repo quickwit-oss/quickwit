@@ -115,6 +115,10 @@ pub(crate) struct Scheduler {
 impl Actor for Scheduler {
     type ObservableState = SchedulerCounters;
 
+    fn yield_after_each_message(&self) -> bool {
+        false
+    }
+
     fn observable_state(&self) -> Self::ObservableState {
         SchedulerCounters {
             num_pending_events: self.future_events.len(),
