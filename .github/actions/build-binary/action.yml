@@ -27,17 +27,13 @@ runs:
         toolchain: stable
         target: ${{ inputs.target }}
         override: true
-    - run: cd ./quickwit
+    - name: Install cross
+      run: cargo install cross
       shell: bash
-    - run: ls
+    - name: Build Quickwit
+      run: cross build --release --features release-feature-vendored-set --target ${{ inputs.target }}
       shell: bash
-    - uses: actions-rs/cargo@v1
-      with:
-        use-cross: true
-        command: build
-        args: --release --features release-feature-vendored-set --target ${{ inputs.target }}
-    - run: cd ..
-      shell: bash
+      working-directory: ./quickwit
     - name: Bundle archive
       run: |
         make archive BINARY_FILE=quickwit/target/${{ inputs.target }}/release/quickwit \
