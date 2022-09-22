@@ -360,10 +360,8 @@ impl QuickwitConfigBuilder {
         let data_dir_uri = Uri::try_new(&self.data_dir_path.to_string_lossy())
             .expect("Failed to create URI from data_dir.");
         match data_dir_uri.filepath() {
-            Some(path) => Ok(path.to_owned()),
-            _ => Err(anyhow::anyhow!(
-                "Only `file://` protocol allowed for data_dir `{data_dir_uri}`."
-            )),
+            Some(path) => Ok(path.to_path_buf()),
+            _ => bail!("Only `file://` protocol allowed for data_dir `{data_dir_uri}`."),
         }
     }
 
@@ -925,10 +923,7 @@ mod tests {
             let config_builder =
                 serde_yaml::from_str::<QuickwitConfigBuilder>(config_yaml).unwrap();
             let error = config_builder.build().await.unwrap_err();
-            assert_eq!(
-                error.to_string(),
-                "Only `file://` protocol allowed for data_dir `s3://indexes/foo`."
-            );
+            assert!(error.to_string().contains("Only `file://` protocol"));
         }
     }
 }
