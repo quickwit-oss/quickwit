@@ -32,7 +32,8 @@ use tokio::time::Duration;
 mod actor;
 mod actor_handle;
 mod actor_state;
-mod channel_with_priority;
+#[doc(hidden)]
+pub mod channel_with_priority;
 mod command;
 mod envelope;
 mod kill_switch;

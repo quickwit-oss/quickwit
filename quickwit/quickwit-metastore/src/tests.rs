@@ -2239,6 +2239,10 @@ pub mod test_suite {
             .await
             .unwrap();
 
+        let last_opstamp_index_1_with_no_task =
+            metastore.last_delete_opstamp(index_id_1).await.unwrap();
+        assert_eq!(last_opstamp_index_1_with_no_task, 0);
+
         // Create a delete task.
         let _ = metastore
             .create_delete_task(delete_query_index_1.clone())

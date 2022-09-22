@@ -40,6 +40,7 @@ use quickwit_proto::{ServiceError, ServiceErrorCode};
 use quickwit_storage::{Storage, StorageError, StorageResolverError, StorageUriResolver};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tokio::sync::Mutex;
 use tracing::{error, info};
 
 use super::merge_pipeline::{GetMergePlannerMailbox, MergePipeline, MergePipelineParams};
@@ -51,9 +52,10 @@ use crate::models::{
     WeakIndexingDirectory,
 };
 use crate::source::INGEST_API_SOURCE_ID;
+use crate::split_store::SplitStoreSpaceQuota;
 use crate::{
-    IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingSplitStoreParams,
-    IndexingStatistics, WeakIndexingSplitStore,
+    IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics,
+    WeakIndexingSplitStore,
 };
 
 /// Name of the indexing directory, usually located at `<data_dir_path>/indexing`.
@@ -106,8 +108,6 @@ type SourceId = String;
 pub struct IndexingService {
     node_id: String,
     data_dir_path: PathBuf,
-    split_store_max_num_bytes: usize,
-    split_store_max_num_splits: usize,
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
     indexing_pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
@@ -118,6 +118,7 @@ pub struct IndexingService {
     split_stores: HashMap<(IndexId, SourceId), WeakIndexingSplitStore>,
     merge_pipeline_handles:
         HashMap<(IndexId, SourceId), (Mailbox<MergePlanner>, ActorHandle<MergePipeline>)>,
+    split_store_space_quota: Arc<Mutex<SplitStoreSpaceQuota>>,
 }
 
 impl IndexingService {
@@ -137,9 +138,6 @@ impl IndexingService {
         Self {
             node_id,
             data_dir_path,
-            split_store_max_num_bytes: indexer_config.split_store_max_num_bytes.get_bytes()
-                as usize,
-            split_store_max_num_splits: indexer_config.split_store_max_num_splits,
             metastore,
             storage_resolver,
             indexing_pipeline_handles: Default::default(),
@@ -149,6 +147,10 @@ impl IndexingService {
             indexing_directories: HashMap::new(),
             split_stores: HashMap::new(),
             merge_pipeline_handles: HashMap::new(),
+            split_store_space_quota: Arc::new(Mutex::new(SplitStoreSpaceQuota::new(
+                indexer_config.split_store_max_num_splits,
+                indexer_config.split_store_max_num_bytes.get_bytes() as usize,
+            ))),
         }
     }
 
@@ -262,12 +264,14 @@ impl IndexingService {
             .await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let merge_policy = self.get_or_create_merge_policy(&pipeline_id, &index_metadata);
-        let split_store = self.get_or_init_split_store(
-            &pipeline_id,
-            indexing_directory.cache_directory(),
-            storage.clone(),
-            merge_policy.clone(),
-        )?;
+        let split_store = self
+            .get_or_init_split_store(
+                &pipeline_id,
+                indexing_directory.cache_directory(),
+                storage.clone(),
+                merge_policy,
+            )
+            .await?;
 
         let doc_mapper = build_doc_mapper(
             &index_metadata.doc_mapping,
@@ -476,7 +480,7 @@ impl IndexingService {
         Ok(indexing_directory)
     }
 
-    fn get_or_init_split_store(
+    async fn get_or_init_split_store(
         &mut self,
         pipeline_id: &IndexingPipelineId,
         cache_directory: &Path,
@@ -494,12 +498,10 @@ impl IndexingService {
         let split_store = IndexingSplitStore::create_with_local_store(
             storage.clone(),
             cache_directory,
-            IndexingSplitStoreParams {
-                max_num_bytes: self.split_store_max_num_bytes,
-                max_num_splits: self.split_store_max_num_splits,
-            },
             merge_policy,
-        )?;
+            self.split_store_space_quota.clone(),
+        )
+        .await?;
 
         self.split_stores.insert(key, split_store.downgrade());
         Ok(split_store)
