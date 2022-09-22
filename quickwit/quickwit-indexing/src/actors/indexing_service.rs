@@ -269,7 +269,7 @@ impl IndexingService {
                 &pipeline_id,
                 indexing_directory.cache_directory(),
                 storage.clone(),
-                merge_policy,
+                merge_policy.clone(),
             )
             .await?;
 
