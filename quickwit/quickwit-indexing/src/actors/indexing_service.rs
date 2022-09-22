@@ -42,7 +42,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{error, info};
 
-use super::merging_pipeline::{GetMergePlannerMailbox, MergingPipeline, MergingPipelineParams};
+use super::merge_pipeline::{GetMergePlannerMailbox, MergePipeline, MergePipelineParams};
 use super::MergePlanner;
 use crate::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 use crate::models::{
@@ -117,7 +117,7 @@ pub struct IndexingService {
     indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
     split_stores: HashMap<(IndexId, SourceId), WeakIndexingSplitStore>,
     merge_pipeline_handles:
-        HashMap<(IndexId, SourceId), (Mailbox<MergePlanner>, ActorHandle<MergingPipeline>)>,
+        HashMap<(IndexId, SourceId), (Mailbox<MergePlanner>, ActorHandle<MergePipeline>)>,
 }
 
 impl IndexingService {
@@ -380,6 +380,49 @@ impl IndexingService {
         Ok(index_metadata)
     }
 
+    async fn handle_supervise(&mut self) -> Result<(), ActorExitStatus> {
+        self.indexing_pipeline_handles
+            .retain(
+                |pipeline_id, pipeline_handle| match pipeline_handle.health() {
+                    Health::Healthy => true,
+                    Health::Success => {
+                        info!(
+                            index_id=%pipeline_id.index_id,
+                            source_id=%pipeline_id.source_id,
+                            pipeline_ord=%pipeline_id.pipeline_ord,
+                            "Indexing pipeline completed."
+                        );
+                        self.state.num_successful_pipelines += 1;
+                        self.state.num_running_pipelines -= 1;
+                        false
+                    }
+                    Health::FailureOrUnhealthy => {
+                        error!(
+                            index_id=%pipeline_id.index_id,
+                            source_id=%pipeline_id.source_id,
+                            pipeline_ord=%pipeline_id.pipeline_ord,
+                            "Indexing pipeline failed."
+                        );
+                        self.state.num_failed_pipelines += 1;
+                        self.state.num_running_pipelines -= 1;
+                        false
+                    }
+                },
+            );
+        // Evict merge pipelines that are not needed or failing.
+        let needed_merge_pipeline_ids: HashSet<(String, String)> = self
+            .indexing_pipeline_handles
+            .keys()
+            .map(|pipeline_id| (pipeline_id.index_id.clone(), pipeline_id.source_id.clone()))
+            .collect();
+        self.merge_pipeline_handles
+            .retain(|index_source_key, (_, handle)| match handle.health() {
+                Health::Healthy => needed_merge_pipeline_ids.contains(index_source_key),
+                Health::FailureOrUnhealthy | Health::Success => false,
+            });
+        Ok(())
+    }
+
     fn get_or_create_merge_policy(
         &mut self,
         pipeline_id: &IndexingPipelineId,
@@ -472,11 +515,17 @@ impl IndexingService {
         merge_policy: Arc<dyn MergePolicy>,
     ) -> anyhow::Result<Mailbox<MergePlanner>> {
         let key = (pipeline_id.index_id.clone(), pipeline_id.source_id.clone());
-        if let Some((merge_planner_mailbox, _)) = self.merge_pipeline_handles.get(&key) {
-            return Ok(merge_planner_mailbox.clone());
+        if let Some((merge_planner_mailbox, merge_pipeline)) = self.merge_pipeline_handles.get(&key)
+        {
+            if merge_pipeline.health() == Health::Healthy {
+                return Ok(merge_planner_mailbox.clone());
+            } else {
+                // Make sure we get rid of unhealthy mailboxes.
+                self.handle_supervise().await?;
+            }
         }
 
-        let merging_pipeline_params = MergingPipelineParams::new(
+        let merging_pipeline_params = MergePipelineParams::new(
             pipeline_id.clone(),
             doc_mapper,
             indexing_directory,
@@ -484,7 +533,7 @@ impl IndexingService {
             split_store,
             merge_policy,
         );
-        let pipeline = MergingPipeline::new(merging_pipeline_params);
+        let pipeline = MergePipeline::new(merging_pipeline_params);
         let (pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
         let merge_planner_mailbox = pipeline_mailbox
             .ask(GetMergePlannerMailbox)
@@ -541,45 +590,7 @@ impl Handler<SuperviseLoop> for IndexingService {
         _message: SuperviseLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        self.indexing_pipeline_handles
-            .retain(
-                |pipeline_id, pipeline_handle| match pipeline_handle.health() {
-                    Health::Healthy => true,
-                    Health::Success => {
-                        info!(
-                            index_id=%pipeline_id.index_id,
-                            source_id=%pipeline_id.source_id,
-                            pipeline_ord=%pipeline_id.pipeline_ord,
-                            "Indexing pipeline completed."
-                        );
-                        self.state.num_successful_pipelines += 1;
-                        self.state.num_running_pipelines -= 1;
-                        false
-                    }
-                    Health::FailureOrUnhealthy => {
-                        error!(
-                            index_id=%pipeline_id.index_id,
-                            source_id=%pipeline_id.source_id,
-                            pipeline_ord=%pipeline_id.pipeline_ord,
-                            "Indexing pipeline failed."
-                        );
-                        self.state.num_failed_pipelines += 1;
-                        self.state.num_running_pipelines -= 1;
-                        false
-                    }
-                },
-            );
-        // Evict merge pipelines that are not needed or failing.
-        let needed_merge_pipeline_ids: HashSet<(String, String)> = self
-            .indexing_pipeline_handles
-            .keys()
-            .map(|pipeline_id| (pipeline_id.index_id.clone(), pipeline_id.source_id.clone()))
-            .collect();
-        self.merge_pipeline_handles
-            .retain(|index_source_key, (_, handle)| match handle.health() {
-                Health::Healthy => needed_merge_pipeline_ids.contains(index_source_key),
-                Health::FailureOrUnhealthy | Health::Success => false,
-            });
+        self.handle_supervise().await?;
         ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, SuperviseLoop)
             .await;
         Ok(())

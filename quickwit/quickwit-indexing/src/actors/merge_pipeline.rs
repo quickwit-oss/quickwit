@@ -36,10 +36,10 @@ use crate::actors::publisher::PublisherType;
 use crate::actors::sequencer::Sequencer;
 use crate::actors::{MergeExecutor, MergePlanner, Packager, Publisher, Uploader};
 use crate::merge_policy::MergePolicy;
-use crate::models::{IndexingDirectory, IndexingPipelineId, MergingStatistics, Observe};
+use crate::models::{IndexingDirectory, IndexingPipelineId, MergeStatistics, Observe};
 use crate::split_store::IndexingSplitStore;
 
-pub struct MergingPipelineHandle {
+pub struct MergePipelineHandle {
     pub merge_planner: ActorHandle<MergePlanner>,
     pub merge_split_downloader: ActorHandle<MergeSplitDownloader>,
     pub merge_executor: ActorHandle<MergeExecutor>,
@@ -61,25 +61,25 @@ struct Spawn {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct GetMergePlannerMailbox;
 
-pub struct MergingPipeline {
-    params: MergingPipelineParams,
-    previous_generations_statistics: MergingStatistics,
-    statistics: MergingStatistics,
+pub struct MergePipeline {
+    params: MergePipelineParams,
+    previous_generations_statistics: MergeStatistics,
+    statistics: MergeStatistics,
     merge_planner_mailbox: Option<Mailbox<MergePlanner>>,
-    handles: Option<MergingPipelineHandle>,
+    handles: Option<MergePipelineHandle>,
     kill_switch: KillSwitch,
 }
 
 #[async_trait]
-impl Actor for MergingPipeline {
-    type ObservableState = MergingStatistics;
+impl Actor for MergePipeline {
+    type ObservableState = MergeStatistics;
 
     fn observable_state(&self) -> Self::ObservableState {
         self.statistics.clone()
     }
 
     fn name(&self) -> String {
-        "MergingPipeline".to_string()
+        "MergePipeline".to_string()
     }
 
     fn span(&self, _ctx: &ActorContext<Self>) -> Span {
@@ -94,15 +94,15 @@ impl Actor for MergingPipeline {
     }
 }
 
-impl MergingPipeline {
-    pub fn new(params: MergingPipelineParams) -> Self {
+impl MergePipeline {
+    pub fn new(params: MergePipelineParams) -> Self {
         Self {
             params,
             previous_generations_statistics: Default::default(),
             merge_planner_mailbox: None,
             handles: None,
             kill_switch: KillSwitch::default(),
-            statistics: MergingStatistics::default(),
+            statistics: MergeStatistics::default(),
         }
     }
 
@@ -289,7 +289,7 @@ impl MergingPipeline {
         self.merge_planner_mailbox = Some(merge_planner_mailbox);
         self.previous_generations_statistics = self.statistics.clone();
         self.statistics.generation += 1;
-        self.handles = Some(MergingPipelineHandle {
+        self.handles = Some(MergePipelineHandle {
             merge_planner: merge_planner_handler,
             merge_split_downloader: merge_split_downloader_handler,
             merge_executor: merge_executor_handler,
@@ -317,7 +317,7 @@ impl MergingPipeline {
 }
 
 #[async_trait]
-impl Handler<Observe> for MergingPipeline {
+impl Handler<Observe> for MergePipeline {
     type Reply = ();
     async fn handle(
         &mut self,
@@ -342,7 +342,7 @@ impl Handler<Observe> for MergingPipeline {
 }
 
 #[async_trait]
-impl Handler<Supervise> for MergingPipeline {
+impl Handler<Supervise> for MergePipeline {
     type Reply = ();
 
     async fn handle(
@@ -373,7 +373,7 @@ impl Handler<Supervise> for MergingPipeline {
 }
 
 #[async_trait]
-impl Handler<Spawn> for MergingPipeline {
+impl Handler<Spawn> for MergePipeline {
     type Reply = ();
 
     async fn handle(
@@ -407,7 +407,7 @@ impl Handler<Spawn> for MergingPipeline {
 }
 
 #[async_trait]
-impl Handler<GetMergePlannerMailbox> for MergingPipeline {
+impl Handler<GetMergePlannerMailbox> for MergePipeline {
     type Reply = Option<Mailbox<MergePlanner>>;
 
     async fn handle(
@@ -419,7 +419,7 @@ impl Handler<GetMergePlannerMailbox> for MergingPipeline {
     }
 }
 
-pub struct MergingPipelineParams {
+pub struct MergePipelineParams {
     pub pipeline_id: IndexingPipelineId,
     pub doc_mapper: Arc<dyn DocMapper>,
     pub indexing_directory: IndexingDirectory,
@@ -428,8 +428,7 @@ pub struct MergingPipelineParams {
     pub merge_policy: Arc<dyn MergePolicy>,
 }
 
-impl MergingPipelineParams {
-    #[allow(clippy::too_many_arguments)]
+impl MergePipelineParams {
     pub fn new(
         pipeline_id: IndexingPipelineId,
         doc_mapper: Arc<dyn DocMapper>,
@@ -459,7 +458,7 @@ mod tests {
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::RamStorage;
 
-    use crate::actors::merging_pipeline::{MergingPipeline, MergingPipelineParams};
+    use crate::actors::merge_pipeline::{MergePipeline, MergePipelineParams};
     use crate::merge_policy::StableMultitenantWithTimestampMergePolicy;
     use crate::models::{IndexingDirectory, IndexingPipelineId};
     use crate::IndexingSplitStore;
@@ -480,7 +479,7 @@ mod tests {
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
-        let pipeline_params = MergingPipelineParams {
+        let pipeline_params = MergePipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             indexing_directory: IndexingDirectory::for_test().await,
@@ -488,7 +487,7 @@ mod tests {
             split_store,
             merge_policy: Arc::new(StableMultitenantWithTimestampMergePolicy::default()),
         };
-        let pipeline = MergingPipeline::new(pipeline_params);
+        let pipeline = MergePipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
         tokio::time::sleep(Duration::from_secs(2)).await;
         let (pipeline_exit_status, pipeline_statistics) = pipeline_handler.quit().await;

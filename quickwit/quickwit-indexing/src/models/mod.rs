@@ -24,7 +24,7 @@ mod indexing_service_message;
 mod indexing_statistics;
 mod merge_planner_message;
 mod merge_scratch;
-mod merging_statistics;
+mod merge_statistics;
 mod packaged_split;
 mod prepared_doc;
 mod publish_lock;
@@ -45,7 +45,7 @@ pub use indexing_service_message::{
 pub use indexing_statistics::IndexingStatistics;
 pub use merge_planner_message::NewSplits;
 pub use merge_scratch::MergeScratch;
-pub use merging_statistics::MergingStatistics;
+pub use merge_statistics::MergeStatistics;
 pub use packaged_split::{PackagedSplit, PackagedSplitBatch};
 pub use prepared_doc::{PreparedDoc, PreparedDocBatch};
 pub use publish_lock::{NewPublishLock, PublishLock};

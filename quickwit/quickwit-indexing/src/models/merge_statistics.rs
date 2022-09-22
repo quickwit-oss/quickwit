@@ -23,7 +23,7 @@ use crate::actors::{PublisherCounters, UploaderCounters};
 
 /// A Struct to hold all merging statistical data.
 #[derive(Clone, Debug, Default)]
-pub struct MergingStatistics {
+pub struct MergeStatistics {
     /// Number of uploaded splits
     pub num_uploaded_splits: u64,
     /// Number of published splits
@@ -34,7 +34,7 @@ pub struct MergingStatistics {
     pub num_spawn_attempts: usize,
 }
 
-impl MergingStatistics {
+impl MergeStatistics {
     pub fn add_actor_counters(
         mut self,
         uploader_counters: &UploaderCounters,
