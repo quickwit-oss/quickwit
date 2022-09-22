@@ -235,6 +235,10 @@ impl Actor for SourceActor {
         RuntimeType::NonBlocking.get_runtime_handle()
     }
 
+    fn yield_after_each_message(&self) -> bool {
+        false
+    }
+
     async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
         self.source
             .initialize(&self.doc_processor_mailbox, ctx)
