@@ -35,7 +35,7 @@ pub use crate::controlled_directory::ControlledDirectory;
 use crate::models::{IndexingStatistics, SpawnPipelines};
 pub use crate::split_store::{
     get_tantivy_directory_from_split_bundle, IndexingSplitStore, IndexingSplitStoreParams,
-    SplitFolder,
+    SplitFolder, WeakIndexingSplitStore,
 };
 
 pub mod actors;
@@ -51,7 +51,7 @@ mod test_utils;
 #[cfg(any(test, feature = "testsuite"))]
 pub use test_utils::{mock_split, mock_split_meta, TestSandbox};
 
-use self::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
+use self::merge_policy::MergePolicy;
 pub use self::source::check_source_connectivity;
 
 pub fn new_split_id() -> String {

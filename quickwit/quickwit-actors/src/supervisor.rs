@@ -34,12 +34,12 @@ pub struct SupervisorState {
 }
 
 pub struct Supervisor<A: Actor> {
-    pub(crate) actor_name: String,
-    pub(crate) actor_factory: Box<dyn Fn() -> A + Sync + Send>,
-    pub(crate) inbox: Inbox<A>,
-    pub(crate) mailbox: Mailbox<A>,
-    pub(crate) handle_opt: Option<ActorHandle<A>>,
-    pub(crate) state: SupervisorState,
+    actor_name: String,
+    actor_factory: Box<dyn Fn() -> A + Sync + Send>,
+    inbox: Inbox<A>,
+    mailbox: Mailbox<A>,
+    handle_opt: Option<ActorHandle<A>>,
+    state: SupervisorState,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -79,7 +79,7 @@ impl<A: Actor> Actor for Supervisor<A> {
             }
             ActorExitStatus::Killed => {
                 if let Some(handle) = self.handle_opt.take() {
-                    handle.activate_kill_switch();
+                    handle.kill().await;
                 }
             }
             ActorExitStatus::Failure(_)
