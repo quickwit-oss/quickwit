@@ -2,6 +2,7 @@ name: Build and publish nightly packages
 
 on:
   workflow_dispatch:
+  pull_request:
   schedule:
     - cron: "0 5 * * *"
 
@@ -19,4 +20,3 @@ jobs:
           target: ${{ matrix.target }}
           version: nightly
           token: ${{ secrets.GITHUB_TOKEN }}
-        working-directory: ./quickwit

@@ -19,7 +19,7 @@ runs:
       with:
         node-version: 16
         cache: "yarn"
-        cache-dependency-path: quickwit-ui/yarn.lock
+        cache-dependency-path: quickwit/quickwit-ui/yarn.lock
     - run: make build-ui
       shell: bash
     - uses: actions-rs/toolchain@v1
@@ -27,14 +27,16 @@ runs:
         toolchain: stable
         target: ${{ inputs.target }}
         override: true
+    - run: cd quickwit
     - uses: actions-rs/cargo@v1
       with:
         use-cross: true
         command: build
         args: --release --features release-feature-vendored-set --target ${{ inputs.target }}
+    - run: cd ..
     - name: Bundle archive
       run: |
-        make archive BINARY_FILE=target/${{ inputs.target }}/release/quickwit \
+        make archive BINARY_FILE=quickwit/target/${{ inputs.target }}/release/quickwit \
           BINARY_VERSION=${{ inputs.version }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
       shell: bash
     - name: Save binary archive for three days
