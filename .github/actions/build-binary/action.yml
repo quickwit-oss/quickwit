@@ -27,7 +27,9 @@ runs:
         toolchain: stable
         target: ${{ inputs.target }}
         override: true
-    - run: cd ./quickwit/quickwit
+    - run: cd ./quickwit
+      shell: bash
+    - run: ls
       shell: bash
     - uses: actions-rs/cargo@v1
       with:
