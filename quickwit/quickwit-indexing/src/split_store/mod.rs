@@ -23,8 +23,9 @@ mod local_split_store;
 pub use indexing_split_store::{
     IndexingSplitStore, IndexingSplitStoreParams, WeakIndexingSplitStore,
 };
-use local_split_store::LocalSplitStore;
-pub use local_split_store::{get_tantivy_directory_from_split_bundle, SplitFolder};
+pub use local_split_store::{
+    get_tantivy_directory_from_split_bundle, LocalSplitStore, SplitFolder,
+};
 
 /// An intermediate folder created at `<cache dir>/SPLIT_CACHE_DIR_NAME`
 /// to hold the local split files.

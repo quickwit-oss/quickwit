@@ -217,22 +217,6 @@ impl IndexingPipeline {
             merge_policy=?merge_policy,
             "Spawning indexing pipeline.",
         );
-        let published_splits = self
-            .params
-            .metastore
-            .list_splits(
-                &self.params.pipeline_id.index_id,
-                SplitState::Published,
-                None,
-                None,
-            )
-            .await?
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect::<Vec<_>>();
-        split_store
-            .remove_dangling_splits(&published_splits)
-            .await?;
 
         let (merge_planner_mailbox, merge_planner_inbox) =
             create_mailbox::<MergePlanner>("MergePlanner".to_string(), QueueCapacity::Unbounded);
@@ -297,6 +281,19 @@ impl IndexingPipeline {
             .spawn(merge_split_downloader);
 
         // Merge planner
+        let published_splits = self
+            .params
+            .metastore
+            .list_splits(
+                &self.params.pipeline_id.index_id,
+                SplitState::Published,
+                None,
+                None,
+            )
+            .await?
+            .into_iter()
+            .map(|split| split.split_metadata)
+            .collect::<Vec<_>>();
         let merge_planner = MergePlanner::new(
             self.params.pipeline_id.clone(),
             published_splits,
