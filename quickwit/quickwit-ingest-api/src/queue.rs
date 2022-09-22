@@ -103,8 +103,7 @@ impl Queues {
         let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
         let cf_opts = default_rocks_db_options();
         self.db.create_cf(&real_queue_id, &cf_opts)?;
-        self.last_position_per_queue
-            .insert(real_queue_id.clone(), None);
+        self.last_position_per_queue.insert(real_queue_id, None);
         Ok(())
     }
 

@@ -46,7 +46,7 @@ impl From<Position> for u64 {
 }
 
 impl Position {
-    pub fn pos_val(self) -> u64 {
+    fn pos_val(self) -> u64 {
         u64::from_be_bytes(self.0)
     }
 

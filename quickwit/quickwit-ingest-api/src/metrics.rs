@@ -36,7 +36,7 @@ impl Default for IngestMetrics {
             ),
             ingested_num_docs: new_counter(
                 "ingested_num_docs",
-                "Number of docs recieved to be ingested",
+                "Number of docs received to be ingested",
                 "quickwit_ingest",
             ),
             queue_count: new_gauge(
