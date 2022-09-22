@@ -28,12 +28,14 @@ runs:
         target: ${{ inputs.target }}
         override: true
     - run: cd quickwit
+      shell: bash
     - uses: actions-rs/cargo@v1
       with:
         use-cross: true
         command: build
         args: --release --features release-feature-vendored-set --target ${{ inputs.target }}
     - run: cd ..
+      shell: bash
     - name: Bundle archive
       run: |
         make archive BINARY_FILE=quickwit/target/${{ inputs.target }}/release/quickwit \
