@@ -96,11 +96,11 @@ pub struct IndexerConfig {
 }
 
 impl IndexerConfig {
-    fn default_split_store_max_num_bytes() -> Byte {
+    pub fn default_split_store_max_num_bytes() -> Byte {
         Byte::from_bytes(100_000_000_000) // 100G
     }
 
-    fn default_split_store_max_num_splits() -> usize {
+    pub fn default_split_store_max_num_splits() -> usize {
         1_000
     }
 

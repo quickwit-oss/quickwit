@@ -25,6 +25,7 @@ use std::sync::{Arc, Weak};
 use std::time::Instant;
 
 use anyhow::Context;
+use quickwit_config::IndexerConfig;
 use quickwit_metastore::SplitMetadata;
 use quickwit_storage::{PutPayload, Storage, StorageErrorKind, StorageResult};
 use tantivy::Directory;
@@ -59,8 +60,8 @@ impl Default for SplitStoreSpaceQuota {
         Self {
             num_splits_in_cache: 0,
             size_in_bytes_in_cache: 0,
-            max_num_splits: 1_000,
-            max_num_bytes: 100_000_000_000, // 100GB TODO: Use byte-unit crate.
+            max_num_bytes: IndexerConfig::default_split_store_max_num_bytes().get_bytes() as usize,
+            max_num_splits: IndexerConfig::default_split_store_max_num_splits(),
             opened_split_store_roots: HashSet::default(),
         }
     }
@@ -69,11 +70,9 @@ impl Default for SplitStoreSpaceQuota {
 impl SplitStoreSpaceQuota {
     pub fn new(max_num_splits: usize, max_num_bytes: usize) -> Self {
         Self {
-            num_splits_in_cache: 0,
-            size_in_bytes_in_cache: 0,
             max_num_splits,
             max_num_bytes,
-            opened_split_store_roots: HashSet::new(),
+            ..Default::default()
         }
     }
 
@@ -206,12 +205,12 @@ impl IndexingSplitStore {
         remote_storage: Arc<dyn Storage>,
         cache_directory: &Path,
         merge_policy: Arc<dyn MergePolicy>,
-        cache_size_checker: Arc<Mutex<SplitStoreSpaceQuota>>,
+        split_store_space_quota: Arc<Mutex<SplitStoreSpaceQuota>>,
     ) -> StorageResult<Self> {
         let local_storage_root = cache_directory.join(SPLIT_CACHE_DIR_NAME);
         std::fs::create_dir_all(&local_storage_root)?;
         let local_split_store =
-            LocalSplitStore::open(local_storage_root, cache_size_checker).await?;
+            LocalSplitStore::open(local_storage_root, split_store_space_quota).await?;
 
         let inner = InnerIndexingSplitStore {
             remote_storage,
@@ -353,8 +352,9 @@ impl IndexingSplitStore {
                 .map(|split| split.split_id())
                 .collect();
 
-            let mut local_split_store_lock = local_split_store.lock().await;
-            return local_split_store_lock
+            return local_split_store
+                .lock()
+                .await
                 .retain_only(&published_split_ids)
                 .await;
         }
@@ -413,14 +413,14 @@ mod test_split_store {
         fs::create_dir_all(&root_path.join("b.split")).await?;
         fs::create_dir_all(&root_path.join("c.split")).await?;
 
-        let cache_size_checker = Arc::new(Mutex::new(SplitStoreSpaceQuota::new(2, 10)));
+        let split_store_space_quota = Arc::new(Mutex::new(SplitStoreSpaceQuota::new(2, 10)));
         let remote_storage = Arc::new(RamStorage::default());
         let merge_policy = Arc::new(StableMultitenantWithTimestampMergePolicy::default());
         let result = IndexingSplitStore::create_with_local_store(
             remote_storage,
             local_dir.path(),
             merge_policy,
-            cache_size_checker,
+            split_store_space_quota,
         )
         .await;
         assert!(matches!(
@@ -442,14 +442,14 @@ mod test_split_store {
         fs::create_dir_all(&root_path.join("a.split")).await?;
         fs::create_dir_all(&root_path.join("b.split")).await?;
 
-        let cache_size_checker = Arc::new(Mutex::new(SplitStoreSpaceQuota::new(4, 10)));
+        let split_store_space_quota = Arc::new(Mutex::new(SplitStoreSpaceQuota::new(4, 10)));
         let remote_storage = Arc::new(RamStorage::default());
         let merge_policy = Arc::new(StableMultitenantWithTimestampMergePolicy::default());
         let result = IndexingSplitStore::create_with_local_store(
             remote_storage,
             local_dir.path(),
             merge_policy,
-            cache_size_checker,
+            split_store_space_quota,
         )
         .await;
         assert!(matches!(
@@ -470,14 +470,14 @@ mod test_split_store {
         fs::write(root_path.join("b.split"), b"abcd").await?;
         fs::write(root_path.join("a.split"), b"abcdefgh").await?;
 
-        let cache_size_checker = Arc::new(Mutex::new(SplitStoreSpaceQuota::new(100, 100)));
+        let split_store_space_quota = Arc::new(Mutex::new(SplitStoreSpaceQuota::new(100, 100)));
         let remote_storage = Arc::new(RamStorage::default());
         let merge_policy = Arc::new(StableMultitenantWithTimestampMergePolicy::default());
         let result = IndexingSplitStore::create_with_local_store(
             remote_storage,
             local_dir.path(),
             merge_policy,
-            cache_size_checker,
+            split_store_space_quota,
         )
         .await;
         assert!(result.is_ok());
@@ -741,20 +741,20 @@ mod test_split_store {
         fs::write(root_path.join("b.split").join("termdict"), b"b").await?;
         fs::write(root_path.join("c.split").join("termdict"), b"c").await?;
 
-        let cache_size_checker = Arc::new(Mutex::new(SplitStoreSpaceQuota::new(100, 200)));
+        let split_store_space_quota = Arc::new(Mutex::new(SplitStoreSpaceQuota::new(100, 200)));
         let remote_storage = Arc::new(RamStorage::default());
         let merge_policy = Arc::new(StableMultitenantWithTimestampMergePolicy::default());
         let split_store = IndexingSplitStore::create_with_local_store(
             remote_storage,
             local_dir.path(),
             merge_policy,
-            cache_size_checker.clone(),
+            split_store_space_quota.clone(),
         )
         .await?;
         let initial_size = {
-            let cache_size_checker_lock = cache_size_checker.lock().await;
-            assert_eq!(cache_size_checker_lock.num_splits(), 3);
-            cache_size_checker_lock.size_in_bytes()
+            let split_store_space_quota_guard = split_store_space_quota.lock().await;
+            assert_eq!(split_store_space_quota_guard.num_splits(), 3);
+            split_store_space_quota_guard.size_in_bytes()
         };
         let published_splits = vec![SplitMetadata {
             split_id: "b".to_string(),
@@ -767,9 +767,9 @@ mod test_split_store {
         assert!(!root_path.join("a.split").as_path().exists());
         assert!(!root_path.join("c.split").as_path().exists());
         assert!(root_path.join("b.split").as_path().exists());
-        let cache_size_checker_lock = cache_size_checker.lock().await;
-        assert_eq!(cache_size_checker_lock.num_splits(), 1);
-        assert!(cache_size_checker_lock.size_in_bytes() < initial_size);
+        let split_store_space_quota_guard = split_store_space_quota.lock().await;
+        assert_eq!(split_store_space_quota_guard.num_splits(), 1);
+        assert!(split_store_space_quota_guard.size_in_bytes() < initial_size);
         Ok(())
     }
 
