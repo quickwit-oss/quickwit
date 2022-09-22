@@ -47,7 +47,7 @@ use crate::models::{
     WeakIndexingDirectory, CACHE,
 };
 use crate::source::INGEST_API_SOURCE_ID;
-use crate::split_store::{LocalSplitStore, SPLIT_CACHE_DIR_NAME, SplitStoreSpaceQuota};
+use crate::split_store::{LocalSplitStore, SplitStoreSpaceQuota, SPLIT_CACHE_DIR_NAME};
 use crate::{
     IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics,
     WeakIndexingSplitStore,
@@ -744,8 +744,10 @@ async fn clean_index_local_split_stores(
 
         let mut split_store = match LocalSplitStore::open(
             source_local_storage_root.clone(),
-            IndexingSplitStoreParams::default(),
-        ) {
+            Arc::new(Mutex::new(SplitStoreSpaceQuota::default())),
+        )
+        .await
+        {
             Ok(split_store) => split_store,
             Err(error) => {
                 warn!(error=?error, index_id=%index_id, path=?source_local_storage_root,  "Failed to a LocalSplitStore.");
