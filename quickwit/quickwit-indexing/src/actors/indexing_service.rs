@@ -109,7 +109,7 @@ pub struct IndexingService {
     merge_policies: HashMap<IndexId, Weak<dyn MergePolicy>>,
     indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
     split_stores: HashMap<(IndexId, SourceId), WeakIndexingSplitStore>,
-    split_stores_cache_size_checker: Arc<Mutex<SplitStoreSpaceQuota>>,
+    split_store_space_quota: Arc<Mutex<SplitStoreSpaceQuota>>,
 }
 
 impl IndexingService {
@@ -137,7 +137,7 @@ impl IndexingService {
             merge_policies: HashMap::new(),
             indexing_directories: HashMap::new(),
             split_stores: HashMap::new(),
-            split_stores_cache_size_checker: Arc::new(Mutex::new(SplitStoreSpaceQuota::new(
+            split_store_space_quota: Arc::new(Mutex::new(SplitStoreSpaceQuota::new(
                 indexer_config.split_store_max_num_splits,
                 indexer_config.split_store_max_num_bytes.get_bytes() as usize,
             ))),
@@ -438,7 +438,7 @@ impl IndexingService {
             storage.clone(),
             cache_directory,
             merge_policy,
-            self.split_stores_cache_size_checker.clone(),
+            self.split_store_space_quota.clone(),
         )
         .await?;
 
