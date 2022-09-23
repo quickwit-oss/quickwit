@@ -106,9 +106,8 @@ impl<'a> TokenStream for ChineseTokenStream<'a> {
         while let Some((offset_from, c)) = iter.next() {
             match char_grouping(c) {
                 Grouping::Keep => {
-                    let offset_to = if let Some((next_index, next_char)) = iter
-                        .filter(|&(_, c)| char_grouping(c) != Grouping::Keep)
-                        .next()
+                    let offset_to = if let Some((next_index, next_char)) =
+                        iter.find(|&(_, c)| char_grouping(c) != Grouping::Keep)
                     {
                         self.last_char = Some((next_index, next_char));
                         next_index
