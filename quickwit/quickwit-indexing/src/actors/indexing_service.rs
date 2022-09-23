@@ -44,7 +44,7 @@ use crate::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy
 use crate::models::{
     DetachPipeline, IndexingDirectory, IndexingPipelineId, Observe, ObservePipeline,
     ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
-    WeakIndexingDirectory, CACHE,
+    WeakIndexingDirectory, CACHE_DIR_NAME,
 };
 use crate::source::INGEST_API_SOURCE_ID;
 use crate::split_store::{LocalSplitStore, SplitStoreSpaceQuota, SPLIT_CACHE_DIR_NAME};
@@ -55,6 +55,9 @@ use crate::{
 
 /// Name of the indexing directory, usually located at `<data_dir_path>/indexing`.
 pub const INDEXING_DIR_NAME: &str = "indexing";
+
+// Maximum number of concurrent indexes to clean.
+const MAX_CONCURRENT_INDEX_SPLIT_STORE_CLEAN: usize = 10;
 
 #[derive(Error, Debug)]
 pub enum IndexingServiceError {
@@ -448,6 +451,8 @@ impl IndexingService {
         Ok(split_store)
     }
 
+    // Finds all the indexes in the indexing directory
+    // and clean the LocalSplitStore found in them.
     async fn clean_local_split_stores(&self) {
         let indexing_dir = self.data_dir_path.join(INDEXING_DIR_NAME);
         if !indexing_dir.exists() {
@@ -471,7 +476,8 @@ impl IndexingService {
             ));
         }
 
-        let stream = tokio_stream::iter(clean_tasks).buffer_unordered(10);
+        let stream = tokio_stream::iter(clean_tasks)
+            .buffer_unordered(MAX_CONCURRENT_INDEX_SPLIT_STORE_CLEAN);
         let _: Vec<_> = stream.collect().await;
     }
 }
@@ -669,10 +675,10 @@ impl Handler<ShutdownPipeline> for IndexingService {
     }
 }
 
-/// Clean all detected of LocalSplitStore for a single index within
+/// Clean all detected instances of LocalSplitStore for a single index within
 /// an indexing directory.
 // Winthin Quickwit data_dir, LocalSplitStore instances are located at
-// `<INDEXING_DIR_NAME>/<index_id>/<source_id>*/<CACHE>/<SPLIT_CACHE_DIR_NAME>`
+// `<INDEXING_DIR_NAME>/<index_id>/<source_id>*/<CACHE_DIR_NAME>/<SPLIT_CACHE_DIR_NAME>`
 async fn clean_index_local_split_stores(
     index_id: String,
     indexing_dir: &Path,
@@ -709,7 +715,7 @@ async fn clean_index_local_split_stores(
         Ok(splits) => splits
             .into_iter()
             .map(|split| split.split_metadata)
-            .filter(|split_metadata| index_merge_policy.is_mature(split_metadata))
+            .filter(|split_metadata| !index_merge_policy.is_mature(split_metadata))
             .collect(),
         Err(error) => {
             if let MetastoreError::IndexDoesNotExist { .. } = error {
@@ -725,8 +731,8 @@ async fn clean_index_local_split_stores(
         .map(|split_metadata| split_metadata.split_id())
         .collect();
 
-    // At location `indexing_dir/<index_id>`, we have directories each corresponding
-    // to a source_id inside which there exist one LocalSPlitStore.
+    // At location `indexing_dir/<index_id>`, we have a set of directories. Each
+    // corresponding to a source_id inside which there exist one LocalSplitStore.
     let mut source_entries = match fs::read_dir(indexing_dir.join(&index_id)).await {
         Ok(entries) => entries,
         Err(error) => {
@@ -736,8 +742,11 @@ async fn clean_index_local_split_stores(
     };
     while let Some(source_entry) = source_entries.next_entry().await.unwrap() {
         // The LocalSplitStore for the source_id is at
-        // `indexing_dir/<index_id>/<source_id>/<CACHE>/<SPLIT_CACHE_DIR_NAME>`
-        let source_local_storage_root = source_entry.path().join(CACHE).join(SPLIT_CACHE_DIR_NAME);
+        // `indexing_dir/<index_id>/<source_id>/<CACHE_DIR_NAME>/<SPLIT_CACHE_DIR_NAME>`
+        let source_local_storage_root = source_entry
+            .path()
+            .join(CACHE_DIR_NAME)
+            .join(SPLIT_CACHE_DIR_NAME);
         if !source_local_storage_root.exists() {
             continue;
         }
@@ -750,7 +759,7 @@ async fn clean_index_local_split_stores(
         {
             Ok(split_store) => split_store,
             Err(error) => {
-                warn!(error=?error, index_id=%index_id, path=?source_local_storage_root,  "Failed to a LocalSplitStore.");
+                warn!(error=?error, index_id=%index_id, path=?source_local_storage_root,  "Failed to open a LocalSplitStore.");
                 continue;
             }
         };
@@ -770,9 +779,49 @@ mod tests {
     use quickwit_common::uri::Uri;
     use quickwit_config::{SourceConfig, VecSourceParams};
     use quickwit_ingest_api::init_ingest_api;
-    use quickwit_metastore::quickwit_metastore_uri_resolver;
+    use quickwit_metastore::{quickwit_metastore_uri_resolver, MockMetastore, Split};
 
     use super::*;
+    use crate::mock_split;
+
+    fn make_split(split_id: &str, num_docs: usize) -> Split {
+        let mut split = mock_split(split_id);
+        split.split_metadata.num_docs = num_docs;
+        split
+    }
+
+    async fn create_split_file(
+        index_id: &str,
+        indexing_dir: &Path,
+        source_id: &str,
+        split_id: &str,
+    ) {
+        fs::create_dir_all(
+            indexing_dir
+                .join(index_id)
+                .join(source_id)
+                .join(CACHE_DIR_NAME)
+                .join(SPLIT_CACHE_DIR_NAME)
+                .join(format!("{split_id}.split")),
+        )
+        .await
+        .unwrap();
+    }
+
+    fn split_file_exists(
+        index_id: &str,
+        indexing_dir: &Path,
+        source_id: &str,
+        split_id: &str,
+    ) -> bool {
+        indexing_dir
+            .join(index_id)
+            .join(source_id)
+            .join(CACHE_DIR_NAME)
+            .join(SPLIT_CACHE_DIR_NAME)
+            .join(format!("{split_id}.split"))
+            .exists()
+    }
 
     #[tokio::test]
     async fn test_indexing_service() {
@@ -993,5 +1042,61 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
         panic!("Sleep");
+    }
+
+    #[tokio::test]
+    async fn test_clean_index_local_split_stores() {
+        let index_id = "foo-index".to_string();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let indexing_dir = temp_dir.path().join(INDEXING_DIR_NAME);
+        create_split_file(&index_id, &indexing_dir, "source-1", "published-mature").await;
+        create_split_file(&index_id, &indexing_dir, "source-1", "published-not-mature").await;
+        create_split_file(&index_id, &indexing_dir, "source-1", "not-published").await;
+        create_split_file(&index_id, &indexing_dir, "source-2", "non-existing").await;
+
+        let mut metastore = MockMetastore::default();
+        metastore
+            .expect_index_metadata()
+            .withf(|index_id| index_id == "foo-index")
+            .returning(|_| {
+                let mut index_metadata =
+                    IndexMetadata::for_test("foo-index", "ram:///indexes/foo-index");
+                index_metadata.indexing_settings.merge_enabled = true;
+                index_metadata.indexing_settings.split_num_docs_target = 1000;
+                Ok(index_metadata)
+            });
+        metastore.expect_list_splits().returning(|_, _, _, _| {
+            Ok(vec![
+                make_split("published-mature", 1020),
+                make_split("published-not-mature", 450),
+            ])
+        });
+
+        clean_index_local_split_stores(index_id.clone(), &indexing_dir, Arc::new(metastore)).await;
+
+        assert!(!split_file_exists(
+            &index_id,
+            &indexing_dir,
+            "source-1",
+            "published-mature"
+        ));
+        assert!(split_file_exists(
+            &index_id,
+            &indexing_dir,
+            "source-1",
+            "published-not-mature"
+        ));
+        assert!(!split_file_exists(
+            &index_id,
+            &indexing_dir,
+            "source-1",
+            "not-published"
+        ));
+        assert!(!split_file_exists(
+            &index_id,
+            &indexing_dir,
+            "source-2",
+            "non-existing"
+        ));
     }
 }

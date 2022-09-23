@@ -26,9 +26,9 @@ use tokio::fs;
 
 use super::ScratchDirectory;
 
-pub const CACHE: &str = "cache";
+pub const CACHE_DIR_NAME: &str = "cache";
 
-pub const SCRATCH: &str = "scratch";
+pub const SCRATCH_DIR_NAME: &str = "scratch";
 
 /// Root of an [`IndexingDirectory`].
 enum Root {
@@ -74,7 +74,7 @@ impl WeakIndexingDirectory {
 impl IndexingDirectory {
     pub async fn create_in_dir<P: AsRef<Path>>(dir_path: P) -> anyhow::Result<IndexingDirectory> {
         // Create cache directory if does not exist.
-        let cache_directory_path = dir_path.as_ref().join(CACHE);
+        let cache_directory_path = dir_path.as_ref().join(CACHE_DIR_NAME);
         fs::create_dir_all(&cache_directory_path)
             .await
             .with_context(|| {
@@ -84,7 +84,7 @@ impl IndexingDirectory {
                 )
             })?;
         // Create scratch directory if does not exist.
-        let scratch_directory_path = dir_path.as_ref().join(SCRATCH);
+        let scratch_directory_path = dir_path.as_ref().join(SCRATCH_DIR_NAME);
         fs::create_dir_all(&scratch_directory_path)
             .await
             .with_context(|| {
@@ -133,10 +133,10 @@ impl IndexingDirectory {
     pub async fn for_test() -> Self {
         let tempdir = tempfile::tempdir().unwrap();
 
-        let cache_directory_path = tempdir.path().join(CACHE);
+        let cache_directory_path = tempdir.path().join(CACHE_DIR_NAME);
         fs::create_dir_all(&cache_directory_path).await.unwrap();
 
-        let scratch_directory_path = tempdir.path().join(SCRATCH);
+        let scratch_directory_path = tempdir.path().join(SCRATCH_DIR_NAME);
         fs::create_dir_all(&scratch_directory_path).await.unwrap();
 
         let scratch_directory = ScratchDirectory::new_in_dir(scratch_directory_path);

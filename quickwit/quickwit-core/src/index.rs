@@ -26,7 +26,7 @@ use quickwit_common::fs::empty_dir;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, QuickwitConfig};
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
-use quickwit_indexing::models::CACHE;
+use quickwit_indexing::models::CACHE_DIR_NAME;
 use quickwit_janitor::{
     delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
 };
@@ -308,7 +308,7 @@ pub fn get_cache_directory_path(data_dir_path: &Path, index_id: &str, source_id:
         .join(INDEXING_DIR_NAME)
         .join(index_id)
         .join(source_id)
-        .join(CACHE)
+        .join(CACHE_DIR_NAME)
 }
 
 /// Clears the cache directory of a given source.
