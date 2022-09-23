@@ -212,8 +212,9 @@ impl<A: Actor> ActorExecutionEnv<A> {
             if self.ctx.kill_switch().is_dead() {
                 return Err(ActorExitStatus::Killed);
             }
+        } else {
+            self.ctx.record_progress();
         }
-
         Ok(())
     }
 
