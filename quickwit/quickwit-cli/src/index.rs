@@ -619,7 +619,9 @@ pub async fn list_index_cli(args: ListIndexesArgs) -> anyhow::Result<()> {
 }
 
 fn make_list_indexes_table<I>(indexes: I) -> Table
-where I: IntoIterator<Item = IndexMetadata> {
+where
+    I: IntoIterator<Item = IndexMetadata>,
+{
     let rows = indexes
         .into_iter()
         .map(|index| IndexRow {
@@ -645,7 +647,10 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri)
         .await?;
-    let index_stats = IndexStats::from_metastore(metastore, &args.index_id).await?;
+    let splits = metastore
+        .list_splits(index_id, SplitState::Published, None, None)
+        .await?;
+    let index_stats = IndexStats::from_metastore(metastore, splits).await?;
     println!("{index_stats}");
     Ok(())
 }
@@ -724,11 +729,8 @@ impl Display for IndexStats {
 }
 
 impl IndexStats {
-    async fn from_metastore(metastore: Arc<dyn Metastore>, index_id: &str) -> anyhow::Result<Self> {
+    async fn from_metastore(metastore: Arc<dyn Metastore>, splits: Vec<Split>) -> anyhow::Result<Self> {
         let index_metadata = metastore.index_metadata(index_id).await?;
-        let splits = metastore
-            .list_splits(index_id, SplitState::Published, None, None)
-            .await?;
 
         let splits_num_docs = splits
             .iter()
@@ -766,8 +768,8 @@ impl IndexStats {
 
         let (num_docs_descriptive, num_bytes_descriptive) = if !splits.is_empty() {
             (
-                Some(DescriptiveStats::new(&splits_num_docs)),
-                Some(DescriptiveStats::new(&splits_bytes)),
+                Some(DescriptiveStats::maybe_new(&splits_num_docs)),
+                Some(DescriptiveStats::maybe_new(&splits_bytes)),
             )
         } else {
             (None, None)
@@ -825,18 +827,21 @@ impl Display for DescriptiveStats {
 }
 
 impl DescriptiveStats {
-    fn new(values: &[usize]) -> DescriptiveStats {
-        DescriptiveStats {
+    fn maybe_new(values: &[usize]) -> Option<DescriptiveStats> {
+        if values.is_empty() {
+            return None;
+        }
+        Some(DescriptiveStats {
             mean_val: mean(values),
             std_val: std_deviation(values),
-            min_val: *values.iter().min().unwrap(),
-            max_val: *values.iter().max().unwrap(),
+            min_val: *values.iter().min().expect("Values should not be empty."),
+            max_val: *values.iter().max().expect("Values should not be empty."),
             q1: percentile(values, 1),
             q25: percentile(values, 50),
             q50: percentile(values, 50),
             q75: percentile(values, 75),
             q99: percentile(values, 75),
-        }
+        })
     }
 }
 
