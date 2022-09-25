@@ -10,22 +10,22 @@ homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
-anyhow = "1.0"
-async-trait = "0.1"
-chitchat = { git = "https://github.com/quickwit-oss/chitchat", rev = "cd568ba" }
-itertools = "0.10"
-quickwit-common = { version = "0.3.1", path = "../quickwit-common" }
-quickwit-config = { version = "0.3.1", path = "../quickwit-config" }
-quickwit-proto = { version = "0.3.1", path = "../quickwit-proto" }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-thiserror = "1.0"
-tokio = { version = "1.21", features = ["full"] }
-tokio-stream = { version = "0.1", features = ["sync"] }
-tracing = "0.1.29"
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+chitchat = { workspace = true }
+itertools = { workspace = true }
+quickwit-common = { workspace = true }
+quickwit-config = { workspace = true }
+quickwit-proto = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tracing = { workspace = true }
 
 [features]
 testsuite = []
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }

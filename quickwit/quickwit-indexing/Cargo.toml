@@ -3,69 +3,51 @@ name = "quickwit-indexing"
 version = "0.3.1"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
-license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
+license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
 description = "Quickwit indexing"
 repository = "https://github.com/quickwit-oss/quickwit"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
-anyhow = "1"
-arc-swap = "1.4"
-async-trait = "0.1"
-backoff = { version = "0.4", features = ["tokio"], optional = true }
-byte-unit = { version = "4", default-features = false, features = ["serde"] }
-fail = "0.5"
-flume = "0.10"
-fnv = "1"
-futures = "0.3"
-itertools = "0.10.3"
-libz-sys = { version = "1.1.3", optional = true }
-once_cell = "1"
-oneshot = "0.1.3"
-openssl = { version = "0.10.36", default-features = false, optional = true }
-quickwit-actors = { version = "0.3.1", path = "../quickwit-actors" }
-quickwit-aws = { version = "0.3.1", path = "../quickwit-aws" }
-quickwit-common = { version = "0.3.1", path = "../quickwit-common" }
-quickwit-config = { version = "0.3.1", path = "../quickwit-config", features = [
-  "testsuite"
-] }
-quickwit-directories = { version = "0.3.1", path = "../quickwit-directories" }
-quickwit-doc-mapper = { version = "0.3.1", path = "../quickwit-doc-mapper", features = [
-    "testsuite",
-] }
-quickwit-ingest-api = { path = "../quickwit-ingest-api", version = "0.3.1" }
-quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore" }
-quickwit-proto = { path = "../quickwit-proto", version = "0.3.1" }
-quickwit-storage = { version = "0.3.1", path = "../quickwit-storage" }
-rdkafka = { version = "0.28", default-features = false, features = [
-    "tokio",
-    "libz",
-    "ssl",
-    "cmake-build",
-], optional = true }
-rusoto_core = { version = "0.48", default-features = false, features = [
-    "rustls",
-], optional = true }
-rusoto_kinesis = { version = "0.48", default-features = false, features = [
-    "rustls",
-], optional = true }
-serde = "1"
-serde_json = "1"
-serde_yaml = "0.9"
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e029fdf", default-features = false, features = [
-  "mmap",
-  "lz4-compression",
-  "zstd-compression",
-  "quickwit",
-] }
-tempfile = "3.3"
-thiserror = "1"
-time = { version = "0.3.9", features = ["std"] }
-tokio = { version = "1", features = ["sync"] }
-tokio-stream = "0.1"
-tracing = "0.1.29"
-ulid = "1.0"
+anyhow = { workspace = true }
+arc-swap = { workspace = true }
+async-trait = { workspace = true }
+backoff = { workspace = true, optional = true }
+byte-unit = { workspace = true }
+fail = { workspace = true }
+flume = { workspace = true }
+fnv = { workspace = true }
+futures = { workspace = true }
+itertools = { workspace = true }
+libz-sys = { workspace = true, optional = true }
+once_cell = { workspace = true }
+oneshot = { workspace = true }
+openssl = { workspace = true, optional = true }
+quickwit-actors = { workspace = true }
+quickwit-aws = { workspace = true }
+quickwit-common = { workspace = true }
+quickwit-config = { workspace = true }
+quickwit-directories = { workspace = true }
+quickwit-doc-mapper = { workspace = true }
+quickwit-ingest-api = { workspace = true }
+quickwit-metastore = { workspace = true }
+quickwit-proto = { workspace = true }
+quickwit-storage = { workspace = true }
+rdkafka = { workspace = true, optional = true }
+rusoto_core = { workspace = true, optional = true }
+rusoto_kinesis = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tantivy = { workspace = true }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tracing = { workspace = true }
+ulid = { workspace = true }
 
 [features]
 kafka = ["rdkafka", "backoff"]
@@ -79,18 +61,12 @@ testsuite = []
 bytes = "1"
 mockall = "0.11"
 proptest = "1"
-quickwit-actors = { version = "0.3.1", path = "../quickwit-actors", features = [
-    "testsuite",
-] }
-quickwit-common = { version = "0.3.1", path = "../quickwit-common" }
-quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore", features = [
-    "testsuite",
-] }
-quickwit-storage = { version = "0.3.1", path = "../quickwit-storage", features = [
-    "testsuite",
-] }
-rand = "0.8"
-tempfile = "3"
+quickwit-actors = { workspace = true, features = ["testsuite"] }
+quickwit-common = { workspace = true }
+quickwit-metastore = { workspace = true, features = ["testsuite"] }
+quickwit-storage = { workspace = true, features = ["testsuite"] }
+rand = { workspace = true }
+tempfile = { workspace = true }
 
 [[test]]
 name = "failpoints"

@@ -23,3 +23,190 @@ members = [
 
 [profile.dev]
 debug = 0
+
+[workspace.dependencies]
+anyhow = "1"
+arc-swap = "1.4"
+assert_cmd = "2"
+assert-json-diff = "2"
+async-trait = "0.1"
+atty = "0.2"
+backoff = { version = "0.4", features = ["tokio"] }
+base64 = "0.13"
+bytes = "1"
+byte-unit = { version = "4", default-features = false, features = ["serde"] }
+chitchat = { git = "https://github.com/quickwit-oss/chitchat", rev = "cd568ba" }
+chrono = "0.4.19"
+clap = { version = "= 3.1", features = ["env"] }
+colored = "2.0.0"
+console-subscriber = "0.1.0"
+cron = "0.11.0"
+criterion = { version = "0.4", features = ["async_tokio"] }
+derivative = "2.2.0"
+dialoguer = "0.10.2"
+dotenv = "0.15"
+dyn-clone = "1.0.4"
+ec2_instance_metadata = "0.3"
+enum-iterator = "1.2"
+env_logger = "0.9"
+fail = "0.5"
+flume = "0.10"
+fnv = "1"
+futures = "0.3"
+futures-util = { version = "0.3.1", default-features = false }
+home = "0.5.3"
+hostname = "0.3"
+http = "0.2"
+humansize = "2.0.0"
+humantime = "2.1.0"
+hyper = { version = "0.14", features = [
+  "stream",
+  "server",
+  "http1",
+  "http2",
+  "tcp",
+  "client"
+] }
+hyper-rustls = "0.23"
+indexmap = { version = "1.9.1", features = ["serde"] }
+itertools = "0.10.3"
+json_comments = "0.2"
+libz-sys = { version = "1.1.3" }
+lru = "0.8"
+matches = "0.1.8"
+md5 = "0.7"
+mime_guess = { version = "2.0.4" }
+mockall = "0.11"
+new_string_template = "1.4.0"
+num_cpus = "1"
+once_cell = "1"
+oneshot = "0.1.3"
+openssl = { version = "0.10.36", default-features = false }
+openssl-probe = "0.1.4"
+opentelemetry = { version = "0.18", features = ["rt-tokio"] }
+opentelemetry-jaeger = { version = "0.17", features = ["rt-tokio"] }
+pnet = { version = "0.31.0", features = ["std"] }
+predicates = "2"
+prometheus = { version = "0.13", features = ["process"] }
+proptest = "1"
+prost = { version = "0.11.0", default-features = false, features = [
+  "prost-derive",
+] }
+prost-build = "0.11.0"
+rand = "0.8"
+rand_distr = "0.4"
+rayon = "1"
+rdkafka = { version = "0.28", default-features = false, features = [
+  "tokio",
+  "libz",
+  "ssl",
+  "cmake-build",
+] }
+regex = "1.6.0"
+reqwest = { version = "0.11", default-features = false, features = [
+  "json",
+  "rustls-tls",
+] }
+rocksdb = { version = "0.19", features = [], default-features = false }
+rusoto_core = { version = "0.48", default-features = false, features = [
+  "rustls",
+] }
+rusoto_kinesis = { version = "0.48", default-features = false, features = [
+  "rustls",
+] }
+rusoto_s3 = { version = "0.48", default-features = false, features = [
+  "rustls",
+] }
+rusoto_sts = { version = "0.48", default-features = false, features = [
+  "rustls",
+] }
+rust-embed = "6.4.0"
+serde = { version = "1.0", features = ["derive", "rc"] }
+serde_cbor = "0.11"
+serde_json = "1.0"
+serde_yaml = "0.9"
+serde_qs = { version = "0.10", features = ["warp"] }
+serial_test = "0.9.0"
+siphasher = "0.3"
+sqlx = { version = "0.6", features = [
+  "runtime-tokio-rustls",
+  "postgres",
+  "migrate",
+  "time",
+] }
+tabled = "0.8"
+tempfile = "3"
+termcolor = "1"
+thiserror = "1"
+thousands = "0.2.0"
+tikv-jemalloc-ctl = "0.5"
+tikv-jemallocator = "0.5"
+time = { version = "0.3.5", features = ["std", "macros"] }
+tokio = { version = "^1.21", features = ["full", "test-util"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tokio-util = { version = "0.7", features = ["full"] }
+toml = "0.5.8"
+tonic = "0.8"
+tonic-build = "0.8.0"
+tower = "0.4.13"
+tracing = "0.1.29"
+tracing-opentelemetry = "0.18"
+tracing-subscriber = { version = "0.3", features = [
+  "time",
+  "std",
+  "env-filter",
+] }
+typetag = "0.2"
+ulid = "1.0"
+uuid = { version = "1.1", features = ["v4", "serde"] }
+unwrap-infallible = "0.1.5"
+username = "0.2"
+warp = "0.3"
+
+quickwit-actors = { version = "0.3.1", path = "./quickwit-actors", features = [
+  "testsuite",
+] }
+quickwit-aws = { version = "0.3.1", path = "./quickwit-aws" }
+quickwit-cluster = { version = "0.3.1", path = "./quickwit-cluster" }
+quickwit-common = { version = "0.3.1", path = "./quickwit-common" }
+quickwit-config = { version = "0.3.1", path = "./quickwit-config", features = [
+  "testsuite",
+] }
+quickwit-core = { version = "0.3.1", path = "./quickwit-core" }
+quickwit-directories = { version = "0.3.1", path = "./quickwit-directories" }
+quickwit-doc-mapper = { version = "0.3.1", path = "./quickwit-doc-mapper", features = [
+  "testsuite",
+] }
+quickwit-indexing = { version = "0.3.1", path = "./quickwit-indexing" }
+quickwit-ingest-api = { version = "0.3.1", path = "./quickwit-ingest-api" }
+quickwit-janitor = { version = "0.3.1", path = "./quickwit-janitor" }
+quickwit-metastore = { version = "0.3.1", path = "./quickwit-metastore", features = [
+  "testsuite",
+] }
+quickwit-proto = { version = "0.3.1", path = "./quickwit-proto" }
+quickwit-search = { version = "0.3.1", path = "./quickwit-search" }
+quickwit-serve = { version = "0.3.1", path = "./quickwit-serve" }
+quickwit-storage = { version = "0.3.1", path = "./quickwit-storage", features = [
+  "testsuite",
+] }
+quickwit-telemetry = { version = "0.3.1", path = "./quickwit-telemetry" }
+
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e029fdf", default-features = false, features = [
+  "mmap",
+  "lz4-compression",
+  "zstd-compression",
+  "quickwit",
+] }
+tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e029fdf" }
+fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e029fdf" }
+
+
+# Temporary: till small our small fixes are published on crates.io.
+azure_core = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10"}
+azure_storage = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10"}
+azure_storage_blobs = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10"}
+
+
+# This is actually not used directly the goal is to fix the version
+# used by reqwest. 0.8.30 has an unclear license.
+encoding_rs = "=0.8.29"
