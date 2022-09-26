@@ -12,13 +12,13 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-ec2_instance_metadata = {workspace = true}
+ec2_instance_metadata = { workspace = true }
 futures = { workspace = true }
-hyper-rustls = {workspace = true}
-once_cell = {workspace = true}
+hyper-rustls = { workspace = true }
+once_cell = { workspace = true }
 rand = { workspace = true }
 rusoto_core = { workspace = true }
-rusoto_kinesis = { workspace = true , optional = true }
+rusoto_kinesis = { workspace = true, optional = true }
 rusoto_s3 = { workspace = true }
 rusoto_sts = { workspace = true }
 tokio = { workspace = true }

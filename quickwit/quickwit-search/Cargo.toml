@@ -3,7 +3,7 @@ name = "quickwit-search"
 version = "0.3.1"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
-license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
+license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
 description = "Quickwit's search logic"
 repository = "https://github.com/quickwit-oss/quickwit"
 homepage = "https://quickwit.io/"
@@ -45,7 +45,7 @@ opentelemetry = { workspace = true }
 [dev-dependencies]
 assert-json-diff = { workspace = true }
 chitchat = { workspace = true }
-quickwit-indexing = { workspace = true , features = ["testsuite"]}
+quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 proptest = { workspace = true }
 serde_json = { workspace = true }
