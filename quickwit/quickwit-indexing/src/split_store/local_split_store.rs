@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fs, io};
 
-use quickwit_common::split_file;
+use quickwit_common::{ignore_io_error, split_file};
 use quickwit_directories::BundleDirectory;
 use quickwit_storage::{PutPayload, SplitPayloadBuilder, StorageErrorKind, StorageResult};
 use tantivy::directory::MmapDirectory;
@@ -75,16 +75,11 @@ impl SplitFolder {
     }
 
     async fn delete(&self) -> io::Result<()> {
-        missing_file_is_ok(tokio::fs::remove_dir_all(&self.path).await)?;
+        ignore_io_error!(
+            io::ErrorKind::NotFound,
+            tokio::fs::remove_dir_all(&self.path).await
+        )?;
         Ok(())
-    }
-}
-
-fn missing_file_is_ok(io_result: io::Result<()>) -> io::Result<()> {
-    match io_result {
-        Ok(()) => Ok(()),
-        Err(io_err) if io_err.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(io_err) => Err(io_err),
     }
 }
 
