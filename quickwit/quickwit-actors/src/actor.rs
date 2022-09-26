@@ -139,6 +139,15 @@ pub trait Actor: Send + Sync + Sized + 'static {
         tokio::runtime::Handle::current()
     }
 
+    /// If set to true, the actor will yield after every single
+    /// message.
+    ///
+    /// For actors that are calling `.await` regularly,
+    /// returning `false` can yield better performance.
+    fn yield_after_each_message(&self) -> bool {
+        true
+    }
+
     /// The Actor's incoming mailbox queue capacity. It is set when the actor is spawned.
     fn queue_capacity(&self) -> QueueCapacity {
         QueueCapacity::Unbounded

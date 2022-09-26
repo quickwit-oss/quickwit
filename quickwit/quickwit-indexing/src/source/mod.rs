@@ -235,6 +235,10 @@ impl Actor for SourceActor {
         RuntimeType::NonBlocking.get_runtime_handle()
     }
 
+    fn yield_after_each_message(&self) -> bool {
+        false
+    }
+
     async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
         self.source
             .initialize(&self.doc_processor_mailbox, ctx)
@@ -262,6 +266,7 @@ impl Handler<Loop> for SourceActor {
             .source
             .emit_batches(&self.doc_processor_mailbox, ctx)
             .await?;
+        ctx.record_progress();
         if wait_for.is_zero() {
             ctx.send_self_message(Loop).await?;
             return Ok(());
