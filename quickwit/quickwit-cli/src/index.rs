@@ -42,12 +42,14 @@ use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
 use quickwit_indexing::models::{
     DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
 };
-use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, SplitState, Split};
+use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
 use quickwit_telemetry::payload::TelemetryEvent;
-use tabled::{Table, Tabled};
+use tabled::object::Columns;
+use tabled::{object::Segment, Alignment, Modify, Panel, Style, Table, Tabled};
+use tabled::{Concat, Format, Rotate};
 use thousands::Separable;
 use tracing::{debug, warn, Level};
 
@@ -651,85 +653,57 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
         .await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let index_stats = IndexStats::from_metadata(index_metadata, splits).await?;
-    println!("{index_stats}");
+    println!("{}", index_stats.display_as_table());
     Ok(())
 }
 
+#[derive(Tabled)]
 struct IndexStats {
+    #[tabled(rename = "Index ID: ")]
     index_id: String,
+    #[tabled(rename = "Index URI: ")]
     index_uri: Uri,
+    #[tabled(rename = "Number of published splits: ")]
     num_published_splits: usize,
+    #[tabled(rename = "Number of published documents: ")]
     num_published_docs: usize,
+    #[tabled(rename = "Size of published splits (MB): ")]
     size_published_docs: usize,
+    #[tabled(display_with = "display_option_in_table", rename = "Timestamp field: ")]
     timestamp_field_name: Option<String>,
-    timestamp_range_min: Option<i64>,
-    timestamp_range_max: Option<i64>,
+    #[tabled(display_with = "display_timestamp_range", rename = "Timestamp range: ")]
+    timestamp_range: Option<(Option<i64>, Option<i64>)>,
+    #[tabled(skip)]
     num_docs_descriptive: Option<DescriptiveStats>,
+    #[tabled(skip)]
     num_bytes_descriptive: Option<DescriptiveStats>,
 }
 
-impl Display for IndexStats {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut output = Vec::new();
-        output.push("\n1. General information".to_string());
-        output.push(format!("{:=<80}", ""));
-        output.push(format!(
-            "{:<35} {}",
-            "Index ID:".color(GREEN_COLOR),
-            self.index_id
-        ));
-        output.push(format!(
-            "{:<35} {}",
-            "Index URI:".color(GREEN_COLOR),
-            self.index_uri
-        ));
-        output.push(format!(
-            "{:<35} {}",
-            "Number of published splits:".color(GREEN_COLOR),
-            self.num_published_splits
-        ));
-        output.push(format!(
-            "{:<35} {}",
-            "Number of published documents:".color(GREEN_COLOR),
-            self.num_published_docs
-        ));
-        output.push(format!(
-            "{:<35} {} MB",
-            "Size of published splits:".color(GREEN_COLOR),
-            self.size_published_docs
-        ));
-        if let Some(timestamp_field_name) = &self.timestamp_field_name {
-            output.push(format!(
-                "{:<35} {}",
-                "Timestamp field:".color(GREEN_COLOR),
-                timestamp_field_name
-            ));
-            output.push(format!(
-                "{:<35} {:?} -> {:?}",
-                "Timestamp range:".color(GREEN_COLOR),
-                self.timestamp_range_min,
-                self.timestamp_range_max
-            ));
-        }
+fn display_option_in_table(opt: &Option<impl Display>) -> String {
+    match opt {
+        Some(opt_val) => format!("{}", opt_val),
+        None => "Field does not exist for the index.".to_string(),
+    }
+}
 
-        if let Some(num_docs_descriptive) = &self.num_docs_descriptive {
-            output.push("2. Split statistics".to_string());
-            output.push(format!("{:=<80}", ""));
-            output.push("Document count stats:".to_string());
-            output.push(format!("{num_docs_descriptive}"));
+fn display_timestamp_range(range: &Option<(Option<i64>, Option<i64>)>) -> String {
+    match range {
+        Some((timestamp_min, timestamp_max)) => {
+            if timestamp_min.is_some() && timestamp_max.is_some() {
+                format!("{} -> {}", timestamp_min.unwrap(), timestamp_max.unwrap())
+            } else {
+                "Range does not exist for the index.".to_string()
+            }
         }
-        if let Some(num_bytes_descriptive) = &self.num_bytes_descriptive {
-            output.push(String::new());
-            output.push("Size in MB stats:".to_string());
-            output.push(format!("{num_bytes_descriptive}"));
-            output.push(String::new());
-        }
-        write!(f, "{}", output.join("\n"))
+        None => "Range does not exist for the index.".to_string(),
     }
 }
 
 impl IndexStats {
-    async fn from_metadata(index_metadata: IndexMetadata, splits: Vec<Split>) -> anyhow::Result<Self> {
+    async fn from_metadata(
+        index_metadata: IndexMetadata,
+        splits: Vec<Split>,
+    ) -> anyhow::Result<Self> {
         let splits_num_docs = splits
             .iter()
             .map(|split| split.split_metadata.num_docs)
@@ -745,24 +719,23 @@ impl IndexStats {
             .collect_vec();
         let total_bytes = splits_bytes.iter().sum::<usize>();
 
-        let (timestamp_min, timestamp_max) =
-            if index_metadata.indexing_settings.timestamp_field.is_some() {
-                let time_min = splits
-                    .iter()
-                    .map(|split| split.split_metadata.time_range.clone())
-                    .filter(|time_range| time_range.is_some())
-                    .map(|time_range| *time_range.unwrap().start())
-                    .min();
-                let time_max = splits
-                    .iter()
-                    .map(|split| split.split_metadata.time_range.clone())
-                    .filter(|time_range| time_range.is_some())
-                    .map(|time_range| *time_range.unwrap().start())
-                    .max();
-                (time_min, time_max)
-            } else {
-                (None, None)
-            };
+        let timestamp_range = if index_metadata.indexing_settings.timestamp_field.is_some() {
+            let time_min = splits
+                .iter()
+                .map(|split| split.split_metadata.time_range.clone())
+                .filter(|time_range| time_range.is_some())
+                .map(|time_range| *time_range.unwrap().start())
+                .min();
+            let time_max = splits
+                .iter()
+                .map(|split| split.split_metadata.time_range.clone())
+                .filter(|time_range| time_range.is_some())
+                .map(|time_range| *time_range.unwrap().start())
+                .max();
+            Some((time_min, time_max))
+        } else {
+            None
+        };
 
         let (num_docs_descriptive, num_bytes_descriptive) = if !splits.is_empty() {
             (
@@ -780,12 +753,49 @@ impl IndexStats {
             num_published_docs: total_num_docs,
             size_published_docs: total_bytes,
             timestamp_field_name: index_metadata.indexing_settings.timestamp_field,
-            timestamp_range_min: timestamp_min,
-            timestamp_range_max: timestamp_max,
+            timestamp_range,
             num_docs_descriptive,
             num_bytes_descriptive,
         })
     }
+
+    fn display_as_table(&self) -> String {
+        let index_stats_table = create_table(&self, "General Information");
+
+        let index_stats_table = if let Some(docs_stats) = &self.num_docs_descriptive {
+            let doc_stats_table = create_table(docs_stats, "Document count stats");
+            index_stats_table.with(Concat::vertical(doc_stats_table))
+        } else {
+            index_stats_table
+        };
+
+        let index_stats_table = if let Some(size_stats) = &self.num_bytes_descriptive {
+            let size_stats_table = create_table(size_stats, "Size in MB stats");
+            index_stats_table.with(Concat::vertical(size_stats_table))
+        } else {
+            index_stats_table
+        };
+
+        index_stats_table.to_string()
+    }
+}
+
+fn create_table(table: impl Tabled, header: &str) -> Table {
+    Table::new(vec![table])
+        .with(Rotate::Left)
+        .with(Rotate::Bottom)
+        .with(
+            Modify::new(Columns::first())
+                .with(Format::new(|column| column.color(GREEN_COLOR).to_string())),
+        )
+        .with(
+            Modify::new(Segment::all())
+                .with(Alignment::left())
+                .with(Alignment::top()),
+        )
+        .with(Panel(header, 0))
+        .with(Style::psql())
+        .with(Panel("\n", 0))
 }
 
 struct DescriptiveStats {
@@ -800,27 +810,27 @@ struct DescriptiveStats {
     q99: f32,
 }
 
-impl Display for DescriptiveStats {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut output = Vec::new();
-        output.push(format!(
-            "{:<35} {:>2} ± {} in [{} … {}]",
-            "Mean ± σ in [min … max]:".color(GREEN_COLOR),
-            self.mean_val,
-            self.std_val,
-            self.min_val,
-            self.max_val,
-        ));
-        output.push(format!(
-            "{:<35} [{}, {}, {}, {}, {}]",
-            "Quantiles [1%, 25%, 50%, 75%, 99%]:".color(GREEN_COLOR),
-            self.q1,
-            self.q25,
-            self.q50,
-            self.q75,
-            self.q99,
-        ));
-        write!(f, "{}", output.join("\n"))
+impl Tabled for DescriptiveStats {
+    const LENGTH: usize = 2;
+
+    fn fields(&self) -> Vec<String> {
+        vec![
+            format!(
+                "{} ± {} in [{} … {}]",
+                self.mean_val, self.std_val, self.min_val, self.max_val
+            ),
+            format!(
+                "[{}, {}, {}, {}, {}]",
+                self.q1, self.q25, self.q50, self.q75, self.q99,
+            ),
+        ]
+    }
+
+    fn headers() -> Vec<String> {
+        vec![
+            "Mean ± σ in [min … max]:".to_string(),
+            "Quantiles [1%, 25%, 50%, 75%, 99%]:".to_string(),
+        ]
     }
 }
 
