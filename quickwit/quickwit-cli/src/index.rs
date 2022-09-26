@@ -21,7 +21,6 @@ use std::collections::VecDeque;
 use std::fmt::Display;
 use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
@@ -43,7 +42,7 @@ use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
 use quickwit_indexing::models::{
     DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
 };
-use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Metastore, SplitState};
+use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, SplitState, Split};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
@@ -648,9 +647,10 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
         .resolve(&quickwit_config.metastore_uri)
         .await?;
     let splits = metastore
-        .list_splits(index_id, SplitState::Published, None, None)
+        .list_splits(&args.index_id, SplitState::Published, None, None)
         .await?;
-    let index_stats = IndexStats::from_metastore(metastore, splits).await?;
+    let index_metadata = metastore.index_metadata(&args.index_id).await?;
+    let index_stats = IndexStats::from_metadata(index_metadata, splits).await?;
     println!("{index_stats}");
     Ok(())
 }
@@ -729,9 +729,7 @@ impl Display for IndexStats {
 }
 
 impl IndexStats {
-    async fn from_metastore(metastore: Arc<dyn Metastore>, splits: Vec<Split>) -> anyhow::Result<Self> {
-        let index_metadata = metastore.index_metadata(index_id).await?;
-
+    async fn from_metadata(index_metadata: IndexMetadata, splits: Vec<Split>) -> anyhow::Result<Self> {
         let splits_num_docs = splits
             .iter()
             .map(|split| split.split_metadata.num_docs)
@@ -768,8 +766,8 @@ impl IndexStats {
 
         let (num_docs_descriptive, num_bytes_descriptive) = if !splits.is_empty() {
             (
-                Some(DescriptiveStats::maybe_new(&splits_num_docs)),
-                Some(DescriptiveStats::maybe_new(&splits_bytes)),
+                DescriptiveStats::maybe_new(&splits_num_docs),
+                DescriptiveStats::maybe_new(&splits_bytes),
             )
         } else {
             (None, None)
