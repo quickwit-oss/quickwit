@@ -21,15 +21,15 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::anyhow;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, HEARTBEAT};
-use quickwit_metastore::{IndexMetadata, Metastore};
+use quickwit_metastore::{IndexMetadata, Metastore, MetastoreResult};
+use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use quickwit_search::SearchClientPool;
 use quickwit_storage::StorageUriResolver;
 use tracing::{error, info, warn};
 
-use super::delete_task_pipeline::{DeletePipelineSuperviseLoop, DeleteTaskPipeline};
+use super::delete_task_pipeline::DeleteTaskPipeline;
 
 pub const DELETE_SERVICE_TASK_DIR_NAME: &str = "delete_task_service";
 
@@ -168,39 +168,16 @@ impl Handler<SuperviseLoop> for DeleteTaskService {
     }
 }
 
-/// Message sent to the [`DeleteTaskService`]
-/// which sends a `PipelineSuperviseLoop` message
-/// to the dedicated delete task pipeline so that
-/// it plans the associated delete oeprations
-#[derive(Debug)]
-pub struct NewDeleteTask {
-    pub index_id: String,
-}
-
 #[async_trait]
-impl Handler<NewDeleteTask> for DeleteTaskService {
-    type Reply = anyhow::Result<()>;
+impl Handler<DeleteQuery> for DeleteTaskService {
+    type Reply = MetastoreResult<DeleteTask>;
 
     async fn handle(
         &mut self,
-        message: NewDeleteTask,
+        message: DeleteQuery,
         _: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        let reply = match self.pipeline_handles_by_index_id.get(&message.index_id) {
-            Some(pipeline_handle) => {
-                let _ = pipeline_handle
-                    .mailbox()
-                    .send_message(DeletePipelineSuperviseLoop)
-                    .await;
-                Ok(())
-            }
-            None => {
-                let error_message =
-                    format!("No delete task pipeline on index ID `{}`", message.index_id);
-                warn!(error_message);
-                Err(anyhow!(error_message))
-            }
-        };
+        let reply = self.metastore.create_delete_task(message).await;
         Ok(reply)
     }
 }
@@ -211,10 +188,11 @@ mod tests {
 
     use quickwit_actors::{Universe, HEARTBEAT};
     use quickwit_indexing::TestSandbox;
+    use quickwit_proto::metastore_api::DeleteQuery;
     use quickwit_search::{MockSearchService, SearchClientPool};
     use quickwit_storage::StorageUriResolver;
 
-    use super::{DeleteTaskService, NewDeleteTask};
+    use super::DeleteTaskService;
 
     #[tokio::test]
     async fn test_delete_task_service() -> anyhow::Result<()> {
@@ -253,13 +231,27 @@ mod tests {
         let state = delete_task_service_handler
             .process_pending_and_observe()
             .await;
+        assert_eq!(state.num_running_pipelines, 1);
+
+        // Just test creation of delete query.
         let reply = delete_task_service_mailbox
-            .ask_for_res(NewDeleteTask {
+            .ask_for_res(DeleteQuery {
                 index_id: index_id.to_string(),
+                start_timestamp: None,
+                end_timestamp: None,
+                query: "*".to_string(),
+                search_fields: Vec::new(),
             })
             .await;
-        assert_eq!(state.num_running_pipelines, 1);
         assert!(reply.is_ok());
+        assert_eq!(
+            metastore
+                .list_delete_tasks(index_id, 0)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
         metastore.delete_index(index_id).await.unwrap();
         tokio::time::sleep(HEARTBEAT * 2).await;
         let state_after_deletion = delete_task_service_handler

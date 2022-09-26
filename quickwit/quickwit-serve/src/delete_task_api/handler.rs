@@ -21,13 +21,13 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use quickwit_actors::Mailbox;
-use quickwit_janitor::actors::{DeleteTaskService, NewDeleteTask};
+use quickwit_janitor::actors::DeleteTaskService;
 use quickwit_metastore::Metastore;
 use quickwit_proto::metastore_api::DeleteQuery;
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 
-use crate::format::Format;
+use crate::format::{Format, FormatError};
 use crate::{require, with_arg};
 
 /// This struct represents the delete query passed to
@@ -51,9 +51,8 @@ pub fn delete_task_api_handlers(
     metastore: Arc<dyn Metastore>,
     delete_task_service_mailbox_opt: Option<Mailbox<DeleteTaskService>>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
-    get_delete_tasks_handler(metastore.clone(), delete_task_service_mailbox_opt.clone()).or(
-        post_delete_tasks_handler(metastore, delete_task_service_mailbox_opt),
-    )
+    get_delete_tasks_handler(metastore.clone(), delete_task_service_mailbox_opt.clone())
+        .or(post_delete_tasks_handler(delete_task_service_mailbox_opt))
 }
 
 pub fn get_delete_tasks_handler(
@@ -82,13 +81,11 @@ async fn get_delete_tasks(
 }
 
 pub fn post_delete_tasks_handler(
-    metastore: Arc<dyn Metastore>,
     delete_task_service_mailbox: Option<Mailbox<DeleteTaskService>>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     warp::path!(String / "delete-tasks")
         .and(warp::body::json())
         .and(warp::post())
-        .and(with_arg(metastore))
         .and(require(delete_task_service_mailbox))
         .and_then(post_delete_request)
 }
@@ -96,7 +93,6 @@ pub fn post_delete_tasks_handler(
 async fn post_delete_request(
     index_id: String,
     delete_request: DeleteQueryRequest,
-    metastore: Arc<dyn Metastore>,
     delete_task_service_mailbox: Mailbox<DeleteTaskService>,
 ) -> Result<impl warp::Reply, Infallible> {
     let delete_query = DeleteQuery {
@@ -106,11 +102,11 @@ async fn post_delete_request(
         query: delete_request.query,
         search_fields: delete_request.search_fields,
     };
-    let delete_task = metastore.create_delete_task(delete_query).await;
-    let _ = delete_task_service_mailbox
-        .send_message(NewDeleteTask { index_id })
-        .await;
-    Ok(Format::PrettyJson.make_rest_reply(delete_task))
+    let create_delete_task_reply = delete_task_service_mailbox
+        .ask_for_res(delete_query)
+        .await
+        .map_err(FormatError::wrap);
+    Ok(Format::PrettyJson.make_rest_reply(create_delete_task_reply))
 }
 
 #[cfg(test)]

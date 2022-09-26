@@ -241,7 +241,7 @@ impl DeleteTaskPipeline {
 }
 
 #[derive(Debug)]
-pub(crate) struct DeletePipelineSuperviseLoop;
+struct DeletePipelineSuperviseLoop;
 
 #[async_trait]
 impl Handler<DeletePipelineSuperviseLoop> for DeleteTaskPipeline {
@@ -356,7 +356,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let data_dir_path = temp_dir.path().to_path_buf();
         let mut indexing_settings = IndexingSettings::for_test();
-        indexing_settings.split_num_docs_target = 1; //
+        // Ensures that all split will be mature and thus be candidates for deletion.
+        indexing_settings.split_num_docs_target = 1;
         let pipeline = DeleteTaskPipeline::new(
             index_id.to_string(),
             metastore.clone(),
