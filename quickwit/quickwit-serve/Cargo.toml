@@ -72,6 +72,9 @@ quickwit-indexing = { version = "0.3.1", path = "../quickwit-indexing", features
 quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore", features = [
   "testsuite"
 ] }
+quickwit-search = { version = "0.3.1", path = "../quickwit-search", features = [
+  "testsuite"
+] }
 quickwit-storage = { version = "0.3.1", path = "../quickwit-storage", features = [
   "testsuite"
 ] }

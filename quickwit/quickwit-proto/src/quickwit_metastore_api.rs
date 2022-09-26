@@ -153,6 +153,7 @@ pub struct DeleteTask {
     pub delete_query: ::core::option::Option<DeleteQuery>,
 }
 #[derive(Serialize, Deserialize)]
+#[serde(default)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteQuery {
     /// / Index ID.
@@ -160,9 +161,11 @@ pub struct DeleteQuery {
     pub index_id: ::prost::alloc::string::String,
     /// / If set, restrict search to documents with a `timestamp >= start_timestamp`.
     #[prost(int64, optional, tag="2")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub start_timestamp: ::core::option::Option<i64>,
     /// / If set, restrict search to documents with a `timestamp < end_timestamp``.
     #[prost(int64, optional, tag="3")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub end_timestamp: ::core::option::Option<i64>,
     /// / Query text. The query language is that of tantivy.
     #[prost(string, tag="4")]

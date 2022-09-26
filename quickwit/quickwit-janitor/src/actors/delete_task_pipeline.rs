@@ -94,7 +94,7 @@ impl Actor for DeleteTaskPipeline {
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         self.spawn_pipeline(ctx).await?;
-        self.handle(SuperviseLoop, ctx).await?;
+        self.handle(DeletePipelineSuperviseLoop, ctx).await?;
         Ok(())
     }
 }
@@ -241,15 +241,15 @@ impl DeleteTaskPipeline {
 }
 
 #[derive(Debug)]
-struct SuperviseLoop;
+struct DeletePipelineSuperviseLoop;
 
 #[async_trait]
-impl Handler<SuperviseLoop> for DeleteTaskPipeline {
+impl Handler<DeletePipelineSuperviseLoop> for DeleteTaskPipeline {
     type Reply = ();
 
     async fn handle(
         &mut self,
-        _: SuperviseLoop,
+        _: DeletePipelineSuperviseLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         if self.handles.is_some() {
@@ -279,7 +279,8 @@ impl Handler<SuperviseLoop> for DeleteTaskPipeline {
                 );
             }
         }
-        ctx.schedule_self_msg(SUPERVISE_DELAY, SuperviseLoop).await;
+        ctx.schedule_self_msg(SUPERVISE_DELAY, DeletePipelineSuperviseLoop)
+            .await;
         Ok(())
     }
 }
@@ -355,7 +356,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let data_dir_path = temp_dir.path().to_path_buf();
         let mut indexing_settings = IndexingSettings::for_test();
-        indexing_settings.split_num_docs_target = 1; //
+        // Ensures that all split will be mature and thus be candidates for deletion.
+        indexing_settings.split_num_docs_target = 1;
         let pipeline = DeleteTaskPipeline::new(
             index_id.to_string(),
             metastore.clone(),
