@@ -35,7 +35,7 @@ fn get_quickwit_tokenizer_manager() -> TokenizerManager {
     let tokenizer_manager = TokenizerManager::default();
 
     tokenizer_manager.register("raw", raw_tokenizer);
-    tokenizer_manager.register("chinese", chinese_tokenizer);
+    tokenizer_manager.register("chinese_compatible", chinese_tokenizer);
 
     tokenizer_manager
 }
@@ -121,12 +121,12 @@ impl<'a> TokenStream for ChineseTokenStream<'a> {
                     return true;
                 }
                 Grouping::SplitKeep => {
-                    let len = c.len_utf8();
+                    let num_bytes_in_char = c.len_utf8();
                     self.token.offset_from = offset_from;
-                    self.token.offset_to = offset_from + len;
+                    self.token.offset_to = offset_from + num_bytes_in_char;
                     self.token
                         .text
-                        .push_str(&self.text[offset_from..(offset_from + len)]);
+                        .push_str(&self.text[offset_from..(self.token.offset_to)]);
                     return true;
                 }
                 Grouping::SplitIgnore => (),
@@ -176,7 +176,9 @@ mod tests {
     fn test_chinese_tokenizer() {
         let text = "Hello world, 你好世界, bonjour monde";
 
-        let tokenizer = get_quickwit_tokenizer_manager().get("chinese").unwrap();
+        let tokenizer = get_quickwit_tokenizer_manager()
+            .get("chinese_compatible")
+            .unwrap();
         let mut text_stream = tokenizer.token_stream(text);
 
         let mut res = Vec::new();
@@ -251,7 +253,9 @@ mod tests {
     fn test_chinese_tokenizer_no_space() {
         let text = "Hello你好bonjour";
 
-        let tokenizer = get_quickwit_tokenizer_manager().get("chinese").unwrap();
+        let tokenizer = get_quickwit_tokenizer_manager()
+            .get("chinese_compatible")
+            .unwrap();
         let mut text_stream = tokenizer.token_stream(text);
 
         let mut res = Vec::new();
@@ -291,5 +295,29 @@ mod tests {
         ];
 
         assert_eq!(dbg!(res), dbg!(expected));
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn test_proptest_ascii_default_chinese_equal(text in "[ -~]{0,64}") {
+            let cn_tok = get_quickwit_tokenizer_manager().get("chinese_compatible").unwrap();
+            let default_tok = get_quickwit_tokenizer_manager().get("default").unwrap();
+
+            let mut text_stream = cn_tok.token_stream(&text);
+
+            let mut cn_res = Vec::new();
+            while let Some(tok) = text_stream.next() {
+                cn_res.push(tok.clone());
+            }
+
+            let mut text_stream = default_tok.token_stream(&text);
+
+            let mut default_res = Vec::new();
+            while let Some(tok) = text_stream.next() {
+                default_res.push(tok.clone());
+            }
+
+            assert_eq!(cn_res, default_res);
+        }
     }
 }

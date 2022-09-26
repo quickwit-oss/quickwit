@@ -3232,6 +3232,7 @@ dependencies = [
  "matches",
  "mockall",
  "once_cell",
+ "proptest",
  "quickwit-proto",
  "regex",
  "serde",

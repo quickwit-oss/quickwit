@@ -100,7 +100,7 @@ pub enum QuickwitTextTokenizer {
     Default,
     #[serde(rename = "en_stem")]
     StemEn,
-    #[serde(rename = "chinese")]
+    #[serde(rename = "chinese_compatible")]
     Chinese,
 }
 
@@ -110,7 +110,7 @@ impl QuickwitTextTokenizer {
             QuickwitTextTokenizer::Raw => "raw",
             QuickwitTextTokenizer::Default => "default",
             QuickwitTextTokenizer::StemEn => "en_stem",
-            QuickwitTextTokenizer::Chinese => "chinese",
+            QuickwitTextTokenizer::Chinese => "chinese_compatible",
         }
     }
 }
@@ -432,7 +432,7 @@ mod tests {
         assert_eq!(
             mapping_entry.unwrap_err().to_string(),
             "Error while parsing field `my_field_name`: unknown variant `notexist`, expected one \
-             of `raw`, `default`, `en_stem`, `chinese`"
+             of `raw`, `default`, `en_stem`, `chinese_compatible`"
                 .to_string()
         );
         Ok(())
