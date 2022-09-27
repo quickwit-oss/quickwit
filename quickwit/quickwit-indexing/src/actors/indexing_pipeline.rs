@@ -47,7 +47,8 @@ const MAX_RETRY_DELAY: Duration = Duration::from_secs(600); // 10 min.
 
 /// Spawning an indexing pipeline puts a lot of pressure on the file system, metastore, etc. so
 /// we rely on this semaphore to limit the number of indexing pipelines that can be spawned
-/// concurrently. See also #1638.
+/// concurrently.
+/// See also <https://github.com/quickwit-oss/quickwit/issues/1638>.
 static SPAWN_PIPELINE_SEMAPHORE: Semaphore = Semaphore::const_new(10);
 
 pub struct IndexingPipelineHandle {
