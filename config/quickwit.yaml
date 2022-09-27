@@ -75,7 +75,8 @@ version: 0
 #
 # -------------------------------- Indexer settings --------------------------------
 #
-# indexer:
+indexer:
+  enable_opentelemetry_otlp_service: true
 #   split_store_max_num_bytes: 200G
 #   split_store_max_num_splits: 10000
 #

@@ -1,3 +1,4 @@
+#[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportLogsServiceRequest {
     /// An array of ResourceLogs.
@@ -8,6 +9,7 @@ pub struct ExportLogsServiceRequest {
     #[prost(message, repeated, tag="1")]
     pub resource_logs: ::prost::alloc::vec::Vec<super::super::super::logs::v1::ResourceLogs>,
 }
+#[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportLogsServiceResponse {
     /// The details of a partially successful export request.
@@ -28,6 +30,7 @@ pub struct ExportLogsServiceResponse {
     #[prost(message, optional, tag="1")]
     pub partial_success: ::core::option::Option<ExportLogsPartialSuccess>,
 }
+#[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportLogsPartialSuccess {
     /// The number of rejected log records.

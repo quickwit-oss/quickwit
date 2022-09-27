@@ -58,16 +58,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ],
             &["./proto"],
         )?;
-    tonic_build::configure().out_dir("src/").compile(
-        &[
-            "./otlp/opentelemetry/proto/common/v1/common.proto", // Must be compiled first.
-            "./otlp/opentelemetry/proto/resource/v1/resource.proto", // Must be compiled second.
-            "./otlp/opentelemetry/proto/logs/v1/logs.proto",
-            "./otlp/opentelemetry/proto/trace/v1/trace.proto",
-            "./otlp/opentelemetry/proto/collector/logs/v1/logs_service.proto",
-            "./otlp/opentelemetry/proto/collector/trace/v1/trace_service.proto",
-        ],
-        &["./otlp"],
-    )?;
+    tonic_build::configure()
+        .type_attribute(".", "#[derive(Serialize, Deserialize)]")
+        .out_dir("src/")
+        .compile(
+            &[
+                "./otlp/opentelemetry/proto/common/v1/common.proto", // Must be compiled first.
+                "./otlp/opentelemetry/proto/resource/v1/resource.proto", // Must be compiled second.
+                "./otlp/opentelemetry/proto/logs/v1/logs.proto",
+                "./otlp/opentelemetry/proto/trace/v1/trace.proto",
+                "./otlp/opentelemetry/proto/collector/logs/v1/logs_service.proto",
+                "./otlp/opentelemetry/proto/collector/trace/v1/trace_service.proto",
+            ],
+            &["./otlp"],
+        )?;
     Ok(())
 }
