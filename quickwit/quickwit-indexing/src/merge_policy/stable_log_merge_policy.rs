@@ -324,25 +324,8 @@ impl StableLogMergePolicy {
 #[cfg(test)]
 mod tests {
 
-    use std::ops::RangeInclusive;
-
     use super::*;
     use crate::merge_policy::tests::create_splits;
-
-    fn create_splits_with_timestamps(
-        num_docs_vec: Vec<(usize, RangeInclusive<i64>)>,
-    ) -> Vec<SplitMetadata> {
-        num_docs_vec
-            .into_iter()
-            .enumerate()
-            .map(|(split_ord, (num_docs, time_range))| SplitMetadata {
-                split_id: format!("split_{:02}", split_ord),
-                num_docs,
-                time_range: Some(time_range),
-                ..Default::default()
-            })
-            .collect()
-    }
 
     #[test]
     fn test_split_is_mature() {

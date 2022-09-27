@@ -146,7 +146,7 @@ pub mod tests {
         create_splits_with_timestamps(num_docs_with_timestamp)
     }
 
-    pub(crate) fn create_splits_with_timestamps(
+    fn create_splits_with_timestamps(
         num_docs_vec: Vec<(usize, RangeInclusive<i64>)>,
     ) -> Vec<SplitMetadata> {
         num_docs_vec
