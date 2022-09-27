@@ -364,9 +364,7 @@ impl Handler<PlanDeleteOperationsLoop> for DeleteTaskPlanner {
 mod tests {
     use quickwit_actors::{create_test_mailbox, ActorState, Universe};
     use quickwit_config::build_doc_mapper;
-    use quickwit_indexing::merge_policy::{
-        MergeOperation, StableMultitenantWithTimestampMergePolicy,
-    };
+    use quickwit_indexing::merge_policy::{MergeOperation, StableLogMergePolicy};
     use quickwit_indexing::TestSandbox;
     use quickwit_metastore::SplitMetadata;
     use quickwit_proto::metastore_api::DeleteQuery;
@@ -459,7 +457,7 @@ mod tests {
         );
         let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
         let (downloader_mailbox, downloader_inbox) = create_test_mailbox();
-        let merge_policy = StableMultitenantWithTimestampMergePolicy {
+        let merge_policy = StableLogMergePolicy {
             split_num_docs_target: 1, // <- Set to 1 to have a mature split.
             merge_enabled: true,
             ..Default::default()

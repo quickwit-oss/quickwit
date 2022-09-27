@@ -38,7 +38,7 @@ use thiserror::Error;
 use tokio::sync::Mutex;
 use tracing::{error, info};
 
-use crate::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
+use crate::merge_policy::{MergePolicy, StableLogMergePolicy};
 use crate::models::{
     DetachPipeline, IndexingDirectory, IndexingPipelineId, Observe, ObservePipeline,
     ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
@@ -377,7 +377,7 @@ impl IndexingService {
             }
         }
 
-        let stable_multitenant_merge_policy = StableMultitenantWithTimestampMergePolicy {
+        let merge_policy = StableLogMergePolicy {
             merge_enabled: index_metadata.indexing_settings.merge_enabled,
             merge_factor: index_metadata.indexing_settings.merge_policy.merge_factor,
             max_merge_factor: index_metadata
@@ -387,7 +387,7 @@ impl IndexingService {
             split_num_docs_target: index_metadata.indexing_settings.split_num_docs_target,
             ..Default::default()
         };
-        let merge_policy: Arc<dyn MergePolicy> = Arc::new(stable_multitenant_merge_policy);
+        let merge_policy: Arc<dyn MergePolicy> = Arc::new(merge_policy);
 
         self.merge_policies
             .insert(pipeline_id.index_id.clone(), Arc::downgrade(&merge_policy));
