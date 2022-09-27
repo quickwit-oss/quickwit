@@ -652,31 +652,31 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
         .list_splits(&args.index_id, SplitState::Published, None, None)
         .await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
-    let index_stats = IndexStats::from_metadata(index_metadata, splits).await?;
+    let index_stats = IndexStats::from_metadata(index_metadata, splits)?;
     println!("{}", index_stats.display_as_table());
     Ok(())
 }
 
 #[derive(Tabled)]
-struct IndexStats {
+pub struct IndexStats {
     #[tabled(rename = "Index ID: ")]
-    index_id: String,
+    pub index_id: String,
     #[tabled(rename = "Index URI: ")]
-    index_uri: Uri,
+    pub index_uri: Uri,
     #[tabled(rename = "Number of published splits: ")]
-    num_published_splits: usize,
+    pub num_published_splits: usize,
     #[tabled(rename = "Number of published documents: ")]
-    num_published_docs: usize,
+    pub num_published_docs: usize,
     #[tabled(rename = "Size of published splits (MB): ")]
-    size_published_docs: usize,
+    pub size_published_docs: usize,
     #[tabled(display_with = "display_option_in_table", rename = "Timestamp field: ")]
-    timestamp_field_name: Option<String>,
+    pub timestamp_field_name: Option<String>,
     #[tabled(display_with = "display_timestamp_range", rename = "Timestamp range: ")]
-    timestamp_range: Option<(Option<i64>, Option<i64>)>,
+    pub timestamp_range: Option<(Option<i64>, Option<i64>)>,
     #[tabled(skip)]
-    num_docs_descriptive: Option<DescriptiveStats>,
+    pub num_docs_descriptive: Option<DescriptiveStats>,
     #[tabled(skip)]
-    num_bytes_descriptive: Option<DescriptiveStats>,
+    pub num_bytes_descriptive: Option<DescriptiveStats>,
 }
 
 fn display_option_in_table(opt: &Option<impl Display>) -> String {
@@ -700,7 +700,7 @@ fn display_timestamp_range(range: &Option<(Option<i64>, Option<i64>)>) -> String
 }
 
 impl IndexStats {
-    async fn from_metadata(
+    pub fn from_metadata(
         index_metadata: IndexMetadata,
         splits: Vec<Split>,
     ) -> anyhow::Result<Self> {
@@ -724,13 +724,19 @@ impl IndexStats {
                 .iter()
                 .map(|split| split.split_metadata.time_range.clone())
                 .filter(|time_range| time_range.is_some())
-                .map(|time_range| *time_range.unwrap().start())
+                .map(|time_range| {
+                    let time_range = time_range.unwrap();
+                    *time_range.start().min(time_range.end())
+                })
                 .min();
             let time_max = splits
                 .iter()
                 .map(|split| split.split_metadata.time_range.clone())
                 .filter(|time_range| time_range.is_some())
-                .map(|time_range| *time_range.unwrap().start())
+                .map(|time_range| {
+                    let time_range = time_range.unwrap();
+                    *time_range.start().max(time_range.end())
+                })
                 .max();
             Some((time_min, time_max))
         } else {
@@ -759,7 +765,7 @@ impl IndexStats {
         })
     }
 
-    fn display_as_table(&self) -> String {
+    pub fn display_as_table(&self) -> String {
         let index_stats_table = create_table(&self, "General Information");
 
         let index_stats_table = if let Some(docs_stats) = &self.num_docs_descriptive {
@@ -798,7 +804,8 @@ fn create_table(table: impl Tabled, header: &str) -> Table {
         .with(Panel("\n", 0))
 }
 
-struct DescriptiveStats {
+#[derive(Debug)]
+pub struct DescriptiveStats {
     mean_val: f32,
     std_val: f32,
     min_val: usize,
@@ -835,7 +842,7 @@ impl Tabled for DescriptiveStats {
 }
 
 impl DescriptiveStats {
-    fn maybe_new(values: &[usize]) -> Option<DescriptiveStats> {
+    pub fn maybe_new(values: &[usize]) -> Option<DescriptiveStats> {
         if values.is_empty() {
             return None;
         }

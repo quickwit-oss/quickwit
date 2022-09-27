@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::ops::RangeInclusive;
 use std::path::PathBuf;
 use std::process::{Child, Stdio};
 use std::sync::Arc;
@@ -28,7 +29,7 @@ use assert_cmd::Command;
 use predicates::str;
 use quickwit_common::net::find_available_tcp_port;
 use quickwit_common::uri::Uri;
-use quickwit_metastore::{FileBackedMetastore, MetastoreResult};
+use quickwit_metastore::{FileBackedMetastore, MetastoreResult, SplitMetadata};
 use quickwit_storage::{LocalFileStorage, S3CompatibleObjectStorage, Storage};
 use tempfile::{tempdir, TempDir};
 
@@ -227,4 +228,17 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
         rest_listen_port,
         storage,
     })
+}
+
+pub fn split_metadata_for_test(
+    split_id: &str,
+    num_docs: usize,
+    time_range: RangeInclusive<i64>,
+    size: u64,
+) -> SplitMetadata {
+    let mut split_metadata = SplitMetadata::for_test(split_id.to_string());
+    split_metadata.num_docs = num_docs;
+    split_metadata.time_range = Some(time_range);
+    split_metadata.footer_offsets = 0..size;
+    split_metadata
 }

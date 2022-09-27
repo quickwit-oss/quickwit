@@ -26,19 +26,23 @@ use std::str::from_utf8;
 
 use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
+use itertools::Itertools;
 use predicates::prelude::*;
-use quickwit_cli::index::{create_index_cli, search_index, CreateIndexArgs, SearchIndexArgs};
+use quickwit_cli::index::{
+    create_index_cli, search_index, CreateIndexArgs, IndexStats, SearchIndexArgs, DescriptiveStats,
+};
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_config::CLI_INGEST_SOURCE_ID;
 use quickwit_core::get_cache_directory_path;
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
-use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore};
+use quickwit_metastore::SplitMetadata;
+use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Metastore, Split};
 use serde_json::{json, Number, Value};
 use serial_test::serial;
 use tokio::time::{sleep, Duration};
 
-use crate::helpers::{create_test_env, make_command, spawn_command};
+use crate::helpers::{create_test_env, make_command, spawn_command, split_metadata_for_test};
 
 fn create_logs_index(test_env: &TestEnv) {
     make_command(
@@ -1070,6 +1074,89 @@ async fn test_cmd_all_with_s3_localstack_internal_api() -> Result<()> {
             .await?,
         false
     );
+
+    Ok(())
+}
+
+#[test]
+fn test_index_stats() -> anyhow::Result<()> {
+    let index_id = append_random_suffix("index-stats-env");
+    let split_id = append_random_suffix("test_split_id");
+    let index_uri = "s3://some-test-bucket";
+
+    let index_metadata = IndexMetadata::for_test(&index_id, index_uri);
+    let split_metadata = split_metadata_for_test(&split_id, 100_000, 1111..=2222, 15_000_000);
+
+    let split_data = Split {
+        split_metadata,
+        split_state: quickwit_metastore::SplitState::Published,
+        update_timestamp: 0,
+        publish_timestamp: Some(0),
+    };
+
+    let index_stats = IndexStats::from_metadata(index_metadata, vec![split_data])?;
+
+    assert_eq!(index_stats.index_id, index_id);
+    assert_eq!(index_stats.index_uri.as_str(), index_uri);
+    assert_eq!(index_stats.num_published_splits, 1);
+    assert_eq!(index_stats.num_published_docs, 100_000);
+    assert_eq!(index_stats.size_published_docs, 15);
+    assert_eq!(
+        index_stats.timestamp_field_name,
+        Some("timestamp".to_string())
+    );
+    assert_eq!(index_stats.timestamp_range, Some((Some(1111), Some(2222))));
+
+    Ok(())
+}
+
+#[test]
+fn test_descriptive_stats() -> anyhow::Result<()> {
+    let split_id = append_random_suffix("stat-test-split");
+    let template_split = Split {
+        split_state: quickwit_metastore::SplitState::Published,
+        update_timestamp: 0,
+        publish_timestamp: Some(0),
+        split_metadata: SplitMetadata::default(),
+    };
+
+    let split_metadata_1 = split_metadata_for_test(&split_id, 70_000, 10..=12, 60_000_000);
+    let split_metadata_2 = split_metadata_for_test(&split_id, 120_000, 11..=15, 145_000_000);
+    let split_metadata_3 = split_metadata_for_test(&split_id, 90_000, 15..=22, 115_000_000);
+    let split_metadata_4 = split_metadata_for_test(&split_id, 40_000, 22..=22, 55_000_000);
+
+    let mut split_1 = template_split.clone();
+    split_1.split_metadata = split_metadata_1;
+    let mut split_2 = template_split.clone();
+    split_2.split_metadata = split_metadata_2;
+    let mut split_3 = template_split.clone();
+    split_3.split_metadata = split_metadata_3;
+    let mut split_4 = template_split.clone();
+    split_4.split_metadata = split_metadata_4;
+
+    let splits = vec![split_1, split_2, split_3, split_4];
+
+    let splits_num_docs = splits
+        .iter()
+        .map(|split| split.split_metadata.num_docs)
+        .sorted()
+        .collect_vec();
+
+    let splits_bytes = splits
+        .iter()
+        .map(|split| (split.split_metadata.footer_offsets.end / 1_000_000) as usize)
+        .sorted()
+        .collect_vec();
+
+    let num_docs_descriptive = DescriptiveStats::maybe_new(&splits_num_docs);
+    let num_bytes_descriptive = DescriptiveStats::maybe_new(&splits_bytes);
+    let desciptive_stats_none = DescriptiveStats::maybe_new(&[]);
+
+
+    assert!(num_docs_descriptive.is_some());
+    assert!(num_bytes_descriptive.is_some());
+
+    assert!(desciptive_stats_none.is_none());
 
     Ok(())
 }
