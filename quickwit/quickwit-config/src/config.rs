@@ -89,6 +89,9 @@ fn default_quickwit_services() -> Vec<String> {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IndexerConfig {
+    #[doc(hidden)]
+    #[serde(default = "IndexerConfig::default_enable_opentelemetry_otlp_service")]
+    pub enable_opentelemetry_otlp_service: bool,
     #[serde(default = "IndexerConfig::default_split_store_max_num_bytes")]
     pub split_store_max_num_bytes: Byte,
     #[serde(default = "IndexerConfig::default_split_store_max_num_splits")]
@@ -96,17 +99,22 @@ pub struct IndexerConfig {
 }
 
 impl IndexerConfig {
-    fn default_split_store_max_num_bytes() -> Byte {
+    fn default_enable_opentelemetry_otlp_service() -> bool {
+        false
+    }
+
+    pub fn default_split_store_max_num_bytes() -> Byte {
         Byte::from_bytes(100_000_000_000) // 100G
     }
 
-    fn default_split_store_max_num_splits() -> usize {
+    pub fn default_split_store_max_num_splits() -> usize {
         1_000
     }
 
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> anyhow::Result<Self> {
         let indexer_config = IndexerConfig {
+            enable_opentelemetry_otlp_service: true,
             split_store_max_num_bytes: Byte::from_bytes(1_000_000),
             split_store_max_num_splits: 3,
         };
@@ -117,6 +125,7 @@ impl IndexerConfig {
 impl Default for IndexerConfig {
     fn default() -> Self {
         Self {
+            enable_opentelemetry_otlp_service: Self::default_enable_opentelemetry_otlp_service(),
             split_store_max_num_bytes: Self::default_split_store_max_num_bytes(),
             split_store_max_num_splits: Self::default_split_store_max_num_splits(),
         }
@@ -356,6 +365,15 @@ impl QuickwitConfigBuilder {
         }
     }
 
+    fn data_dir_path(&self) -> anyhow::Result<PathBuf> {
+        let data_dir_uri = Uri::try_new(&self.data_dir_path.to_string_lossy())
+            .expect("Failed to create URI from data_dir.");
+        match data_dir_uri.filepath() {
+            Some(path) => Ok(path.to_path_buf()),
+            _ => bail!("Only `file://` protocol allowed for data_dir `{data_dir_uri}`."),
+        }
+    }
+
     pub async fn build(self) -> anyhow::Result<QuickwitConfig> {
         let listen_host = self.listen_address.parse::<Host>()?;
 
@@ -368,10 +386,10 @@ impl QuickwitConfigBuilder {
             metastore_uri: self.metastore_uri()?,
             default_index_root_uri: self.default_index_root_uri()?,
             enabled_services: self.parse_services()?,
+            data_dir_path: self.data_dir_path()?,
             version: self.version,
             cluster_id: self.cluster_id,
             node_id: self.node_id,
-            data_dir_path: self.data_dir_path,
             peer_seeds: self.peer_seeds,
             indexer_config: self.indexer_config,
             searcher_config: self.searcher_config,
@@ -610,6 +628,7 @@ mod tests {
                 assert_eq!(
                     config.indexer_config,
                     IndexerConfig {
+                        enable_opentelemetry_otlp_service: false,
                         split_store_max_num_bytes: Byte::from_str("1T").unwrap(),
                         split_store_max_num_splits: 10_000,
                     }
@@ -672,7 +691,10 @@ mod tests {
                 env::current_dir().unwrap().display()
             )
         );
-        assert_eq!(config.data_dir_path.to_string_lossy(), "./qwdata");
+        assert_eq!(
+            config.data_dir_path.to_string_lossy(),
+            format!("{}/qwdata", env::current_dir().unwrap().display())
+        );
     }
 
     #[tokio::test]
@@ -878,6 +900,40 @@ mod tests {
             let config_builder =
                 serde_yaml::from_str::<QuickwitConfigBuilder>(config_yaml).unwrap();
             config_builder.build().await.unwrap_err();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_quickwit_config_data_dir_accepts_both_file_uris_and_file_paths() {
+        {
+            let config_yaml = r#"
+                version: 0
+                data_dir: /opt/quickwit/data
+            "#;
+            let config_builder =
+                serde_yaml::from_str::<QuickwitConfigBuilder>(config_yaml).unwrap();
+            let config = config_builder.build().await.unwrap();
+            assert_eq!(config.data_dir_path, PathBuf::from("/opt/quickwit/data"));
+        }
+        {
+            let config_yaml = r#"
+                version: 0
+                data_dir: file:///opt/quickwit/data
+            "#;
+            let config_builder =
+                serde_yaml::from_str::<QuickwitConfigBuilder>(config_yaml).unwrap();
+            let config = config_builder.build().await.unwrap();
+            assert_eq!(config.data_dir_path, PathBuf::from("/opt/quickwit/data"));
+        }
+        {
+            let config_yaml = r#"
+                version: 0
+                data_dir: s3://indexes/foo
+            "#;
+            let config_builder =
+                serde_yaml::from_str::<QuickwitConfigBuilder>(config_yaml).unwrap();
+            let error = config_builder.build().await.unwrap_err();
+            assert!(error.to_string().contains("Only `file://` protocol"));
         }
     }
 }

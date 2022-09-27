@@ -17,41 +17,135 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testsuite"))]
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Instant;
 
 use anyhow::Context;
+use quickwit_config::IndexerConfig;
 use quickwit_metastore::SplitMetadata;
-use quickwit_storage::{PutPayload, Storage, StorageResult};
+use quickwit_storage::{PutPayload, Storage, StorageErrorKind, StorageResult};
 use tantivy::Directory;
 use tokio::sync::Mutex;
-use tracing::info;
+use tracing::{info, warn};
 
 use super::LocalSplitStore;
+use crate::merge_policy::StableMultitenantWithTimestampMergePolicy;
 use crate::split_store::SPLIT_CACHE_DIR_NAME;
-use crate::{
-    get_tantivy_directory_from_split_bundle, MergePolicy, SplitFolder,
-    StableMultitenantWithTimestampMergePolicy,
-};
+use crate::{get_tantivy_directory_from_split_bundle, MergePolicy, SplitFolder};
 
-/// `IndexingSplitStoreParams` encapsulates the various contraints of the cache.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct IndexingSplitStoreParams {
+/// A struct for keeping in check multiple SplitStore.
+#[derive(Debug)]
+pub struct SplitStoreSpaceQuota {
+    /// Current number of splits in the cache.
+    num_splits_in_cache: usize,
+    /// Current size in bytes of splits in the cache.
+    size_in_bytes_in_cache: usize,
     /// Maximum number of files allowed in the cache.
-    pub max_num_splits: usize,
+    max_num_splits: usize,
     /// Maximum size in bytes allowed in the cache.
-    pub max_num_bytes: usize,
+    max_num_bytes: usize,
+    /// Known split store local storage roots.
+    // A SplitStore can be opened several time for the lifetime
+    // of an indexing server. This set helps in avoiding adding
+    // the same SplitStore opening size again.
+    opened_split_store_roots: HashSet<PathBuf>,
 }
 
-impl Default for IndexingSplitStoreParams {
+impl Default for SplitStoreSpaceQuota {
     fn default() -> Self {
         Self {
-            max_num_splits: 1000,
-            max_num_bytes: 100_000_000_000, // 100GB
+            num_splits_in_cache: 0,
+            size_in_bytes_in_cache: 0,
+            max_num_bytes: IndexerConfig::default_split_store_max_num_bytes().get_bytes() as usize,
+            max_num_splits: IndexerConfig::default_split_store_max_num_splits(),
+            opened_split_store_roots: HashSet::default(),
         }
+    }
+}
+
+impl SplitStoreSpaceQuota {
+    pub fn new(max_num_splits: usize, max_num_bytes: usize) -> Self {
+        Self {
+            max_num_splits,
+            max_num_bytes,
+            ..Default::default()
+        }
+    }
+
+    pub fn can_fit_split(&self, split_size_in_bytes: usize) -> bool {
+        // Avoid storing in the cache when the maximum number of cached files is reached.
+        if self.num_splits() >= self.max_num_splits {
+            warn!("Failed to cache file: maximum number of files exceeded.");
+            return false;
+        }
+
+        // Ignore storing a file that cannot fit in remaining space in the cache.
+        if split_size_in_bytes > self.available_bytes() {
+            warn!("Failed to cache file: maximum size in bytes of cache exceeded.");
+            return false;
+        }
+        true
+    }
+
+    pub fn add_split(&mut self, split_size_in_bytes: usize) {
+        self.num_splits_in_cache += 1;
+        self.size_in_bytes_in_cache += split_size_in_bytes;
+    }
+
+    pub fn add_initial_splits(
+        &mut self,
+        local_storage_root: &Path,
+        num_splits: usize,
+        splits_size_in_bytes: usize,
+    ) -> StorageResult<()> {
+        if self.opened_split_store_roots.contains(local_storage_root) {
+            return Ok(());
+        }
+
+        let total_splits = self.num_splits_in_cache + num_splits;
+        if total_splits > self.max_num_splits {
+            return Err(StorageErrorKind::InternalError.with_error(anyhow::anyhow!(
+                "Initial number of files ({}) exceeds the maximum number ({}) of files allowed.",
+                total_splits,
+                self.max_num_splits
+            )));
+        }
+
+        let total_size_in_bytes = self.size_in_bytes_in_cache + splits_size_in_bytes;
+        if total_size_in_bytes > self.max_num_bytes {
+            return Err(StorageErrorKind::InternalError.with_error(anyhow::anyhow!(
+                "Initial cache size ({}) exceeds the maximum size ({}) in bytes allowed.",
+                total_size_in_bytes,
+                self.max_num_bytes
+            )));
+        }
+
+        self.opened_split_store_roots
+            .insert(local_storage_root.to_path_buf());
+        self.num_splits_in_cache = total_splits;
+        self.size_in_bytes_in_cache = total_size_in_bytes;
+        Ok(())
+    }
+
+    pub fn remove_splits(&mut self, num_splits: usize, splits_size_in_bytes: usize) {
+        self.num_splits_in_cache -= num_splits;
+        self.size_in_bytes_in_cache -= splits_size_in_bytes;
+    }
+
+    pub fn num_splits(&self) -> usize {
+        self.num_splits_in_cache
+    }
+
+    pub fn size_in_bytes(&self) -> usize {
+        self.size_in_bytes_in_cache
+    }
+
+    fn available_bytes(&self) -> usize {
+        self.max_num_bytes - self.size_in_bytes_in_cache
     }
 }
 
@@ -76,10 +170,14 @@ impl Default for IndexingSplitStoreParams {
 /// The splits are stored on the local filesystem in `LocalSplitStore`.
 #[derive(Clone)]
 pub struct IndexingSplitStore {
+    inner: Arc<InnerIndexingSplitStore>,
+}
+
+struct InnerIndexingSplitStore {
     /// The remote storage.
     remote_storage: Arc<dyn Storage>,
 
-    local_split_store: Option<Arc<Mutex<LocalSplitStore>>>,
+    local_split_store: Option<Mutex<LocalSplitStore>>,
 
     /// The merge policy is useful to identify whether a split
     /// should be stored in the local storage or not.
@@ -87,32 +185,51 @@ pub struct IndexingSplitStore {
     merge_policy: Arc<dyn MergePolicy>,
 }
 
+pub struct WeakIndexingSplitStore {
+    inner: Weak<InnerIndexingSplitStore>,
+}
+
+impl WeakIndexingSplitStore {
+    pub fn upgrade(&self) -> Option<IndexingSplitStore> {
+        self.inner
+            .upgrade()
+            .map(|inner| IndexingSplitStore { inner })
+    }
+}
+
 impl IndexingSplitStore {
-    /// Create an instance of [`IndexingSplitStore`]
+    /// Creates an instance of [`IndexingSplitStore`]
     ///
     /// It needs the remote storage to work with.
-    pub fn create_with_local_store(
+    pub async fn create_with_local_store(
         remote_storage: Arc<dyn Storage>,
         cache_directory: &Path,
-        cache_params: IndexingSplitStoreParams,
         merge_policy: Arc<dyn MergePolicy>,
+        split_store_space_quota: Arc<Mutex<SplitStoreSpaceQuota>>,
     ) -> StorageResult<Self> {
         let local_storage_root = cache_directory.join(SPLIT_CACHE_DIR_NAME);
         std::fs::create_dir_all(&local_storage_root)?;
-        let local_split_store = LocalSplitStore::open(local_storage_root, cache_params)?;
-        Ok(Self {
+        let local_split_store =
+            LocalSplitStore::open(local_storage_root, split_store_space_quota).await?;
+
+        let inner = InnerIndexingSplitStore {
             remote_storage,
-            local_split_store: Some(Arc::new(Mutex::new(local_split_store))),
+            local_split_store: Some(Mutex::new(local_split_store)),
             merge_policy,
+        };
+        Ok(Self {
+            inner: Arc::new(inner),
         })
     }
 
-    /// Create a storage with upload cache in a temp directory for tests.
-    pub fn create_with_no_local_store(remote_storage: Arc<dyn Storage>) -> Self {
-        IndexingSplitStore {
+    pub fn create_without_local_store(remote_storage: Arc<dyn Storage>) -> Self {
+        let inner = InnerIndexingSplitStore {
             remote_storage,
             local_split_store: None,
             merge_policy: Arc::new(StableMultitenantWithTimestampMergePolicy::default()),
+        };
+        Self {
+            inner: Arc::new(inner),
         }
     }
 
@@ -137,20 +254,21 @@ impl IndexingSplitStore {
         let split_num_bytes = put_payload.len();
 
         let key = PathBuf::from(quickwit_common::split_file(split.split_id()));
-        self.remote_storage
+        self.inner
+            .remote_storage
             .put(&key, put_payload)
             .await
             .with_context(|| {
                 format!(
                     "Failed uploading key {} in bucket {}",
                     key.display(),
-                    self.remote_storage.uri()
+                    self.inner.remote_storage.uri()
                 )
             })?;
         let elapsed_secs = start.elapsed().as_secs_f32();
         let split_size_in_megabytes = split_num_bytes / 1_000_000;
         let throughput_mb_s = split_size_in_megabytes as f32 / elapsed_secs;
-        let is_mature = self.merge_policy.is_mature(split);
+        let is_mature = self.inner.merge_policy.is_mature(split);
 
         info!(
             split_size_in_megabytes = %split_size_in_megabytes,
@@ -163,10 +281,10 @@ impl IndexingSplitStore {
 
         if !is_mature {
             info!("store-in-cache");
-            if let Some(split_store) = self.local_split_store.as_ref() {
-                let mut split_store_lock = split_store.lock().await;
+            if let Some(split_store) = &self.inner.local_split_store {
+                let mut split_store_guard = split_store.lock().await;
                 let tantivy_dir = SplitFolder::new(split_folder.to_path_buf());
-                if split_store_lock
+                if split_store_guard
                     .move_into_cache(split.split_id(), tantivy_dir, split_num_bytes as usize)
                     .await?
                 {
@@ -174,9 +292,7 @@ impl IndexingSplitStore {
                 }
             }
         }
-
         tokio::fs::remove_dir_all(split_folder).await?;
-
         Ok(())
     }
 
@@ -184,10 +300,10 @@ impl IndexingSplitStore {
     pub async fn delete(&self, split_id: &str) -> StorageResult<()> {
         let split_filename = quickwit_common::split_file(split_id);
         let split_path = Path::new(&split_filename);
-        self.remote_storage.delete(split_path).await?;
-        if let Some(local_split_store) = self.local_split_store.as_ref() {
-            let mut local_split_store_lock = local_split_store.lock().await;
-            local_split_store_lock.remove_split(split_id).await?;
+        self.inner.remote_storage.delete(split_path).await?;
+        if let Some(local_split_store) = &self.inner.local_split_store {
+            let mut local_split_store_guard = local_split_store.lock().await;
+            local_split_store_guard.remove_split(split_id).await?;
         }
         Ok(())
     }
@@ -201,9 +317,9 @@ impl IndexingSplitStore {
         output_dir_path: &Path,
     ) -> StorageResult<Box<dyn Directory>> {
         let path = PathBuf::from(quickwit_common::split_file(split_id));
-        if let Some(local_split_store) = self.local_split_store.as_ref() {
-            let mut local_split_store_lock = local_split_store.lock().await;
-            if let Some(split_folder) = local_split_store_lock
+        if let Some(local_split_store) = &self.inner.local_split_store {
+            let mut local_split_store_guard = local_split_store.lock().await;
+            if let Some(split_folder) = local_split_store_guard
                 .get_cached_split(split_id, output_dir_path)
                 .await?
             {
@@ -213,7 +329,8 @@ impl IndexingSplitStore {
         let start_time = Instant::now();
         let dest_filepath = output_dir_path.join(&path);
         info!(split_id = split_id, "fetch-split-from-remote-storage-start");
-        self.remote_storage
+        self.inner
+            .remote_storage
             .copy_to_file(&path, &dest_filepath)
             .await?;
         info!(split_id=split_id,elapsed=?start_time.elapsed(), "fetch-split-from_remote-storage-success");
@@ -228,15 +345,16 @@ impl IndexingSplitStore {
         &self,
         published_splits: &[SplitMetadata],
     ) -> StorageResult<()> {
-        if let Some(local_split_store) = self.local_split_store.as_ref() {
+        if let Some(local_split_store) = &self.inner.local_split_store {
             let published_split_ids: Vec<&str> = published_splits
                 .iter()
-                .filter(|split| !self.merge_policy.is_mature(split))
+                .filter(|split| !self.inner.merge_policy.is_mature(split))
                 .map(|split| split.split_id())
                 .collect();
 
-            let mut local_split_store_lock = local_split_store.lock().await;
-            return local_split_store_lock
+            return local_split_store
+                .lock()
+                .await
                 .retain_only(&published_split_ids)
                 .await;
         }
@@ -246,15 +364,21 @@ impl IndexingSplitStore {
 
     // TODO: remove when merge_pipeline is refactored
     pub fn get_merge_policy(&self) -> Arc<dyn MergePolicy> {
-        self.merge_policy.clone()
+        self.inner.merge_policy.clone()
+    }
+
+    pub fn downgrade(&self) -> WeakIndexingSplitStore {
+        WeakIndexingSplitStore {
+            inner: Arc::downgrade(&self.inner),
+        }
     }
 
     /// Takes a snapshot of the cache view (only used for testing).
-    #[cfg(test)]
-    async fn inspect_local_store(&self) -> HashMap<String, usize> {
-        if let Some(split_store) = self.local_split_store.as_ref() {
-            let split_store_lock = split_store.lock().await;
-            split_store_lock.inspect()
+    #[cfg(any(test, feature = "testsuite"))]
+    pub async fn inspect_local_store(&self) -> HashMap<String, usize> {
+        if let Some(split_store) = &self.inner.local_split_store {
+            let split_store_guard = split_store.lock().await;
+            split_store_guard.inspect()
         } else {
             HashMap::default()
         }
@@ -272,10 +396,12 @@ mod test_split_store {
     };
     use tempfile::tempdir;
     use tokio::fs;
+    use tokio::sync::Mutex;
 
-    use super::{IndexingSplitStore, IndexingSplitStoreParams};
-    use crate::split_store::SPLIT_CACHE_DIR_NAME;
-    use crate::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
+    use super::IndexingSplitStore;
+    use crate::merge_policy::StableMultitenantWithTimestampMergePolicy;
+    use crate::split_store::{SplitStoreSpaceQuota, SPLIT_CACHE_DIR_NAME};
+    use crate::MergePolicy;
 
     #[tokio::test]
     async fn test_create_should_error_with_wrong_num_files() -> anyhow::Result<()> {
@@ -287,18 +413,16 @@ mod test_split_store {
         fs::create_dir_all(&root_path.join("b.split")).await?;
         fs::create_dir_all(&root_path.join("c.split")).await?;
 
-        let cache_params = IndexingSplitStoreParams {
-            max_num_splits: 2,
-            max_num_bytes: 10,
-        };
+        let split_store_space_quota = Arc::new(Mutex::new(SplitStoreSpaceQuota::new(2, 10)));
         let remote_storage = Arc::new(RamStorage::default());
         let merge_policy = Arc::new(StableMultitenantWithTimestampMergePolicy::default());
         let result = IndexingSplitStore::create_with_local_store(
             remote_storage,
             local_dir.path(),
-            cache_params,
             merge_policy,
-        );
+            split_store_space_quota,
+        )
+        .await;
         assert!(matches!(
             result,
             Err(StorageError {
@@ -318,18 +442,16 @@ mod test_split_store {
         fs::create_dir_all(&root_path.join("a.split")).await?;
         fs::create_dir_all(&root_path.join("b.split")).await?;
 
-        let cache_params = IndexingSplitStoreParams {
-            max_num_splits: 4,
-            max_num_bytes: 10,
-        };
+        let split_store_space_quota = Arc::new(Mutex::new(SplitStoreSpaceQuota::new(4, 10)));
         let remote_storage = Arc::new(RamStorage::default());
         let merge_policy = Arc::new(StableMultitenantWithTimestampMergePolicy::default());
         let result = IndexingSplitStore::create_with_local_store(
             remote_storage,
             local_dir.path(),
-            cache_params,
             merge_policy,
-        );
+            split_store_space_quota,
+        )
+        .await;
         assert!(matches!(
             result,
             Err(StorageError {
@@ -348,18 +470,16 @@ mod test_split_store {
         fs::write(root_path.join("b.split"), b"abcd").await?;
         fs::write(root_path.join("a.split"), b"abcdefgh").await?;
 
-        let cache_params = IndexingSplitStoreParams {
-            max_num_splits: 100,
-            max_num_bytes: 100,
-        };
+        let split_store_space_quota = Arc::new(Mutex::new(SplitStoreSpaceQuota::new(100, 100)));
         let remote_storage = Arc::new(RamStorage::default());
         let merge_policy = Arc::new(StableMultitenantWithTimestampMergePolicy::default());
         let result = IndexingSplitStore::create_with_local_store(
             remote_storage,
             local_dir.path(),
-            cache_params,
             merge_policy,
-        );
+            split_store_space_quota,
+        )
+        .await;
         assert!(result.is_ok());
         Ok(())
     }
@@ -380,9 +500,10 @@ mod test_split_store {
         let split_store = IndexingSplitStore::create_with_local_store(
             remote_storage,
             split_cache_dir.path(),
-            IndexingSplitStoreParams::default(),
             merge_policy.clone(),
-        )?;
+            Arc::new(Mutex::new(SplitStoreSpaceQuota::default())),
+        )
+        .await?;
         {
             let split_path = temp_dir.path().join("split1");
             fs::create_dir_all(&split_path).await?;
@@ -437,12 +558,10 @@ mod test_split_store {
         let split_store = IndexingSplitStore::create_with_local_store(
             remote_storage,
             split_cache_dir.path(),
-            IndexingSplitStoreParams {
-                max_num_splits: 1,
-                max_num_bytes: 1_000_000,
-            },
             merge_policy.clone(),
-        )?;
+            Arc::new(Mutex::new(SplitStoreSpaceQuota::new(1, 1_000_000))),
+        )
+        .await?;
 
         {
             let split_path = temp_dir.path().join("split1");
@@ -507,12 +626,10 @@ mod test_split_store {
         let split_store = IndexingSplitStore::create_with_local_store(
             remote_storage,
             split_cache_dir.path(),
-            IndexingSplitStoreParams {
-                max_num_splits: 10,
-                max_num_bytes: 40,
-            },
             merge_policy.clone(),
-        )?;
+            Arc::new(Mutex::new(SplitStoreSpaceQuota::new(10, 40))),
+        )
+        .await?;
 
         {
             let split_path = temp_dir.path().join("split1");
@@ -570,12 +687,10 @@ mod test_split_store {
         let split_store = IndexingSplitStore::create_with_local_store(
             remote_storage.clone(),
             split_cache_dir.path(),
-            IndexingSplitStoreParams {
-                max_num_splits: 10,
-                max_num_bytes: 40,
-            },
             merge_policy.clone(),
-        )?;
+            Arc::new(Mutex::new(SplitStoreSpaceQuota::new(10, 40))),
+        )
+        .await?;
 
         let split_streamer = SplitPayloadBuilder::get_split_payload(&[], &[5, 5, 5])?;
         {
@@ -626,18 +741,21 @@ mod test_split_store {
         fs::write(root_path.join("b.split").join("termdict"), b"b").await?;
         fs::write(root_path.join("c.split").join("termdict"), b"c").await?;
 
-        let cache_params = IndexingSplitStoreParams {
-            max_num_splits: 100,
-            max_num_bytes: 200,
-        };
+        let split_store_space_quota = Arc::new(Mutex::new(SplitStoreSpaceQuota::new(100, 200)));
         let remote_storage = Arc::new(RamStorage::default());
         let merge_policy = Arc::new(StableMultitenantWithTimestampMergePolicy::default());
         let split_store = IndexingSplitStore::create_with_local_store(
             remote_storage,
             local_dir.path(),
-            cache_params,
             merge_policy,
-        )?;
+            split_store_space_quota.clone(),
+        )
+        .await?;
+        let initial_size = {
+            let split_store_space_quota_guard = split_store_space_quota.lock().await;
+            assert_eq!(split_store_space_quota_guard.num_splits(), 3);
+            split_store_space_quota_guard.size_in_bytes()
+        };
         let published_splits = vec![SplitMetadata {
             split_id: "b".to_string(),
             footer_offsets: 5..20,
@@ -649,6 +767,9 @@ mod test_split_store {
         assert!(!root_path.join("a.split").as_path().exists());
         assert!(!root_path.join("c.split").as_path().exists());
         assert!(root_path.join("b.split").as_path().exists());
+        let split_store_space_quota_guard = split_store_space_quota.lock().await;
+        assert_eq!(split_store_space_quota_guard.num_splits(), 1);
+        assert!(split_store_space_quota_guard.size_in_bytes() < initial_size);
         Ok(())
     }
 
@@ -673,9 +794,10 @@ mod test_split_store {
         let split_store = IndexingSplitStore::create_with_local_store(
             remote_storage,
             split_cache_dir.path(),
-            IndexingSplitStoreParams::default(),
             Arc::new(SplitsAreMature {}),
-        )?;
+            Arc::new(Mutex::new(SplitStoreSpaceQuota::default())),
+        )
+        .await?;
         {
             let split_path = temp_dir.path().join("split1");
             fs::create_dir_all(&split_path).await?;

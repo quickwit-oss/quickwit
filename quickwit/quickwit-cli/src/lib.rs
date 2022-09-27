@@ -47,11 +47,12 @@ pub mod stats;
 /// Throughput calculation window size.
 const THROUGHPUT_WINDOW_SIZE: usize = 5;
 
-/// This environment variable can be set to send telemetry events to a jaeger instance.
-pub const QW_JAEGER_ENABLED_ENV_KEY: &str = "QW_JAEGER_ENABLED";
+pub const QW_ENABLE_JAEGER_EXPORTER_ENV_KEY: &str = "QW_ENABLE_JAEGER_EXPORTER";
 
-/// This environment variable can be set to send data to tokio console.
-pub const QW_TOKIO_CONSOLE_ENABLED_ENV_KEY: &str = "QW_TOKIO_CONSOLE_ENABLED";
+pub const QW_ENABLE_TOKIO_CONSOLE_ENV_KEY: &str = "QW_ENABLE_TOKIO_CONSOLE";
+
+pub const QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY: &str =
+    "QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER";
 
 /// Regular expression representing a valid duration with unit.
 pub const DURATION_WITH_UNIT_PATTERN: &str = r#"^(\d{1,3})(s|m|h|d)$"#;

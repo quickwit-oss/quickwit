@@ -17,6 +17,7 @@ spec:
       containers:
         - name: quickwit
           image: quickwit/quickwit:edge
+          imagePullPolicy: Always
           args: ["run", "--service", "janitor"]
           ports:
             - containerPort: 7280
@@ -47,35 +48,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
-            - name: POSTGRES_HOST
-              valueFrom:
-                configMapKeyRef:
-                  name: quickwit-config
-                  key: postgres.host
-            - name: POSTGRES_PORT
-              valueFrom:
-                configMapKeyRef:
-                  name: quickwit-config
-                  key: postgres.port
-            - name: POSTGRES_USERNAME
-              valueFrom:
-                configMapKeyRef:
-                  name: quickwit-config
-                  key: postgres.username
-            - name: POSTGRES_DATABASE
-              valueFrom:
-                configMapKeyRef:
-                  name: quickwit-config
-                  key: postgres.database
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: quickwit-secrets
-                  key: postgres.password
             - name: QW_CONFIG
               value: node.yaml
-            - name: QW_METASTORE_URI
-              value: "postgres://$(POSTGRES_USERNAME):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DATABASE)"
             - name: QW_NODE_ID
               value: "$(POD_NAME)"
             - name: QW_PEER_SEEDS
@@ -84,11 +58,11 @@ spec:
               value: "$(POD_IP)"
           # readinessProbe:
           #   httpGet:
-          #     path: /healthz/indexer/readyz
+          #     path: /healthz/janitor/readyz
           #     port: rest
           # livenessProbe:
           #   httpGet:
-          #     path: /healthz/indexer/livez
+          #     path: /healthz/janitor/livez
           #     port: rest
       volumes:
         - name: config-volume

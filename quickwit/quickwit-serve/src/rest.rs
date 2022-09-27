@@ -26,6 +26,7 @@ use tracing::{error, info};
 use warp::{redirect, Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
+use crate::delete_task_api::delete_task_api_handlers;
 use crate::format::FormatError;
 use crate::health_check_api::health_check_handlers;
 use crate::index_api::index_management_handlers;
@@ -71,6 +72,13 @@ pub(crate) async fn start_rest_server(
         ))
         .or(index_management_handlers(
             quickwit_services.index_service.clone(),
+        ))
+        .or(delete_task_api_handlers(
+            quickwit_services.metastore.clone(),
+            quickwit_services
+                .janitor_service
+                .as_ref()
+                .map(|service| service.delete_task_service_mailbox().clone()),
         ))
         .or(health_check_handlers(quickwit_services.cluster.clone()));
     let api_v1_root_route = api_v1_root_url.and(api_v1_routes);
