@@ -80,7 +80,7 @@ impl QuickwitDateTimeOptions {
                 DateTimeFormat::RFC2822 => parse_rfc2822(&value),
                 DateTimeFormat::ISO8601 => parse_iso8601(&value),
                 DateTimeFormat::Strftime(strftime_format) => {
-                    parse_strftime(strftime_format, &value)
+                    parse_strftime(&value, strftime_format)
                 }
                 _ => continue,
             };
@@ -88,7 +88,6 @@ impl QuickwitDateTimeOptions {
                 return result;
             }
         }
-
         Err(format!(
             "Could not parse datetime `{}` using the specified formats `{}`.",
             value,
@@ -447,24 +446,30 @@ mod tests {
     }
 
     #[test]
-    fn test_date_time_parse_error() {
+    fn test_parse_date_time() {
         let entry = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
                 "name": "updated_at",
                 "type": "datetime",
-                "input_formats": ["iso8601", "rfc3339", "%Y-%m-%d"]
+                "input_formats": ["iso8601", "rfc3339", "%Y-%m-%d %H:%M:%S", "unix_ts_millis"]
             }"#,
         )
         .unwrap();
 
         match entry.mapping_type {
             FieldMappingType::DateTime(date_options, _) => {
+                let date_time = date_options
+                    .parse_string("2012-05-21 12:09:14".to_string())
+                    .unwrap();
+                assert_eq!(date_time.date(), date!(2012 - 05 - 21));
+                assert_eq!(date_time.time(), time!(12:09:14));
+
                 let error = date_options.parse_string("foo".to_string()).unwrap_err();
                 assert_eq!(
                     error,
                     "Could not parse datetime `foo` using the specified formats `iso8601, \
-                     rfc3339, %Y-%m-%d`.",
+                     rfc3339, %Y-%m-%d %H:%M:%S, unix_ts_millis`.",
                 );
             }
             _ => panic!("Expected `FieldMappingType::Date` variant."),
