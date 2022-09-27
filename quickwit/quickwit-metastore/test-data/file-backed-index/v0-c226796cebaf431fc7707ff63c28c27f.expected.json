@@ -101,6 +101,7 @@
       "index_id": "my-index",
       "node_id": "node/1",
       "num_docs": 12303,
+      "num_merge_ops": 0,
       "partition_id": 7,
       "publish_timestamp": null,
       "source_id": "source",

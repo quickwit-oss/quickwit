@@ -121,6 +121,10 @@ pub struct SplitMetadata {
 
     /// Delete opstamp.
     pub delete_opstamp: u64,
+
+    /// Number of merge operations that was involved to create
+    /// this split.
+    pub num_merge_ops: usize,
 }
 
 impl SplitMetadata {
