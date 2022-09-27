@@ -29,15 +29,16 @@ use helpers::{TestEnv, TestStorageType};
 use itertools::Itertools;
 use predicates::prelude::*;
 use quickwit_cli::index::{
-    create_index_cli, search_index, CreateIndexArgs, IndexStats, SearchIndexArgs, DescriptiveStats,
+    create_index_cli, search_index, CreateIndexArgs, DescriptiveStats, IndexStats, SearchIndexArgs,
 };
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_config::CLI_INGEST_SOURCE_ID;
 use quickwit_core::get_cache_directory_path;
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
-use quickwit_metastore::SplitMetadata;
-use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Metastore, Split};
+use quickwit_metastore::{
+    quickwit_metastore_uri_resolver, IndexMetadata, Metastore, Split, SplitMetadata,
+};
 use serde_json::{json, Number, Value};
 use serial_test::serial;
 use tokio::time::{sleep, Duration};
@@ -1131,7 +1132,7 @@ fn test_descriptive_stats() -> anyhow::Result<()> {
     split_2.split_metadata = split_metadata_2;
     let mut split_3 = template_split.clone();
     split_3.split_metadata = split_metadata_3;
-    let mut split_4 = template_split.clone();
+    let mut split_4 = template_split;
     split_4.split_metadata = split_metadata_4;
 
     let splits = vec![split_1, split_2, split_3, split_4];
@@ -1151,7 +1152,6 @@ fn test_descriptive_stats() -> anyhow::Result<()> {
     let num_docs_descriptive = DescriptiveStats::maybe_new(&splits_num_docs);
     let num_bytes_descriptive = DescriptiveStats::maybe_new(&splits_bytes);
     let desciptive_stats_none = DescriptiveStats::maybe_new(&[]);
-
 
     assert!(num_docs_descriptive.is_some());
     assert!(num_bytes_descriptive.is_some());

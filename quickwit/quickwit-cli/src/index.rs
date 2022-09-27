@@ -47,9 +47,8 @@ use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
 use quickwit_telemetry::payload::TelemetryEvent;
-use tabled::object::Columns;
-use tabled::{object::Segment, Alignment, Modify, Panel, Style, Table, Tabled};
-use tabled::{Concat, Format, Rotate};
+use tabled::object::{Columns, Segment};
+use tabled::{Alignment, Concat, Format, Modify, Panel, Rotate, Style, Table, Tabled};
 use thousands::Separable;
 use tracing::{debug, warn, Level};
 
@@ -620,9 +619,7 @@ pub async fn list_index_cli(args: ListIndexesArgs) -> anyhow::Result<()> {
 }
 
 fn make_list_indexes_table<I>(indexes: I) -> Table
-where
-    I: IntoIterator<Item = IndexMetadata>,
-{
+where I: IntoIterator<Item = IndexMetadata> {
     let rows = indexes
         .into_iter()
         .map(|index| IndexRow {
