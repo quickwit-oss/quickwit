@@ -20,26 +20,30 @@
 use std::env;
 
 use anyhow::Context;
-use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
+use opentelemetry::sdk::{trace, Resource};
+use opentelemetry::{global, KeyValue};
+use opentelemetry_otlp::WithExportConfig;
 use quickwit_cli::cli::{build_cli, CliCommand};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
-use quickwit_cli::QW_JAEGER_ENABLED_ENV_KEY;
+use quickwit_cli::{
+    QW_ENABLE_JAEGER_EXPORTER_ENV_KEY, QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY,
+};
 use quickwit_common::runtimes::RuntimesConfiguration;
 use quickwit_config::service::QuickwitService;
-use quickwit_serve::build_quickwit_build_info;
+use quickwit_serve::{build_quickwit_build_info, QuickwitBuildInfo};
 use quickwit_telemetry::payload::TelemetryEvent;
+use tonic::metadata::MetadataMap;
 use tracing::{info, Level};
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
-fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
+fn setup_logging_and_tracing(level: Level, build_info: &QuickwitBuildInfo) -> anyhow::Result<()> {
     #[cfg(feature = "tokio-console")]
     {
-        use quickwit_cli::QW_TOKIO_CONSOLE_ENABLED_ENV_KEY;
-        if std::env::var_os(QW_TOKIO_CONSOLE_ENABLED_ENV_KEY).is_some() {
+        if std::env::var_os(quickwit_cli::QW_ENABLE_TOKIO_CONSOLE_ENV_KEY).is_some() {
             console_subscriber::init();
             return Ok(());
         }
@@ -62,23 +66,43 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
                 .expect("Time format invalid."),
             ),
         );
-    if std::env::var_os(QW_JAEGER_ENABLED_ENV_KEY).is_some() {
-        // TODO: use install_batch once this issue is fixed: https://github.com/open-telemetry/opentelemetry-rust/issues/545
+    if std::env::var_os(QW_ENABLE_JAEGER_EXPORTER_ENV_KEY).is_some() {
         let tracer = opentelemetry_jaeger::new_agent_pipeline()
             .with_service_name("quickwit")
-            //.install_batch(opentelemetry::runtime::Tokio)
-            .install_simple()
+            .install_batch(opentelemetry::runtime::Tokio)
             .context("Failed to initialize Jaeger exporter.")?;
         registry
-            .with(tracing_subscriber::fmt::layer().event_format(event_format))
             .with(tracing_opentelemetry::layer().with_tracer(tracer))
+            .with(tracing_subscriber::fmt::layer().event_format(event_format))
             .try_init()
-            .context("Failed to set up tracing.")?
+            .context("Failed to set up tracing.")?;
+    } else if std::env::var_os(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY).is_some() {
+        let mut metadata_map = MetadataMap::with_capacity(2);
+        metadata_map.insert("version", build_info.version.parse()?);
+        metadata_map.insert("commit", build_info.commit_short_hash.parse()?);
+
+        let otlp_exporter = opentelemetry_otlp::new_exporter()
+            .tonic()
+            .with_env()
+            .with_metadata(metadata_map);
+        let trace_config = trace::config()
+            .with_resource(Resource::new([KeyValue::new("service.name", "quickwit")]));
+        let tracer = opentelemetry_otlp::new_pipeline()
+            .tracing()
+            .with_exporter(otlp_exporter)
+            .with_trace_config(trace_config)
+            .install_batch(opentelemetry::runtime::Tokio)
+            .context("Failed to initialize OpenTelemetry OTLP exporter.")?;
+        registry
+            .with(tracing_opentelemetry::layer().with_tracer(tracer))
+            .with(tracing_subscriber::fmt::layer().event_format(event_format))
+            .try_init()
+            .context("Failed to set up tracing.")?;
     } else {
         registry
             .with(tracing_subscriber::fmt::layer().event_format(event_format))
             .try_init()
-            .context("Failed to set up tracing.")?
+            .context("Failed to set up tracing.")?;
     }
     Ok(())
 }
@@ -106,7 +130,7 @@ fn runtime_configuration_for_cmd(command: &CliCommand) -> Option<RuntimesConfigu
 fn start_actor_runtimes(cli_command: &CliCommand) -> anyhow::Result<()> {
     if let Some(runtime_configuration) = runtime_configuration_for_cmd(cli_command) {
         quickwit_common::runtimes::initialize_runtimes(runtime_configuration)
-            .context("Failed to start runtimes.")?;
+            .context("Failed to start actor runtimes.")?;
     }
     Ok(())
 }
@@ -138,24 +162,20 @@ async fn main() -> anyhow::Result<()> {
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();
 
-    setup_logging_and_tracing(command.default_log_level())?;
+    setup_logging_and_tracing(command.default_log_level(), &build_info)?;
     info!(
         version = build_info.version,
         commit = build_info.commit_short_hash,
     );
-
     let return_code: i32 = if let Err(err) = command.execute().await {
         eprintln!("Command failed: {:?}", err);
         1
     } else {
         0
     };
-
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::EndCommand { return_code }).await;
-
     telemetry_handle.terminate_telemetry().await;
     global::shutdown_tracer_provider();
-
     std::process::exit(return_code)
 }
 

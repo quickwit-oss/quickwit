@@ -20,7 +20,7 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 
-use quickwit_cluster::{Cluster, ClusterState};
+use quickwit_cluster::{Cluster, ClusterSnapshot};
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 
@@ -62,6 +62,6 @@ async fn get_cluster(
         .make_rest_reply_non_serializable_error(cluster_endpoint(cluster).await))
 }
 
-async fn cluster_endpoint(cluster: Arc<Cluster>) -> Result<ClusterState, Infallible> {
-    Ok(cluster.state().await)
+async fn cluster_endpoint(cluster: Arc<Cluster>) -> Result<ClusterSnapshot, Infallible> {
+    Ok(cluster.snapshot().await)
 }
