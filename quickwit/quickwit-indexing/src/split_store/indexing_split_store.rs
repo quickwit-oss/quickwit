@@ -33,7 +33,7 @@ use tokio::sync::Mutex;
 use tracing::{info, warn};
 
 use super::LocalSplitStore;
-use crate::merge_policy::StableLogMergePolicy;
+use crate::merge_policy::default_merge_policy;
 use crate::split_store::SPLIT_CACHE_DIR_NAME;
 use crate::{get_tantivy_directory_from_split_bundle, MergePolicy, SplitFolder};
 
@@ -226,7 +226,7 @@ impl IndexingSplitStore {
         let inner = InnerIndexingSplitStore {
             remote_storage,
             local_split_store: None,
-            merge_policy: Arc::new(StableLogMergePolicy::default()),
+            merge_policy: default_merge_policy(),
         };
         Self {
             inner: Arc::new(inner),
@@ -399,7 +399,7 @@ mod test_split_store {
     use tokio::sync::Mutex;
 
     use super::IndexingSplitStore;
-    use crate::merge_policy::StableLogMergePolicy;
+    use crate::merge_policy::default_merge_policy;
     use crate::split_store::{SplitStoreSpaceQuota, SPLIT_CACHE_DIR_NAME};
     use crate::MergePolicy;
 
@@ -415,11 +415,10 @@ mod test_split_store {
 
         let split_store_space_quota = Arc::new(Mutex::new(SplitStoreSpaceQuota::new(2, 10)));
         let remote_storage = Arc::new(RamStorage::default());
-        let merge_policy = Arc::new(StableLogMergePolicy::default());
         let result = IndexingSplitStore::create_with_local_store(
             remote_storage,
             local_dir.path(),
-            merge_policy,
+            default_merge_policy(),
             split_store_space_quota,
         )
         .await;
@@ -444,11 +443,10 @@ mod test_split_store {
 
         let split_store_space_quota = Arc::new(Mutex::new(SplitStoreSpaceQuota::new(4, 10)));
         let remote_storage = Arc::new(RamStorage::default());
-        let merge_policy = Arc::new(StableLogMergePolicy::default());
         let result = IndexingSplitStore::create_with_local_store(
             remote_storage,
             local_dir.path(),
-            merge_policy,
+            default_merge_policy(),
             split_store_space_quota,
         )
         .await;
@@ -472,11 +470,10 @@ mod test_split_store {
 
         let split_store_space_quota = Arc::new(Mutex::new(SplitStoreSpaceQuota::new(100, 100)));
         let remote_storage = Arc::new(RamStorage::default());
-        let merge_policy = Arc::new(StableLogMergePolicy::default());
         let result = IndexingSplitStore::create_with_local_store(
             remote_storage,
             local_dir.path(),
-            merge_policy,
+            default_merge_policy(),
             split_store_space_quota,
         )
         .await;
@@ -495,12 +492,11 @@ mod test_split_store {
     async fn test_local_store_cache_in_and_out() -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let split_cache_dir = tempdir()?;
-        let merge_policy = Arc::new(StableLogMergePolicy::default());
         let remote_storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_with_local_store(
             remote_storage,
             split_cache_dir.path(),
-            merge_policy.clone(),
+            default_merge_policy(),
             Arc::new(Mutex::new(SplitStoreSpaceQuota::default())),
         )
         .await?;
@@ -553,12 +549,11 @@ mod test_split_store {
         let temp_dir = tempfile::tempdir()?;
 
         let split_cache_dir = tempdir()?;
-        let merge_policy = Arc::new(StableLogMergePolicy::default());
         let remote_storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_with_local_store(
             remote_storage,
             split_cache_dir.path(),
-            merge_policy.clone(),
+            default_merge_policy(),
             Arc::new(Mutex::new(SplitStoreSpaceQuota::new(1, 1_000_000))),
         )
         .await?;
@@ -621,12 +616,11 @@ mod test_split_store {
         let temp_dir = tempfile::tempdir()?;
 
         let split_cache_dir = tempdir()?;
-        let merge_policy = Arc::new(StableLogMergePolicy::default());
         let remote_storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_with_local_store(
             remote_storage,
             split_cache_dir.path(),
-            merge_policy.clone(),
+            default_merge_policy(),
             Arc::new(Mutex::new(SplitStoreSpaceQuota::new(10, 40))),
         )
         .await?;
@@ -682,12 +676,11 @@ mod test_split_store {
         let temp_dir = tempfile::tempdir()?;
 
         let split_cache_dir = tempdir()?;
-        let merge_policy = Arc::new(StableLogMergePolicy::default());
         let remote_storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_with_local_store(
             remote_storage.clone(),
             split_cache_dir.path(),
-            merge_policy.clone(),
+            default_merge_policy(),
             Arc::new(Mutex::new(SplitStoreSpaceQuota::new(10, 40))),
         )
         .await?;
@@ -743,11 +736,10 @@ mod test_split_store {
 
         let split_store_space_quota = Arc::new(Mutex::new(SplitStoreSpaceQuota::new(100, 200)));
         let remote_storage = Arc::new(RamStorage::default());
-        let merge_policy = Arc::new(StableLogMergePolicy::default());
         let split_store = IndexingSplitStore::create_with_local_store(
             remote_storage,
             local_dir.path(),
-            merge_policy,
+            default_merge_policy(),
             split_store_space_quota.clone(),
         )
         .await?;

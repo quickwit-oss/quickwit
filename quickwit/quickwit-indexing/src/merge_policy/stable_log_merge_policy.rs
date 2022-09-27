@@ -58,9 +58,8 @@ use crate::merge_policy::{splits_short_debug, MergeOperation, MergePolicy};
 /// Because we stop merging splits reaching a size larger than if it would result in a size larger
 /// than `target_num_docs`.
 #[derive(Clone, Debug)]
-pub struct StableLogMergePolicy {
+pub(crate) struct StableLogMergePolicy {
     pub min_level_num_docs: usize,
-    pub merge_enabled: bool,
     pub merge_factor: usize,
     pub max_merge_factor: usize,
     /// The merge policy aims to eventually produce mature splits that have a larger size but
@@ -75,7 +74,6 @@ impl Default for StableLogMergePolicy {
     fn default() -> Self {
         StableLogMergePolicy {
             min_level_num_docs: 100_000,
-            merge_enabled: true,
             merge_factor: 10,
             max_merge_factor: 12,
             split_num_docs_target: 10_000_000,
@@ -135,17 +133,11 @@ enum MergeCandidateSize {
 impl StableLogMergePolicy {
     /// A mature split for merge is a split that won't undergo merge operation in the future.
     fn is_mature_for_merge(&self, split: &SplitMetadata) -> bool {
-        // If merge is disabled, split is considered mature as it will not undergo a merge
-        // operation.
-        if !self.merge_enabled {
-            return true;
-        }
-
         split.num_docs >= self.split_num_docs_target
     }
 
     fn merge_operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
-        if !self.merge_enabled || splits.len() < 2 {
+        if splits.len() < 2 {
             return Vec::new();
         }
         // First we isolate splits that are mature.
@@ -266,7 +258,17 @@ impl StableLogMergePolicy {
 
         MergeCandidateSize::ValidSplit
     }
+}
 
+#[cfg(test)]
+fn is_sorted(els: &[usize]) -> bool {
+    els.windows(2).all(|w| w[0] <= w[1])
+}
+
+// A few helpers that are used to expose some internal property of
+// the stable log merge policy, to be tested in unit tests.
+#[cfg(test)]
+impl StableLogMergePolicy {
     fn case_levels_given_growth_factor(&self, growth_factor: usize) -> Vec<usize> {
         assert!(self.min_level_num_docs > 0);
         assert!(self.merge_factor > 1);
@@ -319,26 +321,13 @@ impl StableLogMergePolicy {
     }
 }
 
-fn is_sorted(els: &[usize]) -> bool {
-    els.windows(2).all(|w| w[0] <= w[1])
-}
-
 #[cfg(test)]
 mod tests {
 
     use std::ops::RangeInclusive;
 
     use super::*;
-
-    fn create_splits(num_docs_vec: Vec<usize>) -> Vec<SplitMetadata> {
-        let num_docs_with_timestamp = num_docs_vec
-            .into_iter()
-            // we give the same timestamp to all of them and rely on stable sort to keep the split
-            // order.
-            .map(|num_docs| (num_docs, (1630563067..=1630564067)))
-            .collect();
-        create_splits_with_timestamps(num_docs_with_timestamp)
-    }
+    use crate::merge_policy::tests::create_splits;
 
     fn create_splits_with_timestamps(
         num_docs_vec: Vec<(usize, RangeInclusive<i64>)>,
@@ -361,12 +350,6 @@ mod tests {
         // Split under max_merge_docs is not mature.
         let mut split = create_splits(vec![9_000_000]).into_iter().next().unwrap();
         assert!(!merge_policy.is_mature(&split));
-        // All splits are mature when merge is disabled.
-        let merge_policy_with_disabled_merge = StableLogMergePolicy {
-            merge_enabled: false,
-            ..Default::default()
-        };
-        assert!(merge_policy_with_disabled_merge.is_mature(&split));
         // Split under max_merge_docs is not mature.
         assert!(!merge_policy.is_mature(&split));
         // Split with docs > max_merge_docs is mature.
@@ -596,17 +579,5 @@ mod tests {
         assert_eq!(merge_policy.max_num_splits_ideal_case(10_000_000), 27);
         assert_eq!(merge_policy.max_num_splits_ideal_case(100_000_000), 37);
         assert_eq!(merge_policy.max_num_splits_ideal_case(1_000_000_000), 127);
-    }
-
-    #[test]
-    fn test_stable_log_merge_policy_merge_not_enabled() {
-        let merge_policy = StableLogMergePolicy {
-            merge_enabled: false,
-            ..Default::default()
-        };
-        let mut splits = create_splits(vec![100; 10]);
-        let merge_ops = merge_policy.operations(&mut splits);
-        assert_eq!(splits.len(), 10);
-        assert_eq!(merge_ops.len(), 0);
     }
 }
