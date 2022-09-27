@@ -89,12 +89,12 @@ impl QuickwitDateTimeOptions {
             }
         }
         Err(format!(
-            "Could not parse datetime `{}` using the specified formats `{}`.",
+            "Failed to parse datetime `{}` using the specified formats `{}`.",
             value,
             self.input_formats
                 .iter()
-                .map(ToString::to_string)
-                .join(", ")
+                .map(|input_format| input_format.as_str())
+                .join("`, `")
         ))
     }
 
@@ -495,8 +495,8 @@ mod tests {
                 .unwrap_err();
             assert_eq!(
                 error,
-                "Could not parse datetime `foo` using the specified formats `iso8601, rfc3339, \
-                 rfc2822, %Y-%m-%d %H:%M:%S, unix_ts_millis`.",
+                "Failed to parse datetime `foo` using the specified formats `iso8601`, `rfc3339`, \
+                 `rfc2822`, `%Y-%m-%d %H:%M:%S`, `unix_ts_millis`.",
             );
         }
     }
