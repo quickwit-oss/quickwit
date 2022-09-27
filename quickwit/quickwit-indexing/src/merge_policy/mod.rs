@@ -86,7 +86,7 @@ impl fmt::Debug for MergeOperation {
     }
 }
 
-/// A merge policy wraps the logic that decide what should be merged.
+/// A merge policy wraps the logic that decides what should be merged.
 /// The SplitMetadata must be extracted from the splits `Vec`.
 ///
 /// It is called by the merge planner whenever a new split is added.

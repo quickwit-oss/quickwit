@@ -265,8 +265,8 @@ fn is_sorted(elements: &[usize]) -> bool {
     elements.windows(2).all(|w| w[0] <= w[1])
 }
 
-// A few helpers that are used to expose some internal property of
-// the stable log merge policy, to be tested in unit tests.
+// Helpers which expose some internal properties of
+// the stable log merge policy to be tested in unit tests.
 #[cfg(test)]
 impl StableLogMergePolicy {
     fn case_levels_given_growth_factor(&self, growth_factor: usize) -> Vec<usize> {
