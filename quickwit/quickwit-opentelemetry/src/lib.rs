@@ -17,13 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod indexing_split_store;
-mod local_split_store;
+pub mod otlp;
 
-pub use indexing_split_store::{IndexingSplitStore, SplitStoreSpaceQuota, WeakIndexingSplitStore};
-use local_split_store::LocalSplitStore;
-pub use local_split_store::{get_tantivy_directory_from_split_bundle, SplitFolder};
-
-/// An intermediate folder created at `<cache dir>/SPLIT_CACHE_DIR_NAME`
-/// to hold the local split files.
-pub const SPLIT_CACHE_DIR_NAME: &str = "splits";
+pub async fn start_otlp_service() -> anyhow::Result<()> {
+    Ok(())
+}

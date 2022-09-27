@@ -131,9 +131,18 @@ impl SearchClientPool {
         })
     }
 
-    async fn update_members(&self, member_grpc_addrs: &[SocketAddr]) {
+    async fn update_members(&self, cluster_members: &[ClusterMember]) {
+        let members_grpc_addrs = cluster_members
+            .iter()
+            .filter(|member| {
+                member
+                    .available_services
+                    .contains(&QuickwitService::Searcher)
+            })
+            .map(|member| member.grpc_advertise_addr)
+            .collect_vec();
         let mut new_clients = self.clients();
-        update_client_map(member_grpc_addrs, &mut new_clients).await;
+        update_client_map(&members_grpc_addrs, &mut new_clients).await;
         *self.clients.write().unwrap() = new_clients;
     }
 
@@ -167,41 +176,15 @@ impl SearchClientPool {
     /// When a client pool is created, the thread that monitors cluster members
     /// will be started at the same time.
     pub async fn create_and_keep_updated(
-        current_members: &[ClusterMember],
         mut members_watch_channel: WatchStream<Vec<ClusterMember>>,
     ) -> anyhow::Result<Self> {
         let search_client_pool = SearchClientPool::default();
-        let members_grpc_addresses = current_members
-            .iter()
-            .filter(|member| {
-                member
-                    .available_services
-                    .contains(&QuickwitService::Searcher)
-            })
-            .map(|member| member.grpc_advertise_addr)
-            .collect_vec();
-        search_client_pool
-            .update_members(&members_grpc_addresses)
-            .await;
-
-        // Prepare to start a thread that will monitor cluster members.
         let search_clients_pool_clone = search_client_pool.clone();
 
-        // Start to monitor the cluster members.
+        // Start to monitor cluster member changes.
         tokio::spawn(async move {
             while let Some(new_members) = members_watch_channel.next().await {
-                let members_grpc_addresses = new_members
-                    .iter()
-                    .filter(|member| {
-                        member
-                            .available_services
-                            .contains(&QuickwitService::Searcher)
-                    })
-                    .map(|member| member.grpc_advertise_addr)
-                    .collect_vec();
-                search_clients_pool_clone
-                    .update_members(&members_grpc_addresses)
-                    .await;
+                search_clients_pool_clone.update_members(&new_members).await;
             }
             Result::<(), anyhow::Error>::Ok(())
         });
@@ -360,11 +343,10 @@ mod tests {
     async fn test_search_client_pool_single_node() -> anyhow::Result<()> {
         let transport = ChannelTransport::default();
         let cluster = create_cluster_simple_for_test(&transport).await?;
-        let client_pool = SearchClientPool::create_and_keep_updated(
-            &cluster.members(),
-            cluster.member_change_watcher(),
-        )
-        .await?;
+        let client_pool =
+            SearchClientPool::create_and_keep_updated(cluster.ready_member_change_watcher())
+                .await?;
+        tokio::time::sleep(Duration::from_millis(1)).await;
         let clients = client_pool.clients();
         let addrs: Vec<SocketAddr> = clients.into_keys().collect();
         let expected_addrs = vec![grpc_addr_from_listen_addr_for_test(
@@ -386,11 +368,10 @@ mod tests {
             .wait_for_members(|members| members.len() == 2, Duration::from_secs(5))
             .await?;
 
-        let client_pool = SearchClientPool::create_and_keep_updated(
-            &cluster1.members(),
-            cluster1.member_change_watcher(),
-        )
-        .await?;
+        let client_pool =
+            SearchClientPool::create_and_keep_updated(cluster1.ready_member_change_watcher())
+                .await?;
+        tokio::time::sleep(Duration::from_millis(1)).await;
         let clients = client_pool.clients();
 
         let addrs: Vec<SocketAddr> = clients.into_keys().sorted().collect();
@@ -407,11 +388,10 @@ mod tests {
     async fn test_search_client_pool_single_node_assign_jobs() -> anyhow::Result<()> {
         let transport = ChannelTransport::default();
         let cluster = create_cluster_simple_for_test(&transport).await?;
-        let client_pool = SearchClientPool::create_and_keep_updated(
-            &cluster.members(),
-            cluster.member_change_watcher(),
-        )
-        .await?;
+        let client_pool =
+            SearchClientPool::create_and_keep_updated(cluster.ready_member_change_watcher())
+                .await?;
+        tokio::time::sleep(Duration::from_millis(1)).await;
         let jobs = vec![
             SearchJob::for_test("split1", 1),
             SearchJob::for_test("split2", 2),

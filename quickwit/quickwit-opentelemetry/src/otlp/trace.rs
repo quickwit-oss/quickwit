@@ -17,13 +17,26 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod indexing_split_store;
-mod local_split_store;
+use async_trait::async_trait;
+use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceService;
+use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
+    ExportTraceServiceRequest, ExportTraceServiceResponse,
+};
 
-pub use indexing_split_store::{IndexingSplitStore, SplitStoreSpaceQuota, WeakIndexingSplitStore};
-use local_split_store::LocalSplitStore;
-pub use local_split_store::{get_tantivy_directory_from_split_bundle, SplitFolder};
+#[derive(Default, Clone)]
+pub struct OtlpGrpcTraceService {}
 
-/// An intermediate folder created at `<cache dir>/SPLIT_CACHE_DIR_NAME`
-/// to hold the local split files.
-pub const SPLIT_CACHE_DIR_NAME: &str = "splits";
+#[async_trait]
+impl TraceService for OtlpGrpcTraceService {
+    async fn export(
+        &self,
+        request: tonic::Request<ExportTraceServiceRequest>,
+    ) -> Result<tonic::Response<ExportTraceServiceResponse>, tonic::Status> {
+        let request = request.into_inner();
+        for resource_span in request.resource_spans {
+            println!("{:?}", resource_span);
+        }
+        let response = ExportTraceServiceResponse::default();
+        Ok(tonic::Response::new(response))
+    }
+}

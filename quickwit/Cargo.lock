@@ -2461,6 +2461,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "opentelemetry-otlp"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1c928609d087790fc936a1067bdc310ae702bdf3b090c3f281b713622c8bbde"
+dependencies = [
+ "async-trait",
+ "futures",
+ "futures-util",
+ "http",
+ "opentelemetry",
+ "opentelemetry-proto",
+ "prost",
+ "thiserror",
+ "tokio",
+ "tonic",
+]
+
+[[package]]
+name = "opentelemetry-proto"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d61a2f56df5574508dd86aaca016c917489e589ece4141df1b5e349af8d66c28"
+dependencies = [
+ "futures",
+ "futures-util",
+ "opentelemetry",
+ "prost",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
 name = "opentelemetry-semantic-conventions"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3089,6 +3121,7 @@ dependencies = [
  "openssl-probe",
  "opentelemetry",
  "opentelemetry-jaeger",
+ "opentelemetry-otlp",
  "predicates",
  "quickwit-actors",
  "quickwit-cluster",
@@ -3117,6 +3150,7 @@ dependencies = [
  "tokio",
  "tokio-util 0.7.3",
  "toml",
+ "tonic",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
@@ -3414,6 +3448,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-opentelemetry"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "quickwit-metastore",
+ "quickwit-proto",
+ "tokio",
+ "tonic",
+ "tracing",
+]
+
+[[package]]
 name = "quickwit-proto"
 version = "0.3.1"
 dependencies = [
@@ -3494,6 +3541,7 @@ dependencies = [
  "quickwit-ingest-api",
  "quickwit-janitor",
  "quickwit-metastore",
+ "quickwit-opentelemetry",
  "quickwit-proto",
  "quickwit-search",
  "quickwit-storage",
@@ -5160,9 +5208,9 @@ dependencies = [
 
 [[package]]
 name = "tonic"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "498f271adc46acce75d66f639e4d35b31b2394c295c82496727dafa16d465dd2"
+checksum = "11cd56bdb54ef93935a6a79dbd1d91f1ebd4c64150fd61654031fd6b8b775c91"
 dependencies = [
  "async-stream",
  "async-trait",

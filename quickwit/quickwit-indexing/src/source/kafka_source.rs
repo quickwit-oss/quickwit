@@ -113,6 +113,7 @@ impl From<BorrowedMessage<'_>> for KafkaMessage {
 }
 
 struct RdKafkaContext {
+    group_id: String,
     topic: String,
     events_tx: mpsc::Sender<KafkaEvent>,
 }
@@ -250,7 +251,12 @@ impl KafkaSource {
         let backfill_mode_enabled = params.enable_backfill_mode;
 
         let (events_tx, events_rx) = mpsc::channel(100);
-        let consumer = create_consumer(&ctx.source_config.source_id, params, events_tx.clone())?;
+        let consumer = create_consumer(
+            &ctx.index_id,
+            &ctx.source_config.source_id,
+            params,
+            events_tx.clone(),
+        )?;
         consumer
             .subscribe(&[&topic])
             .with_context(|| format!("Failed to subscribe to topic `{topic}`."))?;
@@ -265,6 +271,7 @@ impl KafkaSource {
         info!(
             index_id=%ctx.index_id,
             source_id=%ctx.source_config.source_id,
+            group_id=%consumer.client().context().group_id,
             topic=%topic,
             rebalance_protocol=%rebalance_protocol_str,
             "Starting Kafka source."
@@ -629,6 +636,7 @@ pub(super) async fn check_connectivity(params: KafkaSourceParams) -> anyhow::Res
 
 /// Creates a new `KafkaSourceConsumer`.
 fn create_consumer(
+    index_id: &str,
     source_id: &str,
     params: KafkaSourceParams,
     events_tx: mpsc::Sender<KafkaEvent>,
@@ -636,9 +644,8 @@ fn create_consumer(
     let mut client_config = parse_client_params(params.client_params)?;
 
     // Group ID is limited to 255 characters.
-    let mut group_id = format!("quickwit-{}", source_id);
+    let mut group_id = format!("quickwit-{index_id}-{source_id}");
     group_id.truncate(255);
-    debug!("Initializing consumer for group_id {}", group_id);
 
     let log_level = parse_client_log_level(params.client_log_level)?;
     let consumer: RdKafkaConsumer = client_config
@@ -647,9 +654,10 @@ fn create_consumer(
             "enable.partition.eof",
             params.enable_backfill_mode.to_string(),
         )
-        .set("group.id", group_id)
+        .set("group.id", &group_id)
         .set_log_level(log_level)
         .create_with_context(RdKafkaContext {
+            group_id,
             topic: params.topic,
             events_tx,
         })

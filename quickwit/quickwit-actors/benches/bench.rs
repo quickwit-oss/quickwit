@@ -75,7 +75,7 @@ async fn flume_bench_code(num_messages: usize) {
     }
     let join = tokio::task::spawn(async move {
         let mut sum = 0;
-        while let Ok(_) = rx.recv_async().await {
+        while rx.recv_async().await.is_ok() {
             sum += 1;
         }
         sum
@@ -93,7 +93,7 @@ async fn chan_with_priority_bench_code(num_messages: usize) {
     }
     let join = tokio::task::spawn(async move {
         let mut sum = 0;
-        while let Ok(_) = rx.recv().await {
+        while rx.recv().await.is_ok() {
             sum += 1;
         }
         sum

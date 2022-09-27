@@ -62,6 +62,8 @@ tracing = "0.1.29"
 tracing-opentelemetry = "0.18"
 opentelemetry = { version = "0.18", features = ["rt-tokio"] }
 opentelemetry-jaeger = { version = "0.17", features = ["rt-tokio"] }
+opentelemetry-otlp = "0.11.0"
+tonic = "0.8.1"
 tracing-subscriber = { version = "0.3", features = [
   "time",
   "std",
