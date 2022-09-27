@@ -967,8 +967,8 @@ mod tests {
         let err = typ.value_from_json(json!("foo-datetime")).unwrap_err();
         assert_eq!(
             err,
-            "Could not parse datetime `foo-datetime` using the specified formats `rfc3339, \
-             unix_ts_secs`."
+            "Failed to parse datetime `foo-datetime` using the specified formats `rfc3339`, \
+             `unix_ts_secs`."
         );
     }
 
