@@ -53,6 +53,9 @@ pub struct SplitAttrs {
 
     /// Delete opstamp.
     pub delete_opstamp: u64,
+
+    // Number of merge operation the split has been through so far.
+    pub num_merge_ops: usize,
 }
 
 impl fmt::Debug for SplitAttrs {
@@ -67,6 +70,7 @@ impl fmt::Debug for SplitAttrs {
                 &self.uncompressed_docs_size_in_bytes,
             )
             .field("num_docs", &self.num_docs)
+            .field("num_merge_ops", &self.num_merge_ops)
             .finish()
     }
 }
