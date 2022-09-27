@@ -452,27 +452,52 @@ mod tests {
             {
                 "name": "updated_at",
                 "type": "datetime",
-                "input_formats": ["iso8601", "rfc3339", "%Y-%m-%d %H:%M:%S", "unix_ts_millis"]
+                "input_formats": ["iso8601", "rfc3339", "rfc2822", "%Y-%m-%d %H:%M:%S", "unix_ts_millis"]
             }"#,
         )
         .unwrap();
 
-        match entry.mapping_type {
-            FieldMappingType::DateTime(date_options, _) => {
-                let date_time = date_options
-                    .parse_string("2012-05-21 12:09:14".to_string())
-                    .unwrap();
-                assert_eq!(date_time.date(), date!(2012 - 05 - 21));
-                assert_eq!(date_time.time(), time!(12:09:14));
-
-                let error = date_options.parse_string("foo".to_string()).unwrap_err();
-                assert_eq!(
-                    error,
-                    "Could not parse datetime `foo` using the specified formats `iso8601, \
-                     rfc3339, %Y-%m-%d %H:%M:%S, unix_ts_millis`.",
-                );
-            }
+        let date_time_options = match entry.mapping_type {
+            FieldMappingType::DateTime(date_time_options, _) => date_time_options,
             _ => panic!("Expected `FieldMappingType::Date` variant."),
+        };
+        {
+            let date_time = date_time_options
+                .parse_string("20120521T120914Z".to_string())
+                .unwrap();
+            assert_eq!(date_time.date(), date!(2012 - 05 - 21));
+            assert_eq!(date_time.time(), time!(12:09:14));
+        }
+        {
+            let date_time = date_time_options
+                .parse_string("2012-05-21T12:09:14-00:00".to_string())
+                .unwrap();
+            assert_eq!(date_time.date(), date!(2012 - 05 - 21));
+            assert_eq!(date_time.time(), time!(12:09:14));
+        }
+        {
+            let date_time = date_time_options
+                .parse_string("Mon, 21 May 2012 12:09:14 GMT".to_string())
+                .unwrap();
+            assert_eq!(date_time.date(), date!(2012 - 05 - 21));
+            assert_eq!(date_time.time(), time!(12:09:14));
+        }
+        {
+            let date_time = date_time_options
+                .parse_string("2012-05-21 12:09:14".to_string())
+                .unwrap();
+            assert_eq!(date_time.date(), date!(2012 - 05 - 21));
+            assert_eq!(date_time.time(), time!(12:09:14));
+        }
+        {
+            let error = date_time_options
+                .parse_string("foo".to_string())
+                .unwrap_err();
+            assert_eq!(
+                error,
+                "Could not parse datetime `foo` using the specified formats `iso8601, rfc3339, \
+                 rfc2822, %Y-%m-%d %H:%M:%S, unix_ts_millis`.",
+            );
         }
     }
 
