@@ -17,12 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod const_write_amplification;
 mod no_merge_policy;
 mod stable_log_merge_policy;
 
 use std::fmt;
 use std::sync::Arc;
 
+pub use const_write_amplification::ConstWriteAmplification;
 pub use no_merge_policy::NoMergePolicy;
 use quickwit_config::IndexingSettings;
 use quickwit_metastore::SplitMetadata;
@@ -66,7 +68,7 @@ impl MergeOperation {
         }
     }
 
-    pub fn splits_as_slice(&self) -> &[SplitMetadata] {
+    pub fn splits(&self) -> &[SplitMetadata] {
         self.splits.as_slice()
     }
 }

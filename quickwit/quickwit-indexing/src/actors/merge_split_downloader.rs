@@ -55,7 +55,7 @@ impl Handler<MergeOperation> for MergeSplitDownloader {
 
     fn message_span(&self, msg_id: u64, merge_operation: &MergeOperation) -> Span {
         let num_docs: usize = merge_operation
-            .splits_as_slice()
+            .splits()
             .iter()
             .map(|split| split.num_docs)
             .sum();
@@ -63,7 +63,7 @@ impl Handler<MergeOperation> for MergeSplitDownloader {
                     msg_id=&msg_id,
                     merge_split_id=%merge_operation.merge_split_id,
                     num_docs=num_docs,
-                    num_splits=merge_operation.splits_as_slice().len())
+                    num_splits=merge_operation.splits().len())
     }
 
     async fn handle(
@@ -81,7 +81,7 @@ impl Handler<MergeOperation> for MergeSplitDownloader {
             .map_err(|error| anyhow::anyhow!(error))?;
         let tantivy_dirs = self
             .download_splits(
-                merge_operation.splits_as_slice(),
+                merge_operation.splits(),
                 downloaded_splits_directory.path(),
                 ctx,
             )
@@ -187,8 +187,8 @@ mod tests {
             .unwrap()
             .downcast::<MergeScratch>()
             .unwrap();
-        assert_eq!(merge_scratch.merge_operation.splits_as_slice().len(), 10);
-        for split in merge_scratch.merge_operation.splits_as_slice() {
+        assert_eq!(merge_scratch.merge_operation.splits().len(), 10);
+        for split in merge_scratch.merge_operation.splits() {
             let split_filename = split_file(split.split_id());
             let split_filepath = merge_scratch
                 .downloaded_splits_directory

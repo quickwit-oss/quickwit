@@ -103,7 +103,7 @@ impl MergePolicy for StableLogMergePolicy {
             original_num_splits,
             operations
                 .iter()
-                .map(|op| op.splits_as_slice().len())
+                .map(|op| op.splits().len())
                 .sum::<usize>()
                 + splits.len(),
             "The merge policy is supposed to keep the number of splits."
@@ -403,7 +403,7 @@ mod tests {
         assert_eq!(merge_ops.len(), 1);
         let merge_op = merge_ops.pop().unwrap();
         let mut merge_segment_ids: Vec<String> = merge_op
-            .splits_as_slice()
+            .splits()
             .iter()
             .map(|split| split.split_id().to_string())
             .collect();
@@ -427,7 +427,7 @@ mod tests {
         assert_eq!(merge_ops.len(), 1);
         let merge_op = merge_ops.pop().unwrap();
         let mut merge_split_ids: Vec<String> = merge_op
-            .splits_as_slice()
+            .splits()
             .iter()
             .map(|split| split.split_id().to_string())
             .collect();
@@ -452,7 +452,7 @@ mod tests {
         assert_eq!(merge_ops.len(), 1);
         let merge_op = merge_ops.pop().unwrap();
         let mut merge_split_ids: Vec<String> = merge_op
-            .splits_as_slice()
+            .splits()
             .iter()
             .map(|split| split.split_id().to_string())
             .collect();
@@ -509,7 +509,7 @@ mod tests {
         let merge_ops = merge_policy.operations(&mut splits);
         assert!(splits.is_empty());
         assert_eq!(merge_ops.len(), 1);
-        assert_eq!(merge_ops[0].splits_as_slice().len(), 2);
+        assert_eq!(merge_ops[0].splits().len(), 2);
     }
 
     #[test]
@@ -520,7 +520,7 @@ mod tests {
         assert_eq!(splits.len(), 1);
         assert_eq!(splits[0].num_docs, 9_999_997);
         assert_eq!(merge_ops.len(), 1);
-        assert_eq!(merge_ops[0].splits_as_slice().len(), 2);
+        assert_eq!(merge_ops[0].splits().len(), 2);
     }
 
     #[test]

@@ -219,10 +219,10 @@ mod tests {
         split_index: &mut HashMap<String, SplitMetadata>,
         merge_op: &MergeOperation,
     ) -> Vec<SplitMetadata> {
-        for split in merge_op.splits_as_slice() {
+        for split in merge_op.splits() {
             assert!(split_index.remove(split.split_id()).is_some());
         }
-        let splits = vec![fake_merge(merge_op.splits_as_slice())];
+        let splits = vec![fake_merge(merge_op.splits())];
         for split in splits.iter() {
             split_index.insert(split.split_id().to_string(), split.clone());
         }

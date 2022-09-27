@@ -8,6 +8,7 @@
   "index_id": "",
   "node_id": "unknown/0",
   "num_docs": 12303,
+  "num_merge_ops": 0,
   "partition_id": 7,
   "source_id": "unknown",
   "split_id": "split",
