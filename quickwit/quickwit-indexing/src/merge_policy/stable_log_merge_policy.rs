@@ -261,8 +261,8 @@ impl StableLogMergePolicy {
 }
 
 #[cfg(test)]
-fn is_sorted(els: &[usize]) -> bool {
-    els.windows(2).all(|w| w[0] <= w[1])
+fn is_sorted(elements: &[usize]) -> bool {
+    elements.windows(2).all(|w| w[0] <= w[1])
 }
 
 // A few helpers that are used to expose some internal property of
