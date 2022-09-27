@@ -32,7 +32,7 @@ use quickwit_config::{build_doc_mapper, IndexingSettings};
 use quickwit_indexing::actors::{
     MergeExecutor, MergeSplitDownloader, Packager, Publisher, Uploader,
 };
-use quickwit_indexing::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
+use quickwit_indexing::merge_policy::merge_policy_from_settings;
 use quickwit_indexing::models::{IndexingDirectory, IndexingPipelineId};
 use quickwit_indexing::{IndexingSplitStore, PublisherType, Sequencer};
 use quickwit_metastore::Metastore;
@@ -188,14 +188,7 @@ impl DeleteTaskPipeline {
             .spawn_actor()
             .set_kill_switch(KillSwitch::default())
             .spawn(merge_split_downloader);
-        let stable_multitenant_merge_policy = StableMultitenantWithTimestampMergePolicy {
-            merge_enabled: true,
-            merge_factor: self.indexing_settings.merge_policy.merge_factor,
-            max_merge_factor: self.indexing_settings.merge_policy.max_merge_factor,
-            split_num_docs_target: self.indexing_settings.split_num_docs_target,
-            ..Default::default()
-        };
-        let merge_policy: Arc<dyn MergePolicy> = Arc::new(stable_multitenant_merge_policy);
+        let merge_policy = merge_policy_from_settings(&self.indexing_settings);
         let doc_mapper_str = serde_json::to_string(&doc_mapper)?;
         let task_planner = DeleteTaskPlanner::new(
             self.index_id.clone(),
