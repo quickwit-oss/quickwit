@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::cmp::Reverse;
+use std::cmp::Ordering;
 use std::ops::Range;
 
 use quickwit_metastore::SplitMetadata;
@@ -114,6 +114,26 @@ impl MergePolicy for StableLogMergePolicy {
     fn is_mature(&self, split: &SplitMetadata) -> bool {
         self.is_mature_for_merge(split)
     }
+
+    #[cfg(test)]
+    fn check_is_valid(&self, merge_op: &MergeOperation, _remaining_splits: &[SplitMetadata]) {
+        assert!(merge_op.splits_as_slice().len() <= self.max_merge_factor);
+        if merge_op.splits_as_slice().len() < self.merge_factor {
+            let num_docs: usize = merge_op
+                .splits_as_slice()
+                .iter()
+                .map(|split| split.num_docs)
+                .sum();
+            let last_split_num_docs = merge_op
+                .splits_as_slice()
+                .iter()
+                .min_by(|&left, &right| cmp_splits_by_reverse_time_end(left, right))
+                .unwrap()
+                .num_docs;
+            assert!(num_docs >= self.split_num_docs_target);
+            assert!(num_docs - last_split_num_docs < self.split_num_docs_target);
+        }
+    }
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -128,6 +148,26 @@ enum MergeCandidateSize {
     /// - the overall number of docs that will end up in the merged segment already
     /// exceeds `max_merge_docs`.
     OneMoreSplitWouldBeTooBig,
+}
+
+fn extract_time_end(split: &SplitMetadata) -> Option<i64> {
+    let end_timestamp = split.time_range.as_ref()?.end();
+    Some(*end_timestamp)
+}
+
+// Total ordering by
+// - reverse time end.
+// - number of docs
+// - split ids <- this one is just to make the result of the policy  invariant when shuffling the
+//   input splits.
+fn cmp_splits_by_reverse_time_end(left: &SplitMetadata, right: &SplitMetadata) -> Ordering {
+    extract_time_end(left)
+        .cmp(&extract_time_end(right))
+        .reverse()
+        .then_with(|| left.num_docs.cmp(&right.num_docs))
+        .then_with(|| {
+            left.split_id().cmp(right.split_id()) //< for determinism.
+        })
 }
 
 impl StableLogMergePolicy {
@@ -145,14 +185,7 @@ impl StableLogMergePolicy {
             remove_matching_items(splits, |split| self.is_mature_for_merge(split));
 
         let mut merge_operations: Vec<MergeOperation> = Vec::new();
-        // We stable sort the splits, most recent first.
-        splits.sort_by_key(|split| {
-            let time_end = split
-                .time_range
-                .as_ref()
-                .map(|time_range| Reverse(*time_range.end()));
-            (time_end, split.num_docs)
-        });
+        splits.sort_unstable_by(cmp_splits_by_reverse_time_end);
         debug!(splits=?splits_short_debug(&splits[..]), "merge-policy-run");
 
         // Splits should naturally have an increasing num_merge
@@ -247,7 +280,7 @@ impl StableLogMergePolicy {
         }
         let num_docs_in_merge: usize = splits.iter().map(|split| split.num_docs).sum();
 
-        // The resulting split will exceed `max_merge_docs`.
+        // The resulting split will exceed `split_num_docs_target`.
         if num_docs_in_merge >= self.split_num_docs_target {
             return MergeCandidateSize::OneMoreSplitWouldBeTooBig;
         }
@@ -562,5 +595,16 @@ mod tests {
         assert_eq!(merge_policy.max_num_splits_ideal_case(10_000_000), 27);
         assert_eq!(merge_policy.max_num_splits_ideal_case(100_000_000), 37);
         assert_eq!(merge_policy.max_num_splits_ideal_case(1_000_000_000), 127);
+    }
+
+    #[test]
+    fn test_stable_log_merge_policy_proptest() {
+        let merge_policy = StableLogMergePolicy {
+            min_level_num_docs: 100_000,
+            merge_factor: 4,
+            max_merge_factor: 6,
+            split_num_docs_target: 10_000_000,
+        };
+        crate::merge_policy::tests::proptest_merge_policy(&merge_policy);
     }
 }
