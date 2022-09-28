@@ -35,7 +35,7 @@ const Row = styled.div`
 padding: 5px;
 display: flex;
 flex-direction: row;
-&:nth-child(odd){ background: rgba(0,0,0,0.05) }
+&:nth-of-type(odd){ background: rgba(0,0,0,0.05) }
 `
 const RowKey = styled.div`
 width: 300px;
