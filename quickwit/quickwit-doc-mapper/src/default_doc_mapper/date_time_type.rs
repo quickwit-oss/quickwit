@@ -80,7 +80,7 @@ impl QuickwitDateTimeOptions {
                 DateTimeFormat::RFC2822 => parse_rfc2822(&value),
                 DateTimeFormat::ISO8601 => parse_iso8601(&value),
                 DateTimeFormat::Strftime(strftime_format) => {
-                    parse_strftime(strftime_format, &value)
+                    parse_strftime(&value, strftime_format)
                 }
                 _ => continue,
             };
@@ -88,14 +88,13 @@ impl QuickwitDateTimeOptions {
                 return result;
             }
         }
-
         Err(format!(
-            "Could not parse datetime `{}` using the specified formats `{}`.",
+            "Failed to parse datetime `{}` using the specified formats `{}`.",
             value,
             self.input_formats
                 .iter()
-                .map(ToString::to_string)
-                .join(", ")
+                .map(|input_format| input_format.as_str())
+                .join("`, `")
         ))
     }
 
@@ -447,27 +446,58 @@ mod tests {
     }
 
     #[test]
-    fn test_date_time_parse_error() {
+    fn test_parse_date_time() {
         let entry = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
                 "name": "updated_at",
                 "type": "datetime",
-                "input_formats": ["iso8601", "rfc3339", "%Y-%m-%d"]
+                "input_formats": ["iso8601", "rfc3339", "rfc2822", "%Y-%m-%d %H:%M:%S", "unix_ts_millis"]
             }"#,
         )
         .unwrap();
 
-        match entry.mapping_type {
-            FieldMappingType::DateTime(date_options, _) => {
-                let error = date_options.parse_string("foo".to_string()).unwrap_err();
-                assert_eq!(
-                    error,
-                    "Could not parse datetime `foo` using the specified formats `iso8601, \
-                     rfc3339, %Y-%m-%d`.",
-                );
-            }
+        let date_time_options = match entry.mapping_type {
+            FieldMappingType::DateTime(date_time_options, _) => date_time_options,
             _ => panic!("Expected `FieldMappingType::Date` variant."),
+        };
+        {
+            let date_time = date_time_options
+                .parse_string("20120521T120914Z".to_string())
+                .unwrap();
+            assert_eq!(date_time.date(), date!(2012 - 05 - 21));
+            assert_eq!(date_time.time(), time!(12:09:14));
+        }
+        {
+            let date_time = date_time_options
+                .parse_string("2012-05-21T12:09:14-00:00".to_string())
+                .unwrap();
+            assert_eq!(date_time.date(), date!(2012 - 05 - 21));
+            assert_eq!(date_time.time(), time!(12:09:14));
+        }
+        {
+            let date_time = date_time_options
+                .parse_string("Mon, 21 May 2012 12:09:14 GMT".to_string())
+                .unwrap();
+            assert_eq!(date_time.date(), date!(2012 - 05 - 21));
+            assert_eq!(date_time.time(), time!(12:09:14));
+        }
+        {
+            let date_time = date_time_options
+                .parse_string("2012-05-21 12:09:14".to_string())
+                .unwrap();
+            assert_eq!(date_time.date(), date!(2012 - 05 - 21));
+            assert_eq!(date_time.time(), time!(12:09:14));
+        }
+        {
+            let error = date_time_options
+                .parse_string("foo".to_string())
+                .unwrap_err();
+            assert_eq!(
+                error,
+                "Failed to parse datetime `foo` using the specified formats `iso8601`, `rfc3339`, \
+                 `rfc2822`, `%Y-%m-%d %H:%M:%S`, `unix_ts_millis`.",
+            );
         }
     }
 

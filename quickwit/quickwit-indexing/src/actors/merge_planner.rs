@@ -168,7 +168,7 @@ mod tests {
 
     use super::*;
     use crate::actors::combine_partition_ids;
-    use crate::merge_policy::{MergeOperation, StableMultitenantWithTimestampMergePolicy};
+    use crate::merge_policy::{MergeOperation, StableLogMergePolicy};
     use crate::new_split_id;
 
     fn merge_time_range(splits: &[SplitMetadata]) -> Option<RangeInclusive<i64>> {
@@ -319,7 +319,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_simulate_merge_planner_constant_case() -> anyhow::Result<()> {
-        let merge_policy = StableMultitenantWithTimestampMergePolicy::default();
+        let merge_policy = StableLogMergePolicy::default();
         aux_test_simulate_merge_planner_num_docs(
             Arc::new(merge_policy.clone()),
             &vec![10_000; 100_000],
@@ -343,8 +343,8 @@ mod tests {
     proptest! {
         #![proptest_config(proptest_config())]
         #[test]
-        fn test_proptest_simulate_stable_multitenant_merge_planner_adversarial(batch_num_docs in proptest::collection::vec(select(&[11, 1_990, 10_000, 50_000, 310_000][..]), 1..1_000)) {
-            let merge_policy = StableMultitenantWithTimestampMergePolicy::default();
+        fn test_proptest_simulate_stable_log_merge_planner_adversarial(batch_num_docs in proptest::collection::vec(select(&[11, 1_990, 10_000, 50_000, 310_000][..]), 1..1_000)) {
+            let merge_policy = StableLogMergePolicy::default();
             let rt = Runtime::new().unwrap();
             rt.block_on(
             aux_test_simulate_merge_planner_num_docs(
@@ -359,8 +359,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_simulate_stable_multitenant_merge_planner_ideal_case() -> anyhow::Result<()> {
-        let merge_policy = StableMultitenantWithTimestampMergePolicy::default();
+    async fn test_simulate_stable_log_merge_planner_ideal_case() -> anyhow::Result<()> {
+        let merge_policy = StableLogMergePolicy::default();
         aux_test_simulate_merge_planner_num_docs(
             Arc::new(merge_policy.clone()),
             &vec![10_000; 1_000],
@@ -374,8 +374,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_simulate_stable_multitenant_merge_planner_bug() -> anyhow::Result<()> {
-        let merge_policy = StableMultitenantWithTimestampMergePolicy::default();
+    async fn test_simulate_stable_log_merge_planner_bug() -> anyhow::Result<()> {
+        let merge_policy = StableLogMergePolicy::default();
         let vals = &[11, 11, 11, 11, 11, 11, 310000, 11, 11, 11, 11, 11, 11, 11];
         aux_test_simulate_merge_planner_num_docs(
             Arc::new(merge_policy.clone()),
