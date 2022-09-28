@@ -30,7 +30,7 @@ rusoto_kinesis = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
-tantivy = { workspace = true }
+tantivy = { workspace = true, features = ["mmap", "lz4-compression", "zstd-compression", "quickwit"] }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
@@ -41,9 +41,9 @@ ulid = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-aws = { workspace = true }
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["metrics", "system"] }
 quickwit-config = { workspace = true }
-quickwit-directories = { workspace = true }
+quickwit-directories = { workspace = true, features = ["storage", "tokio-time"] }
 quickwit-doc-mapper = { workspace = true }
 quickwit-ingest-api = { workspace = true }
 quickwit-metastore = { workspace = true }
@@ -67,7 +67,7 @@ tempfile = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
-quickwit-common = { workspace = true, features = ["testsuite"] }
+quickwit-common = { workspace = true, features = ["metrics", "system", "testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }

@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::{fmt, io};
 
 use async_trait::async_trait;
-use quickwit_storage::MemorySizedCache;
+use quickwit_cache::{CacheMetrics, MemorySizedCache};
 use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, OwnedBytes};
 use tantivy::{AsyncIoResult, Directory, HasLen};
@@ -51,12 +51,13 @@ impl CachingDirectory {
     pub fn new_with_capacity_in_bytes(
         underlying: Arc<dyn Directory>,
         capacity_in_bytes: usize,
+        shortlived_cache_metrics: Option<&'static CacheMetrics>,
     ) -> CachingDirectory {
         CachingDirectory {
             underlying,
             cache: Arc::new(MemorySizedCache::with_capacity_in_bytes(
                 capacity_in_bytes,
-                &quickwit_storage::STORAGE_METRICS.shortlived_cache,
+                shortlived_cache_metrics,
             )),
         }
     }
@@ -66,12 +67,13 @@ impl CachingDirectory {
     /// Warming: The resulting CacheDirectory will cache all information without ever
     /// removing any item from the cache.
     /// Prefer using `.new_with_capacity_in_bytes(...)` in most case.
-    pub fn new_unbounded(underlying: Arc<dyn Directory>) -> CachingDirectory {
+    pub fn new_unbounded(
+        underlying: Arc<dyn Directory>,
+        shortlived_cache: Option<&'static CacheMetrics>,
+    ) -> CachingDirectory {
         CachingDirectory {
             underlying,
-            cache: Arc::new(MemorySizedCache::with_infinite_capacity(
-                &quickwit_storage::STORAGE_METRICS.shortlived_cache,
-            )),
+            cache: Arc::new(MemorySizedCache::with_infinite_capacity(shortlived_cache)),
         }
     }
 }
@@ -179,8 +181,11 @@ mod tests {
         let test_path = Path::new("test");
         ram_directory.atomic_write(test_path, &b"test"[..])?;
         let debug_proxy_directory = Arc::new(DebugProxyDirectory::wrap(ram_directory));
-        let caching_directory =
-            CachingDirectory::new_with_capacity_in_bytes(debug_proxy_directory.clone(), 10_000);
+        let caching_directory = CachingDirectory::new_with_capacity_in_bytes(
+            debug_proxy_directory.clone(),
+            10_000,
+            None,
+        );
         caching_directory.atomic_read(test_path)?;
         caching_directory.atomic_read(test_path)?;
         assert_eq!(debug_proxy_directory.drain_read_operations().count(), 1);

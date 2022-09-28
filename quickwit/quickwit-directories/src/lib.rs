@@ -28,17 +28,21 @@
 //!   its IO.
 #![warn(missing_docs)]
 
+#[cfg(feature = "storage")]
 mod bundle_directory;
 mod caching_directory;
 mod debug_proxy_directory;
 mod hot_directory;
+#[cfg(feature = "storage")]
 mod storage_directory;
 mod union_directory;
 
+#[cfg(feature = "storage")]
 pub use self::bundle_directory::{get_hotcache_from_split, read_split_footer, BundleDirectory};
 pub use self::caching_directory::CachingDirectory;
 pub use self::debug_proxy_directory::{DebugProxyDirectory, ReadOperation};
 pub use self::hot_directory::{write_hotcache, HotDirectory};
+#[cfg(feature = "storage")]
 pub use self::storage_directory::StorageDirectory;
 pub use self::union_directory::UnionDirectory;
 

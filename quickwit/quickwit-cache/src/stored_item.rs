@@ -17,8 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use tantivy::directory::OwnedBytes;
+#[cfg(not(feature = "tokio-time"))]
+use instant::Instant;
+#[cfg(feature = "tokio-time")]
 use tokio::time::Instant;
+
+use crate::OwnedBytes;
 
 /// It is a bit overkill to put this in its own module, but I
 /// wanted to ensure that no one would access payload without updating `last_access_time`.

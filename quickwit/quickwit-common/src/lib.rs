@@ -20,11 +20,16 @@
 mod checklist;
 mod coolid;
 
+#[cfg(feature = "system")]
 pub mod fs;
+#[cfg(feature = "metrics")]
 pub mod metrics;
+#[cfg(feature = "system")]
 pub mod net;
 pub mod rand;
+#[cfg(feature = "system")]
 pub mod runtimes;
+#[cfg(feature = "uri")]
 pub mod uri;
 
 use std::fmt::Debug;

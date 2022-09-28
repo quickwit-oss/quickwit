@@ -22,6 +22,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use quickwit_cache::{Cache, MemorySizedCache, QuickwitCache};
 use quickwit_common::uri::Uri;
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DocMapper;
@@ -31,7 +32,7 @@ use quickwit_proto::{
     LeafSearchStreamRequest, LeafSearchStreamResponse, SearchRequest, SearchResponse,
     SearchStreamRequest,
 };
-use quickwit_storage::{Cache, MemorySizedCache, QuickwitCache, StorageUriResolver};
+use quickwit_storage::StorageUriResolver;
 use tokio::sync::Semaphore;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
@@ -243,7 +244,7 @@ impl SearcherContext {
         let capacity_in_bytes = searcher_config.split_footer_cache_capacity.get_bytes() as usize;
         let global_split_footer_cache = MemorySizedCache::with_capacity_in_bytes(
             capacity_in_bytes,
-            &quickwit_storage::STORAGE_METRICS.split_footer_cache,
+            Some(&quickwit_storage::STORAGE_METRICS.split_footer_cache),
         );
         let leaf_search_split_semaphore =
             Semaphore::new(searcher_config.max_num_concurrent_split_searches);
@@ -251,7 +252,10 @@ impl SearcherContext {
             Semaphore::new(searcher_config.max_num_concurrent_split_streams);
         let fast_field_cache_capacity =
             searcher_config.fast_field_cache_capacity.get_bytes() as usize;
-        let storage_long_term_cache = Arc::new(QuickwitCache::new(fast_field_cache_capacity));
+        let storage_long_term_cache = Arc::new(QuickwitCache::new(
+            fast_field_cache_capacity,
+            Some(&quickwit_storage::STORAGE_METRICS.fast_field_cache),
+        ));
         Self {
             searcher_config,
             split_footer_cache: global_split_footer_cache,

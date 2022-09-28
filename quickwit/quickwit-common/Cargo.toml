@@ -13,20 +13,23 @@ documentation = "https://quickwit.io/docs/"
 anyhow = { workspace = true }
 colored = { workspace = true }
 env_logger = { workspace = true }
-home = { workspace = true }
+home = { workspace = true, optional = true  }
 itertools = { workspace = true }
 num_cpus = { workspace = true }
 once_cell = { workspace = true }
-pnet = { workspace = true }
-prometheus = { workspace = true }
+pnet = { workspace = true, optional = true }
+prometheus = { workspace = true, optional = true  }
 rand = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, optional = true }
 tracing = { workspace = true }
-warp = { workspace = true }
 
 [features]
+default = ["metrics", "uri", "system"]
+metrics = ["prometheus"]
+system = ["pnet", "tokio"]
+uri = ["home"]
 testsuite = []
 
 [dev-dependencies]

@@ -1,0 +1,26 @@
+[package]
+name = "quickwit-cache"
+version = "0.3.1"
+authors = ["Quickwit, Inc. <hello@quickwit.io>"]
+edition = "2021"
+license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
+description = "Quickwit's storage abstraction"
+repository = "https://github.com/quickwit-oss/quickwit"
+homepage = "https://quickwit.io/"
+documentation = "https://quickwit.io/docs/"
+
+[dependencies]
+async-trait = { workspace = true }
+instant = { workspace = true }
+lru = { workspace = true }
+mockall = { workspace = true, optional = true }
+once_cell = { workspace = true }
+tantivy = { workspace = true, features = ["quickwit"] }
+tokio = { workspace = true, optional = true }
+tracing = { workspace = true }
+
+quickwit-common = { workspace = true, features = ["metrics"] }
+
+[features]
+testsuite = ["mockall", "tokio/macros", "tokio/rt", "tokio/test-util", "tokio-time"]
+tokio-time = ["tokio/time"]

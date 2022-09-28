@@ -21,7 +21,7 @@ tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tracing = { workspace = true }
 
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["metrics", "system"] }
 quickwit-config = { workspace = true }
 quickwit-proto = { workspace = true }
 

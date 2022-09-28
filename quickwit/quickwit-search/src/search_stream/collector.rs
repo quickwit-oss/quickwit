@@ -22,8 +22,9 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use fastfield_codecs::Column;
 use tantivy::collector::{Collector, SegmentCollector};
-use tantivy::fastfield::{Column, FastValue};
+use tantivy::fastfield::FastValue;
 use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader, TantivyError};
 
 use crate::filters::{TimestampFilter, TimestampFilterBuilder};

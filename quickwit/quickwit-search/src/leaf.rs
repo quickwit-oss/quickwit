@@ -26,16 +26,15 @@ use anyhow::Context;
 use futures::future::try_join_all;
 use futures::Future;
 use itertools::{Either, Itertools};
+use quickwit_cache::MemorySizedCache;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, QUICKWIT_TOKENIZER_MANAGER};
 use quickwit_proto::{
     LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets, SplitSearchError,
 };
-use quickwit_storage::{
-    wrap_storage_with_long_term_cache, BundleStorage, MemorySizedCache, OwnedBytes, Storage,
-};
+use quickwit_storage::{wrap_storage_with_long_term_cache, BundleStorage, Storage};
 use tantivy::collector::Collector;
-use tantivy::directory::FileSlice;
+use tantivy::directory::{FileSlice, OwnedBytes};
 use tantivy::error::AsyncIoError;
 use tantivy::query::Query;
 use tantivy::schema::{Cardinality, Field, FieldType};
@@ -111,7 +110,10 @@ pub(crate) async fn open_index_with_caches(
     );
     let directory = StorageDirectory::new(bundle_storage_with_cache);
     let hot_directory = if ephemeral_unbounded_cache {
-        let caching_directory = CachingDirectory::new_unbounded(Arc::new(directory));
+        let caching_directory = CachingDirectory::new_unbounded(
+            Arc::new(directory),
+            Some(&quickwit_storage::STORAGE_METRICS.shortlived_cache),
+        );
         HotDirectory::open(caching_directory, hotcache_bytes.read_bytes()?)?
     } else {
         HotDirectory::open(directory, hotcache_bytes.read_bytes()?)?

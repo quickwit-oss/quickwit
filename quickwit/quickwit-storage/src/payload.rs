@@ -22,7 +22,8 @@ use std::ops::Range;
 
 use async_trait::async_trait;
 use rusoto_core::ByteStream;
-use tantivy::directory::OwnedBytes;
+
+use crate::OwnedBytes;
 
 #[async_trait]
 /// PutPayload is used to upload data and support multipart.

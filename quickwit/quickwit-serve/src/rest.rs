@@ -20,7 +20,7 @@
 use std::net::SocketAddr;
 
 use hyper::http;
-use quickwit_common::metrics;
+use prometheus::{Encoder, TextEncoder};
 use quickwit_proto::ServiceErrorCode;
 use tracing::{error, info};
 use warp::{redirect, Filter, Rejection, Reply};
@@ -37,6 +37,14 @@ use crate::search_api::{search_get_handler, search_post_handler, search_stream_h
 use crate::ui_handler::ui_handler;
 use crate::{Format, QuickwitServices};
 
+fn metrics_handler() -> impl warp::Reply {
+    let metric_families = prometheus::gather();
+    let mut buffer = Vec::new();
+    let encoder = TextEncoder::new();
+    let _ = encoder.encode(&metric_families, &mut buffer); // TODO avoid ignoring the error.
+    String::from_utf8_lossy(&buffer).to_string()
+}
+
 /// Starts REST service given a HTTP address and a search service.
 pub(crate) async fn start_rest_server(
     rest_listen_addr: SocketAddr,
@@ -46,9 +54,7 @@ pub(crate) async fn start_rest_server(
     let request_counter = warp::log::custom(|_| {
         crate::SERVE_METRICS.http_requests_total.inc();
     });
-    let metrics_service = warp::path("metrics")
-        .and(warp::get())
-        .map(metrics::metrics_handler);
+    let metrics_service = warp::path("metrics").and(warp::get()).map(metrics_handler);
     let api_v1_root_url = warp::path!("api" / "v1" / ..);
     let api_v1_routes = cluster_handler(quickwit_services.cluster.clone())
         .or(node_info_handler(

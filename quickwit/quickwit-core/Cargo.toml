@@ -18,7 +18,7 @@ futures-util = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 serde_json = "1.0"
-tantivy = { workspace = true }
+tantivy = { workspace = true, features = ["mmap", "lz4-compression", "zstd-compression", "quickwit"] }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
@@ -27,9 +27,9 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 
 quickwit-actors = { workspace = true }
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["metrics", "system"] }
 quickwit-config = { workspace = true }
-quickwit-directories = { workspace = true }
+quickwit-directories = { workspace = true, features = ["storage", "tokio-time"] }
 quickwit-doc-mapper = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-janitor = { workspace = true }

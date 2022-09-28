@@ -198,7 +198,11 @@ fn list_split_files(
 
 fn build_hotcache<W: io::Write>(split_path: &Path, out: &mut W) -> anyhow::Result<()> {
     let mmap_directory = tantivy::directory::MmapDirectory::open(split_path)?;
-    write_hotcache(mmap_directory, out)?;
+    write_hotcache(
+        mmap_directory,
+        out,
+        Some(&quickwit_storage::STORAGE_METRICS.shortlived_cache),
+    )?;
     Ok(())
 }
 

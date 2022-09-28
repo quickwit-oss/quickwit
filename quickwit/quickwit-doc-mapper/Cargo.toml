@@ -24,7 +24,7 @@ regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 siphasher = { workspace = true }
-tantivy = { workspace = true }
+tantivy = { workspace = true, features = ["mmap", "lz4-compression", "zstd-compression", "quickwit"] }
 tantivy-query-grammar = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }

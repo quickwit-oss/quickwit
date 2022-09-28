@@ -18,5 +18,3 @@ tracing = { workspace = true }
 
 quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
-
-[dev-dependencies]

@@ -25,7 +25,7 @@ once_cell = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tantivy = { workspace = true }
+tantivy = { workspace = true, features = ["mmap", "lz4-compression", "zstd-compression", "quickwit"] }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
@@ -34,10 +34,11 @@ tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 opentelemetry = { workspace = true }
 
+quickwit-cache = { workspace = true, features = ["testsuite", "tokio-time"] }
 quickwit-cluster = { workspace = true }
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["metrics", "system"] }
 quickwit-config = { workspace = true }
-quickwit-directories = { workspace = true }
+quickwit-directories = { workspace = true, features = ["storage", "tokio-time"] }
 quickwit-doc-mapper = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }

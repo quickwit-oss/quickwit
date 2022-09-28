@@ -54,10 +54,10 @@ tracing-subscriber = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["metrics", "system"] }
 quickwit-config = { workspace = true }
 quickwit-core = { workspace = true }
-quickwit-directories = { workspace = true }
+quickwit-directories = { workspace = true, features = ["storage", "tokio-time"] }
 quickwit-doc-mapper = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-metastore = { workspace = true }

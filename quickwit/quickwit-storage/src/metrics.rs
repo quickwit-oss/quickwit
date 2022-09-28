@@ -20,7 +20,8 @@
 // See https://prometheus.io/docs/practices/naming/
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_counter, new_gauge, IntCounter, IntGauge};
+use quickwit_cache::CacheMetrics;
+use quickwit_common::metrics::{new_counter, IntCounter};
 
 /// Counters associated to storage operations.
 pub struct StorageMetrics {
@@ -59,51 +60,6 @@ impl Default for StorageMetrics {
                 "object_storage_download_num_bytes",
                 "Amount of data downloaded from an object storage.",
                 "quickwit_storage",
-            ),
-        }
-    }
-}
-
-/// Counters associated to a cache.
-#[derive(Clone)]
-pub struct CacheMetrics {
-    pub component_name: String,
-    pub in_cache_count: IntGauge,
-    pub in_cache_num_bytes: IntGauge,
-    pub hits_num_items: IntCounter,
-    pub hits_num_bytes: IntCounter,
-    pub misses_num_items: IntCounter,
-}
-
-impl CacheMetrics {
-    fn for_component(component_name: &str) -> Self {
-        let namespace = format!("cache_{component_name}");
-        CacheMetrics {
-            component_name: component_name.to_string(),
-            in_cache_count: new_gauge(
-                "in_cache_count",
-                "Count of {component_name} in cache",
-                &namespace,
-            ),
-            in_cache_num_bytes: new_gauge(
-                "in_cache_num_bytes",
-                "Number of {component_name} bytes in cache",
-                &namespace,
-            ),
-            hits_num_items: new_counter(
-                "cache_hit_total",
-                "Number of {component_name} cache hits",
-                &namespace,
-            ),
-            hits_num_bytes: new_counter(
-                "cache_hits_bytes",
-                "Number of {component_name} cache hits in bytes",
-                &namespace,
-            ),
-            misses_num_items: new_counter(
-                "cache_miss_total",
-                "Number of {component_name} cache misses",
-                &namespace,
             ),
         }
     }

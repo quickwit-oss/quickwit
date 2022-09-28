@@ -18,7 +18,7 @@ itertools = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tantivy = { workspace = true }
+tantivy = { workspace = true, features = ["mmap", "lz4-compression", "zstd-compression", "quickwit"] }
 time = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
@@ -26,9 +26,9 @@ tracing = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["metrics", "system"] }
 quickwit-config = { workspace = true }
-quickwit-directories = { workspace = true }
+quickwit-directories = { workspace = true, features = ["storage", "tokio-time"] }
 quickwit-doc-mapper = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-metastore = { workspace = true }
@@ -40,7 +40,7 @@ quickwit-storage = { workspace = true }
 mockall = "0.11"
 tempfile = "3"
 
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["metrics", "system"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }

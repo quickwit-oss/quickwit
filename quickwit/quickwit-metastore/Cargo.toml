@@ -31,7 +31,7 @@ tower = { workspace = true }
 tracing = { workspace = true }
 
 quickwit-cluster = { workspace = true }
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["metrics", "system"] }
 quickwit-config = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-proto = { workspace = true }

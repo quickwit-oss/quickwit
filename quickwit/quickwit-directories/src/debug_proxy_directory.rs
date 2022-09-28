@@ -20,10 +20,10 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 use std::{fmt, io, mem};
 
 use async_trait::async_trait;
+use instant::{Duration, Instant};
 use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, OwnedBytes};
 use tantivy::{Directory, HasLen};

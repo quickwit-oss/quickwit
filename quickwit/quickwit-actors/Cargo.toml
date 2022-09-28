@@ -19,7 +19,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["metrics", "system"] }
 quickwit-proto = { workspace = true }
 
 [features]

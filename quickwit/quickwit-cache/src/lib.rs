@@ -18,39 +18,20 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod memory_sized_cache;
+mod metrics;
 mod quickwit_cache;
 mod slice_address;
-mod storage_with_cache;
 mod stored_item;
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use async_trait::async_trait;
-pub use quickwit_cache::QuickwitCache;
-pub use storage_with_cache::StorageWithCache;
+use tantivy::directory::OwnedBytes;
 
 pub use self::memory_sized_cache::MemorySizedCache;
-use crate::{OwnedBytes, Storage};
-
-/// Wraps the given directory with a slice cache that is actually global
-/// to quickwit.
-///
-/// FIXME The current approach is quite horrible in that:
-/// - it uses a global
-/// - it relies on the idea that all of the files we attempt to cache
-/// have universally unique names. It happens to be true today, but this might be very error prone
-/// in the future.
-pub fn wrap_storage_with_long_term_cache(
-    long_term_cache: Arc<dyn Cache>,
-    storage: Arc<dyn Storage>,
-) -> Arc<dyn Storage> {
-    Arc::new(StorageWithCache {
-        storage,
-        cache: long_term_cache,
-    })
-}
+pub use self::metrics::CacheMetrics;
+pub use crate::quickwit_cache::QuickwitCache;
 
 /// The `Cache` trait is the abstraction used to describe the caching logic
 /// used in front of a storage. See `StorageWithCache`.

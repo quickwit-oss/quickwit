@@ -23,9 +23,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, io};
 
-use quickwit_storage::{BundleStorageFileOffsets, OwnedBytes, Storage, StorageResult};
+use quickwit_storage::{BundleStorageFileOffsets, Storage, StorageResult};
 use tantivy::directory::error::OpenReadError;
-use tantivy::directory::{FileHandle, FileSlice};
+use tantivy::directory::{FileHandle, FileSlice, OwnedBytes};
 use tantivy::{Directory, HasLen};
 
 /// BundleDirectory is a read-only directory that makes it possible to

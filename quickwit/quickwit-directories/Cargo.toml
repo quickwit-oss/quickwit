@@ -13,18 +13,25 @@ documentation = "https://quickwit.io/docs/"
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
+instant = { workspace = true }
 once_cell = { workspace = true }
 serde = { workspace = true }
 serde_cbor = { workspace = true }
 serde_json = { workspace = true }
-tantivy = { workspace = true }
+tantivy = { workspace = true, features = ["quickwit"] }
 thiserror = { workspace = true }
 time = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, optional = true }
 tracing = { workspace = true }
 
+quickwit-cache = { workspace = true }
 quickwit-common = { workspace = true }
-quickwit-storage = { workspace = true }
+quickwit-storage = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+tokio = { workspace = true, default-features = false, features = ["time"] }
+
+[features]
+storage = ["quickwit-common/uri", "quickwit-storage"]
+tokio-time = ["quickwit-cache/tokio-time"]

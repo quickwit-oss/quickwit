@@ -23,9 +23,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::cache::{Cache, MemorySizedCache};
 use crate::metrics::CacheMetrics;
-use crate::OwnedBytes;
+use crate::{Cache, MemorySizedCache, OwnedBytes};
 
 const FULL_SLICE: Range<usize> = 0..usize::MAX;
 
@@ -44,10 +43,11 @@ impl From<Vec<(&'static str, Arc<dyn Cache>)>> for QuickwitCache {
 impl QuickwitCache {
     /// Creates a [`QuickwitCache`] with a cache on fast fields
     /// with a capacity of `fast_field_cache_capacity`.
-    pub fn new(fast_field_cache_capacity: usize) -> Self {
+    pub fn new(
+        fast_field_cache_capacity: usize,
+        fast_field_cache_counters: Option<&'static CacheMetrics>,
+    ) -> Self {
         let mut quickwit_cache = QuickwitCache::empty();
-        let fast_field_cache_counters: &'static CacheMetrics =
-            &crate::STORAGE_METRICS.fast_field_cache;
         quickwit_cache.add_route(
             ".fast",
             Arc::new(SimpleCache::with_capacity_in_bytes(
@@ -124,7 +124,7 @@ struct SimpleCache {
 impl SimpleCache {
     fn with_capacity_in_bytes(
         capacity_in_bytes: usize,
-        cache_counters: &'static CacheMetrics,
+        cache_counters: Option<&'static CacheMetrics>,
     ) -> Self {
         SimpleCache {
             slice_cache: MemorySizedCache::with_capacity_in_bytes(
@@ -163,8 +163,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::QuickwitCache;
-    use crate::cache::{Cache, MockCache};
-    use crate::OwnedBytes;
+    use crate::{Cache, MockCache, OwnedBytes};
 
     #[tokio::test]
     async fn test_quickwit_cache_get_all() {

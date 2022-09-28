@@ -19,6 +19,7 @@ hyper = { workspace = true }
 itertools = { workspace = true }
 mime_guess = { workspace = true }
 once_cell = { workspace = true }
+prometheus = { workspace = true }
 regex = { workspace = true }
 rust-embed = { workspace = true }
 serde = { workspace = true }
@@ -35,10 +36,10 @@ warp = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
-quickwit-common = { workspace = true }
+quickwit-common = { workspace = true, features = ["metrics", "system"] }
 quickwit-config = { workspace = true }
 quickwit-core = { workspace = true }
-quickwit-directories = { workspace = true }
+quickwit-directories = { workspace = true, features = ["storage", "tokio-time"] }
 quickwit-doc-mapper = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-ingest-api = { workspace = true }
@@ -59,7 +60,7 @@ tokio = { workspace = true }
 tempfile = { workspace = true }
 
 quickwit-cluster = { workspace = true, features = ["testsuite"] }
-quickwit-common = { workspace = true, features = ["testsuite"] }
+quickwit-common = { workspace = true, features = ["metrics", "system", "testsuite"] }
 quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-search = { workspace = true, features = ["testsuite"] }

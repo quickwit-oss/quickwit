@@ -29,7 +29,6 @@
 //! etc.
 //!
 //! - The `BundleStorage` bundles together multiple files into a single file.
-mod cache;
 mod debouncer;
 mod metrics;
 mod storage;
@@ -49,14 +48,15 @@ mod prefix_storage;
 mod ram_storage;
 mod split;
 mod storage_resolver;
+mod storage_with_cache;
 
+use std::sync::Arc;
+
+use quickwit_cache::Cache;
 use quickwit_common::uri::Uri;
-pub use tantivy::directory::OwnedBytes;
+use tantivy::directory::OwnedBytes;
 
 pub use self::bundle_storage::{BundleStorage, BundleStorageFileOffsets};
-#[cfg(any(test, feature = "testsuite"))]
-pub use self::cache::MockCache;
-pub use self::cache::{wrap_storage_with_long_term_cache, Cache, MemorySizedCache, QuickwitCache};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 #[cfg(feature = "azure")]
 pub use self::object_storage::{AzureBlobStorage, AzureBlobStorageFactory};
@@ -77,6 +77,7 @@ pub use self::test_suite::{
     storage_test_multi_part_upload, storage_test_single_part_upload, storage_test_suite,
 };
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
+use crate::storage_with_cache::StorageWithCache;
 
 /// Loads an entire local or remote file into memory.
 pub async fn load_file(uri: &Uri) -> anyhow::Result<OwnedBytes> {
@@ -89,6 +90,24 @@ pub async fn load_file(uri: &Uri) -> anyhow::Result<OwnedBytes> {
         .ok_or_else(|| anyhow::anyhow!("URI `{uri}` is not a valid file URI."))?;
     let bytes = storage.get_all(file_name).await?;
     Ok(bytes)
+}
+
+/// Wraps the given directory with a slice cache that is actually global
+/// to quickwit.
+///
+/// FIXME The current approach is quite horrible in that:
+/// - it uses a global
+/// - it relies on the idea that all of the files we attempt to cache
+/// have universally unique names. It happens to be true today, but this might be very error prone
+/// in the future.
+pub fn wrap_storage_with_long_term_cache(
+    long_term_cache: Arc<dyn Cache>,
+    storage: Arc<dyn Storage>,
+) -> Arc<dyn Storage> {
+    Arc::new(StorageWithCache {
+        storage,
+        cache: long_term_cache,
+    })
 }
 
 #[cfg(test)]

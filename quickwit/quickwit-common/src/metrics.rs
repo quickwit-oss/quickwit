@@ -17,8 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use prometheus::{Encoder, HistogramOpts, Opts, TextEncoder};
 pub use prometheus::{Histogram, HistogramTimer, IntCounter, IntGauge};
+use prometheus::{HistogramOpts, Opts};
 
 pub fn new_counter(name: &str, description: &str, namespace: &str) -> IntCounter {
     let counter_opts = Opts::new(name, description).namespace(namespace);
@@ -39,14 +39,6 @@ pub fn new_gauge(name: &str, description: &str, namespace: &str) -> IntGauge {
     let gauge = IntGauge::with_opts(gauge_opts).expect("Failed to create gauge");
     prometheus::register(Box::new(gauge.clone())).expect("Failed to register gauge");
     gauge
-}
-
-pub fn metrics_handler() -> impl warp::Reply {
-    let metric_families = prometheus::gather();
-    let mut buffer = Vec::new();
-    let encoder = TextEncoder::new();
-    let _ = encoder.encode(&metric_families, &mut buffer); // TODO avoid ignoring the error.
-    String::from_utf8_lossy(&buffer).to_string()
 }
 
 pub fn create_gauge_guard(gauge: &'static IntGauge) -> GaugeGuard {

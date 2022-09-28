@@ -22,9 +22,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use quickwit_cache::Cache;
 use quickwit_common::uri::Uri;
 
-use crate::cache::Cache;
 use crate::{OwnedBytes, Storage, StorageResult};
 
 /// Use with care, StorageWithCache is read-only.
@@ -96,8 +96,10 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Mutex;
 
+    use quickwit_cache::MockCache;
+
     use super::*;
-    use crate::{MockCache, MockStorage, OwnedBytes};
+    use crate::{MockStorage, OwnedBytes};
 
     #[tokio::test]
     async fn put_in_cache_test() {

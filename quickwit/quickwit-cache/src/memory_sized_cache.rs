@@ -22,15 +22,17 @@ use std::hash::Hash;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::Duration;
 
+#[cfg(not(feature = "tokio-time"))]
+use instant::{Duration, Instant};
 use lru::{KeyRef, LruCache};
-use tokio::time::Instant;
+#[cfg(feature = "tokio-time")]
+use tokio::time::{Duration, Instant};
 use tracing::{error, warn};
 
-use crate::cache::slice_address::{SliceAddress, SliceAddressKey, SliceAddressRef};
-use crate::cache::stored_item::StoredItem;
 use crate::metrics::CacheMetrics;
+use crate::slice_address::{SliceAddress, SliceAddressKey, SliceAddressRef};
+use crate::stored_item::StoredItem;
 use crate::OwnedBytes;
 
 /// We do not evict anything that has been accessed in the last 60s.
@@ -69,23 +71,21 @@ struct NeedMutMemorySizedCache<K: Hash + Eq> {
     num_items: usize,
     num_bytes: u64,
     capacity: Capacity,
-    cache_counters: &'static CacheMetrics,
+    cache_counters: Option<&'static CacheMetrics>,
 }
 
 impl<K: Hash + Eq> Drop for NeedMutMemorySizedCache<K> {
     fn drop(&mut self) {
-        self.cache_counters
-            .in_cache_count
-            .sub(self.num_items as i64);
-        self.cache_counters
-            .in_cache_num_bytes
-            .sub(self.num_bytes as i64);
+        if let Some(cache_counters) = self.cache_counters {
+            cache_counters.in_cache_count.sub(self.num_items as i64);
+            cache_counters.in_cache_num_bytes.sub(self.num_bytes as i64);
+        }
     }
 }
 
 impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
     /// Creates a new NeedMutSliceCache with the given capacity.
-    fn with_capacity(capacity: Capacity, cache_counters: &'static CacheMetrics) -> Self {
+    fn with_capacity(capacity: Capacity, cache_counters: Option<&'static CacheMetrics>) -> Self {
         NeedMutMemorySizedCache {
             // The limit will be decided by the amount of memory in the cache,
             // not the number of items in the cache.
@@ -101,15 +101,19 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
     pub fn record_item(&mut self, num_bytes: u64) {
         self.num_items += 1;
         self.num_bytes += num_bytes;
-        self.cache_counters.in_cache_count.inc();
-        self.cache_counters.in_cache_num_bytes.add(num_bytes as i64);
+        if let Some(cache_counters) = self.cache_counters {
+            cache_counters.in_cache_count.inc();
+            cache_counters.in_cache_num_bytes.add(num_bytes as i64);
+        }
     }
 
     pub fn drop_item(&mut self, num_bytes: u64) {
         self.num_items -= 1;
         self.num_bytes -= num_bytes;
-        self.cache_counters.in_cache_count.dec();
-        self.cache_counters.in_cache_num_bytes.sub(num_bytes as i64);
+        if let Some(cache_counters) = self.cache_counters {
+            cache_counters.in_cache_count.dec();
+            cache_counters.in_cache_num_bytes.sub(num_bytes as i64);
+        }
     }
 
     pub fn get<Q>(&mut self, cache_key: &Q) -> Option<OwnedBytes>
@@ -119,11 +123,15 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
     {
         let item_opt = self.lru_cache.get_mut(cache_key);
         if let Some(item) = item_opt {
-            self.cache_counters.hits_num_items.inc();
-            self.cache_counters.hits_num_bytes.inc_by(item.len() as u64);
+            if let Some(cache_counters) = self.cache_counters {
+                cache_counters.hits_num_items.inc();
+                cache_counters.hits_num_bytes.inc_by(item.len() as u64);
+            }
             Some(item.payload())
         } else {
-            self.cache_counters.misses_num_items.inc();
+            if let Some(cache_counters) = self.cache_counters {
+                cache_counters.misses_num_items.inc();
+            }
             None
         }
     }
@@ -185,7 +193,7 @@ impl<K: Hash + Eq> MemorySizedCache<K> {
     /// Creates an slice cache with the given capacity.
     pub fn with_capacity_in_bytes(
         capacity_in_bytes: usize,
-        cache_counters: &'static CacheMetrics,
+        cache_counters: Option<&'static CacheMetrics>,
     ) -> Self {
         MemorySizedCache {
             inner: Mutex::new(NeedMutMemorySizedCache::with_capacity(
@@ -196,7 +204,7 @@ impl<K: Hash + Eq> MemorySizedCache<K> {
     }
 
     /// Creates a slice cache that nevers removes any entry.
-    pub fn with_infinite_capacity(cache_counters: &'static CacheMetrics) -> Self {
+    pub fn with_infinite_capacity(cache_counters: Option<&'static CacheMetrics>) -> Self {
         MemorySizedCache {
             inner: Mutex::new(NeedMutMemorySizedCache::with_capacity(
                 Capacity::Unlimited,
@@ -247,7 +255,8 @@ mod tests {
     #[tokio::test]
     async fn test_cache_edge_condition() {
         tokio::time::pause();
-        let cache = MemorySizedCache::<String>::with_capacity_in_bytes(5, &CACHE_METRICS_FOR_TESTS);
+        let cache =
+            MemorySizedCache::<String>::with_capacity_in_bytes(5, Some(&CACHE_METRICS_FOR_TESTS));
         {
             let data = OwnedBytes::new(&b"abc"[..]);
             cache.put("3".to_string(), data);
@@ -288,7 +297,7 @@ mod tests {
 
     #[test]
     fn test_cache_edge_unlimited_capacity() {
-        let cache = MemorySizedCache::with_infinite_capacity(&CACHE_METRICS_FOR_TESTS);
+        let cache = MemorySizedCache::with_infinite_capacity(Some(&CACHE_METRICS_FOR_TESTS));
         {
             let data = OwnedBytes::new(&b"abc"[..]);
             cache.put("3".to_string(), data);
@@ -304,7 +313,8 @@ mod tests {
 
     #[test]
     fn test_cache() {
-        let cache = MemorySizedCache::with_capacity_in_bytes(10_000, &CACHE_METRICS_FOR_TESTS);
+        let cache =
+            MemorySizedCache::with_capacity_in_bytes(10_000, Some(&CACHE_METRICS_FOR_TESTS));
         assert!(cache.get(&"hello.seg").is_none());
         let data = OwnedBytes::new(&b"werwer"[..]);
         cache.put("hello.seg", data);
