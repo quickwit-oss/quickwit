@@ -30,6 +30,7 @@ use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError, SplitState};
 use quickwit_storage::Storage;
 use tokio::join;
+use tokio::sync::Semaphore;
 use tracing::{debug, error, info, info_span, instrument, Span};
 
 use crate::actors::doc_processor::DocProcessor;
@@ -43,6 +44,12 @@ use crate::source::{quickwit_supported_sources, SourceActor, SourceExecutionCont
 use crate::split_store::IndexingSplitStore;
 
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(600); // 10 min.
+
+/// Spawning an indexing pipeline puts a lot of pressure on the file system, metastore, etc. so
+/// we rely on this semaphore to limit the number of indexing pipelines that can be spawned
+/// concurrently.
+/// See also <https://github.com/quickwit-oss/quickwit/issues/1638>.
+static SPAWN_PIPELINE_SEMAPHORE: Semaphore = Semaphore::const_new(10);
 
 pub struct IndexingPipelineHandle {
     /// Indexing pipeline
@@ -202,6 +209,7 @@ impl IndexingPipeline {
     // TODO this should return an error saying whether we can retry or not.
     #[instrument(name="", level="info", skip_all, fields(index=%self.params.pipeline_id.index_id, gen=self.generation()))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
+        let _spawn_pipeline_permit = SPAWN_PIPELINE_SEMAPHORE.acquire().await.expect("Failed to acquire spawn pipeline permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
         self.statistics.num_spawn_attempts += 1;
         self.kill_switch = KillSwitch::default();
 

@@ -17,11 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 
 use anyhow::Context;
-use quickwit_common::fs::empty_dir;
+use quickwit_common::ignore_io_error;
 use tokio::fs;
 
 use super::ScratchDirectory;
@@ -73,8 +74,9 @@ impl WeakIndexingDirectory {
 
 impl IndexingDirectory {
     pub async fn create_in_dir<P: AsRef<Path>>(dir_path: P) -> anyhow::Result<IndexingDirectory> {
+        let root_dir = dir_path.as_ref().to_path_buf();
         // Create cache directory if does not exist.
-        let cache_directory_path = dir_path.as_ref().join(CACHE);
+        let cache_directory_path = root_dir.join(CACHE);
         fs::create_dir_all(&cache_directory_path)
             .await
             .with_context(|| {
@@ -83,9 +85,19 @@ impl IndexingDirectory {
                     cache_directory_path.display(),
                 )
             })?;
-        // Create scratch directory if does not exist.
-        let scratch_directory_path = dir_path.as_ref().join(SCRATCH);
-        fs::create_dir_all(&scratch_directory_path)
+        // Delete if exists and recreate scratch directory.
+        let scratch_directory_path = root_dir.join(SCRATCH);
+        ignore_io_error!(
+            io::ErrorKind::NotFound,
+            fs::remove_dir_all(&scratch_directory_path).await
+        )
+        .with_context(|| {
+            format!(
+                "Failed to empty scratch directory `{}`.",
+                scratch_directory_path.display(),
+            )
+        })?;
+        fs::create_dir(&scratch_directory_path)
             .await
             .with_context(|| {
                 format!(
@@ -93,17 +105,10 @@ impl IndexingDirectory {
                     scratch_directory_path.display(),
                 )
             })?;
-        // Empty scratch directory if already exists.
-        empty_dir(&scratch_directory_path).await.with_context(|| {
-            format!(
-                "Failed to empty scratch directory `{}`.",
-                scratch_directory_path.display(),
-            )
-        })?;
         let scratch_directory = ScratchDirectory::new_in_dir(scratch_directory_path);
 
         let inner = InnerIndexingDirectory {
-            root: Root::Dir(dir_path.as_ref().to_path_buf()),
+            root: Root::Dir(root_dir),
             cache_directory: cache_directory_path,
             scratch_directory,
         };

@@ -106,9 +106,22 @@ pub fn is_disjoint(left: &Range<i64>, right: &RangeInclusive<i64>) -> bool {
     left.end <= *right.start() || *right.end() < left.start
 }
 
+#[macro_export]
+macro_rules! ignore_io_error {
+    ($kind:path, $expr:expr) => {
+        match $expr {
+            Ok(_) => Ok(()),
+            Err(error) if error.kind() == $kind => Ok(()),
+            Err(error) => Err(error),
+        }
+    };
+}
+
 #[cfg(test)]
 mod tests {
-    use super::truncate_str;
+    use std::io::ErrorKind;
+
+    use super::*;
 
     #[test]
     fn test_get_from_env() {
@@ -131,5 +144,14 @@ mod tests {
         assert_eq!(truncate_str("hello-world", 6), "hello-");
         assert_eq!(truncate_str("hello🧑‍🔬world", 6), "hello");
         assert_eq!(truncate_str("hello🧑‍🔬world", 7), "hello");
+    }
+
+    #[test]
+    fn test_ignore_io_error_macro() {
+        ignore_io_error!(
+            ErrorKind::NotFound,
+            std::fs::remove_file("file-does-not-exist")
+        )
+        .unwrap();
     }
 }

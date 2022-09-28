@@ -32,6 +32,7 @@ pub mod metastore_api {
 }
 
 pub mod opentelemetry {
+    #[cfg(not(doctest))]
     pub mod proto {
 
         pub mod collector {
