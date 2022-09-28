@@ -23,7 +23,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, HEARTBEAT};
-use quickwit_metastore::{IndexMetadata, Metastore};
+use quickwit_metastore::{IndexMetadata, Metastore, MetastoreResult};
+use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use quickwit_search::SearchClientPool;
 use quickwit_storage::StorageUriResolver;
 use tracing::{error, info, warn};
@@ -167,12 +168,27 @@ impl Handler<SuperviseLoop> for DeleteTaskService {
     }
 }
 
+#[async_trait]
+impl Handler<DeleteQuery> for DeleteTaskService {
+    type Reply = MetastoreResult<DeleteTask>;
+
+    async fn handle(
+        &mut self,
+        message: DeleteQuery,
+        _: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        let reply = self.metastore.create_delete_task(message).await;
+        Ok(reply)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::{Universe, HEARTBEAT};
     use quickwit_indexing::TestSandbox;
+    use quickwit_proto::metastore_api::DeleteQuery;
     use quickwit_search::{MockSearchService, SearchClientPool};
     use quickwit_storage::StorageUriResolver;
 
@@ -180,7 +196,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_task_service() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
         let index_id = "test-delete-task-service-index";
         let doc_mapping_yaml = r#"
             field_mappings:
@@ -211,12 +226,32 @@ mod tests {
             data_dir_path,
         );
         let universe = Universe::new();
-        let (_delete_task_service_mailbox, delete_task_service_handler) =
+        let (delete_task_service_mailbox, delete_task_service_handler) =
             universe.spawn_builder().spawn(delete_task_service);
         let state = delete_task_service_handler
             .process_pending_and_observe()
             .await;
         assert_eq!(state.num_running_pipelines, 1);
+
+        // Just test creation of delete query.
+        let reply = delete_task_service_mailbox
+            .ask_for_res(DeleteQuery {
+                index_id: index_id.to_string(),
+                start_timestamp: None,
+                end_timestamp: None,
+                query: "*".to_string(),
+                search_fields: Vec::new(),
+            })
+            .await;
+        assert!(reply.is_ok());
+        assert_eq!(
+            metastore
+                .list_delete_tasks(index_id, 0)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
         metastore.delete_index(index_id).await.unwrap();
         tokio::time::sleep(HEARTBEAT * 2).await;
         let state_after_deletion = delete_task_service_handler

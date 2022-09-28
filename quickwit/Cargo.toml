@@ -14,6 +14,7 @@ members = [
   "quickwit-ingest-api",
   "quickwit-janitor",
   "quickwit-metastore",
+  "quickwit-opentelemetry",
   "quickwit-proto",
   "quickwit-search",
   "quickwit-serve",

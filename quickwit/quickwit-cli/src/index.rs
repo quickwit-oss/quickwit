@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::VecDeque;
+use std::fmt::Display;
 use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -41,12 +42,13 @@ use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
 use quickwit_indexing::models::{
     DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
 };
-use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, SplitState};
+use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
 use quickwit_telemetry::payload::TelemetryEvent;
-use tabled::{Table, Tabled};
+use tabled::object::{Columns, Segment};
+use tabled::{Alignment, Concat, Format, Modify, Panel, Rotate, Style, Table, Tabled};
 use thousands::Separable;
 use tracing::{debug, warn, Level};
 
@@ -643,122 +645,226 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri)
         .await?;
-    let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let splits = metastore
         .list_splits(&args.index_id, SplitState::Published, None, None)
         .await?;
-
-    let splits_num_docs = splits
-        .iter()
-        .map(|split| split.split_metadata.num_docs)
-        .sorted()
-        .collect_vec();
-    let total_num_docs = splits_num_docs.iter().sum::<usize>();
-    let splits_bytes = splits
-        .iter()
-        .map(|split| (split.split_metadata.footer_offsets.end / 1_000_000) as usize)
-        .sorted()
-        .collect_vec();
-    let total_bytes = splits_bytes.iter().sum::<usize>();
-
-    println!();
-    println!("1. General information");
-    println!("===============================================================================");
-    println!(
-        "{:<35} {}",
-        "Index ID:".color(GREEN_COLOR),
-        index_metadata.index_id
-    );
-    println!(
-        "{:<35} {}",
-        "Index URI:".color(GREEN_COLOR),
-        index_metadata.index_uri
-    );
-    println!(
-        "{:<35} {}",
-        "Number of published splits:".color(GREEN_COLOR),
-        splits.len()
-    );
-    println!(
-        "{:<35} {}",
-        "Number of published documents:".color(GREEN_COLOR),
-        total_num_docs
-    );
-    println!(
-        "{:<35} {} MB",
-        "Size of published splits:".color(GREEN_COLOR),
-        total_bytes
-    );
-    if let Some(timestamp_field_name) = &index_metadata.indexing_settings.timestamp_field {
-        println!(
-            "{:<35} {}",
-            "Timestamp field:".color(GREEN_COLOR),
-            timestamp_field_name
-        );
-        let time_min = splits
-            .iter()
-            .map(|split| split.split_metadata.time_range.clone())
-            .filter(|time_range| time_range.is_some())
-            .map(|time_range| *time_range.unwrap().start())
-            .min();
-        let time_max = splits
-            .iter()
-            .map(|split| split.split_metadata.time_range.clone())
-            .filter(|time_range| time_range.is_some())
-            .map(|time_range| *time_range.unwrap().start())
-            .max();
-        println!(
-            "{:<35} {:?} -> {:?}",
-            "Timestamp range:".color(GREEN_COLOR),
-            time_min,
-            time_max
-        );
-    }
-
-    if splits.is_empty() {
-        return Ok(());
-    }
-
-    println!();
-    println!("2. Split statistics");
-    println!("===============================================================================");
-    println!("Document count stats:");
-    print_descriptive_stats(&splits_num_docs);
-    println!();
-    println!("Size in MB stats:");
-    print_descriptive_stats(&splits_bytes);
-
-    println!();
+    let index_metadata = metastore.index_metadata(&args.index_id).await?;
+    let index_stats = IndexStats::from_metadata(index_metadata, splits)?;
+    println!("{}", index_stats.display_as_table());
     Ok(())
 }
 
-fn print_descriptive_stats(values: &[usize]) {
-    let mean_val = mean(values);
-    let std_val = std_deviation(values);
-    let min_val = values.iter().min().unwrap();
-    let max_val = values.iter().max().unwrap();
-    println!(
-        "{:<35} {:>2} ± {} in [{} … {}]",
-        "Mean ± σ in [min … max]:".color(GREEN_COLOR),
-        mean_val,
-        std_val,
-        min_val,
-        max_val,
-    );
-    let q1 = percentile(values, 1);
-    let q25 = percentile(values, 50);
-    let q50 = percentile(values, 50);
-    let q75 = percentile(values, 75);
-    let q99 = percentile(values, 75);
-    println!(
-        "{:<35} [{}, {}, {}, {}, {}]",
-        "Quantiles [1%, 25%, 50%, 75%, 99%]:".color(GREEN_COLOR),
-        q1,
-        q25,
-        q50,
-        q75,
-        q99,
-    );
+pub struct IndexStats {
+    pub index_id: String,
+    pub index_uri: Uri,
+    pub num_published_splits: usize,
+    pub num_published_docs: usize,
+    pub size_published_docs: usize,
+    pub timestamp_field_name: Option<String>,
+    pub timestamp_range: Option<(i64, i64)>,
+    pub num_docs_descriptive: Option<DescriptiveStats>,
+    pub num_bytes_descriptive: Option<DescriptiveStats>,
+}
+
+impl Tabled for IndexStats {
+    const LENGTH: usize = 7;
+
+    fn fields(&self) -> Vec<String> {
+        vec![
+            self.index_id.clone(),
+            self.index_uri.to_string(),
+            self.num_published_splits.to_string(),
+            self.num_published_docs.to_string(),
+            format!("{} MB", self.size_published_docs),
+            display_option_in_table(&self.timestamp_field_name),
+            display_timestamp_range(&self.timestamp_range),
+        ]
+    }
+
+    fn headers() -> Vec<String> {
+        vec![
+            "Index ID: ".to_string(),
+            "Index URI: ".to_string(),
+            "Number of published splits: ".to_string(),
+            "Number of published documents: ".to_string(),
+            "Size of published splits: ".to_string(),
+            "Timestamp field: ".to_string(),
+            "Timestamp range: ".to_string(),
+        ]
+    }
+}
+
+fn display_option_in_table(opt: &Option<impl Display>) -> String {
+    match opt {
+        Some(opt_val) => format!("{}", opt_val),
+        None => "Field does not exist for the index.".to_string(),
+    }
+}
+
+fn display_timestamp_range(range: &Option<(i64, i64)>) -> String {
+    match range {
+        Some((timestamp_min, timestamp_max)) => {
+            format!("{} -> {}", timestamp_min, timestamp_max)
+        }
+        _ => "Range does not exist for the index.".to_string(),
+    }
+}
+
+impl IndexStats {
+    pub fn from_metadata(
+        index_metadata: IndexMetadata,
+        splits: Vec<Split>,
+    ) -> anyhow::Result<Self> {
+        let splits_num_docs = splits
+            .iter()
+            .map(|split| split.split_metadata.num_docs)
+            .sorted()
+            .collect_vec();
+
+        let total_num_docs = splits_num_docs.iter().sum::<usize>();
+
+        let splits_bytes = splits
+            .iter()
+            .map(|split| (split.split_metadata.footer_offsets.end / 1_000_000) as usize)
+            .sorted()
+            .collect_vec();
+        let total_bytes = splits_bytes.iter().sum::<usize>();
+
+        let timestamp_range = if index_metadata.indexing_settings.timestamp_field.is_some() {
+            let time_min = splits
+                .iter()
+                .flat_map(|split| split.split_metadata.time_range.clone())
+                .map(|time_range| *time_range.start())
+                .min();
+            let time_max = splits
+                .iter()
+                .flat_map(|split| split.split_metadata.time_range.clone())
+                .map(|time_range| *time_range.end())
+                .max();
+            if let (Some(time_min), Some(time_max)) = (time_min, time_max) {
+                Some((time_min, time_max))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let (num_docs_descriptive, num_bytes_descriptive) = if !splits.is_empty() {
+            (
+                DescriptiveStats::maybe_new(&splits_num_docs),
+                DescriptiveStats::maybe_new(&splits_bytes),
+            )
+        } else {
+            (None, None)
+        };
+
+        Ok(Self {
+            index_id: index_metadata.index_id,
+            index_uri: index_metadata.index_uri,
+            num_published_splits: splits.len(),
+            num_published_docs: total_num_docs,
+            size_published_docs: total_bytes,
+            timestamp_field_name: index_metadata.indexing_settings.timestamp_field,
+            timestamp_range,
+            num_docs_descriptive,
+            num_bytes_descriptive,
+        })
+    }
+
+    pub fn display_as_table(&self) -> String {
+        let index_stats_table = create_table(&self, "General Information");
+
+        let index_stats_table = if let Some(docs_stats) = &self.num_docs_descriptive {
+            let doc_stats_table = create_table(docs_stats, "Document count stats");
+            index_stats_table.with(Concat::vertical(doc_stats_table))
+        } else {
+            index_stats_table
+        };
+
+        let index_stats_table = if let Some(size_stats) = &self.num_bytes_descriptive {
+            let size_stats_table = create_table(size_stats, "Size in MB stats");
+            index_stats_table.with(Concat::vertical(size_stats_table))
+        } else {
+            index_stats_table
+        };
+
+        index_stats_table.to_string()
+    }
+}
+
+fn create_table(table: impl Tabled, header: &str) -> Table {
+    Table::new(vec![table])
+        .with(Rotate::Left)
+        .with(Rotate::Bottom)
+        .with(
+            Modify::new(Columns::first())
+                .with(Format::new(|column| column.color(GREEN_COLOR).to_string())),
+        )
+        .with(
+            Modify::new(Segment::all())
+                .with(Alignment::left())
+                .with(Alignment::top()),
+        )
+        .with(Panel(header, 0))
+        .with(Style::psql())
+        .with(Panel("\n", 0))
+}
+
+#[derive(Debug)]
+pub struct DescriptiveStats {
+    mean_val: f32,
+    std_val: f32,
+    min_val: usize,
+    max_val: usize,
+    q1: f32,
+    q25: f32,
+    q50: f32,
+    q75: f32,
+    q99: f32,
+}
+
+impl Tabled for DescriptiveStats {
+    const LENGTH: usize = 2;
+
+    fn fields(&self) -> Vec<String> {
+        vec![
+            format!(
+                "{} ± {} in [{} … {}]",
+                self.mean_val, self.std_val, self.min_val, self.max_val
+            ),
+            format!(
+                "[{}, {}, {}, {}, {}]",
+                self.q1, self.q25, self.q50, self.q75, self.q99,
+            ),
+        ]
+    }
+
+    fn headers() -> Vec<String> {
+        vec![
+            "Mean ± σ in [min … max]:".to_string(),
+            "Quantiles [1%, 25%, 50%, 75%, 99%]:".to_string(),
+        ]
+    }
+}
+
+impl DescriptiveStats {
+    pub fn maybe_new(values: &[usize]) -> Option<DescriptiveStats> {
+        if values.is_empty() {
+            return None;
+        }
+        Some(DescriptiveStats {
+            mean_val: mean(values),
+            std_val: std_deviation(values),
+            min_val: *values.iter().min().expect("Values should not be empty."),
+            max_val: *values.iter().max().expect("Values should not be empty."),
+            q1: percentile(values, 1),
+            q25: percentile(values, 50),
+            q50: percentile(values, 50),
+            q75: percentile(values, 75),
+            q99: percentile(values, 75),
+        })
+    }
 }
 
 pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
@@ -1186,5 +1292,110 @@ impl ThroughputCalculator {
 
     pub fn elapsed_time(&self) -> Duration {
         self.start_time.elapsed()
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use std::ops::RangeInclusive;
+
+    use quickwit_metastore::SplitMetadata;
+
+    use super::*;
+
+    pub fn split_metadata_for_test(
+        split_id: &str,
+        num_docs: usize,
+        time_range: RangeInclusive<i64>,
+        size: u64,
+    ) -> SplitMetadata {
+        let mut split_metadata = SplitMetadata::for_test(split_id.to_string());
+        split_metadata.num_docs = num_docs;
+        split_metadata.time_range = Some(time_range);
+        split_metadata.footer_offsets = 0..size;
+        split_metadata
+    }
+
+    #[test]
+    fn test_index_stats() -> anyhow::Result<()> {
+        let index_id = "index-stats-env".to_string();
+        let split_id = "test_split_id".to_string();
+        let index_uri = "s3://some-test-bucket";
+
+        let index_metadata = IndexMetadata::for_test(&index_id, index_uri);
+        let split_metadata = split_metadata_for_test(&split_id, 100_000, 1111..=2222, 15_000_000);
+
+        let split_data = Split {
+            split_metadata,
+            split_state: quickwit_metastore::SplitState::Published,
+            update_timestamp: 0,
+            publish_timestamp: Some(0),
+        };
+
+        let index_stats = IndexStats::from_metadata(index_metadata, vec![split_data])?;
+
+        assert_eq!(index_stats.index_id, index_id);
+        assert_eq!(index_stats.index_uri.as_str(), index_uri);
+        assert_eq!(index_stats.num_published_splits, 1);
+        assert_eq!(index_stats.num_published_docs, 100_000);
+        assert_eq!(index_stats.size_published_docs, 15);
+        assert_eq!(
+            index_stats.timestamp_field_name,
+            Some("timestamp".to_string())
+        );
+        assert_eq!(index_stats.timestamp_range, Some((1111, 2222)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_descriptive_stats() -> anyhow::Result<()> {
+        let split_id = "stat-test-split".to_string();
+        let template_split = Split {
+            split_state: quickwit_metastore::SplitState::Published,
+            update_timestamp: 0,
+            publish_timestamp: Some(0),
+            split_metadata: SplitMetadata::default(),
+        };
+
+        let split_metadata_1 = split_metadata_for_test(&split_id, 70_000, 10..=12, 60_000_000);
+        let split_metadata_2 = split_metadata_for_test(&split_id, 120_000, 11..=15, 145_000_000);
+        let split_metadata_3 = split_metadata_for_test(&split_id, 90_000, 15..=22, 115_000_000);
+        let split_metadata_4 = split_metadata_for_test(&split_id, 40_000, 22..=22, 55_000_000);
+
+        let mut split_1 = template_split.clone();
+        split_1.split_metadata = split_metadata_1;
+        let mut split_2 = template_split.clone();
+        split_2.split_metadata = split_metadata_2;
+        let mut split_3 = template_split.clone();
+        split_3.split_metadata = split_metadata_3;
+        let mut split_4 = template_split;
+        split_4.split_metadata = split_metadata_4;
+
+        let splits = vec![split_1, split_2, split_3, split_4];
+
+        let splits_num_docs = splits
+            .iter()
+            .map(|split| split.split_metadata.num_docs)
+            .sorted()
+            .collect_vec();
+
+        let splits_bytes = splits
+            .iter()
+            .map(|split| (split.split_metadata.footer_offsets.end / 1_000_000) as usize)
+            .sorted()
+            .collect_vec();
+
+        let num_docs_descriptive = DescriptiveStats::maybe_new(&splits_num_docs);
+        let num_bytes_descriptive = DescriptiveStats::maybe_new(&splits_bytes);
+        let desciptive_stats_none = DescriptiveStats::maybe_new(&[]);
+
+        assert!(num_docs_descriptive.is_some());
+        assert!(num_bytes_descriptive.is_some());
+
+        assert!(desciptive_stats_none.is_none());
+
+        Ok(())
     }
 }

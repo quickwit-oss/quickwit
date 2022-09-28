@@ -38,6 +38,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     prost_config.protoc_arg("--experimental_allow_proto3_optional");
     tonic_build::configure()
         .type_attribute(".", "#[derive(Serialize, Deserialize)]")
+        .type_attribute("DeleteQuery", "#[serde(default)]")
+        .field_attribute(
+            "DeleteQuery.start_timestamp",
+            "#[serde(skip_serializing_if = \"Option::is_none\")]",
+        )
+        .field_attribute(
+            "DeleteQuery.end_timestamp",
+            "#[serde(skip_serializing_if = \"Option::is_none\")]",
+        )
         .type_attribute("OutputFormat", "#[serde(rename_all = \"snake_case\")]")
         .out_dir("src/")
         .compile_with_config(

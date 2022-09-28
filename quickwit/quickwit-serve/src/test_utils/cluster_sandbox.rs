@@ -147,7 +147,7 @@ impl ClusterSandbox {
         })
     }
 
-    pub async fn wait_for_cluster_num_live_nodes(
+    pub async fn wait_for_cluster_num_ready_nodes(
         &self,
         expected_num_alive_nodes: usize,
     ) -> anyhow::Result<()> {
@@ -155,8 +155,8 @@ impl ClusterSandbox {
         let max_num_attempts = 3;
         while num_attempts < max_num_attempts {
             tokio::time::sleep(Duration::from_millis(100 * (num_attempts + 1))).await;
-            let cluster_state = self.rest_client.cluster_state().await?;
-            if cluster_state.live_nodes.len() == expected_num_alive_nodes {
+            let cluster_snapshot = self.rest_client.cluster_snapshot().await?;
+            if cluster_snapshot.ready_nodes.len() == expected_num_alive_nodes {
                 return Ok(());
             }
             num_attempts += 1;
