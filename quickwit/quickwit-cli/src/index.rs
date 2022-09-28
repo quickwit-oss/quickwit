@@ -654,26 +654,44 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[derive(Tabled)]
 pub struct IndexStats {
-    #[tabled(rename = "Index ID: ")]
     pub index_id: String,
-    #[tabled(rename = "Index URI: ")]
     pub index_uri: Uri,
-    #[tabled(rename = "Number of published splits: ")]
     pub num_published_splits: usize,
-    #[tabled(rename = "Number of published documents: ")]
     pub num_published_docs: usize,
-    #[tabled(rename = "Size of published splits (MB): ")]
     pub size_published_docs: usize,
-    #[tabled(display_with = "display_option_in_table", rename = "Timestamp field: ")]
     pub timestamp_field_name: Option<String>,
-    #[tabled(display_with = "display_timestamp_range", rename = "Timestamp range: ")]
     pub timestamp_range: Option<(Option<i64>, Option<i64>)>,
-    #[tabled(skip)]
     pub num_docs_descriptive: Option<DescriptiveStats>,
-    #[tabled(skip)]
     pub num_bytes_descriptive: Option<DescriptiveStats>,
+}
+
+impl Tabled for IndexStats {
+    const LENGTH: usize = 7;
+
+    fn fields(&self) -> Vec<String> {
+        vec![
+            self.index_id.clone(),
+            self.index_uri.to_string(),
+            self.num_published_splits.to_string(),
+            self.num_published_docs.to_string(),
+            format!("{} MB", self.size_published_docs),
+            display_option_in_table(&self.timestamp_field_name),
+            display_timestamp_range(&self.timestamp_range),
+        ]
+    }
+
+    fn headers() -> Vec<String> {
+        vec![
+            "Index ID: ".to_string(),
+            "Index URI: ".to_string(),
+            "Number of published splits: ".to_string(),
+            "Number of published documents: ".to_string(),
+            "Size of published splits (MB): ".to_string(),
+            "Timestamp field: ".to_string(),
+            "Timestamp range: ".to_string(),
+        ]
+    }
 }
 
 fn display_option_in_table(opt: &Option<impl Display>) -> String {
