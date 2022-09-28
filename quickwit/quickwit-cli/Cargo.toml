@@ -3,7 +3,7 @@ name = "quickwit-cli"
 version = "0.3.1"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
-license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
+license = "AGPL-3.0-or-later"                               # For a commercial, license, contact hello@quickwit.io
 description = "Quickwit is a cost-efficient search engine."
 repository = "https://github.com/quickwit-oss/quickwit"
 homepage = "https://quickwit.io/"
@@ -41,7 +41,7 @@ quickwit-core = { version = "0.3.1", path = "../quickwit-core" }
 quickwit-directories = { version = "0.3.1", path = "../quickwit-directories" }
 quickwit-doc-mapper = { version = "0.3.1", path = "../quickwit-doc-mapper" }
 quickwit-indexing = { version = "0.3.1", path = "../quickwit-indexing" }
-quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore", features = ["testsuite"]}
+quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore" }
 quickwit-proto = { version = "0.3.1", path = "../quickwit-proto" }
 quickwit-search = { version = "0.3.1", path = "../quickwit-search" }
 quickwit-serve = { version = "0.3.1", path = "../quickwit-serve" }
@@ -49,7 +49,7 @@ quickwit-storage = { version = "0.3.1", path = "../quickwit-storage" }
 quickwit-telemetry = { version = "0.3.1", path = "../quickwit-telemetry" }
 regex = "1.6.0"
 serde_json = "1.0"
-tabled = { version = "0.8", features = ["color"]}
+tabled = { version = "0.8", features = ["color"] }
 tempfile = "3"
 thousands = "0.2.0"
 tikv-jemalloc-ctl = { version = "0.5", optional = true }
@@ -67,7 +67,7 @@ tonic = "0.8.1"
 tracing-subscriber = { version = "0.3", features = [
   "time",
   "std",
-  "env-filter"
+  "env-filter",
 ] }
 
 [dev-dependencies]
@@ -75,9 +75,12 @@ assert_cmd = "2"
 predicates = "2"
 reqwest = { version = "0.11", default-features = false, features = [
   "json",
-  "rustls-tls"
+  "rustls-tls",
 ] }
 serial_test = "0.9.0"
+quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore", features = [
+  "testsuite",
+] }
 
 [features]
 jemalloc = ["dep:tikv-jemalloc-ctl", "dep:tikv-jemallocator"]
@@ -90,7 +93,7 @@ release-feature-set = [
   "quickwit-indexing/kafka",
   "quickwit-indexing/kinesis",
   "openssl-support",
-  "jemalloc"
+  "jemalloc",
 ]
 release-feature-vendored-set = [
   "quickwit-metastore/postgres",
@@ -98,5 +101,5 @@ release-feature-vendored-set = [
   "quickwit-indexing/vendored-kafka",
   "quickwit-indexing/kinesis",
   "openssl-support",
-  "jemalloc"
+  "jemalloc",
 ]

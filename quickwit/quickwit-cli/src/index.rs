@@ -685,14 +685,10 @@ fn display_option_in_table(opt: &Option<impl Display>) -> String {
 
 fn display_timestamp_range(range: &Option<(Option<i64>, Option<i64>)>) -> String {
     match range {
-        Some((timestamp_min, timestamp_max)) => {
-            if timestamp_min.is_some() && timestamp_max.is_some() {
-                format!("{} -> {}", timestamp_min.unwrap(), timestamp_max.unwrap())
-            } else {
-                "Range does not exist for the index.".to_string()
-            }
+        Some((Some(timestamp_min), Some(timestamp_max))) => {
+            format!("{} -> {}", timestamp_min, timestamp_max)
         }
-        None => "Range does not exist for the index.".to_string(),
+        _ => "Range does not exist for the index.".to_string(),
     }
 }
 
@@ -719,21 +715,13 @@ impl IndexStats {
         let timestamp_range = if index_metadata.indexing_settings.timestamp_field.is_some() {
             let time_min = splits
                 .iter()
-                .map(|split| split.split_metadata.time_range.clone())
-                .filter(|time_range| time_range.is_some())
-                .map(|time_range| {
-                    let time_range = time_range.unwrap();
-                    *time_range.start().min(time_range.end())
-                })
+                .flat_map(|split| split.split_metadata.time_range.clone())
+                .map(|time_range| *time_range.start().min(time_range.end()))
                 .min();
             let time_max = splits
                 .iter()
-                .map(|split| split.split_metadata.time_range.clone())
-                .filter(|time_range| time_range.is_some())
-                .map(|time_range| {
-                    let time_range = time_range.unwrap();
-                    *time_range.start().max(time_range.end())
-                })
+                .flat_map(|split| split.split_metadata.time_range.clone())
+                .map(|time_range| *time_range.start().max(time_range.end()))
                 .max();
             Some((time_min, time_max))
         } else {
@@ -1282,5 +1270,111 @@ impl ThroughputCalculator {
 
     pub fn elapsed_time(&self) -> Duration {
         self.start_time.elapsed()
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use std::ops::RangeInclusive;
+
+    use quickwit_metastore::SplitMetadata;
+
+    use super::*;
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn split_metadata_for_test(
+        split_id: &str,
+        num_docs: usize,
+        time_range: RangeInclusive<i64>,
+        size: u64,
+    ) -> SplitMetadata {
+        let mut split_metadata = SplitMetadata::for_test(split_id.to_string());
+        split_metadata.num_docs = num_docs;
+        split_metadata.time_range = Some(time_range);
+        split_metadata.footer_offsets = 0..size;
+        split_metadata
+    }
+
+    #[test]
+    fn test_index_stats() -> anyhow::Result<()> {
+        let index_id = "index-stats-env".to_string();
+        let split_id = "test_split_id".to_string();
+        let index_uri = "s3://some-test-bucket";
+
+        let index_metadata = IndexMetadata::for_test(&index_id, index_uri);
+        let split_metadata = split_metadata_for_test(&split_id, 100_000, 1111..=2222, 15_000_000);
+
+        let split_data = Split {
+            split_metadata,
+            split_state: quickwit_metastore::SplitState::Published,
+            update_timestamp: 0,
+            publish_timestamp: Some(0),
+        };
+
+        let index_stats = IndexStats::from_metadata(index_metadata, vec![split_data])?;
+
+        assert_eq!(index_stats.index_id, index_id);
+        assert_eq!(index_stats.index_uri.as_str(), index_uri);
+        assert_eq!(index_stats.num_published_splits, 1);
+        assert_eq!(index_stats.num_published_docs, 100_000);
+        assert_eq!(index_stats.size_published_docs, 15);
+        assert_eq!(
+            index_stats.timestamp_field_name,
+            Some("timestamp".to_string())
+        );
+        assert_eq!(index_stats.timestamp_range, Some((Some(1111), Some(2222))));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_descriptive_stats() -> anyhow::Result<()> {
+        let split_id = "stat-test-split".to_string();
+        let template_split = Split {
+            split_state: quickwit_metastore::SplitState::Published,
+            update_timestamp: 0,
+            publish_timestamp: Some(0),
+            split_metadata: SplitMetadata::default(),
+        };
+
+        let split_metadata_1 = split_metadata_for_test(&split_id, 70_000, 10..=12, 60_000_000);
+        let split_metadata_2 = split_metadata_for_test(&split_id, 120_000, 11..=15, 145_000_000);
+        let split_metadata_3 = split_metadata_for_test(&split_id, 90_000, 15..=22, 115_000_000);
+        let split_metadata_4 = split_metadata_for_test(&split_id, 40_000, 22..=22, 55_000_000);
+
+        let mut split_1 = template_split.clone();
+        split_1.split_metadata = split_metadata_1;
+        let mut split_2 = template_split.clone();
+        split_2.split_metadata = split_metadata_2;
+        let mut split_3 = template_split.clone();
+        split_3.split_metadata = split_metadata_3;
+        let mut split_4 = template_split;
+        split_4.split_metadata = split_metadata_4;
+
+        let splits = vec![split_1, split_2, split_3, split_4];
+
+        let splits_num_docs = splits
+            .iter()
+            .map(|split| split.split_metadata.num_docs)
+            .sorted()
+            .collect_vec();
+
+        let splits_bytes = splits
+            .iter()
+            .map(|split| (split.split_metadata.footer_offsets.end / 1_000_000) as usize)
+            .sorted()
+            .collect_vec();
+
+        let num_docs_descriptive = DescriptiveStats::maybe_new(&splits_num_docs);
+        let num_bytes_descriptive = DescriptiveStats::maybe_new(&splits_bytes);
+        let desciptive_stats_none = DescriptiveStats::maybe_new(&[]);
+
+        assert!(num_docs_descriptive.is_some());
+        assert!(num_bytes_descriptive.is_some());
+
+        assert!(desciptive_stats_none.is_none());
+
+        Ok(())
     }
 }
