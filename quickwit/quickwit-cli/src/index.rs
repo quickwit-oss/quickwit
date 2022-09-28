@@ -661,7 +661,7 @@ pub struct IndexStats {
     pub num_published_docs: usize,
     pub size_published_docs: usize,
     pub timestamp_field_name: Option<String>,
-    pub timestamp_range: Option<(Option<i64>, Option<i64>)>,
+    pub timestamp_range: Option<(i64, i64)>,
     pub num_docs_descriptive: Option<DescriptiveStats>,
     pub num_bytes_descriptive: Option<DescriptiveStats>,
 }
@@ -687,7 +687,7 @@ impl Tabled for IndexStats {
             "Index URI: ".to_string(),
             "Number of published splits: ".to_string(),
             "Number of published documents: ".to_string(),
-            "Size of published splits (MB): ".to_string(),
+            "Size of published splits: ".to_string(),
             "Timestamp field: ".to_string(),
             "Timestamp range: ".to_string(),
         ]
@@ -701,9 +701,9 @@ fn display_option_in_table(opt: &Option<impl Display>) -> String {
     }
 }
 
-fn display_timestamp_range(range: &Option<(Option<i64>, Option<i64>)>) -> String {
+fn display_timestamp_range(range: &Option<(i64, i64)>) -> String {
     match range {
-        Some((Some(timestamp_min), Some(timestamp_max))) => {
+        Some((timestamp_min, timestamp_max)) => {
             format!("{} -> {}", timestamp_min, timestamp_max)
         }
         _ => "Range does not exist for the index.".to_string(),
@@ -734,14 +734,18 @@ impl IndexStats {
             let time_min = splits
                 .iter()
                 .flat_map(|split| split.split_metadata.time_range.clone())
-                .map(|time_range| *time_range.start().min(time_range.end()))
+                .map(|time_range| *time_range.start())
                 .min();
             let time_max = splits
                 .iter()
                 .flat_map(|split| split.split_metadata.time_range.clone())
-                .map(|time_range| *time_range.start().max(time_range.end()))
+                .map(|time_range| *time_range.end())
                 .max();
-            Some((time_min, time_max))
+            if let (Some(time_min), Some(time_max)) = (time_min, time_max) {
+                Some((time_min, time_max))
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -1300,7 +1304,6 @@ mod test {
 
     use super::*;
 
-    #[cfg(any(test, feature = "testsuite"))]
     pub fn split_metadata_for_test(
         split_id: &str,
         num_docs: usize,
@@ -1341,7 +1344,7 @@ mod test {
             index_stats.timestamp_field_name,
             Some("timestamp".to_string())
         );
-        assert_eq!(index_stats.timestamp_range, Some((Some(1111), Some(2222))));
+        assert_eq!(index_stats.timestamp_range, Some((1111, 2222)));
 
         Ok(())
     }
