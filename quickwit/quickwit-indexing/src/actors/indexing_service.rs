@@ -223,6 +223,7 @@ impl IndexingService {
                 .await?;
                 pipeline_ids.push(pipeline_id);
             }
+            ctx.record_progress();
         }
         if self.enable_ingest_api {
             let pipeline_id = self
@@ -247,7 +248,6 @@ impl IndexingService {
                 pipeline_ord: pipeline_id.pipeline_ord,
             });
         }
-
         let indexing_dir_path = self.data_dir_path.join(INDEXING_DIR_NAME);
         let indexing_directory = self
             .get_or_create_indexing_directory(&pipeline_id, indexing_dir_path)
@@ -255,7 +255,7 @@ impl IndexingService {
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let merge_policy = self.get_or_create_merge_policy(&pipeline_id, &index_metadata);
         let split_store = self
-            .get_or_init_split_store(
+            .get_or_create_split_store(
                 &pipeline_id,
                 indexing_directory.cache_directory(),
                 storage.clone(),
@@ -376,7 +376,6 @@ impl IndexingService {
                 return merge_policy;
             }
         }
-
         let merge_policy = merge_policy_from_settings(&index_metadata.indexing_settings);
 
         self.merge_policies
@@ -409,7 +408,7 @@ impl IndexingService {
         Ok(indexing_directory)
     }
 
-    async fn get_or_init_split_store(
+    async fn get_or_create_split_store(
         &mut self,
         pipeline_id: &IndexingPipelineId,
         cache_directory: &Path,

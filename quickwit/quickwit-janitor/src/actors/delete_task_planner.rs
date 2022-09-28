@@ -364,7 +364,7 @@ impl Handler<PlanDeleteOperationsLoop> for DeleteTaskPlanner {
 mod tests {
     use quickwit_actors::{create_test_mailbox, ActorState, Universe};
     use quickwit_config::build_doc_mapper;
-    use quickwit_indexing::merge_policy::{MergeOperation, NoMergePolicy};
+    use quickwit_indexing::merge_policy::{MergeOperation, NopMergePolicy};
     use quickwit_indexing::TestSandbox;
     use quickwit_metastore::SplitMetadata;
     use quickwit_proto::metastore_api::DeleteQuery;
@@ -463,7 +463,7 @@ mod tests {
             doc_mapper_str,
             metastore.clone(),
             client_pool,
-            Arc::new(NoMergePolicy),
+            Arc::new(NopMergePolicy),
             downloader_mailbox,
         );
         let universe = Universe::new();

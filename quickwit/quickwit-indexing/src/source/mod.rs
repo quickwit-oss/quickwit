@@ -266,7 +266,6 @@ impl Handler<Loop> for SourceActor {
             .source
             .emit_batches(&self.doc_processor_mailbox, ctx)
             .await?;
-        ctx.record_progress();
         if wait_for.is_zero() {
             ctx.send_self_message(Loop).await?;
             return Ok(());

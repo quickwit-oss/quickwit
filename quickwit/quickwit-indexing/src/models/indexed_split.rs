@@ -105,6 +105,7 @@ impl IndexedSplitBuilder {
                 uncompressed_docs_size_in_bytes: 0,
                 time_range: None,
                 delete_opstamp: last_delete_opstamp,
+                num_merge_ops: 0,
             },
             index_writer,
             split_scratch_directory,
