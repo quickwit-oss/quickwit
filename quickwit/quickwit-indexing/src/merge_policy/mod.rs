@@ -17,13 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod no_merge_policy;
+mod nop_merge_policy;
 mod stable_log_merge_policy;
 
 use std::fmt;
 use std::sync::Arc;
 
-pub use no_merge_policy::NoMergePolicy;
+pub use nop_merge_policy::NopMergePolicy;
 use quickwit_config::IndexingSettings;
 use quickwit_metastore::SplitMetadata;
 pub(crate) use stable_log_merge_policy::StableLogMergePolicy;
@@ -99,7 +99,7 @@ pub trait MergePolicy: Send + Sync + fmt::Debug {
 
 pub fn merge_policy_from_settings(indexing_settings: &IndexingSettings) -> Arc<dyn MergePolicy> {
     if !indexing_settings.merge_enabled {
-        return Arc::new(NoMergePolicy);
+        return Arc::new(NopMergePolicy);
     }
     let stable_log_merge_policy = StableLogMergePolicy {
         merge_factor: indexing_settings.merge_policy.merge_factor,
