@@ -88,7 +88,7 @@ export function IndexSummary({ index }: { index: Index }) {
             decimalScale={2}
           />
         </IndexRow>
-        <IndexRow title="Number of documents (Published):">
+        <IndexRow title="Number of published documents:">
           <NumberFormat
             value={total_num_docs}
             displayType={"text"}
