@@ -40,11 +40,17 @@ width: 100px;
 `
 
 export function IndexSummary({index}: {index: Index}) {
-  const total_num_docs = index.splits
+  const all_splits = index.splits;
+  const published_splits = all_splits.filter(split => split.split_state == "Published");
+  const num_of_staged_splits = all_splits.filter(split => split.split_state == "Staged").length;
+  const num_of_marked_for_delete_splits = all_splits.filter(split => split.split_state == "MarkedForDeletion").length;
+  const total_num_docs = published_splits
     .map(split => split.num_docs)
     .reduce((sum, current) => sum + current, 0);
-  const total_num_bytes = index.splits
-    .map(split => split.size_in_bytes)
+  const total_num_bytes = published_splits
+    .map(split => {
+      return split.footer_offsets.end 
+    })
     .reduce((sum, current) => sum + current, 0);
   return (
     <Paper variant="outlined" >
@@ -68,7 +74,7 @@ export function IndexSummary({index}: {index: Index}) {
           </div>
         </Row>
         <Row>
-          <RowKey>Size:</RowKey>
+          <RowKey>Size of pusblished splits:</RowKey>
           <div>
             <NumberFormat value={total_num_bytes / 1000000} displayType={'text'} thousandSeparator={true} suffix='MB' decimalScale={2}/>
           </div>
@@ -80,9 +86,21 @@ export function IndexSummary({index}: {index: Index}) {
           </div>
         </Row>
         <Row>
-          <RowKey>Splits:</RowKey>
+          <RowKey>Number of published splits:</RowKey>
           <div>
-            { index.splits.length }
+            { published_splits.length }
+          </div>
+        </Row>
+        <Row>
+          <RowKey>Number of staged splits:</RowKey>
+          <div>
+            { num_of_staged_splits }
+          </div>
+        </Row>
+        <Row>
+          <RowKey>Number of splits marked for delete:</RowKey>
+          <div>
+            { num_of_marked_for_delete_splits }
           </div>
         </Row>
       </ItemContainer>
