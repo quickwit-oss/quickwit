@@ -27,9 +27,10 @@ use tantivy::schema::{
     BytesOptions, Cardinality, Field, JsonObjectOptions, NumericOptions, SchemaBuilder,
     TextOptions, Value,
 };
-use tantivy::{DateOptions, DateTime, Document};
+use tantivy::{DateOptions, Document};
 
-use super::date_time_type::{timestamp_to_datetime_str, QuickwitDateTimeOptions};
+use super::date_time_parsing::format_timestamp;
+use super::date_time_type::QuickwitDateTimeOptions;
 use crate::default_doc_mapper::field_mapping_entry::{
     QuickwitNumericOptions, QuickwitObjectOptions, QuickwitTextOptions,
 };
@@ -102,24 +103,7 @@ impl LeafType {
                     Err(format!("Expected bool value, got '{}'.", json_val))
                 }
             }
-            LeafType::DateTime(options) => {
-                let date_time = match json_val {
-                    JsonValue::String(text) => options.parse_string(text)?,
-                    JsonValue::Number(number) => {
-                        let i64_val = number
-                            .as_i64()
-                            .ok_or_else(|| format!("Expected an integer, got '{}'.", number))?;
-                        options.parse_number(i64_val)?
-                    }
-                    _ => {
-                        return Err(format!(
-                            "Expected datetime as string or number, got '{}'.",
-                            json_val
-                        ))
-                    }
-                };
-                Ok(Value::Date(DateTime::from_utc(date_time)))
-            }
+            LeafType::DateTime(date_time_options) => date_time_options.parse_json(json_val),
             LeafType::Bytes(_) => {
                 let base64_str = if let JsonValue::String(base64_str) = json_val {
                     base64_str
@@ -197,7 +181,7 @@ impl MappingLeaf {
             if let (LeafType::DateTime(options), Some(timestamp)) =
                 (self.get_type(), json_val.as_i64())
             {
-                let date_time_str = timestamp_to_datetime_str(timestamp, &options.precision)
+                let date_time_str = format_timestamp(timestamp, &options.precision)
                     .expect("Invalid timestamp is not allowed.");
                 return insert_json_val(field_path, JsonValue::String(date_time_str), doc_json);
             }
@@ -277,7 +261,7 @@ trait NumVal: Sized + Into<Value> {
                 })?
                 .into())
         } else {
-            Err(format!("Expected JSON number, got '{:?}'.", json_val))
+            Err(format!("Expected JSON number, got '{json_val}'.",))
         }
     }
 }
@@ -928,12 +912,10 @@ mod tests {
                 &mut document,
                 &mut path,
             )
-            .err()
-            .unwrap();
+            .unwrap_err();
         assert_eq!(
             parse_err.to_string(),
-            "The field 'root.my_field' could not be parsed: Expected JSON number, got 'Array \
-             [Number(1), Number(2)]'."
+            "The field 'root.my_field' could not be parsed: Expected JSON number, got '[1,2]'."
         );
     }
 
@@ -967,8 +949,7 @@ mod tests {
         let err = typ.value_from_json(json!("foo-datetime")).unwrap_err();
         assert_eq!(
             err,
-            "Failed to parse datetime `foo-datetime` using the specified formats `rfc3339`, \
-             `unix_ts_secs`."
+            "Failed to parse datetime `foo-datetime` using the following formats: `rfc3339`."
         );
     }
 
@@ -978,7 +959,7 @@ mod tests {
         let err = typ.value_from_json(json!(["foo", "bar"])).err().unwrap();
         assert_eq!(
             err,
-            "Expected datetime as string or number, got '[\"foo\",\"bar\"]'."
+            "Failed to parse datetime. Expected an integer or a string, got `[\"foo\",\"bar\"]`."
         );
     }
 

@@ -13,7 +13,6 @@ documentation = "https://quickwit.io/docs/"
 anyhow = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
-derivative = { workspace = true }
 dyn-clone = { workspace = true }
 fnv = { workspace = true }
 indexmap = { workspace = true }
