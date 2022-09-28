@@ -21,14 +21,15 @@ itertools = { workspace = true }
 json_comments = { workspace = true }
 new_string_template = { workspace = true }
 once_cell = { workspace = true }
-quickwit-common = { workspace = true }
-quickwit-doc-mapper = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
+
+quickwit-common = { workspace = true }
+quickwit-doc-mapper = { workspace = true }
 
 [features]
 testsuite = []

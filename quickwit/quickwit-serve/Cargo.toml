@@ -19,20 +19,6 @@ hyper = { workspace = true }
 itertools = { workspace = true }
 mime_guess = { workspace = true }
 once_cell = { workspace = true }
-quickwit-actors = { workspace = true }
-quickwit-cluster = { workspace = true }
-quickwit-common = { workspace = true }
-quickwit-config = { workspace = true }
-quickwit-core = { workspace = true }
-quickwit-directories = { workspace = true }
-quickwit-doc-mapper = { workspace = true }
-quickwit-indexing = { workspace = true }
-quickwit-ingest-api = { workspace = true }
-quickwit-janitor = { workspace = true }
-quickwit-metastore = { workspace = true }
-quickwit-proto = { workspace = true }
-quickwit-search = { workspace = true }
-quickwit-storage = { workspace = true }
 regex = { workspace = true }
 rust-embed = { workspace = true }
 serde = { workspace = true }
@@ -47,16 +33,34 @@ tracing-opentelemetry = { workspace = true }
 opentelemetry = { workspace = true }
 warp = { workspace = true }
 
+quickwit-actors = { workspace = true }
+quickwit-cluster = { workspace = true }
+quickwit-common = { workspace = true }
+quickwit-config = { workspace = true }
+quickwit-core = { workspace = true }
+quickwit-directories = { workspace = true }
+quickwit-doc-mapper = { workspace = true }
+quickwit-indexing = { workspace = true }
+quickwit-ingest-api = { workspace = true }
+quickwit-janitor = { workspace = true }
+quickwit-metastore = { workspace = true }
+quickwit-opentelemetry = { workspace = true }
+quickwit-proto = { workspace = true }
+quickwit-search = { workspace = true }
+quickwit-storage = { workspace = true }
+
 [dev-dependencies]
 assert-json-diff = { workspace = true }
 chitchat = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
+rand = { workspace = true }
+tokio = { workspace = true }
+tempfile = { workspace = true }
+
 quickwit-cluster = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
+quickwit-search = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
-rand = { workspace = true }
-tokio = { workspace = true }
-tempfile = { workspace = true }

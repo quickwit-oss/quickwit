@@ -3,7 +3,7 @@ name = "quickwit-janitor"
 version = "0.3.1"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
-license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
+license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
 description = "Quickwit Janitor Service"
 repository = "https://github.com/quickwit-oss/quickwit"
 homepage = "https://quickwit.io/"
@@ -15,6 +15,15 @@ async-trait = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
 itertools = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tantivy = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tracing = { workspace = true }
+
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
@@ -26,21 +35,14 @@ quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-storage = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
-tantivy = { workspace = true }
-time = { workspace = true }
-tokio = { workspace = true }
-tokio-stream = { workspace = true }
-tracing = { workspace = true }
 
 [dev-dependencies]
 mockall = "0.11"
+tempfile = "3"
+
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-search = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
-tempfile = "3"

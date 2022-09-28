@@ -20,7 +20,6 @@ indexmap = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true, optional = true }
 once_cell = { workspace = true }
-quickwit-proto = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -33,6 +32,7 @@ tracing = { workspace = true }
 typetag = { workspace = true }
 unwrap-infallible = { workspace = true }
 
+quickwit-proto = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

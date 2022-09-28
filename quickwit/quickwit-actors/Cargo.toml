@@ -15,11 +15,12 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }
-quickwit-common = { workspace = true }
-quickwit-proto = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+
+quickwit-common = { workspace = true }
+quickwit-proto = { workspace = true }
 
 [features]
 testsuite = []

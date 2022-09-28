@@ -72,11 +72,11 @@ hyper-rustls = "0.23"
 indexmap = { version = "1.9.1", features = ["serde"] }
 itertools = "0.10.3"
 json_comments = "0.2"
-libz-sys = { version = "1.1.3" }
+libz-sys = "1.1.3"
 lru = "0.8"
 matches = "0.1.8"
 md5 = "0.7"
-mime_guess = { version = "2.0.4" }
+mime_guess = "2.0.4"
 mockall = "0.11"
 new_string_template = "1.4.0"
 num_cpus = "1"
@@ -86,6 +86,7 @@ openssl = { version = "0.10.36", default-features = false }
 openssl-probe = "0.1.4"
 opentelemetry = { version = "0.18", features = ["rt-tokio"] }
 opentelemetry-jaeger = { version = "0.17", features = ["rt-tokio"] }
+opentelemetry-otlp = "0.11.0"
 pnet = { version = "0.31.0", features = ["std"] }
 predicates = "2"
 prometheus = { version = "0.13", features = ["process"] }
@@ -135,7 +136,7 @@ sqlx = { version = "0.6", features = [
   "migrate",
   "time",
 ] }
-tabled = "0.8"
+tabled = { version = "0.8", features = ["color"] }
 tempfile = "3"
 termcolor = "1"
 thiserror = "1"
@@ -176,6 +177,7 @@ quickwit-indexing = { version = "0.3.1", path = "./quickwit-indexing" }
 quickwit-ingest-api = { version = "0.3.1", path = "./quickwit-ingest-api" }
 quickwit-janitor = { version = "0.3.1", path = "./quickwit-janitor" }
 quickwit-metastore = { version = "0.3.1", path = "./quickwit-metastore" }
+quickwit-opentelemetry = { version = "0.3.1", path = "./quickwit-opentelemetry" }
 quickwit-proto = { version = "0.3.1", path = "./quickwit-proto" }
 quickwit-search = { version = "0.3.1", path = "./quickwit-search" }
 quickwit-serve = { version = "0.3.1", path = "./quickwit-serve" }

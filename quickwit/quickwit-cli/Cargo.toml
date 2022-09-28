@@ -34,7 +34,24 @@ itertools = { workspace = true }
 once_cell = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry-jaeger = { workspace = true }
+opentelemetry-otlp = { workspace = true }
 openssl-probe = { workspace = true, optional = true }
+regex = { workspace = true }
+serde_json = { workspace = true }
+tabled = { workspace = true }
+tempfile = { workspace = true }
+thousands = { workspace = true }
+tikv-jemalloc-ctl = { workspace = true, optional = true }
+tikv-jemallocator = { workspace = true, optional = true }
+time = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+toml = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true }
+
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
@@ -49,26 +66,14 @@ quickwit-search = { workspace = true }
 quickwit-serve = { workspace = true }
 quickwit-storage = { workspace = true }
 quickwit-telemetry = { workspace = true }
-regex = { workspace = true }
-serde_json = { workspace = true }
-tabled = { workspace = true }
-tempfile = { workspace = true }
-thousands = { workspace = true }
-tikv-jemalloc-ctl = { workspace = true, optional = true }
-tikv-jemallocator = { workspace = true, optional = true }
-time = { workspace = true }
-tokio = { workspace = true }
-tokio-util = { workspace = true }
-toml = { workspace = true }
-tracing = { workspace = true }
-tracing-opentelemetry = { workspace = true }
-tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 assert_cmd = { workspace = true }
 predicates = { workspace = true }
 reqwest = { workspace = true }
 serial_test = { workspace = true }
+
+quickwit-metastore = { workspace = true, features = ["testsuite"] }
 
 [features]
 jemalloc = ["dep:tikv-jemalloc-ctl", "dep:tikv-jemallocator"]

@@ -24,16 +24,6 @@ libz-sys = { workspace = true, optional = true }
 once_cell = { workspace = true }
 oneshot = { workspace = true }
 openssl = { workspace = true, optional = true }
-quickwit-actors = { workspace = true }
-quickwit-aws = { workspace = true }
-quickwit-common = { workspace = true }
-quickwit-config = { workspace = true }
-quickwit-directories = { workspace = true }
-quickwit-doc-mapper = { workspace = true }
-quickwit-ingest-api = { workspace = true }
-quickwit-metastore = { workspace = true }
-quickwit-proto = { workspace = true }
-quickwit-storage = { workspace = true }
 rdkafka = { workspace = true, optional = true }
 rusoto_core = { workspace = true, optional = true }
 rusoto_kinesis = { workspace = true, optional = true }
@@ -49,6 +39,17 @@ tokio-stream = { workspace = true }
 tracing = { workspace = true }
 ulid = { workspace = true }
 
+quickwit-actors = { workspace = true }
+quickwit-aws = { workspace = true }
+quickwit-common = { workspace = true }
+quickwit-config = { workspace = true }
+quickwit-directories = { workspace = true }
+quickwit-doc-mapper = { workspace = true }
+quickwit-ingest-api = { workspace = true }
+quickwit-metastore = { workspace = true }
+quickwit-proto = { workspace = true }
+quickwit-storage = { workspace = true }
+
 [features]
 kafka = ["rdkafka", "backoff"]
 kafka-broker-tests = []
@@ -58,15 +59,16 @@ kinesis-localstack-tests = []
 testsuite = []
 
 [dev-dependencies]
-bytes = "1"
-mockall = "0.11"
-proptest = "1"
-quickwit-actors = { workspace = true, features = ["testsuite"] }
-quickwit-common = { workspace = true }
-quickwit-metastore = { workspace = true, features = ["testsuite"] }
-quickwit-storage = { workspace = true, features = ["testsuite"] }
+bytes = { workspace = true }
+mockall = { workspace = true }
+proptest = { workspace = true }
 rand = { workspace = true }
 tempfile = { workspace = true }
+
+quickwit-actors = { workspace = true, features = ["testsuite"] }
+quickwit-common = { workspace = true, features = ["testsuite"] }
+quickwit-metastore = { workspace = true, features = ["testsuite"] }
+quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [[test]]
 name = "failpoints"

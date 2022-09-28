@@ -14,8 +14,6 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
 once_cell = { workspace = true }
-quickwit-common = { workspace = true }
-quickwit-storage = { workspace = true }
 serde = { workspace = true }
 serde_cbor = { workspace = true }
 serde_json = { workspace = true }
@@ -24,6 +22,9 @@ thiserror = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+
+quickwit-common = { workspace = true }
+quickwit-storage = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
