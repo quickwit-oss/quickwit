@@ -21,6 +21,7 @@ import styled from "@emotion/styled";
 import { Paper } from "@mui/material";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc"
+import { FC, ReactNode } from "react";
 import NumberFormat from "react-number-format";
 import { Index } from "../utils/models";
 dayjs.extend(utc);
@@ -34,12 +35,22 @@ const Row = styled.div`
 padding: 5px;
 display: flex;
 flex-direction: row;
+&:nth-child(odd){ background: rgba(0,0,0,0.05) }
 `
 const RowKey = styled.div`
-width: 100px;
+width: 300px;
 `
+const IndexRow: FC<{ title: string; children: ReactNode }> = ({
+  title,
+  children,
+}) => (
+  <Row>
+    <RowKey>{title}</RowKey>
+    <div>{children}</div>
+  </Row>
+);
 
-export function IndexSummary({index}: {index: Index}) {
+export function IndexSummary({ index }: { index: Index }) {
   const all_splits = index.splits;
   const published_splits = all_splits.filter(split => split.split_state == "Published");
   const num_of_staged_splits = all_splits.filter(split => split.split_state == "Staged").length;
@@ -49,60 +60,44 @@ export function IndexSummary({index}: {index: Index}) {
     .reduce((sum, current) => sum + current, 0);
   const total_num_bytes = published_splits
     .map(split => {
-      return split.footer_offsets.end 
+      return split.footer_offsets.end
     })
     .reduce((sum, current) => sum + current, 0);
   return (
     <Paper variant="outlined" >
       <ItemContainer>
-        <Row>
-          <RowKey>Created at:</RowKey>
-          <div>
-            { dayjs.unix(index.metadata.create_timestamp).utc().format("YYYY/MM/DD HH:MM") }
-          </div>
-        </Row>
-        <Row>
-          <RowKey>Updated at:</RowKey>
-          <div>
-            { dayjs.unix(index.metadata.update_timestamp).utc().format("YYYY/MM/DD HH:MM") }
-          </div>
-        </Row>
-        <Row>
-          <RowKey>URI:</RowKey>
-          <div>
-            { index.metadata.index_uri }
-          </div>
-        </Row>
-        <Row>
-          <RowKey>Size of pusblished splits:</RowKey>
-          <div>
-            <NumberFormat value={total_num_bytes / 1000000} displayType={'text'} thousandSeparator={true} suffix='MB' decimalScale={2}/>
-          </div>
-        </Row>
-        <Row>
-          <RowKey>Documents:</RowKey>
-          <div>
-            <NumberFormat value={total_num_docs} displayType={'text'} thousandSeparator={true} />
-          </div>
-        </Row>
-        <Row>
-          <RowKey>Number of published splits:</RowKey>
-          <div>
-            { published_splits.length }
-          </div>
-        </Row>
-        <Row>
-          <RowKey>Number of staged splits:</RowKey>
-          <div>
-            { num_of_staged_splits }
-          </div>
-        </Row>
-        <Row>
-          <RowKey>Number of splits marked for delete:</RowKey>
-          <div>
-            { num_of_marked_for_delete_splits }
-          </div>
-        </Row>
+        <IndexRow title="Created at:">
+          {dayjs
+            .unix(index.metadata.create_timestamp)
+            .utc()
+            .format("YYYY/MM/DD HH:MM")}
+        </IndexRow>
+        <IndexRow title="Updated at:">
+          {dayjs
+            .unix(index.metadata.update_timestamp)
+            .utc()
+            .format("YYYY/MM/DD HH:MM")}
+        </IndexRow>
+        <IndexRow title="URI:">{index.metadata.index_uri}</IndexRow>
+        <IndexRow title="Size of published splits:">
+          <NumberFormat
+            value={total_num_bytes / 1000000}
+            displayType={"text"}
+            thousandSeparator={true}
+            suffix=" MB"
+            decimalScale={2}
+          />
+        </IndexRow>
+        <IndexRow title="Number of documents (Published):">
+          <NumberFormat
+            value={total_num_docs}
+            displayType={"text"}
+            thousandSeparator={true}
+          />
+        </IndexRow>
+        <IndexRow title="Number of published splits:">{published_splits.length}</IndexRow>
+        <IndexRow title="Number of staged splits:">{num_of_staged_splits}</IndexRow>
+        <IndexRow title="Number of splits marked for deletion:">{num_of_marked_for_delete_splits}</IndexRow>
       </ItemContainer>
     </Paper>
   )
