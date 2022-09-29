@@ -187,7 +187,6 @@ export type SplitMetadata = {
   split_id: string;
   split_state: string;
   num_docs: number;
-  size_in_bytes: number;
   time_range: null | Range;
   update_timestamp: number;
   version: number;
