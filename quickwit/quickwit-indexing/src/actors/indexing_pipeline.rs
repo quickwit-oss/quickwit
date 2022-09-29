@@ -33,6 +33,7 @@ use tokio::join;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, info_span, instrument, Span};
 
+use super::uploader::SplitsUpdateMailbox;
 use crate::actors::doc_processor::DocProcessor;
 use crate::actors::index_serializer::IndexSerializer;
 use crate::actors::merge_split_downloader::MergeSplitDownloader;
@@ -68,7 +69,6 @@ pub struct IndexingPipelineHandle {
     pub merge_executor: ActorHandle<MergeExecutor>,
     pub merge_packager: ActorHandle<Packager>,
     pub merge_uploader: ActorHandle<Uploader>,
-    pub merge_sequencer: ActorHandle<Sequencer<Publisher>>,
     pub merge_publisher: ActorHandle<Publisher>,
 }
 
@@ -140,7 +140,6 @@ impl IndexingPipeline {
                 &handles.merge_executor,
                 &handles.merge_packager,
                 &handles.merge_uploader,
-                &handles.merge_sequencer,
                 &handles.merge_publisher,
             ];
             supervisables
@@ -257,18 +256,12 @@ impl IndexingPipeline {
             .set_kill_switch(self.kill_switch.clone())
             .spawn(merge_publisher);
 
-        let merge_sequencer = Sequencer::new(merge_publisher_mailbox);
-        let (merge_sequencer_mailbox, merge_sequencer_handler) = ctx
-            .spawn_actor()
-            .set_kill_switch(self.kill_switch.clone())
-            .spawn(merge_sequencer);
-
         // Merge uploader
         let merge_uploader = Uploader::new(
             "MergeUploader",
             self.params.metastore.clone(),
             split_store.clone(),
-            merge_sequencer_mailbox,
+            SplitsUpdateMailbox::Publisher(merge_publisher_mailbox),
         );
         let (merge_uploader_mailbox, merge_uploader_handler) = ctx
             .spawn_actor()
@@ -343,7 +336,7 @@ impl IndexingPipeline {
             "Uploader",
             self.params.metastore.clone(),
             split_store.clone(),
-            sequencer_mailbox,
+            SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
         );
         let (uploader_mailbox, uploader_handler) = ctx
             .spawn_actor()
@@ -433,7 +426,6 @@ impl IndexingPipeline {
             merge_executor: merge_executor_handler,
             merge_packager: merge_packager_handler,
             merge_uploader: merge_uploader_handler,
-            merge_sequencer: merge_sequencer_handler,
             merge_publisher: merge_publisher_handler,
         });
         Ok(())
