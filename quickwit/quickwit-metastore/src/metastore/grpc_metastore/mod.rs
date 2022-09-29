@@ -51,7 +51,7 @@ use tower::discover::Change;
 use tower::service_fn;
 use tower::timeout::error::Elapsed;
 use tower::timeout::Timeout;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
@@ -554,7 +554,7 @@ async fn update_channel_endpoints(
     }
 
     for leaving_grpc_address in grpc_addresses_in_use.difference(new_grpc_addresses) {
-        debug!(
+        info!(
             "Removing gRPC address `{}` from `MetastoreGrpcClient`.",
             leaving_grpc_address
         );
