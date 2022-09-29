@@ -649,6 +649,7 @@ mod tests {
                         replaced_split_ids: Vec::new(),
                         split_id: "test-split".to_string(),
                         delete_opstamp: 10,
+                        num_merge_ops: 0,
                     },
                     split_scratch_directory,
                     tags: Default::default(),
