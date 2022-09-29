@@ -24,17 +24,37 @@ use quickwit_metastore::SplitMetadata;
 use super::MergeOperation;
 use crate::merge_policy::MergePolicy;
 
-#[derive(Debug)]
-pub struct ConstWriteAmplification {
+/// The `ConstWriteAmplificationMergePolicy` has been designed for a use
+/// case where there are a several index partitions with different sizes,
+/// and partitions tend to be searched separately. (e.g. partitioning by tenant.)
+///
+/// In that case, the StableLogMergePolicy would tend to target the same number
+/// of docs for all tenants. Assuming a merge factor of 10 and a target num docs of 10 millions,
+/// The write amplification observed for a small tenant, emitting splits of 1
+/// document would be 7.
+///
+/// These extra merge have the benefit of making less splits, but really we are
+/// over-trading write amplification for read amplification here.
+///
+/// The `ConstWriteAmplificationMergePolicy` is very simple. It targets a number
+/// of merges instead, and stops once this number of merges is reached.
+///
+/// Only splits with the same number of merge operation are merged together,
+/// and for a given merge operation, we build split in a greedy way.
+/// After sorting the splits per creation date, we append splits one after the
+/// other until we either reach `max_merge_factor` or we exceed the
+/// targetted` split_num_docs`.
+#[derive(Debug, Clone)]
+pub struct ConstWriteAmplificationMergePolicy {
     max_merge_ops: usize,
     merge_factor: usize,
     max_merge_factor: usize,
     split_num_docs_target: usize,
 }
 
-impl Default for ConstWriteAmplification {
-    fn default() -> ConstWriteAmplification {
-        ConstWriteAmplification {
+impl Default for ConstWriteAmplificationMergePolicy {
+    fn default() -> ConstWriteAmplificationMergePolicy {
+        ConstWriteAmplificationMergePolicy {
             max_merge_ops: 4,
             merge_factor: 10,
             max_merge_factor: 12,
@@ -43,10 +63,10 @@ impl Default for ConstWriteAmplification {
     }
 }
 
-impl ConstWriteAmplification {
+impl ConstWriteAmplificationMergePolicy {
     #[cfg(test)]
-    fn for_test() -> ConstWriteAmplification {
-        ConstWriteAmplification {
+    fn for_test() -> ConstWriteAmplificationMergePolicy {
+        ConstWriteAmplificationMergePolicy {
             max_merge_ops: 3,
             merge_factor: 3,
             max_merge_factor: 5,
@@ -97,7 +117,7 @@ impl ConstWriteAmplification {
     }
 }
 
-impl MergePolicy for ConstWriteAmplification {
+impl MergePolicy for ConstWriteAmplificationMergePolicy {
     fn operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
         let mut group_by_num_merge_ops: HashMap<usize, Vec<SplitMetadata>> = HashMap::default();
         let mut mature_splits = Vec::new();
@@ -134,7 +154,6 @@ impl MergePolicy for ConstWriteAmplification {
     #[cfg(test)]
     fn check_is_valid(&self, merge_op: &MergeOperation, _remaining_splits: &[SplitMetadata]) {
         use std::collections::HashSet;
-
         assert!(merge_op.splits_as_slice().len() <= self.max_merge_factor);
         if merge_op.splits_as_slice().len() < self.merge_factor {
             let num_docs: usize = merge_op
@@ -158,17 +177,20 @@ impl MergePolicy for ConstWriteAmplification {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
     use quickwit_metastore::SplitMetadata;
     use rand::seq::SliceRandom;
 
-    use super::ConstWriteAmplification;
+    use super::ConstWriteAmplificationMergePolicy;
     use crate::merge_policy::MergeOperation;
     use crate::MergePolicy;
 
     #[test]
     fn test_const_write_amplification_merge_policy_empty() {
         let mut splits = Vec::new();
-        let merge_policy = ConstWriteAmplification::for_test();
+        let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
         assert!(merge_policy.operations(&mut splits).is_empty());
     }
 
@@ -181,7 +203,7 @@ mod tests {
             num_merge_ops: 4,
             ..Default::default()
         }];
-        let merge_policy = ConstWriteAmplification::for_test();
+        let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
         let operations: Vec<MergeOperation> = merge_policy.operations(&mut splits);
         assert!(operations.is_empty());
         assert_eq!(splits.len(), 1);
@@ -189,7 +211,7 @@ mod tests {
 
     #[test]
     fn test_const_write_merge_policy_simple() {
-        let merge_policy = ConstWriteAmplification::for_test();
+        let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
         let mut splits = (0..merge_policy.merge_factor)
             .map(|i| SplitMetadata {
                 split_id: format!("split-{i}"),
@@ -208,7 +230,7 @@ mod tests {
 
     #[test]
     fn test_const_write_merge_policy_merge_factor_max() {
-        let merge_policy = ConstWriteAmplification::for_test();
+        let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
         let mut splits = (0..merge_policy.max_merge_factor + merge_policy.merge_factor - 1)
             .map(|i| SplitMetadata {
                 split_id: format!("split-{i}"),
@@ -227,7 +249,7 @@ mod tests {
 
     #[test]
     fn test_const_write_merge_policy_older_first() {
-        let merge_policy = ConstWriteAmplification::for_test();
+        let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
         let mut splits: Vec<SplitMetadata> = (0..merge_policy.max_merge_factor)
             .map(|i| SplitMetadata {
                 split_id: format!("split-{i}"),
@@ -257,7 +279,7 @@ mod tests {
 
     #[test]
     fn test_const_write_merge_policy_target_num_docs() {
-        let merge_policy = ConstWriteAmplification::for_test();
+        let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
         let mut splits = (0..4)
             .map(|i| SplitMetadata {
                 split_id: format!("split-{i}"),
@@ -273,7 +295,34 @@ mod tests {
 
     #[test]
     fn test_const_write_amp_merge_policy_proptest() {
-        let merge_policy = ConstWriteAmplification::for_test();
+        let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
         crate::merge_policy::tests::proptest_merge_policy(&merge_policy);
+    }
+
+    #[tokio::test]
+    async fn test_simulate_const_write_amplification_merge_policy() -> anyhow::Result<()> {
+        let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
+        let vals = vec![1; 1_211]; //< 1_000 splits with a single doc each.
+        crate::merge_policy::tests::aux_test_simulate_merge_planner_num_docs(
+            Arc::new(merge_policy.clone()),
+            &vals[..],
+            |splits| {
+                let mut num_merge_ops_counts: HashMap<usize, usize> = HashMap::default();
+                for split in splits {
+                    *num_merge_ops_counts.entry(split.num_merge_ops).or_default() += 1;
+                }
+                for split in splits {
+                    assert!(split.num_merge_ops <= merge_policy.max_merge_ops);
+                }
+                for i in 0..merge_policy.max_merge_ops {
+                    assert!(
+                        num_merge_ops_counts.get(&i).copied().unwrap_or(0)
+                            < merge_policy.merge_factor
+                    );
+                }
+            },
+        )
+        .await?;
+        Ok(())
     }
 }

@@ -141,13 +141,17 @@ fn splits_short_debug(splits: &[SplitMetadata]) -> Vec<SplitShortDebug> {
 pub mod tests {
 
     use std::collections::hash_map::DefaultHasher;
+    use std::collections::{BTreeSet, HashMap};
     use std::hash::Hasher;
     use std::ops::RangeInclusive;
 
     use proptest::prelude::*;
+    use quickwit_actors::{create_test_mailbox, Universe};
     use rand::seq::SliceRandom;
 
     use super::*;
+    use crate::actors::{merge_split_attrs, MergePlanner, MergeSplitDownloader};
+    use crate::models::{create_split_metadata, IndexingPipelineId, NewSplits};
 
     fn pow_of_10(n: usize) -> usize {
         10usize.pow(n as u32)
@@ -276,5 +280,128 @@ pub mod tests {
                 merge_policy.check_is_valid(merge_op, &splits[..]);
             }
         });
+    }
+
+    fn merge_tags(splits: &[SplitMetadata]) -> BTreeSet<String> {
+        splits
+            .iter()
+            .flat_map(|split| split.tags.iter().cloned())
+            .collect()
+    }
+
+    fn fake_merge(splits: &[SplitMetadata]) -> SplitMetadata {
+        assert!(!splits.is_empty(), "Split list should not be empty.");
+        let merged_split_id = new_split_id();
+        let tags = merge_tags(splits);
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test_index".to_string(),
+            source_id: "test_source".to_string(),
+            node_id: "test_node".to_string(),
+            pipeline_ord: 0,
+        };
+        let split_attrs = merge_split_attrs(merged_split_id, &pipeline_id, splits);
+        create_split_metadata(&split_attrs, tags, 0..0)
+    }
+
+    fn apply_merge(
+        split_index: &mut HashMap<String, SplitMetadata>,
+        merge_op: &MergeOperation,
+    ) -> SplitMetadata {
+        for split in merge_op.splits_as_slice() {
+            assert!(split_index.remove(split.split_id()).is_some());
+        }
+        let merged_split = fake_merge(merge_op.splits_as_slice());
+        split_index.insert(merged_split.split_id().to_string(), merged_split.clone());
+        merged_split
+    }
+
+    pub async fn aux_test_simulate_merge_planner<CheckFn: Fn(&[SplitMetadata])>(
+        merge_policy: Arc<dyn MergePolicy>,
+        incoming_splits: Vec<SplitMetadata>,
+        check_final_configuration: CheckFn,
+    ) -> anyhow::Result<()> {
+        let (merge_op_mailbox, merge_op_inbox) = create_test_mailbox::<MergeSplitDownloader>();
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
+        let merge_planner =
+            MergePlanner::new(pipeline_id, Vec::new(), merge_policy, merge_op_mailbox);
+        let universe = Universe::new();
+        let mut split_index: HashMap<String, SplitMetadata> = HashMap::default();
+        let (merge_planner_mailbox, merge_planner_handler) =
+            universe.spawn_builder().spawn(merge_planner);
+        for split in incoming_splits {
+            split_index.insert(split.split_id().to_string(), split.clone());
+            merge_planner_mailbox
+                .send_message(NewSplits {
+                    new_splits: vec![split],
+                })
+                .await?;
+            loop {
+                let obs = merge_planner_handler.process_pending_and_observe().await;
+                assert_eq!(obs.obs_type, quickwit_actors::ObservationType::Alive);
+                let merge_ops: Vec<MergeOperation> = merge_op_inbox
+                    .drain_for_test()
+                    .into_iter()
+                    .flat_map(|op| op.downcast::<MergeOperation>())
+                    .map(|op| *op)
+                    .collect();
+                if merge_ops.is_empty() {
+                    break;
+                }
+                let new_splits: Vec<SplitMetadata> = merge_ops
+                    .into_iter()
+                    .map(|merge_op| apply_merge(&mut split_index, &merge_op))
+                    .collect();
+                merge_planner_mailbox
+                    .send_message(NewSplits { new_splits })
+                    .await?;
+            }
+            let split_metadatas: Vec<SplitMetadata> = split_index.values().cloned().collect();
+            check_final_configuration(&split_metadatas);
+        }
+        Ok(())
+    }
+
+    /// Mock split meta helper.
+    fn mock_split_meta_from_num_docs(
+        time_range: RangeInclusive<i64>,
+        num_docs: u64,
+    ) -> SplitMetadata {
+        SplitMetadata {
+            split_id: crate::new_split_id(),
+            partition_id: 3u64,
+            num_docs: num_docs as usize,
+            uncompressed_docs_size_in_bytes: 256u64 * num_docs,
+            time_range: Some(time_range),
+            create_timestamp: 0,
+            tags: BTreeSet::from_iter(vec!["tenant_id:1".to_string(), "tenant_id:2".to_string()]),
+            footer_offsets: 0..100,
+            ..Default::default()
+        }
+    }
+
+    pub async fn aux_test_simulate_merge_planner_num_docs<CheckFn: Fn(&[SplitMetadata])>(
+        merge_policy: Arc<dyn MergePolicy>,
+        batch_num_docs: &[usize],
+        check_final_configuration: CheckFn,
+    ) -> anyhow::Result<()> {
+        let split_metadatas: Vec<SplitMetadata> = batch_num_docs
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(split_ord, num_docs)| {
+                let time_first = split_ord as i64 * 1_000;
+                let time_last = time_first + 999;
+                let time_range = time_first..=time_last;
+                mock_split_meta_from_num_docs(time_range, num_docs as u64)
+            })
+            .collect();
+        aux_test_simulate_merge_planner(merge_policy, split_metadatas, check_final_configuration)
+            .await?;
+        Ok(())
     }
 }

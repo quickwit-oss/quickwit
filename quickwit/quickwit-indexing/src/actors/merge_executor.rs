@@ -287,6 +287,37 @@ async fn merge_split_directories(
     Ok(output_directory)
 }
 
+pub fn merge_split_attrs(
+    merge_split_id: String,
+    pipeline_id: &IndexingPipelineId,
+    splits: &[SplitMetadata],
+) -> SplitAttrs {
+    let partition_id = combine_partition_ids_aux(splits.iter().map(|split| split.partition_id));
+    let time_range = merge_time_range(splits);
+    let uncompressed_docs_size_in_bytes = sum_doc_sizes_in_bytes(splits);
+    let num_docs = sum_num_docs(splits);
+    let replaced_split_ids: Vec<String> = splits
+        .iter()
+        .map(|split| split.split_id().to_string())
+        .collect();
+    let delete_opstamp = splits
+        .iter()
+        .map(|split| split.delete_opstamp)
+        .min()
+        .unwrap_or(0);
+    SplitAttrs {
+        split_id: merge_split_id,
+        partition_id,
+        pipeline_id: pipeline_id.clone(),
+        replaced_split_ids,
+        time_range,
+        num_docs,
+        uncompressed_docs_size_in_bytes,
+        delete_opstamp,
+        num_merge_ops: max_merge_ops(splits) + 1,
+    }
+}
+
 fn max_merge_ops(splits: &[SplitMetadata]) -> usize {
     splits
         .iter()
@@ -316,14 +347,9 @@ impl MergeExecutor {
         merge_scratch_directory: ScratchDirectory,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
-        let pipeline_id = self.pipeline_id.clone();
         let start = Instant::now();
         info!("merge-start");
-        let partition_id = combine_partition_ids_aux(splits.iter().map(|split| split.partition_id));
-        let replaced_split_ids: Vec<String> = splits
-            .iter()
-            .map(|split| split.split_id().to_string())
-            .collect();
+
         let (union_index_meta, split_directories) = open_split_directories(&tantivy_dirs)?;
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
         fail_point!("before-merge-split");
@@ -344,30 +370,12 @@ impl MergeExecutor {
 
         // This will have the side effect of deleting the directory containing the downloaded
         // splits.
-        let time_range = merge_time_range(&splits);
-        let uncompressed_docs_size_in_bytes = sum_doc_sizes_in_bytes(&splits);
-        let num_docs = sum_num_docs(&splits);
-        let delete_opstamp = splits
-            .iter()
-            .map(|split| split.delete_opstamp)
-            .min()
-            .unwrap_or(0);
-
         let merged_index = open_index(controlled_directory.clone())?;
         ctx.record_progress();
 
+        let split_attrs = merge_split_attrs(merge_split_id, &self.pipeline_id, &splits);
         let indexed_split = IndexedSplit {
-            split_attrs: SplitAttrs {
-                split_id: merge_split_id,
-                partition_id,
-                pipeline_id,
-                replaced_split_ids,
-                time_range,
-                num_docs,
-                uncompressed_docs_size_in_bytes,
-                delete_opstamp,
-                num_merge_ops: max_merge_ops(&splits[..]) + 1,
-            },
+            split_attrs,
             index: merged_index,
             split_scratch_directory: merge_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),

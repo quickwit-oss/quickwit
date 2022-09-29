@@ -357,8 +357,10 @@ impl StableLogMergePolicy {
 #[cfg(test)]
 mod tests {
 
+    use std::sync::Arc;
+
     use super::*;
-    use crate::merge_policy::tests::create_splits;
+    use crate::merge_policy::tests::{aux_test_simulate_merge_planner_num_docs, create_splits};
 
     #[test]
     fn test_split_is_mature() {
@@ -606,5 +608,79 @@ mod tests {
             split_num_docs_target: 10_000_000,
         };
         crate::merge_policy::tests::proptest_merge_policy(&merge_policy);
+    }
+
+    #[tokio::test]
+    async fn test_simulate_stable_log_merge_policy_constant_case() -> anyhow::Result<()> {
+        let merge_policy = StableLogMergePolicy::default();
+        aux_test_simulate_merge_planner_num_docs(
+            Arc::new(merge_policy.clone()),
+            &vec![10_000; 100_000],
+            |splits| {
+                let num_docs = splits.iter().map(|split| split.num_docs as u64).sum();
+                assert!(splits.len() <= merge_policy.max_num_splits_ideal_case(num_docs))
+            },
+        )
+        .await?;
+        Ok(())
+    }
+
+    use proptest::prelude::*;
+    use proptest::sample::select;
+    use tokio::runtime::Runtime;
+
+    fn proptest_config() -> ProptestConfig {
+        let mut proptest_config = ProptestConfig::with_cases(20);
+        proptest_config.max_shrink_iters = 600;
+        proptest_config
+    }
+
+    proptest! {
+        #![proptest_config(proptest_config())]
+        #[test]
+        fn test_proptest_simulate_stable_log_merge_planner_adversarial(batch_num_docs in proptest::collection::vec(select(&[11, 1_990, 10_000, 50_000, 310_000][..]), 1..1_000)) {
+            let merge_policy = StableLogMergePolicy::default();
+            let rt = Runtime::new().unwrap();
+            rt.block_on(
+            aux_test_simulate_merge_planner_num_docs(
+                Arc::new(merge_policy.clone()),
+                &batch_num_docs,
+                |splits| {
+                    let num_docs = splits.iter().map(|split| split.num_docs as u64).sum();
+                    assert!(splits.len() <= merge_policy.max_num_splits_worst_case(num_docs));
+                },
+            )).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_simulate_stable_log_merge_planner_ideal_case() -> anyhow::Result<()> {
+        let merge_policy = StableLogMergePolicy::default();
+        aux_test_simulate_merge_planner_num_docs(
+            Arc::new(merge_policy.clone()),
+            &vec![10_000; 1_000],
+            |splits| {
+                let num_docs = splits.iter().map(|split| split.num_docs as u64).sum();
+                assert!(splits.len() <= merge_policy.max_num_splits_ideal_case(num_docs));
+            },
+        )
+        .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_simulate_stable_log_merge_planner_bug() -> anyhow::Result<()> {
+        let merge_policy = StableLogMergePolicy::default();
+        let vals = &[11, 11, 11, 11, 11, 11, 310000, 11, 11, 11, 11, 11, 11, 11];
+        aux_test_simulate_merge_planner_num_docs(
+            Arc::new(merge_policy.clone()),
+            &vals[..],
+            |splits| {
+                let num_docs = splits.iter().map(|split| split.num_docs as u64).sum();
+                assert!(splits.len() <= merge_policy.max_num_splits_worst_case(num_docs));
+            },
+        )
+        .await?;
+        Ok(())
     }
 }
