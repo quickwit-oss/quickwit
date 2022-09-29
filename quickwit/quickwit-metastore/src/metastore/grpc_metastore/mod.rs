@@ -553,21 +553,35 @@ async fn update_channel_endpoints(
         error!("No Metastore service is available in the cluster.");
     }
 
-    for leaving_grpc_address in grpc_addresses_in_use.difference(new_grpc_addresses) {
+    let leaving_grpc_addresses = grpc_addresses_in_use
+        .difference(new_grpc_addresses)
+        .into_iter()
+        .collect_vec();
+    if !leaving_grpc_addresses.is_empty() {
         info!(
-            "Removing gRPC address `{}` from `MetastoreGrpcClient`.",
-            leaving_grpc_address
+            addresses=?leaving_grpc_addresses,
+            "Removing gRPC addresses from `MetastoreGrpcClient`.",
         );
+    }
+
+    for leaving_grpc_address in leaving_grpc_addresses {
         endpoint_channel_rx
             .send(Change::Remove(*leaving_grpc_address))
             .await?;
     }
 
-    for new_grpc_address in new_grpc_addresses.difference(grpc_addresses_in_use) {
+    let new_grpc_addresses = new_grpc_addresses
+        .difference(grpc_addresses_in_use)
+        .into_iter()
+        .collect_vec();
+    if !new_grpc_addresses.is_empty() {
         info!(
-            "Adding gRPC address `{}` to `MetastoreGrpcClient`.",
-            new_grpc_address
+            addresses=?new_grpc_addresses,
+            "Adding gRPC addresses to `MetastoreGrpcClient`.",
         );
+    }
+
+    for new_grpc_address in new_grpc_addresses {
         let new_grpc_uri_result = Uri::builder()
             .scheme("http")
             .authority(new_grpc_address.to_string().as_str())
@@ -692,6 +706,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_metastore_service_grpc_with_one_metastore_service() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
         let mut metastore = MockMetastore::new();
         let index_id = "test-index";
         metastore
@@ -763,6 +778,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_metastore_grpc_client_with_multiple_metastore_services() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
         let mut metastore = MockMetastore::new();
         let index_id = "test-index";
         metastore
