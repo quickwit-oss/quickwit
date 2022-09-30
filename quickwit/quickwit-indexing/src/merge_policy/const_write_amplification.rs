@@ -33,17 +33,17 @@ use crate::merge_policy::MergePolicy;
 /// The write amplification observed for a small tenant, emitting splits of 1
 /// document would be 7.
 ///
-/// These extra merge have the benefit of making less splits, but really we are
+/// These extra merges have the benefit of making less splits, but really we are
 /// over-trading write amplification for read amplification here.
 ///
 /// The `ConstWriteAmplificationMergePolicy` is very simple. It targets a number
 /// of merges instead, and stops once this number of merges is reached.
 ///
-/// Only splits with the same number of merge operation are merged together,
+/// Only splits with the same number of merge operations are merged together,
 /// and for a given merge operation, we build split in a greedy way.
 /// After sorting the splits per creation date, we append splits one after the
 /// other until we either reach `max_merge_factor` or we exceed the
-/// targetted` split_num_docs`.
+/// targeted` split_num_docs`.
 #[derive(Debug, Clone)]
 pub struct ConstWriteAmplificationMergePolicy {
     max_merge_ops: usize,
@@ -74,8 +74,8 @@ impl ConstWriteAmplificationMergePolicy {
         }
     }
 
-    /// Merge operations within one level.
-    /// This method assumes that the splits are sorted by inverse creation date.
+    /// Returns a merge operation within one `num_merge_ops` level if one can be built from the given splits.
+    /// This method assumes that the splits are sorted by reverse creation date and have all the same `num_merge_ops`.
     fn single_merge_operation_within_num_merge_op_level(
         &self,
         splits: &mut Vec<SplitMetadata>,
@@ -195,7 +195,7 @@ mod tests {
     }
 
     #[test]
-    fn test_const_write_merge_policy_single() {
+    fn test_const_write_merge_policy_single_split() {
         let mut splits = vec![SplitMetadata {
             split_id: "01GE1R0KBFQHJ76030RYRAS8QA".to_string(),
             num_docs: 1,
@@ -302,7 +302,7 @@ mod tests {
     #[tokio::test]
     async fn test_simulate_const_write_amplification_merge_policy() -> anyhow::Result<()> {
         let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
-        let vals = vec![1; 1_211]; //< 1_000 splits with a single doc each.
+        let vals = vec![1; 1_211]; //< 1_211 splits with a single doc each.
         crate::merge_policy::tests::aux_test_simulate_merge_planner_num_docs(
             Arc::new(merge_policy.clone()),
             &vals[..],

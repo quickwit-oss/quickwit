@@ -96,7 +96,7 @@ pub trait MergePolicy: Send + Sync + fmt::Debug {
     fn operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation>;
     /// A mature split is a split that won't undergo a merge operation in the future.
     fn is_mature(&self, split: &SplitMetadata) -> bool;
-    /// Describe a bunch of properties specific to the given merge policy.
+    /// Checks a bunch of properties specific to the given merge policy.
     /// This method is used in proptesting.
     ///
     /// - `merge_op` is a merge operation emitted by this merge policy.
