@@ -17,8 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::BTreeSet;
 use std::fmt;
-use std::ops::RangeInclusive;
+use std::ops::{Range, RangeInclusive};
+
+use quickwit_metastore::SplitMetadata;
+use time::OffsetDateTime;
 
 use crate::models::IndexingPipelineId;
 
@@ -72,5 +76,28 @@ impl fmt::Debug for SplitAttrs {
             .field("num_docs", &self.num_docs)
             .field("num_merge_ops", &self.num_merge_ops)
             .finish()
+    }
+}
+
+pub fn create_split_metadata(
+    split_attrs: &SplitAttrs,
+    tags: BTreeSet<String>,
+    footer_offsets: Range<u64>,
+) -> SplitMetadata {
+    SplitMetadata {
+        split_id: split_attrs.split_id.clone(),
+        index_id: split_attrs.pipeline_id.index_id.clone(),
+        partition_id: split_attrs.partition_id,
+        source_id: split_attrs.pipeline_id.source_id.clone(),
+        node_id: split_attrs.pipeline_id.node_id.clone(),
+        pipeline_ord: split_attrs.pipeline_id.pipeline_ord,
+        num_docs: split_attrs.num_docs as usize,
+        time_range: split_attrs.time_range.clone(),
+        uncompressed_docs_size_in_bytes: split_attrs.uncompressed_docs_size_in_bytes,
+        create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
+        tags,
+        footer_offsets,
+        delete_opstamp: split_attrs.delete_opstamp,
+        num_merge_ops: split_attrs.num_merge_ops,
     }
 }
