@@ -37,6 +37,7 @@ use quickwit_doc_mapper::{
 use serde::de::{Error, IgnoredAny};
 use serde::{Deserialize, Deserializer, Serialize};
 
+use crate::merge_policy_config::{MergePolicyConfig, StableLogMergePolicyConfig};
 use crate::source_config::SourceConfig;
 use crate::validate_identifier;
 
@@ -102,26 +103,19 @@ impl Default for IndexingResources {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// Only here for deserialization.
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct MergePolicy {
-    #[serde(default, rename = "demux_factor", skip_serializing)]
+pub struct MergePolicyLegacy {
+    #[serde(default, rename = "demux_factor")]
     pub __demux_factor_deprecated: IgnoredAny, // DEPRECATED
-    #[serde(default = "MergePolicy::default_merge_factor")]
+    #[serde(default = "MergePolicyLegacy::default_merge_factor")]
     pub merge_factor: usize,
-    #[serde(default = "MergePolicy::default_max_merge_factor")]
+    #[serde(default = "MergePolicyLegacy::default_max_merge_factor")]
     pub max_merge_factor: usize,
 }
 
-impl PartialEq for MergePolicy {
-    fn eq(&self, other: &Self) -> bool {
-        self.merge_factor == other.merge_factor && self.max_merge_factor == other.max_merge_factor
-    }
-}
-
-impl Eq for MergePolicy {}
-
-impl MergePolicy {
+impl MergePolicyLegacy {
     fn default_merge_factor() -> usize {
         10
     }
@@ -131,7 +125,7 @@ impl MergePolicy {
     }
 }
 
-impl Default for MergePolicy {
+impl Default for MergePolicyLegacy {
     fn default() -> Self {
         Self {
             __demux_factor_deprecated: serde::de::IgnoredAny,
@@ -141,13 +135,9 @@ impl Default for MergePolicy {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct IndexingSettings {
-    #[serde(default, rename = "demux_enabled", skip_serializing)]
-    pub __demux_enabled_deprecated: IgnoredAny,
-    #[serde(default, rename = "demux_field", skip_serializing)]
-    pub __demux_field_deprecated: IgnoredAny,
     pub timestamp_field: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sort_field: Option<String>,
@@ -159,30 +149,130 @@ pub struct IndexingSettings {
     pub docstore_compression_level: i32,
     #[serde(default = "IndexingSettings::default_docstore_blocksize")]
     pub docstore_blocksize: usize,
-    /// A split containing a number of docs greather than or equal to this value is considered
-    /// mature.
+    /// The merge policy aims to eventually produce mature splits that have a larger size but
+    /// are within close range of `split_num_docs_target`.
+    ///
+    /// In other words, splits that contain a number of documents greater than or equal to
+    /// `split_num_docs_target` are considered mature and never merged.
     #[serde(default = "IndexingSettings::default_split_num_docs_target")]
     pub split_num_docs_target: usize,
-    #[serde(default = "IndexingSettings::default_merge_enabled")]
-    pub merge_enabled: bool,
+    /// A split containing a number of docs greather than or equal to this value is considered
+    /// mature.
     #[serde(default)]
-    pub merge_policy: MergePolicy,
+    pub merge_policy: MergePolicyConfig,
     #[serde(default)]
     pub resources: IndexingResources,
 }
 
-impl PartialEq for IndexingSettings {
-    fn eq(&self, other: &Self) -> bool {
-        self.timestamp_field == other.timestamp_field
-            && self.sort_field == other.sort_field
-            && self.sort_order == other.sort_order
-            && self.commit_timeout_secs == other.commit_timeout_secs
-            && self.docstore_compression_level == other.docstore_compression_level
-            && self.docstore_blocksize == other.docstore_blocksize
-            && self.split_num_docs_target == other.split_num_docs_target
-            && self.merge_enabled == other.merge_enabled
-            && self.merge_policy == other.merge_policy
-            && self.resources == other.resources
+/// The IndexingSettingsLegacy struct is just here to deserialize version 0 / version 1
+/// index settings.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IndexingSettingsLegacy {
+    #[serde(default, rename = "demux_enabled", skip_serializing)]
+    __demux_enabled_deprecated: IgnoredAny,
+    #[serde(default, rename = "demux_field", skip_serializing)]
+    __demux_field_deprecated: IgnoredAny,
+    timestamp_field: Option<String>,
+    sort_field: Option<String>,
+    sort_order: Option<SortOrder>,
+    #[serde(default = "IndexingSettings::default_commit_timeout_secs")]
+    commit_timeout_secs: usize,
+    #[serde(default = "IndexingSettings::default_docstore_compression_level")]
+    docstore_compression_level: i32,
+    #[serde(default = "IndexingSettings::default_docstore_blocksize")]
+    docstore_blocksize: usize,
+    /// A split containing a number of docs greather than or equal to this value is considered
+    /// mature.
+    #[serde(default = "IndexingSettings::default_split_num_docs_target")]
+    split_num_docs_target: usize,
+    #[serde(default = "IndexingSettings::default_merge_enabled")]
+    merge_enabled: bool,
+    #[serde(default)]
+    merge_policy: MergePolicyLegacy,
+    #[serde(default)]
+    resources: IndexingResources,
+}
+
+fn merge_policy_from_legacy(settings: &IndexingSettingsLegacy) -> MergePolicyConfig {
+    if !settings.merge_enabled {
+        return MergePolicyConfig::Nop;
+    }
+    let stable_log_merge_policy = StableLogMergePolicyConfig {
+        merge_factor: settings.merge_policy.merge_factor,
+        max_merge_factor: settings.merge_policy.max_merge_factor,
+        ..Default::default()
+    };
+    MergePolicyConfig::StableLog(stable_log_merge_policy)
+}
+
+impl From<IndexingSettingsLegacy> for IndexingSettings {
+    fn from(settings: IndexingSettingsLegacy) -> IndexingSettings {
+        let merge_policy = merge_policy_from_legacy(&settings);
+        IndexingSettings {
+            timestamp_field: settings.timestamp_field,
+            sort_field: settings.sort_field,
+            sort_order: settings.sort_order,
+            commit_timeout_secs: settings.commit_timeout_secs,
+            docstore_compression_level: settings.docstore_compression_level,
+            docstore_blocksize: settings.docstore_blocksize,
+            split_num_docs_target: settings.split_num_docs_target,
+            merge_policy,
+            resources: settings.resources,
+        }
+    }
+}
+
+impl Default for IndexingSettingsLegacy {
+    fn default() -> Self {
+        Self {
+            __demux_enabled_deprecated: IgnoredAny,
+            __demux_field_deprecated: IgnoredAny,
+            timestamp_field: None,
+            sort_field: None,
+            sort_order: None,
+            commit_timeout_secs: Self::default_commit_timeout_secs(),
+            docstore_blocksize: Self::default_docstore_blocksize(),
+            docstore_compression_level: Self::default_docstore_compression_level(),
+            split_num_docs_target: Self::default_split_num_docs_target(),
+            merge_enabled: Self::default_merge_enabled(),
+            merge_policy: MergePolicyLegacy::default(),
+            resources: IndexingResources::default(),
+        }
+    }
+}
+
+impl IndexingSettingsLegacy {
+    pub fn commit_timeout(&self) -> Duration {
+        Duration::from_secs(self.commit_timeout_secs as u64)
+    }
+
+    fn default_commit_timeout_secs() -> usize {
+        60
+    }
+
+    pub fn default_docstore_blocksize() -> usize {
+        1_000_000
+    }
+
+    pub fn default_docstore_compression_level() -> i32 {
+        8
+    }
+
+    fn default_split_num_docs_target() -> usize {
+        10_000_000
+    }
+
+    fn default_merge_enabled() -> bool {
+        true
+    }
+
+    pub fn sort_by(&self) -> SortBy {
+        if let Some(field_name) = self.sort_field.clone() {
+            let order = self.sort_order.unwrap_or_default();
+            return SortBy::FastField { field_name, order };
+        }
+        SortBy::DocId
     }
 }
 
@@ -231,8 +321,6 @@ impl IndexingSettings {
 impl Default for IndexingSettings {
     fn default() -> Self {
         Self {
-            __demux_enabled_deprecated: IgnoredAny,
-            __demux_field_deprecated: IgnoredAny,
             timestamp_field: None,
             sort_field: None,
             sort_order: None,
@@ -240,8 +328,7 @@ impl Default for IndexingSettings {
             docstore_blocksize: Self::default_docstore_blocksize(),
             docstore_compression_level: Self::default_docstore_compression_level(),
             split_num_docs_target: Self::default_split_num_docs_target(),
-            merge_enabled: Self::default_merge_enabled(),
-            merge_policy: MergePolicy::default(),
+            merge_policy: MergePolicyConfig::default(),
             resources: IndexingResources::default(),
         }
     }
@@ -459,14 +546,9 @@ impl IndexConfig {
             &self.search_settings,
             &self.indexing_settings,
         )?;
-        if self.indexing_settings.merge_policy.max_merge_factor
-            < self.indexing_settings.merge_policy.merge_factor
-        {
-            bail!(
-                "Index config merge policy `max_merge_factor` must be superior or equal to \
-                 `merge_factor`."
-            )
-        }
+
+        self.indexing_settings.merge_policy.validate()?;
+
         Ok(())
     }
 }
@@ -516,6 +598,7 @@ mod tests {
     use cron::TimeUnitSpec;
 
     use super::*;
+    use crate::merge_policy_config::MergePolicyConfig;
     use crate::SourceParams;
 
     fn get_index_config_filepath(index_config_filename: &str) -> String {
@@ -584,18 +667,13 @@ mod tests {
                     SortOrder::Asc
                 );
                 assert_eq!(index_config.indexing_settings.commit_timeout_secs, 61);
-
-                assert_eq!(
-                    index_config.indexing_settings.split_num_docs_target,
-                    10_000_001
-                );
                 assert_eq!(
                     index_config.indexing_settings.merge_policy,
-                    MergePolicy {
+                    MergePolicyConfig::StableLog(StableLogMergePolicyConfig {
                         merge_factor: 9,
                         max_merge_factor: 11,
                         ..Default::default()
-                    }
+                    })
                 );
                 assert_eq!(
                     index_config.indexing_settings.resources,
@@ -687,7 +765,7 @@ mod tests {
                 IndexingSettings {
                     sort_field: Some("timestamp".to_string()),
                     commit_timeout_secs: 42,
-                    merge_policy: MergePolicy::default(),
+                    merge_policy: MergePolicyConfig::default(),
                     resources: IndexingResources {
                         __num_threads_deprecated: serde::de::IgnoredAny,
                         ..Default::default()
@@ -716,19 +794,18 @@ mod tests {
         {
             let mut invalid_index_config = index_config.clone();
             // Set a max merge factor to an inconsistent value.
-            invalid_index_config
-                .indexing_settings
-                .merge_policy
-                .max_merge_factor = index_config.indexing_settings.merge_policy.merge_factor - 1;
+            let mut stable_log_merge_policy_config = StableLogMergePolicyConfig::default();
+            stable_log_merge_policy_config.max_merge_factor =
+                stable_log_merge_policy_config.merge_factor - 1;
+            invalid_index_config.indexing_settings.merge_policy =
+                MergePolicyConfig::StableLog(stable_log_merge_policy_config);
             assert!(invalid_index_config.validate().is_err());
-            assert!(invalid_index_config
-                .validate()
-                .unwrap_err()
-                .to_string()
-                .contains(
-                    "Index config merge policy `max_merge_factor` must be superior or equal to \
-                     `merge_factor`."
-                ));
+            let validation_err = invalid_index_config.validate().unwrap_err().to_string();
+            assert_eq!(
+                validation_err,
+                "Index config merge policy `max_merge_factor` must be superior or equal to \
+                 `merge_factor`."
+            );
         }
         {
             // Add two sources with same id.
