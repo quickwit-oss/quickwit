@@ -20,7 +20,6 @@
 use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::mem;
-use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -33,14 +32,15 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_storage::SplitPayloadBuilder;
-use time::OffsetDateTime;
 use tokio::sync::oneshot::Sender;
 use tokio::sync::{oneshot, Semaphore, SemaphorePermit};
 use tracing::{info, info_span, warn, Instrument, Span};
 
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::Publisher;
-use crate::models::{PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate};
+use crate::models::{
+    create_split_metadata, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate,
+};
 use crate::split_store::IndexingSplitStore;
 
 pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 4;
@@ -287,25 +287,6 @@ impl Handler<PackagedSplitBatch> for Uploader {
     }
 }
 
-fn create_split_metadata(split: &PackagedSplit, footer_offsets: Range<u64>) -> SplitMetadata {
-    SplitMetadata {
-        split_id: split.split_attrs.split_id.clone(),
-        index_id: split.split_attrs.pipeline_id.index_id.clone(),
-        partition_id: split.split_attrs.partition_id,
-        source_id: split.split_attrs.pipeline_id.source_id.clone(),
-        node_id: split.split_attrs.pipeline_id.node_id.clone(),
-        pipeline_ord: split.split_attrs.pipeline_id.pipeline_ord,
-        num_docs: split.split_attrs.num_docs as usize,
-        time_range: split.split_attrs.time_range.clone(),
-        uncompressed_docs_size_in_bytes: split.split_attrs.uncompressed_docs_size_in_bytes,
-        create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
-        tags: split.tags.clone(),
-        footer_offsets,
-        delete_opstamp: split.split_attrs.delete_opstamp,
-        num_merge_ops: 0,
-    }
-}
-
 fn make_publish_operation(
     index_id: String,
     publish_lock: PublishLock,
@@ -342,7 +323,8 @@ async fn stage_and_upload_split(
         &packaged_split.hotcache_bytes,
     )?;
     let split_metadata = create_split_metadata(
-        packaged_split,
+        &packaged_split.split_attrs,
+        packaged_split.tags.clone(),
         split_streamer.footer_range.start as u64..split_streamer.footer_range.end as u64,
     );
     let index_id = &packaged_split.split_attrs.pipeline_id.index_id.clone();
@@ -376,7 +358,7 @@ mod tests {
     use tokio::sync::oneshot;
 
     use super::*;
-    use crate::models::{IndexingPipelineId, ScratchDirectory, SplitAttrs};
+    use crate::models::{IndexingPipelineId, ScratchDirectory, SplitAttrs, SplitsUpdate};
 
     #[tokio::test]
     async fn test_uploader_with_sequencer() -> anyhow::Result<()> {
@@ -567,7 +549,7 @@ mod tests {
 
         let publisher_message = match publish_futures.pop().unwrap().await? {
             SequencerCommand::Discard => panic!(
-                "Expected `SequencerCommand::Proceed(SplitUpdate)`, got \
+                "Expected `SequencerCommand::Proceed(SplitsUpdate)`, got \
                  `SequencerCommand::Discard`."
             ),
             SequencerCommand::Proceed(publisher_message) => publisher_message,
