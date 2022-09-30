@@ -32,7 +32,6 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_storage::SplitPayloadBuilder;
-use time::OffsetDateTime;
 use tokio::sync::oneshot::Sender;
 use tokio::sync::{oneshot, Semaphore, SemaphorePermit};
 use tracing::{info, info_span, warn, Instrument, Span};
@@ -40,7 +39,7 @@ use tracing::{info, info_span, warn, Instrument, Span};
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::Publisher;
 use crate::models::{
-    create_split_metadata, PackagedSplit, PackagedSplitBatch, PublishLock, SplitUpdate,
+    create_split_metadata, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate,
 };
 use crate::split_store::IndexingSplitStore;
 
@@ -359,7 +358,7 @@ mod tests {
     use tokio::sync::oneshot;
 
     use super::*;
-    use crate::models::{IndexingPipelineId, ScratchDirectory, SplitAttrs};
+    use crate::models::{IndexingPipelineId, ScratchDirectory, SplitAttrs, SplitsUpdate};
 
     #[tokio::test]
     async fn test_uploader_with_sequencer() -> anyhow::Result<()> {
@@ -550,7 +549,7 @@ mod tests {
 
         let publisher_message = match publish_futures.pop().unwrap().await? {
             SequencerCommand::Discard => panic!(
-                "Expected `SequencerCommand::Proceed(SplitUpdate)`, got \
+                "Expected `SequencerCommand::Proceed(SplitsUpdate)`, got \
                  `SequencerCommand::Discard`."
             ),
             SequencerCommand::Proceed(publisher_message) => publisher_message,
