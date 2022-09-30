@@ -37,6 +37,7 @@ pub enum DateTimeFormat {
     TimestampSecs,
     TimestampMillis,
     TimestampMicros,
+    TimestampNanos,
 }
 
 impl DateTimeFormat {
@@ -51,6 +52,7 @@ impl DateTimeFormat {
             DateTimeFormat::TimestampSecs => "unix_ts_secs",
             DateTimeFormat::TimestampMillis => "unix_ts_millis",
             DateTimeFormat::TimestampMicros => "unix_ts_micros",
+            DateTimeFormat::TimestampNanos => "unix_ts_nanos",
         }
     }
 
@@ -60,6 +62,7 @@ impl DateTimeFormat {
             DateTimeFormat::TimestampSecs
                 | DateTimeFormat::TimestampMillis
                 | DateTimeFormat::TimestampMicros
+                | DateTimeFormat::TimestampNanos
         )
     }
 }
@@ -81,6 +84,7 @@ impl FromStr for DateTimeFormat {
             "unix_ts_secs" => DateTimeFormat::TimestampSecs,
             "unix_ts_millis" => DateTimeFormat::TimestampMillis,
             "unix_ts_micros" => DateTimeFormat::TimestampMicros,
+            "unix_ts_nanos" => DateTimeFormat::TimestampNanos,
             _ => DateTimeFormat::Strftime {
                 strftime_format: date_time_format_str.to_string(),
                 with_timezone: date_time_format_str.contains("%z"),
@@ -118,6 +122,7 @@ mod tests {
             DateTimeFormat::TimestampSecs,
             DateTimeFormat::TimestampMillis,
             DateTimeFormat::TimestampMicros,
+            DateTimeFormat::TimestampNanos,
         ])
         .unwrap();
 
@@ -128,6 +133,7 @@ mod tests {
             "unix_ts_secs",
             "unix_ts_millis",
             "unix_ts_micros",
+            "unix_ts_nanos",
         ]);
         assert_eq!(date_time_formats_json, expected_date_time_formats);
     }
@@ -141,7 +147,8 @@ mod tests {
                 "rfc3339",
                 "unix_ts_secs",
                 "unix_ts_millis",
-                "unix_ts_micros"
+                "unix_ts_micros",
+                "unix_ts_nanos"
             ]
             "#;
         let date_time_formats: Vec<DateTimeFormat> =
@@ -153,6 +160,7 @@ mod tests {
             DateTimeFormat::TimestampSecs,
             DateTimeFormat::TimestampMillis,
             DateTimeFormat::TimestampMicros,
+            DateTimeFormat::TimestampNanos,
         ];
         assert_eq!(date_time_formats, &expected_date_time_formats);
     }

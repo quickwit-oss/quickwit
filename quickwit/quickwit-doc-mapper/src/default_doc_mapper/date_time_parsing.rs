@@ -102,13 +102,17 @@ pub(super) fn parse_timestamp(
             DateTimeFormat::TimestampSecs => TantivyDateTime::from_timestamp_secs(timestamp),
             DateTimeFormat::TimestampMillis => TantivyDateTime::from_timestamp_millis(timestamp),
             DateTimeFormat::TimestampMicros => TantivyDateTime::from_timestamp_micros(timestamp),
+            DateTimeFormat::TimestampNanos => {
+                TantivyDateTime::from_timestamp_micros(timestamp / 1_000)
+            }
             _ => continue,
         };
         return Ok(date_time);
     }
     Err(format!(
         "Failed to parse unix timestamp `{timestamp}`. No unix timestamp format is specified for \
-         the field. Allowed formats are: `unix_ts_secs`, `unix_ts_millis`, and `unix_micros`.",
+         the field. Allowed formats are: `unix_ts_secs`, `unix_ts_millis`, `unix_ts_micros`, and \
+         `unix_ts_nanos`.",
     ))
 }
 
@@ -265,6 +269,12 @@ mod tests {
             let date_time =
                 parse_timestamp(unix_ts_micros, &[DateTimeFormat::TimestampMicros]).unwrap();
             assert_eq!(date_time.into_timestamp_micros(), unix_ts_micros);
+        }
+        {
+            let unix_ts_nanos = now.unix_timestamp_nanos() as i64;
+            let date_time =
+                parse_timestamp(unix_ts_nanos, &[DateTimeFormat::TimestampNanos]).unwrap();
+            assert_eq!(date_time.into_timestamp_micros(), unix_ts_nanos / 1_000);
         }
     }
 
