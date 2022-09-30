@@ -155,12 +155,12 @@ Quickwit handles three numeric types: `i64`, `u64`, and `f64`.
 
 Numeric values can be stored in a fast field (the equivalent of Lucene's `DocValues`) which is a column-oriented storage.
 
-Example of a mapping for an i64 field:
+Example of a mapping for an u64 field:
 
 ```yaml
-name: timestamp
-description: UNIX timestamp of the document creation date
-type: i64
+name: rating
+description: Score between 0 and 5
+type: u64
 stored: true
 indexed: true
 fast: true
@@ -171,19 +171,21 @@ fast: true
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | `description` | Optional description for the field. | `None` |
-| `stored`    | Whether value is stored in the document store | `true` |
-| `indexed`   | Whether value is indexed | `true` |
-| `fast`      | Whether value is stored in a fast field | `false` |
+| `stored`    | Whether the field values are stored in the document store | `true` |
+| `indexed`   | Whether the field values are indexed | `true` |
+| `fast`      | Whether the field values are stored in a fast field | `false` |
 
 #### `datetime` type
 
-The `datetime` type can accepts multiple formats and a storage precision. The following formats are supported but need to be explicitly requested via configuration.
-- `rfc3339`, `rfc2822`, `iso8601`: Parsing dates using standard specified formats.
-- `strftime`: Parsing dates using the Unix [strftime](https://man7.org/linux/man-pages/man3/strftime.3.html) format.
-- `unix_ts_secs`, `unix_ts_millis`, `unix_ts_micros`: Parsing dates from numbers (timestamp). Only one can be used in configuration. `unix_ts_secs` is added to the list by default if none is specified.
+The `datetime` type handles dates and datetimes. Quickwit supports multiple input formats configured independently for each field. The following formats are natively supported:
+- `iso8601`, `rfc2822`, `rfc3339`: parse dates using standard ISO and RFC formats.
+- `strftime`: parse dates using the Unix [strftime](https://man7.org/linux/man-pages/man3/strftime.3.html) format.
+- `unix_ts_secs`, `unix_ts_millis`, `unix_ts_micros`: parse Unix timestamps. At most one Unix timestamp format must be specified.
+
+When a `datetime` field is stored as a fast field, the `precision` parameter indicates the precision used to truncate the values before encoding and compressing them. The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`.
 
 :::info
-When specifying multiple input formats, the corresponding parsers are tried in the order they are declared.
+When specifying multiple input formats, the corresponding parsers are attempted in the order they are declared.
 :::
 
 Example of a mapping for a datetime field:
@@ -191,25 +193,26 @@ Example of a mapping for a datetime field:
 ```yaml
 name: timestamp
 type: datetime
+description: Time at which the event was emitted
 input_formats:
-  - "rfc3339"
-  - "unix_ts_millis"
-  - "%Y %m %d %H:%M:%S %z"
-precision: "milliseconds"
+  - rfc3339
+  - unix_ts_millis
+  - "%Y %m %d %H:%M:%S.%3f %z"
 stored: true
 indexed: true
 fast: true
+precision: milliseconds
 ```
 
 **Parameters for datetime field**
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `input_formats` | Formats used to parse input document datetime fields | [`rfc3339`, `unix_ts_secs`] |
-| `precision`     | The precision used to store the underlying fast value | `seconds` |
-| `stored`        | Whether value is stored in the document store | `true` |
-| `indexed`       | Whether value is indexed | `true` |
-| `fast`          | Whether value is stored in a fast field | `false` |
+| `input_formats` | Formats used to parse input dates | [`rfc3339`] |
+| `stored`        | Whether the field values are stored in the document store | `true` |
+| `indexed`       | Whether the field values are indexed | `true` |
+| `fast`          | Whether the field values are stored in a fast field | `false` |
+| `precision`     | The precision used to store the fast values | `seconds` |
 
 #### `bool` type
 
