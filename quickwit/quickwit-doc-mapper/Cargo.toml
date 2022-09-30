@@ -35,6 +35,7 @@ unwrap-infallible = { workspace = true }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]
+proptest = { workspace = true }
 criterion = { workspace = true }
 matches = { workspace = true }
 

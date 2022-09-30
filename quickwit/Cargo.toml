@@ -184,14 +184,14 @@ quickwit-serve = { version = "0.3.1", path = "./quickwit-serve" }
 quickwit-storage = { version = "0.3.1", path = "./quickwit-storage" }
 quickwit-telemetry = { version = "0.3.1", path = "./quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e029fdf", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "97ccd6d", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",
   "quickwit",
 ] }
-tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e029fdf" }
-fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e029fdf" }
+tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "97ccd6d" }
+fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", rev = "97ccd6d" }
 
 
 # Temporary: till small our small fixes are published on crates.io.

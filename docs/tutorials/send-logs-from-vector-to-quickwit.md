@@ -150,7 +150,8 @@ encoding.codec = "json"
 [sinks.quickwit_logs]
 type = "http"
 inputs = ["remap_syslog"]
-encoding.codec = "ndjson"
+encoding.codec = "json"
+framing.method = "newline_delimited"
 uri = "http://host.docker.internal:7280/api/v1/otel-logs/ingest"
 ```
 
