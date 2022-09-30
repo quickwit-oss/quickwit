@@ -77,7 +77,7 @@ pub struct CacheMetrics {
 
 impl CacheMetrics {
     fn for_component(component_name: &str) -> Self {
-        let namespace = format!("cache_{component_name}");
+        let namespace = format!("quickwit_cache_{component_name}");
         CacheMetrics {
             component_name: component_name.to_string(),
             in_cache_count: new_gauge(
