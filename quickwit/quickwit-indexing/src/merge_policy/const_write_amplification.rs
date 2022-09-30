@@ -74,8 +74,9 @@ impl ConstWriteAmplificationMergePolicy {
         }
     }
 
-    /// Returns a merge operation within one `num_merge_ops` level if one can be built from the given splits.
-    /// This method assumes that the splits are sorted by reverse creation date and have all the same `num_merge_ops`.
+    /// Returns a merge operation within one `num_merge_ops` level if one can be built from the
+    /// given splits. This method assumes that the splits are sorted by reverse creation date
+    /// and have all the same `num_merge_ops`.
     fn single_merge_operation_within_num_merge_op_level(
         &self,
         splits: &mut Vec<SplitMetadata>,
@@ -303,7 +304,7 @@ mod tests {
     async fn test_simulate_const_write_amplification_merge_policy() -> anyhow::Result<()> {
         let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
         let vals = vec![1; 1_211]; //< 1_211 splits with a single doc each.
-        crate::merge_policy::tests::aux_test_simulate_merge_planner_num_docs(
+        let final_splits = crate::merge_policy::tests::aux_test_simulate_merge_planner_num_docs(
             Arc::new(merge_policy.clone()),
             &vals[..],
             |splits| {
@@ -323,6 +324,7 @@ mod tests {
             },
         )
         .await?;
+        assert_eq!(final_splits.len(), 49);
         Ok(())
     }
 }

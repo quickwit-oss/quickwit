@@ -263,6 +263,8 @@ pub mod tests {
                 "Splits should not be lost."
             );
 
+            // This property is not uninteresting but is currently not observed
+            // in the stable log merge policy.
             // assert!(
             //     merge_policy.operations(&mut splits).is_empty(),
             //     "Merge policy are expected to return all available merge operations."
@@ -319,7 +321,7 @@ pub mod tests {
         merge_policy: Arc<dyn MergePolicy>,
         incoming_splits: Vec<SplitMetadata>,
         check_final_configuration: CheckFn,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Vec<SplitMetadata>> {
         let (merge_op_mailbox, merge_op_inbox) = create_test_mailbox::<MergeSplitDownloader>();
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
@@ -333,6 +335,7 @@ pub mod tests {
         let mut split_index: HashMap<String, SplitMetadata> = HashMap::default();
         let (merge_planner_mailbox, merge_planner_handler) =
             universe.spawn_builder().spawn(merge_planner);
+        let mut split_metadatas: Vec<SplitMetadata> = Vec::new();
         for split in incoming_splits {
             split_index.insert(split.split_id().to_string(), split.clone());
             merge_planner_mailbox
@@ -360,10 +363,10 @@ pub mod tests {
                     .send_message(NewSplits { new_splits })
                     .await?;
             }
-            let split_metadatas: Vec<SplitMetadata> = split_index.values().cloned().collect();
+            split_metadatas = split_index.values().cloned().collect();
             check_final_configuration(&split_metadatas);
         }
-        Ok(())
+        Ok(split_metadatas)
     }
 
     /// Mock split meta helper.
@@ -388,7 +391,7 @@ pub mod tests {
         merge_policy: Arc<dyn MergePolicy>,
         batch_num_docs: &[usize],
         check_final_configuration: CheckFn,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Vec<SplitMetadata>> {
         let split_metadatas: Vec<SplitMetadata> = batch_num_docs
             .iter()
             .cloned()
@@ -401,7 +404,6 @@ pub mod tests {
             })
             .collect();
         aux_test_simulate_merge_planner(merge_policy, split_metadatas, check_final_configuration)
-            .await?;
-        Ok(())
+            .await
     }
 }
