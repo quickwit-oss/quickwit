@@ -3,45 +3,40 @@ name = "quickwit-doc-mapper"
 version = "0.3.1"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
-license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
+license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
 description = "Quickwit index configuration"
 repository = "https://github.com/quickwit-oss/quickwit"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
-anyhow = "1"
-base64 = "0.13"
-chrono = "0.4.19"
-derivative = "2.2.0"
-dyn-clone = "1.0.4"
-fnv = "1"
-indexmap = { version = "1.9.1", features = ["serde"] }
-itertools = "0.10"
-mockall = { version = "0.11", optional = true }
-once_cell = "1.14"
-quickwit-proto = { version = "0.3.1", path = "../quickwit-proto" }
-regex = "1"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-siphasher = "0.3"
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e029fdf", default-features = false, features = [
-  "mmap",
-  "lz4-compression",
-  "zstd-compression",
-  "quickwit",
-] }
-tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e029fdf" }
-thiserror = "1.0"
-time = { version = "0.3.10", features = ["std", "macros"] }
-tracing = "0.1.29"
-typetag = "0.2"
-unwrap-infallible = "0.1.5"
+anyhow = { workspace = true }
+base64 = { workspace = true }
+chrono = { workspace = true }
+derivative = { workspace = true }
+dyn-clone = { workspace = true }
+fnv = { workspace = true }
+indexmap = { workspace = true }
+itertools = { workspace = true }
+mockall = { workspace = true, optional = true }
+once_cell = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+siphasher = { workspace = true }
+tantivy = { workspace = true }
+tantivy-query-grammar = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+tracing = { workspace = true }
+typetag = { workspace = true }
+unwrap-infallible = { workspace = true }
 
+quickwit-proto = { workspace = true }
 
 [dev-dependencies]
-criterion = "0.4"
-matches = "0.1.8"
+criterion = { workspace = true }
+matches = { workspace = true }
 
 [features]
 testsuite = []

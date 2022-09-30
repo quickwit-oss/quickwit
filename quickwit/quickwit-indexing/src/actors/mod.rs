@@ -49,4 +49,4 @@ pub use self::merge_planner::MergePlanner;
 pub use self::merge_split_downloader::MergeSplitDownloader;
 pub use self::packager::Packager;
 pub use self::publisher::{Publisher, PublisherCounters, PublisherType};
-pub use self::uploader::{Uploader, UploaderCounters};
+pub use self::uploader::{SplitsUpdateMailbox, Uploader, UploaderCounters};

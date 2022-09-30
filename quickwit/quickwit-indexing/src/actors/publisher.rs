@@ -27,7 +27,7 @@ use quickwit_metastore::Metastore;
 use tracing::info;
 
 use crate::actors::MergePlanner;
-use crate::models::{NewSplits, SplitUpdate};
+use crate::models::{NewSplits, SplitsUpdate};
 use crate::source::{SourceActor, SuggestTruncate};
 
 #[derive(Clone, Debug, Default)]
@@ -108,17 +108,17 @@ impl Actor for Publisher {
 }
 
 #[async_trait]
-impl Handler<SplitUpdate> for Publisher {
+impl Handler<SplitsUpdate> for Publisher {
     type Reply = ();
 
     async fn handle(
         &mut self,
-        split_update: SplitUpdate,
+        split_update: SplitsUpdate,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         fail_point!("publisher:before");
 
-        let SplitUpdate {
+        let SplitsUpdate {
             index_id,
             new_splits,
             replaced_split_ids,
@@ -231,7 +231,7 @@ mod tests {
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
         assert!(publisher_mailbox
-            .send_message(SplitUpdate {
+            .send_message(SplitsUpdate {
                 index_id: "index".to_string(),
                 new_splits: vec![SplitMetadata {
                     split_id: "split".to_string(),
@@ -294,7 +294,7 @@ mod tests {
         );
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
-        let publisher_message = SplitUpdate {
+        let publisher_message = SplitsUpdate {
             index_id: "index".to_string(),
             new_splits: vec![SplitMetadata {
                 split_id: "split3".to_string(),
@@ -336,7 +336,7 @@ mod tests {
         publish_lock.kill().await;
 
         publisher_mailbox
-            .send_message(SplitUpdate {
+            .send_message(SplitsUpdate {
                 index_id: "test-index".to_string(),
                 new_splits: vec![SplitMetadata::for_test("test-split".to_string())],
                 replaced_split_ids: Vec::new(),

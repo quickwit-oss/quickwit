@@ -241,10 +241,6 @@ async fn merge_split_directories(
         let doc_mapper = doc_mapper_opt
             .ok_or_else(|| anyhow!("Doc mapper must be present if there are delete tasks."))?;
         for delete_task in delete_tasks {
-            // TODO: currently tantivy only support deletes with a term query.
-            // Until tantivy supports a delete on the `Query` trait, we delete all terms
-            // present in the query so we can test simple queries.
-            // WARNING: this is broken by design and should not go in production.
             let delete_query = delete_task
                 .delete_query
                 .expect("A delete task must have a delete query.");
@@ -261,9 +257,7 @@ async fn merge_split_directories(
                 search_request
             );
             let query = doc_mapper.query(union_index.schema(), &search_request)?;
-            query.query_terms(&mut |term, _need_position| {
-                index_writer.delete_term(term.clone());
-            });
+            index_writer.delete_query(query)?;
         }
         debug!("commit-delete-operations");
         index_writer.commit()?;
