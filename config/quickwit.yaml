@@ -76,7 +76,7 @@ version: 0
 # -------------------------------- Indexer settings --------------------------------
 #
 indexer:
-  enable_opentelemetry_otlp_service: true
+  enable_opentelemetry_otlp_service: ${QW_ENABLE_OPENTELEMETRY_OTLP_SERVICE:-false}
 #   split_store_max_num_bytes: 200G
 #   split_store_max_num_splits: 10000
 #

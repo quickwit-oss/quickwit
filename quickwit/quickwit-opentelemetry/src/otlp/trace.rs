@@ -62,7 +62,7 @@ struct FlattenedSpan {
     service_name: Option<String>,
     start_timestamp_nanos: i64,
     end_timestamp_nanos: i64,
-    attributes: HashMap<String, JsonValue>,
+    span_attributes: HashMap<String, JsonValue>,
     dropped_attributes_count: u64,
     events: Vec<Event>,
     dropped_events_count: u64,
@@ -165,7 +165,7 @@ impl TraceService for OtlpGrpcTraceService {
                     };
                     let start_timestamp_nanos = (span.start_time_unix_nano / 1_000) as i64; // TODO: use nanos
                     let end_timestamp_nanos = (span.end_time_unix_nano / 1_000) as i64; // TOOD: use nanos
-                    let attributes = extract_attributes(span.attributes);
+                    let span_attributes = extract_attributes(span.attributes);
                     let flattened_span = FlattenedSpan {
                         trace_id,
                         span_id,
@@ -176,7 +176,7 @@ impl TraceService for OtlpGrpcTraceService {
                         service_name: service_name.clone(),
                         start_timestamp_nanos,
                         end_timestamp_nanos,
-                        attributes,
+                        span_attributes,
                         dropped_attributes_count: span.dropped_attributes_count as u64,
                         events: Vec::new(), // TODO: populate events
                         dropped_events_count: span.dropped_events_count as u64,
