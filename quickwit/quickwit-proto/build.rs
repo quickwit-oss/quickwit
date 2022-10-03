@@ -22,6 +22,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=proto/metastore_api.proto");
     println!("cargo:rerun-if-changed=proto/search_api.proto");
 
+    println!("cargo:rerun-if-changed=jaeger/model.proto");
+    println!("cargo:rerun-if-changed=jaeger/storage.proto");
+
     println!(
         "cargo:rerun-if-changed=otlp/opentelemetry/proto/collector/logs/v1/logs_service.proto"
     );
@@ -58,6 +61,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ],
             &["./proto"],
         )?;
+    tonic_build::configure().out_dir("src/").compile(
+        &["./jaeger/model.proto", "./jaeger/storage.proto"],
+        &["./jaeger", "/opt/homebrew/Cellar/protobuf/21.5/include"],
+    )?;
     tonic_build::configure()
         .type_attribute(".", "#[derive(Serialize, Deserialize)]")
         .out_dir("src/")

@@ -42,6 +42,7 @@ quickwit-directories = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-ingest-api = { workspace = true }
+quickwit-jaeger = { workspace = true }
 quickwit-janitor = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-opentelemetry = { workspace = true }
