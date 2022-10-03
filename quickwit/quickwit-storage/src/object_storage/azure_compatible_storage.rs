@@ -31,7 +31,9 @@ use azure_storage::Error as AzureError;
 use azure_storage_blobs::blob::operations::GetBlobResponse;
 use azure_storage_blobs::prelude::*;
 use bytes::Bytes;
+use futures::io::{Error as FutureError, ErrorKind as FutureErrorKind};
 use futures::stream::StreamExt;
+use futures::TryStreamExt;
 use md5::Digest;
 use once_cell::sync::OnceCell;
 use quickwit_aws::retry::{retry, RetryParams, Retryable};
@@ -41,7 +43,8 @@ use regex::Regex;
 use tantivy::directory::OwnedBytes;
 use thiserror::Error;
 use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWriteExt, BufReader};
+use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tracing::instrument;
 
 use crate::debouncer::DebouncedStorage;
@@ -305,12 +308,13 @@ impl Storage for AzureBlobStorage {
         let mut dest_file = File::create(output_path).await?;
         while let Some(chunk_result) = output_stream.next().await {
             let chunk_response = chunk_result.map_err(AzureErrorWrapper::from)?;
-            let chuck_data = chunk_response
+            let chunk_response_body_stream = chunk_response
                 .data
-                .collect()
-                .await
-                .map_err(AzureErrorWrapper::from)?;
-            dest_file.write_all(&chuck_data).await?;
+                .map_err(|err| FutureError::new(FutureErrorKind::Other, err))
+                .into_async_read()
+                .compat();
+            let mut body_stream_reader = BufReader::new(chunk_response_body_stream);
+            tokio::io::copy_buf(&mut body_stream_reader, &mut dest_file).await?;
         }
         dest_file.flush().await?;
         Ok(())
@@ -443,10 +447,16 @@ async fn download_all(
         .clone();
     while let Some(chunk_result) = chunk_stream.next().await {
         let chunk_response = chunk_result?;
-        let chuck_data = chunk_response.data.collect().await?;
-        object_storage_download_num_bytes.inc_by(chuck_data.len() as u64);
-        output.extend(chuck_data.as_ref());
+        let chunk_response_body_stream = chunk_response
+            .data
+            .map_err(|err| FutureError::new(FutureErrorKind::Other, err))
+            .into_async_read()
+            .compat();
+        let mut body_stream_reader = BufReader::new(chunk_response_body_stream);
+        let num_bytes_copied = tokio::io::copy_buf(&mut body_stream_reader, output).await?;
+        object_storage_download_num_bytes.inc_by(num_bytes_copied);
     }
+    // When calling `get_all`, the Vec capacity is not properly set.
     output.shrink_to_fit();
     Ok(())
 }
