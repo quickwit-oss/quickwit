@@ -24,7 +24,7 @@ use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPl
 use quickwit_proto::jaeger::storage::v1::{
     FindTraceIDsRequest, FindTraceIDsResponse, FindTracesRequest, GetOperationsRequest,
     GetOperationsResponse, GetServicesRequest, GetServicesResponse, GetTraceRequest,
-    SpansResponseChunk,
+    SpansResponseChunk, Operation,
 };
 use quickwit_proto::SearchRequest;
 use quickwit_search::SearchService;
@@ -55,14 +55,13 @@ impl SpanReaderPlugin for JaegerService {
 
     async fn get_services(
         &self,
-        request: Request<GetServicesRequest>,
+        _request: Request<GetServicesRequest>,
     ) -> Result<Response<GetServicesResponse>, Status> {
-        let request = request.into_inner();
         let search_request = SearchRequest {
             index_id: TRACE_INDEX_ID.to_string(),
-            query: "service_name:*".to_string(),
-            search_fields: vec!["service_name".to_string()],
-            start_timestamp: Some(OffsetDateTime::now_utc().unix_timestamp() - 24 * 3600),
+            query: "status.code:0".to_string(),
+            search_fields: Vec::new(),
+            start_timestamp: None,
             end_timestamp: None,
             max_hits: 1_000,
             start_offset: 0,
@@ -82,7 +81,7 @@ impl SpanReaderPlugin for JaegerService {
             .filter_map(|hit| {
                 match serde_json::from_str::<JsonValue>(&hit.json)
                     .ok()
-                    .map(|mut value| value["document"]["service_name"].take()) {
+                    .map(|mut value| value["service_name"].take()) {
                         Some(JsonValue::String(service_name)) => Some(service_name),
                         _ => None,
                     }
@@ -94,17 +93,61 @@ impl SpanReaderPlugin for JaegerService {
         Ok(Response::new(response))
     }
 
+    async fn get_operations(
+        &self,
+        request: Request<GetOperationsRequest>,
+    ) -> Result<Response<GetOperationsResponse>, Status> {
+        let request = request.into_inner();
+        print!("GET OPERATIONS: {:?}", request);
+        let query = if request.span_kind.is_empty() {
+            format!("service_name:{}", request.service) }
+        else {
+            format!("service_name:{} span_kind.name:{}", request.service, request.span_kind)
+        };
+        let search_request = SearchRequest {
+            index_id: TRACE_INDEX_ID.to_string(),
+            query,
+            search_fields: Vec::new(),
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 1_000,
+            start_offset: 0,
+            sort_order: None,
+            sort_by_field: None,
+            aggregation_request: None,
+            snippet_fields: Vec::new(),
+        };
+        let search_response = self
+            .search_service
+            .root_search(search_request)
+            .await
+            .unwrap();
+        let mut operation_names: Vec<String> = search_response
+            .hits
+            .into_iter()
+            .filter_map(|hit| {
+                match serde_json::from_str::<JsonValue>(&hit.json)
+                    .ok()
+                    .map(|mut value| value["span_name"].take()) {
+                        Some(JsonValue::String(service_name)) => Some(service_name),
+                        _ => None,
+                    }
+            })
+            .collect();
+        operation_names.sort();
+        operation_names.dedup();
+        let operations = vec![Operation {
+            name: "all".to_string(),
+            span_kind: "span_kind".to_string(),
+        }];
+        let response = GetOperationsResponse { operation_names, operations };
+        Ok(Response::new(response))
+    }
+
     async fn get_trace(
         &self,
         _request: Request<GetTraceRequest>,
     ) -> Result<Response<Self::GetTraceStream>, Status> {
-        unimplemented!()
-    }
-
-    async fn get_operations(
-        &self,
-        _request: Request<GetOperationsRequest>,
-    ) -> Result<Response<GetOperationsResponse>, Status> {
         unimplemented!()
     }
 
