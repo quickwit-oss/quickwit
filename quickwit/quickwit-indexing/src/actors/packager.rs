@@ -34,7 +34,7 @@ use quickwit_doc_mapper::NamedField;
 use tantivy::schema::FieldType;
 use tantivy::{InvertedIndexReader, ReloadPolicy, SegmentMeta};
 use tokio::runtime::Handle;
-use tracing::{debug, info, info_span, warn, Span};
+use tracing::{debug, info, instrument, warn};
 
 /// Maximum distinct values allowed for a tag field within a split.
 const MAX_VALUES_PER_TAG_FIELD: usize = if cfg!(any(test, feature = "testsuite")) {
@@ -118,10 +118,7 @@ impl Actor for Packager {
 impl Handler<IndexedSplitBatch> for Packager {
     type Reply = ();
 
-    fn message_span(&self, msg_id: u64, batch: &IndexedSplitBatch) -> Span {
-        info_span!("", msg_id=&msg_id, num_splits=%batch.splits.len())
-    }
-
+    #[instrument(level = "info", name = "packager", parent=batch.batch_parent_span.id(), skip_all)]
     async fn handle(
         &mut self,
         batch: IndexedSplitBatch,
@@ -164,7 +161,7 @@ impl Handler<IndexedSplitBatch> for Packager {
                 packaged_splits,
                 batch.checkpoint_delta,
                 batch.publish_lock,
-                batch.date_of_birth,
+                batch.batch_parent_span,
             ),
         )
         .await?;
@@ -321,13 +318,13 @@ fn u64_from_term_data(data: &[u8]) -> anyhow::Result<u64> {
 #[cfg(test)]
 mod tests {
     use std::ops::RangeInclusive;
-    use std::time::Instant;
 
     use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
     use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};
     use tantivy::{doc, Index};
+    use tracing::Span;
 
     use super::*;
     use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory, SplitAttrs};
@@ -441,7 +438,7 @@ mod tests {
                 splits: vec![indexed_split],
                 checkpoint_delta: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
                 publish_lock: PublishLock::default(),
-                date_of_birth: Instant::now(),
+                batch_parent_span: Span::none(),
             })
             .await?;
         assert_eq!(

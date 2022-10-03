@@ -20,7 +20,6 @@
 use std::collections::hash_map::Entry;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
-use std::time::Instant;
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -38,7 +37,7 @@ use tantivy::schema::Schema;
 use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::{IndexBuilder, IndexSettings, IndexSortByField};
 use tokio::runtime::Handle;
-use tracing::info;
+use tracing::{info, info_span, Instrument, Span};
 use ulid::Ulid;
 
 use crate::actors::IndexSerializer;
@@ -121,7 +120,15 @@ impl IndexerState {
             .metastore
             .last_delete_opstamp(&self.pipeline_id.index_id)
             .await?;
+        let batch_parent_span = info_span!(target: "quickwit-indexing", "index_batch",
+            index_id=%self.pipeline_id.index_id,
+            source_id=%self.pipeline_id.source_id,
+            pipeline_ord=%self.pipeline_id.pipeline_ord
+        );
+        let indexing_span = info_span!(parent: batch_parent_span.id(), "indexer");
         let workbench = IndexingWorkbench {
+            batch_parent_span,
+            _indexing_span: indexing_span,
             workbench_id: Ulid::new(),
             indexed_splits: FnvHashMap::with_capacity_and_hasher(250, Default::default()),
             checkpoint_delta: IndexCheckpointDelta {
@@ -129,7 +136,6 @@ impl IndexerState {
                 source_delta: SourceCheckpointDelta::default(),
             },
             publish_lock: self.publish_lock.clone(),
-            date_of_birth: Instant::now(),
             last_delete_opstamp,
             memory_usage: Byte::from_bytes(0),
         };
@@ -225,14 +231,14 @@ impl IndexerState {
 /// A workbench hosts the set of `IndexedSplit` that will are being built.
 struct IndexingWorkbench {
     workbench_id: Ulid,
+    // This span is used for the entire lifetime of the splits batch creations
+    // This span is meant to be passed through the pipeline.
+    batch_parent_span: Span,
+    // Span for the in-memory indexing (done in the Indexer actor).
+    _indexing_span: Span,
     indexed_splits: FnvHashMap<u64, IndexedSplitBuilder>,
     checkpoint_delta: IndexCheckpointDelta,
     publish_lock: PublishLock,
-    // TODO create this Instant on the source side to be more accurate.
-    // Right now this instant is used to compute time-to-search, but this
-    // does not include the amount of time a document could have been
-    // staying in the indexer queue or in the push api queue.
-    date_of_birth: Instant,
     // On workbench creation, we fetch from the metastore the last delete task opstamp.
     // We use this value to set the `delete_opstamp` of the workbench splits.
     last_delete_opstamp: u64,
@@ -440,7 +446,7 @@ impl Indexer {
             indexed_splits,
             checkpoint_delta,
             publish_lock,
-            date_of_birth,
+            batch_parent_span,
             ..
         } = if let Some(indexing_workbench) = self.indexing_workbench_opt.take() {
             indexing_workbench
@@ -482,16 +488,18 @@ impl Indexer {
         let split_ids = splits.iter().map(|split| split.split_id()).join(",");
 
         info!(commit_trigger=?commit_trigger, split_ids=%split_ids, num_docs=self.counters.num_docs_in_workbench, "send-to-packager");
+        let span_id = batch_parent_span.id();
         ctx.send_message(
             &self.index_serializer_mailbox,
             IndexedSplitBatchBuilder {
+                batch_parent_span,
                 splits,
                 checkpoint_delta: Some(checkpoint_delta),
                 publish_lock,
-                date_of_birth,
                 commit_trigger,
             },
         )
+        .instrument(info_span!(parent: span_id, "send_to_serializer"))
         .await?;
         self.counters.num_docs_in_workbench = 0;
         self.counters.num_splits_emitted += num_splits;

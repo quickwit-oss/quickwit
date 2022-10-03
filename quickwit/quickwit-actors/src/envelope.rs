@@ -22,7 +22,6 @@ use std::fmt;
 
 use async_trait::async_trait;
 use tokio::sync::oneshot;
-use tracing::Instrument;
 
 use crate::{Actor, ActorContext, ActorExitStatus, Handler};
 
@@ -55,11 +54,10 @@ impl<A: Actor> Envelope<A> {
     /// Execute the captured handle function.
     pub async fn handle_message(
         &mut self,
-        msg_id: u64,
         actor: &mut A,
         ctx: &ActorContext<A>,
     ) -> Result<(), ActorExitStatus> {
-        self.0.handle_message(msg_id, actor, ctx).await
+        self.0.handle_message(actor, ctx).await
     }
 }
 
@@ -82,7 +80,6 @@ trait EnvelopeT<A: Actor>: Send + Sync {
     /// Execute the captured handle function.
     async fn handle_message(
         &mut self,
-        msg_id: u64,
         actor: &mut A,
         ctx: &ActorContext<A>,
     ) -> Result<(), ActorExitStatus>;
@@ -113,15 +110,13 @@ where
 
     async fn handle_message(
         &mut self,
-        msg_id: u64,
         actor: &mut A,
         ctx: &ActorContext<A>,
     ) -> Result<(), ActorExitStatus> {
         let (response_tx, msg) = self
             .take()
             .expect("handle_message should never be called twice.");
-        let message_span = actor.message_span(msg_id, &msg);
-        let response = actor.handle(msg, ctx).instrument(message_span).await?;
+        let response = actor.handle(msg, ctx).await?;
         // A SendError is fine here. The caller just did not wait
         // for our response and dropped its Receiver channel.
         let _ = response_tx.send(response);

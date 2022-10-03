@@ -31,7 +31,7 @@ use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError, SplitState};
 use quickwit_storage::Storage;
 use tokio::join;
 use tokio::sync::Semaphore;
-use tracing::{debug, error, info, info_span, instrument, Span};
+use tracing::{debug, error, info, instrument};
 
 use super::uploader::SplitsUpdateMailbox;
 use crate::actors::doc_processor::DocProcessor;
@@ -101,10 +101,6 @@ impl Actor for IndexingPipeline {
 
     fn name(&self) -> String {
         "IndexingPipeline".to_string()
-    }
-
-    fn span(&self, _ctx: &ActorContext<Self>) -> Span {
-        info_span!("")
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
@@ -206,7 +202,14 @@ impl IndexingPipeline {
     }
 
     // TODO this should return an error saying whether we can retry or not.
-    #[instrument(name="", level="info", skip_all, fields(index=%self.params.pipeline_id.index_id, gen=self.generation()))]
+    #[instrument(
+        name="spawn_pipeline",
+        level="info",
+        skip_all,
+        fields(
+            index=%self.params.pipeline_id.index_id,
+            gen=self.generation()
+        ))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         let _spawn_pipeline_permit = SPAWN_PIPELINE_SEMAPHORE.acquire().await.expect("Failed to acquire spawn pipeline permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
         self.statistics.num_spawn_attempts += 1;

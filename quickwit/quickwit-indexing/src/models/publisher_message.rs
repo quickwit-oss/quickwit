@@ -18,11 +18,11 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
-use std::time::Instant;
 
 use itertools::Itertools;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::SplitMetadata;
+use tracing::Span;
 
 use crate::models::PublishLock;
 
@@ -32,7 +32,7 @@ pub struct SplitsUpdate {
     pub replaced_split_ids: Vec<String>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
-    pub date_of_birth: Instant, // for logging
+    pub parent_span: Span,
 }
 
 impl fmt::Debug for SplitsUpdate {
@@ -46,7 +46,6 @@ impl fmt::Debug for SplitsUpdate {
             .field("index_id", &self.index_id)
             .field("new_splits", &new_split_ids)
             .field("checkpoint_delta", &self.checkpoint_delta_opt)
-            .field("tts_in_secs", &self.date_of_birth.elapsed().as_secs_f32())
             .finish()
     }
 }
