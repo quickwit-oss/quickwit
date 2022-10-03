@@ -22,10 +22,10 @@ doc_mapping:
     - name: parent_span_id
       type: text
       tokenizer: raw
-    - name: name
+    - name: span_name
       type: text
       tokenizer: raw
-    - name: kind
+    - name: span_kind
       type: json
     - name: service_name
       type: text
@@ -42,7 +42,7 @@ doc_mapping:
         - unix_ts_micros # TODO: change to unix_ts_nanos
       fast: true
       precision: seconds
-    - name: attributes
+    - name: span_attributes
       type: json
     - name: dropped_attributes_count
       type: u64

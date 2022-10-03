@@ -57,16 +57,16 @@ struct FlattenedSpan {
     span_id: Base64,
     trace_state: String,
     parent_span_id: Option<Base64>,
-    name: String,
-    kind: SpanKind,
+    span_name: String,
+    span_kind: SpanKind,
     service_name: Option<String>,
     start_timestamp_nanos: i64,
     end_timestamp_nanos: i64,
     span_attributes: HashMap<String, JsonValue>,
     dropped_attributes_count: u64,
-    events: Vec<Event>,
+    // events: Vec<Event>,
     dropped_events_count: u64,
-    links: Vec<Link>,
+    // links: Vec<Link>,
     dropped_links_count: u64,
     status: Option<Status>,
 }
@@ -144,7 +144,7 @@ impl TraceService for OtlpGrpcTraceService {
             ..Default::default()
         };
         for resource_span in request.resource_spans {
-            println!("Resource: {:?}", resource_span.resource);
+            // println!("Resource: {:?}", resource_span.resource);
             let service_name = match resource_span
                 .resource
                 .and_then(|resource| extract_value(resource.attributes, "service.name"))
@@ -153,9 +153,9 @@ impl TraceService for OtlpGrpcTraceService {
                 _ => None,
             };
             for scope_span in resource_span.scope_spans {
-                println!("\tScope: {:?}", scope_span.scope);
+                // println!("\tScope: {:?}", scope_span.scope);
                 for span in scope_span.spans {
-                    println!("\t\tSpan: {:?}", span);
+                    // println!("\t\tSpan: {:?}", span);
                     let trace_id = base64::encode(span.trace_id);
                     let span_id = base64::encode(span.span_id);
                     let parent_span_id = if !span.parent_span_id.is_empty() {
@@ -171,16 +171,16 @@ impl TraceService for OtlpGrpcTraceService {
                         span_id,
                         trace_state: span.trace_state,
                         parent_span_id,
-                        name: span.name,
-                        kind: to_span_kind(span.kind),
+                        span_name: span.name,
+                        span_kind: to_span_kind(span.kind),
                         service_name: service_name.clone(),
                         start_timestamp_nanos,
                         end_timestamp_nanos,
                         span_attributes,
                         dropped_attributes_count: span.dropped_attributes_count as u64,
-                        events: Vec::new(), // TODO: populate events
+                        // events: Vec::new(), // TODO: populate events
                         dropped_events_count: span.dropped_events_count as u64,
-                        links: Vec::new(), // TODO: populate links
+                        // links: Vec::new(), // TODO: populate links
                         dropped_links_count: span.dropped_links_count as u64,
                         status: span.status,
                     };
