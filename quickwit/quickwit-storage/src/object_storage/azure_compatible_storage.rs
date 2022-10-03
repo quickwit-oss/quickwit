@@ -26,7 +26,7 @@ use std::{fmt, io};
 use async_trait::async_trait;
 use azure_core::error::ErrorKind;
 use azure_core::{Pageable, StatusCode};
-use azure_storage::core::prelude::*;
+use azure_storage::prelude::*;
 use azure_storage::Error as AzureError;
 use azure_storage_blobs::blob::operations::GetBlobResponse;
 use azure_storage_blobs::prelude::*;
@@ -86,8 +86,9 @@ impl fmt::Debug for AzureBlobStorage {
 impl AzureBlobStorage {
     /// Creates an object storage.
     pub fn new(account: &str, access_key: &str, uri: Uri, container: &str) -> Self {
+        let storage_credentials = StorageCredentials::access_key(account, access_key);
         let container_client =
-            StorageClient::new_access_key(account, access_key).container_client(container);
+            BlobServiceClient::new(account, storage_credentials).container_client(container);
         Self {
             container_client,
             uri,
@@ -116,7 +117,7 @@ impl AzureBlobStorage {
     /// Creates an emulated storage for testing.
     #[cfg(feature = "testsuite")]
     pub fn new_emulated(container: &str) -> Self {
-        let container_client = StorageClient::new_emulator_default().container_client(container);
+        let container_client = ClientBuilder::emulator().container_client(container);
         Self {
             container_client,
             uri: Uri::new(format!("azure://tester/{}", container)),
@@ -302,9 +303,14 @@ impl Storage for AzureBlobStorage {
         let mut output_stream = self.container_client.blob_client(name).get().into_stream();
 
         let mut dest_file = File::create(output_path).await?;
-        while let Some(result) = output_stream.next().await {
-            let chunk = result.map_err(AzureErrorWrapper::from)?.data;
-            dest_file.write_all(&chunk).await?;
+        while let Some(chunk_result) = output_stream.next().await {
+            let chunk_response = chunk_result.map_err(AzureErrorWrapper::from)?;
+            let chuck_data = chunk_response
+                .data
+                .collect()
+                .await
+                .map_err(AzureErrorWrapper::from)?;
+            dest_file.write_all(&chuck_data).await?;
         }
         dest_file.flush().await?;
         Ok(())
@@ -436,8 +442,8 @@ async fn download_all(
         .object_storage_download_num_bytes
         .clone();
     while let Some(chunk_result) = chunk_stream.next().await {
-        let chunk_response = chunk_result.map_err(AzureErrorWrapper::from)?;
-        let chuck_data = chunk_response.data;
+        let chunk_response = chunk_result?;
+        let chuck_data = chunk_response.data.collect().await?;
         object_storage_download_num_bytes.inc_by(chuck_data.len() as u64);
         output.extend(chuck_data.as_ref());
     }
