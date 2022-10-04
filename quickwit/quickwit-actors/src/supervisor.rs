@@ -43,7 +43,7 @@ pub struct Supervisor<A: Actor> {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct SuperviseLoop;
+struct SuperviseLoop;
 
 #[async_trait]
 impl<A: Actor> Actor for Supervisor<A> {
