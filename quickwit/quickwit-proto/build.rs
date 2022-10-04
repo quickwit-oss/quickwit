@@ -65,11 +65,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     {
         let mut prost_config = prost_build::Config::default();
-        prost_config.type_attribute("Operation", "#[derive(Ord)]");
-        tonic_build::configure().out_dir("src/").compile(
-            &["./jaeger/model.proto", "./jaeger/storage.proto"],
-            &["./jaeger", "/opt/homebrew/Cellar/protobuf/21.5/include"],
-        )?;
+        prost_config.type_attribute("Operation", "#[derive(Eq, Ord, PartialOrd)]");
+
+        tonic_build::configure()
+            .out_dir("src/")
+            .compile_with_config(
+                prost_config,
+                &["./jaeger/model.proto", "./jaeger/storage.proto"],
+                &["./jaeger", "/opt/homebrew/Cellar/protobuf/21.5/include"],
+            )?;
     }
     tonic_build::configure()
         .type_attribute(".", "#[derive(Serialize, Deserialize)]")

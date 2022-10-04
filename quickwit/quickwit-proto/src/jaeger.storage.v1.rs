@@ -47,6 +47,7 @@ pub struct GetOperationsRequest {
     #[prost(string, tag="2")]
     pub span_kind: ::prost::alloc::string::String,
 }
+#[derive(Eq, Ord, PartialOrd)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Operation {
     #[prost(string, tag="1")]

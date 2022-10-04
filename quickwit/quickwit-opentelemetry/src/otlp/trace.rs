@@ -53,22 +53,143 @@ type Base64 = String;
 
 #[derive(Debug, Serialize)]
 struct FlattenedSpan {
+    // Event
+    event_timestamp_nanos: i64,
+    event_name: String,
+    event_attributes: HashMap<String, JsonValue>,
+    event_dropped_attributes_count: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "entry_type")]
+enum TraceIndexEntry<'a> {
+    Span(Span),
+    Event(Event<'a>),
+}
+
+#[derive(Debug, Serialize)]
+struct Span {
     trace_id: Base64,
-    span_id: Base64,
     trace_state: String,
-    parent_span_id: Option<Base64>,
-    span_name: String,
-    span_kind: SpanKind,
     service_name: Option<String>,
-    start_timestamp_nanos: i64,
-    end_timestamp_nanos: i64,
+    span_id: Base64,
+    span_kind: SpanKind,
+    span_name: String,
+    span_start_timestamp_nanos: i64,
+    span_end_timestamp_nanos: i64,
     span_attributes: HashMap<String, JsonValue>,
-    dropped_attributes_count: u64,
-    // events: Vec<Event>,
-    dropped_events_count: u64,
-    // links: Vec<Link>,
-    dropped_links_count: u64,
-    status: Option<Status>,
+    span_dropped_attributes_count: u64,
+    span_dropped_events_count: u64,
+    span_dropped_links_count: u64,
+    span_status: Option<Status>,
+    parent_span_id: Option<Base64>,
+}
+
+#[derive(Debug, Serialize)]
+struct Event<'a> {
+    trace_id: &'a Base64,
+    service_name: &'a Option<String>,
+    span_id: &'a Base64,
+    span_kind: SpanKind,
+    span_name: &'a String,
+    span_attributes: &'a HashMap<String, JsonValue>,
+    event_timestamp_nanos: i64,
+    event_name: &'a String,
+    event_attributes: HashMap<String, JsonValue>,
+    event_dropped_attributes_count: u64,
+}
+
+#[async_trait]
+impl TraceService for OtlpGrpcTraceService {
+    async fn export(
+        &self,
+        request: tonic::Request<ExportTraceServiceRequest>,
+    ) -> Result<tonic::Response<ExportTraceServiceResponse>, tonic::Status> {
+        let request = request.into_inner();
+        let mut doc_batch = DocBatch {
+            index_id: TRACE_INDEX_ID.to_string(),
+            ..Default::default()
+        };
+        for resource_span in request.resource_spans {
+            // println!("Resource: {:?}", resource_span.resource);
+            let service_name = match resource_span
+                .resource
+                .and_then(|resource| extract_value(resource.attributes, "service.name"))
+            {
+                Some(OtlpValue::StringValue(service_name)) => Some(service_name),
+                _ => None,
+            };
+            for scope_span in resource_span.scope_spans {
+                // println!("\tScope: {:?}", scope_span.scope);
+                for span in scope_span.spans {
+                    // println!("\t\tSpan: {:?}", span);
+                    let trace_id = base64::encode(span.trace_id);
+                    let span_id = base64::encode(span.span_id);
+                    let parent_span_id = if !span.parent_span_id.is_empty() {
+                        Some(base64::encode(span.parent_span_id))
+                    } else {
+                        None
+                    };
+                    let span_name = if !span.name.is_empty() {
+                        span.name
+                    } else {
+                        "unknown".to_string()
+                    };
+                    let span_start_timestamp_nanos = (span.start_time_unix_nano / 1_000) as i64; // TODO: use nanos
+                    let span_end_timestamp_nanos = (span.end_time_unix_nano / 1_000) as i64; // TOOD: use nanos
+                    let span_attributes = extract_attributes(span.attributes);
+                    for event in span.events {
+                        let event = Event {
+                            trace_id: &trace_id,
+                            service_name: &service_name,
+                            span_id: &span_id,
+                            span_kind: to_span_kind(span.kind),
+                            span_name: &span_name,
+                            span_attributes: &span_attributes,
+                            event_timestamp_nanos: (event.time_unix_nano / 1_000) as i64, /* TODO: use nanos */
+                            event_name: &event.name,
+                            event_attributes: extract_attributes(event.attributes),
+                            event_dropped_attributes_count: event.dropped_attributes_count as u64,
+                        };
+                        let event_json =
+                            serde_json::to_vec(&TraceIndexEntry::Event(event)).expect(""); // TODO: Reuse buffer.
+                        let event_json_len = event_json.len() as u64;
+                        doc_batch.concat_docs.extend_from_slice(&event_json);
+                        doc_batch.doc_lens.push(event_json_len);
+                    }
+                    let span = Span {
+                        trace_id,
+                        trace_state: span.trace_state,
+                        service_name: service_name.clone(),
+                        span_id,
+                        span_kind: to_span_kind(span.kind),
+                        span_name,
+                        span_start_timestamp_nanos,
+                        span_end_timestamp_nanos,
+                        span_attributes,
+                        span_dropped_attributes_count: span.dropped_attributes_count as u64,
+                        span_dropped_events_count: span.dropped_events_count as u64,
+                        span_dropped_links_count: span.dropped_links_count as u64,
+                        span_status: span.status,
+                        parent_span_id,
+                    };
+                    let span_json = serde_json::to_vec(&TraceIndexEntry::Span(span)).expect("");
+                    let span_json_len = span_json.len() as u64;
+                    doc_batch.concat_docs.extend_from_slice(&span_json);
+                    doc_batch.doc_lens.push(span_json_len);
+                }
+            }
+        }
+        let ingest_request = IngestRequest {
+            doc_batches: vec![doc_batch],
+        };
+        // TODO: return appropriate tonic status
+        if let Err(error) = self.ingest_api_service.ask_for_res(ingest_request).await {
+            error!(error=?error, "Failed to ingest trace");
+        }
+        let response = ExportTraceServiceResponse::default();
+        Ok(tonic::Response::new(response))
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -76,12 +197,6 @@ struct SpanKind {
     id: i32,
     name: &'static str,
 }
-
-#[derive(Debug, Serialize)]
-struct Event;
-
-#[derive(Debug, Serialize)]
-struct Link;
 
 fn extract_attributes(attributes: Vec<KeyValue>) -> HashMap<String, JsonValue> {
     let mut attrs = HashMap::new();
@@ -130,77 +245,4 @@ fn to_span_kind(id: i32) -> SpanKind {
         _ => panic!("Unknown span kind: `{id}`."),
     };
     SpanKind { id, name }
-}
-
-#[async_trait]
-impl TraceService for OtlpGrpcTraceService {
-    async fn export(
-        &self,
-        request: tonic::Request<ExportTraceServiceRequest>,
-    ) -> Result<tonic::Response<ExportTraceServiceResponse>, tonic::Status> {
-        let request = request.into_inner();
-        let mut doc_batch = DocBatch {
-            index_id: TRACE_INDEX_ID.to_string(),
-            ..Default::default()
-        };
-        for resource_span in request.resource_spans {
-            // println!("Resource: {:?}", resource_span.resource);
-            let service_name = match resource_span
-                .resource
-                .and_then(|resource| extract_value(resource.attributes, "service.name"))
-            {
-                Some(OtlpValue::StringValue(service_name)) => Some(service_name),
-                _ => None,
-            };
-            for scope_span in resource_span.scope_spans {
-                // println!("\tScope: {:?}", scope_span.scope);
-                for span in scope_span.spans {
-                    // println!("\t\tSpan: {:?}", span);
-                    let trace_id = base64::encode(span.trace_id);
-                    let span_id = base64::encode(span.span_id);
-                    let parent_span_id = if !span.parent_span_id.is_empty() {
-                        Some(base64::encode(span.parent_span_id))
-                    } else {
-                        None
-                    };
-                    let start_timestamp_nanos = (span.start_time_unix_nano / 1_000) as i64; // TODO: use nanos
-                    let end_timestamp_nanos = (span.end_time_unix_nano / 1_000) as i64; // TOOD: use nanos
-                    let span_attributes = extract_attributes(span.attributes);
-                    let flattened_span = FlattenedSpan {
-                        trace_id,
-                        span_id,
-                        trace_state: span.trace_state,
-                        parent_span_id,
-                        span_name: span.name,
-                        span_kind: to_span_kind(span.kind),
-                        service_name: service_name.clone(),
-                        start_timestamp_nanos,
-                        end_timestamp_nanos,
-                        span_attributes,
-                        dropped_attributes_count: span.dropped_attributes_count as u64,
-                        // events: Vec::new(), // TODO: populate events
-                        dropped_events_count: span.dropped_events_count as u64,
-                        // links: Vec::new(), // TODO: populate links
-                        dropped_links_count: span.dropped_links_count as u64,
-                        status: span.status,
-                    };
-                    let flattened_span_json = serde_json::to_vec(&flattened_span).expect("");
-                    let flattened_span_json_len = flattened_span_json.len() as u64;
-                    doc_batch
-                        .concat_docs
-                        .extend_from_slice(&flattened_span_json);
-                    doc_batch.doc_lens.push(flattened_span_json_len);
-                }
-            }
-        }
-        let ingest_request = IngestRequest {
-            doc_batches: vec![doc_batch],
-        };
-        // TODO: return appropriate tonic status
-        if let Err(error) = self.ingest_api_service.ask_for_res(ingest_request).await {
-            error!(error=?error, "Failed to ingest trace");
-        }
-        let response = ExportTraceServiceResponse::default();
-        Ok(tonic::Response::new(response))
-    }
 }

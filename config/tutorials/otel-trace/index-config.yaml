@@ -8,35 +8,33 @@ version: 0
 index_id: otel-trace
 
 doc_mapping:
-  mode: lenient # TODO: change to strict eventually
+  mode: lenient
   field_mappings:
     - name: trace_id
+      type: text
+      tokenizer: raw
+    - name: trace_state
+      type: text
+      indexed: false
+      stored: true
+    - name: service_name
       type: text
       tokenizer: raw
     - name: span_id
       type: text
       tokenizer: raw
-    - name: trace_state
-      type: text
-      tokenizer: raw
-    - name: parent_span_id
-      type: text
-      tokenizer: raw
+    - name: span_kind
+      type: json
     - name: span_name
       type: text
       tokenizer: raw
-    - name: span_kind
-      type: json
-    - name: service_name
-      type: text
-      tokenizer: raw
-    - name: start_timestamp_nanos
+    - name: span_start_timestamp_nanos
       type: datetime
       input_formats:
         - unix_ts_micros # TODO: change to unix_ts_nanos
       fast: true
       precision: seconds
-    - name: end_timestamp_nanos
+    - name: span_end_timestamp_nanos
       type: datetime
       input_formats:
         - unix_ts_micros # TODO: change to unix_ts_nanos
@@ -44,16 +42,37 @@ doc_mapping:
       precision: seconds
     - name: span_attributes
       type: json
-    - name: dropped_attributes_count
+    - name: span_dropped_attributes_count
       type: u64
-    # - name: events
-    - name: dropped_events_count
+      indexed: false
+    - name: span_dropped_events_count
       type: u64
-    # - name: links
-    - name: dropped_links_count
+      indexed: false
+    - name: span_dropped_links_count
       type: u64
-    - name: status
+      indexed: false
+    - name: span_status
+      type: text
+      indexed: false
+    - name: parent_span_id
+      type: text
+      tokenizer: raw
+    - name: event_timestamp_nanos
+      type: datetime
+      input_formats:
+        - unix_ts_micros # TODO: change to unix_ts_nanos
+      fast: true
+      precision: seconds
+    - name: event_name
+      type: text
+    - name: event_attributes
       type: json
+    - name: event_dropped_attributes_count
+      type: u64
+      indexed: false
+    - name: entry_type
+      type: text
+      indexed: false
 
 indexing_settings:
   commit_timeout_secs: 30
