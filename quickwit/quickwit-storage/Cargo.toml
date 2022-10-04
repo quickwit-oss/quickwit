@@ -33,7 +33,6 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 tokio-stream = { workspace = true }
-# Temporary: till small our small fixes are published on crates.io.
 azure_core = { workspace = true, optional = true }
 azure_storage = { workspace = true, optional = true }
 azure_storage_blobs = { workspace = true, optional = true }

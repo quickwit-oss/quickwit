@@ -64,6 +64,9 @@ impl IndexMetadata {
     /// Returns an [`IndexMetadata`] object with multiple hard coded values for tests.
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(index_id: &str, index_uri: &str) -> Self {
+        use quickwit_config::IndexingResources;
+        use quickwit_doc_mapper::SortOrder;
+
         let index_uri = Uri::new(index_uri.to_string());
         let doc_mapping_json = r#"{
             "field_mappings": [
@@ -127,8 +130,8 @@ impl IndexMetadata {
         let indexing_settings = IndexingSettings {
             timestamp_field: Some("timestamp".to_string()),
             sort_field: Some("timestamp".to_string()),
-            sort_order: Some(quickwit_doc_mapper::SortOrder::Desc),
-            resources: quickwit_config::IndexingResources::for_test(),
+            sort_order: Some(SortOrder::Desc),
+            resources: IndexingResources::for_test(),
             ..Default::default()
         };
         let search_settings = SearchSettings {

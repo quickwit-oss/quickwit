@@ -244,13 +244,13 @@ dependencies = [
 
 [[package]]
 name = "azure_core"
-version = "0.3.0"
-source = "git+https://github.com/Azure/azure-sdk-for-rust?rev=a001d10#a001d10bd59406d6651cdbc717253a9cb8268f51"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6424becb946de1b1eff7bf5fbc86fabf7457637c88b63dd967b219a712c322c"
 dependencies = [
  "async-trait",
  "base64",
  "bytes",
- "chrono",
  "dyn-clone",
  "futures",
  "getrandom 0.2.7",
@@ -262,22 +262,24 @@ dependencies = [
  "reqwest",
  "rustc_version 0.4.0",
  "serde",
+ "serde-xml-rs",
  "serde_json",
+ "time 0.3.14",
  "url",
  "uuid",
 ]
 
 [[package]]
 name = "azure_storage"
-version = "0.4.0"
-source = "git+https://github.com/Azure/azure-sdk-for-rust?rev=a001d10#a001d10bd59406d6651cdbc717253a9cb8268f51"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28d0de4ed66067ca1afa0a07d787a6fe001288a162409b8308c45909044552ca"
 dependencies = [
  "RustyXML",
  "async-trait",
  "azure_core",
  "base64",
  "bytes",
- "chrono",
  "futures",
  "hmac 0.12.1",
  "log",
@@ -287,21 +289,22 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "sha2 0.10.2",
+ "time 0.3.14",
  "url",
  "uuid",
 ]
 
 [[package]]
 name = "azure_storage_blobs"
-version = "0.4.0"
-source = "git+https://github.com/Azure/azure-sdk-for-rust?rev=a001d10#a001d10bd59406d6651cdbc717253a9cb8268f51"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a69ea7177f0b3c64196766fcd442ac9664658a194070d082ae8876406800040b"
 dependencies = [
  "RustyXML",
  "azure_core",
  "azure_storage",
  "base64",
  "bytes",
- "chrono",
  "futures",
  "log",
  "md5",
@@ -309,6 +312,7 @@ dependencies = [
  "serde-xml-rs",
  "serde_derive",
  "serde_json",
+ "time 0.3.14",
  "url",
  "uuid",
 ]
@@ -4261,9 +4265,9 @@ dependencies = [
 
 [[package]]
 name = "serde-xml-rs"
-version = "0.5.1"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65162e9059be2f6a3421ebbb4fef3e74b7d9e7c60c50a0e292c6239f19f1edfa"
+checksum = "fb3aa78ecda1ebc9ec9847d5d3aba7d618823446a049ba2491940506da6e2782"
 dependencies = [
  "log",
  "serde",
