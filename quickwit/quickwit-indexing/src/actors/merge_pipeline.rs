@@ -22,8 +22,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, KillSwitch,
-    Mailbox, QueueCapacity, Supervisable,
+    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Inbox,
+    KillSwitch, Mailbox, QueueCapacity, Supervisable,
 };
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{Metastore, MetastoreError, SplitState};
@@ -65,9 +65,10 @@ pub struct MergePipeline {
     params: MergePipelineParams,
     previous_generations_statistics: MergeStatistics,
     statistics: MergeStatistics,
-    merge_planner_mailbox: Option<Mailbox<MergePlanner>>,
     handles: Option<MergePipelineHandle>,
     kill_switch: KillSwitch,
+    merge_planner_mailbox: Mailbox<MergePlanner>,
+    merge_planner_inbox: Inbox<MergePlanner>,
 }
 
 #[async_trait]
@@ -92,13 +93,16 @@ impl Actor for MergePipeline {
 
 impl MergePipeline {
     pub fn new(params: MergePipelineParams) -> Self {
+        let (merge_planner_mailbox, merge_planner_inbox) =
+            create_mailbox::<MergePlanner>("MergePlanner".to_string(), QueueCapacity::Unbounded);
         Self {
             params,
             previous_generations_statistics: Default::default(),
-            merge_planner_mailbox: None,
             handles: None,
             kill_switch: KillSwitch::default(),
             statistics: MergeStatistics::default(),
+            merge_planner_inbox,
+            merge_planner_mailbox,
         }
     }
 
@@ -208,14 +212,11 @@ impl MergePipeline {
             .remove_dangling_splits(&published_splits)
             .await?;
 
-        let (merge_planner_mailbox, merge_planner_inbox) =
-            create_mailbox::<MergePlanner>("MergePlanner".to_string(), QueueCapacity::Unbounded);
-
         // Merge publisher
         let merge_publisher = Publisher::new(
             PublisherType::MergePublisher,
             self.params.metastore.clone(),
-            Some(merge_planner_mailbox.clone()),
+            Some(self.merge_planner_mailbox.clone()),
             None,
         );
         let (merge_publisher_mailbox, merge_publisher_handler) = ctx
@@ -276,13 +277,15 @@ impl MergePipeline {
             self.params.merge_policy.clone(),
             merge_split_downloader_mailbox,
         );
-        let (merge_planner_mailbox, merge_planner_handler) = ctx
+        let (_, merge_planner_handler) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .set_mailboxes(merge_planner_mailbox, merge_planner_inbox)
+            .set_mailboxes(
+                self.merge_planner_mailbox.clone(),
+                self.merge_planner_inbox.clone(),
+            )
             .spawn(merge_planner);
 
-        self.merge_planner_mailbox = Some(merge_planner_mailbox);
         self.previous_generations_statistics = self.statistics.clone();
         self.statistics.generation += 1;
         self.handles = Some(MergePipelineHandle {
@@ -404,17 +407,18 @@ impl Handler<Spawn> for MergePipeline {
 
 #[async_trait]
 impl Handler<GetMergePlannerMailbox> for MergePipeline {
-    type Reply = Option<Mailbox<MergePlanner>>;
+    type Reply = Mailbox<MergePlanner>;
 
     async fn handle(
         &mut self,
         _: GetMergePlannerMailbox,
         _: &ActorContext<Self>,
-    ) -> Result<Option<Mailbox<MergePlanner>>, ActorExitStatus> {
+    ) -> Result<Mailbox<MergePlanner>, ActorExitStatus> {
         Ok(self.merge_planner_mailbox.clone())
     }
 }
 
+#[derive(Clone)]
 pub struct MergePipelineParams {
     pub pipeline_id: IndexingPipelineId,
     pub doc_mapper: Arc<dyn DocMapper>,

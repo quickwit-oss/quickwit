@@ -39,7 +39,6 @@ use crate::actors::indexing_service::GetOrInitMergePipeline;
 use crate::actors::publisher::PublisherType;
 use crate::actors::sequencer::Sequencer;
 use crate::actors::{Indexer, Packager, Publisher, Uploader};
-use crate::merge_policy::MergePolicy;
 use crate::models::{IndexingDirectory, IndexingPipelineId, IndexingStatistics, Observe};
 use crate::source::{quickwit_supported_sources, SourceActor, SourceExecutionContext};
 use crate::split_store::IndexingSplitStore;
@@ -219,10 +218,11 @@ impl IndexingPipeline {
             source_id=%self.params.pipeline_id.source_id,
             pipeline_ord=%self.params.pipeline_id.pipeline_ord,
             root_dir=%self.params.indexing_directory.path().display(),
-            merge_policy=?self.params.merge_policy,
             "Spawning indexing pipeline.",
         );
 
+        let merge_policy =
+            crate::merge_policy::merge_policy_from_settings(&self.params.indexing_settings);
         let merge_planner_mailbox = self
             .params
             .indexing_service
@@ -231,7 +231,7 @@ impl IndexingPipeline {
                 doc_mapper: self.params.doc_mapper.clone(),
                 indexing_directory: self.params.indexing_directory.clone(),
                 split_store: self.params.split_store.clone(),
-                merge_policy: self.params.merge_policy.clone(),
+                merge_policy,
             })
             .await
             .map_err(|err| {
@@ -487,7 +487,6 @@ pub struct IndexingPipelineParams {
     pub metastore: Arc<dyn Metastore>,
     pub storage: Arc<dyn Storage>,
     pub split_store: IndexingSplitStore,
-    pub merge_policy: Arc<dyn MergePolicy>,
     pub indexing_service: Mailbox<IndexingService>,
 }
 
@@ -502,7 +501,6 @@ impl IndexingPipelineParams {
         metastore: Arc<dyn Metastore>,
         storage: Arc<dyn Storage>,
         split_store: IndexingSplitStore,
-        merge_policy: Arc<dyn MergePolicy>,
         indexing_service: Mailbox<IndexingService>,
     ) -> Self {
         Self {
@@ -514,7 +512,6 @@ impl IndexingPipelineParams {
             metastore,
             storage,
             split_store,
-            merge_policy,
             indexing_service,
         }
     }
@@ -532,7 +529,6 @@ mod tests {
     use quickwit_storage::{RamStorage, StorageUriResolver};
 
     use super::{IndexingPipeline, *};
-    use crate::merge_policy::default_merge_policy;
     use crate::models::IndexingDirectory;
 
     #[test]
@@ -632,7 +628,6 @@ mod tests {
             metastore: metastore.clone(),
             storage,
             split_store,
-            merge_policy: default_merge_policy(),
             indexing_service,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
@@ -740,7 +735,6 @@ mod tests {
             metastore: metastore.clone(),
             storage,
             split_store,
-            merge_policy: default_merge_policy(),
             indexing_service,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);

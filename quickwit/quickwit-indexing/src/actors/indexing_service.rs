@@ -22,7 +22,6 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 
-use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox, Observation,
@@ -105,6 +104,26 @@ pub struct IndexingServiceState {
 type IndexId = String;
 type SourceId = String;
 
+#[derive(Hash, Eq, PartialEq)]
+struct MergePipelineId {
+    index_id: String,
+    source_id: String,
+}
+
+impl<'a> From<&'a IndexingPipelineId> for MergePipelineId {
+    fn from(pipeline_id: &'a IndexingPipelineId) -> Self {
+        MergePipelineId {
+            index_id: pipeline_id.index_id.clone(),
+            source_id: pipeline_id.source_id.clone(),
+        }
+    }
+}
+
+struct MergePipelineMailboxHandle {
+    mailbox: Mailbox<MergePlanner>,
+    handle: ActorHandle<MergePipeline>,
+}
+
 pub struct IndexingService {
     node_id: String,
     data_dir_path: PathBuf,
@@ -116,8 +135,7 @@ pub struct IndexingService {
     merge_policies: HashMap<IndexId, Weak<dyn MergePolicy>>,
     indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
     split_stores: HashMap<(IndexId, SourceId), WeakIndexingSplitStore>,
-    merge_pipeline_handles:
-        HashMap<(IndexId, SourceId), (Mailbox<MergePlanner>, ActorHandle<MergePipeline>)>,
+    merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineMailboxHandle>,
     split_store_space_quota: Arc<Mutex<SplitStoreSpaceQuota>>,
 }
 
@@ -289,7 +307,6 @@ impl IndexingService {
             self.metastore.clone(),
             storage,
             split_store,
-            merge_policy,
             ctx.mailbox().clone(),
         );
         let pipeline = IndexingPipeline::new(pipeline_params);
@@ -414,15 +431,17 @@ impl IndexingService {
                 },
             );
         // Evict merge pipelines that are not needed or failing.
-        let needed_merge_pipeline_ids: HashSet<(String, String)> = self
+        let needed_merge_pipeline_ids: HashSet<MergePipelineId> = self
             .indexing_pipeline_handles
             .keys()
-            .map(|pipeline_id| (pipeline_id.index_id.clone(), pipeline_id.source_id.clone()))
+            .map(MergePipelineId::from)
             .collect();
         self.merge_pipeline_handles
-            .retain(|index_source_key, (_, handle)| match handle.health() {
-                Health::Healthy => needed_merge_pipeline_ids.contains(index_source_key),
-                Health::FailureOrUnhealthy | Health::Success => false,
+            .retain(|merge_pipeline_id, merge_pipeline_mailbox_handle| {
+                match merge_pipeline_mailbox_handle.handle.health() {
+                    Health::Healthy => needed_merge_pipeline_ids.contains(merge_pipeline_id),
+                    Health::FailureOrUnhealthy | Health::Success => false,
+                }
             });
         Ok(())
     }
@@ -505,15 +524,11 @@ impl IndexingService {
         split_store: IndexingSplitStore,
         merge_policy: Arc<dyn MergePolicy>,
     ) -> anyhow::Result<Mailbox<MergePlanner>> {
-        let key = (pipeline_id.index_id.clone(), pipeline_id.source_id.clone());
-        if let Some((merge_planner_mailbox, merge_pipeline)) = self.merge_pipeline_handles.get(&key)
+        let merge_pipeline_id = MergePipelineId::from(pipeline_id);
+        if let Some(merge_pipeline_mailbox_handle) =
+            self.merge_pipeline_handles.get(&merge_pipeline_id)
         {
-            if merge_pipeline.health() == Health::Healthy {
-                return Ok(merge_planner_mailbox.clone());
-            } else {
-                // Make sure we get rid of unhealthy mailboxes.
-                self.handle_supervise().await?;
-            }
+            return Ok(merge_pipeline_mailbox_handle.mailbox.clone());
         }
 
         let merging_pipeline_params = MergePipelineParams::new(
@@ -524,20 +539,15 @@ impl IndexingService {
             split_store,
             merge_policy,
         );
-        let pipeline = MergePipeline::new(merging_pipeline_params);
-        let (pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
-        let merge_planner_mailbox = pipeline_mailbox
-            .ask(GetMergePlannerMailbox)
-            .await?
-            .with_context(|| {
-                format!(
-                    "Couldn't get merge planner mailbox for index_id:`{}` source_id: `{}`.",
-                    pipeline_id.index_id, pipeline_id.source_id
-                )
-            })?;
-
+        let merge_pipeline = MergePipeline::new(merging_pipeline_params);
+        let (pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(merge_pipeline);
+        let merge_planner_mailbox = pipeline_mailbox.ask(GetMergePlannerMailbox).await?;
+        let merge_pipeline_mailbox_handle = MergePipelineMailboxHandle {
+            mailbox: merge_planner_mailbox.clone(),
+            handle: pipeline_handle,
+        };
         self.merge_pipeline_handles
-            .insert(key, (merge_planner_mailbox.clone(), pipeline_handle));
+            .insert(merge_pipeline_id, merge_pipeline_mailbox_handle);
         Ok(merge_planner_mailbox)
     }
 }

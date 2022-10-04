@@ -97,7 +97,17 @@ impl Handler<NewSplits> for MergePlanner {
                 .partitioned_young_splits
                 .entry(partition_id)
                 .or_default();
-            young_splits.extend(new_young_splits);
+            for new_young_split in new_young_splits {
+                // Due to the recycling of the mailbox of the merge planner, it is possible for
+                // a split already in store to be received.
+                let split_already_known = young_splits
+                    .iter()
+                    .any(|split| split.split_id() == new_young_split.split_id());
+                if split_already_known {
+                    continue;
+                }
+                young_splits.push(new_young_split);
+            }
             target_partition_ids.push(partition_id);
         }
         self.send_merge_ops(ctx, &target_partition_ids).await?;
@@ -150,7 +160,9 @@ impl MergePlanner {
     }
 }
 
-/// We can merge splits from the same (index_id, source_id).
+/// We can merge splits from the same (index_id, source_id, node_id).
 fn belongs_to_pipeline(pipeline_id: &IndexingPipelineId, split: &SplitMetadata) -> bool {
-    pipeline_id.source_id == split.source_id && pipeline_id.node_id == split.node_id
+    pipeline_id.index_id == split.index_id
+        && pipeline_id.source_id == split.source_id
+        && pipeline_id.node_id == split.node_id
 }
