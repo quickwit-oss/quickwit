@@ -23,9 +23,8 @@ use std::collections::HashMap;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
-    DocMapping, IndexingResources, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig,
+    DocMapping, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig,
 };
-use quickwit_doc_mapper::SortOrder;
 use serde::{Deserialize, Serialize};
 
 use crate::checkpoint::IndexCheckpoint;
@@ -63,8 +62,11 @@ pub struct IndexMetadata {
 
 impl IndexMetadata {
     /// Returns an [`IndexMetadata`] object with multiple hard coded values for tests.
-    #[doc(hidden)]
+    #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(index_id: &str, index_uri: &str) -> Self {
+        use quickwit_config::IndexingResources;
+        use quickwit_doc_mapper::SortOrder;
+
         let index_uri = Uri::new(index_uri.to_string());
         let doc_mapping_json = r#"{
             "field_mappings": [

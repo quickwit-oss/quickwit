@@ -457,25 +457,23 @@ impl S3CompatibleObjectStorage {
                 .map_err(RusotoErrorWrapper::from)
         })
         .await?;
-        let mut body = get_object_output.body.ok_or_else(|| {
+        let body = get_object_output.body.ok_or_else(|| {
             StorageErrorKind::Service.with_error(anyhow::anyhow!("Returned object body was empty."))
         })?;
         let mut buf: Vec<u8> = Vec::with_capacity(cap);
-        download_all(&mut body, &mut buf).await?;
+        download_all(body, &mut buf).await?;
         Ok(buf)
     }
 }
 
-async fn download_all(byte_stream: &mut ByteStream, output: &mut Vec<u8>) -> io::Result<()> {
+async fn download_all(byte_stream: ByteStream, output: &mut Vec<u8>) -> io::Result<()> {
     output.clear();
     let object_storage_download_num_bytes = crate::STORAGE_METRICS
         .object_storage_download_num_bytes
         .clone();
-    while let Some(chunk_res) = byte_stream.next().await {
-        let chunk = chunk_res?;
-        object_storage_download_num_bytes.inc_by(chunk.len() as u64);
-        output.extend(chunk.as_ref());
-    }
+    let mut body_stream_reader = BufReader::new(byte_stream.into_async_read());
+    let num_bytes_copied = tokio::io::copy_buf(&mut body_stream_reader, output).await?;
+    object_storage_download_num_bytes.inc_by(num_bytes_copied);
     // When calling `get_all`, the Vec capacity is not properly set.
     output.shrink_to_fit();
     Ok(())

@@ -28,7 +28,7 @@ use quickwit_actors::{
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{Metastore, MetastoreError, SplitState};
 use tokio::join;
-use tracing::{debug, error, info, info_span, instrument, Span};
+use tracing::{debug, error, info, instrument};
 
 use crate::actors::indexing_pipeline::wait_duration_before_retry;
 use crate::actors::merge_split_downloader::MergeSplitDownloader;
@@ -80,10 +80,6 @@ impl Actor for MergePipeline {
 
     fn name(&self) -> String {
         "MergePipeline".to_string()
-    }
-
-    fn span(&self, _ctx: &ActorContext<Self>) -> Span {
-        info_span!("")
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
@@ -238,7 +234,7 @@ impl MergePipeline {
             "MergeUploader",
             self.params.metastore.clone(),
             self.params.split_store.clone(),
-            merge_sequencer_mailbox,
+            merge_sequencer_mailbox.into(),
         );
         let (merge_uploader_mailbox, merge_uploader_handler) = ctx
             .spawn_actor()
@@ -459,7 +455,7 @@ mod tests {
     use quickwit_storage::RamStorage;
 
     use crate::actors::merge_pipeline::{MergePipeline, MergePipelineParams};
-    use crate::merge_policy::StableMultitenantWithTimestampMergePolicy;
+    use crate::merge_policy::default_merge_policy;
     use crate::models::{IndexingDirectory, IndexingPipelineId};
     use crate::IndexingSplitStore;
 
@@ -485,7 +481,7 @@ mod tests {
             indexing_directory: IndexingDirectory::for_test().await,
             metastore: Arc::new(metastore),
             split_store,
-            merge_policy: Arc::new(StableMultitenantWithTimestampMergePolicy::default()),
+            merge_policy: default_merge_policy(),
         };
         let pipeline = MergePipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);

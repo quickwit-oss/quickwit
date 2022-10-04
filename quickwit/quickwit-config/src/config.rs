@@ -89,6 +89,9 @@ fn default_quickwit_services() -> Vec<String> {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IndexerConfig {
+    #[doc(hidden)]
+    #[serde(default = "IndexerConfig::default_enable_opentelemetry_otlp_service")]
+    pub enable_opentelemetry_otlp_service: bool,
     #[serde(default = "IndexerConfig::default_split_store_max_num_bytes")]
     pub split_store_max_num_bytes: Byte,
     #[serde(default = "IndexerConfig::default_split_store_max_num_splits")]
@@ -96,6 +99,10 @@ pub struct IndexerConfig {
 }
 
 impl IndexerConfig {
+    fn default_enable_opentelemetry_otlp_service() -> bool {
+        false
+    }
+
     pub fn default_split_store_max_num_bytes() -> Byte {
         Byte::from_bytes(100_000_000_000) // 100G
     }
@@ -107,6 +114,7 @@ impl IndexerConfig {
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> anyhow::Result<Self> {
         let indexer_config = IndexerConfig {
+            enable_opentelemetry_otlp_service: true,
             split_store_max_num_bytes: Byte::from_bytes(1_000_000),
             split_store_max_num_splits: 3,
         };
@@ -117,6 +125,7 @@ impl IndexerConfig {
 impl Default for IndexerConfig {
     fn default() -> Self {
         Self {
+            enable_opentelemetry_otlp_service: Self::default_enable_opentelemetry_otlp_service(),
             split_store_max_num_bytes: Self::default_split_store_max_num_bytes(),
             split_store_max_num_splits: Self::default_split_store_max_num_splits(),
         }
@@ -619,6 +628,7 @@ mod tests {
                 assert_eq!(
                     config.indexer_config,
                     IndexerConfig {
+                        enable_opentelemetry_otlp_service: false,
                         split_store_max_num_bytes: Byte::from_str("1T").unwrap(),
                         split_store_max_num_splits: 10_000,
                     }

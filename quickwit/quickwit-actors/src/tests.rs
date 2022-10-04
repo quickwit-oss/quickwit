@@ -341,6 +341,10 @@ impl Actor for LoopingActor {
         self.clone()
     }
 
+    fn yield_after_each_message(&self) -> bool {
+        false
+    }
+
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         self.handle(Loop, ctx).await
     }
@@ -374,7 +378,7 @@ impl Handler<SingleShot> for LoopingActor {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_looping() -> anyhow::Result<()> {
     let universe = Universe::new();
     let looping_actor = LoopingActor::default();

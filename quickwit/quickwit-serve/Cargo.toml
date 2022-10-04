@@ -3,77 +3,65 @@ name = "quickwit-serve"
 version = "0.3.1"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
-license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
+license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
 description = "Quickwit's search service"
 repository = "https://github.com/quickwit-oss/quickwit"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
-anyhow = "1"
-async-trait = "0.1"
-bytes = "1"
-futures = "0.3"
-futures-util = { version = "0.3.1", default-features = false }
-hyper = { version = "0.14", features = [
-  "stream",
-  "server",
-  "http1",
-  "http2",
-  "tcp",
-  "client"
-] }
-itertools = "0.10"
-mime_guess = { version = "2.0.4" }
-once_cell = "1"
-quickwit-actors = { version = "0.3.1", path = "../quickwit-actors" }
-quickwit-cluster = { version = "0.3.1", path = "../quickwit-cluster" }
-quickwit-common = { version = "0.3.1", path = "../quickwit-common" }
-quickwit-config = { version = "0.3.1", path = "../quickwit-config" }
-quickwit-core = { version = "0.3.1", path = "../quickwit-core" }
-quickwit-directories = { version = "0.3.1", path = "../quickwit-directories" }
-quickwit-doc-mapper = { version = "0.3.1", path = "../quickwit-doc-mapper" }
-quickwit-indexing = { version = "0.3.1", path = "../quickwit-indexing" }
-quickwit-ingest-api = { version = "0.3.1", path = "../quickwit-ingest-api" }
-quickwit-janitor = { version = "0.3.1", path = "../quickwit-janitor" }
-quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore" }
-quickwit-proto = { version = "0.3.1", path = "../quickwit-proto" }
-quickwit-search = { version = "0.3.1", path = "../quickwit-search" }
-quickwit-storage = { version = "0.3.1", path = "../quickwit-storage" }
-regex = "1"
-rust-embed = "6.4.0"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1"
-serde_qs = { version = "0.10", features = ["warp"] }
-termcolor = "1"
-thiserror = "1"
-tokio = { version = "1.21", features = ["full"] }
-tokio-stream = "0.1"
-tracing = "0.1.29"
-tracing-opentelemetry = "0.18"
-opentelemetry = "0.18"
-warp = "0.3"
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+hyper = { workspace = true }
+itertools = { workspace = true }
+mime_guess = { workspace = true }
+once_cell = { workspace = true }
+regex = { workspace = true }
+rust-embed = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_qs = { workspace = true }
+termcolor = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+opentelemetry = { workspace = true }
+warp = { workspace = true }
+
+quickwit-actors = { workspace = true }
+quickwit-cluster = { workspace = true }
+quickwit-common = { workspace = true }
+quickwit-config = { workspace = true }
+quickwit-core = { workspace = true }
+quickwit-directories = { workspace = true }
+quickwit-doc-mapper = { workspace = true }
+quickwit-indexing = { workspace = true }
+quickwit-ingest-api = { workspace = true }
+quickwit-janitor = { workspace = true }
+quickwit-metastore = { workspace = true }
+quickwit-opentelemetry = { workspace = true }
+quickwit-proto = { workspace = true }
+quickwit-search = { workspace = true }
+quickwit-storage = { workspace = true }
 
 [dev-dependencies]
-assert-json-diff = "2.0.1"
-chitchat = { git = "https://github.com/quickwit-oss/chitchat", rev = "cd568ba" }
-itertools = "0.10.3"
-mockall = "0.11"
-quickwit-cluster = { version = "0.3.1", path = "../quickwit-cluster", features = [
-  "testsuite"
-] }
-quickwit-common = { version = "0.3.1", path = "../quickwit-common", features = [
-  "testsuite"
-] }
-quickwit-indexing = { version = "0.3.1", path = "../quickwit-indexing", features = [
-  "testsuite"
-] }
-quickwit-metastore = { version = "0.3.1", path = "../quickwit-metastore", features = [
-  "testsuite"
-] }
-quickwit-storage = { version = "0.3.1", path = "../quickwit-storage", features = [
-  "testsuite"
-] }
-rand = "0.8"
-tokio = { version = "1", features = ["full"] }
-tempfile = "3.3.0"
+assert-json-diff = { workspace = true }
+chitchat = { workspace = true }
+itertools = { workspace = true }
+mockall = { workspace = true }
+rand = { workspace = true }
+tokio = { workspace = true }
+tempfile = { workspace = true }
+
+quickwit-cluster = { workspace = true, features = ["testsuite"] }
+quickwit-common = { workspace = true, features = ["testsuite"] }
+quickwit-config = { workspace = true, features = ["testsuite"] }
+quickwit-indexing = { workspace = true, features = ["testsuite"] }
+quickwit-metastore = { workspace = true, features = ["testsuite"] }
+quickwit-search = { workspace = true, features = ["testsuite"] }
+quickwit-storage = { workspace = true, features = ["testsuite"] }

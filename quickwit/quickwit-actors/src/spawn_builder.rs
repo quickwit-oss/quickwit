@@ -19,7 +19,7 @@
 
 use anyhow::Context;
 use tokio::sync::watch;
-use tracing::{debug, error, info, Instrument};
+use tracing::{debug, error, info};
 
 use crate::envelope::Envelope;
 use crate::mailbox::Inbox;
@@ -103,9 +103,7 @@ impl<A: Actor> SpawnBuilder<A> {
         debug!(actor_id = %ctx.actor_instance_id(), "spawn-actor");
         let mailbox = ctx.mailbox().clone();
         let ctx_clone = ctx.clone();
-        let span = actor.span(&ctx);
-        let loop_async_actor_future =
-            async move { actor_loop(actor, inbox, ctx).await }.instrument(span);
+        let loop_async_actor_future = async move { actor_loop(actor, inbox, ctx).await };
         let join_handle = runtime_handle.spawn(loop_async_actor_future);
         let actor_handle = ActorHandle::new(state_rx, join_handle, ctx_clone);
         (mailbox, actor_handle)
@@ -175,7 +173,6 @@ struct ActorExecutionEnv<A: Actor> {
     actor: A,
     inbox: Inbox<A>,
     ctx: ActorContext<A>,
-    msg_id: u64,
 }
 
 impl<A: Actor> ActorExecutionEnv<A> {
@@ -196,10 +193,7 @@ impl<A: Actor> ActorExecutionEnv<A> {
         mut envelope: Envelope<A>,
     ) -> Result<(), ActorExitStatus> {
         self.yield_and_check_if_killed().await?;
-        envelope
-            .handle_message(self.msg_id, &mut self.actor, &self.ctx)
-            .await?;
-        self.msg_id += 1u64;
+        envelope.handle_message(&mut self.actor, &self.ctx).await?;
         Ok(())
     }
 
@@ -212,8 +206,9 @@ impl<A: Actor> ActorExecutionEnv<A> {
             if self.ctx.kill_switch().is_dead() {
                 return Err(ActorExitStatus::Killed);
             }
+        } else {
+            self.ctx.record_progress();
         }
-
         Ok(())
     }
 
@@ -277,12 +272,7 @@ impl<A: Actor> Drop for ActorExecutionEnv<A> {
 }
 
 async fn actor_loop<A: Actor>(actor: A, inbox: Inbox<A>, ctx: ActorContext<A>) -> ActorExitStatus {
-    let mut actor_env = ActorExecutionEnv {
-        actor,
-        inbox,
-        ctx,
-        msg_id: 1u64,
-    };
+    let mut actor_env = ActorExecutionEnv { actor, inbox, ctx };
 
     let initialize_exit_status_res: Result<(), ActorExitStatus> = actor_env.initialize().await;
 

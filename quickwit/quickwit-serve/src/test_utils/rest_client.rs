@@ -22,7 +22,7 @@ use std::time::Duration;
 
 use hyper::client::HttpConnector;
 use hyper::{Body, Response, StatusCode};
-use quickwit_cluster::ClusterState;
+use quickwit_cluster::ClusterSnapshot;
 use quickwit_indexing::actors::IndexingServiceState;
 use serde::de::DeserializeOwned;
 use tokio_stream::StreamExt;
@@ -42,7 +42,7 @@ impl QuickwitRestClient {
         Self { api_root, client }
     }
 
-    pub async fn cluster_state(&self) -> anyhow::Result<ClusterState> {
+    pub async fn cluster_snapshot(&self) -> anyhow::Result<ClusterSnapshot> {
         let uri = format!("{}/cluster", self.api_root)
             .parse::<hyper::Uri>()
             .unwrap();

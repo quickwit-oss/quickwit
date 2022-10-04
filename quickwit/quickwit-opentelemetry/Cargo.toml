@@ -1,0 +1,22 @@
+[package]
+name = "quickwit-opentelemetry"
+version = "0.3.1"
+authors = ["Quickwit, Inc. <hello@quickwit.io>"]
+edition = "2021"
+license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
+description = "Quickwit OpenTelemetry"
+repository = "https://github.com/quickwit-oss/quickwit"
+homepage = "https://quickwit.io/"
+documentation = "https://quickwit.io/docs/"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }
+
+quickwit-metastore = { workspace = true }
+quickwit-proto = { workspace = true }
+
+[dev-dependencies]

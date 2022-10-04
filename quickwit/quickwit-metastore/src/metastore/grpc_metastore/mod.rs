@@ -51,7 +51,7 @@ use tower::discover::Change;
 use tower::service_fn;
 use tower::timeout::error::Elapsed;
 use tower::timeout::Timeout;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
@@ -76,7 +76,6 @@ impl MetastoreGrpcClient {
     /// [`Metastore`] service. It listens to cluster members changes to update the
     /// nodes.
     pub async fn create_and_update_from_members(
-        current_members: &[ClusterMember],
         mut members_watch_channel: WatchStream<Vec<ClusterMember>>,
     ) -> anyhow::Result<Self> {
         // Create a balance channel whose endpoint can be updated thanks to a sender.
@@ -89,9 +88,6 @@ impl MetastoreGrpcClient {
         let timeout_channel = Timeout::new(channel, CLIENT_TIMEOUT_DURATION);
 
         let mut grpc_addresses_in_use = HashSet::new();
-        let new_grpc_addresses = get_metastore_grpc_addresses(current_members);
-        update_channel_endpoints(&new_grpc_addresses, &grpc_addresses_in_use, &channel_tx).await?;
-        grpc_addresses_in_use = new_grpc_addresses;
 
         // Watch for cluster members changes and dynamically update channel endpoint.
         tokio::spawn(async move {
@@ -557,21 +553,35 @@ async fn update_channel_endpoints(
         error!("No Metastore service is available in the cluster.");
     }
 
-    for leaving_grpc_address in grpc_addresses_in_use.difference(new_grpc_addresses) {
-        debug!(
-            "Removing gRPC address `{}` from `MetastoreGrpcClient`.",
-            leaving_grpc_address
+    let leaving_grpc_addresses = grpc_addresses_in_use
+        .difference(new_grpc_addresses)
+        .into_iter()
+        .collect_vec();
+    if !leaving_grpc_addresses.is_empty() {
+        info!(
+            addresses=?leaving_grpc_addresses,
+            "Removing gRPC addresses from `MetastoreGrpcClient`.",
         );
+    }
+
+    for leaving_grpc_address in leaving_grpc_addresses {
         endpoint_channel_rx
             .send(Change::Remove(*leaving_grpc_address))
             .await?;
     }
 
-    for new_grpc_address in new_grpc_addresses.difference(grpc_addresses_in_use) {
+    let new_grpc_addresses = new_grpc_addresses
+        .difference(grpc_addresses_in_use)
+        .into_iter()
+        .collect_vec();
+    if !new_grpc_addresses.is_empty() {
         info!(
-            "Adding gRPC address `{}` to `MetastoreGrpcClient`.",
-            new_grpc_address
+            addresses=?new_grpc_addresses,
+            "Adding gRPC addresses to `MetastoreGrpcClient`.",
         );
+    }
+
+    for new_grpc_address in new_grpc_addresses {
         let new_grpc_uri_result = Uri::builder()
             .scheme("http")
             .authority(new_grpc_address.to_string().as_str())
@@ -653,7 +663,6 @@ mod tests {
     use std::net::SocketAddr;
     use std::sync::Arc;
 
-    use futures::StreamExt;
     use quickwit_cluster::ClusterMember;
     use quickwit_config::service::QuickwitService;
     use quickwit_proto::metastore_api::metastore_api_service_server::MetastoreApiServiceServer;
@@ -697,6 +706,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_metastore_service_grpc_with_one_metastore_service() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
         let mut metastore = MockMetastore::new();
         let index_id = "test-index";
         metastore
@@ -728,15 +738,12 @@ mod tests {
             HashSet::from([QuickwitService::Searcher]),
             searcher_grpc_addr,
         );
-        let (members_tx, members_rx) = watch::channel::<Vec<ClusterMember>>(Vec::new());
-        let mut watch_members = WatchStream::new(members_rx);
-        watch_members.next().await; // Consumes the first value in channel which is empty vec.
-        let metastore_client = MetastoreGrpcClient::create_and_update_from_members(
-            &[metastore_service_member.clone()],
-            watch_members,
-        )
-        .await
-        .unwrap();
+        let (members_tx, members_rx) =
+            watch::channel::<Vec<ClusterMember>>(vec![metastore_service_member.clone()]);
+        let watch_members = WatchStream::new(members_rx);
+        let metastore_client = MetastoreGrpcClient::create_and_update_from_members(watch_members)
+            .await
+            .unwrap();
 
         // gRPC service should send request on the running server.
         let result = metastore_client.index_metadata(index_id).await;
@@ -771,6 +778,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_metastore_grpc_client_with_multiple_metastore_services() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
         let mut metastore = MockMetastore::new();
         let index_id = "test-index";
         metastore
@@ -810,15 +818,12 @@ mod tests {
             HashSet::from([QuickwitService::Metastore]),
             grpc_addr_3,
         );
-        let (members_tx, members_rx) = watch::channel::<Vec<ClusterMember>>(Vec::new());
-        let mut watch_members = WatchStream::new(members_rx);
-        watch_members.next().await; // <- Consumes the first value in channel which is empty vec.
-        let metastore_client = MetastoreGrpcClient::create_and_update_from_members(
-            &[metastore_member_1.clone()],
-            watch_members,
-        )
-        .await
-        .unwrap();
+        let (members_tx, members_rx) =
+            watch::channel::<Vec<ClusterMember>>(vec![metastore_member_1.clone()]);
+        let watch_members = WatchStream::new(members_rx);
+        let metastore_client = MetastoreGrpcClient::create_and_update_from_members(watch_members)
+            .await
+            .unwrap();
 
         let result = metastore_client.index_metadata(index_id).await;
         assert!(result.is_ok());

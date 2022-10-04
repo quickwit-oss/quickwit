@@ -32,9 +32,9 @@ use quickwit_config::{build_doc_mapper, IndexingSettings};
 use quickwit_indexing::actors::{
     MergeExecutor, MergeSplitDownloader, Packager, Publisher, Uploader,
 };
-use quickwit_indexing::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
+use quickwit_indexing::merge_policy::merge_policy_from_settings;
 use quickwit_indexing::models::{IndexingDirectory, IndexingPipelineId};
-use quickwit_indexing::{IndexingSplitStore, PublisherType, Sequencer};
+use quickwit_indexing::{IndexingSplitStore, PublisherType};
 use quickwit_metastore::Metastore;
 use quickwit_search::SearchClientPool;
 use quickwit_storage::Storage;
@@ -54,7 +54,6 @@ struct DeletePipelineHandle {
     pub delete_task_executor: ActorHandle<MergeExecutor>,
     pub packager: ActorHandle<Packager>,
     pub uploader: ActorHandle<Uploader>,
-    pub sequencer: ActorHandle<Sequencer<Publisher>>,
     pub publisher: ActorHandle<Publisher>,
 }
 
@@ -94,7 +93,7 @@ impl Actor for DeleteTaskPipeline {
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         self.spawn_pipeline(ctx).await?;
-        self.handle(SuperviseLoop, ctx).await?;
+        self.handle(DeletePipelineSuperviseLoop, ctx).await?;
         Ok(())
     }
 }
@@ -136,18 +135,13 @@ impl DeleteTaskPipeline {
             .spawn_actor()
             .set_kill_switch(KillSwitch::default())
             .spawn(publisher);
-        let sequencer = Sequencer::new(publisher_mailbox);
-        let (sequencer_mailbox, sequencer_handler) = ctx
-            .spawn_actor()
-            .set_kill_switch(KillSwitch::default())
-            .spawn(sequencer);
         let split_store =
             IndexingSplitStore::create_without_local_store(self.index_storage.clone());
         let uploader = Uploader::new(
             "MergeUploader",
             self.metastore.clone(),
             split_store.clone(),
-            sequencer_mailbox,
+            publisher_mailbox.into(),
         );
         let (uploader_mailbox, uploader_handler) = ctx
             .spawn_actor()
@@ -188,14 +182,7 @@ impl DeleteTaskPipeline {
             .spawn_actor()
             .set_kill_switch(KillSwitch::default())
             .spawn(merge_split_downloader);
-        let stable_multitenant_merge_policy = StableMultitenantWithTimestampMergePolicy {
-            merge_enabled: true,
-            merge_factor: self.indexing_settings.merge_policy.merge_factor,
-            max_merge_factor: self.indexing_settings.merge_policy.max_merge_factor,
-            split_num_docs_target: self.indexing_settings.split_num_docs_target,
-            ..Default::default()
-        };
-        let merge_policy: Arc<dyn MergePolicy> = Arc::new(stable_multitenant_merge_policy);
+        let merge_policy = merge_policy_from_settings(&self.indexing_settings);
         let doc_mapper_str = serde_json::to_string(&doc_mapper)?;
         let task_planner = DeleteTaskPlanner::new(
             self.index_id.clone(),
@@ -216,7 +203,6 @@ impl DeleteTaskPipeline {
             delete_task_executor: task_executor_handler,
             packager: packager_handler,
             uploader: uploader_handler,
-            sequencer: sequencer_handler,
             publisher: publisher_handler,
         });
         Ok(())
@@ -227,7 +213,6 @@ impl DeleteTaskPipeline {
             let supervisables: Vec<&dyn Supervisable> = vec![
                 &handles.packager,
                 &handles.uploader,
-                &handles.sequencer,
                 &handles.publisher,
                 &handles.delete_task_planner,
                 &handles.downloader,
@@ -241,15 +226,15 @@ impl DeleteTaskPipeline {
 }
 
 #[derive(Debug)]
-struct SuperviseLoop;
+struct DeletePipelineSuperviseLoop;
 
 #[async_trait]
-impl Handler<SuperviseLoop> for DeleteTaskPipeline {
+impl Handler<DeletePipelineSuperviseLoop> for DeleteTaskPipeline {
     type Reply = ();
 
     async fn handle(
         &mut self,
-        _: SuperviseLoop,
+        _: DeletePipelineSuperviseLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         if self.handles.is_some() {
@@ -279,7 +264,8 @@ impl Handler<SuperviseLoop> for DeleteTaskPipeline {
                 );
             }
         }
-        ctx.schedule_self_msg(SUPERVISE_DELAY, SuperviseLoop).await;
+        ctx.schedule_self_msg(SUPERVISE_DELAY, DeletePipelineSuperviseLoop)
+            .await;
         Ok(())
     }
 }
@@ -355,7 +341,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let data_dir_path = temp_dir.path().to_path_buf();
         let mut indexing_settings = IndexingSettings::for_test();
-        indexing_settings.split_num_docs_target = 1; //
+        // Ensures that all split will be mature and thus be candidates for deletion.
+        indexing_settings.split_num_docs_target = 1;
         let pipeline = DeleteTaskPipeline::new(
             index_id.to_string(),
             metastore.clone(),

@@ -38,7 +38,7 @@ use quickwit_proto::SearchRequest;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
 use tantivy::{Directory, Index, IndexMeta, SegmentId, SegmentReader, TantivyError};
 use tokio::runtime::Handle;
-use tracing::{debug, info, info_span, warn, Span};
+use tracing::{debug, info, instrument, warn};
 
 use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
@@ -77,35 +77,15 @@ impl Actor for MergeExecutor {
 impl Handler<MergeScratch> for MergeExecutor {
     type Reply = ();
 
-    fn message_span(&self, msg_id: u64, merge_scratch: &MergeScratch) -> Span {
-        let merge_op = &merge_scratch.merge_operation;
-        let num_docs: usize = merge_op
-            .splits_as_slice()
-            .iter()
-            .map(|split| split.num_docs)
-            .sum();
-        let in_merge_split_ids: Vec<String> = merge_op
-            .splits_as_slice()
-            .iter()
-            .map(|split| split.split_id().to_string())
-            .collect();
-        info_span!("merge",
-                    msg_id=&msg_id,
-                    dir=%merge_scratch.merge_scratch_directory.path().display(),
-                    merge_split_id=%merge_op.merge_split_id,
-                    in_merge_split_ids=?in_merge_split_ids,
-                    num_docs=num_docs,
-                    num_splits=merge_op.splits_as_slice().len())
-    }
-
+    #[instrument(level = "info", name = "merge_executor", parent = merge_scratch.merge_operation.merge_parent_span.id(), skip_all)]
     async fn handle(
         &mut self,
         merge_scratch: MergeScratch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        let merge_op = &merge_scratch.merge_operation;
-        match merge_op.operation_type {
-            MergeOperationType::Merge => {
+        let merge_op = merge_scratch.merge_operation;
+        let indexed_split_opt: Option<IndexedSplit> = match merge_op.operation_type {
+            MergeOperationType::Merge => Some(
                 self.process_merge(
                     merge_op.merge_split_id.clone(),
                     merge_op.splits.clone(),
@@ -113,8 +93,8 @@ impl Handler<MergeScratch> for MergeExecutor {
                     merge_scratch.merge_scratch_directory,
                     ctx,
                 )
-                .await?;
-            }
+                .await?,
+            ),
             MergeOperationType::DeleteAndMerge => {
                 self.process_delete_and_merge(
                     merge_op.merge_split_id.clone(),
@@ -123,8 +103,20 @@ impl Handler<MergeScratch> for MergeExecutor {
                     merge_scratch.merge_scratch_directory,
                     ctx,
                 )
-                .await?;
+                .await?
             }
+        };
+        if let Some(indexed_split) = indexed_split_opt {
+            ctx.send_message(
+                &self.merge_packager_mailbox,
+                IndexedSplitBatch {
+                    batch_parent_span: merge_op.merge_parent_span,
+                    splits: vec![indexed_split],
+                    checkpoint_delta: Default::default(),
+                    publish_lock: PublishLock::default(),
+                },
+            )
+            .await?;
         }
         Ok(())
     }
@@ -192,8 +184,8 @@ fn combine_two_hashes(lhs: u64, rhs: u64) -> u64 {
     lhs ^ update_to_xor
 }
 
-fn combine_partition_ids_aux(partition_ids: impl Iterator<Item = u64>) -> u64 {
-    let sorted_unique_partition_ids: BTreeSet<u64> = partition_ids.collect();
+fn combine_partition_ids_aux(partition_ids: impl IntoIterator<Item = u64>) -> u64 {
+    let sorted_unique_partition_ids: BTreeSet<u64> = partition_ids.into_iter().collect();
     let mut sorted_unique_partition_ids_it = sorted_unique_partition_ids.into_iter();
     if let Some(partition_id) = sorted_unique_partition_ids_it.next() {
         sorted_unique_partition_ids_it.fold(partition_id, |acc, partition_id| {
@@ -241,10 +233,6 @@ async fn merge_split_directories(
         let doc_mapper = doc_mapper_opt
             .ok_or_else(|| anyhow!("Doc mapper must be present if there are delete tasks."))?;
         for delete_task in delete_tasks {
-            // TODO: currently tantivy only support deletes with a term query.
-            // Until tantivy supports a delete on the `Query` trait, we delete all terms
-            // present in the query so we can test simple queries.
-            // WARNING: this is broken by design and should not go in production.
             let delete_query = delete_task
                 .delete_query
                 .expect("A delete task must have a delete query.");
@@ -261,9 +249,7 @@ async fn merge_split_directories(
                 search_request
             );
             let query = doc_mapper.query(union_index.schema(), &search_request)?;
-            query.query_terms(&mut |term, _need_position| {
-                index_writer.delete_term(term.clone());
-            });
+            index_writer.delete_query(query)?;
         }
         debug!("commit-delete-operations");
         index_writer.commit()?;
@@ -287,6 +273,45 @@ async fn merge_split_directories(
     Ok(output_directory)
 }
 
+pub fn merge_split_attrs(
+    merge_split_id: String,
+    pipeline_id: &IndexingPipelineId,
+    splits: &[SplitMetadata],
+) -> SplitAttrs {
+    let partition_id = combine_partition_ids_aux(splits.iter().map(|split| split.partition_id));
+    let time_range = merge_time_range(splits);
+    let uncompressed_docs_size_in_bytes = sum_doc_sizes_in_bytes(splits);
+    let num_docs = sum_num_docs(splits);
+    let replaced_split_ids: Vec<String> = splits
+        .iter()
+        .map(|split| split.split_id().to_string())
+        .collect();
+    let delete_opstamp = splits
+        .iter()
+        .map(|split| split.delete_opstamp)
+        .min()
+        .unwrap_or(0);
+    SplitAttrs {
+        split_id: merge_split_id,
+        partition_id,
+        pipeline_id: pipeline_id.clone(),
+        replaced_split_ids,
+        time_range,
+        num_docs,
+        uncompressed_docs_size_in_bytes,
+        delete_opstamp,
+        num_merge_ops: max_merge_ops(splits) + 1,
+    }
+}
+
+fn max_merge_ops(splits: &[SplitMetadata]) -> usize {
+    splits
+        .iter()
+        .map(|split| split.num_merge_ops)
+        .max()
+        .unwrap_or(0)
+}
+
 impl MergeExecutor {
     pub fn new(
         pipeline_id: IndexingPipelineId,
@@ -307,15 +332,7 @@ impl MergeExecutor {
         tantivy_dirs: Vec<Box<dyn Directory>>,
         merge_scratch_directory: ScratchDirectory,
         ctx: &ActorContext<Self>,
-    ) -> anyhow::Result<()> {
-        let pipeline_id = self.pipeline_id.clone();
-        let start = Instant::now();
-        info!("merge-start");
-        let partition_id = combine_partition_ids_aux(splits.iter().map(|split| split.partition_id));
-        let replaced_split_ids: Vec<String> = splits
-            .iter()
-            .map(|split| split.split_id().to_string())
-            .collect();
+    ) -> anyhow::Result<IndexedSplit> {
         let (union_index_meta, split_directories) = open_split_directories(&tantivy_dirs)?;
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
         fail_point!("before-merge-split");
@@ -329,52 +346,19 @@ impl MergeExecutor {
         )
         .await?;
         fail_point!("after-merge-split");
-        info!(
-            elapsed_secs = start.elapsed().as_secs_f32(),
-            "merge-success"
-        );
 
         // This will have the side effect of deleting the directory containing the downloaded
         // splits.
-        let time_range = merge_time_range(&splits);
-        let uncompressed_docs_size_in_bytes = sum_doc_sizes_in_bytes(&splits);
-        let num_docs = sum_num_docs(&splits);
-        let delete_opstamp = splits
-            .iter()
-            .map(|split| split.delete_opstamp)
-            .min()
-            .unwrap_or(0);
-
         let merged_index = open_index(controlled_directory.clone())?;
         ctx.record_progress();
 
-        let indexed_split = IndexedSplit {
-            split_attrs: SplitAttrs {
-                split_id: merge_split_id,
-                partition_id,
-                pipeline_id,
-                replaced_split_ids,
-                time_range,
-                num_docs,
-                uncompressed_docs_size_in_bytes,
-                delete_opstamp,
-            },
+        let split_attrs = merge_split_attrs(merge_split_id, &self.pipeline_id, &splits);
+        Ok(IndexedSplit {
+            split_attrs,
             index: merged_index,
             split_scratch_directory: merge_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),
-        };
-
-        ctx.send_message(
-            &self.merge_packager_mailbox,
-            IndexedSplitBatch {
-                splits: vec![indexed_split],
-                checkpoint_delta: Default::default(),
-                publish_lock: PublishLock::default(),
-                date_of_birth: start,
-            },
-        )
-        .await?;
-        Ok(())
+        })
     }
 
     async fn process_delete_and_merge(
@@ -384,7 +368,7 @@ impl MergeExecutor {
         tantivy_dirs: Vec<Box<dyn Directory>>,
         merge_scratch_directory: ScratchDirectory,
         ctx: &ActorContext<Self>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<IndexedSplit>> {
         assert_eq!(
             splits.len(),
             1,
@@ -408,7 +392,7 @@ impl MergeExecutor {
                 split.split_id(),
                 split.delete_opstamp
             );
-            return Ok(());
+            return Ok(None);
         }
         let last_delete_opstamp = delete_tasks
             .iter()
@@ -487,23 +471,13 @@ impl MergeExecutor {
                 num_docs,
                 uncompressed_docs_size_in_bytes,
                 delete_opstamp: last_delete_opstamp,
+                num_merge_ops: max_merge_ops(&splits[..]),
             },
             index: merged_index,
             split_scratch_directory: merge_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),
         };
-
-        ctx.send_message(
-            &self.merge_packager_mailbox,
-            IndexedSplitBatch {
-                splits: vec![indexed_split],
-                checkpoint_delta: Default::default(),
-                publish_lock: PublishLock::default(),
-                date_of_birth: start,
-            },
-        )
-        .await?;
-        Ok(())
+        Ok(Some(indexed_split))
     }
 }
 
@@ -590,21 +564,13 @@ mod tests {
             universe.spawn_builder().spawn(merge_executor);
         merge_executor_mailbox.send_message(merge_scratch).await?;
         merge_executor_handle.process_pending_and_observe().await;
-        let mut packager_msgs = merge_packager_inbox.drain_for_test();
+        let packager_msgs: Vec<IndexedSplitBatch> = merge_packager_inbox.drain_for_test_typed();
         assert_eq!(packager_msgs.len(), 1);
-        let packager_msg = packager_msgs
-            .pop()
-            .unwrap()
-            .downcast::<IndexedSplitBatch>()
-            .unwrap();
-        assert_eq!(packager_msg.splits[0].split_attrs.num_docs, 4);
-        assert_eq!(
-            packager_msg.splits[0]
-                .split_attrs
-                .uncompressed_docs_size_in_bytes,
-            136
-        );
-        let reader = packager_msg.splits[0].index.reader()?;
+        let split_attrs_after_merge = &packager_msgs[0].splits[0].split_attrs;
+        assert_eq!(split_attrs_after_merge.num_docs, 4);
+        assert_eq!(split_attrs_after_merge.uncompressed_docs_size_in_bytes, 136);
+        assert_eq!(split_attrs_after_merge.num_merge_ops, 1);
+        let reader = packager_msgs[0].splits[0].index.reader()?;
         let searcher = reader.searcher();
         assert_eq!(searcher.segment_readers().len(), 1);
         Ok(())
@@ -612,30 +578,30 @@ mod tests {
 
     #[test]
     fn test_combine_partition_ids_singleton_unchanged() {
-        assert_eq!(combine_partition_ids_aux([17].into_iter()), 17);
+        assert_eq!(combine_partition_ids_aux([17]), 17);
     }
 
     #[test]
     fn test_combine_partition_ids_zero_has_an_impact() {
         assert_ne!(
-            combine_partition_ids_aux([12u64, 0u64].into_iter()),
-            combine_partition_ids_aux([12u64].into_iter())
+            combine_partition_ids_aux([12u64, 0u64]),
+            combine_partition_ids_aux([12u64])
         );
     }
 
     #[test]
     fn test_combine_partition_ids_depends_on_partition_id_set() {
         assert_eq!(
-            combine_partition_ids_aux([12, 16, 12, 13].into_iter()),
-            combine_partition_ids_aux([12, 16, 13].into_iter())
+            combine_partition_ids_aux([12, 16, 12, 13]),
+            combine_partition_ids_aux([12, 16, 13])
         );
     }
 
     #[test]
     fn test_combine_partition_ids_order_does_not_matter() {
         assert_eq!(
-            combine_partition_ids_aux([7, 12, 13].into_iter()),
-            combine_partition_ids_aux([12, 13, 7].into_iter())
+            combine_partition_ids_aux([7, 12, 13]),
+            combine_partition_ids_aux([12, 13, 7])
         );
     }
 
@@ -678,29 +644,11 @@ mod tests {
             .unwrap();
         let expected_uncompressed_docs_size_in_bytes =
             (2_f32 * split_meta.uncompressed_docs_size_in_bytes as f32 / 3_f32) as u64;
-        // let mut tantivy_dirs: Vec<Box<dyn Directory>> = vec![];
-        // for split_meta in &split_metas {
-        //     let split_filename = split_file(split_meta.split_id());
-        //     let dest_filepath = downloaded_splits_directory.path().join(&split_filename);
-        //     test_sandbox
-        //         .storage()
-        //         .copy_to_file(Path::new(&split_filename), &dest_filepath)
-        //         .await?;
-
-        //     tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap())
-        // }
-        // let merge_scratch = MergeScratch {
-        //     merge_operation: MergeOperation::new_merge_operation(split_metas),
-        //     tantivy_dirs,
-        //     merge_scratch_directory,
-        //     downloaded_splits_directory,
-        // };
         let merge_scratch_directory = ScratchDirectory::for_test()?;
         let downloaded_splits_directory =
             merge_scratch_directory.named_temp_child("downloaded-splits-")?;
         let split_filename = split_file(split_meta.split_id());
         let dest_filepath = downloaded_splits_directory.path().join(&split_filename);
-        println!("dest_filepath {:?}", dest_filepath);
         test_sandbox
             .storage()
             .copy_to_file(Path::new(&split_filename), &dest_filepath)
@@ -730,22 +678,18 @@ mod tests {
         delete_task_executor_handle
             .process_pending_and_observe()
             .await;
-        let mut packager_msgs = merge_packager_inbox.drain_for_test();
+        let packager_msgs: Vec<IndexedSplitBatch> = merge_packager_inbox.drain_for_test_typed();
         assert_eq!(packager_msgs.len(), 1);
-        let packager_msg = packager_msgs
-            .pop()
-            .unwrap()
-            .downcast::<IndexedSplitBatch>()
-            .unwrap();
-        assert_eq!(packager_msg.splits[0].split_attrs.num_docs, 2);
-        assert_eq!(packager_msg.splits[0].split_attrs.delete_opstamp, 1);
+        let split = &packager_msgs[0].splits[0];
+        assert_eq!(split.split_attrs.num_docs, 2);
+        assert_eq!(split.split_attrs.delete_opstamp, 1);
+        // Delete operations do not update the num_merge_ops value.
+        assert_eq!(split.split_attrs.num_merge_ops, 0);
         assert_eq!(
-            packager_msg.splits[0]
-                .split_attrs
-                .uncompressed_docs_size_in_bytes,
+            split.split_attrs.uncompressed_docs_size_in_bytes,
             expected_uncompressed_docs_size_in_bytes,
         );
-        let reader = packager_msg.splits[0].index.reader()?;
+        let reader = split.index.reader()?;
         let searcher = reader.searcher();
         assert_eq!(searcher.segment_readers().len(), 1);
         Ok(())

@@ -19,12 +19,12 @@
 
 use std::fmt;
 use std::path::Path;
-use std::time::Instant;
 
 use quickwit_actors::{KillSwitch, Progress};
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use tantivy::directory::MmapDirectory;
 use tantivy::IndexBuilder;
+use tracing::{instrument, Span};
 
 use crate::controlled_directory::ControlledDirectory;
 use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory, SplitAttrs};
@@ -105,6 +105,7 @@ impl IndexedSplitBuilder {
                 uncompressed_docs_size_in_bytes: 0,
                 time_range: None,
                 delete_opstamp: last_delete_opstamp,
+                num_merge_ops: 0,
             },
             index_writer,
             split_scratch_directory,
@@ -112,6 +113,21 @@ impl IndexedSplitBuilder {
         })
     }
 
+    #[instrument(name="serialize_split",
+        skip_all,
+        fields(
+            index_id=%self.split_attrs.pipeline_id.index_id,
+            source_id=%self.split_attrs.pipeline_id.source_id,
+            node_id=%self.split_attrs.pipeline_id.node_id,
+            pipeline_id=%self.split_attrs.pipeline_id.pipeline_ord,
+            split_id=%self.split_attrs.split_id,
+            partition_id=%self.split_attrs.partition_id,
+            num_docs=%self.split_attrs.num_docs,
+            uncompressed_docs_size_in_bytes=%self.split_attrs.uncompressed_docs_size_in_bytes,
+            delete_opstamp=%self.split_attrs.delete_opstamp,
+            num_merge_ops=%self.split_attrs.num_merge_ops,
+        )
+    )]
     pub fn finalize(self) -> anyhow::Result<IndexedSplit> {
         let index = self.index_writer.finalize()?;
         Ok(IndexedSplit {
@@ -133,10 +149,10 @@ impl IndexedSplitBuilder {
 
 #[derive(Debug)]
 pub struct IndexedSplitBatch {
+    pub batch_parent_span: Span,
     pub splits: Vec<IndexedSplit>,
     pub checkpoint_delta: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
-    pub date_of_birth: Instant,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -149,9 +165,9 @@ pub enum CommitTrigger {
 
 #[derive(Debug)]
 pub struct IndexedSplitBatchBuilder {
+    pub batch_parent_span: Span,
     pub splits: Vec<IndexedSplitBuilder>,
     pub checkpoint_delta: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
-    pub date_of_birth: Instant,
     pub commit_trigger: CommitTrigger,
 }
