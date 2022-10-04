@@ -23,7 +23,7 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::SplitMetadata;
 use tantivy::Directory;
-use tracing::{info, info_span, warn, Span};
+use tracing::{debug, info, instrument};
 
 use super::MergeExecutor;
 use crate::merge_policy::MergeOperation;
@@ -53,19 +53,11 @@ impl Actor for MergeSplitDownloader {
 impl Handler<MergeOperation> for MergeSplitDownloader {
     type Reply = ();
 
-    fn message_span(&self, msg_id: u64, merge_operation: &MergeOperation) -> Span {
-        let num_docs: usize = merge_operation
-            .splits_as_slice()
-            .iter()
-            .map(|split| split.num_docs)
-            .sum();
-        info_span!("merge",
-                    msg_id=&msg_id,
-                    merge_split_id=%merge_operation.merge_split_id,
-                    num_docs=num_docs,
-                    num_splits=merge_operation.splits_as_slice().len())
-    }
-
+    #[instrument(
+        name = "merge_split_downloader",
+        parent = merge_operation.merge_parent_span.id(),
+        skip_all,
+    )]
     async fn handle(
         &mut self,
         merge_operation: MergeOperation,
@@ -108,7 +100,10 @@ impl MergeSplitDownloader {
         let mut tantivy_dirs = vec![];
         for split in splits {
             if ctx.kill_switch().is_dead() {
-                warn!(split_id=?split.split_id(), "Kill switch was activated. Cancelling download.");
+                debug!(
+                    split_id = split.split_id(),
+                    "Kill switch was activated. Cancelling download."
+                );
                 return Err(ActorExitStatus::Killed);
             }
             let _protect_guard = ctx.protect_zone();

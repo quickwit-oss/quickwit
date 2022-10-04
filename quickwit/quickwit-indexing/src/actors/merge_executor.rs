@@ -38,7 +38,7 @@ use quickwit_proto::SearchRequest;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
 use tantivy::{Directory, Index, IndexMeta, SegmentId, SegmentReader, TantivyError};
 use tokio::runtime::Handle;
-use tracing::{debug, info, info_span, warn, Span};
+use tracing::{debug, info, instrument, warn};
 
 use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
@@ -77,35 +77,15 @@ impl Actor for MergeExecutor {
 impl Handler<MergeScratch> for MergeExecutor {
     type Reply = ();
 
-    fn message_span(&self, msg_id: u64, merge_scratch: &MergeScratch) -> Span {
-        let merge_op = &merge_scratch.merge_operation;
-        let num_docs: usize = merge_op
-            .splits_as_slice()
-            .iter()
-            .map(|split| split.num_docs)
-            .sum();
-        let in_merge_split_ids: Vec<String> = merge_op
-            .splits_as_slice()
-            .iter()
-            .map(|split| split.split_id().to_string())
-            .collect();
-        info_span!("merge",
-                    msg_id=&msg_id,
-                    dir=%merge_scratch.merge_scratch_directory.path().display(),
-                    merge_split_id=%merge_op.merge_split_id,
-                    in_merge_split_ids=?in_merge_split_ids,
-                    num_docs=num_docs,
-                    num_splits=merge_op.splits_as_slice().len())
-    }
-
+    #[instrument(level = "info", name = "merge_executor", parent = merge_scratch.merge_operation.merge_parent_span.id(), skip_all)]
     async fn handle(
         &mut self,
         merge_scratch: MergeScratch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        let merge_op = &merge_scratch.merge_operation;
-        match merge_op.operation_type {
-            MergeOperationType::Merge => {
+        let merge_op = merge_scratch.merge_operation;
+        let indexed_split_opt: Option<IndexedSplit> = match merge_op.operation_type {
+            MergeOperationType::Merge => Some(
                 self.process_merge(
                     merge_op.merge_split_id.clone(),
                     merge_op.splits.clone(),
@@ -113,8 +93,8 @@ impl Handler<MergeScratch> for MergeExecutor {
                     merge_scratch.merge_scratch_directory,
                     ctx,
                 )
-                .await?;
-            }
+                .await?,
+            ),
             MergeOperationType::DeleteAndMerge => {
                 self.process_delete_and_merge(
                     merge_op.merge_split_id.clone(),
@@ -123,8 +103,20 @@ impl Handler<MergeScratch> for MergeExecutor {
                     merge_scratch.merge_scratch_directory,
                     ctx,
                 )
-                .await?;
+                .await?
             }
+        };
+        if let Some(indexed_split) = indexed_split_opt {
+            ctx.send_message(
+                &self.merge_packager_mailbox,
+                IndexedSplitBatch {
+                    batch_parent_span: merge_op.merge_parent_span,
+                    splits: vec![indexed_split],
+                    checkpoint_delta: Default::default(),
+                    publish_lock: PublishLock::default(),
+                },
+            )
+            .await?;
         }
         Ok(())
     }
@@ -340,10 +332,7 @@ impl MergeExecutor {
         tantivy_dirs: Vec<Box<dyn Directory>>,
         merge_scratch_directory: ScratchDirectory,
         ctx: &ActorContext<Self>,
-    ) -> anyhow::Result<()> {
-        let start = Instant::now();
-        info!("merge-start");
-
+    ) -> anyhow::Result<IndexedSplit> {
         let (union_index_meta, split_directories) = open_split_directories(&tantivy_dirs)?;
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
         fail_point!("before-merge-split");
@@ -357,10 +346,6 @@ impl MergeExecutor {
         )
         .await?;
         fail_point!("after-merge-split");
-        info!(
-            elapsed_secs = start.elapsed().as_secs_f32(),
-            "merge-success"
-        );
 
         // This will have the side effect of deleting the directory containing the downloaded
         // splits.
@@ -368,24 +353,12 @@ impl MergeExecutor {
         ctx.record_progress();
 
         let split_attrs = merge_split_attrs(merge_split_id, &self.pipeline_id, &splits);
-        let indexed_split = IndexedSplit {
+        Ok(IndexedSplit {
             split_attrs,
             index: merged_index,
             split_scratch_directory: merge_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),
-        };
-
-        ctx.send_message(
-            &self.merge_packager_mailbox,
-            IndexedSplitBatch {
-                splits: vec![indexed_split],
-                checkpoint_delta: Default::default(),
-                publish_lock: PublishLock::default(),
-                date_of_birth: start,
-            },
-        )
-        .await?;
-        Ok(())
+        })
     }
 
     async fn process_delete_and_merge(
@@ -395,7 +368,7 @@ impl MergeExecutor {
         tantivy_dirs: Vec<Box<dyn Directory>>,
         merge_scratch_directory: ScratchDirectory,
         ctx: &ActorContext<Self>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<IndexedSplit>> {
         assert_eq!(
             splits.len(),
             1,
@@ -419,7 +392,7 @@ impl MergeExecutor {
                 split.split_id(),
                 split.delete_opstamp
             );
-            return Ok(());
+            return Ok(None);
         }
         let last_delete_opstamp = delete_tasks
             .iter()
@@ -504,18 +477,7 @@ impl MergeExecutor {
             split_scratch_directory: merge_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),
         };
-
-        ctx.send_message(
-            &self.merge_packager_mailbox,
-            IndexedSplitBatch {
-                splits: vec![indexed_split],
-                checkpoint_delta: Default::default(),
-                publish_lock: PublishLock::default(),
-                date_of_birth: start,
-            },
-        )
-        .await?;
-        Ok(())
+        Ok(Some(indexed_split))
     }
 }
 

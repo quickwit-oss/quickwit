@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use fail::fail_point;
 use quickwit_actors::{Actor, ActorContext, Handler, Mailbox};
 use quickwit_metastore::Metastore;
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::actors::MergePlanner;
 use crate::models::{NewSplits, SplitsUpdate};
@@ -111,6 +111,7 @@ impl Actor for Publisher {
 impl Handler<SplitsUpdate> for Publisher {
     type Reply = ();
 
+    #[instrument(name="publisher", parent=split_update.parent_span.id(),  skip(self, ctx))]
     async fn handle(
         &mut self,
         split_update: SplitsUpdate,
@@ -124,7 +125,7 @@ impl Handler<SplitsUpdate> for Publisher {
             replaced_split_ids,
             checkpoint_delta_opt,
             publish_lock,
-            date_of_birth,
+            parent_span: _,
         } = split_update;
 
         let split_ids: Vec<&str> = new_splits.iter().map(|split| split.split_id()).collect();
@@ -149,7 +150,7 @@ impl Handler<SplitsUpdate> for Publisher {
             );
             return Ok(());
         }
-        info!(new_splits=?split_ids, tts=%date_of_birth.elapsed().as_secs_f32(), checkpoint_delta=?checkpoint_delta_opt, "publish-new-splits");
+        info!(new_splits=?split_ids, checkpoint_delta=?checkpoint_delta_opt, "publish-new-splits");
         if let Some(source_mailbox) = self.source_mailbox_opt.as_ref() {
             if let Some(checkpoint) = checkpoint_delta_opt {
                 // We voluntarily do not log anything here.
@@ -189,13 +190,12 @@ impl Handler<SplitsUpdate> for Publisher {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
-
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_metastore::checkpoint::{
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
     };
     use quickwit_metastore::{MockMetastore, SplitMetadata};
+    use tracing::Span;
 
     use super::*;
     use crate::models::PublishLock;
@@ -243,7 +243,7 @@ mod tests {
                     source_delta: SourceCheckpointDelta::from(1..3),
                 }),
                 publish_lock: PublishLock::default(),
-                date_of_birth: Instant::now(),
+                parent_span: tracing::Span::none(),
             })
             .await
             .is_ok());
@@ -303,7 +303,7 @@ mod tests {
             replaced_split_ids: vec!["split1".to_string(), "split2".to_string()],
             checkpoint_delta_opt: None,
             publish_lock: PublishLock::default(),
-            date_of_birth: Instant::now(),
+            parent_span: Span::none(),
         };
         assert!(publisher_mailbox
             .send_message(publisher_message)
@@ -342,7 +342,7 @@ mod tests {
                 replaced_split_ids: Vec::new(),
                 checkpoint_delta_opt: None,
                 publish_lock,
-                date_of_birth: Instant::now(),
+                parent_span: Span::none(),
             })
             .await
             .unwrap();

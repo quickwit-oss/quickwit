@@ -21,6 +21,7 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::runtimes::RuntimeType;
 use tokio::runtime::Handle;
+use tracing::instrument;
 
 use crate::actors::Packager;
 use crate::models::{IndexedSplit, IndexedSplitBatch, IndexedSplitBatchBuilder};
@@ -62,6 +63,11 @@ impl Actor for IndexSerializer {
 impl Handler<IndexedSplitBatchBuilder> for IndexSerializer {
     type Reply = ();
 
+    #[instrument(
+        name="serialize_split_batch"
+        parent=batch_builder.batch_parent_span.id(),
+        skip(self, ctx)
+    )]
     async fn handle(
         &mut self,
         batch_builder: IndexedSplitBatchBuilder,
@@ -76,10 +82,10 @@ impl Handler<IndexedSplitBatchBuilder> for IndexSerializer {
                 .collect::<Result<_, _>>()?
         };
         let indexed_split_batch = IndexedSplitBatch {
+            batch_parent_span: batch_builder.batch_parent_span,
             splits,
             checkpoint_delta: batch_builder.checkpoint_delta,
             publish_lock: batch_builder.publish_lock,
-            date_of_birth: batch_builder.date_of_birth,
         };
         ctx.send_message(&self.packager_mailbox, indexed_split_batch)
             .await?;

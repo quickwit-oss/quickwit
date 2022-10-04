@@ -28,6 +28,7 @@ pub use nop_merge_policy::NopMergePolicy;
 use quickwit_config::IndexingSettings;
 use quickwit_metastore::SplitMetadata;
 pub(crate) use stable_log_merge_policy::StableLogMergePolicy;
+use tracing::{info_span, Span};
 
 use crate::new_split_id;
 
@@ -45,6 +46,7 @@ impl fmt::Display for MergeOperationType {
 
 #[derive(Clone)]
 pub struct MergeOperation {
+    pub merge_parent_span: Span,
     pub merge_split_id: String,
     pub splits: Vec<SplitMetadata>,
     pub operation_type: MergeOperationType,
@@ -52,16 +54,22 @@ pub struct MergeOperation {
 
 impl MergeOperation {
     pub fn new_merge_operation(splits: Vec<SplitMetadata>) -> Self {
+        let merge_split_id = new_split_id();
+        let merge_parent_span = info_span!("merge", merge_split_id=%merge_split_id, splits=?splits, typ=%MergeOperationType::Merge);
         Self {
-            merge_split_id: new_split_id(),
+            merge_parent_span,
+            merge_split_id,
             splits,
             operation_type: MergeOperationType::Merge,
         }
     }
 
     pub fn new_delete_and_merge_operation(split: SplitMetadata) -> Self {
+        let merge_split_id = new_split_id();
+        let merge_parent_span = info_span!("delete", merge_split_id=%merge_split_id, split=?split, typ=%MergeOperationType::DeleteAndMerge);
         Self {
-            merge_split_id: new_split_id(),
+            merge_parent_span,
+            merge_split_id,
             splits: vec![split],
             operation_type: MergeOperationType::DeleteAndMerge,
         }
