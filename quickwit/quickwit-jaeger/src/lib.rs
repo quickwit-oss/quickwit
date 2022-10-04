@@ -20,11 +20,12 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use itertools::Itertools;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPlugin;
 use quickwit_proto::jaeger::storage::v1::{
     FindTraceIDsRequest, FindTraceIDsResponse, FindTracesRequest, GetOperationsRequest,
-    GetOperationsResponse, GetServicesRequest, GetServicesResponse, GetTraceRequest,
-    SpansResponseChunk, Operation,
+    GetOperationsResponse, GetServicesRequest, GetServicesResponse, GetTraceRequest, Operation,
+    SpansResponseChunk,
 };
 use quickwit_proto::SearchRequest;
 use quickwit_search::SearchService;
@@ -32,6 +33,10 @@ use serde_json::Value as JsonValue;
 use time::OffsetDateTime;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
+use tracing::debug;
+
+// OpenTelemetry to Jaeger Transformation
+// <https://opentelemetry.io/docs/reference/specification/trace/sdk_exporters/jaeger/>
 
 const TRACE_INDEX_ID: &str = "otel-trace";
 
@@ -45,6 +50,23 @@ impl JaegerService {
     }
 }
 
+fn extract_service_name(mut doc: JsonValue) -> Option<String> {
+    match doc["service_name"].take() {
+        JsonValue::String(service_name) => Some(service_name),
+        _ => None,
+    }
+}
+
+fn extract_operation(mut doc: JsonValue) -> Option<Operation> {
+    match (doc["span_name"].take(), doc["span_kind"]["name"].take()) {
+        (JsonValue::String(span_name), JsonValue::String(span_kind_name)) => Some(Operation {
+            name: span_name,
+            span_kind: span_kind_name,
+        }),
+        _ => None,
+    }
+}
+
 type SpanStream = ReceiverStream<Result<SpansResponseChunk, Status>>;
 
 #[async_trait]
@@ -55,11 +77,15 @@ impl SpanReaderPlugin for JaegerService {
 
     async fn get_services(
         &self,
-        _request: Request<GetServicesRequest>,
+        request: Request<GetServicesRequest>,
     ) -> Result<Response<GetServicesResponse>, Status> {
-        let search_request = SearchRequest {
+        let request = request.into_inner();
+        debug!(request=?request, "`get_services` request");
+
+        let search_request =
+            SearchRequest {
             index_id: TRACE_INDEX_ID.to_string(),
-            query: "status.code:0".to_string(),
+            query: "status.code:0".to_string(), // TODO: really, what I want is "service_name:*", but really, what I really really want is "SELECT DISTINCT service_name FROM otel-trace;"
             search_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
@@ -75,20 +101,17 @@ impl SpanReaderPlugin for JaegerService {
             .root_search(search_request)
             .await
             .unwrap();
-        let mut services: Vec<String> = search_response
+        let services: Vec<String> = search_response
             .hits
             .into_iter()
-            .filter_map(|hit| {
-                match serde_json::from_str::<JsonValue>(&hit.json)
-                    .ok()
-                    .map(|mut value| value["service_name"].take()) {
-                        Some(JsonValue::String(service_name)) => Some(service_name),
-                        _ => None,
-                    }
+            .map(|hit| {
+                serde_json::from_str::<JsonValue>(&hit.json)
+                    .expect("Failed to deserialize hit. This should never happen.")
             })
+            .filter_map(|mut doc| extract_service_name(doc))
+            .sorted()
+            .dedup()
             .collect();
-        services.sort();
-        services.dedup();
         let response = GetServicesResponse { services };
         Ok(Response::new(response))
     }
@@ -98,11 +121,16 @@ impl SpanReaderPlugin for JaegerService {
         request: Request<GetOperationsRequest>,
     ) -> Result<Response<GetOperationsResponse>, Status> {
         let request = request.into_inner();
-        print!("GET OPERATIONS: {:?}", request);
+        debug!(request=?request, "`get_operations` request");
+
+        println!("GET OPERATIONS: {:?}", request);
         let query = if request.span_kind.is_empty() {
-            format!("service_name:{}", request.service) }
-        else {
-            format!("service_name:{} span_kind.name:{}", request.service, request.span_kind)
+            format!("service_name:{}", request.service)
+        } else {
+            format!(
+                "service_name:{} span_kind.name:{}",
+                request.service, request.span_kind
+            )
         };
         let search_request = SearchRequest {
             index_id: TRACE_INDEX_ID.to_string(),
@@ -122,25 +150,27 @@ impl SpanReaderPlugin for JaegerService {
             .root_search(search_request)
             .await
             .unwrap();
-        let mut operation_names: Vec<String> = search_response
+        let mut operations: Vec<Operation> = search_response
             .hits
             .into_iter()
-            .filter_map(|hit| {
-                match serde_json::from_str::<JsonValue>(&hit.json)
-                    .ok()
-                    .map(|mut value| value["span_name"].take()) {
-                        Some(JsonValue::String(service_name)) => Some(service_name),
-                        _ => None,
-                    }
+            .map(|hit| {
+                serde_json::from_str::<JsonValue>(&hit.json)
+                    .expect("Failed to deserialize hit. This should never happen.")
             })
+            .filter_map(|mut doc| extract_operation(doc))
+            .sorted()
+            .dedup()
             .collect();
-        operation_names.sort();
-        operation_names.dedup();
-        let operations = vec![Operation {
-            name: "all".to_string(),
-            span_kind: "span_kind".to_string(),
-        }];
-        let response = GetOperationsResponse { operation_names, operations };
+        operations.sort();
+        operations.dedup();
+        let operation_names: Vec<String> = operations
+            .iter()
+            .map(|operation| operation.name.clone())
+            .collect();
+        let response = GetOperationsResponse {
+            operation_names,
+            operations,
+        };
         Ok(Response::new(response))
     }
 

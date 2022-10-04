@@ -36,35 +36,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=otlp/opentelemetry/proto/resource/v1/resource.proto");
     println!("cargo:rerun-if-changed=otlp/opentelemetry/proto/trace/v1/trace.proto");
 
-    let mut prost_config = prost_build::Config::default();
-    // prost_config.type_attribute("LeafSearchResponse", "#[derive(Default)]");
-    prost_config.protoc_arg("--experimental_allow_proto3_optional");
-    tonic_build::configure()
-        .type_attribute(".", "#[derive(Serialize, Deserialize)]")
-        .type_attribute("DeleteQuery", "#[serde(default)]")
-        .field_attribute(
-            "DeleteQuery.start_timestamp",
-            "#[serde(skip_serializing_if = \"Option::is_none\")]",
-        )
-        .field_attribute(
-            "DeleteQuery.end_timestamp",
-            "#[serde(skip_serializing_if = \"Option::is_none\")]",
-        )
-        .type_attribute("OutputFormat", "#[serde(rename_all = \"snake_case\")]")
-        .out_dir("src/")
-        .compile_with_config(
-            prost_config,
-            &[
-                "./proto/ingest_api.proto",
-                "./proto/metastore_api.proto",
-                "./proto/search_api.proto",
-            ],
-            &["./proto"],
+    {
+        let mut prost_config = prost_build::Config::default();
+        prost_config.protoc_arg("--experimental_allow_proto3_optional");
+
+        tonic_build::configure()
+            .type_attribute(".", "#[derive(Serialize, Deserialize)]")
+            .type_attribute("DeleteQuery", "#[serde(default)]")
+            .field_attribute(
+                "DeleteQuery.start_timestamp",
+                "#[serde(skip_serializing_if = \"Option::is_none\")]",
+            )
+            .field_attribute(
+                "DeleteQuery.end_timestamp",
+                "#[serde(skip_serializing_if = \"Option::is_none\")]",
+            )
+            .type_attribute("OutputFormat", "#[serde(rename_all = \"snake_case\")]")
+            .out_dir("src/")
+            .compile_with_config(
+                prost_config,
+                &[
+                    "./proto/ingest_api.proto",
+                    "./proto/metastore_api.proto",
+                    "./proto/search_api.proto",
+                ],
+                &["./proto"],
+            )?;
+    }
+    {
+        let mut prost_config = prost_build::Config::default();
+        prost_config.type_attribute("Operation", "#[derive(Ord)]");
+        tonic_build::configure().out_dir("src/").compile(
+            &["./jaeger/model.proto", "./jaeger/storage.proto"],
+            &["./jaeger", "/opt/homebrew/Cellar/protobuf/21.5/include"],
         )?;
-    tonic_build::configure().out_dir("src/").compile(
-        &["./jaeger/model.proto", "./jaeger/storage.proto"],
-        &["./jaeger", "/opt/homebrew/Cellar/protobuf/21.5/include"],
-    )?;
+    }
     tonic_build::configure()
         .type_attribute(".", "#[derive(Serialize, Deserialize)]")
         .out_dir("src/")
