@@ -479,7 +479,7 @@ index_id: "hdfs"
 indexing_settings:
   merge_policy:
     type: "limit_merge"
-    min_level_num_docs: 100_000
+    max_merge_ops: 5
     merge_factor: 10
     max_merge_factor: 12
 
@@ -495,9 +495,10 @@ indexing_settings:
 #### No merge
 
 The `no_merge` merge policy entirely disables merging.
-This setting is not recommended.
-Merges are necessary to reduce the number of splits,
-and hence improve search performances.
+
+:::caution
+This setting is not recommended. Merges are necessary to reduce the number of splits, and hence improve search performances.
+:::
 
 ```yaml
 version: 0
