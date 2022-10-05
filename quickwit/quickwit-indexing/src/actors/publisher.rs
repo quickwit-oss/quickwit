@@ -52,6 +52,7 @@ impl PublisherType {
     }
 }
 
+#[derive(Clone)]
 pub struct Publisher {
     publisher_type: PublisherType,
     metastore: Arc<dyn Metastore>,

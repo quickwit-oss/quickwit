@@ -49,6 +49,7 @@ use crate::models::{
     ScratchDirectory, SplitAttrs,
 };
 
+#[derive(Clone)]
 pub struct MergeExecutor {
     pipeline_id: IndexingPipelineId,
     metastore: Arc<dyn Metastore>,
