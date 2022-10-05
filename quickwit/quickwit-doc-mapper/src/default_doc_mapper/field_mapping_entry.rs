@@ -127,7 +127,7 @@ pub struct QuickwitTextOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tokenizer: Option<QuickwitTextTokenizer>,
     #[serde(default)]
-    pub record: IndexRecordOption,
+    pub record: Option<IndexRecordOption>,
     #[serde(default)]
     pub fieldnorms: bool,
     #[serde(default = "default_as_true")]
@@ -142,7 +142,7 @@ impl Default for QuickwitTextOptions {
             description: None,
             indexed: true,
             tokenizer: None,
-            record: IndexRecordOption::Basic,
+            record: None,
             fieldnorms: false,
             stored: true,
             fast: false,
@@ -160,8 +160,9 @@ impl From<QuickwitTextOptions> for TextOptions {
             text_options = text_options.set_fast();
         }
         if quickwit_text_options.indexed {
+            if let Some(index_record_options) = quickwit_text_options.record {
             let mut text_field_indexing = TextFieldIndexing::default()
-                .set_index_option(quickwit_text_options.record)
+                .set_index_option(index_record_options)
                 .set_fieldnorms(quickwit_text_options.fieldnorms);
 
             if let Some(tokenizer) = quickwit_text_options.tokenizer {
@@ -169,6 +170,7 @@ impl From<QuickwitTextOptions> for TextOptions {
             }
 
             text_options = text_options.set_indexing_options(text_field_indexing);
+            }
         }
         text_options
     }
@@ -258,8 +260,8 @@ fn deserialize_mapping_type(
             #[allow(clippy::collapsible_if)]
             if !text_options.indexed {
                 if text_options.tokenizer.is_some()
-                    || text_options.record == IndexRecordOption::Basic
-                    || !text_options.fieldnorms
+                    || text_options.record == Some(IndexRecordOption::Basic)
+                    || text_options.fieldnorms
                 {
                     bail!(
                         "`record`, `tokenizer`, and `fieldnorms` parameters are allowed only if \
@@ -461,7 +463,7 @@ mod tests {
                 assert_eq!(options.stored, true);
                 assert_eq!(options.indexed, true);
                 assert_eq!(options.tokenizer.unwrap().get_name(), "en_stem");
-                assert_eq!(options.record, IndexRecordOption::Basic);
+                assert_eq!(options.record.unwrap(), IndexRecordOption::Basic);
             }
             _ => panic!("wrong property type"),
         }
