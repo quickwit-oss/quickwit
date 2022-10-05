@@ -3398,6 +3398,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-jaeger"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64",
+ "itertools",
+ "quickwit-proto",
+ "quickwit-search",
+ "serde_json",
+ "time 0.3.15",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tracing",
+]
+
+[[package]]
 name = "quickwit-janitor"
 version = "0.3.1"
 dependencies = [
@@ -3562,6 +3580,7 @@ dependencies = [
  "quickwit-doc-mapper",
  "quickwit-indexing",
  "quickwit-ingest-api",
+ "quickwit-jaeger",
  "quickwit-janitor",
  "quickwit-metastore",
  "quickwit-opentelemetry",
