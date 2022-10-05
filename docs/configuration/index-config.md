@@ -127,7 +127,7 @@ fieldnorms: true
 | `stored`    | Whether value is stored in the document store | `true` |
 | `tokenizer` | Name of the `Tokenizer`, choices between `raw`, `default`, `en_stem` and `chinese_compatible` | `default` |
 | `record`    | Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
-| `fieldnorms` | Whether to store fieldnorms for the field. Fieldnorms are required to calculate the BM25 Score of the document. | `false` |  
+| `fieldnorms` | Whether to store fieldnorms for the field. Fieldnorms are required to calculate the BM25 Score of the document. | `false` |
 | `fast`     | Whether value is stored in a fast field. The fast field will contain the term ids. The effective cardinality depends on the tokenizer. When creating fast fields on text fields it is recommended to use the "raw" tokenizer, since it will store the original text unchanged. The "default" tokenizer will store the terms as lower case and this will be reflected in the dictionary ([see tokenizers](#description-of-available-tokenizers)). | `false` |
 
 #### **Description of available tokenizers**
@@ -180,7 +180,7 @@ fast: true
 The `datetime` type can accepts multiple formats and a storage precision. The following formats are supported but need to be explicitly requested via configuration.
 - `rfc3339`, `rfc2822`, `iso8601`: Parsing dates using standard specified formats.
 - `strftime`: Parsing dates using the Unix [strftime](https://man7.org/linux/man-pages/man3/strftime.3.html) format.
-- `unix_ts_secs`, `unix_ts_millis`, `unix_ts_micros`: Parsing dates from numbers (timestamp). Only one can be used in configuration. `unix_ts_secs` is added to the list by default if none is specified. 
+- `unix_ts_secs`, `unix_ts_millis`, `unix_ts_micros`: Parsing dates from numbers (timestamp). Only one can be used in configuration. `unix_ts_secs` is added to the list by default if none is specified.
 
 :::info
 When specifying multiple input formats, the corresponding parsers are tried in the order they are declared.
@@ -424,12 +424,90 @@ This section describes indexing settings for a given index.
 | ------------- | ------------- | ------------- |
 | `timestamp_field`      | Timestamp field used for sharding documents in splits (1).   | None |
 | `commit_timeout_secs`      | Maximum number of seconds before committing a split since its creation.   | 60 |
-| `split_num_docs_target`      | Maximum number of documents in a split. Note that this is not a hard limit.   | 10_000_000 |
-| `merge_policy.merge_factor`      | Number of splits to merge.   | 10 |
-| `merge_policy.max_merge_factor`      | Maximum number of splits to merge.   | 12 |
+| `split_num_docs_target` | Target number of docs per split.   | 10_000_000 |
+| `merge_policy` | Describes the strategy used to trigger split merge operations (see [Merge policies](#merge-policies) section below). |
 | `resources.heap_size`      | Indexer heap size per source per index.   | 2_000_000_000 |
 
 (1) Both `datetime` and `i64` can be referenced. `i64` fields are interpreted as Unix timestamp (seconds). You can learn more about time sharding [here](./../concepts/architecture.md).
+
+### Merge policies
+
+Quickwit makes it possible to define the strategy used to decide which splits should be merged together and when.
+
+Quickwit offers three different merge policies, each with their
+own set of parameters.
+
+#### "Stable log" merge policy
+
+The stable log merge policy attempts to minimize write amplification AND keep time-pruning power as high as possible, by merging splits with a similar size, and with a close time span.
+
+Quickwit's default merge policy is the `stable_log` merge policy
+with the following parameters:
+
+```yaml
+version: 0
+index_id: "hdfs"
+# ...
+indexing_settings:
+  merge_policy:
+    type: "stable_log"
+    min_level_num_docs: 100_000
+    merge_factor: 10
+    max_merge_factor: 12
+```
+
+
+| Variable      | Description   | Default value |
+| ------------- | ------------- | ------------- |
+| `merge_factor`      | *(advanced)* Number of splits to merge together in a single merge operation.   | 10 |
+| `max_merge_factor` | *(advanced)* Maximum number of splits that can be merged together in a single merge operation.  | 12 |
+| `min_level_num_docs` |  *(advanced)* Number of docs below which all splits are considered as belonging to the same level.   | 100_000 |
+
+
+#### "Limit Merge" merge policy
+
+*The limit merge policy is considered advanced*.
+
+The limit merge policy simply limits write amplification by setting an upperbound
+of the number of merge operation a split should undergo.
+
+
+```yaml
+version: 0
+index_id: "hdfs"
+# ...
+indexing_settings:
+  merge_policy:
+    type: "limit_merge"
+    max_merge_ops: 5
+    merge_factor: 10
+    max_merge_factor: 12
+
+```
+
+
+| Variable      | Description   | Default value |
+| ------------- | ------------- | ------------- |
+| `max_merge_ops`   |  Maximum number of merges that a given split should undergo. | 4 |
+| `merge_factor`      | *(advanced)* Number of splits to merge together in a single merge operation.   | 10 |
+| `max_merge_factor` | *(advanced)* Maximum number of splits that can be merged together in a single merge operation.  | 12 |
+
+#### No merge
+
+The `no_merge` merge policy entirely disables merging.
+
+:::caution
+This setting is not recommended. Merges are necessary to reduce the number of splits, and hence improve search performances.
+:::
+
+```yaml
+version: 0
+index_id: "hdfs"
+indexing_settings:
+    merge_policy:
+        type: "no_merge"
+```
+
 
 
 ### Indexer memory usage

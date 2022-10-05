@@ -22,9 +22,10 @@ use std::num::NonZeroU64;
 
 use byte_unit::Byte;
 use quickwit_common::uri::Uri;
+use quickwit_config::merge_policy_config::{MergePolicyConfig, StableLogMergePolicyConfig};
 use quickwit_config::{
-    DocMapping, IndexingResources, IndexingSettings, KafkaSourceParams, MergePolicy,
-    RetentionPolicy, RetentionPolicyCutoffReference, SearchSettings, SourceConfig, SourceParams,
+    DocMapping, IndexingResources, IndexingSettings, KafkaSourceParams, RetentionPolicy,
+    RetentionPolicyCutoffReference, SearchSettings, SourceConfig, SourceParams,
 };
 use quickwit_doc_mapper::{ModeType, SortOrder};
 
@@ -151,11 +152,12 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
         RetentionPolicyCutoffReference::PublishTimestamp,
         "daily".to_string(),
     ));
-    let merge_policy = MergePolicy {
+    let stable_log_config = StableLogMergePolicyConfig {
         merge_factor: 9,
         max_merge_factor: 11,
         ..Default::default()
     };
+    let merge_policy = MergePolicyConfig::StableLog(stable_log_config);
     let indexing_resources = IndexingResources {
         __num_threads_deprecated: serde::de::IgnoredAny,
         heap_size: Byte::from_bytes(3),
@@ -202,6 +204,16 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
 
 #[test]
 fn test_index_metadata_backward_compatibility() -> anyhow::Result<()> {
+    let sample_index_metadata = sample_index_metadata_for_regression();
+    super::test_json_backward_compatibility_helper(
+        "index-metadata",
+        test_index_metadata_eq,
+        sample_index_metadata,
+    )
+}
+
+#[test]
+fn test_index_metadata_backward_compatibility_one() -> anyhow::Result<()> {
     let sample_index_metadata = sample_index_metadata_for_regression();
     super::test_json_backward_compatibility_helper(
         "index-metadata",

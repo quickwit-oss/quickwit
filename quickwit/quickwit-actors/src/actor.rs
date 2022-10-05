@@ -29,7 +29,7 @@ use async_trait::async_trait;
 use futures::Future;
 use thiserror::Error;
 use tokio::sync::{oneshot, watch};
-use tracing::{debug, error, info_span, Span};
+use tracing::{debug, error};
 
 use crate::actor_state::{ActorState, AtomicState};
 use crate::progress::{Progress, ProtectedZoneGuard};
@@ -157,11 +157,6 @@ pub trait Actor: Send + Sync + Sized + 'static {
     ///
     /// This function should return quickly.
     fn observable_state(&self) -> Self::ObservableState;
-
-    /// Creates a span associated to all logging happening during the lifetime of an actor instance.
-    fn span(&self, _ctx: &ActorContext<Self>) -> Span {
-        info_span!("", actor = %self.name())
-    }
 
     /// Initialize is called before running the actor.
     ///
@@ -545,15 +540,6 @@ impl<A: Actor> ActorContext<A> {
 #[async_trait::async_trait]
 pub trait Handler<M>: Actor {
     type Reply: 'static + Send;
-
-    /// Returns a context span for the processing of a specific
-    /// message.
-    ///
-    /// `msg_id` is an autoincremented message id than can be added to the span.
-    /// The counter starts 0 at the beginning of the life of an actor instance.
-    fn message_span(&self, msg_id: u64, _msg: &M) -> Span {
-        info_span!("", msg_id = &msg_id)
-    }
 
     /// Processes a message.
     ///

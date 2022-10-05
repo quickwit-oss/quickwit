@@ -19,9 +19,9 @@
 
 use std::collections::{BTreeSet, HashSet};
 use std::fmt;
-use std::time::Instant;
 
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
+use tracing::Span;
 
 use crate::models::{PublishLock, ScratchDirectory, SplitAttrs};
 
@@ -52,10 +52,10 @@ impl fmt::Debug for PackagedSplit {
 
 #[derive(Debug)]
 pub struct PackagedSplitBatch {
+    pub parent_span: Span,
     pub splits: Vec<PackagedSplit>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
-    pub date_of_birth: Instant,
 }
 
 impl PackagedSplitBatch {
@@ -67,7 +67,7 @@ impl PackagedSplitBatch {
         splits: Vec<PackagedSplit>,
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
         publish_lock: PublishLock,
-        date_of_birth: Instant,
+        span: Span,
     ) -> Self {
         assert!(!splits.is_empty());
         assert_eq!(
@@ -80,10 +80,10 @@ impl PackagedSplitBatch {
             "All splits must be on the same `index_id`."
         );
         Self {
+            parent_span: span,
             splits,
             checkpoint_delta_opt,
             publish_lock,
-            date_of_birth,
         }
     }
 

@@ -23,7 +23,8 @@ use std::collections::HashMap;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
-    DocMapping, IndexingSettings, RetentionPolicy, SearchSettings, SourceConfig,
+    DocMapping, IndexingSettings, IndexingSettingsLegacy, RetentionPolicy, SearchSettings,
+    SourceConfig,
 };
 use serde::{Deserialize, Serialize};
 
@@ -64,6 +65,9 @@ impl IndexMetadata {
     /// Returns an [`IndexMetadata`] object with multiple hard coded values for tests.
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(index_id: &str, index_uri: &str) -> Self {
+        use quickwit_config::IndexingResources;
+        use quickwit_doc_mapper::SortOrder;
+
         let index_uri = Uri::new(index_uri.to_string());
         let doc_mapping_json = r#"{
             "field_mappings": [
@@ -127,8 +131,8 @@ impl IndexMetadata {
         let indexing_settings = IndexingSettings {
             timestamp_field: Some("timestamp".to_string()),
             sort_field: Some("timestamp".to_string()),
-            sort_order: Some(quickwit_doc_mapper::SortOrder::Desc),
-            resources: quickwit_config::IndexingResources::for_test(),
+            sort_order: Some(SortOrder::Desc),
+            resources: IndexingResources::for_test(),
             ..Default::default()
         };
         let search_settings = SearchSettings {
@@ -182,12 +186,14 @@ impl IndexMetadata {
 #[serde(tag = "version")]
 pub(crate) enum VersionedIndexMetadata {
     #[serde(rename = "1")]
-    V1(IndexMetadataV1),
+    V1(#[serde(skip_serializing)] IndexMetadataV1),
+    #[serde(rename = "2")]
+    V2(IndexMetadataV2),
 }
 
 impl From<IndexMetadata> for VersionedIndexMetadata {
     fn from(index_metadata: IndexMetadata) -> Self {
-        VersionedIndexMetadata::V1(index_metadata.into())
+        VersionedIndexMetadata::V2(index_metadata.into())
     }
 }
 
@@ -195,12 +201,34 @@ impl From<VersionedIndexMetadata> for IndexMetadata {
     fn from(index_metadata: VersionedIndexMetadata) -> Self {
         match index_metadata {
             VersionedIndexMetadata::V1(v1) => v1.into(),
+            VersionedIndexMetadata::V2(v2) => v2.into(),
         }
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub(crate) struct IndexMetadataV1 {
+    pub index_id: String,
+    pub index_uri: String,
+    pub checkpoint: IndexCheckpoint,
+    pub doc_mapping: DocMapping,
+    #[serde(default)]
+    pub indexing_settings: IndexingSettingsLegacy,
+    pub search_settings: SearchSettings,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<SourceConfig>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retention_policy: Option<RetentionPolicy>,
+    #[serde(default = "utc_now_timestamp")]
+    pub create_timestamp: i64,
+    #[serde(default = "utc_now_timestamp")]
+    pub update_timestamp: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct IndexMetadataV2 {
     pub index_id: String,
     pub index_uri: String,
     pub checkpoint: IndexCheckpoint,
@@ -220,7 +248,7 @@ pub(crate) struct IndexMetadataV1 {
     pub update_timestamp: i64,
 }
 
-impl From<IndexMetadata> for IndexMetadataV1 {
+impl From<IndexMetadata> for IndexMetadataV2 {
     fn from(index_metadata: IndexMetadata) -> Self {
         let sources = index_metadata
             .sources
@@ -254,12 +282,34 @@ impl From<IndexMetadataV1> for IndexMetadata {
             index_uri: Uri::new(v1.index_uri),
             checkpoint: v1.checkpoint,
             doc_mapping: v1.doc_mapping,
-            indexing_settings: v1.indexing_settings,
+            indexing_settings: v1.indexing_settings.into(),
             search_settings: v1.search_settings,
             sources,
             retention_policy: v1.retention_policy,
             create_timestamp: v1.create_timestamp,
             update_timestamp: v1.update_timestamp,
+        }
+    }
+}
+
+impl From<IndexMetadataV2> for IndexMetadata {
+    fn from(v2: IndexMetadataV2) -> Self {
+        let sources = v2
+            .sources
+            .into_iter()
+            .map(|source| (source.source_id.clone(), source))
+            .collect();
+        Self {
+            index_id: v2.index_id,
+            index_uri: Uri::new(v2.index_uri),
+            checkpoint: v2.checkpoint,
+            doc_mapping: v2.doc_mapping,
+            indexing_settings: v2.indexing_settings,
+            search_settings: v2.search_settings,
+            sources,
+            retention_policy: v2.retention_policy,
+            create_timestamp: v2.create_timestamp,
+            update_timestamp: v2.update_timestamp,
         }
     }
 }

@@ -22,7 +22,6 @@ use std::iter::FromIterator;
 use std::mem;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
 
 use anyhow::{bail, Context};
 use async_trait::async_trait;
@@ -34,7 +33,7 @@ use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_storage::SplitPayloadBuilder;
 use tokio::sync::oneshot::Sender;
 use tokio::sync::{oneshot, Semaphore, SemaphorePermit};
-use tracing::{info, info_span, warn, Instrument, Span};
+use tracing::{info, instrument, warn, Instrument, Span};
 
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::Publisher;
@@ -207,10 +206,9 @@ impl Actor for Uploader {
 impl Handler<PackagedSplitBatch> for Uploader {
     type Reply = ();
 
-    fn message_span(&self, msg_id: u64, batch: &PackagedSplitBatch) -> Span {
-        info_span!("", msg_id=&msg_id, num_splits=%batch.split_ids().len())
-    }
-
+    #[instrument(name = "uploader",
+        parent=batch.parent_span.id(),
+        skip_all)]
     async fn handle(
         &mut self,
         batch: PackagedSplitBatch,
@@ -242,7 +240,6 @@ impl Handler<PackagedSplitBatch> for Uploader {
         let counters = self.counters.clone();
         let index_id = batch.index_id();
         let ctx_clone = ctx.clone();
-        let span = Span::current();
         info!(split_ids=?split_ids, "start-stage-and-store-splits");
         tokio::spawn(
             async move {
@@ -251,10 +248,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                 for split in batch.splits {
                     if batch.publish_lock.is_dead() {
                         // TODO: Remove the junk right away?
-                        info!(
-                            split_ids=?split_ids,
-                            "Splits' publish lock is dead."
-                        );
+                        info!("Splits' publish lock is dead.");
                         split_udpate_sender.discard()?;
                         return Ok(());
                     }
@@ -272,15 +266,14 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     }
                     packaged_splits_and_metadatas.push((split, upload_result.unwrap()));
                 }
-                let splits_update = make_publish_operation(index_id, batch.publish_lock, packaged_splits_and_metadatas, batch.checkpoint_delta_opt, batch.date_of_birth);
+                let splits_update = make_publish_operation(index_id, batch.publish_lock, packaged_splits_and_metadatas, batch.checkpoint_delta_opt, batch.parent_span);
                 split_udpate_sender.send(splits_update, &ctx_clone).await?;
-                info!("success-stage-and-store-splits");
                 // We explicitely drop it in order to force move the permit guard into the async
                 // task.
                 mem::drop(permit_guard);
                 Result::<(), anyhow::Error>::Ok(())
             }
-            .instrument(span),
+            .instrument(Span::current()),
         );
         fail_point!("uploader:intask:after");
         Ok(())
@@ -292,7 +285,7 @@ fn make_publish_operation(
     publish_lock: PublishLock,
     packaged_splits_and_metadatas: Vec<(PackagedSplit, SplitMetadata)>,
     checkpoint_delta_opt: Option<IndexCheckpointDelta>,
-    date_of_birth: Instant,
+    parent_span: Span,
 ) -> SplitsUpdate {
     assert!(!packaged_splits_and_metadatas.is_empty());
     let replaced_split_ids = packaged_splits_and_metadatas
@@ -308,10 +301,16 @@ fn make_publish_operation(
             .collect_vec(),
         replaced_split_ids: Vec::from_iter(replaced_split_ids),
         checkpoint_delta_opt,
-        date_of_birth,
+        parent_span,
     }
 }
 
+#[instrument(
+    level = "info"
+    name = "stage_and_upload",
+    fields(split = %packaged_split.split_attrs.split_id),
+    skip_all
+)]
 async fn stage_and_upload_split(
     packaged_split: &PackagedSplit,
     split_store: &IndexingSplitStore,
@@ -328,13 +327,12 @@ async fn stage_and_upload_split(
         split_streamer.footer_range.start as u64..split_streamer.footer_range.end as u64,
     );
     let index_id = &packaged_split.split_attrs.pipeline_id.index_id.clone();
-    info!(split_id = packaged_split.split_id(), "staging-split");
     metastore
         .stage_split(index_id, split_metadata.clone())
+        .instrument(tracing::info_span!("staging_split"))
         .await?;
     counters.num_staged_splits.fetch_add(1, Ordering::SeqCst);
 
-    info!(split_id = packaged_split.split_id(), "storing-split");
     split_store
         .store_split(
             &split_metadata,
@@ -349,7 +347,7 @@ async fn stage_and_upload_split(
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
@@ -416,7 +414,7 @@ mod tests {
                 }],
                 checkpoint_delta_opt,
                 PublishLock::default(),
-                Instant::now(),
+                Span::none(),
             ))
             .await?;
         assert_eq!(
@@ -536,7 +534,7 @@ mod tests {
                 vec![packaged_split_1, package_split_2],
                 None,
                 PublishLock::default(),
-                Instant::now(),
+                Span::none(),
             ))
             .await?;
         assert_eq!(
@@ -640,7 +638,7 @@ mod tests {
                 }],
                 checkpoint_delta_opt,
                 PublishLock::default(),
-                Instant::now(),
+                Span::none(),
             ))
             .await?;
         assert_eq!(
