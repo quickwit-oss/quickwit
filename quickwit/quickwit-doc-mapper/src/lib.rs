@@ -79,6 +79,7 @@ pub fn default_doc_mapper_for_test() -> DefaultDocMapper {
                 {
                     "name": "response_date",
                     "type": "datetime",
+                    "input_formats": ["rfc3339", "unix_ts_secs"],
                     "fast": true
                 },
                 {

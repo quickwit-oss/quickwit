@@ -726,20 +726,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_indexing_pipeline_retry_1() -> anyhow::Result<()> {
+    async fn test_indexing_pipeline_retry_0() -> anyhow::Result<()> {
         test_indexing_pipeline_num_fails_before_success(0).await?;
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_indexing_pipeline_retry_2() -> anyhow::Result<()> {
-        test_indexing_pipeline_num_fails_before_success(2).await?;
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_indexing_pipeline_retry_3() -> anyhow::Result<()> {
-        test_indexing_pipeline_num_fails_before_success(3).await?;
+    async fn test_indexing_pipeline_retry_1() -> anyhow::Result<()> {
+        test_indexing_pipeline_num_fails_before_success(1).await?;
         Ok(())
     }
 
