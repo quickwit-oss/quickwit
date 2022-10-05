@@ -248,13 +248,19 @@ pub mod test_suite {
         assert_eq!(source.enabled(), true);
 
         // disable source
-        metastore.toggle_source(index_id, &source.source_id, false).await.unwrap();
+        metastore
+            .toggle_source(index_id, &source.source_id, false)
+            .await
+            .unwrap();
         let index_metadata = metastore.index_metadata(index_id).await.unwrap();
         let source = index_metadata.sources.get(source_id).unwrap();
         assert_eq!(source.enabled(), false);
 
         // enable source
-        metastore.toggle_source(index_id, &source.source_id, true).await.unwrap();
+        metastore
+            .toggle_source(index_id, &source.source_id, true)
+            .await
+            .unwrap();
         let index_metadata = metastore.index_metadata(index_id).await.unwrap();
         let source = index_metadata.sources.get(source_id).unwrap();
         assert_eq!(source.enabled(), true);

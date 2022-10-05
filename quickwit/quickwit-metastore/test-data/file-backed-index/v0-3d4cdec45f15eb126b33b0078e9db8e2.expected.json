@@ -1,5 +1,15 @@
 {
-  "delete_tasks": [],
+  "delete_tasks": [
+    {
+      "create_timestamp": 0,
+      "delete_query": {
+        "index_id": "index",
+        "query": "Harry Potter",
+        "search_fields": []
+      },
+      "opstamp": 10
+    }
+  ],
   "index": {
     "checkpoint": {
       "kafka-source": {
@@ -59,11 +69,10 @@
       "commit_timeout_secs": 301,
       "docstore_blocksize": 1000000,
       "docstore_compression_level": 8,
+      "merge_enabled": true,
       "merge_policy": {
         "max_merge_factor": 11,
-        "merge_factor": 9,
-        "min_level_num_docs": 100000,
-        "type": "stable_log"
+        "merge_factor": 9
       },
       "resources": {
         "heap_size": 3
@@ -96,12 +105,12 @@
       }
     ],
     "update_timestamp": 1789,
-    "version": "2"
+    "version": "1"
   },
   "splits": [
     {
       "create_timestamp": 3,
-      "delete_opstamp": 0,
+      "delete_opstamp": 10,
       "footer_offsets": {
         "end": 2000,
         "start": 1000
@@ -109,9 +118,9 @@
       "index_id": "my-index",
       "node_id": "node/1",
       "num_docs": 12303,
-      "num_merge_ops": 0,
+      "num_merge_ops": 3,
       "partition_id": 7,
-      "publish_timestamp": null,
+      "publish_timestamp": 1789,
       "source_id": "source",
       "split_id": "split",
       "split_state": "Published",

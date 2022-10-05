@@ -34,9 +34,9 @@ pub use index_config::{
     IndexingSettingsLegacy, RetentionPolicy, RetentionPolicyCutoffReference, SearchSettings,
 };
 pub use source_config::{
-    FileSourceParams, IngestApiSourceParams, KafkaSourceParams, KinesisSourceParams,
-    RegionOrEndpoint, SourceConfig, SourceParams, VecSourceParams, VoidSourceParams,
-    CLI_INGEST_SOURCE_ID,
+    ingest_api_default_source_config, FileSourceParams, IngestApiSourceParams, KafkaSourceParams,
+    KinesisSourceParams, RegionOrEndpoint, SourceConfig, SourceParams, VecSourceParams,
+    VoidSourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 
 fn is_false(val: &bool) -> bool {

@@ -27,8 +27,11 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::{is_false, validate_identifier};
 
-/// Reserved source ID for the `quickwit index ingest` CLI command.
+/// Reserved source ID for the `Quickwit index ingest` CLI command.
 pub const CLI_INGEST_SOURCE_ID: &str = ".cli-ingest-source";
+
+/// Reserved source ID used for Quickwit ingest API.
+pub const INGEST_API_SOURCE_ID: &str = ".ingest-api";
 
 fn default_num_pipelines() -> usize {
     1
@@ -169,7 +172,21 @@ impl SourceConfig {
 
     pub fn enabled(&self) -> bool {
         self.enabled
-    } 
+    }
+}
+
+/// Creates de default ingest-api source config.
+pub fn ingest_api_default_source_config(index_id: &str) -> SourceConfig {
+    SourceConfig {
+        source_id: INGEST_API_SOURCE_ID.to_string(),
+        num_pipelines: 1,
+        enabled: true,
+        source_params: SourceParams::IngestApi(IngestApiSourceParams {
+            index_id: index_id.to_string(),
+            queues_dir_path: None,
+            batch_num_bytes_limit: None,
+        }),
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -321,7 +338,12 @@ pub struct VoidSourceParams;
 #[serde(deny_unknown_fields)]
 pub struct IngestApiSourceParams {
     pub index_id: String,
-    pub queues_dir_path: PathBuf,
+    // IngestApiSource can be instantiated by any indexing node when starting an ingest API.
+    // Since nodes can have different QuickwitConfig, the `queues_dir_path` needs
+    // to be during instantiation based on the node QuickwitConfig.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub queues_dir_path: Option<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub batch_num_bytes_limit: Option<u64>,
 }
@@ -569,7 +591,7 @@ mod tests {
         assert_eq!(ingest_api_params.batch_num_bytes_limit, Some(200000));
         assert_eq!(
             ingest_api_params.queues_dir_path,
-            Path::new("./qwdata/queues")
+            Some(PathBuf::from("./qwdata/queues"))
         )
     }
 }

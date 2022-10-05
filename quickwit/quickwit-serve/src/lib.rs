@@ -186,7 +186,6 @@ pub async fn serve_quickwit(
     let index_service = Arc::new(IndexService::new(
         metastore.clone(),
         storage_resolver,
-        config.data_dir_path.clone(),
         config.default_index_root_uri.clone(),
     ));
 

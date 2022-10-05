@@ -42,8 +42,9 @@
         "type": "text"
       }
     ],
-    "max_num_partitions": 8,
+    "max_num_partitions": 20,
     "mode": "dynamic",
+    "partition_key": "tenant",
     "store_source": true,
     "tag_fields": [
       "log_level",
@@ -56,11 +57,10 @@
     "commit_timeout_secs": 301,
     "docstore_blocksize": 1000000,
     "docstore_compression_level": 8,
+    "merge_enabled": true,
     "merge_policy": {
       "max_merge_factor": 11,
-      "merge_factor": 9,
-      "min_level_num_docs": 100000,
-      "type": "stable_log"
+      "merge_factor": 9
     },
     "resources": {
       "heap_size": 3
@@ -70,6 +70,11 @@
     "split_num_docs_target": 10000001,
     "timestamp_field": "timestamp"
   },
+  "retention_policy": {
+    "cutoff_reference": "publish_timestamp",
+    "period": "90 days",
+    "schedule": "daily"
+  },
   "search_settings": {
     "default_search_fields": [
       "message"
@@ -78,6 +83,7 @@
   "sources": [
     {
       "enabled": true,
+      "num_pipelines": 2,
       "params": {
         "client_params": {},
         "topic": "kafka-topic"
@@ -87,5 +93,5 @@
     }
   ],
   "update_timestamp": 1789,
-  "version": "2"
+  "version": "1"
 }

@@ -24,6 +24,7 @@ use std::time::Duration;
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
+use quickwit_config::INGEST_API_SOURCE_ID;
 use quickwit_ingest_api::IngestApiService;
 use quickwit_metastore::Metastore;
 use quickwit_proto::ingest_api::{DropQueueRequest, ListQueuesRequest};
@@ -32,7 +33,6 @@ use tracing::{debug, error, info, instrument};
 
 use super::IndexingService;
 use crate::models::ShutdownPipelines;
-use crate::source::INGEST_API_SOURCE_ID;
 
 const RUN_INTERVAL: Duration = if cfg!(test) {
     Duration::from_secs(60) // 1min

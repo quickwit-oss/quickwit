@@ -34,6 +34,7 @@ use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::{
     IndexConfig, IndexerConfig, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
+    INGEST_API_SOURCE_ID,
 };
 use quickwit_core::{
     clear_cache_directory, remove_indexing_directory, validate_storage_uri, IndexService,
@@ -42,7 +43,6 @@ use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
 use quickwit_indexing::models::{
     DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
 };
-use quickwit_indexing::source::INGEST_API_SOURCE_ID;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
@@ -635,7 +635,6 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     let index_service = IndexService::new(
         metastore,
         quickwit_storage_uri_resolver().clone(),
-        quickwit_config.data_dir_path,
         quickwit_config.default_index_root_uri,
     );
     index_service
@@ -936,7 +935,6 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         let index_service = IndexService::new(
             metastore.clone(),
             quickwit_storage_uri_resolver().clone(),
-            config.data_dir_path.clone(),
             config.default_index_root_uri.clone(),
         );
         index_service.clear_index(&args.index_id).await?;
@@ -1103,7 +1101,6 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     let index_service = IndexService::new(
         metastore,
         quickwit_storage_uri_resolver().clone(),
-        quickwit_config.data_dir_path.clone(),
         quickwit_config.default_index_root_uri,
     );
     let affected_files = index_service
@@ -1143,7 +1140,6 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     let index_service = IndexService::new(
         metastore,
         quickwit_storage_uri_resolver().clone(),
-        quickwit_config.data_dir_path,
         quickwit_config.default_index_root_uri,
     );
     let deleted_files = index_service

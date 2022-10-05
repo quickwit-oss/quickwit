@@ -21,6 +21,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
 use quickwit_config::IngestApiSourceParams;
@@ -73,7 +74,13 @@ impl IngestApiSource {
         params: IngestApiSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
-        let ingest_api_service = get_ingest_api_service(&params.queues_dir_path).await?;
+        let queues_dir_path = params.queues_dir_path.as_ref().with_context(|| {
+            format!(
+                "Expected a queue path to be configured on the source `{}`.",
+                source_id
+            )
+        })?;
+        let ingest_api_service = get_ingest_api_service(queues_dir_path).await?;
         let partition_id = PartitionId::from(params.index_id.clone());
         let previous_offset = if let Some(Position::Offset(offset_str)) =
             checkpoint.position_for_partition(&partition_id)
@@ -212,12 +219,13 @@ mod tests {
 
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_common::rand::append_random_suffix;
+    use quickwit_config::INGEST_API_SOURCE_ID;
     use quickwit_ingest_api::{add_doc, init_ingest_api, Queues};
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
     use quickwit_proto::ingest_api::{DocBatch, IngestRequest};
 
     use super::*;
-    use crate::source::{SourceActor, INGEST_API_SOURCE_ID};
+    use crate::source::SourceActor;
 
     fn make_ingest_request(index_id: String, num_batch: u64, batch_size: usize) -> IngestRequest {
         let mut doc_batches = vec![];
@@ -260,7 +268,7 @@ mod tests {
 
         let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
         let params = IngestApiSourceParams {
-            queues_dir_path: queues_dir_path.to_path_buf(),
+            queues_dir_path: Some(queues_dir_path.to_path_buf()),
             index_id,
             batch_num_bytes_limit: Some(4 * 500),
         };
@@ -306,7 +314,7 @@ mod tests {
 
         let (doc_processor_mailbox, _doc_processor_inbox) = create_test_mailbox();
         let params = IngestApiSourceParams {
-            queues_dir_path: queues_dir_path.to_path_buf(),
+            queues_dir_path: Some(queues_dir_path.to_path_buf()),
             index_id,
             batch_num_bytes_limit: Some(4 * 500),
         };
@@ -346,7 +354,7 @@ mod tests {
 
         let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
         let params = IngestApiSourceParams {
-            queues_dir_path: queues_dir_path.to_path_buf(),
+            queues_dir_path: Some(queues_dir_path.to_path_buf()),
             index_id,
             batch_num_bytes_limit: None,
         };
@@ -410,7 +418,7 @@ mod tests {
 
         let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
         let params = IngestApiSourceParams {
-            queues_dir_path: queues_dir_path.to_path_buf(),
+            queues_dir_path: Some(queues_dir_path.to_path_buf()),
             index_id,
             batch_num_bytes_limit: None,
         };

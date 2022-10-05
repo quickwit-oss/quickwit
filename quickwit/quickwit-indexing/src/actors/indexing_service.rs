@@ -28,6 +28,7 @@ use quickwit_actors::{
 use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_config::{
     IndexerConfig, IngestApiSourceParams, SourceConfig, SourceParams, VecSourceParams,
+    INGEST_API_SOURCE_ID,
 };
 use quickwit_ingest_api::{get_ingest_api_service, QUEUES_DIR_NAME};
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
@@ -45,7 +46,6 @@ use crate::models::{
     ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
     WeakIndexingDirectory,
 };
-use crate::source::INGEST_API_SOURCE_ID;
 use crate::split_store::SplitStoreSpaceQuota;
 use crate::{
     IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics,
@@ -226,9 +226,44 @@ impl IndexingService {
             }
             ctx.record_progress();
         }
-        if self.enable_ingest_api {
+
+        if !self.enable_ingest_api {
+            return Ok(pipeline_ids);
+        }
+
+        let mut source_config = index_metadata
+            .sources
+            .get(INGEST_API_SOURCE_ID)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Expected index `{}` to have a default source `{}`.",
+                    index_id, INGEST_API_SOURCE_ID
+                )
+            })
+            .clone();
+        if source_config.enabled {
+            let queues_dir_path = self.data_dir_path.join(QUEUES_DIR_NAME);
+            if let SourceParams::IngestApi(params) = source_config.source_params {
+                source_config.source_params = SourceParams::IngestApi(IngestApiSourceParams {
+                    index_id: params.index_id,
+                    queues_dir_path: Some(queues_dir_path.clone()),
+                    batch_num_bytes_limit: params.batch_num_bytes_limit,
+                });
+            } else {
+                panic!(
+                    "Expected default source `{}` to be of type `ingest-api`.",
+                    INGEST_API_SOURCE_ID
+                );
+            }
+
             let pipeline_id = self
-                .spawn_ingest_api_pipeline(ctx, index_id, index_metadata)
+                .spawn_ingest_api_pipeline(
+                    ctx,
+                    index_id,
+                    index_metadata,
+                    source_config,
+                    queues_dir_path.as_path(),
+                )
                 .await?;
             pipeline_ids.push(pipeline_id);
         }
@@ -288,20 +323,19 @@ impl IndexingService {
         ctx: &ActorContext<Self>,
         index_id: String,
         index_metadata: IndexMetadata,
+        source_config: SourceConfig,
+        queues_dir_path: &Path,
     ) -> Result<IndexingPipelineId, IndexingServiceError> {
-        let source_id = INGEST_API_SOURCE_ID.to_string();
-
         let pipeline_id = IndexingPipelineId {
             index_id: index_id.clone(),
-            source_id: source_id.clone(),
+            source_id: INGEST_API_SOURCE_ID.to_string(),
             node_id: self.node_id.clone(),
             pipeline_ord: 0,
         };
         if self.indexing_pipeline_handles.contains_key(&pipeline_id) {
             return Ok(pipeline_id);
         }
-        let queues_dir_path = self.data_dir_path.join(QUEUES_DIR_NAME);
-        let ingest_api_service = get_ingest_api_service(&queues_dir_path)
+        let ingest_api_service = get_ingest_api_service(queues_dir_path)
             .await
             .expect("The ingest API service should have been initialized beforehand.");
 
@@ -314,16 +348,6 @@ impl IndexingService {
             .await
             .map_err(|err| IndexingServiceError::InvalidParams(err.into()))?;
 
-        let source_config = SourceConfig {
-            source_id,
-            num_pipelines: 1,
-            enabled: true,
-            source_params: SourceParams::IngestApi(IngestApiSourceParams {
-                index_id,
-                batch_num_bytes_limit: None,
-                queues_dir_path,
-            }),
-        };
         self.spawn_pipeline_inner(
             ctx,
             pipeline_id.clone(),
@@ -640,7 +664,7 @@ mod tests {
     use quickwit_actors::{ObservationType, Universe};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
-    use quickwit_config::{SourceConfig, VecSourceParams};
+    use quickwit_config::{ingest_api_default_source_config, SourceConfig, VecSourceParams};
     use quickwit_ingest_api::init_ingest_api;
     use quickwit_metastore::quickwit_metastore_uri_resolver;
 
@@ -659,6 +683,10 @@ mod tests {
         let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
 
         metastore.create_index(index_metadata).await.unwrap();
+        metastore
+            .add_source(&index_id, ingest_api_default_source_config(&index_id))
+            .await
+            .unwrap();
 
         // Test `IndexingService::new`.
         let temp_dir = tempfile::tempdir().unwrap();

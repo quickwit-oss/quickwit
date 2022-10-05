@@ -305,12 +305,20 @@ async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
         .resolve(&qw_config.metastore_uri)
         .await?;
     let source_config_content = load_file(&args.source_config_uri).await?;
-    let source =
+    let source_config =
         SourceConfig::load(&args.source_config_uri, source_config_content.as_slice()).await?;
-    let source_id = source.source_id.clone();
-    check_source_connectivity(&source).await?;
+    if let SourceParams::IngestApi(_) = source_config.source_params {
+        bail!(
+            "Could not create the source `{}`, sources of type `ingest-api` are for internal use \
+             only.",
+            source_config.source_id
+        );
+    };
 
-    metastore.add_source(&args.index_id, source).await?;
+    let source_id = source_config.source_id.clone();
+    check_source_connectivity(&source_config).await?;
+
+    metastore.add_source(&args.index_id, source_config).await?;
     println!(
         "Source `{}` successfully created for index `{}`.",
         source_id, args.index_id
@@ -324,18 +332,18 @@ async fn toggle_source_cli(args: ToggleSourceArgs) -> anyhow::Result<()> {
         .resolve(&config.metastore_uri)
         .await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
-    let source_config = index_metadata
-        .sources
-        .get(&args.source_id)
-        .ok_or(anyhow::anyhow!(
+    let source_config = index_metadata.sources.get(&args.source_id).ok_or_else(|| {
+        anyhow::anyhow!(
             "The source `{}` doesn't exist for index `{}`.",
             args.source_id,
             args.index_id
-        ))?;
+        )
+    })?;
 
     if let SourceParams::IngestApi(_) = source_config.source_params {
         bail!(
-            "The source `{}` of type `IngestApi` cannot be modified directly.",
+            "Could not update the source `{}`, sources of type `ingest-api` are for internal use \
+             only.",
             args.source_id
         );
     };
@@ -355,6 +363,22 @@ async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri)
         .await?;
+    let index_metadata = metastore.index_metadata(&args.index_id).await?;
+    let source_config = index_metadata.sources.get(&args.source_id).ok_or_else(|| {
+        anyhow::anyhow!(
+            "The source `{}` doesn't exist for index `{}`.",
+            args.source_id,
+            args.index_id
+        )
+    })?;
+    if let SourceParams::IngestApi(_) = source_config.source_params {
+        bail!(
+            "Could not delete the source `{}`, sources of type `ingest-api` are for internal use \
+             only.",
+            source_config.source_id
+        );
+    };
+
     metastore
         .delete_source(&args.index_id, &args.source_id)
         .await?;
