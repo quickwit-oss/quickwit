@@ -21,6 +21,7 @@ use std::cmp::Ordering;
 use std::ops::Range;
 
 use quickwit_config::merge_policy_config::StableLogMergePolicyConfig;
+use quickwit_config::IndexingSettings;
 use quickwit_metastore::SplitMetadata;
 use tracing::debug;
 
@@ -68,7 +69,7 @@ impl Default for StableLogMergePolicy {
     fn default() -> Self {
         StableLogMergePolicy {
             config: Default::default(),
-            split_num_docs_target: 10_000_000,
+            split_num_docs_target: IndexingSettings::default_split_num_docs_target(),
         }
     }
 }

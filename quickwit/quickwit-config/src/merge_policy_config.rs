@@ -21,10 +21,13 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Eq, PartialEq)]
 pub struct ConstWriteAmplificationMergePolicyConfig {
+    /// Number of splits to merge together in a single merge operation.
     #[serde(default = "default_merge_factor")]
     pub merge_factor: usize,
+    /// Maximum number of splits that can be merged together in a single merge operation.
     #[serde(default = "default_max_merge_factor")]
     pub max_merge_factor: usize,
+    /// Maximum number of merges that a given split should undergo.
     #[serde(default = "default_max_merge_ops")]
     pub max_merge_ops: usize,
 }
@@ -41,10 +44,13 @@ impl Default for ConstWriteAmplificationMergePolicyConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub struct StableLogMergePolicyConfig {
+    /// Number of docs below which all splits are considered as belonging to the same level.
     #[serde(default = "default_min_level_num_docs")]
     pub min_level_num_docs: usize,
+    /// Number of splits to merge together in a single merge operation.
     #[serde(default = "default_merge_factor")]
     pub merge_factor: usize,
+    /// Maximum number of splits that can be merged together in a single merge operation.
     #[serde(default = "default_max_merge_factor")]
     pub max_merge_factor: usize,
 }
@@ -95,24 +101,20 @@ impl Default for MergePolicyConfig {
 
 impl MergePolicyConfig {
     pub fn validate(&self) -> anyhow::Result<()> {
-        match self {
-            MergePolicyConfig::Nop => {}
+        let (merge_factor, max_merge_factor) = match self {
+            MergePolicyConfig::Nop => {
+                return Ok(());
+            }
             MergePolicyConfig::ConstWriteAmplification(config) => {
-                if config.max_merge_factor < config.merge_factor {
-                    anyhow::bail!(
-                        "Index config merge policy `max_merge_factor` must be superior or equal \
-                         to `merge_factor`."
-                    );
-                }
+                (config.merge_factor, config.max_merge_factor)
             }
-            MergePolicyConfig::StableLog(config) => {
-                if config.max_merge_factor < config.merge_factor {
-                    anyhow::bail!(
-                        "Index config merge policy `max_merge_factor` must be superior or equal \
-                         to `merge_factor`."
-                    );
-                }
-            }
+            MergePolicyConfig::StableLog(config) => (config.merge_factor, config.max_merge_factor),
+        };
+        if max_merge_factor < merge_factor {
+            anyhow::bail!(
+                "Index config merge policy `max_merge_factor` must be superior or equal to \
+                 `merge_factor`."
+            );
         }
         Ok(())
     }

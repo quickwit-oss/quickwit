@@ -20,11 +20,32 @@
 use std::collections::HashMap;
 
 use quickwit_config::merge_policy_config::ConstWriteAmplificationMergePolicyConfig;
+use quickwit_config::IndexingSettings;
 use quickwit_metastore::SplitMetadata;
 
 use super::MergeOperation;
 use crate::merge_policy::MergePolicy;
 
+/// The `ConstWriteAmplificationMergePolicy` has been designed for a use
+/// case where there are a several index partitions with different sizes,
+/// and partitions tend to be searched separately. (e.g. partitioning by tenant.)
+///
+/// In that case, the StableLogMergePolicy would tend to target the same number
+/// of docs for all tenants. Assuming a merge factor of 10 and a target num docs of 10 millions,
+/// The write amplification observed for a small tenant, emitting splits of 1
+/// document would be 7.
+///
+/// These extra merges have the benefit of making less splits, but really we are
+/// over-trading write amplification for read amplification here.
+///
+/// The `ConstWriteAmplificationMergePolicy` is very simple. It targets a number
+/// of merges instead, and stops once this number of merges is reached.
+///
+/// Only splits with the same number of merge operations are merged together,
+/// and for a given merge operation, we build split in a greedy way.
+/// After sorting the splits per creation date, we append splits one after the
+/// other until we either reach `max_merge_factor` or we exceed the
+/// targeted` split_num_docs`.
 #[derive(Debug, Clone)]
 pub struct ConstWriteAmplificationMergePolicy {
     config: ConstWriteAmplificationMergePolicyConfig,
@@ -35,7 +56,7 @@ impl Default for ConstWriteAmplificationMergePolicy {
     fn default() -> Self {
         ConstWriteAmplificationMergePolicy {
             config: Default::default(),
-            split_num_docs_target: 10_000_000,
+            split_num_docs_target: IndexingSettings::default_split_num_docs_target(),
         }
     }
 }

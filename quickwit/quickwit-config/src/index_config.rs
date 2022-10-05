@@ -156,8 +156,7 @@ pub struct IndexingSettings {
     /// `split_num_docs_target` are considered mature and never merged.
     #[serde(default = "IndexingSettings::default_split_num_docs_target")]
     pub split_num_docs_target: usize,
-    /// A split containing a number of docs greather than or equal to this value is considered
-    /// mature.
+
     #[serde(default)]
     pub merge_policy: MergePolicyConfig,
     #[serde(default)]
@@ -293,7 +292,7 @@ impl IndexingSettings {
         8
     }
 
-    fn default_split_num_docs_target() -> usize {
+    pub fn default_split_num_docs_target() -> usize {
         10_000_000
     }
 
