@@ -46,7 +46,7 @@ mod spawn_builder;
 mod supervisor;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 mod universe;
 
 pub use actor::{Actor, ActorExitStatus, Handler};
@@ -91,15 +91,5 @@ impl<E: fmt::Debug + ServiceError> ServiceError for AskError<E> {
             AskError::ProcessMessageError => ServiceErrorCode::Internal,
             AskError::ErrorReply(err) => err.status_code(),
         }
-    }
-}
-
-struct TestActor;
-
-impl Actor for TestActor {
-    type ObservableState = usize;
-
-    fn observable_state(&self) -> Self::ObservableState {
-        0
     }
 }

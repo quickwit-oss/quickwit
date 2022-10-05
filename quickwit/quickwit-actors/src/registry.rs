@@ -124,13 +124,10 @@ impl ActorRegistry {
             }));
     }
 
-    // As far as I can tell this is a false alarm from clippy.
-    #[allow(clippy::await_holding_lock)]
     pub async fn observe(&self, timeout: Duration) -> Vec<ActorObservation> {
         self.gc();
-        let rlock = self.actors.read().unwrap();
         let mut obs_futures = Vec::new();
-        for registry_for_type in rlock.values() {
+        for registry_for_type in self.actors.read().unwrap().values() {
             for obs in &registry_for_type.observables {
                 if obs.is_disconnected() {
                     continue;
@@ -150,7 +147,6 @@ impl ActorRegistry {
                 });
             }
         }
-        drop(rlock);
         future::join_all(obs_futures.into_iter()).await
     }
 
@@ -193,38 +189,39 @@ fn get_iter<A: Actor>(
 mod tests {
     use std::time::Duration;
 
-    use crate::{TestActor, Universe};
+    use crate::tests::PingReceiverActor;
+    use crate::Universe;
 
     #[tokio::test]
     async fn test_registry() {
-        let test_actor = TestActor;
+        let test_actor = PingReceiverActor::default();
         let universe = Universe::new();
         let (_mailbox, _handle) = universe.spawn_builder().spawn(test_actor);
-        let _actor_mailbox = universe.get_one::<TestActor>().unwrap();
+        let _actor_mailbox = universe.get_one::<PingReceiverActor>().unwrap();
     }
 
     #[tokio::test]
     async fn test_registry_killed_actor() {
-        let test_actor = TestActor;
+        let test_actor = PingReceiverActor::default();
         let universe = Universe::new();
         let (_mailbox, handle) = universe.spawn_builder().spawn(test_actor);
         handle.kill().await;
-        assert!(universe.get_one::<TestActor>().is_none());
+        assert!(universe.get_one::<PingReceiverActor>().is_none());
     }
 
     #[tokio::test]
     async fn test_registry_last_mailbox_dropped_actor() {
-        let test_actor = TestActor;
+        let test_actor = PingReceiverActor::default();
         let universe = Universe::new();
         let (mailbox, handle) = universe.spawn_builder().spawn(test_actor);
         drop(mailbox);
         handle.join().await;
-        assert!(universe.get_one::<TestActor>().is_none());
+        assert!(universe.get_one::<PingReceiverActor>().is_none());
     }
 
     #[tokio::test]
     async fn test_get_actor_states() {
-        let test_actor = TestActor;
+        let test_actor = PingReceiverActor::default();
         let universe = Universe::new();
         let (_mailbox, _handle) = universe.spawn_builder().spawn(test_actor);
         let obs = universe.observe(Duration::from_millis(1000)).await;

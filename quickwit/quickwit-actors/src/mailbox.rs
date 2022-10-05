@@ -304,18 +304,18 @@ impl<A: Actor> WeakMailbox<A> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::TestActor;
+    use crate::tests::PingReceiverActor;
 
     #[test]
     fn test_weak_mailbox_downgrade_upgrade() {
-        let (mailbox, _inbox) = create_test_mailbox::<TestActor>();
+        let (mailbox, _inbox) = create_test_mailbox::<PingReceiverActor>();
         let weak_mailbox = mailbox.downgrade();
         assert!(weak_mailbox.upgrade().is_some());
     }
 
     #[test]
     fn test_weak_mailbox_failing_upgrade() {
-        let (mailbox, _inbox) = create_test_mailbox::<TestActor>();
+        let (mailbox, _inbox) = create_test_mailbox::<PingReceiverActor>();
         let weak_mailbox = mailbox.downgrade();
         drop(mailbox);
         assert!(weak_mailbox.upgrade().is_none());
