@@ -212,7 +212,7 @@ precision: milliseconds
 | `stored`        | Whether the field values are stored in the document store | `true` |
 | `indexed`       | Whether the field values are indexed | `true` |
 | `fast`          | Whether the field values are stored in a fast field | `false` |
-| `precision`     | The precision used to store the fast values | `seconds` |
+| `precision`     | The precision (`seconds`, `milliseconds`, or `microseconds`) used to store the fast values | `seconds` |
 
 #### `bool` type
 
