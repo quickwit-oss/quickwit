@@ -91,7 +91,7 @@ pub struct RoutingExpr {
 impl Default for RoutingExpr {
     fn default() -> Self {
         Self {
-            inner_opt: Default::default(),
+            inner_opt: None,
             max_num_partitions: NonZeroU64::new(1).unwrap(),
             salted_hasher: Default::default(),
         }
@@ -101,19 +101,11 @@ impl Default for RoutingExpr {
 impl RoutingExpr {
     pub fn new(expr_dsl_str: &str, max_num_partitions: NonZeroU64) -> anyhow::Result<Self> {
         let expr_dsl_str = expr_dsl_str.trim();
-        if max_num_partitions.get() <= 1 {
+        if max_num_partitions.get() <= 1 || expr_dsl_str.is_empty() {
             return Ok(RoutingExpr::default());
         }
 
         let mut salted_hasher: SipHasher = SipHasher::new();
-
-        if expr_dsl_str.is_empty() {
-            return Ok(RoutingExpr {
-                inner_opt: None,
-                max_num_partitions,
-                salted_hasher: SipHasher::new(),
-            });
-        }
 
         let inner: InnerRoutingExpr = InnerRoutingExpr::from_str(expr_dsl_str)?;
         // We hash the expression tree here instead of hashing the str, or
