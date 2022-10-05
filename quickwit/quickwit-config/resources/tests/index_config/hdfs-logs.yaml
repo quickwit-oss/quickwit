@@ -32,14 +32,13 @@ retention:
   schedule: daily
 
 indexing_settings:
-  demux_field: tenant_id
   timestamp_field: timestamp
   sort_field: timestamp
   sort_order: asc
   commit_timeout_secs: 61
   split_num_docs_target: 10000001
   merge_policy:
-    demux_factor: 7
+    type: "stable_log"
     merge_factor: 9
     max_merge_factor: 11
   resources:

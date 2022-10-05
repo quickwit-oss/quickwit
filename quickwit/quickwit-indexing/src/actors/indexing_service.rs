@@ -25,6 +25,7 @@ use async_trait::async_trait;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Observation, Supervisable,
 };
+use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_config::{
     IndexerConfig, IngestApiSourceParams, SourceConfig, SourceParams, VecSourceParams,
 };
@@ -345,7 +346,9 @@ impl IndexingService {
             pipeline_ord: 0,
         };
         let mut index_metadata = self.index_metadata(ctx, &pipeline_id.index_id).await?;
-        index_metadata.indexing_settings.merge_enabled = merge_enabled;
+        if !merge_enabled {
+            index_metadata.indexing_settings.merge_policy = MergePolicyConfig::Nop
+        }
         let source_config = SourceConfig {
             source_id: pipeline_id.source_id.clone(),
             num_pipelines: 1,

@@ -23,14 +23,15 @@ use regex::Regex;
 
 mod config;
 mod index_config;
+pub mod merge_policy_config;
 pub mod service;
 mod source_config;
 mod templating;
 
 pub use config::{IndexerConfig, QuickwitConfig, SearcherConfig, DEFAULT_QW_CONFIG_PATH};
 pub use index_config::{
-    build_doc_mapper, DocMapping, IndexConfig, IndexingResources, IndexingSettings, MergePolicy,
-    RetentionPolicy, RetentionPolicyCutoffReference, SearchSettings,
+    build_doc_mapper, DocMapping, IndexConfig, IndexingResources, IndexingSettings,
+    IndexingSettingsLegacy, RetentionPolicy, RetentionPolicyCutoffReference, SearchSettings,
 };
 pub use source_config::{
     FileSourceParams, IngestApiSourceParams, KafkaSourceParams, KinesisSourceParams,

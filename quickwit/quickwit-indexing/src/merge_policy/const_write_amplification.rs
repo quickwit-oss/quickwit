@@ -19,6 +19,8 @@
 
 use std::collections::HashMap;
 
+use quickwit_config::merge_policy_config::ConstWriteAmplificationMergePolicyConfig;
+use quickwit_config::IndexingSettings;
 use quickwit_metastore::SplitMetadata;
 
 use super::MergeOperation;
@@ -46,32 +48,38 @@ use crate::merge_policy::MergePolicy;
 /// targeted` split_num_docs`.
 #[derive(Debug, Clone)]
 pub struct ConstWriteAmplificationMergePolicy {
-    max_merge_ops: usize,
-    merge_factor: usize,
-    max_merge_factor: usize,
+    config: ConstWriteAmplificationMergePolicyConfig,
     split_num_docs_target: usize,
 }
 
 impl Default for ConstWriteAmplificationMergePolicy {
-    fn default() -> ConstWriteAmplificationMergePolicy {
+    fn default() -> Self {
         ConstWriteAmplificationMergePolicy {
-            max_merge_ops: 4,
-            merge_factor: 10,
-            max_merge_factor: 12,
-            split_num_docs_target: 10_000_000,
+            config: Default::default(),
+            split_num_docs_target: IndexingSettings::default_split_num_docs_target(),
         }
     }
 }
 
 impl ConstWriteAmplificationMergePolicy {
+    pub fn new(
+        config: ConstWriteAmplificationMergePolicyConfig,
+        split_num_docs_target: usize,
+    ) -> Self {
+        ConstWriteAmplificationMergePolicy {
+            config,
+            split_num_docs_target,
+        }
+    }
+
     #[cfg(test)]
     fn for_test() -> ConstWriteAmplificationMergePolicy {
-        ConstWriteAmplificationMergePolicy {
+        let config = ConstWriteAmplificationMergePolicyConfig {
             max_merge_ops: 3,
             merge_factor: 3,
             max_merge_factor: 5,
-            split_num_docs_target: 10_000_000,
-        }
+        };
+        Self::new(config, 10_000_000)
     }
 
     /// Returns a merge operation within one `num_merge_ops` level if one can be built from the
@@ -83,7 +91,7 @@ impl ConstWriteAmplificationMergePolicy {
     ) -> Option<MergeOperation> {
         let mut num_splits_in_merge = 0;
         let mut num_docs_in_merge = 0;
-        for split in splits.iter().take(self.max_merge_factor) {
+        for split in splits.iter().take(self.config.max_merge_factor) {
             num_docs_in_merge += split.num_docs;
             num_splits_in_merge += 1;
             if num_docs_in_merge >= self.split_num_docs_target {
@@ -91,7 +99,7 @@ impl ConstWriteAmplificationMergePolicy {
             }
         }
         if (num_docs_in_merge < self.split_num_docs_target)
-            && (num_splits_in_merge < self.merge_factor)
+            && (num_splits_in_merge < self.config.merge_factor)
         {
             return None;
         }
@@ -143,7 +151,7 @@ impl MergePolicy for ConstWriteAmplificationMergePolicy {
     }
 
     fn is_mature(&self, split: &SplitMetadata) -> bool {
-        if split.num_merge_ops >= self.max_merge_ops {
+        if split.num_merge_ops >= self.config.max_merge_ops {
             return true;
         }
         if split.num_docs >= self.split_num_docs_target {
@@ -155,8 +163,8 @@ impl MergePolicy for ConstWriteAmplificationMergePolicy {
     #[cfg(test)]
     fn check_is_valid(&self, merge_op: &MergeOperation, _remaining_splits: &[SplitMetadata]) {
         use std::collections::HashSet;
-        assert!(merge_op.splits_as_slice().len() <= self.max_merge_factor);
-        if merge_op.splits_as_slice().len() < self.merge_factor {
+        assert!(merge_op.splits_as_slice().len() <= self.config.max_merge_factor);
+        if merge_op.splits_as_slice().len() < self.config.merge_factor {
             let num_docs: usize = merge_op
                 .splits_as_slice()
                 .iter()
@@ -172,7 +180,7 @@ impl MergePolicy for ConstWriteAmplificationMergePolicy {
             .map(|merge_op| merge_op.num_merge_ops)
             .collect();
         assert_eq!(num_merge_ops.len(), 1);
-        assert!(num_merge_ops.into_iter().next().unwrap() < self.max_merge_ops);
+        assert!(num_merge_ops.into_iter().next().unwrap() < self.config.max_merge_ops);
     }
 }
 
@@ -213,7 +221,7 @@ mod tests {
     #[test]
     fn test_const_write_merge_policy_simple() {
         let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
-        let mut splits = (0..merge_policy.merge_factor)
+        let mut splits = (0..merge_policy.config.merge_factor)
             .map(|i| SplitMetadata {
                 split_id: format!("split-{i}"),
                 num_docs: 1_000,
@@ -225,33 +233,34 @@ mod tests {
         assert_eq!(operations.len(), 1);
         assert_eq!(
             operations[0].splits_as_slice().len(),
-            merge_policy.merge_factor
+            merge_policy.config.merge_factor
         );
     }
 
     #[test]
     fn test_const_write_merge_policy_merge_factor_max() {
         let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
-        let mut splits = (0..merge_policy.max_merge_factor + merge_policy.merge_factor - 1)
-            .map(|i| SplitMetadata {
-                split_id: format!("split-{i}"),
-                num_docs: 1_000,
-                num_merge_ops: 1,
-                ..Default::default()
-            })
-            .collect();
+        let mut splits =
+            (0..merge_policy.config.max_merge_factor + merge_policy.config.merge_factor - 1)
+                .map(|i| SplitMetadata {
+                    split_id: format!("split-{i}"),
+                    num_docs: 1_000,
+                    num_merge_ops: 1,
+                    ..Default::default()
+                })
+                .collect();
         let operations: Vec<MergeOperation> = merge_policy.operations(&mut splits);
         assert_eq!(operations.len(), 1);
         assert_eq!(
             operations[0].splits_as_slice().len(),
-            merge_policy.max_merge_factor
+            merge_policy.config.max_merge_factor
         );
     }
 
     #[test]
     fn test_const_write_merge_policy_older_first() {
         let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
-        let mut splits: Vec<SplitMetadata> = (0..merge_policy.max_merge_factor)
+        let mut splits: Vec<SplitMetadata> = (0..merge_policy.config.max_merge_factor)
             .map(|i| SplitMetadata {
                 split_id: format!("split-{i}"),
                 num_docs: 1_000,
@@ -265,7 +274,7 @@ mod tests {
         assert_eq!(operations.len(), 1);
         assert_eq!(
             operations[0].splits_as_slice().len(),
-            merge_policy.max_merge_factor
+            merge_policy.config.max_merge_factor
         );
         let split_ids: Vec<&str> = operations[0]
             .splits_as_slice()
@@ -313,12 +322,12 @@ mod tests {
                     *num_merge_ops_counts.entry(split.num_merge_ops).or_default() += 1;
                 }
                 for split in splits {
-                    assert!(split.num_merge_ops <= merge_policy.max_merge_ops);
+                    assert!(split.num_merge_ops <= merge_policy.config.max_merge_ops);
                 }
-                for i in 0..merge_policy.max_merge_ops {
+                for i in 0..merge_policy.config.max_merge_ops {
                     assert!(
                         num_merge_ops_counts.get(&i).copied().unwrap_or(0)
-                            < merge_policy.merge_factor
+                            < merge_policy.config.merge_factor
                     );
                 }
             },
