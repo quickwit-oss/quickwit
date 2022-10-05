@@ -180,7 +180,7 @@ fast: true
 The `datetime` type handles dates and datetimes. Quickwit supports multiple input formats configured independently for each field. The following formats are natively supported:
 - `iso8601`, `rfc2822`, `rfc3339`: parse dates using standard ISO and RFC formats.
 - `strftime`: parse dates using the Unix [strftime](https://man7.org/linux/man-pages/man3/strftime.3.html) format.
-- `unix_ts_secs`, `unix_ts_millis`, `unix_ts_micros`: parse Unix timestamps. At most one Unix timestamp format must be specified.
+- `unix_ts_secs`, `unix_ts_millis`, `unix_ts_micros`, `unix_ts_nanos`: parse Unix timestamps. At most one Unix timestamp format must be specified.
 
 When a `datetime` field is stored as a fast field, the `precision` parameter indicates the precision used to truncate the values before encoding and compressing them. The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`.
 
@@ -212,7 +212,7 @@ precision: milliseconds
 | `stored`        | Whether the field values are stored in the document store | `true` |
 | `indexed`       | Whether the field values are indexed | `true` |
 | `fast`          | Whether the field values are stored in a fast field | `false` |
-| `precision`     | The precision used to store the fast values | `seconds` |
+| `precision`     | The precision (`seconds`, `milliseconds`, or `microseconds`) used to store the fast values | `seconds` |
 
 #### `bool` type
 
