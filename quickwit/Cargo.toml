@@ -32,6 +32,9 @@ assert_cmd = "2"
 assert-json-diff = "2"
 async-trait = "0.1"
 atty = "0.2"
+azure_core = "0.5.0"
+azure_storage = "0.6.0"
+azure_storage_blobs = "0.6.0"
 backoff = { version = "0.4", features = ["tokio"] }
 base64 = "0.13"
 bytes = "1"
@@ -184,21 +187,14 @@ quickwit-serve = { version = "0.3.1", path = "./quickwit-serve" }
 quickwit-storage = { version = "0.3.1", path = "./quickwit-storage" }
 quickwit-telemetry = { version = "0.3.1", path = "./quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e029fdf", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "97ccd6d", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",
   "quickwit",
 ] }
-tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e029fdf" }
-fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e029fdf" }
-
-
-# Temporary: till small our small fixes are published on crates.io.
-azure_core = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10" }
-azure_storage = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10" }
-azure_storage_blobs = { git = "https://github.com/Azure/azure-sdk-for-rust", rev = "a001d10" }
-
+tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "97ccd6d" }
+fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", rev = "97ccd6d" }
 
 # This is actually not used directly the goal is to fix the version
 # used by reqwest. 0.8.30 has an unclear license.

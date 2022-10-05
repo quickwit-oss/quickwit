@@ -30,7 +30,7 @@ use quickwit_metastore::SplitMetadata;
 use quickwit_storage::{PutPayload, Storage, StorageErrorKind, StorageResult};
 use tantivy::Directory;
 use tokio::sync::Mutex;
-use tracing::{info, warn};
+use tracing::{info, info_span, instrument, warn, Instrument};
 
 use super::LocalSplitStore;
 use crate::merge_policy::default_merge_policy;
@@ -242,14 +242,13 @@ impl IndexingSplitStore {
     /// the store).
     /// In other words, after calling this function the file will not be available
     /// at `split_folder` anymore.
+    #[instrument("store_split", skip_all)]
     pub async fn store_split<'a>(
         &'a self,
         split: &'a SplitMetadata,
         split_folder: &'a Path,
         put_payload: Box<dyn PutPayload>,
     ) -> anyhow::Result<()> {
-        info!("store-split-remote-start");
-
         let start = Instant::now();
         let split_num_bytes = put_payload.len();
 
@@ -257,6 +256,7 @@ impl IndexingSplitStore {
         self.inner
             .remote_storage
             .put(&key, put_payload)
+            .instrument(info_span!("storage_put"))
             .await
             .with_context(|| {
                 format!(

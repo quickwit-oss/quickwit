@@ -31,8 +31,9 @@ use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError, SplitState};
 use quickwit_storage::Storage;
 use tokio::join;
 use tokio::sync::Semaphore;
-use tracing::{debug, error, info, info_span, instrument, Span};
+use tracing::{debug, error, info, instrument};
 
+use super::uploader::SplitsUpdateMailbox;
 use crate::actors::doc_processor::DocProcessor;
 use crate::actors::index_serializer::IndexSerializer;
 use crate::actors::merge_split_downloader::MergeSplitDownloader;
@@ -68,7 +69,6 @@ pub struct IndexingPipelineHandle {
     pub merge_executor: ActorHandle<MergeExecutor>,
     pub merge_packager: ActorHandle<Packager>,
     pub merge_uploader: ActorHandle<Uploader>,
-    pub merge_sequencer: ActorHandle<Sequencer<Publisher>>,
     pub merge_publisher: ActorHandle<Publisher>,
 }
 
@@ -101,10 +101,6 @@ impl Actor for IndexingPipeline {
 
     fn name(&self) -> String {
         "IndexingPipeline".to_string()
-    }
-
-    fn span(&self, _ctx: &ActorContext<Self>) -> Span {
-        info_span!("")
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
@@ -140,7 +136,6 @@ impl IndexingPipeline {
                 &handles.merge_executor,
                 &handles.merge_packager,
                 &handles.merge_uploader,
-                &handles.merge_sequencer,
                 &handles.merge_publisher,
             ];
             supervisables
@@ -207,7 +202,14 @@ impl IndexingPipeline {
     }
 
     // TODO this should return an error saying whether we can retry or not.
-    #[instrument(name="", level="info", skip_all, fields(index=%self.params.pipeline_id.index_id, gen=self.generation()))]
+    #[instrument(
+        name="spawn_pipeline",
+        level="info",
+        skip_all,
+        fields(
+            index=%self.params.pipeline_id.index_id,
+            gen=self.generation()
+        ))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         let _spawn_pipeline_permit = SPAWN_PIPELINE_SEMAPHORE.acquire().await.expect("Failed to acquire spawn pipeline permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
         self.statistics.num_spawn_attempts += 1;
@@ -257,18 +259,12 @@ impl IndexingPipeline {
             .set_kill_switch(self.kill_switch.clone())
             .spawn(merge_publisher);
 
-        let merge_sequencer = Sequencer::new(merge_publisher_mailbox);
-        let (merge_sequencer_mailbox, merge_sequencer_handler) = ctx
-            .spawn_actor()
-            .set_kill_switch(self.kill_switch.clone())
-            .spawn(merge_sequencer);
-
         // Merge uploader
         let merge_uploader = Uploader::new(
             "MergeUploader",
             self.params.metastore.clone(),
             split_store.clone(),
-            merge_sequencer_mailbox,
+            SplitsUpdateMailbox::Publisher(merge_publisher_mailbox),
         );
         let (merge_uploader_mailbox, merge_uploader_handler) = ctx
             .spawn_actor()
@@ -343,7 +339,7 @@ impl IndexingPipeline {
             "Uploader",
             self.params.metastore.clone(),
             split_store.clone(),
-            sequencer_mailbox,
+            SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
         );
         let (uploader_mailbox, uploader_handler) = ctx
             .spawn_actor()
@@ -433,7 +429,6 @@ impl IndexingPipeline {
             merge_executor: merge_executor_handler,
             merge_packager: merge_packager_handler,
             merge_uploader: merge_uploader_handler,
-            merge_sequencer: merge_sequencer_handler,
             merge_publisher: merge_publisher_handler,
         });
         Ok(())

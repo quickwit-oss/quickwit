@@ -20,10 +20,8 @@
 use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::mem;
-use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
 
 use anyhow::{bail, Context};
 use async_trait::async_trait;
@@ -33,13 +31,15 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_storage::SplitPayloadBuilder;
-use time::OffsetDateTime;
+use tokio::sync::oneshot::Sender;
 use tokio::sync::{oneshot, Semaphore, SemaphorePermit};
-use tracing::{info, info_span, warn, Instrument, Span};
+use tracing::{info, instrument, warn, Instrument, Span};
 
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::Publisher;
-use crate::models::{PackagedSplit, PackagedSplitBatch, PublishLock, SplitUpdate};
+use crate::models::{
+    create_split_metadata, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate,
+};
 use crate::split_store::IndexingSplitStore;
 
 pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 4;
@@ -52,11 +52,95 @@ pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 4;
 /// actor for all indexing pipeline.
 static CONCURRENT_UPLOAD_PERMITS: Semaphore = Semaphore::const_new(MAX_CONCURRENT_SPLIT_UPLOAD);
 
+/// [`SplitsUpdateMailbox`] wraps either a [`Mailbox<Sequencer>`] or [`Mailbox<Publisher>`].
+/// It makes it possible to send a [`SplitsUpdate`] either to the [`Sequencer`] or directly
+/// to [`Publisher`]. It is used in combination with `SplitsUpdateSender` that will do the send.
+///
+/// This is useful as we have different requirements between the indexing pipeline and
+/// the merge/delete task pipelines.
+/// 1. In the indexing pipeline, we want to publish splits in the same order as they
+///    are produced by the indexer/packager to ensure we are publishing splits without
+///    "holes" in checkpoints. We thus send [`SplitsUpdate`] to the [`Sequencer`]
+///    to keep the right ordering.
+/// 2. In the merge pipeline and the delete task pipeline, we are merging splits and in
+///    in this case, publishing order does not matter. In this case, we can just
+///    send [`SplitsUpdate`] directly to the [`Publisher`].
+#[derive(Clone, Debug)]
+pub enum SplitsUpdateMailbox {
+    Sequencer(Mailbox<Sequencer<Publisher>>),
+    Publisher(Mailbox<Publisher>),
+}
+
+impl SplitsUpdateMailbox {
+    async fn get_split_update_sender(
+        &self,
+        ctx: &ActorContext<Uploader>,
+    ) -> anyhow::Result<SplitsUpdateSender> {
+        match self {
+            SplitsUpdateMailbox::Sequencer(sequencer_mailbox) => {
+                // We send the future to the sequencer right away.
+                // The sequencer will then resolve the future in their arrival order and ensure that
+                // the publisher publishes splits in order.
+                let (split_uploaded_tx, split_uploaded_rx) =
+                    oneshot::channel::<SequencerCommand<SplitsUpdate>>();
+                ctx.send_message(sequencer_mailbox, split_uploaded_rx)
+                    .await?;
+                Ok(SplitsUpdateSender::Sequencer(split_uploaded_tx))
+            }
+            SplitsUpdateMailbox::Publisher(publisher_mailbox) => {
+                // We just need the publisher mailbox to send the split in this case.
+                Ok(SplitsUpdateSender::Publisher(publisher_mailbox.clone()))
+            }
+        }
+    }
+}
+
+enum SplitsUpdateSender {
+    Sequencer(Sender<SequencerCommand<SplitsUpdate>>),
+    Publisher(Mailbox<Publisher>),
+}
+
+impl SplitsUpdateSender {
+    fn discard(self) -> anyhow::Result<()> {
+        if let SplitsUpdateSender::Sequencer(split_uploader_tx) = self {
+            if split_uploader_tx.send(SequencerCommand::Discard).is_err() {
+                bail!(
+                    "Failed to send cancel command to sequencer. The sequencer is probably dead."
+                );
+            }
+        }
+        Ok(())
+    }
+
+    async fn send(
+        self,
+        split_update: SplitsUpdate,
+        ctx: &ActorContext<Uploader>,
+    ) -> anyhow::Result<()> {
+        match self {
+            SplitsUpdateSender::Sequencer(split_uploaded_tx) => {
+                if let Err(publisher_message) =
+                    split_uploaded_tx.send(SequencerCommand::Proceed(split_update))
+                {
+                    bail!(
+                        "Failed to send upload split `{:?}`. The publisher is probably dead.",
+                        &publisher_message
+                    );
+                }
+            }
+            SplitsUpdateSender::Publisher(publisher_mailbox) => {
+                ctx.send_message(&publisher_mailbox, split_update).await?;
+            }
+        }
+        Ok(())
+    }
+}
+
 pub struct Uploader {
     actor_name: &'static str,
     metastore: Arc<dyn Metastore>,
     split_store: IndexingSplitStore,
-    sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
+    split_update_mailbox: SplitsUpdateMailbox,
     counters: UploaderCounters,
 }
 
@@ -65,13 +149,13 @@ impl Uploader {
         actor_name: &'static str,
         metastore: Arc<dyn Metastore>,
         split_store: IndexingSplitStore,
-        sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
+        split_update_mailbox: SplitsUpdateMailbox,
     ) -> Uploader {
         Uploader {
             actor_name,
             metastore,
             split_store,
-            sequencer_mailbox,
+            split_update_mailbox,
             counters: Default::default(),
         }
     }
@@ -122,24 +206,18 @@ impl Actor for Uploader {
 impl Handler<PackagedSplitBatch> for Uploader {
     type Reply = ();
 
-    fn message_span(&self, msg_id: u64, batch: &PackagedSplitBatch) -> Span {
-        info_span!("", msg_id=&msg_id, num_splits=%batch.split_ids().len())
-    }
-
+    #[instrument(name = "uploader",
+        parent=batch.parent_span.id(),
+        skip_all)]
     async fn handle(
         &mut self,
         batch: PackagedSplitBatch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         fail_point!("uploader:before");
-        let (split_uploaded_tx, split_uploaded_rx) =
-            oneshot::channel::<SequencerCommand<SplitUpdate>>();
-
-        // We send the future to the sequencer right away.
-
-        // The sequencer will then resolve the future in their arrival order and ensure that the
-        // publisher publishes splits in order.
-        ctx.send_message(&self.sequencer_mailbox, split_uploaded_rx)
+        let split_udpate_sender = self
+            .split_update_mailbox
+            .get_split_update_sender(ctx)
             .await?;
 
         // The permit will be added back manually to the semaphore the task after it is finished.
@@ -161,7 +239,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
         let split_store = self.split_store.clone();
         let counters = self.counters.clone();
         let index_id = batch.index_id();
-        let span = Span::current();
+        let ctx_clone = ctx.clone();
         info!(split_ids=?split_ids, "start-stage-and-store-splits");
         tokio::spawn(
             async move {
@@ -170,14 +248,9 @@ impl Handler<PackagedSplitBatch> for Uploader {
                 for split in batch.splits {
                     if batch.publish_lock.is_dead() {
                         // TODO: Remove the junk right away?
-                        info!(
-                            split_ids=?split_ids,
-                            "Splits' publish lock is dead."
-                        );
-                        if split_uploaded_tx.send(SequencerCommand::Discard).is_err() {
-                            bail!("Failed to send cancel command to sequencer. The sequencer is probably dead.");
-                        }
-                        return Ok(())
+                        info!("Splits' publish lock is dead.");
+                        split_udpate_sender.discard()?;
+                        return Ok(());
                     }
                     let upload_result = stage_and_upload_split(
                         &split,
@@ -193,42 +266,17 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     }
                     packaged_splits_and_metadatas.push((split, upload_result.unwrap()));
                 }
-                let publisher_message = make_publish_operation(index_id, batch.publish_lock, packaged_splits_and_metadatas, batch.checkpoint_delta_opt, batch.date_of_birth);
-                if let Err(publisher_message) = split_uploaded_tx.send(publisher_message) {
-                    bail!(
-                        "Failed to send upload split `{:?}`. The publisher is probably dead.",
-                        &publisher_message
-                    );
-                }
-                info!("success-stage-and-store-splits");
+                let splits_update = make_publish_operation(index_id, batch.publish_lock, packaged_splits_and_metadatas, batch.checkpoint_delta_opt, batch.parent_span);
+                split_udpate_sender.send(splits_update, &ctx_clone).await?;
                 // We explicitely drop it in order to force move the permit guard into the async
                 // task.
                 mem::drop(permit_guard);
                 Result::<(), anyhow::Error>::Ok(())
             }
-            .instrument(span),
+            .instrument(Span::current()),
         );
         fail_point!("uploader:intask:after");
         Ok(())
-    }
-}
-
-fn create_split_metadata(split: &PackagedSplit, footer_offsets: Range<u64>) -> SplitMetadata {
-    SplitMetadata {
-        split_id: split.split_attrs.split_id.clone(),
-        index_id: split.split_attrs.pipeline_id.index_id.clone(),
-        partition_id: split.split_attrs.partition_id,
-        source_id: split.split_attrs.pipeline_id.source_id.clone(),
-        node_id: split.split_attrs.pipeline_id.node_id.clone(),
-        pipeline_ord: split.split_attrs.pipeline_id.pipeline_ord,
-        num_docs: split.split_attrs.num_docs as usize,
-        time_range: split.split_attrs.time_range.clone(),
-        uncompressed_docs_size_in_bytes: split.split_attrs.uncompressed_docs_size_in_bytes,
-        create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
-        tags: split.tags.clone(),
-        footer_offsets,
-        delete_opstamp: split.split_attrs.delete_opstamp,
-        num_merge_ops: 0,
     }
 }
 
@@ -237,14 +285,14 @@ fn make_publish_operation(
     publish_lock: PublishLock,
     packaged_splits_and_metadatas: Vec<(PackagedSplit, SplitMetadata)>,
     checkpoint_delta_opt: Option<IndexCheckpointDelta>,
-    date_of_birth: Instant,
-) -> SequencerCommand<SplitUpdate> {
+    parent_span: Span,
+) -> SplitsUpdate {
     assert!(!packaged_splits_and_metadatas.is_empty());
     let replaced_split_ids = packaged_splits_and_metadatas
         .iter()
         .flat_map(|(split, _)| split.split_attrs.replaced_split_ids.clone())
         .collect::<HashSet<_>>();
-    SequencerCommand::Proceed(SplitUpdate {
+    SplitsUpdate {
         index_id,
         publish_lock,
         new_splits: packaged_splits_and_metadatas
@@ -253,10 +301,16 @@ fn make_publish_operation(
             .collect_vec(),
         replaced_split_ids: Vec::from_iter(replaced_split_ids),
         checkpoint_delta_opt,
-        date_of_birth,
-    })
+        parent_span,
+    }
 }
 
+#[instrument(
+    level = "info"
+    name = "stage_and_upload",
+    fields(split = %packaged_split.split_attrs.split_id),
+    skip_all
+)]
 async fn stage_and_upload_split(
     packaged_split: &PackagedSplit,
     split_store: &IndexingSplitStore,
@@ -268,17 +322,17 @@ async fn stage_and_upload_split(
         &packaged_split.hotcache_bytes,
     )?;
     let split_metadata = create_split_metadata(
-        packaged_split,
+        &packaged_split.split_attrs,
+        packaged_split.tags.clone(),
         split_streamer.footer_range.start as u64..split_streamer.footer_range.end as u64,
     );
     let index_id = &packaged_split.split_attrs.pipeline_id.index_id.clone();
-    info!(split_id = packaged_split.split_id(), "staging-split");
     metastore
         .stage_split(index_id, split_metadata.clone())
+        .instrument(tracing::info_span!("staging_split"))
         .await?;
     counters.num_staged_splits.fetch_add(1, Ordering::SeqCst);
 
-    info!(split_id = packaged_split.split_id(), "storing-split");
     split_store
         .store_split(
             &split_metadata,
@@ -293,7 +347,7 @@ async fn stage_and_upload_split(
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-    use std::time::Instant;
+    use std::time::Duration;
 
     use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
@@ -302,10 +356,10 @@ mod tests {
     use tokio::sync::oneshot;
 
     use super::*;
-    use crate::models::{IndexingPipelineId, ScratchDirectory, SplitAttrs};
+    use crate::models::{IndexingPipelineId, ScratchDirectory, SplitAttrs, SplitsUpdate};
 
     #[tokio::test]
-    async fn test_uploader_1() -> anyhow::Result<()> {
+    async fn test_uploader_with_sequencer() -> anyhow::Result<()> {
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -331,7 +385,7 @@ mod tests {
             "TestUploader",
             Arc::new(mock_metastore),
             split_store,
-            sequencer_mailbox,
+            SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
         let split_scratch_directory = ScratchDirectory::for_test()?;
@@ -360,14 +414,14 @@ mod tests {
                 }],
                 checkpoint_delta_opt,
                 PublishLock::default(),
-                Instant::now(),
+                Span::none(),
             ))
             .await?;
         assert_eq!(
             uploader_handle.process_pending_and_observe().await.obs_type,
             ObservationType::Alive
         );
-        let mut publish_futures: Vec<oneshot::Receiver<SequencerCommand<SplitUpdate>>> =
+        let mut publish_futures: Vec<oneshot::Receiver<SequencerCommand<SplitsUpdate>>> =
             sequencer_inbox.drain_for_test_typed();
         assert_eq!(publish_futures.len(), 1);
 
@@ -378,7 +432,7 @@ mod tests {
             ),
             SequencerCommand::Proceed(publisher_message) => publisher_message,
         };
-        let SplitUpdate {
+        let SplitsUpdate {
             index_id,
             new_splits,
             checkpoint_delta_opt,
@@ -403,7 +457,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_uploader_emits_replace() -> anyhow::Result<()> {
+    async fn test_uploader_with_sequencer_emits_replace() -> anyhow::Result<()> {
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
@@ -430,7 +484,7 @@ mod tests {
             "TestUploader",
             Arc::new(mock_metastore),
             split_store,
-            sequencer_mailbox,
+            SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
         let split_scratch_directory_1 = ScratchDirectory::for_test()?;
@@ -480,25 +534,25 @@ mod tests {
                 vec![packaged_split_1, package_split_2],
                 None,
                 PublishLock::default(),
-                Instant::now(),
+                Span::none(),
             ))
             .await?;
         assert_eq!(
             uploader_handle.process_pending_and_observe().await.obs_type,
             ObservationType::Alive
         );
-        let mut publish_futures: Vec<oneshot::Receiver<SequencerCommand<SplitUpdate>>> =
+        let mut publish_futures: Vec<oneshot::Receiver<SequencerCommand<SplitsUpdate>>> =
             sequencer_inbox.drain_for_test_typed();
         assert_eq!(publish_futures.len(), 1);
 
         let publisher_message = match publish_futures.pop().unwrap().await? {
             SequencerCommand::Discard => panic!(
-                "Expected `SequencerCommand::Proceed(SplitUpdate)`, got \
+                "Expected `SequencerCommand::Proceed(SplitsUpdate)`, got \
                  `SequencerCommand::Discard`."
             ),
             SequencerCommand::Proceed(publisher_message) => publisher_message,
         };
-        let SplitUpdate {
+        let SplitsUpdate {
             index_id,
             new_splits,
             mut replaced_split_ids,
@@ -529,6 +583,83 @@ mod tests {
                 PathBuf::from("test-split-2.split")
             ]
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_uploader_without_sequencer() -> anyhow::Result<()> {
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index-no-sequencer".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
+        let universe = Universe::new();
+        let (publisher_mailbox, publisher_inbox) = create_test_mailbox::<Publisher>();
+        let mut mock_metastore = MockMetastore::default();
+        mock_metastore
+            .expect_stage_split()
+            .withf(move |index_id, _| -> bool { index_id == "test-index-no-sequencer" })
+            .times(1)
+            .returning(|_, _| Ok(()));
+        let ram_storage = RamStorage::default();
+        let split_store =
+            IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
+        let uploader = Uploader::new(
+            "TestUploader",
+            Arc::new(mock_metastore),
+            split_store,
+            SplitsUpdateMailbox::Publisher(publisher_mailbox),
+        );
+        let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
+        let split_scratch_directory = ScratchDirectory::for_test()?;
+        let checkpoint_delta_opt: Option<IndexCheckpointDelta> = Some(IndexCheckpointDelta {
+            source_id: "test-source".to_string(),
+            source_delta: SourceCheckpointDelta::from(3..15),
+        });
+        uploader_mailbox
+            .send_message(PackagedSplitBatch::new(
+                vec![PackagedSplit {
+                    split_attrs: SplitAttrs {
+                        partition_id: 3u64,
+                        pipeline_id,
+                        time_range: None,
+                        uncompressed_docs_size_in_bytes: 1_000,
+                        num_docs: 10,
+                        replaced_split_ids: Vec::new(),
+                        split_id: "test-split".to_string(),
+                        delete_opstamp: 10,
+                        num_merge_ops: 0,
+                    },
+                    split_scratch_directory,
+                    tags: Default::default(),
+                    hotcache_bytes: vec![],
+                    split_files: vec![],
+                }],
+                checkpoint_delta_opt,
+                PublishLock::default(),
+                Span::none(),
+            ))
+            .await?;
+        assert_eq!(
+            uploader_handle.process_pending_and_observe().await.obs_type,
+            ObservationType::Alive
+        );
+        // We have to wait a bit to make sure uploader has sent the message.
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let mut splits_updates: Vec<SplitsUpdate> = publisher_inbox.drain_for_test_typed();
+        assert_eq!(splits_updates.len(), 1);
+
+        let SplitsUpdate {
+            index_id,
+            new_splits,
+            replaced_split_ids,
+            ..
+        } = splits_updates.pop().unwrap();
+
+        assert_eq!(index_id, "test-index-no-sequencer");
+        assert_eq!(new_splits.len(), 1);
+        assert!(replaced_split_ids.is_empty());
         Ok(())
     }
 }

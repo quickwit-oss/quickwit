@@ -47,10 +47,10 @@ pub use merge_scratch::MergeScratch;
 pub use packaged_split::{PackagedSplit, PackagedSplitBatch};
 pub use prepared_doc::{PreparedDoc, PreparedDocBatch};
 pub use publish_lock::{NewPublishLock, PublishLock};
-pub use publisher_message::SplitUpdate;
+pub use publisher_message::SplitsUpdate;
 pub use raw_doc_batch::RawDocBatch;
 pub use scratch_directory::ScratchDirectory;
-pub use split_attrs::SplitAttrs;
+pub use split_attrs::{create_split_metadata, SplitAttrs};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Observe;

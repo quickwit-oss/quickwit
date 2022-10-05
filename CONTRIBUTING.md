@@ -30,7 +30,7 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 3. Install awslocal https://github.com/localstack/awscli-local
 4. Install protoc https://grpc.io/docs/protoc-installation/ (you may need to install the latest binaries rather than your distro's flavor)
 5. Start the external services with `make docker-compose-up`
-6. Run `QW_S3_ENDPOINT=http://localhost:4566 cargo test --all-features`
+6. Run `QW_S3_ENDPOINT=http://localhost:4566 AWS_ACCESS_KEY_ID=ignored AWS_SECRET_ACCESS_KEY=ignored cargo test --all-features`
 7. Run UI tests `yarn --cwd quickwit-ui install` and `yarn --cwd quickwit-ui test`
 
 ## Start the UI

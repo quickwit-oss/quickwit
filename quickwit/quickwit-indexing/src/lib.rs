@@ -29,7 +29,7 @@ use tracing::info;
 
 pub use crate::actors::{
     IndexingPipeline, IndexingPipelineParams, IndexingService, IndexingServiceError,
-    IngestApiGarbageCollector, PublisherType, Sequencer,
+    IngestApiGarbageCollector, PublisherType, Sequencer, SplitsUpdateMailbox,
 };
 pub use crate::controlled_directory::ControlledDirectory;
 use crate::models::{IndexingStatistics, SpawnPipelines};
