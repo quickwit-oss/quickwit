@@ -943,14 +943,12 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         ..Default::default()
     };
     let universe = Universe::new();
-    let enable_ingest_api = false;
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
         indexer_config,
         metastore,
         quickwit_storage_uri_resolver().clone(),
-        enable_ingest_api,
     );
     let (indexing_server_mailbox, _) = universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_server_mailbox
@@ -1063,14 +1061,12 @@ pub async fn merge_cli(args: MergeArgs, merge_enabled: bool) -> anyhow::Result<(
         .resolve(&config.metastore_uri)
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
-    let enable_ingest_api = false;
     let indexing_server = IndexingService::new(
         config.node_id,
         config.data_dir_path,
         indexer_config,
         metastore,
         storage_resolver,
-        enable_ingest_api,
     );
     let universe = Universe::new();
     let (indexing_server_mailbox, _) = universe.spawn_builder().spawn(indexing_server);

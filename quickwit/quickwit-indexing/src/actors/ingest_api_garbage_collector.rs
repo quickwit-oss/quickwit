@@ -217,14 +217,12 @@ mod tests {
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
         let storage_resolver = StorageUriResolver::for_test();
-        let enable_ingest_api = true;
         let indexing_server = IndexingService::new(
             "test-node".to_string(),
             data_dir_path,
             indexer_config,
             metastore.clone(),
             storage_resolver.clone(),
-            enable_ingest_api,
         );
         let (indexing_server_mailbox, _indexing_server_handle) =
             universe.spawn_builder().spawn(indexing_server);

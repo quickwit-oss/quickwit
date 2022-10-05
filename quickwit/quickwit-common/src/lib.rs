@@ -35,6 +35,18 @@ pub use checklist::{print_checklist, run_checklist, BLUE_COLOR, GREEN_COLOR, RED
 pub use coolid::new_coolid;
 use tracing::{error, info};
 
+// TODO: [https://github.com/quickwit-oss/quickwit/issues/2069]
+// Given some objects use `_`, we should harmonize this and bring
+// know internal objects name into this crate under `quickwit.rs`
+/// Quickwit internal objects id start with this marker.
+pub const QUICKWIT_INTERNAL_OBJECT_ID_MARKER: char = '.';
+
+/// Checks if an object id has the internal id marker.
+#[inline]
+pub fn is_quickwit_internal_object_id(id: &str) -> bool {
+    id.starts_with(QUICKWIT_INTERNAL_OBJECT_ID_MARKER)
+}
+
 pub fn chunk_range(range: Range<usize>, chunk_size: usize) -> impl Iterator<Item = Range<usize>> {
     range.clone().step_by(chunk_size).map(move |block_start| {
         let block_end = (block_start + chunk_size).min(range.end);

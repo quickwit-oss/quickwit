@@ -92,14 +92,12 @@ impl TestSandbox {
         let storage_resolver = StorageUriResolver::for_test();
         let storage = storage_resolver.resolve(&index_uri)?;
         let universe = Universe::new();
-        let enable_ingest_api = false;
         let indexing_service_actor = IndexingService::new(
             node_id.to_string(),
             temp_dir.path().to_path_buf(),
             indexer_config,
             metastore.clone(),
             storage_resolver.clone(),
-            enable_ingest_api,
         );
         let (indexing_service, _indexing_service_handle) =
             universe.spawn_builder().spawn(indexing_service_actor);

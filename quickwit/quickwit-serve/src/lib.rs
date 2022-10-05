@@ -142,14 +142,11 @@ pub async fn serve_quickwit(
 
     let (ingest_api_service, indexer_service) = if services.contains(&QuickwitService::Indexer) {
         let ingest_api_service = start_ingest_api_service(&universe, &config.data_dir_path).await?;
-        // TODO: Move to indexer config?
-        let enable_ingest_api = true;
         let indexing_service = start_indexing_service(
             &universe,
             &config,
             metastore.clone(),
             storage_resolver.clone(),
-            enable_ingest_api,
         )
         .await?;
         (Some(ingest_api_service), Some(indexing_service))

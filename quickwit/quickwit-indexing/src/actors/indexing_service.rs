@@ -106,7 +106,6 @@ pub struct IndexingService {
     storage_resolver: StorageUriResolver,
     indexing_pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     state: IndexingServiceState,
-    enable_ingest_api: bool,
     merge_policies: HashMap<IndexId, Weak<dyn MergePolicy>>,
     indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
     split_stores: HashMap<(IndexId, SourceId), WeakIndexingSplitStore>,
@@ -125,7 +124,6 @@ impl IndexingService {
         indexer_config: IndexerConfig,
         metastore: Arc<dyn Metastore>,
         storage_resolver: StorageUriResolver,
-        enable_ingest_api: bool,
     ) -> IndexingService {
         Self {
             node_id,
@@ -134,7 +132,6 @@ impl IndexingService {
             storage_resolver,
             indexing_pipeline_handles: Default::default(),
             state: Default::default(),
-            enable_ingest_api,
             merge_policies: HashMap::new(),
             indexing_directories: HashMap::new(),
             split_stores: HashMap::new(),
@@ -225,10 +222,6 @@ impl IndexingService {
                 pipeline_ids.push(pipeline_id);
             }
             ctx.record_progress();
-        }
-
-        if !self.enable_ingest_api {
-            return Ok(pipeline_ids);
         }
 
         let mut source_config = index_metadata
@@ -696,14 +689,12 @@ mod tests {
         let universe = Universe::new();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
         init_ingest_api(&universe, &queues_dir_path).await.unwrap();
-        let enable_ingest_api = true;
         let indexing_server = IndexingService::new(
             "test-node".to_string(),
             data_dir_path,
             indexer_config,
             metastore.clone(),
             storage_resolver.clone(),
-            enable_ingest_api,
         );
         let (indexing_server_mailbox, indexing_server_handle) =
             universe.spawn_builder().spawn(indexing_server);
