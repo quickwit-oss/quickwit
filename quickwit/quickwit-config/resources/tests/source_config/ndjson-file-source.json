@@ -1,0 +1,9 @@
+{
+    "source_id": "hdfs-logs-json-file-source",
+    "num_pipelines": 1,
+    "source_type": "file",
+    "params": {
+        "filepath": "zero/wiki-articles-10000.json"
+    }
+}
+

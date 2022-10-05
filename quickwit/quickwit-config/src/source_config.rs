@@ -38,6 +38,10 @@ fn is_one(num: &usize) -> bool {
     *num == 1
 }
 
+fn default_source_enabled() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceConfig {
     pub source_id: String,
@@ -48,6 +52,10 @@ pub struct SourceConfig {
     /// Therefore, if there exists `n` indexers in the cluster, there will be `n` * `num_pipelines`
     /// indexing pipelines running for the source.
     pub num_pipelines: usize,
+
+    // Denotes if this source is enable.
+    #[serde(default = "default_source_enabled")]
+    pub enabled: bool,
 
     #[serde(flatten)]
     pub source_params: SourceParams,
@@ -158,6 +166,10 @@ impl SourceConfig {
             _ => None,
         }
     }
+
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    } 
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -342,6 +354,7 @@ mod tests {
         let expected_source_config = SourceConfig {
             source_id: "hdfs-logs-kafka-source".to_string(),
             num_pipelines: 2,
+            enabled: true,
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: "cloudera-cluster-logs".to_string(),
                 client_log_level: None,
@@ -432,6 +445,7 @@ mod tests {
         let expected_source_config = SourceConfig {
             source_id: "hdfs-logs-kinesis-source".to_string(),
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::Kinesis(KinesisSourceParams {
                 stream_name: "emr-cluster-logs".to_string(),
                 region_or_endpoint: None,

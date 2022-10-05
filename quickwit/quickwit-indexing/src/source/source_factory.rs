@@ -133,6 +133,7 @@ mod tests {
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::void(),
         };
         source_loader

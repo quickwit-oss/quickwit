@@ -56,6 +56,9 @@ service MetastoreApiService {
   // Adds source.
   rpc add_source(AddSourceRequest) returns (SourceResponse);
 
+  // Toggle source.
+  rpc toggle_source(ToggleSourceRequest) returns (SourceResponse); 
+
   // Removes source.
   rpc delete_source(DeleteSourceRequest) returns (SourceResponse);
 
@@ -149,6 +152,12 @@ message SplitResponse {}
 message AddSourceRequest {
   string index_id = 1;
   string source_config_serialized_json = 2;
+}
+
+message ToggleSourceRequest {
+  string index_id = 1;
+  string source_id = 2;
+  bool enable = 3;
 }
 
 message DeleteSourceRequest {

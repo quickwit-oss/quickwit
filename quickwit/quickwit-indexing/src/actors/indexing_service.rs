@@ -317,6 +317,7 @@ impl IndexingService {
         let source_config = SourceConfig {
             source_id,
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::IngestApi(IngestApiSourceParams {
                 index_id,
                 batch_num_bytes_limit: None,
@@ -352,6 +353,7 @@ impl IndexingService {
         let source_config = SourceConfig {
             source_id: pipeline_id.source_id.clone(),
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::Vec(VecSourceParams::default()),
         };
         self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_metadata, source_config)
@@ -686,6 +688,7 @@ mod tests {
         let source_config_0 = SourceConfig {
             source_id: "test-indexing-service--source-0".to_string(),
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::void(),
         };
         let spawn_pipeline_msg = SpawnPipeline {
@@ -744,6 +747,7 @@ mod tests {
         let source_config_1 = SourceConfig {
             source_id: "test-indexing-service--source-1".to_string(),
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::void(),
         };
         metastore
@@ -765,6 +769,7 @@ mod tests {
         let source_config_2 = SourceConfig {
             source_id: "test-indexing-service--source-2".to_string(),
             num_pipelines: 2,
+            enabled: true,
             source_params: SourceParams::void(),
         };
         metastore
@@ -841,6 +846,7 @@ mod tests {
         let source_config_3 = SourceConfig {
             source_id: "test-indexing-service--source-3".to_string(),
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::Vec(VecSourceParams {
                 docs: Vec::new(),
                 batch_num_docs: 10,

@@ -93,6 +93,7 @@ pub mod test_suite {
             let source = SourceConfig {
                 source_id: source_id.clone(),
                 num_pipelines: 1,
+                enabled: true,
                 source_params: SourceParams::void(),
             };
             metastore
@@ -169,6 +170,7 @@ pub mod test_suite {
         let source = SourceConfig {
             source_id: source_id.to_string(),
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::void(),
         };
 
@@ -217,6 +219,49 @@ pub mod test_suite {
         cleanup_index(&metastore, &index_metadata.index_id).await;
     }
 
+    pub async fn test_metastore_toggle_source<MetastoreToTest: Metastore + DefaultForTest>() {
+        let metastore = MetastoreToTest::default_for_test().await;
+
+        let index_id = "test-metastore-toggle-source";
+        let index_uri = format!("ram://indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
+
+        metastore
+            .create_index(index_metadata.clone())
+            .await
+            .unwrap();
+
+        let source_id = "test-metastore-toggle-source--void-source-id";
+        let source = SourceConfig {
+            source_id: source_id.to_string(),
+            num_pipelines: 1,
+            enabled: true,
+            source_params: SourceParams::void(),
+        };
+        metastore
+            .add_source(index_id, source.clone())
+            .await
+            .unwrap();
+
+        let index_metadata = metastore.index_metadata(index_id).await.unwrap();
+        let source = index_metadata.sources.get(source_id).unwrap();
+        assert_eq!(source.enabled(), true);
+
+        // disable source
+        metastore.toggle_source(index_id, &source.source_id, false).await.unwrap();
+        let index_metadata = metastore.index_metadata(index_id).await.unwrap();
+        let source = index_metadata.sources.get(source_id).unwrap();
+        assert_eq!(source.enabled(), false);
+
+        // enable source
+        metastore.toggle_source(index_id, &source.source_id, true).await.unwrap();
+        let index_metadata = metastore.index_metadata(index_id).await.unwrap();
+        let source = index_metadata.sources.get(source_id).unwrap();
+        assert_eq!(source.enabled(), true);
+
+        cleanup_index(&metastore, &index_metadata.index_id).await;
+    }
+
     pub async fn test_metastore_delete_source<MetastoreToTest: Metastore + DefaultForTest>() {
         let _ = tracing_subscriber::fmt::try_init();
         let metastore = MetastoreToTest::default_for_test().await;
@@ -228,6 +273,7 @@ pub mod test_suite {
         let source = SourceConfig {
             source_id: source_id.to_string(),
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::void(),
         };
 
@@ -2647,6 +2693,12 @@ macro_rules! metastore_test_suite {
             async fn test_metastore_add_source() {
                 let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_add_source::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_toggle_source() {
+                let _ = tracing_subscriber::fmt::try_init();
+                crate::tests::test_suite::test_metastore_toggle_source::<$metastore_type>().await;
             }
 
             #[tokio::test]

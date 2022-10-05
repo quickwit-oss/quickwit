@@ -40,7 +40,8 @@ use quickwit_proto::metastore_api::{
     DeleteSplitsRequest, DeleteTask, IndexMetadataRequest, LastDeleteOpstampRequest,
     ListAllSplitsRequest, ListDeleteTasksRequest, ListIndexesMetadatasRequest, ListSplitsRequest,
     ListStaleSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest,
-    ResetSourceCheckpointRequest, StageSplitRequest, UpdateSplitsDeleteOpstampRequest,
+    ResetSourceCheckpointRequest, StageSplitRequest, ToggleSourceRequest,
+    UpdateSplitsDeleteOpstampRequest,
 };
 use quickwit_proto::tonic::transport::{Channel, Endpoint};
 use quickwit_proto::tonic::Status;
@@ -386,6 +387,27 @@ impl Metastore for MetastoreGrpcClient {
         self.0
             .clone()
             .add_source(request)
+            .await
+            .map(|tonic_response| tonic_response.into_inner())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+        Ok(())
+    }
+
+    /// Toggle source enable value.
+    async fn toggle_source(
+        &self,
+        index_id: &str,
+        source_id: &str,
+        enable: bool,
+    ) -> MetastoreResult<()> {
+        let request = ToggleSourceRequest {
+            index_id: index_id.to_string(),
+            source_id: source_id.to_string(),
+            enable,
+        };
+        self.0
+            .clone()
+            .toggle_source(request)
             .await
             .map(|tonic_response| tonic_response.into_inner())
             .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;

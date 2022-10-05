@@ -84,6 +84,7 @@ mod tests {
         let source_config = SourceConfig {
             source_id: "test-void-source".to_string(),
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::void(),
         };
         let metastore = metastore_for_test();
@@ -105,6 +106,7 @@ mod tests {
                 SourceConfig {
                     source_id: "test-void-source".to_string(),
                     num_pipelines: 1,
+                    enabled: true,
                     source_params: SourceParams::void(),
                 },
             ),

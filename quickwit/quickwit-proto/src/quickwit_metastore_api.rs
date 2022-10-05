@@ -120,6 +120,16 @@ pub struct AddSourceRequest {
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ToggleSourceRequest {
+    #[prost(string, tag="1")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(bool, tag="3")]
+    pub enable: bool,
+}
+#[derive(Serialize, Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteSourceRequest {
     #[prost(string, tag="1")]
     pub index_id: ::prost::alloc::string::String,
@@ -516,6 +526,26 @@ pub mod metastore_api_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
+        /// Toggle source.
+        pub async fn toggle_source(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ToggleSourceRequest>,
+        ) -> Result<tonic::Response<super::SourceResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit_metastore_api.MetastoreApiService/toggle_source",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
         /// Removes source.
         pub async fn delete_source(
             &mut self,
@@ -722,6 +752,11 @@ pub mod metastore_api_service_server {
         async fn add_source(
             &self,
             request: tonic::Request<super::AddSourceRequest>,
+        ) -> Result<tonic::Response<super::SourceResponse>, tonic::Status>;
+        /// Toggle source.
+        async fn toggle_source(
+            &self,
+            request: tonic::Request<super::ToggleSourceRequest>,
         ) -> Result<tonic::Response<super::SourceResponse>, tonic::Status>;
         /// Removes source.
         async fn delete_source(
@@ -1246,6 +1281,46 @@ pub mod metastore_api_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = add_sourceSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit_metastore_api.MetastoreApiService/toggle_source" => {
+                    #[allow(non_camel_case_types)]
+                    struct toggle_sourceSvc<T: MetastoreApiService>(pub Arc<T>);
+                    impl<
+                        T: MetastoreApiService,
+                    > tonic::server::UnaryService<super::ToggleSourceRequest>
+                    for toggle_sourceSvc<T> {
+                        type Response = super::SourceResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ToggleSourceRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).toggle_source(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = toggle_sourceSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -703,6 +703,7 @@ mod tests {
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
         };
         let storage = Arc::new(RamStorage::default());
@@ -789,6 +790,7 @@ mod tests {
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
         };
         let storage = Arc::new(RamStorage::default());

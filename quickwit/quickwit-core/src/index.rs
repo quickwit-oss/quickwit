@@ -24,9 +24,11 @@ use std::time::Duration;
 
 use quickwit_common::fs::empty_dir;
 use quickwit_common::uri::Uri;
-use quickwit_config::{IndexConfig, QuickwitConfig};
+use quickwit_config::{IndexConfig, QuickwitConfig, SourceConfig, SourceParams, IngestApiSourceParams};
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_indexing::models::CACHE;
+use quickwit_indexing::source::INGEST_API_SOURCE_ID;
+use quickwit_ingest_api::QUEUES_DIR_NAME;
 use quickwit_janitor::{
     delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
 };
@@ -67,6 +69,7 @@ impl ServiceError for IndexServiceError {
 pub struct IndexService {
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
+    data_dir_path: PathBuf,
     default_index_root_uri: Uri,
 }
 
@@ -75,11 +78,13 @@ impl IndexService {
     pub fn new(
         metastore: Arc<dyn Metastore>,
         storage_resolver: StorageUriResolver,
+        data_dir_path: PathBuf,
         default_index_root_uri: Uri,
     ) -> Self {
         Self {
             metastore,
             storage_resolver,
+            data_dir_path,
             default_index_root_uri,
         }
     }
@@ -89,7 +94,7 @@ impl IndexService {
             .resolve(&config.metastore_uri)
             .await?;
         let storage_resolver = quickwit_storage_uri_resolver().clone();
-        let index_service = Self::new(metastore, storage_resolver, config.default_index_root_uri);
+        let index_service = Self::new(metastore, storage_resolver, config.data_dir_path, config.default_index_root_uri);
         Ok(index_service)
     }
 
@@ -161,6 +166,20 @@ impl IndexService {
             update_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
         };
         self.metastore.create_index(index_metadata).await?;
+
+        // Create a default enabled ingest-api source.
+        let queues_dir_path = self.data_dir_path.join(QUEUES_DIR_NAME);
+        let source_config = SourceConfig {
+            source_id: INGEST_API_SOURCE_ID.to_string(),
+            num_pipelines: 1,
+            enabled: true,
+            source_params: SourceParams::IngestApi(IngestApiSourceParams {
+                index_id: index_config.index_id.clone(),
+                batch_num_bytes_limit: None,
+                queues_dir_path,
+            }),
+        };
+        self.metastore.add_source(&index_config.index_id, source_config).await?;
         let index_metadata = self
             .metastore
             .index_metadata(&index_config.index_id)

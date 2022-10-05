@@ -150,6 +150,7 @@ mod tests {
                 SourceConfig {
                     source_id: "test-vec-source".to_string(),
                     num_pipelines: 1,
+                    enabled: true,
                     source_params: SourceParams::Vec(params.clone()),
                 },
             ),
@@ -205,6 +206,7 @@ mod tests {
                 SourceConfig {
                     source_id: "test-vec-source".to_string(),
                     num_pipelines: 1,
+                    enabled: true,
                     source_params: SourceParams::Vec(params.clone()),
                 },
             ),

@@ -133,6 +133,7 @@ impl TestSandbox {
         let source_config = SourceConfig {
             source_id: self.index_id.clone(),
             num_pipelines: 0,
+            enabled: true,
             source_params: SourceParams::Vec(VecSourceParams {
                 docs,
                 batch_num_docs: 10,

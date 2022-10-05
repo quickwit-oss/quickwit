@@ -707,6 +707,21 @@ impl Metastore for PostgresqlMetastore {
     }
 
     #[instrument(skip(self))]
+    async fn toggle_source(
+        &self,
+        index_id: &str,
+        source_id: &str,
+        enable: bool,
+    ) -> MetastoreResult<()> {
+        run_with_tx!(self.connection_pool, tx, {
+            mutate_index_metadata(tx, index_id, |index_metadata| {
+                index_metadata.toggle_source(source_id, enable)
+            })
+            .await
+        })
+    }
+
+    #[instrument(skip(self))]
     async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()> {
         run_with_tx!(self.connection_pool, tx, {
             mutate_index_metadata(tx, index_id, |index_metadata| {

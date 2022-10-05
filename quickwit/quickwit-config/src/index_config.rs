@@ -813,11 +813,13 @@ mod tests {
                 SourceConfig {
                     source_id: "void_1".to_string(),
                     num_pipelines: 1,
+                    enabled: true,
                     source_params: SourceParams::void(),
                 },
                 SourceConfig {
                     source_id: "void_1".to_string(),
                     num_pipelines: 1,
+                    enabled: true,
                     source_params: SourceParams::void(),
                 },
             ];
@@ -834,6 +836,7 @@ mod tests {
             invalid_index_config.sources = vec![SourceConfig {
                 source_id: "file_params_1".to_string(),
                 num_pipelines: 1,
+                enabled: true,
                 source_params: SourceParams::stdin(),
             }];
             assert!(invalid_index_config.validate().is_err());

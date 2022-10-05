@@ -171,6 +171,17 @@ impl IndexMetadata {
         Ok(())
     }
 
+    pub(crate) fn toggle_source(&mut self, source_id: &str, enable: bool) -> MetastoreResult<()> {
+        let source =
+            self.sources
+                .get_mut(source_id)
+                .ok_or_else(|| MetastoreError::SourceDoesNotExist {
+                    source_id: source_id.to_string(),
+                })?;
+        source.enabled = enable;
+        Ok(())
+    }
+
     pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<()> {
         self.sources
             .remove(source_id)

@@ -3258,6 +3258,7 @@ dependencies = [
  "quickwit-directories",
  "quickwit-doc-mapper",
  "quickwit-indexing",
+ "quickwit-ingest-api",
  "quickwit-janitor",
  "quickwit-metastore",
  "quickwit-proto",
