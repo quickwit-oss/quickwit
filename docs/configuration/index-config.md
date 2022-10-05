@@ -424,7 +424,7 @@ This section describes indexing settings for a given index.
 | ------------- | ------------- | ------------- |
 | `timestamp_field`      | Timestamp field used for sharding documents in splits (1).   | None |
 | `commit_timeout_secs`      | Maximum number of seconds before committing a split since its creation.   | 60 |
-| `split_num_docs_target` | Target of number of docs per split.   | 10_000_000 |
+| `split_num_docs_target` | Target number of docs per split.   | 10_000_000 |
 | `merge_policy` | Describes the strategy used to trigger split merge operations (see [Merge policies](#merge-policies) section below). |
 | `resources.heap_size`      | Indexer heap size per source per index.   | 2_000_000_000 |
 
