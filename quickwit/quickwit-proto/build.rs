@@ -18,24 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("cargo:rerun-if-changed=proto/ingest_api.proto");
-    println!("cargo:rerun-if-changed=proto/metastore_api.proto");
-    println!("cargo:rerun-if-changed=proto/search_api.proto");
-
-    println!(
-        "cargo:rerun-if-changed=otlp/opentelemetry/proto/collector/logs/v1/logs_service.proto"
-    );
-    println!(
-        "cargo:rerun-if-changed=otlp/opentelemetry/proto/collector/trace/v1/trace_service.proto"
-    );
-    println!("cargo:rerun-if-changed=otlp/opentelemetry/proto/common/v1/common.proto");
-    println!("cargo:rerun-if-changed=otlp/opentelemetry/proto/logs/v1/logs.proto");
-    println!("cargo:rerun-if-changed=otlp/opentelemetry/proto/resource/v1/resource.proto");
-    println!("cargo:rerun-if-changed=otlp/opentelemetry/proto/trace/v1/trace.proto");
-
+    // Quickwit proto
     let mut prost_config = prost_build::Config::default();
-    // prost_config.type_attribute("LeafSearchResponse", "#[derive(Default)]");
     prost_config.protoc_arg("--experimental_allow_proto3_optional");
+
     tonic_build::configure()
         .type_attribute(".", "#[derive(Serialize, Deserialize)]")
         .type_attribute("DeleteQuery", "#[serde(default)]")
@@ -58,6 +44,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ],
             &["./proto"],
         )?;
+
+    // Jaeger proto
+    let mut prost_config = prost_build::Config::default();
+    prost_config.type_attribute("Operation", "#[derive(Eq, Ord, PartialOrd)]");
+
+    tonic_build::configure()
+        .out_dir("src/")
+        .compile_with_config(
+            prost_config,
+            &["./jaeger/model.proto", "./jaeger/storage.proto"],
+            &["./jaeger"],
+        )?;
+
+    // OTEL proto
     tonic_build::configure()
         .type_attribute(".", "#[derive(Serialize, Deserialize)]")
         .out_dir("src/")
