@@ -56,7 +56,7 @@ service MetastoreApiService {
   // Adds source.
   rpc add_source(AddSourceRequest) returns (SourceResponse);
 
-  // Toggle source.
+  // Toggles source.
   rpc toggle_source(ToggleSourceRequest) returns (SourceResponse); 
 
   // Removes source.

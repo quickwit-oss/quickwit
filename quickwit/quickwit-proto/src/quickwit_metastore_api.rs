@@ -526,7 +526,7 @@ pub mod metastore_api_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        /// Toggle source.
+        /// Toggles source.
         pub async fn toggle_source(
             &mut self,
             request: impl tonic::IntoRequest<super::ToggleSourceRequest>,
@@ -753,7 +753,7 @@ pub mod metastore_api_service_server {
             &self,
             request: tonic::Request<super::AddSourceRequest>,
         ) -> Result<tonic::Response<super::SourceResponse>, tonic::Status>;
-        /// Toggle source.
+        /// Toggles source.
         async fn toggle_source(
             &self,
             request: tonic::Request<super::ToggleSourceRequest>,

@@ -393,7 +393,7 @@ impl Metastore for MetastoreGrpcClient {
         Ok(())
     }
 
-    /// Toggle source enable value.
+    /// Toggle source `enabled` field value.
     async fn toggle_source(
         &self,
         index_id: &str,

@@ -37,7 +37,7 @@ use tracing::{error, info};
 
 // TODO: [https://github.com/quickwit-oss/quickwit/issues/2069]
 // Given some objects use `_`, we should harmonize this and bring
-// know internal objects name into this crate under `quickwit.rs`
+// known internal objects name into this crate under `quickwit.rs`
 /// Quickwit internal objects id start with this marker.
 pub const QUICKWIT_INTERNAL_OBJECT_ID_MARKER: char = '.';
 

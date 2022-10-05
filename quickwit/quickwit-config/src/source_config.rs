@@ -27,7 +27,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::{is_false, validate_identifier};
 
-/// Reserved source ID for the `Quickwit index ingest` CLI command.
+/// Reserved source ID for the `quickwit index ingest` CLI command.
 pub const CLI_INGEST_SOURCE_ID: &str = ".cli-ingest-source";
 
 /// Reserved source ID used for Quickwit ingest API.
@@ -340,7 +340,7 @@ pub struct IngestApiSourceParams {
     pub index_id: String,
     // IngestApiSource can be instantiated by any indexing node when starting an ingest API.
     // Since nodes can have different QuickwitConfig, the `queues_dir_path` needs
-    // to be during instantiation based on the node QuickwitConfig.
+    // to be set during instantiation based on the node's QuickwitConfig.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub queues_dir_path: Option<PathBuf>,
