@@ -19,6 +19,11 @@
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Quickwit proto
+    let protos = [
+        "proto/ingest_api.proto",
+        "proto/metastore_api.proto",
+        "proto/search_api.proto",
+    ];
     let mut prost_config = prost_build::Config::default();
     prost_config.protoc_arg("--experimental_allow_proto3_optional");
 
@@ -35,42 +40,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .type_attribute("OutputFormat", "#[serde(rename_all = \"snake_case\")]")
         .out_dir("src/")
-        .compile_with_config(
-            prost_config,
-            &[
-                "./proto/ingest_api.proto",
-                "./proto/metastore_api.proto",
-                "./proto/search_api.proto",
-            ],
-            &["./proto"],
-        )?;
+        .compile_with_config(prost_config, &protos, &["./proto"])?;
 
     // Jaeger proto
+    let protos = ["./jaeger/model.proto", "./jaeger/storage.proto"];
+
     let mut prost_config = prost_build::Config::default();
     prost_config.type_attribute("Operation", "#[derive(Eq, Ord, PartialOrd)]");
 
     tonic_build::configure()
         .out_dir("src/")
-        .compile_with_config(
-            prost_config,
-            &["./jaeger/model.proto", "./jaeger/storage.proto"],
-            &["./jaeger"],
-        )?;
+        .compile_with_config(prost_config, &protos, &["./jaeger"])?;
 
     // OTEL proto
+    let protos = [
+        "otlp/opentelemetry/proto/common/v1/common.proto", // Must be compiled first.
+        "otlp/opentelemetry/proto/resource/v1/resource.proto", // Must be compiled second.
+        "otlp/opentelemetry/proto/logs/v1/logs.proto",
+        "otlp/opentelemetry/proto/trace/v1/trace.proto",
+        "otlp/opentelemetry/proto/collector/logs/v1/logs_service.proto",
+        "otlp/opentelemetry/proto/collector/trace/v1/trace_service.proto",
+    ];
     tonic_build::configure()
         .type_attribute(".", "#[derive(Serialize, Deserialize)]")
         .out_dir("src/")
-        .compile(
-            &[
-                "./otlp/opentelemetry/proto/common/v1/common.proto", // Must be compiled first.
-                "./otlp/opentelemetry/proto/resource/v1/resource.proto", // Must be compiled second.
-                "./otlp/opentelemetry/proto/logs/v1/logs.proto",
-                "./otlp/opentelemetry/proto/trace/v1/trace.proto",
-                "./otlp/opentelemetry/proto/collector/logs/v1/logs_service.proto",
-                "./otlp/opentelemetry/proto/collector/trace/v1/trace_service.proto",
-            ],
-            &["./otlp"],
-        )?;
+        .compile(&protos, &["./otlp"])?;
     Ok(())
 }
