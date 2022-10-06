@@ -387,68 +387,17 @@ mod tests {
     };
     use crate::default_doc_mapper::FieldMappingType;
 
-    const TEXT_MAPPING_ENTRY_VALUE: &str = r#"
-        {
-            "name": "my_field_name",
-            "type": "text",
-            "stored": true,
-            "record": "basic",
-            "tokenizer": "en_stem"
-        }
-    "#;
-
-    const TEXT_MAPPING_ENTRY_VALUE_INVALID_TOKENIZER: &str = r#"
-        {
-            "name": "my_field_name",
-            "type": "text",
-            "stored": true,
-            "record": "basic",
-            "tokenizer": "notexist"
-        }
-    "#;
-
-    const TEXT_MAPPING_ENTRY_VALUE_NOT_INDEXED: &str = r#"
-        {
+    #[test]
+    fn test_deserialize_text_mapping_entry_not_indexed() -> anyhow::Result<()> {
+        let mapping_entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
             "name": "data_binary",
             "type": "text",
             "indexed": false,
             "stored": true
-        }"#;
-
-    const TEXT_MAPPING_ENTRY_VALUE_NOT_INDEXED_INVALID: &str = r#"
-    {
-        "name": "data_binary",
-        "type": "text",
-        "indexed": false,
-        "record": "basic"
-    }
-    "#;
-
-    const JSON_MAPPING_ENTRY_UNKNOWN_FIELD: &str = r#"
-        {
-            "name": "my_field_name",
-            "type": "json",
-            "blub": true
-        }
-    "#;
-
-    const OBJECT_MAPPING_ENTRY_VALUE: &str = r#"
-        {
-            "name": "my_field_name",
-            "type": "object",
-            "field_mappings": [
-                {
-                    "name": "my_field_name",
-                    "type": "text"
-                }
-            ]
-        }
-    "#;
-
-    #[test]
-    fn test_deserialize_text_mapping_entry_not_indexed() -> anyhow::Result<()> {
-        let mapping_entry =
-            serde_json::from_str::<FieldMappingEntry>(TEXT_MAPPING_ENTRY_VALUE_NOT_INDEXED)?;
+            }"#,
+        )?;
         assert_eq!(mapping_entry.name, "data_binary");
         match mapping_entry.mapping_type {
             FieldMappingType::Text(options, _) => {
@@ -463,8 +412,16 @@ mod tests {
 
     #[test]
     fn test_deserialize_text_mapping_entry_not_indexed_invalid() {
-        let result =
-            serde_json::from_str::<FieldMappingEntry>(TEXT_MAPPING_ENTRY_VALUE_NOT_INDEXED_INVALID);
+        let result = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "data_binary",
+                "type": "text",
+                "indexed": false,
+                "record": "basic"
+            }
+            "#,
+        );
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert_eq!(
@@ -476,8 +433,17 @@ mod tests {
 
     #[test]
     fn test_deserialize_invalid_text_mapping_entry() -> anyhow::Result<()> {
-        let mapping_entry =
-            serde_json::from_str::<FieldMappingEntry>(TEXT_MAPPING_ENTRY_VALUE_INVALID_TOKENIZER);
+        let mapping_entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "text",
+                "stored": true,
+                "record": "basic",
+                "tokenizer": "notexist"
+            }
+            "#,
+        );
         assert!(mapping_entry.is_err());
         assert_eq!(
             mapping_entry.unwrap_err().to_string(),
@@ -490,8 +456,15 @@ mod tests {
 
     #[test]
     fn test_deserialize_invalid_json_mapping_entry() -> anyhow::Result<()> {
-        let mapping_entry =
-            serde_json::from_str::<FieldMappingEntry>(JSON_MAPPING_ENTRY_UNKNOWN_FIELD);
+        let mapping_entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+        {
+            "name": "my_field_name",
+            "type": "json",
+            "blub": true
+        }
+    "#,
+        );
         assert!(mapping_entry.is_err());
         assert_eq!(
             mapping_entry.unwrap_err().to_string(),
@@ -504,7 +477,17 @@ mod tests {
 
     #[test]
     fn test_deserialize_text_mapping_entry() -> anyhow::Result<()> {
-        let mapping_entry = serde_json::from_str::<FieldMappingEntry>(TEXT_MAPPING_ENTRY_VALUE)?;
+        let mapping_entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+        {
+            "name": "my_field_name",
+            "type": "text",
+            "stored": true,
+            "record": "basic",
+            "tokenizer": "en_stem"
+        }
+        "#,
+        )?;
         assert_eq!(mapping_entry.name, "my_field_name");
         match mapping_entry.mapping_type {
             FieldMappingType::Text(options, _) => {
@@ -587,8 +570,21 @@ mod tests {
 
     #[test]
     fn test_deserialize_object_mapping_entry() {
-        let mapping_entry =
-            serde_json::from_str::<FieldMappingEntry>(OBJECT_MAPPING_ENTRY_VALUE).unwrap();
+        let mapping_entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+            "name": "my_field_name",
+            "type": "object",
+            "field_mappings": [
+                {
+                    "name": "my_field_name",
+                    "type": "text"
+                }
+            ]
+            }
+            "#,
+        )
+        .unwrap();
         assert_eq!(mapping_entry.name, "my_field_name");
         match mapping_entry.mapping_type {
             FieldMappingType::Object(options) => {
