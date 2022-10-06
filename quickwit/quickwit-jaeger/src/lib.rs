@@ -66,11 +66,7 @@ impl SpanReaderPlugin for JaegerService {
         debug!(request=?request, "`get_services` request");
 
         let search_request = request.into_search_req();
-        let search_response = self
-            .search_service
-            .root_search(search_request)
-            .await
-            .unwrap();
+        let search_response = self.search_service.root_search(search_request).await?;
         let response = search_response.into_jaeger_resp();
         debug!(response=?response, "`get_services` response");
         Ok(Response::new(response))
@@ -84,11 +80,7 @@ impl SpanReaderPlugin for JaegerService {
         debug!(request=?request, "`get_operations` request");
 
         let search_request = request.into_search_req();
-        let search_response = self
-            .search_service
-            .root_search(search_request)
-            .await
-            .unwrap();
+        let search_response = self.search_service.root_search(search_request).await?;
         let response = search_response.into_jaeger_resp();
         debug!(response=?response, "`get_operations` response");
         Ok(Response::new(response))
@@ -102,11 +94,7 @@ impl SpanReaderPlugin for JaegerService {
         debug!(request=?request, "`find_trace_ids` request");
 
         let search_request = request.into_search_req();
-        let search_response = self
-            .search_service
-            .root_search(search_request)
-            .await
-            .unwrap();
+        let search_response = self.search_service.root_search(search_request).await?;
         let response = search_response.into_jaeger_resp();
         debug!(response=?response, "`find_trace_ids` response");
         Ok(Response::new(response))
