@@ -160,6 +160,33 @@ quickwit index ingest --index wikipedia --config=./config/quickwit.yaml --input-
 cat hdfs-log.json | quickwit index ingest --index wikipedia --config=./config/quickwit.yaml
 ```
 
+### enable/disable ingest API
+
+Enable/Disable the ingest API for an index.
+`quickwit index ingest-api [args]`
+
+*Synopsis*
+
+```bash
+quickwit index ingest-api
+    --index <index>
+    --config <config>
+    --enable
+```
+
+*Options*
+
+`--index` ID of the target index. \
+`--config` Quickwit config file. \
+`--enable` or `--disable` Enable or disable the ingest API.
+
+*Examples*
+
+*Disable the ingest API of your index*
+```bash
+quickwit index ingest-api --index wikipedia --config ./config/quickwit.yaml --disable 
+```
+
 ### index describe
 
 Displays descriptive statistics of an index: number of published splits, number of documents, splits min/max timestamps, size of splits.
@@ -505,6 +532,60 @@ EOF
 quickwit source add --index wikipedia --source wikipedia-source --type kafka --params wikipedia-kafka-source.json --config ./config/quickwit.yaml
 ```
 
+### source enable
+
+Enables a source.
+`quickwit source enable [args]`
+
+*Synopsis*
+
+```bash
+quickwit source enable
+    --index <index>
+    --source <source>
+    --config <config>
+```
+
+*Options*
+
+`--index` ID of the target index. \
+`--source` ID of the target source. \
+`--config` Quickwit config file.
+
+*Examples*
+
+*Enable a `wikipedia-source` source*
+```bash
+quickwit source enable --index wikipedia --source wikipedia-source --config ./config/quickwit.yaml
+```
+
+### source disable
+
+Disables a source.
+`quickwit source disable [args]`
+
+*Synopsis*
+
+```bash
+quickwit source disable
+    --index <index>
+    --source <source_id>
+    --config <config>
+```
+
+*Options*
+
+`--index` ID of the target index. \
+`--source` ID of the target source. \
+`--config` Quickwit config file.
+
+*Examples*
+
+*Disable a `wikipedia-source` source*
+```bash
+quickwit source disable --index wikipedia --source wikipedia-source --config ./config/quickwit.yaml
+```
+
 ### source delete
 
 Deletes a source.
@@ -523,7 +604,7 @@ quickwit source delete
 
 `--index` ID of the target index. \
 `--source` ID of the target source. \
-`--config` Quickwit config file. \
+`--config` Quickwit config file.
 
 *Examples*
 
@@ -550,7 +631,7 @@ quickwit source describe
 
 `--index` ID of the target index. \
 `--source` ID of the target source. \
-`--config` Quickwit config file. \
+`--config` Quickwit config file.
 
 *Examples*
 
@@ -575,7 +656,7 @@ quickwit source list
 *Options*
 
 `--index` ID of the target index. \
-`--config` Quickwit config file. \
+`--config` Quickwit config file.
 
 *Examples*
 
