@@ -393,16 +393,14 @@ impl FileBackedIndex {
         Ok(())
     }
 
-    /// Adds a source. Returns that a mutation occurred (true).
+    /// Adds a source. Returns whether a mutation occurred.
     pub(crate) fn add_source(&mut self, source: SourceConfig) -> MetastoreResult<bool> {
-        self.metadata.add_source(source)?;
-        Ok(true)
+        self.metadata.add_source(source)
     }
 
-    /// Deletes the source. Returns that a mutation occurred (true).
+    /// Deletes the source. Returns whether a mutation occurred.
     pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<bool> {
-        self.metadata.delete_source(source_id)?;
-        Ok(true)
+        self.metadata.delete_source(source_id)
     }
 
     /// Resets the checkpoint of a source. Returns whether a mutation occurred.
