@@ -20,6 +20,7 @@
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
 
+use anyhow::Context;
 use quickwit_config::service::QuickwitService;
 use quickwit_metastore::GrpcMetastoreAdapter;
 use quickwit_opentelemetry::otlp::OtlpGrpcTraceService;
@@ -59,7 +60,13 @@ pub(crate) async fn start_grpc_server(
         && services.services.contains(&QuickwitService::Indexer)
     {
         enabled_grpc_services.insert("otlp-trace");
-        Some(TraceServiceServer::new(OtlpGrpcTraceService::default()))
+        let ingest_api_service = services
+            .ingest_api_service
+            .clone()
+            .context("Failed to instantiate OTLP trace service: the ingest API is disabled.")?;
+        Some(TraceServiceServer::new(OtlpGrpcTraceService::new(
+            ingest_api_service,
+        )))
     } else {
         None
     };
