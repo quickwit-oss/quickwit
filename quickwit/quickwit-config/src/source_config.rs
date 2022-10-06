@@ -22,10 +22,11 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context};
 use json_comments::StripComments;
 use quickwit_common::uri::{Extension, Uri};
+use quickwit_common::validate_identifier;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::{is_false, validate_identifier};
+use crate::is_false;
 
 /// Reserved source ID for the `quickwit index ingest` CLI command.
 pub const CLI_INGEST_SOURCE_ID: &str = ".cli-ingest-source";
@@ -56,7 +57,7 @@ pub struct SourceConfig {
     /// indexing pipelines running for the source.
     pub num_pipelines: usize,
 
-    // Denotes if this source is enable.
+    // Denotes if this source is enabled.
     #[serde(default = "default_source_enabled")]
     pub enabled: bool,
 
@@ -175,15 +176,13 @@ impl SourceConfig {
     }
 }
 
-/// Creates de default ingest-api source config.
-pub fn ingest_api_default_source_config(index_id: &str) -> SourceConfig {
+/// Creates the default ingest-api source config.
+pub fn ingest_api_default_source_config() -> SourceConfig {
     SourceConfig {
         source_id: INGEST_API_SOURCE_ID.to_string(),
         num_pipelines: 1,
         enabled: true,
         source_params: SourceParams::IngestApi(IngestApiSourceParams {
-            index_id: index_id.to_string(),
-            queues_dir_path: None,
             batch_num_bytes_limit: None,
         }),
     }
@@ -335,17 +334,30 @@ pub struct VecSourceParams {
 pub struct VoidSourceParams;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(from = "IngestApiSourceParamsLegacy")]
 #[serde(deny_unknown_fields)]
 pub struct IngestApiSourceParams {
-    pub index_id: String,
-    // IngestApiSource can be instantiated by any indexing node when starting an ingest API.
-    // Since nodes can have different QuickwitConfig, the `queues_dir_path` needs
-    // to be set during instantiation based on the node's QuickwitConfig.
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub queues_dir_path: Option<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub batch_num_bytes_limit: Option<u64>,
+}
+
+/// Only here for deserialization.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IngestApiSourceParamsLegacy {
+    #[serde(default, rename = "index_id", skip_serializing)]
+    pub __index_id_deprecated: String,
+    #[serde(default, rename = "queues_dir_path", skip_serializing)]
+    pub __queues_dir_path_deprecated: PathBuf,
+    pub batch_num_bytes_limit: Option<u64>,
+}
+
+impl From<IngestApiSourceParamsLegacy> for IngestApiSourceParams {
+    fn from(params: IngestApiSourceParamsLegacy) -> Self {
+        Self {
+            batch_num_bytes_limit: params.batch_num_bytes_limit,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -579,19 +591,58 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn test_load_ingest_api_source_config() {
+        let source_config_filepath = get_source_config_filepath("ingest-api-source.json");
+        let file_content = std::fs::read_to_string(&source_config_filepath).unwrap();
+        let source_config_uri = Uri::try_new(&source_config_filepath).unwrap();
+        let source_config = SourceConfig::from_uri(&source_config_uri, file_content.as_bytes())
+            .await
+            .unwrap();
+        let expected_source_config = SourceConfig {
+            source_id: ".ingest-api".to_string(),
+            num_pipelines: 1,
+            enabled: true,
+            source_params: SourceParams::IngestApi(IngestApiSourceParams {
+                batch_num_bytes_limit: Some(2000),
+            }),
+        };
+        assert_eq!(source_config, expected_source_config);
+        assert!(source_config.num_pipelines().is_none());
+    }
+
     #[test]
     fn test_ingest_api_source_params_deserialization() {
         let yaml = r#"
-            index_id: wikipedia
-            batch_num_bytes_limit: 200000
-            queues_dir_path: ./qwdata/queues
+            batch_num_bytes_limit: 2000
         "#;
         let ingest_api_params = serde_yaml::from_str::<IngestApiSourceParams>(yaml).unwrap();
-        assert_eq!(ingest_api_params.index_id, "wikipedia");
-        assert_eq!(ingest_api_params.batch_num_bytes_limit, Some(200000));
+        assert_eq!(ingest_api_params.batch_num_bytes_limit, Some(2000));
+
+        let json = r#"{}"#;
+        let ingest_api_params = serde_json::from_str::<IngestApiSourceParams>(json).unwrap();
+        assert_eq!(ingest_api_params.batch_num_bytes_limit, None);
+    }
+
+    #[test]
+    fn test_ingest_api_source_params_backward_compatibility() {
+        let old_format_yaml = r#"
+            index_id: wikipedia
+            batch_num_bytes_limit: 2000
+            queues_dir_path: ./qwdata/queues
+        "#;
+        let ingest_api_params =
+            serde_yaml::from_str::<IngestApiSourceParams>(old_format_yaml).unwrap();
+        assert_eq!(ingest_api_params.batch_num_bytes_limit, Some(2000));
+
+        let serialized_json = serde_json::to_string(&ingest_api_params).unwrap();
+        let expected_json = serde_json::to_string(&IngestApiSourceParams {
+            batch_num_bytes_limit: Some(2000),
+        })
+        .unwrap();
         assert_eq!(
-            ingest_api_params.queues_dir_path,
-            Some(PathBuf::from("./qwdata/queues"))
-        )
+            serialized_json, expected_json,
+            "Expected to serialize to new format"
+        );
     }
 }

@@ -30,6 +30,7 @@ use cron::Schedule;
 use humantime::parse_duration;
 use json_comments::StripComments;
 use quickwit_common::uri::{Extension, Uri};
+use quickwit_common::validate_identifier;
 use quickwit_doc_mapper::{
     DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, ModeType,
     QuickwitJsonOptions, SortBy, SortByConfig, SortOrder,
@@ -39,7 +40,6 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::merge_policy_config::{MergePolicyConfig, StableLogMergePolicyConfig};
 use crate::source_config::SourceConfig;
-use crate::validate_identifier;
 
 // Note(fmassot): `DocMapping` is a struct only used for
 // serialization/deserialization of `DocMapper` parameters.

@@ -743,6 +743,8 @@ fn parse_message_payload(message: &BorrowedMessage) -> Option<String> {
 
 #[cfg(all(test, feature = "kafka-broker-tests"))]
 mod kafka_broker_tests {
+    use std::path::PathBuf;
+
     use quickwit_actors::{create_test_mailbox, ActorContext, Universe};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{SourceConfig, SourceParams};
@@ -934,7 +936,12 @@ mod kafka_broker_tests {
         } else {
             unreachable!()
         };
-        let ctx = SourceExecutionContext::for_test(metastore, &index_id, source_config);
+        let ctx = SourceExecutionContext::for_test(
+            metastore,
+            &index_id,
+            PathBuf::from("./queues"),
+            source_config,
+        );
         let ignored_checkpoint = SourceCheckpoint::default();
         let mut kafka_source = KafkaSource::try_new(ctx, params, ignored_checkpoint)
             .await
@@ -1055,7 +1062,12 @@ mod kafka_broker_tests {
         } else {
             unreachable!()
         };
-        let ctx = SourceExecutionContext::for_test(metastore, &index_id, source_config);
+        let ctx = SourceExecutionContext::for_test(
+            metastore,
+            &index_id,
+            PathBuf::from("./queues"),
+            source_config,
+        );
         let ignored_checkpoint = SourceCheckpoint::default();
         let mut kafka_source = KafkaSource::try_new(ctx, params, ignored_checkpoint)
             .await
@@ -1110,7 +1122,12 @@ mod kafka_broker_tests {
         } else {
             unreachable!()
         };
-        let ctx = SourceExecutionContext::for_test(metastore, &index_id, source_config);
+        let ctx = SourceExecutionContext::for_test(
+            metastore,
+            &index_id,
+            PathBuf::from("./queues"),
+            source_config,
+        );
         let ignored_checkpoint = SourceCheckpoint::default();
         let mut kafka_source = KafkaSource::try_new(ctx, params, ignored_checkpoint)
             .await
@@ -1161,7 +1178,12 @@ mod kafka_broker_tests {
         } else {
             unreachable!()
         };
-        let ctx = SourceExecutionContext::for_test(metastore, &index_id, source_config);
+        let ctx = SourceExecutionContext::for_test(
+            metastore,
+            &index_id,
+            PathBuf::from("./queues"),
+            source_config,
+        );
         let ignored_checkpoint = SourceCheckpoint::default();
         let mut kafka_source = KafkaSource::try_new(ctx, params, ignored_checkpoint)
             .await
@@ -1197,6 +1219,7 @@ mod kafka_broker_tests {
                     SourceExecutionContext::for_test(
                         metastore.clone(),
                         &index_id,
+                        PathBuf::from("./queues"),
                         source_config.clone(),
                     ),
                     SourceCheckpoint::default(),
@@ -1258,6 +1281,7 @@ mod kafka_broker_tests {
                     SourceExecutionContext::for_test(
                         metastore.clone(),
                         &index_id,
+                        PathBuf::from("./queues"),
                         source_config.clone(),
                     ),
                     SourceCheckpoint::default(),
@@ -1323,6 +1347,7 @@ mod kafka_broker_tests {
                     SourceExecutionContext::for_test(
                         metastore.clone(),
                         &index_id,
+                        PathBuf::from("./queues"),
                         source_config.clone(),
                     ),
                     SourceCheckpoint::default(),

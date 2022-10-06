@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -396,6 +397,7 @@ impl IndexingPipeline {
                 Arc::new(SourceExecutionContext {
                     metastore: self.params.metastore.clone(),
                     index_id: self.params.pipeline_id.index_id.clone(),
+                    queues_dir_path: self.params.queues_dir_path.clone(),
                     source_config: self.params.source_config.clone(),
                 }),
                 source_checkpoint,
@@ -565,6 +567,7 @@ pub struct IndexingPipelineParams {
     pub pipeline_id: IndexingPipelineId,
     pub doc_mapper: Arc<dyn DocMapper>,
     pub indexing_directory: IndexingDirectory,
+    pub queues_dir_path: PathBuf,
     pub indexing_settings: IndexingSettings,
     pub source_config: SourceConfig,
     pub metastore: Arc<dyn Metastore>,
@@ -579,6 +582,7 @@ impl IndexingPipelineParams {
         index_metadata: IndexMetadata,
         source_config: SourceConfig,
         indexing_directory: IndexingDirectory,
+        queues_dir_path: PathBuf,
         split_store: IndexingSplitStore,
         metastore: Arc<dyn Metastore>,
         storage: Arc<dyn Storage>,
@@ -592,6 +596,7 @@ impl IndexingPipelineParams {
             pipeline_id,
             doc_mapper,
             indexing_directory,
+            queues_dir_path,
             indexing_settings: index_metadata.indexing_settings,
             source_config,
             metastore,
@@ -713,6 +718,7 @@ mod tests {
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             indexing_directory: IndexingDirectory::for_test().await,
+            queues_dir_path: PathBuf::from("./queues"),
             indexing_settings: IndexingSettings::for_test(),
             metastore: Arc::new(metastore),
             storage,
@@ -800,6 +806,7 @@ mod tests {
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             indexing_directory: IndexingDirectory::for_test().await,
+            queues_dir_path: PathBuf::from("./queues"),
             indexing_settings: IndexingSettings::for_test(),
             metastore: Arc::new(metastore),
             storage,

@@ -122,6 +122,8 @@ impl Source for VecSource {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use quickwit_actors::{create_test_mailbox, Actor, Command, Universe};
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::metastore_for_test;
@@ -147,6 +149,7 @@ mod tests {
             SourceExecutionContext::for_test(
                 metastore,
                 "test-index",
+                PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-vec-source".to_string(),
                     num_pipelines: 1,
@@ -203,6 +206,7 @@ mod tests {
             SourceExecutionContext::for_test(
                 metastore,
                 "test-index",
+                PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-vec-source".to_string(),
                     num_pipelines: 1,

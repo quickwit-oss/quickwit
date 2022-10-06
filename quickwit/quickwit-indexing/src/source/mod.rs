@@ -67,7 +67,7 @@ mod source_factory;
 mod vec_source;
 mod void_source;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -97,6 +97,8 @@ use crate::source::ingest_api_source::IngestApiSourceFactory;
 pub struct SourceExecutionContext {
     pub metastore: Arc<dyn Metastore>,
     pub index_id: String,
+    // Ingest API queues directory path.
+    pub queues_dir_path: PathBuf,
     pub source_config: SourceConfig,
 }
 
@@ -105,11 +107,13 @@ impl SourceExecutionContext {
     fn for_test(
         metastore: Arc<dyn Metastore>,
         index_id: &str,
+        queues_dir_path: PathBuf,
         source_config: SourceConfig,
     ) -> Arc<SourceExecutionContext> {
         Arc::new(Self {
             metastore,
             index_id: index_id.to_string(),
+            queues_dir_path,
             source_config,
         })
     }

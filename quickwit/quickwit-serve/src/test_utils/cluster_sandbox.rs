@@ -190,10 +190,7 @@ async fn create_index_for_test(
         .await?;
     metastore.create_index(index_meta.clone()).await?;
     metastore
-        .add_source(
-            index_id_for_test,
-            ingest_api_default_source_config(index_id_for_test),
-        )
+        .add_source(index_id_for_test, ingest_api_default_source_config())
         .await?;
     Ok(())
 }

@@ -1,0 +1,8 @@
+{
+  "source_id": ".ingest-api",
+  "enabled": true,
+  "source_type": "ingest-api",
+  "params": {
+    "batch_num_bytes_limit": 2000
+  }
+}

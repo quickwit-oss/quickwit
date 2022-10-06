@@ -21,7 +21,7 @@ use anyhow::{bail, Context};
 use clap::{arg, ArgMatches, Command};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
-use quickwit_common::{is_quickwit_internal_object_id, QUICKWIT_INTERNAL_OBJECT_ID_MARKER};
+use quickwit_common::validate_identifier;
 use quickwit_config::{SourceConfig, SourceParams};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
@@ -308,14 +308,6 @@ async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
     let source_config_content = load_file(&args.source_config_uri).await?;
     let source_config =
         SourceConfig::load(&args.source_config_uri, source_config_content.as_slice()).await?;
-    if is_quickwit_internal_object_id(&source_config.source_id) {
-        bail!(
-            "Could not create the source `{}`, sources with ids starting with `{}` are only for \
-             internal use.",
-            source_config.source_id,
-            QUICKWIT_INTERNAL_OBJECT_ID_MARKER,
-        );
-    }
     if let SourceParams::IngestApi(_) = source_config.source_params {
         bail!(
             "Could not create the source `{}`, sources of type `ingest-api` are only for internal \
@@ -340,14 +332,7 @@ async fn toggle_source_cli(args: ToggleSourceArgs) -> anyhow::Result<()> {
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri)
         .await?;
-    if is_quickwit_internal_object_id(&args.source_id) {
-        bail!(
-            "Could not update the source `{}`, sources with ids starting with `{}` are only for \
-             internal use.",
-            args.source_id,
-            QUICKWIT_INTERNAL_OBJECT_ID_MARKER,
-        );
-    }
+    validate_identifier("Source ID", &args.source_id)?;
 
     metastore
         .toggle_source(&args.index_id, &args.source_id, args.enable)
@@ -365,14 +350,7 @@ async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri)
         .await?;
-    if is_quickwit_internal_object_id(&args.source_id) {
-        bail!(
-            "Could not delete the source `{}`, sources with ids starting with `{}` are only for \
-             internal use.",
-            args.source_id,
-            QUICKWIT_INTERNAL_OBJECT_ID_MARKER,
-        );
-    }
+    validate_identifier("Source ID", &args.source_id)?;
 
     metastore
         .delete_source(&args.index_id, &args.source_id)

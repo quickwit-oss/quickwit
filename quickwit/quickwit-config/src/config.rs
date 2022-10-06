@@ -27,14 +27,13 @@ use byte_unit::Byte;
 use derivative::Derivative;
 use json_comments::StripComments;
 use quickwit_common::net::{find_private_ip, Host, HostAddr};
-use quickwit_common::new_coolid;
 use quickwit_common::uri::{Extension, Uri};
+use quickwit_common::{new_coolid, validate_identifier};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use crate::service::QuickwitService;
 use crate::templating::render_config;
-use crate::validate_identifier;
 
 pub const DEFAULT_QW_CONFIG_PATH: &str = "./config/quickwit.yaml";
 

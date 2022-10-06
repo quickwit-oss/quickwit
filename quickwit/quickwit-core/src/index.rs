@@ -163,7 +163,7 @@ impl IndexService {
         self.metastore.create_index(index_metadata).await?;
 
         // Create a default enabled ingest-api source.
-        let source_config = ingest_api_default_source_config(&index_config.index_id);
+        let source_config = ingest_api_default_source_config();
         self.metastore
             .add_source(&index_config.index_id, source_config)
             .await?;

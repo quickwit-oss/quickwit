@@ -247,7 +247,7 @@ pub mod test_suite {
         let source = index_metadata.sources.get(source_id).unwrap();
         assert_eq!(source.enabled(), true);
 
-        // disable source
+        // Disable source.
         metastore
             .toggle_source(index_id, &source.source_id, false)
             .await
@@ -256,7 +256,7 @@ pub mod test_suite {
         let source = index_metadata.sources.get(source_id).unwrap();
         assert_eq!(source.enabled(), false);
 
-        // enable source
+        // Enable source.
         metastore
             .toggle_source(index_id, &source.source_id, true)
             .await

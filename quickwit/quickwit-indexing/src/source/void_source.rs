@@ -70,6 +70,8 @@ impl TypedSourceFactory for VoidSourceFactory {
 #[cfg(test)]
 mod tests {
 
+    use std::path::PathBuf;
+
     use quickwit_actors::{create_test_mailbox, Health, Supervisable, Universe};
     use quickwit_config::SourceParams;
     use quickwit_metastore::checkpoint::SourceCheckpoint;
@@ -88,7 +90,12 @@ mod tests {
             source_params: SourceParams::void(),
         };
         let metastore = metastore_for_test();
-        let ctx = SourceExecutionContext::for_test(metastore, "test-index", source_config);
+        let ctx = SourceExecutionContext::for_test(
+            metastore,
+            "test-index",
+            PathBuf::from("./queues"),
+            source_config,
+        );
         let source = quickwit_supported_sources()
             .load_source(ctx, SourceCheckpoint::default())
             .await
@@ -103,6 +110,7 @@ mod tests {
             SourceExecutionContext::for_test(
                 metastore,
                 "test-index",
+                PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-void-source".to_string(),
                     num_pipelines: 1,

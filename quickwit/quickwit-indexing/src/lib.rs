@@ -86,7 +86,6 @@ pub async fn start_indexing_service(
             })
             .await?;
     }
-
     // Spawn Ingest Api garbage collector.
     let queues_dir_path = config.data_dir_path.join(QUEUES_DIR_NAME);
     let ingest_api_service = get_ingest_api_service(&queues_dir_path).await?;
