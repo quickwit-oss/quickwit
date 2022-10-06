@@ -21,6 +21,7 @@ use std::any::Any;
 use std::borrow::Borrow;
 use std::fmt;
 
+use serde::Serialize;
 use tokio::sync::{oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
@@ -38,7 +39,7 @@ pub struct ActorHandle<A: Actor> {
 }
 
 /// Describes the health of a given actor.
-#[derive(Clone, Eq, PartialEq, Debug, Hash)]
+#[derive(Clone, Eq, PartialEq, Debug, Hash, Serialize)]
 pub enum Health {
     /// The actor is running and behaving as expected.
     Healthy,

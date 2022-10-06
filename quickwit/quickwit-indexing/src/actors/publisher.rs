@@ -24,13 +24,14 @@ use async_trait::async_trait;
 use fail::fail_point;
 use quickwit_actors::{Actor, ActorContext, Handler, Mailbox};
 use quickwit_metastore::Metastore;
+use serde::Serialize;
 use tracing::{info, instrument};
 
 use crate::actors::MergePlanner;
 use crate::models::{NewSplits, SplitsUpdate};
 use crate::source::{SourceActor, SuggestTruncate};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct PublisherCounters {
     pub num_published_splits: u64,
     pub num_replace_operations: u64,

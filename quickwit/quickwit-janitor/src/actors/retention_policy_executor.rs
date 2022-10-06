@@ -25,13 +25,14 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_metastore::{IndexMetadata, Metastore};
+use serde::Serialize;
 use tracing::{debug, error};
 
 use crate::retention_policy_execution::run_execute_retention_policy;
 
 const RUN_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hours
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct RetentionPolicyExecutorCounters {
     /// The number of refresh the config passes.
     pub num_refresh_passes: usize,

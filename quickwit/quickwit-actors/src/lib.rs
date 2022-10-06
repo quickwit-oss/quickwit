@@ -40,12 +40,13 @@ mod kill_switch;
 mod mailbox;
 mod observation;
 mod progress;
+mod registry;
 mod scheduler;
 mod spawn_builder;
 mod supervisor;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 mod universe;
 
 pub use actor::{Actor, ActorExitStatus, Handler};
@@ -62,6 +63,7 @@ pub use self::actor::ActorContext;
 pub use self::actor_state::ActorState;
 pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError};
 pub use self::mailbox::{create_mailbox, create_test_mailbox, Inbox, Mailbox};
+pub use self::registry::ActorObservation;
 pub use self::supervisor::Supervisor;
 
 /// Heartbeat used to verify that actors are progressing.

@@ -33,6 +33,7 @@ use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::{DocMapper, SortBy, QUICKWIT_TOKENIZER_MANAGER};
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
 use quickwit_metastore::Metastore;
+use serde::Serialize;
 use tantivy::schema::Schema;
 use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::{IndexBuilder, IndexSettings, IndexSortByField};
@@ -51,7 +52,7 @@ struct CommitTimeout {
     workbench_id: Ulid,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct IndexerCounters {
     /// Number of splits that were emitted by the indexer.
     pub num_splits_emitted: u64,

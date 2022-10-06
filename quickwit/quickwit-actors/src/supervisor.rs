@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use async_trait::async_trait;
+use serde::Serialize;
 use tracing::{info, warn};
 
 use crate::mailbox::Inbox;
@@ -26,7 +27,7 @@ use crate::{
     Supervisable,
 };
 
-#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Serialize)]
 pub struct SupervisorState {
     num_panics: usize,
     num_errors: usize,

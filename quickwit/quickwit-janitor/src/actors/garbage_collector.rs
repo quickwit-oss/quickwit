@@ -27,6 +27,7 @@ use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
+use serde::Serialize;
 use tracing::{error, info};
 
 use crate::garbage_collection::run_garbage_collect;
@@ -46,7 +47,7 @@ const DELETION_GRACE_PERIOD: Duration = Duration::from_secs(120); // 2 min
 
 const MAX_CONCURRENT_STORAGE_REQUESTS: usize = if cfg!(test) { 2 } else { 10 };
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct GarbageCollectorCounters {
     /// The number of passes the garbage collector has performed.
     pub num_passes: usize,

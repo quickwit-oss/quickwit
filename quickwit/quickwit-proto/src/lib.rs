@@ -31,6 +31,17 @@ pub mod metastore_api {
     pub use crate::quickwit_metastore_api::*;
 }
 
+pub mod jaeger {
+    pub mod api_v2 {
+            include!("jaeger.api_v2.rs");
+    }
+    pub mod storage {
+        pub mod v1 {
+            include!("jaeger.storage.v1.rs");
+        }
+    }
+}
+
 pub mod opentelemetry {
     #[cfg(not(doctest))]
     pub mod proto {
