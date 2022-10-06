@@ -156,7 +156,7 @@ fn validate_tag_fields(tag_fields: &[String], schema: &Schema) -> anyhow::Result
                     .get_indexing_options()
                     .map(|text_options| text_options.tokenizer());
 
-                if tokenizer_opt != None
+                if tokenizer_opt.is_some()
                     && tokenizer_opt != Some(QuickwitTextTokenizer::Raw.get_name())
                 {
                     bail!(
