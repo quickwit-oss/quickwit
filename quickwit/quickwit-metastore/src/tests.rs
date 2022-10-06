@@ -242,28 +242,36 @@ pub mod test_suite {
             .add_source(index_id, source.clone())
             .await
             .unwrap();
-
         let index_metadata = metastore.index_metadata(index_id).await.unwrap();
         let source = index_metadata.sources.get(source_id).unwrap();
-        assert_eq!(source.enabled(), true);
+        assert_eq!(source.enabled, true);
 
         // Disable source.
-        metastore
+        let has_changed = metastore
             .toggle_source(index_id, &source.source_id, false)
             .await
             .unwrap();
+        assert!(has_changed);
         let index_metadata = metastore.index_metadata(index_id).await.unwrap();
         let source = index_metadata.sources.get(source_id).unwrap();
-        assert_eq!(source.enabled(), false);
+        assert_eq!(source.enabled, false);
 
         // Enable source.
-        metastore
+        let has_changed = metastore
             .toggle_source(index_id, &source.source_id, true)
             .await
             .unwrap();
+        assert!(has_changed);
         let index_metadata = metastore.index_metadata(index_id).await.unwrap();
         let source = index_metadata.sources.get(source_id).unwrap();
-        assert_eq!(source.enabled(), true);
+        assert_eq!(source.enabled, true);
+
+        // Enable source again should not change.
+        let has_changed = metastore
+            .toggle_source(index_id, &source.source_id, true)
+            .await
+            .unwrap();
+        assert!(!has_changed);
 
         cleanup_index(&metastore, &index_metadata.index_id).await;
     }

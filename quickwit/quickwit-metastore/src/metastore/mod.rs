@@ -201,7 +201,7 @@ pub trait Metastore: Send + Sync + 'static {
         index_id: &str,
         source_id: &str,
         enable: bool,
-    ) -> MetastoreResult<()>;
+    ) -> MetastoreResult<bool>;
 
     /// Deletes a source. Fails with
     /// [`SourceDoesNotExist`](crate::MetastoreError::SourceDoesNotExist) if the specified source

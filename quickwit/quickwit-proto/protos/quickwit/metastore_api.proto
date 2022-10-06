@@ -170,7 +170,9 @@ message ResetSourceCheckpointRequest {
   string source_id = 2;
 }
 
-message SourceResponse {}
+message SourceResponse {
+  bool has_changed = 1;
+}
 
 ///
 /// Delete tasks.

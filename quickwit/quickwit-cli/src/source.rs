@@ -21,8 +21,7 @@ use anyhow::{bail, Context};
 use clap::{arg, ArgMatches, Command};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
-use quickwit_common::validate_identifier;
-use quickwit_config::{SourceConfig, SourceParams};
+use quickwit_config::{validate_identifier, SourceConfig, SourceParams, INGEST_API_SOURCE_ID};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
@@ -310,9 +309,11 @@ async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
         SourceConfig::load(&args.source_config_uri, source_config_content.as_slice()).await?;
     if let SourceParams::IngestApi(_) = source_config.source_params {
         bail!(
-            "Could not create the source `{}`, sources of type `ingest-api` are only for internal \
-             use.",
-            source_config.source_id
+            "Failed to create Ingest API source `{}` for index `{}`. Ingest API sources are \
+             created and managed by Quickwit and cannot be created via the `source create` CLI \
+             command.",
+            source_config.source_id,
+            args.index_id,
         );
     };
 
@@ -332,12 +333,29 @@ async fn toggle_source_cli(args: ToggleSourceArgs) -> anyhow::Result<()> {
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri)
         .await?;
-    validate_identifier("Source ID", &args.source_id)?;
+    if let Err(err) = validate_identifier("Source ID", &args.source_id) {
+        if args.source_id == INGEST_API_SOURCE_ID {
+            bail!(
+                "Source `{}` is managed by Quickwit, you cannot enable or disable a source \
+                 managed by Quickwit.",
+                args.source_id
+            );
+        }
+        bail!(err);
+    }
 
-    metastore
+    let has_changed = metastore
         .toggle_source(&args.index_id, &args.source_id, args.enable)
         .await?;
     let toggled_state_name = if args.enable { "enabled" } else { "disabled" };
+    if !has_changed {
+        println!(
+            "Source `{}` already {} for index `{}`.",
+            args.source_id, toggled_state_name, args.index_id
+        );
+        return Ok(());
+    }
+
     println!(
         "Source `{}` successfully {} for index `{}`.",
         args.source_id, toggled_state_name, args.index_id
@@ -350,7 +368,16 @@ async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri)
         .await?;
-    validate_identifier("Source ID", &args.source_id)?;
+    if let Err(err) = validate_identifier("Source ID", &args.source_id) {
+        if args.source_id == INGEST_API_SOURCE_ID {
+            bail!(
+                "Source `{}` is managed by Quickwit, you cannot delete a source managed by \
+                 Quickwit.",
+                args.source_id
+            );
+        }
+        bail!(err);
+    }
 
     metastore
         .delete_source(&args.index_id, &args.source_id)

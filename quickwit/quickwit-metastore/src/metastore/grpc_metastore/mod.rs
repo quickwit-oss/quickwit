@@ -399,19 +399,20 @@ impl Metastore for MetastoreGrpcClient {
         index_id: &str,
         source_id: &str,
         enable: bool,
-    ) -> MetastoreResult<()> {
+    ) -> MetastoreResult<bool> {
         let request = ToggleSourceRequest {
             index_id: index_id.to_string(),
             source_id: source_id.to_string(),
             enable,
         };
-        self.0
+        let source_response = self
+            .0
             .clone()
             .toggle_source(request)
             .await
             .map(|tonic_response| tonic_response.into_inner())
             .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        Ok(())
+        Ok(source_response.has_changed)
     }
 
     /// Removes a source from a given index.

@@ -398,16 +398,16 @@ macro_rules! run_with_tx {
     }};
 }
 
-async fn mutate_index_metadata<E, M: FnOnce(&mut IndexMetadata) -> Result<(), E>>(
+async fn mutate_index_metadata<T, E, M: FnOnce(&mut IndexMetadata) -> Result<T, E>>(
     tx: &mut Transaction<'_, Postgres>,
     index_id: &str,
     mutation: M,
-) -> MetastoreResult<()>
+) -> MetastoreResult<T>
 where
     MetastoreError: From<E>,
 {
     let mut index_metadata = index_metadata(tx, index_id).await?;
-    mutation(&mut index_metadata)?;
+    let mutation_value = mutation(&mut index_metadata)?;
     let index_metadata_json =
         serde_json::to_string(&index_metadata).map_err(|err| MetastoreError::InternalError {
             message: "Failed to serialize index metadata.".to_string(),
@@ -429,7 +429,7 @@ where
             index_id: index_id.to_string(),
         });
     }
-    Ok(())
+    Ok(mutation_value)
 }
 
 #[async_trait]
@@ -712,7 +712,7 @@ impl Metastore for PostgresqlMetastore {
         index_id: &str,
         source_id: &str,
         enable: bool,
-    ) -> MetastoreResult<()> {
+    ) -> MetastoreResult<bool> {
         run_with_tx!(self.connection_pool, tx, {
             mutate_index_metadata(tx, index_id, |index_metadata| {
                 index_metadata.toggle_source(source_id, enable)

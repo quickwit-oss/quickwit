@@ -199,7 +199,7 @@ impl IndexingService {
 
         for source_config in index_metadata.sources.values() {
             // Skip disabled source
-            if !source_config.enabled() {
+            if !source_config.enabled {
                 continue;
             }
 
@@ -608,7 +608,7 @@ mod tests {
     use quickwit_actors::{ObservationType, Universe};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
-    use quickwit_config::{ingest_api_default_source_config, SourceConfig, VecSourceParams};
+    use quickwit_config::{SourceConfig, VecSourceParams};
     use quickwit_ingest_api::init_ingest_api;
     use quickwit_metastore::quickwit_metastore_uri_resolver;
 
@@ -628,7 +628,7 @@ mod tests {
 
         metastore.create_index(index_metadata).await.unwrap();
         metastore
-            .add_source(&index_id, ingest_api_default_source_config())
+            .add_source(&index_id, SourceConfig::ingest_api_default())
             .await
             .unwrap();
 

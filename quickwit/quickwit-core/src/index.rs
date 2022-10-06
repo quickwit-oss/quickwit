@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use quickwit_common::fs::empty_dir;
 use quickwit_common::uri::Uri;
-use quickwit_config::{ingest_api_default_source_config, IndexConfig, QuickwitConfig};
+use quickwit_config::{IndexConfig, QuickwitConfig, SourceConfig};
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_indexing::models::CACHE;
 use quickwit_janitor::{
@@ -163,7 +163,7 @@ impl IndexService {
         self.metastore.create_index(index_metadata).await?;
 
         // Create a default enabled ingest-api source.
-        let source_config = ingest_api_default_source_config();
+        let source_config = SourceConfig::ingest_api_default();
         self.metastore
             .add_source(&index_config.index_id, source_config)
             .await?;

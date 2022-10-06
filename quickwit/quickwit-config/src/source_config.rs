@@ -22,11 +22,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context};
 use json_comments::StripComments;
 use quickwit_common::uri::{Extension, Uri};
-use quickwit_common::validate_identifier;
-use serde::de::Error;
+use serde::de::{Error, IgnoredAny};
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::is_false;
+use crate::{is_false, validate_identifier};
 
 /// Reserved source ID for the `quickwit index ingest` CLI command.
 pub const CLI_INGEST_SOURCE_ID: &str = ".cli-ingest-source";
@@ -171,20 +170,18 @@ impl SourceConfig {
         }
     }
 
-    pub fn enabled(&self) -> bool {
-        self.enabled
-    }
-}
-
-/// Creates the default ingest-api source config.
-pub fn ingest_api_default_source_config() -> SourceConfig {
-    SourceConfig {
-        source_id: INGEST_API_SOURCE_ID.to_string(),
-        num_pipelines: 1,
-        enabled: true,
-        source_params: SourceParams::IngestApi(IngestApiSourceParams {
-            batch_num_bytes_limit: None,
-        }),
+    /// Creates the default ingest-api source config.
+    pub fn ingest_api_default() -> SourceConfig {
+        SourceConfig {
+            source_id: INGEST_API_SOURCE_ID.to_string(),
+            num_pipelines: 1,
+            enabled: true,
+            source_params: SourceParams::IngestApi(IngestApiSourceParams {
+                __index_id_deprecated: IgnoredAny,
+                __queues_dir_path_deprecated: IgnoredAny,
+                batch_num_bytes_limit: None,
+            }),
+        }
     }
 }
 
@@ -333,32 +330,24 @@ pub struct VecSourceParams {
 #[serde(deny_unknown_fields)]
 pub struct VoidSourceParams;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(from = "IngestApiSourceParamsLegacy")]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IngestApiSourceParams {
+    #[serde(default, rename = "index_id", skip_serializing)]
+    pub __index_id_deprecated: IgnoredAny, // DEPRECATED
+    #[serde(default, rename = "queues_dir_path", skip_serializing)]
+    pub __queues_dir_path_deprecated: IgnoredAny, // DEPRECATED
     #[serde(skip_serializing_if = "Option::is_none")]
     pub batch_num_bytes_limit: Option<u64>,
 }
 
-/// Only here for deserialization.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct IngestApiSourceParamsLegacy {
-    #[serde(default, rename = "index_id", skip_serializing)]
-    pub __index_id_deprecated: String,
-    #[serde(default, rename = "queues_dir_path", skip_serializing)]
-    pub __queues_dir_path_deprecated: PathBuf,
-    pub batch_num_bytes_limit: Option<u64>,
-}
-
-impl From<IngestApiSourceParamsLegacy> for IngestApiSourceParams {
-    fn from(params: IngestApiSourceParamsLegacy) -> Self {
-        Self {
-            batch_num_bytes_limit: params.batch_num_bytes_limit,
-        }
+impl PartialEq for IngestApiSourceParams {
+    fn eq(&self, other: &Self) -> bool {
+        self.batch_num_bytes_limit == other.batch_num_bytes_limit
     }
 }
+
+impl Eq for IngestApiSourceParams {}
 
 #[cfg(test)]
 mod tests {
@@ -604,6 +593,8 @@ mod tests {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::IngestApi(IngestApiSourceParams {
+                __index_id_deprecated: IgnoredAny,
+                __queues_dir_path_deprecated: IgnoredAny,
                 batch_num_bytes_limit: Some(2000),
             }),
         };
@@ -637,6 +628,8 @@ mod tests {
 
         let serialized_json = serde_json::to_string(&ingest_api_params).unwrap();
         let expected_json = serde_json::to_string(&IngestApiSourceParams {
+            __index_id_deprecated: IgnoredAny,
+            __queues_dir_path_deprecated: IgnoredAny,
             batch_num_bytes_limit: Some(2000),
         })
         .unwrap();

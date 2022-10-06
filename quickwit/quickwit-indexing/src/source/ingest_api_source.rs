@@ -220,6 +220,7 @@ mod tests {
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
     use quickwit_metastore::metastore_for_test;
     use quickwit_proto::ingest_api::{DocBatch, IngestRequest};
+    use serde::de::IgnoredAny;
 
     use super::*;
     use crate::source::SourceActor;
@@ -273,6 +274,8 @@ mod tests {
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
         let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
         let params = IngestApiSourceParams {
+            __index_id_deprecated: IgnoredAny,
+            __queues_dir_path_deprecated: IgnoredAny,
             batch_num_bytes_limit: Some(4 * 500),
         };
         let source_config = make_source_config(params.clone());
@@ -324,6 +327,8 @@ mod tests {
 
         let (doc_processor_mailbox, _doc_processor_inbox) = create_test_mailbox();
         let params = IngestApiSourceParams {
+            __index_id_deprecated: IgnoredAny,
+            __queues_dir_path_deprecated: IgnoredAny,
             batch_num_bytes_limit: Some(4 * 500),
         };
         let source_config = make_source_config(params.clone());
@@ -378,6 +383,8 @@ mod tests {
         checkpoint.try_apply_delta(checkpoint_delta)?;
 
         let params = IngestApiSourceParams {
+            __index_id_deprecated: IgnoredAny,
+            __queues_dir_path_deprecated: IgnoredAny,
             batch_num_bytes_limit: None,
         };
         let source_config = make_source_config(params.clone());
@@ -438,6 +445,8 @@ mod tests {
 
         let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
         let params = IngestApiSourceParams {
+            __index_id_deprecated: IgnoredAny,
+            __queues_dir_path_deprecated: IgnoredAny,
             batch_num_bytes_limit: None,
         };
         let source_config = make_source_config(params.clone());

@@ -31,25 +31,9 @@ use std::fmt::Debug;
 use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
-use anyhow::bail;
 pub use checklist::{print_checklist, run_checklist, BLUE_COLOR, GREEN_COLOR, RED_COLOR};
 pub use coolid::new_coolid;
-use once_cell::sync::OnceCell;
-use regex::Regex;
 use tracing::{error, info};
-
-/// Checks if an identifier conforms to Quickwit objects naming rules.
-pub fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
-    static IDENTIFIER_REGEX: OnceCell<Regex> = OnceCell::new();
-
-    if IDENTIFIER_REGEX
-        .get_or_init(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9-_]{2,254}$").expect("Failed to compile regular expression. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
-        .is_match(value)
-    {
-        return Ok(());
-    }
-    bail!("{} `{}` is invalid.", label, value);
-}
 
 pub fn chunk_range(range: Range<usize>, chunk_size: usize) -> impl Iterator<Item = Range<usize>> {
     range.clone().step_by(chunk_size).map(move |block_start| {
@@ -169,25 +153,5 @@ mod tests {
             std::fs::remove_file("file-does-not-exist")
         )
         .unwrap();
-    }
-
-    #[test]
-    fn test_validate_identifier() {
-        validate_identifier("Cluster ID", "").unwrap_err();
-        validate_identifier("Cluster ID", "-").unwrap_err();
-        validate_identifier("Cluster ID", "_").unwrap_err();
-        validate_identifier("Cluster ID", "f").unwrap_err();
-        validate_identifier("Cluster ID", "fo").unwrap_err();
-        validate_identifier("Cluster ID", "_fo").unwrap_err();
-        validate_identifier("Cluster ID", "_foo").unwrap_err();
-        validate_identifier("Cluster ID", "foo").unwrap();
-        validate_identifier("Cluster ID", "f-_").unwrap();
-
-        assert_eq!(
-            validate_identifier("Cluster ID", "foo!")
-                .unwrap_err()
-                .to_string(),
-            "Cluster ID `foo!` is invalid."
-        );
     }
 }

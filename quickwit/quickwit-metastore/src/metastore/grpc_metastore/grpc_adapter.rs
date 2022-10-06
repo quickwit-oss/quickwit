@@ -289,7 +289,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
             .0
             .add_source(&add_source_request.index_id, source_config)
             .await
-            .map(|_| SourceResponse {})?;
+            .map(|_| SourceResponse { has_changed: true })?;
         Ok(tonic::Response::new(add_source_reply))
     }
 
@@ -306,7 +306,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
                 toggle_source_request.enable,
             )
             .await
-            .map(|_| SourceResponse {})?;
+            .map(|has_changed| SourceResponse { has_changed })?;
         Ok(tonic::Response::new(toggle_source_reply))
     }
 
@@ -322,7 +322,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
                 &delete_source_request.source_id,
             )
             .await
-            .map(|_| SourceResponse {})?;
+            .map(|_| SourceResponse { has_changed: true })?;
         Ok(tonic::Response::new(delete_source_reply))
     }
 
@@ -335,7 +335,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
             .0
             .reset_source_checkpoint(&request.index_id, &request.source_id)
             .await
-            .map(|_| SourceResponse {})?;
+            .map(|_| SourceResponse { has_changed: true })?;
         Ok(tonic::Response::new(reply))
     }
 
