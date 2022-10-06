@@ -11,6 +11,7 @@ RUN apt-get -y update \
                           clang \
                           cmake \
                           libssl-dev \
+                          libsasl2-dev \
                           llvm \
                           nodejs \
                           protobuf-compiler \
