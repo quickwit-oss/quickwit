@@ -240,7 +240,7 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
 fn deserialize_mapping_type(
     quickwit_field_type: QuickwitFieldType,
     json: serde_json::Value,
-    ) -> anyhow::Result<FieldMappingType> {
+) -> anyhow::Result<FieldMappingType> {
     let (typ, cardinality) = match quickwit_field_type {
         QuickwitFieldType::Simple(typ) => (typ, Cardinality::SingleValue),
         QuickwitFieldType::Array(typ) => (typ, Cardinality::MultiValues),
