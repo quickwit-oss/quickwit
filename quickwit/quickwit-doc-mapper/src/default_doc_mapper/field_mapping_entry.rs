@@ -161,11 +161,11 @@ impl From<QuickwitTextOptions> for TextOptions {
             text_options = text_options.set_fast();
         }
         if quickwit_text_options.indexed {
-            let index_record_options = quickwit_text_options
+            let index_record_option = quickwit_text_options
                 .record
                 .unwrap_or(IndexRecordOption::Basic);
             let mut text_field_indexing = TextFieldIndexing::default()
-                .set_index_option(index_record_options)
+                .set_index_option(index_record_option)
                 .set_fieldnorms(quickwit_text_options.fieldnorms);
 
             if let Some(tokenizer) = quickwit_text_options.tokenizer {
