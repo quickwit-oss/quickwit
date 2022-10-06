@@ -18,6 +18,8 @@ futures = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 quickwit-common = { workspace = true }
 quickwit-proto = { workspace = true }

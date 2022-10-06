@@ -23,6 +23,7 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_doc_mapper::{DocMapper, DocParsingError};
+use serde::Serialize;
 use tantivy::schema::{Field, Value};
 use tokio::runtime::Handle;
 use tracing::warn;
@@ -35,7 +36,7 @@ enum PrepareDocumentError {
     MissingField,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct DocProcessorCounters {
     /// Overall number of documents received, partitioned
     /// into 3 categories:

@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use serde::Serialize;
 
 use crate::observation::ObservationType;
 use crate::{
@@ -70,7 +71,7 @@ pub struct PingerSenderActor {
     peers: HashMap<String, Mailbox<PingReceiverActor>>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct SenderState {
     pub count: usize,
     pub num_peers: usize,
@@ -321,7 +322,7 @@ async fn test_actor_running_states() {
     assert_eq!(ping_handle.state(), ActorState::Idle);
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize)]
 struct LoopingActor {
     pub loop_count: usize,
     pub single_shot_count: usize,
@@ -628,7 +629,7 @@ struct TestActorWithDrain {
     counts: ProcessAndDrainCounts,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 struct ProcessAndDrainCounts {
     process_calls_count: usize,
     drain_calls_count: usize,

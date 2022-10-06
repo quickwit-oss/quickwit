@@ -23,6 +23,7 @@ use tracing::{debug, error, info};
 
 use crate::envelope::Envelope;
 use crate::mailbox::Inbox;
+use crate::registry::ActorRegistry;
 use crate::scheduler::Scheduler;
 use crate::supervisor::Supervisor;
 use crate::{
@@ -32,15 +33,21 @@ use crate::{
 /// `SpawnBuilder` makes it possible to configure misc parameters before spawning an actor.
 pub struct SpawnBuilder<A: Actor> {
     scheduler_mailbox: Mailbox<Scheduler>,
+    registry: ActorRegistry,
     kill_switch: KillSwitch,
     #[allow(clippy::type_complexity)]
     mailboxes: Option<(Mailbox<A>, Inbox<A>)>,
 }
 
 impl<A: Actor> SpawnBuilder<A> {
-    pub(crate) fn new(scheduler_mailbox: Mailbox<Scheduler>, kill_switch: KillSwitch) -> Self {
+    pub(crate) fn new(
+        scheduler_mailbox: Mailbox<Scheduler>,
+        kill_switch: KillSwitch,
+        registry: ActorRegistry,
+    ) -> Self {
         SpawnBuilder {
             scheduler_mailbox,
+            registry,
             kill_switch,
             mailboxes: None,
         }
@@ -91,6 +98,7 @@ impl<A: Actor> SpawnBuilder<A> {
             mailbox,
             self.kill_switch.clone(),
             self.scheduler_mailbox.clone(),
+            self.registry.clone(),
             state_tx,
         );
         (ctx, inbox, state_rx)
@@ -102,6 +110,7 @@ impl<A: Actor> SpawnBuilder<A> {
         let (ctx, inbox, state_rx) = self.create_actor_context_and_inbox(&actor);
         debug!(actor_id = %ctx.actor_instance_id(), "spawn-actor");
         let mailbox = ctx.mailbox().clone();
+        ctx.registry().register(&mailbox);
         let ctx_clone = ctx.clone();
         let loop_async_actor_future = async move { actor_loop(actor, inbox, ctx).await };
         let join_handle = runtime_handle.spawn(loop_async_actor_future);
@@ -120,6 +129,7 @@ impl<A: Actor> SpawnBuilder<A> {
         let kill_switch = self.kill_switch.clone();
         let child_kill_switch = kill_switch.child();
         let scheduler_mailbox = self.scheduler_mailbox.clone();
+        let registry = self.registry.clone();
         let (mailbox, actor_handle) = self.set_kill_switch(child_kill_switch).spawn(actor);
         let supervisor = Supervisor::new(
             actor_name,
@@ -129,7 +139,7 @@ impl<A: Actor> SpawnBuilder<A> {
             actor_handle,
         );
         let (_superviser_mailbox, supervisor_handle) =
-            SpawnBuilder::new(scheduler_mailbox, kill_switch).spawn(supervisor);
+            SpawnBuilder::new(scheduler_mailbox, kill_switch, registry).spawn(supervisor);
         (mailbox, supervisor_handle)
     }
 }

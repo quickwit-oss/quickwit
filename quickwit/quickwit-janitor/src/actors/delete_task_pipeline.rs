@@ -38,6 +38,7 @@ use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
 use quickwit_metastore::Metastore;
 use quickwit_search::SearchClientPool;
 use quickwit_storage::Storage;
+use serde::Serialize;
 use tracing::{debug, error, info};
 
 use super::delete_task_planner::DeleteTaskPlanner;
@@ -58,7 +59,7 @@ struct DeletePipelineHandle {
 }
 
 /// A Struct to hold all statistical data about deletes.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct DeletePipelineState {
     /// Actors health.
     pub actors_health: HashMap<String, Health>,

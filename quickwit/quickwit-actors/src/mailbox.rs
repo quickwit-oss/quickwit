@@ -21,7 +21,7 @@ use std::any::Any;
 use std::convert::Infallible;
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use async_trait::async_trait;
 use tokio::sync::oneshot;
@@ -54,6 +54,15 @@ pub struct Mailbox<A: Actor> {
     // race condition. We want to make sure the processing of the `Nudge`
     // message happens AFTER we decrement the refcount.
     ref_count: Arc<AtomicUsize>,
+}
+
+impl<A: Actor> Mailbox<A> {
+    pub fn downgrade(&self) -> WeakMailbox<A> {
+        WeakMailbox {
+            inner: Arc::downgrade(&self.inner),
+            ref_count: Arc::downgrade(&self.ref_count),
+        }
+    }
 }
 
 impl<A: Actor> Drop for Mailbox<A> {
@@ -133,6 +142,10 @@ impl<A: Actor> fmt::Debug for Mailbox<A> {
 impl<A: Actor> Mailbox<A> {
     pub fn actor_instance_id(&self) -> &str {
         &self.inner.instance_id
+    }
+
+    pub fn is_disconnected(&self) -> bool {
+        self.inner.tx.is_disconnected()
     }
 
     /// Sends a message to the actor owning the associated inbox.
@@ -273,4 +286,38 @@ pub fn create_mailbox<A: Actor>(
 
 pub fn create_test_mailbox<A: Actor>() -> (Mailbox<A>, Inbox<A>) {
     create_mailbox("test-mailbox".to_string(), QueueCapacity::Unbounded)
+}
+
+pub struct WeakMailbox<A: Actor> {
+    inner: Weak<Inner<A>>,
+    ref_count: Weak<AtomicUsize>,
+}
+
+impl<A: Actor> WeakMailbox<A> {
+    pub fn upgrade(&self) -> Option<Mailbox<A>> {
+        let inner = self.inner.upgrade()?;
+        let ref_count = self.ref_count.upgrade()?;
+        Some(Mailbox { inner, ref_count })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::PingReceiverActor;
+
+    #[test]
+    fn test_weak_mailbox_downgrade_upgrade() {
+        let (mailbox, _inbox) = create_test_mailbox::<PingReceiverActor>();
+        let weak_mailbox = mailbox.downgrade();
+        assert!(weak_mailbox.upgrade().is_some());
+    }
+
+    #[test]
+    fn test_weak_mailbox_failing_upgrade() {
+        let (mailbox, _inbox) = create_test_mailbox::<PingReceiverActor>();
+        let weak_mailbox = mailbox.downgrade();
+        drop(mailbox);
+        assert!(weak_mailbox.upgrade().is_none());
+    }
 }

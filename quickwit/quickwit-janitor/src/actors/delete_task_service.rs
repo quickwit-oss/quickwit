@@ -27,13 +27,14 @@ use quickwit_metastore::{IndexMetadata, Metastore, MetastoreResult};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use quickwit_search::SearchClientPool;
 use quickwit_storage::StorageUriResolver;
+use serde::Serialize;
 use tracing::{error, info, warn};
 
 use super::delete_task_pipeline::DeleteTaskPipeline;
 
 pub const DELETE_SERVICE_TASK_DIR_NAME: &str = "delete_task_service";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DeleteTaskServiceState {
     pub num_running_pipelines: usize,
 }

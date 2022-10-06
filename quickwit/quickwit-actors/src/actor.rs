@@ -33,6 +33,7 @@ use tracing::{debug, error};
 
 use crate::actor_state::{ActorState, AtomicState};
 use crate::progress::{Progress, ProtectedZoneGuard};
+use crate::registry::ActorRegistry;
 use crate::scheduler::{Callback, ScheduleEvent, Scheduler};
 use crate::spawn_builder::SpawnBuilder;
 #[cfg(any(test, feature = "testsuite"))]
@@ -119,7 +120,7 @@ impl From<SendError> for ActorExitStatus {
 #[async_trait]
 pub trait Actor: Send + Sync + Sized + 'static {
     /// Piece of state that can be copied for assert in unit test, admin, etc.
-    type ObservableState: Send + Sync + Clone + fmt::Debug;
+    type ObservableState: Send + Sync + Clone + serde::Serialize + fmt::Debug;
     /// A name identifying the type of actor.
     ///
     /// Ideally respect the `CamelCase` convention.
@@ -231,6 +232,7 @@ pub struct ActorContextInner<A: Actor> {
     progress: Progress,
     kill_switch: KillSwitch,
     scheduler_mailbox: Mailbox<Scheduler>,
+    registry: ActorRegistry,
     actor_state: AtomicState,
     // Count the number of times the actor has slept.
     // This counter is useful to unsure that obsolete WakeUp
@@ -270,6 +272,7 @@ impl<A: Actor> ActorContext<A> {
         self_mailbox: Mailbox<A>,
         kill_switch: KillSwitch,
         scheduler_mailbox: Mailbox<Scheduler>,
+        registry: ActorRegistry,
         observable_state_tx: watch::Sender<A::ObservableState>,
     ) -> Self {
         ActorContext {
@@ -278,6 +281,7 @@ impl<A: Actor> ActorContext<A> {
                 progress: Progress::default(),
                 kill_switch,
                 scheduler_mailbox,
+                registry,
                 actor_state: AtomicState::default(),
                 sleep_count: AtomicUsize::default(),
                 observable_state_tx: Mutex::new(observable_state_tx),
@@ -296,6 +300,7 @@ impl<A: Actor> ActorContext<A> {
             actor_mailbox,
             universe.kill_switch.clone(),
             universe.scheduler_mailbox.clone(),
+            universe.registry.clone(),
             observable_state_tx,
         )
     }
@@ -306,6 +311,10 @@ impl<A: Actor> ActorContext<A> {
 
     pub fn mailbox(&self) -> &Mailbox<A> {
         &self.self_mailbox
+    }
+
+    pub(crate) fn registry(&self) -> &ActorRegistry {
+        &self.registry
     }
 
     pub fn actor_instance_id(&self) -> &str {
@@ -344,7 +353,11 @@ impl<A: Actor> ActorContext<A> {
     }
 
     pub fn spawn_actor<SpawnedActor: Actor>(&self) -> SpawnBuilder<SpawnedActor> {
-        SpawnBuilder::new(self.scheduler_mailbox.clone(), self.kill_switch.child())
+        SpawnBuilder::new(
+            self.scheduler_mailbox.clone(),
+            self.kill_switch.child(),
+            self.registry.clone(),
+        )
     }
 
     /// Records some progress.

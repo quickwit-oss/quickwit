@@ -27,6 +27,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_ingest_api::IngestApiService;
 use quickwit_metastore::Metastore;
 use quickwit_proto::ingest_api::{DropQueueRequest, ListQueuesRequest};
+use serde::Serialize;
 use tracing::{debug, error, info, instrument};
 
 use super::IndexingService;
@@ -39,7 +40,7 @@ const RUN_INTERVAL: Duration = if cfg!(test) {
     Duration::from_secs(60 * 60) // 1h
 };
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct IngestApiGarbageCollectorCounters {
     /// The number of passes the garbage collector has performed.
     pub num_passes: usize,

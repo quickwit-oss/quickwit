@@ -31,6 +31,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_storage::SplitPayloadBuilder;
+use serde::Serialize;
 use tokio::sync::oneshot::Sender;
 use tokio::sync::{oneshot, Semaphore, SemaphorePermit};
 use tracing::{info, instrument, warn, Instrument, Span};
@@ -171,7 +172,7 @@ impl Uploader {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct UploaderCounters {
     pub num_staged_splits: Arc<AtomicU64>,
     pub num_uploaded_splits: Arc<AtomicU64>,
