@@ -127,6 +127,7 @@ pub struct QuickwitTextOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tokenizer: Option<QuickwitTextTokenizer>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub record: Option<IndexRecordOption>,
     #[serde(default)]
     pub fieldnorms: bool,
@@ -345,14 +346,7 @@ fn typed_mapping_to_json_params(
     field_mapping_type: FieldMappingType,
 ) -> serde_json::Map<String, serde_json::Value> {
     match field_mapping_type {
-        FieldMappingType::Text(mut text_options, _) => {
-            // The default value for an IndexRecordOption is None but if the text is indexed the
-            // value should be IndexRecordOption::Basic.
-            if text_options.indexed && !text_options.record.is_some() {
-                text_options.record = Some(IndexRecordOption::Basic);
-            }
-            serialize_to_map(&text_options)
-        }
+        FieldMappingType::Text(text_options, _) => serialize_to_map(&text_options),
         FieldMappingType::U64(options, _)
         | FieldMappingType::I64(options, _)
         | FieldMappingType::Bytes(options, _)
@@ -902,7 +896,6 @@ mod tests {
                 "stored": true,
                 "indexed": true,
                 "fieldnorms": false,
-                "record": "basic",
             })
         );
     }
@@ -928,7 +921,6 @@ mod tests {
                 "indexed": true,
                 "fieldnorms": false,
                 "fast": false,
-                "record": "basic",
             })
         );
     }
@@ -1171,7 +1163,6 @@ mod tests {
                 "stored": true,
                 "indexed": true,
                 "fieldnorms": false,
-                "record": "basic"
             })
         );
     }
