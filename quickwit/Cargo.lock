@@ -3485,7 +3485,7 @@ dependencies = [
 name = "quickwit-proto"
 version = "0.3.1"
 dependencies = [
- "itertools",
+ "glob",
  "prost",
  "prost-build",
  "prost-types",

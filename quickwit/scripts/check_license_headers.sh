@@ -5,8 +5,7 @@ RESULT=0
 for file in $(git ls-files | \
     grep "src\|proto" | \
     grep -e "\.proto\|\.rs\|\.ts" | \
-    grep -v "quickwit-proto/jaeger" | \
-    grep -v "quickwit-proto/otlp" | \
+    grep -v "quickwit-proto/protos/third-party" | \
     grep -v "quickwit-proto/src" \
 )
 do

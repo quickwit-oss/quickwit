@@ -16,6 +16,6 @@ serde = { workspace = true }
 tonic = { workspace = true }
 
 [build-dependencies]
-itertools = { workspace = true }
+glob = "0.3.0"
 prost-build = { workspace = true }
 tonic-build = { workspace = true }
