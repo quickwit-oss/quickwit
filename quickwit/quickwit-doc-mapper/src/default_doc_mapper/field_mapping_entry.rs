@@ -127,7 +127,7 @@ pub struct QuickwitTextOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tokenizer: Option<QuickwitTextTokenizer>,
     #[serde(default)]
-    pub record: Option<IndexRecordOption>,
+    pub record: IndexRecordOption,
     #[serde(default)]
     pub fieldnorms: bool,
     #[serde(default = "default_as_true")]
@@ -142,7 +142,7 @@ impl Default for QuickwitTextOptions {
             description: None,
             indexed: true,
             tokenizer: None,
-            record: None,
+            record: IndexRecordOption::Basic,
             fieldnorms: false,
             stored: true,
             fast: false,
@@ -160,9 +160,8 @@ impl From<QuickwitTextOptions> for TextOptions {
             text_options = text_options.set_fast();
         }
         if quickwit_text_options.indexed {
-            if let Some(index_record_options) = quickwit_text_options.record {
             let mut text_field_indexing = TextFieldIndexing::default()
-                .set_index_option(index_record_options)
+                .set_index_option(quickwit_text_options.record)
                 .set_fieldnorms(quickwit_text_options.fieldnorms);
 
             if let Some(tokenizer) = quickwit_text_options.tokenizer {
@@ -170,7 +169,6 @@ impl From<QuickwitTextOptions> for TextOptions {
             }
 
             text_options = text_options.set_indexing_options(text_field_indexing);
-            }
         }
         text_options
     }
@@ -242,7 +240,7 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
 fn deserialize_mapping_type(
     quickwit_field_type: QuickwitFieldType,
     json: serde_json::Value,
-) -> anyhow::Result<FieldMappingType> {
+    ) -> anyhow::Result<FieldMappingType> {
     let (typ, cardinality) = match quickwit_field_type {
         QuickwitFieldType::Simple(typ) => (typ, Cardinality::SingleValue),
         QuickwitFieldType::Array(typ) => (typ, Cardinality::MultiValues),
@@ -260,7 +258,7 @@ fn deserialize_mapping_type(
             #[allow(clippy::collapsible_if)]
             if !text_options.indexed {
                 if text_options.tokenizer.is_some()
-                    || text_options.record == Some(IndexRecordOption::Basic)
+                    || text_options.record != IndexRecordOption::Basic
                     || text_options.fieldnorms
                 {
                     bail!(
@@ -463,7 +461,7 @@ mod tests {
                 assert_eq!(options.stored, true);
                 assert_eq!(options.indexed, true);
                 assert_eq!(options.tokenizer.unwrap().get_name(), "en_stem");
-                assert_eq!(options.record.unwrap(), IndexRecordOption::Basic);
+                assert_eq!(options.record, IndexRecordOption::Basic);
             }
             _ => panic!("wrong property type"),
         }
