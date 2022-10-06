@@ -403,6 +403,14 @@ mod tests {
         }
     "#;
 
+    const TEXT_MAPPING_ENTRY_VALUE_NOT_INDEXED: &str = r#"
+        {
+            "name": "data_binary",
+            "type": "text",
+            "indexed": false,
+            "stored": true
+        }"#;
+
     const JSON_MAPPING_ENTRY_UNKNOWN_FIELD: &str = r#"
         {
             "name": "my_field_name",
@@ -423,6 +431,22 @@ mod tests {
             ]
         }
     "#;
+
+    #[test]
+    fn test_deserialize_text_mapping_entry_not_indexed() -> anyhow::Result<()> {
+        let mapping_entry =
+            serde_json::from_str::<FieldMappingEntry>(TEXT_MAPPING_ENTRY_VALUE_NOT_INDEXED)?;
+        assert_eq!(mapping_entry.name, "data_binary");
+        match mapping_entry.mapping_type {
+            FieldMappingType::Text(options, _) => {
+                assert_eq!(options.stored, true);
+                assert_eq!(options.indexed, false);
+                assert_eq!(options.record, IndexRecordOption::Basic);
+            }
+            _ => panic!("wrong property type"),
+        }
+        Ok(())
+    }
 
     #[test]
     fn test_deserialize_invalid_text_mapping_entry() -> anyhow::Result<()> {
