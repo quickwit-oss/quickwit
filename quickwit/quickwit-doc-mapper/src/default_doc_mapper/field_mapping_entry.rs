@@ -421,6 +421,15 @@ mod tests {
             "stored": true
         }"#;
 
+    const TEXT_MAPPING_ENTRY_VALUE_NOT_INDEXED_INVALID: &str = r#"
+    {
+        "name": "data_binary",
+        "type": "text",
+        "indexed": false,
+        "record": "basic"
+    }
+    "#;
+
     const JSON_MAPPING_ENTRY_UNKNOWN_FIELD: &str = r#"
         {
             "name": "my_field_name",
@@ -456,6 +465,19 @@ mod tests {
             _ => panic!("wrong property type"),
         }
         Ok(())
+    }
+
+    #[test]
+    fn test_deserialize_text_mapping_entry_not_indexed_invalid() {
+        let result =
+            serde_json::from_str::<FieldMappingEntry>(TEXT_MAPPING_ENTRY_VALUE_NOT_INDEXED_INVALID);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Error while parsing field `data_binary`: `record`, `tokenizer`, and `fieldnorms` \
+             parameters are allowed only if indexed is true."
+        );
     }
 
     #[test]
