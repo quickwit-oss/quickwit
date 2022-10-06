@@ -160,7 +160,9 @@ impl From<QuickwitTextOptions> for TextOptions {
             text_options = text_options.set_fast();
         }
         if quickwit_text_options.indexed {
-            if let Some(index_record_options) = quickwit_text_options.record {
+            let index_record_options = quickwit_text_options
+                .record
+                .unwrap_or(IndexRecordOption::Basic);
             let mut text_field_indexing = TextFieldIndexing::default()
                 .set_index_option(index_record_options)
                 .set_fieldnorms(quickwit_text_options.fieldnorms);
@@ -170,7 +172,6 @@ impl From<QuickwitTextOptions> for TextOptions {
             }
 
             text_options = text_options.set_indexing_options(text_field_indexing);
-            }
         }
         text_options
     }
@@ -260,7 +261,7 @@ fn deserialize_mapping_type(
             #[allow(clippy::collapsible_if)]
             if !text_options.indexed {
                 if text_options.tokenizer.is_some()
-                    || text_options.record == Some(IndexRecordOption::Basic)
+                    || text_options.record.is_some()
                     || text_options.fieldnorms
                 {
                     bail!(
@@ -344,7 +345,14 @@ fn typed_mapping_to_json_params(
     field_mapping_type: FieldMappingType,
 ) -> serde_json::Map<String, serde_json::Value> {
     match field_mapping_type {
-        FieldMappingType::Text(text_options, _) => serialize_to_map(&text_options),
+        FieldMappingType::Text(mut text_options, _) => {
+            // The default value for an IndexRecordOption is None but if the text is indexed the
+            // value should be IndexRecordOption::Basic.
+            if text_options.indexed && !text_options.record.is_some() {
+                text_options.record = Some(IndexRecordOption::Basic);
+            }
+            serialize_to_map(&text_options)
+        }
         FieldMappingType::U64(options, _)
         | FieldMappingType::I64(options, _)
         | FieldMappingType::Bytes(options, _)
@@ -443,7 +451,7 @@ mod tests {
             FieldMappingType::Text(options, _) => {
                 assert_eq!(options.stored, true);
                 assert_eq!(options.indexed, false);
-                assert_eq!(options.record, IndexRecordOption::Basic);
+                assert_eq!(options.record.is_some(), false);
             }
             _ => panic!("wrong property type"),
         }
