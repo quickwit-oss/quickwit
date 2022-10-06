@@ -58,11 +58,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?;
 
     // OTEL proto
+    let mut prost_config = prost_build::Config::default();
+    prost_config.protoc_arg("--experimental_allow_proto3_optional");
+
     let protos = find_protos("protos/third-party/otlp");
     tonic_build::configure()
         .type_attribute(".", "#[derive(Serialize, Deserialize)]")
         .out_dir("src/")
-        .compile(&protos, &["protos/third-party/otlp"])?;
+        .compile_with_config(prost_config, &protos, &["protos/third-party/otlp"])?;
     Ok(())
 }
 
