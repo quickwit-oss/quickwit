@@ -162,7 +162,7 @@ cat hdfs-log.json | quickwit index ingest --index wikipedia --config=./config/qu
 
 ### enable/disable ingest API
 
-Enable/Disable the ingest API for an index.
+Enable or disable the ingest API for an index.
 `quickwit index ingest-api [args]`
 
 *Synopsis*
