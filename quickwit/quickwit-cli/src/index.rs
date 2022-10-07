@@ -909,7 +909,8 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         metastore,
         quickwit_storage_uri_resolver().clone(),
         enable_ingest_api,
-    );
+    )
+    .await?;
     let (indexing_server_mailbox, _) = universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_server_mailbox
         .ask_for_res(SpawnPipeline {
@@ -945,12 +946,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
 
     if args.clear_cache {
         println!("Clearing local cache directory...");
-        clear_cache_directory(
-            &config.data_dir_path,
-            args.index_id.clone(),
-            CLI_INGEST_SOURCE_ID.to_string(),
-        )
-        .await?;
+        clear_cache_directory(&config.data_dir_path).await?;
     }
 
     match statistics.num_invalid_docs {
@@ -1013,7 +1009,8 @@ pub async fn merge_cli(args: MergeArgs, merge_enabled: bool) -> anyhow::Result<(
         metastore,
         storage_resolver,
         enable_ingest_api,
-    );
+    )
+    .await?;
     let universe = Universe::new();
     let (indexing_server_mailbox, _) = universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_server_mailbox

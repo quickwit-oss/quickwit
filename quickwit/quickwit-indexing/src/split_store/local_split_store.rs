@@ -17,21 +17,60 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{HashMap, HashSet};
-use std::fs::DirEntry;
+// The Local Split Store is a local cache used to improve the performance of indexing nodes.
+// Its purpose is simple: when a new split is freshly created, it is usely merged
+// very rapidly after.
+//
+// In order to prevent this merge to force its download, we store it in the
+// `LocalSplitStore`. This store is just a cache: a cache miss is acceptable and
+// just means that the split will be redownloaded.
+//
+// The local split store eviction policy however, is rather uncommon.
+// On our happy path, a split is stored into the cache, and is then used only once
+// to undergo a merge.
+//
+// For this reason, we simply offer a way to `move splits into the cache`,
+// and `move splits out of the cache`. A split is removed from the split store
+// after its first access.
+//
+// Of course a failed merge could require accessing a given split more than once. In that
+// case the split will be downloaded again.
+//
+// The cache size is limited by 3 things:
+// - a maximum number of splits as defined in the `SplitStoreQuota`.
+// - a maximum number of bytes as defined in the `SplitStoreQuota`.
+// - finally, we evince older splits to make sure that newest split and the oldest
+// split only differ by at most `SPLIT_MAX_AGE`.
+//
+// The point of this final rule invariant is to make sure that the disk space will be
+// if the cache is NOT under pressure but some splits are actually useless.
+//
+// When adding a new split into the cache, if adding the split would break one of the following
+// limit, we simply remove split one by one starting by the oldest first, until the split
+// can be added.
+
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::str::FromStr;
+use std::time::{Duration, SystemTime};
 use std::{fs, io};
 
-use quickwit_common::{ignore_io_error, split_file};
+use anyhow::Context;
+use byte_unit::Byte;
+use quickwit_common::split_file;
 use quickwit_directories::BundleDirectory;
-use quickwit_storage::{PutPayload, SplitPayloadBuilder, StorageErrorKind, StorageResult};
+use quickwit_storage::{StorageErrorKind, StorageResult};
 use tantivy::directory::MmapDirectory;
 use tantivy::Directory;
 use tokio::sync::Mutex;
-use tracing::error;
+use tracing::{error, warn};
+use ulid::Ulid;
 
-use super::SplitStoreSpaceQuota;
+use super::SplitStoreQuota;
+
+/// TODO Make this configurable.
+const SPLIT_MAX_AGE: Duration = Duration::from_secs(2 * 24 * 3_600); // 2 days
 
 pub fn get_tantivy_directory_from_split_bundle(
     split_file: &Path,
@@ -46,189 +85,304 @@ pub fn get_tantivy_directory_from_split_bundle(
     Ok(Box::new(BundleDirectory::open_split(split_fileslice)?))
 }
 
-#[derive(Clone, Debug)]
-pub struct SplitFolder {
-    path: PathBuf,
-}
-impl SplitFolder {
-    pub fn new(path: PathBuf) -> Self {
-        SplitFolder { path }
-    }
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl SplitFolder {
-    pub fn get_tantivy_directory(&self) -> StorageResult<Box<dyn Directory>> {
-        let mmap_directory = MmapDirectory::open(&self.path)?;
-        Ok(Box::new(mmap_directory))
-    }
-
-    /// Moves the underlying data to a new location.
-    async fn move_to(&mut self, new_folder: &Path, split_id: &str) -> StorageResult<()> {
-        let new_path = PathBuf::from(split_file(split_id));
-        let to_full_path = new_folder.join(new_path);
-        tokio::fs::rename(&self.path, &to_full_path).await?;
-        self.path = to_full_path.to_path_buf();
-        Ok(())
-    }
-
-    async fn delete(&self) -> io::Result<()> {
-        ignore_io_error!(
-            io::ErrorKind::NotFound,
-            tokio::fs::remove_dir_all(&self.path).await
-        )?;
-        Ok(())
-    }
-}
-
-fn split_id_from_split_folder(dir_entry: &DirEntry) -> Option<String> {
-    if !dir_entry.path().is_dir() {
-        return None;
-    }
-    let split_filename = dir_entry.file_name().into_string().ok()?;
-    split_filename
-        .strip_suffix(".split")
-        .map(ToString::to_string)
-}
-
-pub struct LocalSplitStore {
-    /// Splits owned by the local split store, which reside in the split_store_folder.
-    /// SplitId -> (Split Num Bytes, BundledSplitFile)
-    split_files: HashMap<String, (usize, SplitFolder)>,
-    /// The root folder where all data is moved into.
-    split_store_folder: PathBuf,
-    /// The split store space quota shared among all indexing split stores.
-    split_store_space_quota: Arc<Mutex<SplitStoreSpaceQuota>>,
-}
-
-impl LocalSplitStore {
-    /// Try to open an existing local split directory.
-    ///
-    /// All files finishing by .split will be considered to be part of the directory.
-    pub async fn open(
-        local_storage_root: PathBuf,
-        split_store_space_quota: Arc<Mutex<SplitStoreSpaceQuota>>,
-    ) -> StorageResult<LocalSplitStore> {
-        let mut split_files: HashMap<String, (usize, SplitFolder)> = HashMap::new();
-        let mut total_size_in_bytes: usize = 0;
-        for dir_entry_result in fs::read_dir(&local_storage_root)? {
-            let dir_entry = dir_entry_result?;
-            if let Some(split_id) = split_id_from_split_folder(&dir_entry) {
-                let split_file = SplitFolder::new(dir_entry.path());
-                let paths: Vec<_> = fs::read_dir(dir_entry.path())?
-                    .map(|el| el.map(|el| el.path()))
-                    .collect::<Result<_, _>>()?;
-                // TODO: Do we need the hotcache?
-                let split_streamer = SplitPayloadBuilder::get_split_payload(&paths, &[])?;
-
-                let split_num_bytes = split_streamer.len() as usize;
-                total_size_in_bytes += split_num_bytes;
-                split_files.insert(split_id, (split_num_bytes, split_file));
-            }
+/// Returns the number of bytes held in a given directory.
+async fn num_bytes_in_folder(directory_path: &Path) -> io::Result<Byte> {
+    let mut total_bytes = 0;
+    let mut read_dir = tokio::fs::read_dir(directory_path).await?;
+    while let Some(dir_entry) = read_dir.next_entry().await? {
+        let metadata = dir_entry.metadata().await?;
+        if metadata.is_file() {
+            total_bytes += metadata.len();
+        } else {
+            warn!(
+                "Unexpected directory found in split cache. {:?}",
+                dir_entry.path()
+            );
         }
+    }
+    Ok(Byte::from_bytes(total_bytes))
+}
 
-        split_store_space_quota.lock().await.add_initial_splits(
-            local_storage_root.as_path(),
-            split_files.len(),
-            total_size_in_bytes,
-        )?;
-        Ok(LocalSplitStore {
-            split_store_folder: local_storage_root,
-            split_files,
-            split_store_space_quota,
+/// The local split store is a cache for freshly indexed splits.
+///
+/// In order to save the cost of an extra write, we store them in the form
+/// of a directory and the splits are built on the file upon upload.
+struct SplitFolder {
+    split_id: Ulid,
+    num_bytes: Byte,
+}
+
+impl SplitFolder {
+    /// Creates a new `SplitFolder`.
+    ///
+    /// There are no specific constraint on `path`.
+    pub async fn create(split_id: &str, path: &Path) -> io::Result<Self> {
+        let split_id = Ulid::from_str(split_id).map_err(|_err| {
+            let error_msg = format!("Split Id should be an `Ulid`. Got `{split_id:?}`.");
+            io::Error::new(io::ErrorKind::InvalidInput, error_msg)
+        })?;
+        let num_bytes = num_bytes_in_folder(path).await?;
+        Ok(SplitFolder {
+            split_id,
+            num_bytes,
         })
     }
 
-    /// Clean the split store.
-    /// By only keeping the splits specified and removing other
-    /// existing splits in this store.
-    pub async fn retain_only(&mut self, split_ids: &[&str]) -> StorageResult<()> {
-        let stored_ids_set: HashSet<String> = self.split_files.keys().cloned().collect();
-        let to_retain_ids_set: HashSet<String> = split_ids
-            .iter()
-            .map(|split_id| split_id.to_string())
-            .collect();
-        let to_remove_ids_set = &stored_ids_set - &to_retain_ids_set;
+    /// Returns the creation time as encoded in the split id ULID.
+    fn creation_time(&self) -> SystemTime {
+        self.split_id.datetime()
+    }
+}
 
-        let total_num_splits = to_remove_ids_set.len();
-        let mut total_size_splits = 0usize;
-        for split_id in to_remove_ids_set {
-            total_size_splits += self.remove_split(&split_id).await?;
-        }
+fn split_id_from_split_folder(dir_path: &Path) -> Option<&str> {
+    if !dir_path.is_dir() {
+        return None;
+    }
+    let split_id: &str = dir_path.file_name()?.to_str()?.strip_suffix(".split")?;
+    Some(split_id)
+}
+
+pub struct LocalSplitStore {
+    inner: Mutex<InnerLocalSplitStore>,
+}
+
+struct InnerLocalSplitStore {
+    /// Splits owned by the local split store, which reside in the split_store_folder.
+    /// SplitId -> SplitFolder
+    split_folders: HashMap<Ulid, SplitFolder>,
+    /// Binary heap of split ids.
+    /// The binary heap is used for eviction.
+    ///
+    /// Splits ids are generated using ULID, so that they are sorted
+    /// according to their creation date.
+    /// We evict the oldest split first. (Note this is not an LRU strategy
+    /// because we do not care about the last access time, but we only
+    /// consider the creation time.)
+    split_ids: BinaryHeap<Reverse<Ulid>>,
+    /// The root folder where all data is moved into.
+    split_store_folder: PathBuf,
+    /// The split store space quota shared among all indexing split stores.
+    split_store_space_quota: SplitStoreQuota,
+}
+
+impl InnerLocalSplitStore {
+    /// Moves a split within the store to an external folder.
+    async fn move_out(
+        &mut self,
+        split_id: Ulid,
+        to_folder: &Path,
+    ) -> StorageResult<Option<PathBuf>> {
+        let split_folder = self.split_folders.remove(&split_id).ok_or_else(|| {
+            StorageErrorKind::DoesNotExist
+                .with_error(anyhow::anyhow!("Missing split_id `{split_id}`"))
+        })?;
+        let from_path = self.split_path(split_id);
+        let to_full_path = to_folder.join(from_path.file_name().unwrap());
+        tokio::fs::rename(&from_path, &to_full_path).await?;
         self.split_store_space_quota
-            .lock()
-            .await
-            .remove_splits(total_num_splits, total_size_splits);
+            .remove_split(split_folder.num_bytes);
+        Ok(Some(to_full_path))
+    }
+
+    /// Returns the directory filepath of a split in cache.
+    fn split_path(&self, split_id: Ulid) -> PathBuf {
+        let split_file = split_file(&split_id.to_string());
+        self.split_store_folder.join(&split_file)
+    }
+
+    /// Remove one split from the cache to make some room.
+    ///
+    /// # Panics
+    /// Panics if there are no remaining splits.
+    async fn evict_one_split(&mut self) -> io::Result<()> {
+        let split_folder = loop {
+            let split_id = self
+                .split_ids
+                .pop()
+                .expect("No remaining split to remove")
+                .0;
+            if let Some(split_folder) = self.split_folders.remove(&split_id) {
+                break split_folder;
+            }
+        };
+        self.split_store_space_quota
+            .remove_split(split_folder.num_bytes);
+        tokio::fs::remove_dir_all(&self.split_path(split_folder.split_id)).await?;
         Ok(())
+    }
+
+    /// Tries to move a `split_folder` file into the cache.
+    ///
+    /// Move is not an image here. We are litterally moving the directory.
+    ///
+    /// If the cache capacity does not allow it, this function
+    /// just logs a warning and returns Ok(false).
+    ///
+    /// Ok(true) means the file was effectively accepted.
+    async fn move_into_cache(&mut self, split_id_str: &str, split_path: &Path) -> io::Result<bool> {
+        let split_folder = SplitFolder::create(split_id_str, split_path).await?;
+        let split_id = split_folder.split_id;
+        let should_move_split = self.make_room_and_record_split(split_folder).await?;
+        if !should_move_split {
+            return Ok(false);
+        }
+        let to_full_path = self.split_path(split_id);
+        tokio::fs::rename(split_path, &to_full_path).await?;
+        Ok(true)
+    }
+
+    /// Removes all splits that have a creation date older than `limit`.
+    async fn remove_splits_older_than_limit(&mut self, limit: SystemTime) -> io::Result<()> {
+        while let Some(split_id) = self.split_ids.peek() {
+            if split_id.0.datetime() >= limit {
+                break;
+            }
+            self.evict_one_split().await?;
+        }
+        Ok(())
+    }
+
+    /// Ensures that there is room to store the split,
+    /// return false, if the split should not be added to the cache.
+    /// return true and record split , if the split should be moved into the cache.
+    async fn make_room_and_record_split(&mut self, split_folder: SplitFolder) -> io::Result<bool> {
+        // We don't accept splits that are too large.
+        if split_folder.num_bytes > self.split_store_space_quota.max_num_bytes() {
+            return Ok(false);
+        }
+
+        while !self
+            .split_store_space_quota
+            .can_fit_split(split_folder.num_bytes)
+        {
+            self.evict_one_split().await?;
+        }
+
+        if let Some(creation_time_limit) = split_folder.creation_time().checked_sub(SPLIT_MAX_AGE) {
+            self.remove_splits_older_than_limit(creation_time_limit)
+                .await?;
+        }
+
+        self.split_store_space_quota
+            .add_split(split_folder.num_bytes);
+        let split_id = split_folder.split_id;
+        self.split_folders.insert(split_id, split_folder);
+        self.split_ids.push(Reverse(split_id));
+        Ok(true)
+    }
+}
+
+impl LocalSplitStore {
+    pub fn no_caching() -> LocalSplitStore {
+        let inner = Mutex::new(InnerLocalSplitStore {
+            split_folders: Default::default(),
+            split_store_folder: PathBuf::from("no_caching"),
+            split_store_space_quota: SplitStoreQuota::no_caching(),
+            split_ids: BinaryHeap::default(),
+        });
+        LocalSplitStore { inner }
+    }
+
+    /// Try to open an existing local split store directory.
+    ///
+    /// If the directory does not exists, it will be created.
+    ///
+    /// The directory is expected to only contain directory
+    /// with a name following the pattern `<ULID.split>`.
+    ///
+    /// The different pre-existing splits are recorded into
+    /// the split store in their creation order. If the split store
+    /// quota have been modified, the store will undergo the same
+    /// eviction logic.
+    pub async fn open(
+        split_store_folder: PathBuf,
+        space_quota: SplitStoreQuota,
+    ) -> anyhow::Result<LocalSplitStore> {
+        tokio::fs::create_dir_all(&split_store_folder)
+            .await
+            .context("Failed to create the split cache directory.")?;
+
+        let mut split_folders: Vec<SplitFolder> = Vec::new();
+
+        for dir_entry_result in fs::read_dir(&split_store_folder)? {
+            let dir_entry = dir_entry_result?;
+            let dir_path: PathBuf = dir_entry.path();
+            let split_id = split_id_from_split_folder(&dir_path)
+                .ok_or_else(|| {
+                    let error_msg = format!(
+                        "Split folder name should match the format `<split_id>.split`. Got \
+                         `{dir_path:?}`."
+                    );
+                    io::Error::new(io::ErrorKind::InvalidInput, error_msg)
+                })?
+                .to_string();
+            let split_folder = SplitFolder::create(&split_id, &dir_entry.path()).await?;
+            split_folders.push(split_folder);
+        }
+
+        let mut inner_local_split_store = InnerLocalSplitStore {
+            split_store_folder: split_store_folder.clone(),
+            split_store_space_quota: space_quota,
+            split_folders: HashMap::default(),
+            split_ids: BinaryHeap::default(),
+        };
+
+        split_folders.sort_by_key(SplitFolder::creation_time);
+
+        // We record all `split_folder`, sorted by `creation_time`.
+        for split_folder in split_folders {
+            let split_id = split_folder.split_id;
+            if !inner_local_split_store
+                .make_room_and_record_split(split_folder)
+                .await?
+            {
+                let split_dir = inner_local_split_store.split_path(split_id);
+                tokio::fs::remove_dir_all(&split_dir).await?;
+            }
+        }
+
+        Ok(LocalSplitStore {
+            inner: Mutex::new(inner_local_split_store),
+        })
     }
 
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn inspect(&self) -> HashMap<String, usize> {
-        self.split_files
+    pub async fn inspect(&self) -> HashMap<String, Byte> {
+        self.inner
+            .lock()
+            .await
+            .split_folders
             .iter()
-            .map(|(k, v)| (k.to_string(), v.0))
+            .map(|(k, split_folder)| (k.to_string(), split_folder.num_bytes))
             .collect()
     }
 
-    pub async fn remove_split(&mut self, split_id: &str) -> StorageResult<usize> {
-        if !self.split_files.contains_key(split_id) {
-            return Ok(0);
-        }
-        if let Some((split_size, split_file)) = self.split_files.remove(split_id) {
-            split_file.delete().await?;
-            return Ok(split_size);
-        }
-        Ok(0)
-    }
-
-    /// Moves a split into the store.
-    pub async fn move_into(
+    /// Returns a cached split to performs a merge operation.
+    ///
+    /// For simplicity, this method optimistically assumes that the merge operation will be
+    /// successful and removes the split from the cache.
+    ///
+    /// If the merge operation is a failure and needs to be re-executed, we will
+    /// experience a cache miss, and the split will be downloaded from the
+    /// storage.
+    pub(super) async fn get_cached_split(
         &self,
-        split: &mut SplitFolder,
-        new_folder: &Path,
-        split_id: &str,
-    ) -> StorageResult<()> {
-        split.move_to(new_folder, split_id).await?;
-        Ok(())
-    }
-
-    /// Moves a split within the store to an external folder.
-    pub async fn move_out(
-        &mut self,
-        split_id: &str,
-        to_folder: &Path,
-    ) -> StorageResult<SplitFolder> {
-        let (split_size_in_bytes, mut split_folder) =
-            self.split_files.remove(split_id).ok_or_else(|| {
-                StorageErrorKind::DoesNotExist
-                    .with_error(anyhow::anyhow!("Missing split_id `{}`", split_id))
-            })?;
-        split_folder.move_to(to_folder, split_id).await?;
-        let mut split_store_space_quota_guard = self.split_store_space_quota.lock().await;
-        split_store_space_quota_guard.remove_splits(1, split_size_in_bytes);
-        Ok(split_folder)
-    }
-
-    /// Returns a cached split.
-    pub async fn get_cached_split(
-        &mut self,
         split_id: &str,
         output_dir_path: &Path,
-    ) -> StorageResult<Option<SplitFolder>> {
-        if !self.split_files.contains_key(split_id) {
+    ) -> StorageResult<Option<PathBuf>> {
+        let mut split_store_lock = self.inner.lock().await;
+        let split_ulid = if let Ok(split_ulid) = Ulid::from_str(split_id) {
+            split_ulid
+        } else {
             return Ok(None);
-        }
-        let split_file_res = self.move_out(split_id, output_dir_path).await;
+        };
+        let split_file_res = split_store_lock.move_out(split_ulid, output_dir_path).await;
         match split_file_res {
-            Ok(split_file) => {
-                self.split_files.remove(split_id);
-                Ok(Some(split_file))
-            }
+            Ok(Some(split_path)) => Ok(Some(split_path)),
+            Ok(None) => Ok(None),
             Err(storage_err) if storage_err.kind() == StorageErrorKind::DoesNotExist => {
                 error!(split_id = split_id, error = ?storage_err, "Cached split file/folder is missing.");
-                self.split_files.remove(split_id);
+                split_store_lock.split_folders.remove(&split_ulid);
                 Ok(None)
             }
             Err(storage_err) => Err(storage_err),
@@ -243,161 +397,195 @@ impl LocalSplitStore {
     /// just logs a warning and returns Ok(false).
     ///
     /// Ok(true) means the file was effectively accepted.
-    pub async fn move_into_cache<'a>(
-        &'a mut self,
-        split_id: &'a str,
-        mut split_folder: SplitFolder,
-        split_num_bytes: usize,
+    pub(super) async fn move_into_cache(
+        &self,
+        split_id: &str,
+        split_path: &Path,
     ) -> io::Result<bool> {
-        assert!(split_folder.path().is_dir());
-        let mut split_store_space_quota_guard = self.split_store_space_quota.lock().await;
-        if !split_store_space_quota_guard.can_fit_split(split_num_bytes) {
-            return Ok(false);
-        }
-
-        self.move_into(&mut split_folder, &self.split_store_folder, split_id)
-            .await?;
-
-        self.split_files
-            .insert(split_id.to_string(), (split_num_bytes, split_folder));
-        split_store_space_quota_guard.add_split(split_num_bytes);
-        Ok(true)
+        assert!(split_path.is_dir());
+        let mut inner = self.inner.lock().await;
+        inner.move_into_cache(split_id, split_path).await
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::fs::File;
+    use std::io;
     use std::io::Write;
+    use std::path::Path;
 
-    use quickwit_storage::PutPayload;
+    use byte_unit::Byte;
+    use quickwit_directories::BundleDirectory;
+    use quickwit_storage::{PutPayload, SplitPayloadBuilder};
     use tantivy::directory::FileSlice;
+    use tantivy::Directory;
+    use tempfile::tempdir;
+    use tokio::fs;
+    use ulid::Ulid;
 
-    use super::*;
+    use crate::split_store::{LocalSplitStore, SplitStoreQuota};
+
+    async fn create_fake_split(
+        split_cache_path: &Path,
+        split_id: &str,
+        len: usize,
+    ) -> io::Result<()> {
+        let split_path = split_cache_path.join(format!("{split_id}.split"));
+        fs::create_dir(&split_path).await?;
+        fs::write(split_path.join("splitdata"), &vec![0u8; len]).await?;
+        Ok(())
+    }
 
     #[tokio::test]
     async fn test_local_split_store_load_existing_splits() -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        tokio::fs::write(&temp_dir.path().join("not-a-split.split"), b"split-content").await?;
-        tokio::fs::write(
-            &temp_dir.path().join("also-not-a-split.split"),
-            b"split-content2",
-        )
-        .await?;
-        tokio::fs::write(&temp_dir.path().join("different-file"), b"split-content").await?;
-        tokio::fs::create_dir(&temp_dir.path().join("split1.split")).await?;
-        tokio::fs::create_dir(&temp_dir.path().join("split2.split")).await?;
-        let split_store_space_quota = Arc::new(Mutex::new(SplitStoreSpaceQuota::default()));
+        let split_id1 = "01GF5449X7DA53TK9F9W2ZJST2";
+        let split_id2 = "01GF545472A06WY07SEHGCJF9P";
+        create_fake_split(temp_dir.path(), split_id1, 15).await?;
+        create_fake_split(temp_dir.path(), split_id2, 13).await?;
+        let split_store_space_quota = SplitStoreQuota::default();
         let split_store =
             LocalSplitStore::open(temp_dir.path().to_path_buf(), split_store_space_quota).await?;
-        let cache_content = split_store.inspect();
+        let cache_content = split_store.inspect().await;
         assert_eq!(cache_content.len(), 2);
-        assert_eq!(cache_content.get("split1").cloned(), Some(28));
-        assert_eq!(cache_content.get("split2").cloned(), Some(28));
         assert_eq!(
-            split_store
-                .split_files
-                .values()
-                .map(|(size, _)| size)
-                .cloned()
-                .sum::<usize>(),
-            28 * 2
+            cache_content.get(split_id1).cloned(),
+            Some(Byte::from_bytes(15))
         );
-        assert_eq!(split_store.split_files.len(), 2);
+        assert_eq!(
+            cache_content.get(split_id2).cloned(),
+            Some(Byte::from_bytes(13))
+        );
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_local_split_stores_with_shared_split_store_space_quota() -> anyhow::Result<()> {
-        let temp_dir = tempfile::tempdir()?;
-        let split_store_1_path = temp_dir.path().join("store1");
-        let split_store_2_path = temp_dir.path().join("store2");
-
-        tokio::fs::create_dir_all(&split_store_1_path.join("split1.split")).await?;
-        tokio::fs::create_dir_all(&split_store_1_path.join("split2.split")).await?;
-        tokio::fs::create_dir_all(&split_store_2_path).await?;
-        let split_store_space_quota = Arc::new(Mutex::new(SplitStoreSpaceQuota::new(4, 120)));
-        let mut split_store1 =
-            LocalSplitStore::open(split_store_1_path, split_store_space_quota.clone()).await?;
-        let mut split_store2 =
-            LocalSplitStore::open(split_store_2_path, split_store_space_quota.clone()).await?;
-
-        let task1 = async {
-            let split_path = temp_dir.path().join("split3.split");
-            tokio::fs::create_dir_all(&split_path).await.unwrap();
-            let is_accepted = split_store1
-                .move_into_cache("split3", SplitFolder::new(split_path), 28)
+    async fn test_create_with_too_many_files() {
+        let dir = tempdir().unwrap();
+        create_fake_split(dir.path(), "01GF5215TMV48JT7GZ543BV193", 12)
+            .await
+            .unwrap(); // 1
+        create_fake_split(dir.path(), "01GF520MTTRNCCTQZE264BBYWM", 23)
+            .await
+            .unwrap(); // 0
+        create_fake_split(dir.path(), "01GF521M316V9AEHZWTHN76F2V", 5)
+            .await
+            .unwrap(); // 3
+        create_fake_split(dir.path(), "01GF521CZC1260V8QPA81T46X7", 45)
+            .await
+            .unwrap(); // 2
+        let split_store_space_quota = SplitStoreQuota::new(2, Byte::from_bytes(1_000));
+        let local_split_store =
+            LocalSplitStore::open(dir.path().to_path_buf(), split_store_space_quota)
                 .await
                 .unwrap();
-            assert!(is_accepted);
-        };
-        let task2 = async {
-            let split_path = temp_dir.path().join("split1.split");
-            tokio::fs::create_dir_all(&split_path).await.unwrap();
-            let is_accepted = split_store2
-                .move_into_cache("split1", SplitFolder::new(split_path), 28)
-                .await
-                .unwrap();
-            assert!(is_accepted);
-        };
-        tokio::join!(task1, task2);
-
-        // We need this block to drop the `split_store_space_quota_guard`
-        // as we cannot make progress while holding it.
-        {
-            let split_store_space_quota_guard = split_store_space_quota.lock().await;
-            assert_eq!(split_store_space_quota_guard.num_splits(), 4);
-            assert_eq!(split_store_space_quota_guard.size_in_bytes(), 28 * 4);
-        }
-
-        // Check we cannot store anymore items.
-        let split_path = temp_dir.path().join("split2.split");
-        tokio::fs::create_dir_all(&split_path).await.unwrap();
-        let is_not_accepted = !split_store2
-            .move_into_cache("split2", SplitFolder::new(split_path), 28)
-            .await
-            .unwrap();
-        assert!(is_not_accepted);
-
-        // Now remove a split and check that the quota has been updated.
-        split_store1
-            .move_out("split1", temp_dir.path())
-            .await
-            .unwrap();
-        let split_store_space_quota_guard = split_store_space_quota.lock().await;
-        assert_eq!(split_store_space_quota_guard.num_splits(), 3);
-        assert_eq!(split_store_space_quota_guard.size_in_bytes(), 28 * 3);
-
-        Ok(())
+        assert_eq!(local_split_store.inspect().await.len(), 2);
     }
 
     #[tokio::test]
-    async fn test_stream_split_to_bundle_and_open() -> anyhow::Result<()> {
-        let temp_dir = tempfile::tempdir()?;
+    async fn test_create_with_exceeds_num_bytes() {
+        let dir = tempdir().unwrap();
+        create_fake_split(dir.path(), "01GF5215TMV48JT7GZ543BV193", 12)
+            .await
+            .unwrap(); // 1
+        create_fake_split(dir.path(), "01GF520MTTRNCCTQZE264BBYWM", 23)
+            .await
+            .unwrap(); // 0
+        create_fake_split(dir.path(), "01GF521M316V9AEHZWTHN76F2V", 5)
+            .await
+            .unwrap(); // 3
+        create_fake_split(dir.path(), "01GF521CZC1260V8QPA81T46X7", 45)
+            .await
+            .unwrap(); // 2
+        let split_store_space_quota = SplitStoreQuota::new(6, Byte::from_bytes(61));
+        let local_split_store =
+            LocalSplitStore::open(dir.path().to_path_buf(), split_store_space_quota)
+                .await
+                .unwrap();
+        let cache_content = local_split_store.inspect().await;
+        assert_eq!(cache_content.len(), 2);
+        assert_eq!(cache_content.values().map(Byte::get_bytes).sum::<u64>(), 50);
+    }
+
+    #[tokio::test]
+    async fn test_remove_splits_out_of_age() {
+        let dir = tempdir().unwrap();
+        // 2022-10-13T06:12:37.643Z
+        create_fake_split(dir.path(), "01GF7ZJBMBMEPMAQSFD09VTST2", 1)
+            .await
+            .unwrap();
+        // 2022-10-12T20:53:23.211Z
+        create_fake_split(dir.path(), "01GF6ZJBMBMEPMAQSFD09VTST2", 1)
+            .await
+            .unwrap();
+        // 2022-10-12T02:14:54.347Z
+        create_fake_split(dir.path(), "01GF4ZJBMBMEPMAQSFD09VTST2", 1)
+            .await
+            .unwrap();
+        // 2022-10-10T22:17:11.051Z
+        create_fake_split(dir.path(), "01GF1ZJBMBMEPMAQSFD09VTST2", 1)
+            .await
+            .unwrap();
+        let split_store_space_quota = SplitStoreQuota::new(6, Byte::from_bytes(100));
+        let local_split_store =
+            LocalSplitStore::open(dir.path().to_path_buf(), split_store_space_quota)
+                .await
+                .unwrap();
+        let cache_content = local_split_store.inspect().await;
+        assert_eq!(cache_content.len(), 3);
+        let extra_split = tempdir().unwrap();
+        local_split_store
+            .move_into_cache("01GFCZJBMBMEPMAQSFD09VTST2", extra_split.path())
+            .await
+            .unwrap();
+        let cache_content = local_split_store.inspect().await;
+        assert_eq!(cache_content.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_stream_split_to_bundle_and_open() {
+        let temp_dir = tempfile::tempdir().unwrap();
         let test_filepath1 = temp_dir.path().join("f1");
         let test_filepath2 = temp_dir.path().join("f2");
+        let mut file1 = File::create(&test_filepath1).unwrap();
+        file1.write_all(b"ab").unwrap();
+        let mut file2 = File::create(&test_filepath2).unwrap();
+        file2.write_all(b"def").unwrap();
+        let split_streamer =
+            SplitPayloadBuilder::get_split_payload(&[test_filepath1, test_filepath2], b"hotcache")
+                .unwrap();
+        let data = split_streamer.read_all().await.unwrap();
+        let bundle_dir = BundleDirectory::open_split(FileSlice::from(data.to_vec())).unwrap();
+        let f1_data = bundle_dir.atomic_read(Path::new("f1")).unwrap();
+        assert_eq!(&*f1_data, b"ab");
+        let f2_data = bundle_dir.atomic_read(Path::new("f2")).unwrap();
+        assert_eq!(&f2_data[..], b"def");
+    }
 
-        let mut file1 = File::create(&test_filepath1)?;
-        file1.write_all(&[123, 76])?;
-
-        let mut file2 = File::create(&test_filepath2)?;
-        file2.write_all(&[99, 55, 44])?;
-
-        let split_streamer = SplitPayloadBuilder::get_split_payload(
-            &[test_filepath1.clone(), test_filepath2.clone()],
-            &[1, 2, 3],
-        )?;
-
-        let data = split_streamer.read_all().await?;
-
-        let bundle_dir = BundleDirectory::open_split(FileSlice::from(data.to_vec()))?;
-
-        let f1_data = bundle_dir.atomic_read(Path::new("f1"))?;
-        assert_eq!(&*f1_data, &[123u8, 76u8]);
-
-        let f2_data = bundle_dir.atomic_read(Path::new("f2"))?;
-        assert_eq!(&f2_data[..], &[99, 55, 44]);
-
-        Ok(())
+    #[tokio::test]
+    async fn test_store_and_fetch() {
+        let temp_dir_in = tempfile::tempdir().unwrap();
+        let split_id = Ulid::default().to_string();
+        let split_dir = temp_dir_in.path().join(format!("scratch_{split_id}"));
+        tokio::fs::create_dir(&split_dir).await.unwrap();
+        let cache_dir = tempfile::tempdir().unwrap();
+        let quota = SplitStoreQuota::default();
+        let local_store = LocalSplitStore::open(cache_dir.path().to_path_buf(), quota)
+            .await
+            .unwrap();
+        assert!(split_dir.exists());
+        assert!(local_store
+            .move_into_cache(&split_id, &split_dir)
+            .await
+            .unwrap());
+        assert!(!split_dir.exists());
+        let split_path = local_store
+            .get_cached_split(&split_id, temp_dir_in.path())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(split_path.exists());
+        assert_eq!(split_path.parent().unwrap(), temp_dir_in.path());
     }
 }

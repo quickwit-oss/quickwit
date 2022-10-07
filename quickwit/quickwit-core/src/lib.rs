@@ -20,8 +20,8 @@
 mod index;
 
 pub use index::{
-    clear_cache_directory, get_cache_directory_path, remove_indexing_directory,
-    validate_storage_uri, IndexService, IndexServiceError,
+    clear_cache_directory, remove_indexing_directory, validate_storage_uri, IndexService,
+    IndexServiceError,
 };
 
 #[cfg(test)]
