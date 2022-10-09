@@ -145,12 +145,12 @@ impl FileBackedMetastore {
         &self,
         index_id: &str,
         mutate_fn: impl FnOnce(&mut FileBackedIndex) -> crate::MetastoreResult<bool>,
-    ) -> MetastoreResult<()> {
+    ) -> MetastoreResult<bool> {
         let mut locked_index = self.get_locked_index(index_id).await?;
         let mut index = locked_index.clone();
         let mutation_occurred = mutate_fn(&mut index)?;
         if !mutation_occurred {
-            return Ok(());
+            return Ok(false);
         }
 
         let put_result = put_index(&*self.storage, &index).await;

@@ -398,19 +398,18 @@ macro_rules! run_with_tx {
     }};
 }
 
-
 async fn mutate_index_metadata<E, M: FnOnce(&mut IndexMetadata) -> Result<bool, E>>(
     tx: &mut Transaction<'_, Postgres>,
     index_id: &str,
     mutate_fn: M,
-) -> MetastoreResult<()>
+) -> MetastoreResult<bool>
 where
     MetastoreError: From<E>,
 {
     let mut index_metadata = index_metadata(tx, index_id).await?;
     let mutation_occurred = mutate_fn(&mut index_metadata)?;
     if !mutation_occurred {
-        return Ok(());
+        return Ok(mutation_occurred);
     }
     let index_metadata_json =
         serde_json::to_string(&index_metadata).map_err(|err| MetastoreError::InternalError {
@@ -433,7 +432,7 @@ where
             index_id: index_id.to_string(),
         });
     }
-    Ok(mutation_value)
+    Ok(mutation_occurred)
 }
 
 #[async_trait]
@@ -706,7 +705,8 @@ impl Metastore for PostgresqlMetastore {
             mutate_index_metadata(tx, index_id, |index_metadata| {
                 index_metadata.add_source(source)
             })
-            .await
+            .await?;
+            Ok(())
         })
     }
 
@@ -731,7 +731,8 @@ impl Metastore for PostgresqlMetastore {
             mutate_index_metadata(tx, index_id, |index_metadata| {
                 index_metadata.delete_source(source_id)
             })
-            .await
+            .await?;
+            Ok(())
         })
     }
 
@@ -745,7 +746,8 @@ impl Metastore for PostgresqlMetastore {
             mutate_index_metadata(tx, index_id, |index_metadata| {
                 Ok::<_, MetastoreError>(index_metadata.checkpoint.reset_source(source_id))
             })
-            .await
+            .await?;
+            Ok(())
         })
     }
 
