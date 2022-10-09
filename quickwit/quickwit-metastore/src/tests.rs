@@ -191,16 +191,15 @@ pub mod test_suite {
 
         let index_metadata = metastore.index_metadata(index_id).await.unwrap();
 
-        assert_eq!(
-            index_metadata.checkpoint.source_checkpoint(source_id),
-            Some(&SourceCheckpoint::default())
-        );
-
         let sources = index_metadata.sources;
         assert_eq!(sources.len(), 1);
         assert!(sources.contains_key(source_id));
         assert_eq!(sources.get(source_id).unwrap().source_id, source_id);
         assert_eq!(sources.get(source_id).unwrap().source_type(), "void");
+        assert_eq!(
+            index_metadata.checkpoint.source_checkpoint(source_id),
+            Some(&SourceCheckpoint::default())
+        );
 
         assert!(matches!(
             metastore

@@ -157,7 +157,8 @@ impl IndexMetadata {
         }
     }
 
-    pub(crate) fn add_source(&mut self, source: SourceConfig) -> MetastoreResult<()> {
+    /// Adds a source to the index. Returns whether the index was modified (true).
+    pub(crate) fn add_source(&mut self, source: SourceConfig) -> MetastoreResult<bool> {
         let entry = self.sources.entry(source.source_id.clone());
         let source_id = source.source_id.clone();
         if let Entry::Occupied(_) = entry {
@@ -168,7 +169,7 @@ impl IndexMetadata {
         }
         entry.or_insert(source);
         self.checkpoint.add_source(&source_id);
-        Ok(())
+        Ok(true)
     }
 
     pub(crate) fn toggle_source(&mut self, source_id: &str, enable: bool) -> MetastoreResult<bool> {
@@ -187,14 +188,15 @@ impl IndexMetadata {
         Ok(has_changed)
     }
 
-    pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<()> {
+    /// Deletes a source from the index. Returns whether the index was modified (true).
+    pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<bool> {
         self.sources
             .remove(source_id)
             .ok_or_else(|| MetastoreError::SourceDoesNotExist {
                 source_id: source_id.to_string(),
             })?;
         self.checkpoint.remove_source(source_id);
-        Ok(())
+        Ok(true)
     }
 }
 
