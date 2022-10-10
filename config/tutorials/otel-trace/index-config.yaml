@@ -32,13 +32,13 @@ doc_mapping:
     - name: span_start_timestamp_nanos
       type: datetime
       input_formats:
-        - unix_ts_nanos
+        - unix_timestamp
       fast: true
       precision: seconds
     - name: span_end_timestamp_nanos
       type: datetime
       input_formats:
-        - unix_ts_nanos
+        - unix_timestamp
       fast: true
       precision: seconds
     - name: span_attributes
