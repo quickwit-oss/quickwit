@@ -13,7 +13,8 @@
     ],
     "indexer": {
         "split_store_max_num_bytes": "1T",
-        "split_store_max_num_splits": 10000
+        "split_store_max_num_splits": 10000,
+        "max_concurrent_split_upload": 8
     },
     "searcher": {
         "fast_field_cache_capacity": "10G",
