@@ -54,8 +54,8 @@ pub fn get_http_client() -> HttpClient {
         // It is not enabled on S3 and it does not seem to work with Google Cloud Storage at
         // this point. https://github.com/quickwit-oss/quickwit/issues/1584
         //
-        // (Besides, HTTP2 would be awesome but rusoto does not leverage
-        // multiplexing anyway.)
+        // (HTTP2 would be awesome since we do a lot of concurrent requests and
+        // HTTP2 enables multiplexing a given connection.)
         .enable_http1()
         .build();
     HttpClient::from_connector_with_config(connector, http_config)

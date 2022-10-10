@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use crate::split_metadata::utc_now_timestamp;
 use crate::{SplitMetadata, SplitState};
 
-#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Debug, Deserialize)]
 struct SplitMetadataV0 {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
@@ -64,7 +64,7 @@ struct SplitMetadataV0 {
     pub tags: BTreeSet<String>,
 }
 
-#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Debug, Deserialize)]
 pub(crate) struct SplitMetadataAndFooterV0 {
     split_metadata: SplitMetadataV0,
     footer_offsets: Range<u64>,
@@ -209,7 +209,7 @@ impl From<SplitMetadata> for SplitMetadataV1 {
 #[serde(tag = "version")]
 pub(crate) enum VersionedSplitMetadata {
     #[serde(rename = "0")]
-    V0(SplitMetadataAndFooterV0),
+    V0(#[serde(skip_serializing)] SplitMetadataAndFooterV0),
     #[serde(rename = "1")]
     V1(SplitMetadataV1),
 }

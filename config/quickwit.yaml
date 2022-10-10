@@ -75,14 +75,16 @@ version: 0
 #
 # -------------------------------- Indexer settings --------------------------------
 #
-# indexer:
+indexer:
+  enable_opentelemetry_otlp_service: ${QW_ENABLE_OPENTELEMETRY_OTLP_SERVICE:-false}
 #   split_store_max_num_bytes: 200G
 #   split_store_max_num_splits: 10000
 #
 #
 # -------------------------------- Searcher settings --------------------------------
 #
-# searcher:
+searcher:
+  enable_jaeger_service: ${QW_ENABLE_JAEGER_SERVICE:-false}
 #   fast_field_cache_capacity: 10G
 #   split_footer_cache_capacity: 1G
 #   max_num_concurrent_split_streams: 100

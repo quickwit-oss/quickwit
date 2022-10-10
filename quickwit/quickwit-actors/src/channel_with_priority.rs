@@ -129,6 +129,10 @@ pub struct Sender<T> {
 }
 
 impl<T> Sender<T> {
+    pub fn is_disconnected(&self) -> bool {
+        self.low_priority_tx.is_disconnected()
+    }
+
     pub async fn send_low_priority(&self, msg: T) -> Result<(), SendError> {
         self.low_priority_tx.send_async(msg).await?;
         Ok(())

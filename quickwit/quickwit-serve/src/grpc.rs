@@ -20,9 +20,12 @@
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
 
+use anyhow::Context;
 use quickwit_config::service::QuickwitService;
+use quickwit_jaeger::JaegerService;
 use quickwit_metastore::GrpcMetastoreAdapter;
 use quickwit_opentelemetry::otlp::OtlpGrpcTraceService;
+use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
 use quickwit_proto::metastore_api::metastore_api_service_server::MetastoreApiServiceServer;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;
 use quickwit_proto::search_service_server::SearchServiceServer;
@@ -59,7 +62,13 @@ pub(crate) async fn start_grpc_server(
         && services.services.contains(&QuickwitService::Indexer)
     {
         enabled_grpc_services.insert("otlp-trace");
-        Some(TraceServiceServer::new(OtlpGrpcTraceService::default()))
+        let ingest_api_service = services
+            .ingest_api_service
+            .clone()
+            .context("Failed to instantiate OTLP trace service: the ingest API is disabled.")?;
+        Some(TraceServiceServer::new(OtlpGrpcTraceService::new(
+            ingest_api_service,
+        )))
     } else {
         None
     };
@@ -72,10 +81,22 @@ pub(crate) async fn start_grpc_server(
     } else {
         None
     };
+    let enable_jaeger_service = services.config.searcher_config.enable_jaeger_service;
+    let jaeger_service =
+        if enable_jaeger_service && services.services.contains(&QuickwitService::Searcher) {
+            enabled_grpc_services.insert("jaeger");
+            let search_service = services.search_service.clone();
+            Some(SpanReaderPluginServer::new(JaegerService::new(
+                search_service,
+            )))
+        } else {
+            None
+        };
     let server_router = server
         .add_optional_service(metastore_service)
         .add_optional_service(otlp_trace_service)
-        .add_optional_service(search_service);
+        .add_optional_service(search_service)
+        .add_optional_service(jaeger_service);
 
     info!(enabled_grpc_services=?enabled_grpc_services, grpc_listen_addr=?grpc_listen_addr, "Starting gRPC server.");
     server_router.serve(grpc_listen_addr).await?;

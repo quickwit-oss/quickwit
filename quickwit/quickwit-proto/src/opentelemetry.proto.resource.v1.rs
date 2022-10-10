@@ -1,4 +1,5 @@
 /// Resource information.
+#[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Resource {
     /// Set of attributes that describe the resource.

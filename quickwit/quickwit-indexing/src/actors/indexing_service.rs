@@ -19,12 +19,13 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Observation, Supervisable,
 };
+use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_config::{
     IndexerConfig, IngestApiSourceParams, SourceConfig, SourceParams, VecSourceParams,
 };
@@ -38,7 +39,7 @@ use thiserror::Error;
 use tokio::sync::Mutex;
 use tracing::{error, info};
 
-use crate::merge_policy::{merge_policy_from_settings, MergePolicy};
+use crate::merge_policy::MergePolicy;
 use crate::models::{
     DetachPipeline, IndexingDirectory, IndexingPipelineId, Observe, ObservePipeline,
     ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
@@ -106,7 +107,6 @@ pub struct IndexingService {
     indexing_pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
     state: IndexingServiceState,
     enable_ingest_api: bool,
-    merge_policies: HashMap<IndexId, Weak<dyn MergePolicy>>,
     indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
     split_stores: HashMap<(IndexId, SourceId), WeakIndexingSplitStore>,
     split_store_space_quota: Arc<Mutex<SplitStoreSpaceQuota>>,
@@ -134,7 +134,6 @@ impl IndexingService {
             indexing_pipeline_handles: Default::default(),
             state: Default::default(),
             enable_ingest_api,
-            merge_policies: HashMap::new(),
             indexing_directories: HashMap::new(),
             split_stores: HashMap::new(),
             split_store_space_quota: Arc::new(Mutex::new(SplitStoreSpaceQuota::new(
@@ -253,7 +252,8 @@ impl IndexingService {
             .get_or_create_indexing_directory(&pipeline_id, indexing_dir_path)
             .await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
-        let merge_policy = self.get_or_create_merge_policy(&pipeline_id, &index_metadata);
+        let merge_policy =
+            crate::merge_policy::merge_policy_from_settings(&index_metadata.indexing_settings);
         let split_store = self
             .get_or_create_split_store(
                 &pipeline_id,
@@ -345,7 +345,9 @@ impl IndexingService {
             pipeline_ord: 0,
         };
         let mut index_metadata = self.index_metadata(ctx, &pipeline_id.index_id).await?;
-        index_metadata.indexing_settings.merge_enabled = merge_enabled;
+        if !merge_enabled {
+            index_metadata.indexing_settings.merge_policy = MergePolicyConfig::Nop
+        }
         let source_config = SourceConfig {
             source_id: pipeline_id.source_id.clone(),
             num_pipelines: 1,
@@ -364,23 +366,6 @@ impl IndexingService {
         let _protect_guard = ctx.protect_zone();
         let index_metadata = self.metastore.index_metadata(index_id).await?;
         Ok(index_metadata)
-    }
-
-    fn get_or_create_merge_policy(
-        &mut self,
-        pipeline_id: &IndexingPipelineId,
-        index_metadata: &IndexMetadata,
-    ) -> Arc<dyn MergePolicy> {
-        if let Some(merge_policy_ref) = self.merge_policies.get(&pipeline_id.index_id) {
-            if let Some(merge_policy) = merge_policy_ref.upgrade() {
-                return merge_policy;
-            }
-        }
-        let merge_policy = merge_policy_from_settings(&index_metadata.indexing_settings);
-
-        self.merge_policies
-            .insert(pipeline_id.index_id.clone(), Arc::downgrade(&merge_policy));
-        merge_policy
     }
 
     async fn get_or_create_indexing_directory(

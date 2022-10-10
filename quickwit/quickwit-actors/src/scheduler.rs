@@ -25,6 +25,7 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use futures::Future;
+use serde::Serialize;
 use tokio::sync::oneshot::{self, Sender};
 use tokio::task::JoinHandle;
 use tracing::info;
@@ -98,7 +99,7 @@ impl fmt::Debug for ScheduleEvent {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct SchedulerCounters {
     num_pending_events: usize,
     total_num_events: u64,

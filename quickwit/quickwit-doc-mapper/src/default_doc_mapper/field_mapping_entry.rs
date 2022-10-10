@@ -1024,7 +1024,7 @@ mod tests {
             json!({
                 "name": "my_field_name",
                 "type": "datetime",
-                "input_formats": ["rfc3339", "unix_ts_secs"],
+                "input_formats": ["rfc3339"],
                 "precision": "seconds",
                 "stored": true,
                 "indexed": true,
@@ -1051,7 +1051,7 @@ mod tests {
             json!({
                 "name": "my_field_name",
                 "type": "array<datetime>",
-                "input_formats": ["rfc3339", "unix_ts_secs"],
+                "input_formats": ["rfc3339"],
                 "precision": "milliseconds",
                 "stored": true,
                 "indexed": true,

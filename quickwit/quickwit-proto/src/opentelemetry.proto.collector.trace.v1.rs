@@ -1,3 +1,4 @@
+#[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportTraceServiceRequest {
     /// An array of ResourceSpans.
@@ -8,6 +9,7 @@ pub struct ExportTraceServiceRequest {
     #[prost(message, repeated, tag="1")]
     pub resource_spans: ::prost::alloc::vec::Vec<super::super::super::trace::v1::ResourceSpans>,
 }
+#[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportTraceServiceResponse {
     /// The details of a partially successful export request.
@@ -28,6 +30,7 @@ pub struct ExportTraceServiceResponse {
     #[prost(message, optional, tag="1")]
     pub partial_success: ::core::option::Option<ExportTracePartialSuccess>,
 }
+#[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportTracePartialSuccess {
     /// The number of rejected spans.

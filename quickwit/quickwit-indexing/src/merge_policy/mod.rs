@@ -25,11 +25,13 @@ use std::fmt;
 use std::sync::Arc;
 
 pub use nop_merge_policy::NopMergePolicy;
+use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_config::IndexingSettings;
 use quickwit_metastore::SplitMetadata;
 pub(crate) use stable_log_merge_policy::StableLogMergePolicy;
 use tracing::{info_span, Span};
 
+use crate::merge_policy::const_write_amplification::ConstWriteAmplificationMergePolicy;
 use crate::new_split_id;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -113,17 +115,20 @@ pub trait MergePolicy: Send + Sync + fmt::Debug {
     fn check_is_valid(&self, _merge_op: &MergeOperation, _remaining_splits: &[SplitMetadata]) {}
 }
 
-pub fn merge_policy_from_settings(indexing_settings: &IndexingSettings) -> Arc<dyn MergePolicy> {
-    if !indexing_settings.merge_enabled {
-        return Arc::new(NopMergePolicy);
+pub fn merge_policy_from_settings(settings: &IndexingSettings) -> Arc<dyn MergePolicy> {
+    let merge_policy_config = settings.merge_policy.clone();
+    match merge_policy_config {
+        MergePolicyConfig::Nop => Arc::new(NopMergePolicy),
+        MergePolicyConfig::ConstWriteAmplification(config) => {
+            let merge_policy =
+                ConstWriteAmplificationMergePolicy::new(config, settings.split_num_docs_target);
+            Arc::new(merge_policy)
+        }
+        MergePolicyConfig::StableLog(config) => {
+            let merge_policy = StableLogMergePolicy::new(config, settings.split_num_docs_target);
+            Arc::new(merge_policy)
+        }
     }
-    let stable_log_merge_policy = StableLogMergePolicy {
-        merge_factor: indexing_settings.merge_policy.merge_factor,
-        max_merge_factor: indexing_settings.merge_policy.max_merge_factor,
-        split_num_docs_target: indexing_settings.split_num_docs_target,
-        ..Default::default()
-    };
-    Arc::new(stable_log_merge_policy)
 }
 
 pub fn default_merge_policy() -> Arc<dyn MergePolicy> {

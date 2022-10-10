@@ -20,6 +20,8 @@
 use std::cmp::Ordering;
 use std::ops::Range;
 
+use quickwit_config::merge_policy_config::StableLogMergePolicyConfig;
+use quickwit_config::IndexingSettings;
 use quickwit_metastore::SplitMetadata;
 use tracing::debug;
 
@@ -57,26 +59,17 @@ use crate::merge_policy::{splits_short_debug, MergeOperation, MergePolicy};
 ///
 /// Because we stop merging splits reaching a size larger than if it would result in a size larger
 /// than `target_num_docs`.
-#[derive(Clone, Debug)]
-pub(crate) struct StableLogMergePolicy {
-    pub min_level_num_docs: usize,
-    pub merge_factor: usize,
-    pub max_merge_factor: usize,
-    /// The merge policy aims to eventually produce mature splits that have a larger size but
-    /// are within close range of `split_num_docs_target`.
-    ///
-    /// In other words, splits that contain a number of documents greater than or equal to
-    /// `split_num_docs_target` are considered mature and never merged.
-    pub split_num_docs_target: usize,
+#[derive(Debug, Clone)]
+pub struct StableLogMergePolicy {
+    config: StableLogMergePolicyConfig,
+    split_num_docs_target: usize,
 }
 
 impl Default for StableLogMergePolicy {
     fn default() -> Self {
         StableLogMergePolicy {
-            min_level_num_docs: 100_000,
-            merge_factor: 10,
-            max_merge_factor: 12,
-            split_num_docs_target: 10_000_000,
+            config: Default::default(),
+            split_num_docs_target: IndexingSettings::default_split_num_docs_target(),
         }
     }
 }
@@ -93,6 +86,18 @@ fn remove_matching_items<T, Pred: Fn(&T) -> bool>(items: &mut Vec<T>, predicate:
         }
     }
     matching_items
+}
+
+impl StableLogMergePolicy {
+    pub fn new(
+        config: StableLogMergePolicyConfig,
+        split_num_docs_target: usize,
+    ) -> StableLogMergePolicy {
+        StableLogMergePolicy {
+            config,
+            split_num_docs_target,
+        }
+    }
 }
 
 impl MergePolicy for StableLogMergePolicy {
@@ -117,8 +122,8 @@ impl MergePolicy for StableLogMergePolicy {
 
     #[cfg(test)]
     fn check_is_valid(&self, merge_op: &MergeOperation, _remaining_splits: &[SplitMetadata]) {
-        assert!(merge_op.splits_as_slice().len() <= self.max_merge_factor);
-        if merge_op.splits_as_slice().len() < self.merge_factor {
+        assert!(merge_op.splits_as_slice().len() <= self.config.max_merge_factor);
+        if merge_op.splits_as_slice().len() < self.config.merge_factor {
             let num_docs: usize = merge_op
                 .splits_as_slice()
                 .iter()
@@ -225,7 +230,8 @@ impl StableLogMergePolicy {
 
         let mut split_levels: Vec<Range<usize>> = Vec::new();
         let mut current_level_start_ord = 0;
-        let mut current_level_max_docs = (splits[0].num_docs * 3).max(self.min_level_num_docs);
+        let mut current_level_max_docs =
+            (splits[0].num_docs * 3).max(self.config.min_level_num_docs);
 
         let mut levels = vec![(0..current_level_max_docs)]; // for logging only
         for (split_ord, split) in splits.iter().enumerate() {
@@ -275,7 +281,7 @@ impl StableLogMergePolicy {
         }
 
         // There are already enough splits in this merge.
-        if splits.len() >= self.max_merge_factor {
+        if splits.len() >= self.config.max_merge_factor {
             return MergeCandidateSize::OneMoreSplitWouldBeTooBig;
         }
         let num_docs_in_merge: usize = splits.iter().map(|split| split.num_docs).sum();
@@ -285,7 +291,7 @@ impl StableLogMergePolicy {
             return MergeCandidateSize::OneMoreSplitWouldBeTooBig;
         }
 
-        if splits.len() < self.merge_factor {
+        if splits.len() < self.config.merge_factor {
             return MergeCandidateSize::TooSmall;
         }
 
@@ -303,12 +309,12 @@ fn is_sorted(elements: &[usize]) -> bool {
 #[cfg(test)]
 impl StableLogMergePolicy {
     fn case_levels_given_growth_factor(&self, growth_factor: usize) -> Vec<usize> {
-        assert!(self.min_level_num_docs > 0);
-        assert!(self.merge_factor > 1);
-        assert!(self.max_merge_factor >= self.merge_factor);
-        assert!(self.split_num_docs_target > self.min_level_num_docs);
+        assert!(self.config.min_level_num_docs > 0);
+        assert!(self.config.merge_factor > 1);
+        assert!(self.config.max_merge_factor >= self.config.merge_factor);
+        assert!(self.split_num_docs_target > self.config.min_level_num_docs);
         let mut levels_start_num_docs = vec![1];
-        let mut level_end_doc = self.min_level_num_docs;
+        let mut level_end_doc = self.config.min_level_num_docs;
         while level_end_doc < self.split_num_docs_target {
             levels_start_num_docs.push(level_end_doc);
             level_end_doc *= growth_factor;
@@ -318,7 +324,7 @@ impl StableLogMergePolicy {
     }
 
     pub fn max_num_splits_ideal_case(&self, num_docs: u64) -> usize {
-        let levels = self.case_levels_given_growth_factor(self.merge_factor);
+        let levels = self.case_levels_given_growth_factor(self.config.merge_factor);
         self.max_num_splits_knowning_levels(num_docs, &levels, true)
     }
 
@@ -342,15 +348,15 @@ impl StableLogMergePolicy {
             return 0;
         }
         let first_level_min_saturation_docs = if sorted {
-            head * (self.merge_factor - 1)
+            head * (self.config.merge_factor - 1)
         } else {
-            head + (self.merge_factor - 2)
+            head + (self.config.merge_factor - 2)
         };
         if tail.is_empty() || num_docs <= first_level_min_saturation_docs as u64 {
             return (num_docs as usize + head - 1) / head;
         }
         num_docs -= first_level_min_saturation_docs as u64;
-        self.merge_factor - 1 + self.max_num_splits_knowning_levels(num_docs, tail, sorted)
+        self.config.merge_factor - 1 + self.max_num_splits_knowning_levels(num_docs, tail, sorted)
     }
 }
 
@@ -601,12 +607,12 @@ mod tests {
 
     #[test]
     fn test_stable_log_merge_policy_proptest() {
-        let merge_policy = StableLogMergePolicy {
+        let config = StableLogMergePolicyConfig {
             min_level_num_docs: 100_000,
             merge_factor: 4,
             max_merge_factor: 6,
-            split_num_docs_target: 10_000_000,
         };
+        let merge_policy = StableLogMergePolicy::new(config, 10_000_000);
         crate::merge_policy::tests::proptest_merge_policy(&merge_policy);
     }
 

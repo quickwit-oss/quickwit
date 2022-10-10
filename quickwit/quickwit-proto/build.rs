@@ -17,25 +17,17 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("cargo:rerun-if-changed=proto/ingest_api.proto");
-    println!("cargo:rerun-if-changed=proto/metastore_api.proto");
-    println!("cargo:rerun-if-changed=proto/search_api.proto");
+use std::path::PathBuf;
 
-    println!(
-        "cargo:rerun-if-changed=otlp/opentelemetry/proto/collector/logs/v1/logs_service.proto"
-    );
-    println!(
-        "cargo:rerun-if-changed=otlp/opentelemetry/proto/collector/trace/v1/trace_service.proto"
-    );
-    println!("cargo:rerun-if-changed=otlp/opentelemetry/proto/common/v1/common.proto");
-    println!("cargo:rerun-if-changed=otlp/opentelemetry/proto/logs/v1/logs.proto");
-    println!("cargo:rerun-if-changed=otlp/opentelemetry/proto/resource/v1/resource.proto");
-    println!("cargo:rerun-if-changed=otlp/opentelemetry/proto/trace/v1/trace.proto");
+use glob::glob;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Quickwit proto
+    let protos = find_protos("protos/quickwit");
 
     let mut prost_config = prost_build::Config::default();
-    // prost_config.type_attribute("LeafSearchResponse", "#[derive(Default)]");
     prost_config.protoc_arg("--experimental_allow_proto3_optional");
+
     tonic_build::configure()
         .type_attribute(".", "#[derive(Serialize, Deserialize)]")
         .type_attribute("DeleteQuery", "#[serde(default)]")
@@ -49,25 +41,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .type_attribute("OutputFormat", "#[serde(rename_all = \"snake_case\")]")
         .out_dir("src/")
+        .compile_with_config(prost_config, &protos, &["protos/quickwit"])?;
+
+    // Jaeger proto
+    let protos = find_protos("protos/third-party/jaeger");
+
+    let mut prost_config = prost_build::Config::default();
+    prost_config.type_attribute("Operation", "#[derive(Eq, Ord, PartialOrd)]");
+
+    tonic_build::configure()
+        .out_dir("src/")
         .compile_with_config(
             prost_config,
-            &[
-                "./proto/ingest_api.proto",
-                "./proto/metastore_api.proto",
-                "./proto/search_api.proto",
-            ],
-            &["./proto"],
+            &protos,
+            &["protos/third-party/jaeger", "protos/third-party"],
         )?;
-    tonic_build::configure().out_dir("src/").compile(
-        &[
-            "./otlp/opentelemetry/proto/common/v1/common.proto", // Must be compiled first.
-            "./otlp/opentelemetry/proto/resource/v1/resource.proto", // Must be compiled second.
-            "./otlp/opentelemetry/proto/logs/v1/logs.proto",
-            "./otlp/opentelemetry/proto/trace/v1/trace.proto",
-            "./otlp/opentelemetry/proto/collector/logs/v1/logs_service.proto",
-            "./otlp/opentelemetry/proto/collector/trace/v1/trace_service.proto",
-        ],
-        &["./otlp"],
-    )?;
+
+    // OTEL proto
+    let mut prost_config = prost_build::Config::default();
+    prost_config.protoc_arg("--experimental_allow_proto3_optional");
+
+    let protos = find_protos("protos/third-party/otlp");
+    tonic_build::configure()
+        .type_attribute(".", "#[derive(Serialize, Deserialize)]")
+        .out_dir("src/")
+        .compile_with_config(prost_config, &protos, &["protos/third-party/otlp"])?;
     Ok(())
+}
+
+fn find_protos(dir_path: &str) -> Vec<PathBuf> {
+    glob(&format!("{dir_path}/**/*.proto"))
+        .unwrap()
+        .flatten()
+        .collect()
 }

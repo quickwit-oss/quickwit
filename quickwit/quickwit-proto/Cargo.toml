@@ -11,9 +11,11 @@ documentation = "https://quickwit.io/docs/"
 
 [dependencies]
 prost = { workspace = true }
+prost-types = { workspace = true }
 serde = { workspace = true }
 tonic = { workspace = true }
 
 [build-dependencies]
+glob = "0.3.0"
 prost-build = { workspace = true }
 tonic-build = { workspace = true }

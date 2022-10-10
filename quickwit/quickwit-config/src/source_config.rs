@@ -28,7 +28,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::{is_false, validate_identifier};
 
 /// Reserved source ID for the `quickwit index ingest` CLI command.
-pub const CLI_INGEST_SOURCE_ID: &str = ".cli-ingest-source";
+pub const CLI_INGEST_SOURCE_ID: &str = "_cli-ingest-source";
 
 fn default_num_pipelines() -> usize {
     1

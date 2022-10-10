@@ -83,7 +83,7 @@ impl RoutingExprContext for serde_json::Map<String, serde_json::Value> {
 
 #[derive(Clone)]
 pub struct RoutingExpr {
-    inner: Arc<InnerRoutingExpr>,
+    inner_opt: Option<Arc<InnerRoutingExpr>>,
     max_num_partitions: NonZeroU64,
     salted_hasher: SipHasher,
 }
@@ -91,7 +91,7 @@ pub struct RoutingExpr {
 impl Default for RoutingExpr {
     fn default() -> Self {
         Self {
-            inner: Default::default(),
+            inner_opt: None,
             max_num_partitions: NonZeroU64::new(1).unwrap(),
             salted_hasher: Default::default(),
         }
@@ -100,11 +100,14 @@ impl Default for RoutingExpr {
 
 impl RoutingExpr {
     pub fn new(expr_dsl_str: &str, max_num_partitions: NonZeroU64) -> anyhow::Result<Self> {
-        if max_num_partitions.get() <= 1 {
+        let expr_dsl_str = expr_dsl_str.trim();
+        if max_num_partitions.get() <= 1 || expr_dsl_str.is_empty() {
             return Ok(RoutingExpr::default());
         }
-        let inner = InnerRoutingExpr::from_str(expr_dsl_str)?;
+
         let mut salted_hasher: SipHasher = SipHasher::new();
+
+        let inner: InnerRoutingExpr = InnerRoutingExpr::from_str(expr_dsl_str)?;
         // We hash the expression tree here instead of hashing the str, or
         // hash the display of the tree, in order to make the partition id less brittle to
         // a minor change in formatting, or a change in the DSL itself.
@@ -112,8 +115,9 @@ impl RoutingExpr {
         // We do not use the standard library DefaultHasher to make sure we
         // get the same hash values.
         inner.hash(&mut salted_hasher);
+
         Ok(RoutingExpr {
-            inner: Arc::new(inner),
+            inner_opt: Some(Arc::new(inner)),
             max_num_partitions,
             salted_hasher,
         })
@@ -126,7 +130,11 @@ impl RoutingExpr {
 
 impl Display for RoutingExpr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.inner.fmt(f)
+        if let Some(inner_expr) = self.inner_opt.as_ref() {
+            inner_expr.fmt(f)
+        } else {
+            write!(f, "EmptyRoutingExpr")
+        }
     }
 }
 
@@ -226,9 +234,13 @@ impl RoutingExpr {
     ///
     /// Obviously this function is not perfectly injective.
     pub fn eval_hash<Ctx: RoutingExprContext>(&self, ctx: &Ctx) -> u64 {
-        let mut hasher = self.salted_hasher;
-        self.inner.eval_hash(ctx, &mut hasher);
-        hasher.finish() % self.max_num_partitions.get()
+        if let Some(inner) = self.inner_opt.as_ref() {
+            let mut hasher: SipHasher = self.salted_hasher;
+            inner.eval_hash(ctx, &mut hasher);
+            hasher.finish() % self.max_num_partitions.get()
+        } else {
+            0u64
+        }
     }
 }
 
@@ -251,6 +263,13 @@ mod tests {
     fn test_routing_expr_empty() {
         let routing_expr = deser_util("");
         assert!(matches!(routing_expr, InnerRoutingExpr::Composite(leaves) if leaves.is_empty()));
+    }
+
+    #[test]
+    fn test_routing_expr_empty_hashes_to_0() {
+        let expr = RoutingExpr::new("", NonZeroU64::new(10).unwrap()).unwrap();
+        let ctx: serde_json::Map<String, serde_json::Value> = Default::default();
+        assert_eq!(expr.eval_hash(&ctx), 0u64);
     }
 
     #[test]
