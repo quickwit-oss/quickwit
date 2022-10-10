@@ -1142,10 +1142,7 @@ mod tests {
     #[test]
     fn test_quickwit_json_options_default_tokenizer_is_default() {
         let quickwit_json_options = QuickwitJsonOptions::default();
-        assert_eq!(
-            quickwit_json_options.tokenizer,
-            None
-        );
+        assert_eq!(quickwit_json_options.tokenizer, None);
     }
 
     #[test]
