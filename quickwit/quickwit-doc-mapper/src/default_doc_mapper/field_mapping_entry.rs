@@ -164,7 +164,9 @@ impl From<QuickwitTextOptions> for TextOptions {
             let index_record_option = quickwit_text_options
                 .record
                 .unwrap_or(IndexRecordOption::Basic);
-            let tokenizer = quickwit_text_options.tokenizer.unwrap_or(QuickwitTextTokenizer::Default);
+            let tokenizer = quickwit_text_options
+                .tokenizer
+                .unwrap_or(QuickwitTextTokenizer::Default);
             let text_field_indexing = TextFieldIndexing::default()
                 .set_index_option(index_record_option)
                 .set_fieldnorms(quickwit_text_options.fieldnorms)
@@ -226,8 +228,12 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
             json_options = json_options.set_stored();
         }
         if quickwit_json_options.indexed {
-            let index_record_option = quickwit_json_options.record.unwrap_or(IndexRecordOption::Basic);
-            let tokenizer = quickwit_json_options.tokenizer.unwrap_or(QuickwitTextTokenizer::Default);
+            let index_record_option = quickwit_json_options
+                .record
+                .unwrap_or(IndexRecordOption::Basic);
+            let tokenizer = quickwit_json_options
+                .tokenizer
+                .unwrap_or(QuickwitTextTokenizer::Default);
             let text_field_indexing = TextFieldIndexing::default()
                 .set_tokenizer(tokenizer.get_name())
                 .set_index_option(index_record_option);
@@ -301,11 +307,9 @@ fn deserialize_mapping_type(
             let json_options: QuickwitJsonOptions = serde_json::from_value(json)?;
             #[allow(clippy::collapsible_if)]
             if !json_options.indexed {
-                if json_options.tokenizer.is_some() || json_options.record.is_some()
-                {
+                if json_options.tokenizer.is_some() || json_options.record.is_some() {
                     bail!(
-                        "`record` and `tokenizer` parameters are allowed only if \
-                         indexed is true."
+                        "`record` and `tokenizer` parameters are allowed only if indexed is true."
                     );
                 }
             }
@@ -476,8 +480,8 @@ mod tests {
         let error = result.unwrap_err();
         assert_eq!(
             error.to_string(),
-            "Error while parsing field `data_binary`: `record` and `tokenizer` \
-             parameters are allowed only if indexed is true."
+            "Error while parsing field `data_binary`: `record` and `tokenizer` parameters are \
+             allowed only if indexed is true."
         );
     }
 
@@ -1120,12 +1124,11 @@ mod tests {
 
     #[test]
     fn test_quickwit_json_options_default_tokenizer_is_default() {
-        // If the same check is added for JsonOptions, 
+        // If the same check is added for JsonOptions,
         let quickwit_json_options = QuickwitJsonOptions::default();
         assert_eq!(
             quickwit_json_options.tokenizer,
-            None
-            // QuickwitTextTokenizer::Default
+            None // QuickwitTextTokenizer::Default
         );
     }
 
@@ -1152,7 +1155,7 @@ mod tests {
             description: None,
             indexed: true,
             tokenizer: Some(QuickwitTextTokenizer::Raw),
-            record: Some(IndexRecordOption::Basic),
+            record: None,
             stored: false,
         };
         assert_eq!(&field_mapping_entry.name, "my_json_field_multi");
