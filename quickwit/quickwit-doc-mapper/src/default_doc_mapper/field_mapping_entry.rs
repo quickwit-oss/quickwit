@@ -389,7 +389,7 @@ mod tests {
     use anyhow::bail;
     use matches::matches;
     use serde_json::json;
-    use tantivy::schema::{Cardinality, IndexRecordOption, TextOptions};
+    use tantivy::schema::{Cardinality, IndexRecordOption, JsonObjectOptions, TextOptions};
 
     use super::FieldMappingEntry;
     use crate::default_doc_mapper::field_mapping_entry::{
@@ -408,6 +408,21 @@ mod tests {
             Some(text_field_indexing) => {
                 assert_eq!(text_field_indexing.index_option(), IndexRecordOption::Basic);
                 assert_eq!(text_field_indexing.fieldnorms(), false);
+                assert_eq!(text_field_indexing.tokenizer(), "default");
+            }
+            _ => panic!("text field indexing is None"),
+        }
+    }
+
+    #[test]
+    fn test_tantivy_json_options_from_quickwit_json_options() {
+        let tantivy_json_option = JsonObjectOptions::from(QuickwitJsonOptions::default());
+
+        assert_eq!(tantivy_json_option.is_stored(), true);
+
+        match tantivy_json_option.get_text_indexing_options() {
+            Some(text_field_indexing) => {
+                assert_eq!(text_field_indexing.index_option(), IndexRecordOption::Basic);
                 assert_eq!(text_field_indexing.tokenizer(), "default");
             }
             _ => panic!("text field indexing is None"),
