@@ -205,7 +205,7 @@ fn test_cmd_ingest_on_non_existing_file() -> Result<()> {
     )
     .assert()
     .failure()
-    .stderr(predicate::str::contains("✖ .cli-ingest-source"));
+    .stderr(predicate::str::contains("✖ _cli-ingest-source"));
     Ok(())
 }
 
