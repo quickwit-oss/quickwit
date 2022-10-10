@@ -389,13 +389,30 @@ mod tests {
     use anyhow::bail;
     use matches::matches;
     use serde_json::json;
-    use tantivy::schema::{Cardinality, IndexRecordOption};
+    use tantivy::schema::{Cardinality, IndexRecordOption, TextOptions};
 
     use super::FieldMappingEntry;
     use crate::default_doc_mapper::field_mapping_entry::{
-        QuickwitJsonOptions, QuickwitTextTokenizer,
+        QuickwitJsonOptions, QuickwitTextOptions, QuickwitTextTokenizer,
     };
     use crate::default_doc_mapper::FieldMappingType;
+
+    #[test]
+    fn test_tantivy_text_options_from_quickwit_text_options() {
+        let tantivy_text_option = TextOptions::from(QuickwitTextOptions::default());
+
+        assert_eq!(tantivy_text_option.is_stored(), true);
+        assert_eq!(tantivy_text_option.is_fast(), false);
+
+        match tantivy_text_option.get_indexing_options() {
+            Some(text_field_indexing) => {
+                assert_eq!(text_field_indexing.index_option(), IndexRecordOption::Basic);
+                assert_eq!(text_field_indexing.fieldnorms(), false);
+                assert_eq!(text_field_indexing.tokenizer(), "default");
+            }
+            _ => panic!("text field indexing is None"),
+        }
+    }
 
     #[test]
     fn test_deserialize_text_mapping_entry_not_indexed() -> anyhow::Result<()> {
@@ -1124,11 +1141,10 @@ mod tests {
 
     #[test]
     fn test_quickwit_json_options_default_tokenizer_is_default() {
-        // If the same check is added for JsonOptions,
         let quickwit_json_options = QuickwitJsonOptions::default();
         assert_eq!(
             quickwit_json_options.tokenizer,
-            None // QuickwitTextTokenizer::Default
+            None
         );
     }
 
