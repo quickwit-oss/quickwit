@@ -791,7 +791,7 @@ mod tests {
         let expected_json_paths_and_values: HashMap<String, JsonValue> = serde_json::from_str(
             r#"{
                 "city": ["tokio"],
-                "image": [[97,98,99]]
+                "image": ["YWJj"]
             }"#,
         )
         .unwrap();
