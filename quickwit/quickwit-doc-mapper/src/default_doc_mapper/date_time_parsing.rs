@@ -24,11 +24,14 @@ use time::OffsetDateTime;
 
 use super::date_time_format::DateTimeFormat;
 
-// Minimum supported timestamp value in seconds (01 Jan 1974 00:00:00 GMT).
-const MIN_TIMESTAMP_SECONDS: i64 = 126230400;
+// Minimum supported timestamp value in seconds (13 Apr 1972 23:59:55 GMT).
+const MIN_TIMESTAMP_SECONDS: i64 = 72_057_595;
 
-// Maximum supported timestamp value in nanoseconds (31 Dec 2241 23:59:59 GMT).
-const MAX_TIMESTAMP_NANOSECONDS: i64 = 8_583_494_399_000_000_000;
+// Maximum supported timestamp value in nanoseconds (16 Mar 2242 12:56:31 GMT).
+const MAX_TIMESTAMP_NANOSECONDS: i64 = 8_589_934_591_000_000_000;
+
+// -> Thu Apr 13 1972 23:59:55 GMT -> 72057595 (timestamp)
+// -> Wed Mar 16 2242 12:56:31 GMT -> 8589934591 (timestamp)
 
 pub(super) fn parse_date_time(
     date_time_str: &str,
@@ -103,12 +106,12 @@ fn parse_strftime_with_tz(
 /// This function will choose the timestamp precision based on the
 /// most significant bit position in the timestamp value.
 /// The tradeoff is that we can only support dates ranging from
-/// `01 Jan 1974 00:00:00` to `31 Dec 2241 23:59:59`
+/// `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`
 pub(super) fn parse_timestamp(timestamp: i64) -> Result<TantivyDateTime, String> {
     if !(MIN_TIMESTAMP_SECONDS..=MAX_TIMESTAMP_NANOSECONDS).contains(&timestamp) {
         return Err(format!(
             "Failed to parse unix timestamp `{timestamp}`. Quickwit only support timestamp values \
-             ranging form `01 Jan 1974 00:00:00` to `31 Dec 2241 23:59:59`."
+             ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`."
         ));
     }
     match i64::BITS - timestamp.leading_zeros() {
@@ -116,7 +119,10 @@ pub(super) fn parse_timestamp(timestamp: i64) -> Result<TantivyDateTime, String>
         37..=43 => Ok(TantivyDateTime::from_timestamp_millis(timestamp)),
         47..=53 => Ok(TantivyDateTime::from_timestamp_micros(timestamp)),
         57..=63 => Ok(TantivyDateTime::from_timestamp_micros(timestamp / 1_000)),
-        _ => unreachable!(),
+        _ => Err(format!(
+            "Failed to parse unix timestamp `{timestamp}`. Quickwit only support timestamp values \
+             ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`."
+        )),
     }
 }
 
@@ -278,7 +284,7 @@ mod tests {
         }
         {
             let min_supported_date =
-                OffsetDateTime::parse("1974-01-01T00:00:00.00Z", &Rfc3339).unwrap();
+                OffsetDateTime::parse("1972-04-13T23:59:55.00Z", &Rfc3339).unwrap();
             let parsed_date_time = parse_timestamp(min_supported_date.unix_timestamp()).unwrap();
             assert_eq!(
                 parsed_date_time.into_timestamp_secs(),
@@ -291,7 +297,7 @@ mod tests {
         }
         {
             let max_supported_date =
-                OffsetDateTime::parse("2241-12-31T23:59:59.00Z", &Rfc3339).unwrap();
+                OffsetDateTime::parse("2242-03-16T12:56:31.00Z", &Rfc3339).unwrap();
             let parsed_date_time = parse_timestamp(max_supported_date.unix_timestamp()).unwrap();
             assert_eq!(
                 parsed_date_time.into_timestamp_secs(),
@@ -315,6 +321,15 @@ mod tests {
         {
             let unix_epoch = 0;
             let parse_err = parse_timestamp(unix_epoch).unwrap_err();
+            assert!(parse_err.contains("Failed to parse unix timestamp"));
+
+            let parse_err = parse_timestamp(MIN_TIMESTAMP_SECONDS << 7).unwrap_err();
+            assert!(parse_err.contains("Failed to parse unix timestamp"));
+
+            let parse_err = parse_timestamp(MIN_TIMESTAMP_SECONDS << 17).unwrap_err();
+            assert!(parse_err.contains("Failed to parse unix timestamp"));
+
+            let parse_err = parse_timestamp(MIN_TIMESTAMP_SECONDS << 27).unwrap_err();
             assert!(parse_err.contains("Failed to parse unix timestamp"));
         }
     }
