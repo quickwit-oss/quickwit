@@ -44,7 +44,7 @@ use crate::models::{
 };
 use crate::split_store::IndexingSplitStore;
 
-/// This semaphore ensures that at most `MAX_CONCURRENT_SPLIT_UPLOAD` uploads can happen
+/// This semaphore ensures that, at most, `MAX_CONCURRENT_SPLIT_UPLOADS` uploads can happen
 /// concurrently.
 ///
 /// This permit applies to all uploader actors. In the future, we might want to have a nicer
