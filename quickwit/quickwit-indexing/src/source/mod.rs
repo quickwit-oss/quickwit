@@ -94,7 +94,7 @@ use crate::actors::DocProcessor;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
 
 /// Reserved source ID used for the ingest API.
-pub const INGEST_API_SOURCE_ID: &str = ".ingest-api";
+pub const INGEST_API_SOURCE_ID: &str = "_ingest-api";
 
 /// Runtime configuration used during execution of a source actor.
 pub struct SourceExecutionContext {
