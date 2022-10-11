@@ -518,12 +518,12 @@ mod tests {
             "body": ["20200415T072306-0700 INFO This is a great log"],
             "response_date": ["2021-12-19T16:39:57Z"],
             "response_time": [2.3],
-            "response_payload": [[97,98,99]],
+            "response_payload": ["YWJj"],
             "owner": ["foo"],
             "isImportant": [false],
             "body_other_tokenizer": ["20200415T072306-0700 INFO This is a great log"],
             "attributes.server": ["ABC"],
-            "attributes.server\\.payload": [[97], [98]],
+            "attributes.server\\.payload": ["YQ==", "Yg=="],
             "attributes.tags": [22, 23],
             "attributes.server\\.status": ["200", "201"]
         }"#;
