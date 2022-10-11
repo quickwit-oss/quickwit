@@ -96,8 +96,8 @@ pub struct IndexerConfig {
     pub split_store_max_num_bytes: Byte,
     #[serde(default = "IndexerConfig::default_split_store_max_num_splits")]
     pub split_store_max_num_splits: usize,
-    #[serde(default = "IndexerConfig::default_max_concurrent_split_upload")]
-    pub max_concurrent_split_upload: usize,
+    #[serde(default = "IndexerConfig::default_max_concurrent_split_uploads")]
+    pub max_concurrent_split_uploads: usize,
 }
 
 impl IndexerConfig {
@@ -105,7 +105,7 @@ impl IndexerConfig {
         false
     }
 
-    fn default_max_concurrent_split_upload() -> usize {
+    fn default_max_concurrent_split_uploads() -> usize {
         4
     }
 
@@ -123,7 +123,7 @@ impl IndexerConfig {
             enable_opentelemetry_otlp_service: true,
             split_store_max_num_bytes: Byte::from_bytes(1_000_000),
             split_store_max_num_splits: 3,
-            max_concurrent_split_upload: 4,
+            max_concurrent_split_uploads: 4,
         };
         Ok(indexer_config)
     }
@@ -135,7 +135,7 @@ impl Default for IndexerConfig {
             enable_opentelemetry_otlp_service: Self::default_enable_opentelemetry_otlp_service(),
             split_store_max_num_bytes: Self::default_split_store_max_num_bytes(),
             split_store_max_num_splits: Self::default_split_store_max_num_splits(),
-            max_concurrent_split_upload: Self::default_max_concurrent_split_upload(),
+            max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
         }
     }
 }
@@ -647,7 +647,7 @@ mod tests {
                         enable_opentelemetry_otlp_service: false,
                         split_store_max_num_bytes: Byte::from_str("1T").unwrap(),
                         split_store_max_num_splits: 10_000,
-                        max_concurrent_split_upload: 8,
+                        max_concurrent_split_uploads: 8,
                     }
                 );
 

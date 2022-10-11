@@ -141,7 +141,7 @@ pub struct Uploader {
     metastore: Arc<dyn Metastore>,
     split_store: IndexingSplitStore,
     split_update_mailbox: SplitsUpdateMailbox,
-    max_concurrent_split_upload: usize,
+    max_concurrent_split_uploads: usize,
     counters: UploaderCounters,
 }
 
@@ -151,14 +151,14 @@ impl Uploader {
         metastore: Arc<dyn Metastore>,
         split_store: IndexingSplitStore,
         split_update_mailbox: SplitsUpdateMailbox,
-        max_concurrent_split_upload: usize,
+        max_concurrent_split_uploads: usize,
     ) -> Uploader {
         Uploader {
             actor_name,
             metastore,
             split_store,
             split_update_mailbox,
-            max_concurrent_split_upload,
+            max_concurrent_split_uploads,
             counters: Default::default(),
         }
     }
@@ -168,7 +168,7 @@ impl Uploader {
     ) -> anyhow::Result<SemaphorePermit<'static>> {
         let _guard = ctx.protect_zone();
         CONCURRENT_UPLOAD_PERMITS
-            .get_or_init(|| Semaphore::const_new(self.max_concurrent_split_upload))
+            .get_or_init(|| Semaphore::const_new(self.max_concurrent_split_uploads))
             .acquire()
             .await
             .context("The uploader semaphore is closed. (This should never happen.)")

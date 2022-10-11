@@ -10,7 +10,7 @@ data_dir = "/opt/quickwit/data"
 [indexer]
 split_store_max_num_bytes = "1T"
 split_store_max_num_splits = 10_000
-max_concurrent_split_upload = 8
+max_concurrent_split_uploads = 8
 
 [searcher]
 fast_field_cache_capacity = "10G"
