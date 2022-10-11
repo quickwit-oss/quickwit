@@ -58,6 +58,7 @@ pub async fn start_janitor_service(
         search_client_pool,
         storage_uri_resolver,
         config.data_dir_path.clone(),
+        config.indexer_config.max_concurrent_split_uploads,
     );
     let (_, delete_task_service_handle) = universe.spawn_builder().spawn(delete_task_service);
 

@@ -265,6 +265,7 @@ impl IndexingPipeline {
             self.params.metastore.clone(),
             split_store.clone(),
             SplitsUpdateMailbox::Publisher(merge_publisher_mailbox),
+            self.params.max_concurrent_split_uploads,
         );
         let (merge_uploader_mailbox, merge_uploader_handler) = ctx
             .spawn_actor()
@@ -340,6 +341,7 @@ impl IndexingPipeline {
             self.params.metastore.clone(),
             split_store.clone(),
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
+            self.params.max_concurrent_split_uploads,
         );
         let (uploader_mailbox, uploader_handler) = ctx
             .spawn_actor()
@@ -570,6 +572,7 @@ pub struct IndexingPipelineParams {
     pub metastore: Arc<dyn Metastore>,
     pub storage: Arc<dyn Storage>,
     pub split_store: IndexingSplitStore,
+    pub max_concurrent_split_uploads: usize,
 }
 
 impl IndexingPipelineParams {
@@ -582,6 +585,7 @@ impl IndexingPipelineParams {
         split_store: IndexingSplitStore,
         metastore: Arc<dyn Metastore>,
         storage: Arc<dyn Storage>,
+        max_concurrent_split_uploads: usize,
     ) -> anyhow::Result<Self> {
         let doc_mapper = build_doc_mapper(
             &index_metadata.doc_mapping,
@@ -597,6 +601,7 @@ impl IndexingPipelineParams {
             metastore,
             storage,
             split_store,
+            max_concurrent_split_uploads,
         })
     }
 }
@@ -716,6 +721,7 @@ mod tests {
             metastore: Arc::new(metastore),
             storage,
             split_store,
+            max_concurrent_split_uploads: 4,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
@@ -802,6 +808,7 @@ mod tests {
             metastore: Arc::new(metastore),
             storage,
             split_store,
+            max_concurrent_split_uploads: 4,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);

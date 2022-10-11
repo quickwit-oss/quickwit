@@ -73,6 +73,7 @@ pub struct DeleteTaskPipeline {
     index_storage: Arc<dyn Storage>,
     delete_service_dir_path: PathBuf,
     handles: Option<DeletePipelineHandle>,
+    max_concurrent_split_uploads: usize,
 }
 
 #[async_trait]
@@ -107,6 +108,7 @@ impl DeleteTaskPipeline {
         indexing_settings: IndexingSettings,
         index_storage: Arc<dyn Storage>,
         delete_service_dir_path: PathBuf,
+        max_concurrent_split_uploads: usize,
     ) -> Self {
         Self {
             index_id,
@@ -116,6 +118,7 @@ impl DeleteTaskPipeline {
             index_storage,
             delete_service_dir_path,
             handles: Default::default(),
+            max_concurrent_split_uploads,
         }
     }
 
@@ -143,6 +146,7 @@ impl DeleteTaskPipeline {
             self.metastore.clone(),
             split_store.clone(),
             SplitsUpdateMailbox::Publisher(publisher_mailbox),
+            self.max_concurrent_split_uploads,
         );
         let (uploader_mailbox, uploader_handler) = ctx
             .spawn_actor()
@@ -351,6 +355,7 @@ mod tests {
             indexing_settings,
             test_sandbox.storage(),
             data_dir_path,
+            4,
         );
         let universe = Universe::new();
 

@@ -157,6 +157,7 @@ mod tests {
             client_pool,
             StorageUriResolver::for_test(),
             data_dir_path,
+            4,
         );
         let universe = Universe::new();
         let (delete_task_service_mailbox, _delete_task_service_handler) =

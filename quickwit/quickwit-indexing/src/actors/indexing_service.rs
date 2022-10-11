@@ -110,6 +110,7 @@ pub struct IndexingService {
     indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
     split_stores: HashMap<(IndexId, SourceId), WeakIndexingSplitStore>,
     split_store_space_quota: Arc<Mutex<SplitStoreSpaceQuota>>,
+    max_concurrent_split_uploads: usize,
 }
 
 impl IndexingService {
@@ -140,6 +141,7 @@ impl IndexingService {
                 indexer_config.split_store_max_num_splits,
                 indexer_config.split_store_max_num_bytes.get_bytes() as usize,
             ))),
+            max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
         }
     }
 
@@ -271,6 +273,7 @@ impl IndexingService {
             split_store,
             self.metastore.clone(),
             storage,
+            self.max_concurrent_split_uploads,
         )
         .map_err(IndexingServiceError::InvalidParams)?;
 
