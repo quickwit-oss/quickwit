@@ -42,6 +42,7 @@ pub fn build_split_command<'a>() -> Command<'a> {
         .subcommand(
             Command::new("list")
                 .about("Lists the splits of an index.")
+                .alias("ls")
                 .args(&[
                     arg!(--index <INDEX> "Target index ID")
                         .display_order(1)
@@ -87,6 +88,7 @@ pub fn build_split_command<'a>() -> Command<'a> {
         .subcommand(
             Command::new("describe")
                 .about("Displays metadata about a split.")
+                .alias("desc")
                 .args(&[
                     arg!(--index <INDEX> "ID of the target index")
                         .display_order(1),

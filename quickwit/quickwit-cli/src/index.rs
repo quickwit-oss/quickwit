@@ -686,9 +686,7 @@ pub async fn list_index_cli(args: ListIndexesArgs) -> anyhow::Result<()> {
 }
 
 fn make_list_indexes_table<I>(indexes: I) -> Table
-where
-    I: IntoIterator<Item = IndexMetadata>,
-{
+where I: IntoIterator<Item = IndexMetadata> {
     let rows = indexes
         .into_iter()
         .map(|index| IndexRow {

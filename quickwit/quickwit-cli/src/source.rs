@@ -62,6 +62,7 @@ pub fn build_source_command<'a>() -> Command<'a> {
         .subcommand(
             Command::new("delete")
                 .about("Deletes a source from an index.")
+                .alias("del")
                 .args(&[
                     arg!(--index <INDEX_ID> "ID of the target index")
                         .display_order(1),
@@ -72,6 +73,7 @@ pub fn build_source_command<'a>() -> Command<'a> {
         .subcommand(
             Command::new("describe")
                 .about("Describes a source.")
+                .alias("desc")
                 .args(&[
                     arg!(--index <INDEX_ID> "ID of the target index")
                         .display_order(1),
@@ -82,6 +84,7 @@ pub fn build_source_command<'a>() -> Command<'a> {
         .subcommand(
             Command::new("list")
                 .about("Lists the sources of an index.")
+                .alias("ls")
                 .args(&[
                     arg!(--index <INDEX_ID> "ID of the target index")
                         .display_order(1),
@@ -90,6 +93,7 @@ pub fn build_source_command<'a>() -> Command<'a> {
         .subcommand(
             Command::new("reset-checkpoint")
                 .about("Resets a source checkpoint. This operation is destructive and cannot be undone. Proceed with caution.")
+                .alias("reset")
                 .args(&[
                     arg!(--index <INDEX_ID> "Index ID")
                         .display_order(1),
