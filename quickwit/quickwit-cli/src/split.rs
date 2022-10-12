@@ -74,8 +74,10 @@ pub fn build_split_command<'a>() -> Command<'a> {
             Command::new("extract")
                 .about("Downloads and extracts a split to a directory.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
-                    arg!(--split <SPLIT> "ID of the target split"),
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1),
+                    arg!(--split <SPLIT> "ID of the target split")
+                        .display_order(2),
                     arg!(--"target-dir" <TARGET_DIR> "Directory to extract the split to."),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -86,8 +88,10 @@ pub fn build_split_command<'a>() -> Command<'a> {
             Command::new("describe")
                 .about("Displays metadata about a split.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
-                    arg!(--split <SPLIT> "ID of the target split"),
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1),
+                    arg!(--split <SPLIT> "ID of the target split")
+                        .display_order(2),
                     arg!(--verbose "Displays additional metadata about the hotcache."),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
@@ -100,10 +104,10 @@ pub fn build_split_command<'a>() -> Command<'a> {
                 .alias("mark")
                 .args(&[
                     arg!(--index <INDEX_ID> "Target index ID")
-                        .display_order(2)
+                        .display_order(1)
                         .required(true),
                     arg!(--splits <SPLIT_IDS> "Comma-separated list of split IDs")
-                        .display_order(3)
+                        .display_order(2)
                         .required(true)
                         .use_value_delimiter(true),
                 ])

@@ -38,7 +38,8 @@ pub fn build_source_command<'a>() -> Command<'a> {
             Command::new("create")
                 .about("Adds a new source to an index.")
                 .args(&[
-                    arg!(--index <INDEX_ID> "ID of the target index"),
+                    arg!(--index <INDEX_ID> "ID of the target index")
+                        .display_order(1),
                     arg!(--"source-config" <SOURCE_CONFIG> "Path to source config file. Please, refer to the documentation for more details."),
                 ])
             )
@@ -62,31 +63,38 @@ pub fn build_source_command<'a>() -> Command<'a> {
             Command::new("delete")
                 .about("Deletes a source from an index.")
                 .args(&[
-                    arg!(--index <INDEX_ID> "ID of the target index"),
-                    arg!(--source <SOURCE_ID> "ID of the source."),
+                    arg!(--index <INDEX_ID> "ID of the target index")
+                        .display_order(1),
+                    arg!(--source <SOURCE_ID> "ID of the source.")
+                        .display_order(2),
                 ])
             )
         .subcommand(
             Command::new("describe")
                 .about("Describes a source.")
                 .args(&[
-                    arg!(--index <INDEX_ID> "ID of the target index"),
-                    arg!(--source <SOURCE_ID> "ID of the source."),
+                    arg!(--index <INDEX_ID> "ID of the target index")
+                        .display_order(1),
+                    arg!(--source <SOURCE_ID> "ID of the source.")
+                        .display_order(2),
                 ])
             )
         .subcommand(
             Command::new("list")
                 .about("Lists the sources of an index.")
                 .args(&[
-                    arg!(--index <INDEX_ID> "ID of the target index"),
+                    arg!(--index <INDEX_ID> "ID of the target index")
+                        .display_order(1),
                 ])
             )
         .subcommand(
             Command::new("reset-checkpoint")
                 .about("Resets a source checkpoint. This operation is destructive and cannot be undone. Proceed with caution.")
                 .args(&[
-                    arg!(--index <INDEX_ID> "Index ID"),
-                    arg!(--source <SOURCE_ID> "Source ID"),
+                    arg!(--index <INDEX_ID> "Index ID")
+                        .display_order(1),
+                    arg!(--source <SOURCE_ID> "Source ID")
+                        .display_order(2),
                 ])
             )
         .arg_required_else_help(true)
