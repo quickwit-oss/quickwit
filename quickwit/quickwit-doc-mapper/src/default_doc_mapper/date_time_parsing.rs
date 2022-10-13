@@ -20,7 +20,9 @@
 use itertools::Itertools;
 use tantivy::{DatePrecision as DateTimePrecision, DateTime as TantivyDateTime};
 use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
-use time::OffsetDateTime;
+use time::{OffsetDateTime, PrimitiveDateTime};
+use time_fmt::parse::{parse_strict_date_time_maybe_with_zone, TimeZoneSpecifier};
+use time_tz::{timezones, PrimitiveDateTimeExt};
 
 use super::date_time_format::DateTimeFormat;
 
@@ -37,12 +39,13 @@ pub(super) fn parse_date_time(
                 strftime_format,
                 with_timezone: true,
             } => parse_strftime_with_tz(date_time_str, strftime_format)
-                .map(|dt| TantivyDateTime::from_timestamp_micros(dt.timestamp_micros())),
+                .map(TantivyDateTime::from_utc),
             DateTimeFormat::Strftime {
                 strftime_format,
                 with_timezone: false,
-            } => parse_strftime(date_time_str, strftime_format)
-                .map(|dt| TantivyDateTime::from_timestamp_micros(dt.timestamp_micros())),
+            } => {
+                parse_strftime(date_time_str, strftime_format).map(TantivyDateTime::from_primitive)
+            }
             _ => continue,
         };
         if date_time_res.is_ok() {
@@ -74,22 +77,42 @@ fn parse_rfc3339(value: &str) -> Result<OffsetDateTime, String> {
 }
 
 /// Parses a date using the specified strftime format without a timezone.
-fn parse_strftime(
-    date_time_str: &str,
-    strftime_format: &str,
-) -> Result<chrono::NaiveDateTime, String> {
-    chrono::NaiveDateTime::parse_from_str(date_time_str, strftime_format)
-        .map_err(|error| error.to_string())
+fn parse_strftime(date_time_str: &str, strftime_format: &str) -> Result<PrimitiveDateTime, String> {
+    let (date_time, time_zone_opt) =
+        parse_strict_date_time_maybe_with_zone(strftime_format, date_time_str)
+            .map_err(|error| error.to_string())?;
+    if time_zone_opt.is_some() {
+        return Err(format!(
+            "Unexpected timezone in format `{strftime_format}`, got one in the provided value \
+             `{date_time_str}`."
+        ));
+    }
+    Ok(date_time)
 }
 
 /// Parses a date using the specified strftime format with a timezone (`%z` or `%Z`).
 fn parse_strftime_with_tz(
     date_time_str: &str,
     strftime_format: &str,
-) -> Result<chrono::NaiveDateTime, String> {
-    chrono::DateTime::parse_from_str(date_time_str, strftime_format)
-        .map(|date_time| date_time.naive_utc())
-        .map_err(|error| error.to_string())
+) -> Result<OffsetDateTime, String> {
+    let (date_time, time_zone_spec_opt) =
+        parse_strict_date_time_maybe_with_zone(strftime_format, date_time_str)
+            .map_err(|error| error.to_string())?;
+    let time_zone_spec = time_zone_spec_opt.ok_or_else(|| {
+        format!(
+            "Expected timezone from format `{strftime_format}`, but none was found in the \
+             provided value `{date_time_str}`."
+        )
+    })?;
+    let offset_date_time = match time_zone_spec {
+        TimeZoneSpecifier::Offset(offset) => date_time.assume_offset(offset),
+        TimeZoneSpecifier::Name(time_zone_name) => {
+            let time_zone = timezones::get_by_name(time_zone_name)
+                .ok_or_else(|| format!("Unknown time zone name `{time_zone_name}`."))?;
+            date_time.assume_timezone_utc(time_zone)
+        }
+    };
+    Ok(offset_date_time)
 }
 
 /// Returns the appropriate tantivy datetime for the specified unix timestamp.
@@ -164,8 +187,16 @@ mod tests {
     fn test_parse_strftime() {
         let date_time = parse_strftime("2012-05-21 12:09:14", "%Y-%m-%d %H:%M:%S").unwrap();
         assert_eq!(
-            date_time.timestamp(),
+            date_time.assume_utc().unix_timestamp(),
             datetime!(2012-05-21 12:09:14 UTC).unix_timestamp()
+        );
+
+        assert!(parse_strftime("2012-05-21 12:09:14 garbage", "%Y-%m-%d %H:%M:%S").is_err());
+
+        assert!(
+            parse_strftime("2012-05-21 12:09:14 +00:00", "%Y-%m-%d %H:%M:%S %z")
+                .unwrap_err()
+                .contains("Unexpected timezone in format")
         );
     }
 
@@ -174,8 +205,46 @@ mod tests {
         let date_time =
             parse_strftime_with_tz("2012-05-21 12:09:14 +00:00", "%Y-%m-%d %H:%M:%S %z").unwrap();
         assert_eq!(
-            date_time.timestamp(),
+            date_time.unix_timestamp(),
             datetime!(2012-05-21 12:09:14 UTC).unix_timestamp()
+        );
+
+        let date_time_with_tz_offset =
+            parse_strftime_with_tz("2012-05-21 12:09:14 +02:00", "%Y-%m-%d %H:%M:%S %z").unwrap();
+        assert_eq!(
+            date_time_with_tz_offset.unix_timestamp(),
+            datetime!(2012-05-21 10:09:14 UTC).unix_timestamp()
+        );
+
+        let date_time_with_tz_offset =
+            parse_strftime_with_tz("2012-05-21 12:09:14 -03:00", "%Y-%m-%d %H:%M:%S %z").unwrap();
+        assert_eq!(
+            date_time_with_tz_offset.unix_timestamp(),
+            datetime!(2012-05-21 15:09:14 UTC).unix_timestamp()
+        );
+
+        let date_time_with_tz_name =
+            parse_strftime_with_tz("2012-05-21 12:09:14 Africa/Lagos", "%Y-%m-%d %H:%M:%S %Z")
+                .unwrap();
+        assert_eq!(
+            date_time_with_tz_name.unix_timestamp(),
+            datetime!(2012-05-21 11:09:14 UTC).unix_timestamp()
+        );
+
+        assert!(
+            parse_strftime_with_tz("2012-05-21 12:09:14 garbage", "%Y-%m-%d %H:%M:%S").is_err()
+        );
+
+        assert!(
+            parse_strftime_with_tz("2012-05-21 12:09:14", "%Y-%m-%d %H:%M:%S")
+                .unwrap_err()
+                .contains("Expected timezone from format")
+        );
+
+        assert!(
+            parse_strftime_with_tz("2012-05-21 12:09:14 foo", "%Y-%m-%d %H:%M:%S %Z")
+                .unwrap_err()
+                .contains("Unknown time zone name `foo`.")
         );
     }
 
@@ -236,7 +305,7 @@ mod tests {
                     DateTimeFormat::ISO8601,
                     DateTimeFormat::RCF3339,
                     DateTimeFormat::Strftime {
-                        strftime_format: "%Y-%m-%d %H:%M:%S.%3f".to_string(),
+                        strftime_format: "%Y-%m-%d %H:%M:%S.%f".to_string(),
                         with_timezone: false,
                     },
                 ],

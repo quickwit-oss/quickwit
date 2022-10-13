@@ -262,7 +262,7 @@ dependencies = [
  "reqwest",
  "rustc_version 0.4.0",
  "serde",
- "serde-xml-rs",
+ "serde-xml-rs 0.6.0",
  "serde_json",
  "time 0.3.15",
  "url",
@@ -285,7 +285,7 @@ dependencies = [
  "log",
  "once_cell",
  "serde",
- "serde-xml-rs",
+ "serde-xml-rs 0.6.0",
  "serde_derive",
  "serde_json",
  "sha2 0.10.6",
@@ -309,7 +309,7 @@ dependencies = [
  "log",
  "md5",
  "serde",
- "serde-xml-rs",
+ "serde-xml-rs 0.6.0",
  "serde_derive",
  "serde_json",
  "time 0.3.15",
@@ -2645,6 +2645,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "parse-zoneinfo"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c705f256449c60da65e11ff6626e0c16a0a0b96aaa348de61376b249bc340f41"
+dependencies = [
+ "regex",
+]
+
+[[package]]
 name = "paste"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2670,6 +2679,44 @@ checksum = "e6d5014253a1331579ce62aa67443b4a658c5e7dd03d4bc6d302b94474888143"
 dependencies = [
  "fixedbitset",
  "indexmap",
+]
+
+[[package]]
+name = "phf"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fabbf1ead8a5bcbc20f5f8b939ee3f5b0f6f281b6ad3468b84656b658b455259"
+dependencies = [
+ "phf_shared",
+]
+
+[[package]]
+name = "phf_codegen"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fb1c3a8bc4dd4e5cfce29b44ffc14bedd2ee294559a294e2a4d4c9e9a6a13cd"
+dependencies = [
+ "phf_generator",
+ "phf_shared",
+]
+
+[[package]]
+name = "phf_generator"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d5285893bb5eb82e6aaf5d59ee909a06a16737a8970984dd7746ba9283498d6"
+dependencies = [
+ "phf_shared",
+ "rand 0.8.5",
+]
+
+[[package]]
+name = "phf_shared"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6796ad771acdc0123d2a88dc428b5e38ef24456743ddb1744ed628f9815c096"
+dependencies = [
+ "siphasher",
 ]
 
 [[package]]
@@ -3302,7 +3349,6 @@ version = "0.3.1"
 dependencies = [
  "anyhow",
  "base64",
- "chrono",
  "criterion",
  "dyn-clone",
  "fnv",
@@ -3321,9 +3367,10 @@ dependencies = [
  "tantivy-query-grammar",
  "thiserror",
  "time 0.3.15",
+ "time-fmt",
+ "time-tz",
  "tracing",
  "typetag",
- "unwrap-infallible",
 ]
 
 [[package]]
@@ -3622,7 +3669,6 @@ dependencies = [
  "once_cell",
  "quickwit-aws",
  "quickwit-common",
- "quickwit-config",
  "rand 0.8.5",
  "regex",
  "rusoto_core",
@@ -4305,6 +4351,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "728eb6351430bccb993660dfffc5a72f91ccc1295abaa8ce19b27ebe4f75568b"
 dependencies = [
  "serde_derive",
+]
+
+[[package]]
+name = "serde-xml-rs"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65162e9059be2f6a3421ebbb4fef3e74b7d9e7c60c50a0e292c6239f19f1edfa"
+dependencies = [
+ "log",
+ "serde",
+ "thiserror",
+ "xml-rs",
 ]
 
 [[package]]
@@ -5072,6 +5130,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "time-fmt"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19747822012cf30964edc0673c76481e0a5d5b8a1e0fba8fca6f7ff87162f0a2"
+dependencies = [
+ "thiserror",
+ "time 0.3.15",
+]
+
+[[package]]
 name = "time-macros"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5098,6 +5166,21 @@ dependencies = [
  "quote",
  "standback",
  "syn",
+]
+
+[[package]]
+name = "time-tz"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fd98f2e9d7719aebdb5bf768af93c8700485f4634f31d486cb110836951e97e"
+dependencies = [
+ "cfg-if",
+ "parse-zoneinfo",
+ "phf",
+ "phf_codegen",
+ "serde",
+ "serde-xml-rs 0.5.1",
+ "time 0.3.15",
 ]
 
 [[package]]
@@ -5555,12 +5638,6 @@ name = "untrusted"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
-
-[[package]]
-name = "unwrap-infallible"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "151ac09978d3c2862c4e39b557f4eceee2cc72150bc4cb4f16abf061b6e381fb"
 
 [[package]]
 name = "ureq"

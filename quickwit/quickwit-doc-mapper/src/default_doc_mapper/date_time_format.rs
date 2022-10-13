@@ -17,12 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::convert::Infallible;
 use std::fmt::Display;
 use std::str::FromStr;
 
+use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
-use unwrap_infallible::UnwrapInfallible;
+use time_fmt::format::time_format_item::parse_to_format_item;
 
 /// Specifies the datetime and unix timestamp formats to use when parsing date strings.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -74,7 +74,7 @@ impl Display for DateTimeFormat {
 }
 
 impl FromStr for DateTimeFormat {
-    type Err = Infallible;
+    type Err = String;
 
     fn from_str(date_time_format_str: &str) -> Result<Self, Self::Err> {
         let date_time_format = match date_time_format_str.to_lowercase().as_str() {
@@ -85,10 +85,16 @@ impl FromStr for DateTimeFormat {
             "unix_ts_millis" => DateTimeFormat::TimestampMillis,
             "unix_ts_micros" => DateTimeFormat::TimestampMicros,
             "unix_ts_nanos" => DateTimeFormat::TimestampNanos,
-            _ => DateTimeFormat::Strftime {
-                strftime_format: date_time_format_str.to_string(),
-                with_timezone: date_time_format_str.contains("%z"),
-            },
+            _ => {
+                // Validate the format.
+                let _ = parse_to_format_item(date_time_format_str).map_err(|err| {
+                    format!("Invalid format specification `{date_time_format_str}`. Error: {err}.")
+                })?;
+                DateTimeFormat::Strftime {
+                    strftime_format: date_time_format_str.to_string(),
+                    with_timezone: date_time_format_str.contains("%z"),
+                }
+            }
         };
         Ok(date_time_format)
     }
@@ -105,7 +111,9 @@ impl<'de> Deserialize<'de> for DateTimeFormat {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
         let date_time_format_str = String::deserialize(deserializer)?;
-        Ok(DateTimeFormat::from_str(&date_time_format_str).unwrap_infallible())
+        let date_time_format =
+            DateTimeFormat::from_str(&date_time_format_str).map_err(D::Error::custom)?;
+        Ok(date_time_format)
     }
 }
 

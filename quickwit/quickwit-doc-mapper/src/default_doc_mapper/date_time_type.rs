@@ -303,6 +303,17 @@ mod tests {
     }
 
     #[test]
+    fn test_deserialize_invalid_input_formats_should_error() {
+        {
+            let input_formats_json = r#"["rfc3339", "%Y-%Q-%d"]"#;
+            let error = serde_json::from_str::<InputFormats>(input_formats_json)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("Invalid format specification"));
+        }
+    }
+
+    #[test]
     fn test_date_time_options_parse_json() {
         let date_time_options = QuickwitDateTimeOptions {
             input_formats: InputFormats(vec![
