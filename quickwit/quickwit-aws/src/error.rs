@@ -30,7 +30,8 @@ use rusoto_kinesis::{
 };
 use rusoto_s3::{
     AbortMultipartUploadError, CompleteMultipartUploadError, CreateMultipartUploadError,
-    DeleteObjectError, GetObjectError, HeadObjectError, PutObjectError, UploadPartError,
+    DeleteObjectError, DeleteObjectsError, GetObjectError, HeadObjectError, PutObjectError,
+    UploadPartError,
 };
 
 use crate::retry::Retryable;
@@ -85,6 +86,12 @@ impl Retryable for GetObjectError {
 }
 
 impl Retryable for DeleteObjectError {
+    fn is_retryable(&self) -> bool {
+        false
+    }
+}
+
+impl Retryable for DeleteObjectsError {
     fn is_retryable(&self) -> bool {
         false
     }

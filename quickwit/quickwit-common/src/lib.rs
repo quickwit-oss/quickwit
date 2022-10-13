@@ -110,7 +110,7 @@ pub fn is_disjoint(left: &Range<i64>, right: &RangeInclusive<i64>) -> bool {
 }
 
 #[macro_export]
-macro_rules! ignore_io_error {
+macro_rules! ignore_error_kind {
     ($kind:path, $expr:expr) => {
         match $expr {
             Ok(_) => Ok(()),
@@ -151,7 +151,7 @@ mod tests {
 
     #[test]
     fn test_ignore_io_error_macro() {
-        ignore_io_error!(
+        ignore_error_kind!(
             ErrorKind::NotFound,
             std::fs::remove_file("file-does-not-exist")
         )

@@ -29,7 +29,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 
 use crate::prefix_storage::add_prefix_to_storage;
-use crate::storage::SendableAsync;
+use crate::storage::{BulkDeleteError, SendableAsync};
 use crate::{
     OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
 };
@@ -117,6 +117,14 @@ impl Storage for RamStorage {
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         self.files.write().await.remove(path);
+        Ok(())
+    }
+
+    async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+        let mut files = self.files.write().await;
+        for &path in paths {
+            files.remove(path);
+        }
         Ok(())
     }
 
