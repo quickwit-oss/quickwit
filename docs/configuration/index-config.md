@@ -528,7 +528,7 @@ This section describes search settings for a given index.
 
 ## Retention policy settings
 
-This section describes the way Quickwit manages data retention. In Quickwit, the retention policy manager drops data on split basis as opposed to individually dropping documents.
+This section describes how Quickwit manages data retention. In Quickwit, the retention policy manager drops data on a split basis as opposed to individually dropping documents.
 
 ```yaml
 version: 0
