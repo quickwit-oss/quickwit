@@ -222,6 +222,9 @@ impl S3CompatibleObjectStorage {
             ..Default::default()
         };
         crate::STORAGE_METRICS.object_storage_put_parts.inc();
+        crate::STORAGE_METRICS
+            .object_storage_upload_num_bytes
+            .inc_by(len);
         self.s3_client.put_object(request).await?;
         Ok(())
     }
@@ -317,6 +320,9 @@ impl S3CompatibleObjectStorage {
             ..Default::default()
         };
         crate::STORAGE_METRICS.object_storage_put_parts.inc();
+        crate::STORAGE_METRICS
+            .object_storage_upload_num_bytes
+            .inc_by(part.len());
         let upload_part_output = self
             .s3_client
             .upload_part(upload_part_req)
