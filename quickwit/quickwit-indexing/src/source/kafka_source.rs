@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -40,9 +40,10 @@ use rdkafka::message::BorrowedMessage;
 use rdkafka::util::Timeout;
 use rdkafka::{ClientContext, Message, Offset, TopicPartitionList};
 use serde_json::json;
+use tokio::runtime::Handle;
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::TrySendError;
 use tokio::task::{spawn_blocking, JoinHandle};
-use tokio::time;
 use tracing::{debug, info, warn};
 
 use crate::actors::DocProcessor;
@@ -251,7 +252,7 @@ impl KafkaSource {
         let backfill_mode_enabled = params.enable_backfill_mode;
 
         let (events_tx, events_rx) = mpsc::channel(100);
-        let consumer = create_consumer(
+        let (client_config, consumer) = create_consumer(
             &ctx.index_id,
             &ctx.source_config.source_id,
             params,
@@ -260,7 +261,12 @@ impl KafkaSource {
         consumer
             .subscribe(&[&topic])
             .with_context(|| format!("Failed to subscribe to topic `{topic}`."))?;
-        let poll_loop_jh = spawn_consumer_poll_loop(consumer.clone(), events_tx);
+        let max_poll_interval_millis = client_config
+            .create_native_config()?
+            .get("max.poll.interval.ms")?
+            .parse::<u64>()?;
+        let poll_loop_jh =
+            spawn_consumer_poll_loop(consumer.clone(), events_tx, max_poll_interval_millis);
         let publish_lock = PublishLock::default();
 
         let rebalance_protocol_str = match consumer.rebalance_protocol() {
@@ -274,6 +280,7 @@ impl KafkaSource {
             group_id=%consumer.client().context().group_id,
             topic=%topic,
             rebalance_protocol=%rebalance_protocol_str,
+            max_poll_interval_millis=%max_poll_interval_millis,
             "Starting Kafka source."
         );
         let state = KafkaSourceState {
@@ -481,7 +488,7 @@ impl Source for KafkaSource {
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
         let mut batch = BatchBuilder::default();
-        let deadline = time::sleep(quickwit_actors::HEARTBEAT / 2);
+        let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT / 2);
         tokio::pin!(deadline);
 
         loop {
@@ -576,23 +583,78 @@ impl Source for KafkaSource {
 fn spawn_consumer_poll_loop(
     consumer: Arc<RdKafkaConsumer>,
     events_tx: mpsc::Sender<KafkaEvent>,
+    max_poll_interval_millis: u64,
 ) -> JoinHandle<()> {
     spawn_blocking(move || {
+        // When the channel is full, we must keep polling the consumer at least once every
+        // `max_poll_interval_millis`, otherwise the consumer will be kicked out of the group. We
+        // temporarily store the events in this buffer while we wait for the channel to have
+        // capacity.
+        let mut overflow_buffer = VecDeque::new();
+        let max_drain_overflow_buffer_duration =
+            Duration::from_millis(max_poll_interval_millis - max_poll_interval_millis / 10);
+
         while !events_tx.is_closed() {
+            drain_overflow_buffer(
+                &mut overflow_buffer,
+                &events_tx,
+                max_drain_overflow_buffer_duration,
+            );
             if let Some(message_res) = consumer.poll(Some(Duration::from_secs(1))) {
                 let event = match message_res {
                     Ok(message) => KafkaEvent::Message(message.into()),
                     Err(KafkaError::PartitionEOF(partition)) => KafkaEvent::PartitionEOF(partition),
                     Err(error) => KafkaEvent::Error(anyhow!(error)),
                 };
-                if events_tx.blocking_send(event).is_err() {
-                    break;
+                if !overflow_buffer.is_empty() {
+                    overflow_buffer.push_front(event);
+                } else {
+                    match events_tx.try_send(event) {
+                        Ok(()) => (),
+                        Err(TrySendError::Closed(_)) => {
+                            break;
+                        }
+                        Err(TrySendError::Full(event)) => {
+                            overflow_buffer.push_front(event);
+                        }
+                    }
                 }
             }
         }
         debug!("Exiting consumer poll loop.");
         consumer.unsubscribe();
     })
+}
+
+/// Attempts to drain the overflow buffer by sending as many events as possible to the channel
+/// `events_tx` before `max_duration` has passed.
+fn drain_overflow_buffer<T>(
+    overflow_buffer: &mut VecDeque<T>,
+    events_tx: &mpsc::Sender<T>,
+    max_duration: Duration,
+) {
+    if overflow_buffer.is_empty() {
+        return;
+    }
+    let now = tokio::time::Instant::now();
+    let deadline = now + max_duration;
+    Handle::current().block_on(async {
+        while let Some(event) = overflow_buffer.pop_back() {
+            let permit = match tokio::time::timeout_at(deadline, events_tx.reserve()).await {
+                Ok(Ok(permit)) => permit,
+                Ok(Err(_)) => {
+                    // The channel is closed.
+                    break;
+                }
+                Err(_) => {
+                    // The deadline has passed.
+                    overflow_buffer.push_back(event);
+                    break;
+                }
+            };
+            permit.send(event);
+        }
+    });
 }
 
 /// Returns the preceding `Position` for the offset.
@@ -640,22 +702,25 @@ fn create_consumer(
     source_id: &str,
     params: KafkaSourceParams,
     events_tx: mpsc::Sender<KafkaEvent>,
-) -> anyhow::Result<Arc<RdKafkaConsumer>> {
+) -> anyhow::Result<(ClientConfig, Arc<RdKafkaConsumer>)> {
     let mut client_config = parse_client_params(params.client_params)?;
 
     // Group ID is limited to 255 characters.
     let mut group_id = format!("quickwit-{index_id}-{source_id}");
     group_id.truncate(255);
 
-    let log_level = parse_client_log_level(params.client_log_level)?;
-    let consumer: RdKafkaConsumer = client_config
+    client_config
         .set("enable.auto.commit", "false") // We manage offsets ourselves: we always want to set this value to `false`.
         .set(
             "enable.partition.eof",
             params.enable_backfill_mode.to_string(),
         )
-        .set("group.id", &group_id)
-        .set_log_level(log_level)
+        .set("group.id", &group_id);
+
+    let log_level = parse_client_log_level(params.client_log_level)?;
+    client_config.set_log_level(log_level);
+
+    let consumer = client_config
         .create_with_context(RdKafkaContext {
             group_id,
             topic: params.topic,
@@ -663,7 +728,7 @@ fn create_consumer(
         })
         .context("Failed to create Kafka consumer.")?;
 
-    Ok(Arc::new(consumer))
+    Ok((client_config, Arc::new(consumer)))
 }
 
 fn parse_client_log_level(client_log_level: Option<String>) -> anyhow::Result<RDKafkaLogLevel> {
@@ -739,6 +804,62 @@ fn parse_message_payload(message: &BorrowedMessage) -> Option<String> {
         ),
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_drain_overflow_buffer() {
+        {
+            let (events_tx, mut events_rx) = mpsc::channel(1);
+            events_tx.try_send(0).unwrap();
+
+            let mut overflow_buffer = VecDeque::new();
+            overflow_buffer.push_front(1);
+            overflow_buffer.push_front(2);
+            overflow_buffer.push_front(3);
+
+            let max_duration = Duration::from_millis(25);
+
+            let now = Instant::now();
+
+            let drained_overflow_buffer = spawn_blocking(move || {
+                drain_overflow_buffer(&mut overflow_buffer, &events_tx, max_duration);
+                overflow_buffer
+            })
+            .await
+            .unwrap();
+            assert_eq!(drained_overflow_buffer, [3, 2, 1]);
+            assert_eq!(events_rx.try_recv().unwrap(), 0);
+            events_rx.try_recv().unwrap_err();
+
+            assert!(now.elapsed() >= max_duration);
+            assert!(now.elapsed() < 2 * max_duration);
+        }
+        {
+            let (events_tx, mut events_rx) = mpsc::channel(1);
+
+            let mut overflow_buffer = VecDeque::new();
+            overflow_buffer.push_front(1);
+            overflow_buffer.push_front(2);
+            overflow_buffer.push_front(3);
+
+            let max_duration = Duration::from_millis(25);
+
+            let drained_overflow_buffer = spawn_blocking(move || {
+                drain_overflow_buffer(&mut overflow_buffer, &events_tx, max_duration);
+                overflow_buffer
+            })
+            .await
+            .unwrap();
+            assert_eq!(drained_overflow_buffer, [3, 2]);
+            assert_eq!(events_rx.try_recv().unwrap(), 1);
+            events_rx.try_recv().unwrap_err();
+        }
+    }
 }
 
 #[cfg(all(test, feature = "kafka-broker-tests"))]
@@ -1422,5 +1543,70 @@ mod kafka_broker_tests {
         })
         .await
         .unwrap_err();
+    }
+
+    #[tokio::test]
+    async fn test_kafka_consumer_poll_loop_overflow() {
+        let topic = append_random_suffix("test-kafka-consumer-poll-loop-overflow");
+        let admin_client = create_admin_client().unwrap();
+        create_topic(&admin_client, &topic, 1).await.unwrap();
+        populate_topic(
+            &topic,
+            2,
+            &key_fn,
+            &|message_id| format!("Message #{:0>3}", message_id),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let bootstrap_servers = "localhost:9092";
+        let group_id = append_random_suffix("test-kafka-consumer-poll-loop-overflow-group");
+
+        let mut client_config = ClientConfig::new();
+        client_config.set("bootstrap.servers", bootstrap_servers);
+        client_config.set("group.id", &group_id);
+        client_config.set("enable.partition.eof", "true");
+        client_config.set("session.timeout.ms", "6000"); // 6 secs, minimum value allowed by `group.min.session.timeout.ms`
+        client_config.set("max.poll.interval.ms", "6000"); // 6 secs, minimum value >= `session.timeout.ms
+
+        let (events_tx, mut events_rx) = mpsc::channel(1);
+
+        let consumer: RdKafkaConsumer = client_config
+            .create_with_context(RdKafkaContext {
+                group_id,
+                topic: topic.clone(),
+                events_tx: events_tx.clone(),
+            })
+            .unwrap();
+        consumer.subscribe(&[&topic]).unwrap();
+
+        spawn_consumer_poll_loop(Arc::new(consumer), events_tx, 1000);
+
+        // Handle the assign partition event.
+        match events_rx.recv().await.unwrap() {
+            KafkaEvent::AssignPartitions {
+                partitions: _,
+                assignment_tx,
+            } => {
+                assignment_tx.send(vec![(0, Offset::Beginning)]).unwrap();
+            }
+            _ => panic!("Expected assign partitions event"),
+        };
+        // The channel is full and we wait for a duration > `max.poll.interval.ms` to trigger an
+        // overflow.
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        assert!(
+            matches!(events_rx.recv().await.unwrap(), KafkaEvent::Message(message) if message.offset == 0)
+        );
+        assert!(
+            matches!(events_rx.recv().await.unwrap(), KafkaEvent::Message(message) if message.offset == 1)
+        );
+        assert!(matches!(
+            events_rx.recv().await.unwrap(),
+            KafkaEvent::PartitionEOF(0)
+        ));
     }
 }
