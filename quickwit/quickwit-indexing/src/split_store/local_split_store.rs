@@ -200,16 +200,15 @@ impl LocalSplitStore {
         split_id: &str,
         to_folder: &Path,
     ) -> StorageResult<SplitFolder> {
-        let mut split_file = self
-            .split_files
-            .remove(split_id)
-            .ok_or_else(|| {
+        let (split_size_in_bytes, mut split_folder) =
+            self.split_files.remove(split_id).ok_or_else(|| {
                 StorageErrorKind::DoesNotExist
                     .with_error(anyhow::anyhow!("Missing split_id `{}`", split_id))
-            })?
-            .1;
-        split_file.move_to(to_folder, split_id).await?;
-        Ok(split_file)
+            })?;
+        split_folder.move_to(to_folder, split_id).await?;
+        let mut split_store_space_quota_guard = self.split_store_space_quota.lock().await;
+        split_store_space_quota_guard.remove_splits(1, split_size_in_bytes);
+        Ok(split_folder)
     }
 
     /// Returns a cached split.
@@ -359,6 +358,16 @@ mod tests {
             .await
             .unwrap();
         assert!(is_not_accepted);
+
+        // Now remove a split and check that the quota has been updated.
+        split_store1
+            .move_out("split1", temp_dir.path())
+            .await
+            .unwrap();
+        let split_store_space_quota_guard = split_store_space_quota.lock().await;
+        assert_eq!(split_store_space_quota_guard.num_splits(), 3);
+        assert_eq!(split_store_space_quota_guard.size_in_bytes(), 28 * 3);
+
         Ok(())
     }
 
