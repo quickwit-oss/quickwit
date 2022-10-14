@@ -544,7 +544,7 @@ retention:
 | ------------- | ------------- | ------------- |
 | `period`      | Duration after which splits are dropped, expressed in a human-readable way (`1 day`, `2 hours`, `a week`, ...). (1) | required |
 | `cutoff_reference`      | Split attribute from which the retention policy is applied relatively, possible values are: `publish_timestamp`, and `split_timestamp_field`. (2) | required |
-| `schedule`      | Frequency at which the retention policy manager should run and drop eligible splits. Expressed in cron expression (`0 0 * * * *`) or shorthands (`hourly`, `daily`, `weekly`, `monthly`, `yearly`). | `hourly` |
+| `schedule`      | Frequency at which the retention policy is evaluated and applied, expressed as a cron expression (`0 0 * * * *`) or human-readable form (`hourly`, `daily`, `weekly`, `monthly`, `yearly`). | `hourly` |
 
 
 (1) `period` is specified as set of time spans. Each time span is an integer followed by a unit suffix like: `2 days 3h 24min`. The supported units are:
