@@ -544,10 +544,10 @@ retention:
 | ------------- | ------------- | ------------- |
 | `period`      | Duration after which a split is eligible to be dropped. Expressed in human-friendly way (`1 day`, `2 hours`, `a week`, ...). (1) | required |
 | `cutoff_reference`      | Split attribute on which the retention policy is applied, possible values are: `publish_timestamp`, and `split_timestamp_field`. (2) | required |
-| `schedule`      | Frequency at which the retention manager should run and drop droppable splits. Expressed in cron expression (`0 0 * * * *`) or shorthands (`hourly`, `daily`, `weekly`, `monthly`, `yearly`). | `hourly` |
+| `schedule`      | Frequency at which the retention policy manager should run and drop eligible splits. Expressed in cron expression (`0 0 * * * *`) or shorthands (`hourly`, `daily`, `weekly`, `monthly`, `yearly`). | `hourly` |
 
 
-(1)  `period` is specified as set of time spans. Each time span is an integer followed by a unit suffix like: `2 days 3h 24min`. Supported units are as follows:
+(1) `period` is specified as set of time spans. Each time span is an integer followed by a unit suffix like: `2 days 3h 24min`. The supported units are:
   - `nsec`, `ns` -- nanoseconds
   - `usec`, `us` -- microseconds
   - `msec`, `ms` -- milliseconds
@@ -556,12 +556,12 @@ retention:
   - `hours`, `hour`, `hr`, `h`
   - `days`, `day`, `d`
   - `weeks`, `week`, `w`
-  - `months`, `month`, `M` -- defined as 30.44 days
-  - `years`, `year`, `y` -- defined as 365.25 days
+  - `months`, `month`, `M` -- a month is defined as `30.44 days`
+  - `years`, `year`, `y` -- a year is defined as `365.25 days`
 
-(2)  `cutoff_reference` possible values:
+(2) `cutoff_reference` possible values:
   - `publish_timestamp` will evaluate based on the timestamp the split was published at.
-  - `split_timestamp_field` will evaluate based on the index timestamp field specified in `indexing_settings.timestamp_field`.
+  - `split_timestamp_field` will evaluate based on the index timestamp field specified in the (`indexing_settings.timestamp_field`) settings.
 
 
 ## Sources
