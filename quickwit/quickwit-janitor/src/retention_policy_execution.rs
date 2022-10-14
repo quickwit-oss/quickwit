@@ -23,7 +23,7 @@ use quickwit_actors::ActorContext;
 use quickwit_config::{RetentionPolicy, RetentionPolicyCutoffReference};
 use quickwit_metastore::{Metastore, Split, SplitMetadata, SplitState};
 use time::OffsetDateTime;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::actors::RetentionPolicyExecutor;
 
@@ -61,6 +61,7 @@ pub async fn run_execute_retention_policy(
         return Ok(expired_splits);
     }
 
+    info!(index_id=%index_id, num_splits=%expired_splits.len(), "retention-policy-mark-splits-for-deletion");
     // Change all expired splits state to MarkedForDeletion.
     let split_ids: Vec<&str> = expired_splits.iter().map(|meta| meta.split_id()).collect();
     metastore
