@@ -287,9 +287,6 @@ Note that this aggregation includes the from value and excludes the to value for
 
 Overlapping ranges are not yet supported.
 
-Elasticsearch `keyed` parameter is not yet supported.
-
-
 #### Parameters
 
 ###### **field**
@@ -308,8 +305,12 @@ Note that this aggregation includes the `from` value and excludes the `to` value
 
 ### Terms
 
-Creates a bucket for every unique term.
+Creates a bucket for every unique term and counts the number of occurences.
 
+Note that `doc_count` in the response buckets equals term count here.
+If the text is untokenized and single value, that means one term per document and therefore it is in fact doc count.
+
+Request
 ```json skip
 {
     "query": "*",
@@ -321,6 +322,23 @@ Creates a bucket for every unique term.
     }
 }
 ```
+
+Response
+```json
+...
+"aggs": {
+    "genres": {
+        "doc_count_error_upper_bound": 0,   
+        "sum_other_doc_count": 0,           
+        "buckets": [                        
+            { "key": "drumnbass", "doc_count": 6 },
+            { "key": "raggae", "doc_count": 4 },
+            { "key": "jazz", "doc_count": 2 }
+        ]
+    }
+}
+```
+
 
 #### Document count error
 In Quickwit, we have one segment per split. Therefore the results returned from a split, is equivalent to results returned from a segment.
