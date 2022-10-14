@@ -526,7 +526,7 @@ This section describes search settings for a given index.
 | ------------- | ------------- | ------------- |
 | `search_default_fields`      | Default list of fields that will be used for search.   | None |
 
-## Retention policy settings
+## Retention policy
 
 This section describes how Quickwit manages data retention. In Quickwit, the retention policy manager drops data on a split basis as opposed to individually dropping documents.
 
