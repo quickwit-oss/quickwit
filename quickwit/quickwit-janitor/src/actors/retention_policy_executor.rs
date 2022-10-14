@@ -199,7 +199,7 @@ impl Handler<Execute> for RetentionPolicyExecutor {
             &message.index_id,
             self.metastore.clone(),
             retention_policy,
-            Some(ctx),
+            ctx,
         )
         .await;
         match execution_result {
