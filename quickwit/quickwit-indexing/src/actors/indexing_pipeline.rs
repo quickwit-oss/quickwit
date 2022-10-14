@@ -227,15 +227,13 @@ impl IndexingPipeline {
             merge_policy=?merge_policy,
             "Spawning indexing pipeline.",
         );
-        let published_splits = self
-            .params
-            .metastore
-            .list_splits(
+        let published_splits = ctx
+            .protect_future(self.params.metastore.list_splits(
                 &self.params.pipeline_id.index_id,
                 SplitState::Published,
                 None,
                 None,
-            )
+            ))
             .await?
             .into_iter()
             .map(|split| split.split_metadata)

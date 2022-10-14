@@ -60,8 +60,7 @@ pub async fn run_execute_retention_policy(
 
     // Change all expired splits state to MarkedForDeletion.
     let split_ids: Vec<&str> = expired_splits.iter().map(|meta| meta.split_id()).collect();
-    metastore
-        .mark_splits_for_deletion(index_id, &split_ids)
+    ctx.protect_future(metastore.mark_splits_for_deletion(index_id, &split_ids))
         .await?;
 
     Ok(expired_splits)
