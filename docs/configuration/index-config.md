@@ -532,7 +532,7 @@ This section describes how Quickwit manages data retention. In Quickwit, the ret
 
 ```yaml
 version: 0
-index_id: "hdfs"
+index_id: hdfs
 # ...
 retention:
   period: 90 days
