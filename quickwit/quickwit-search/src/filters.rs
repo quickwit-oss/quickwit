@@ -18,46 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::ops::{Bound, RangeBounds};
-use std::sync::Arc;
 
-use tantivy::fastfield::Column;
-use tantivy::schema::{Field, Type};
-use tantivy::{DateTime, DocId, SegmentReader, TantivyError};
-
-#[derive(Clone)]
-enum GenericFastFieldReader {
-    I64(Arc<dyn Column<i64>>),
-    Date(Arc<dyn Column<DateTime>>),
-}
-
-impl GenericFastFieldReader {
-    fn min_value(&self) -> i64 {
-        match self {
-            GenericFastFieldReader::I64(fast_reader) => fast_reader.min_value(),
-            GenericFastFieldReader::Date(fast_reader) => {
-                fast_reader.min_value().into_timestamp_secs()
-            }
-        }
-    }
-
-    fn max_value(&self) -> i64 {
-        match self {
-            GenericFastFieldReader::I64(fast_reader) => fast_reader.max_value(),
-            GenericFastFieldReader::Date(fast_reader) => {
-                fast_reader.max_value().into_timestamp_secs()
-            }
-        }
-    }
-
-    fn get(&self, doc_id: DocId) -> i64 {
-        match self {
-            GenericFastFieldReader::I64(fast_reader) => fast_reader.get_val(doc_id as u64),
-            GenericFastFieldReader::Date(fast_reader) => {
-                fast_reader.get_val(doc_id as u64).into_timestamp_secs()
-            }
-        }
-    }
-}
+use quickwit_common::fast_field_reader::{timestamp_field_reader, GenericFastFieldReader};
+use tantivy::schema::Field;
+use tantivy::{DocId, SegmentReader};
 
 /// A filter that only retains docs within a time range.
 #[derive(Clone)]
@@ -107,28 +71,14 @@ impl TimestampFilterBuilder {
         &self,
         segment_reader: &SegmentReader,
     ) -> tantivy::Result<Option<TimestampFilter>> {
-        let field_entry = segment_reader
+        let timestamp_field_entry = segment_reader
             .schema()
             .get_field_entry(self.timestamp_field);
-
-        let field_schema_type = field_entry.field_type().value_type();
-        let timestamp_field_reader = match field_entry.field_type().value_type() {
-            Type::I64 => {
-                GenericFastFieldReader::I64(segment_reader.fast_fields().i64(self.timestamp_field)?)
-            }
-            Type::Date => GenericFastFieldReader::Date(
-                segment_reader.fast_fields().date(self.timestamp_field)?,
-            ),
-            _ => {
-                return Err(TantivyError::SchemaError(format!(
-                    "Failed to build timestamp filter for field `{:?}`: expected I64 or Date \
-                     type, got `{:?}`.",
-                    field_entry.name(),
-                    field_schema_type
-                )))
-            }
-        };
-
+        let timestamp_field_reader = timestamp_field_reader(
+            self.timestamp_field,
+            timestamp_field_entry,
+            segment_reader.fast_fields(),
+        )?;
         let segment_range = (
             timestamp_field_reader.min_value(),
             timestamp_field_reader.max_value(),
