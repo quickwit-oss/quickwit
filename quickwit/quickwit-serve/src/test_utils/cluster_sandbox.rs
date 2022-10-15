@@ -77,11 +77,7 @@ impl ClusterSandbox {
         let index_for_test = append_random_suffix("test-standalone-node-index");
         create_index_for_test(&index_for_test, &node_config.quickwit_config).await?;
         tokio::spawn(async move {
-            let result = serve_quickwit(
-                node_config_clone.quickwit_config,
-                &node_config_clone.services,
-            )
-            .await;
+            let result = serve_quickwit(node_config_clone.quickwit_config).await;
             println!("Quickwit server terminated: {:?}", result);
             Result::<_, anyhow::Error>::Ok(())
         });
@@ -112,11 +108,7 @@ impl ClusterSandbox {
         for node_config in node_configs.iter() {
             let node_config_clone = node_config.clone();
             tokio::spawn(async move {
-                let result = serve_quickwit(
-                    node_config_clone.quickwit_config,
-                    &node_config_clone.services,
-                )
-                .await;
+                let result = serve_quickwit(node_config_clone.quickwit_config).await;
                 info!("Quickwit server terminated: {:?}", result);
                 Result::<_, anyhow::Error>::Ok(())
             });
