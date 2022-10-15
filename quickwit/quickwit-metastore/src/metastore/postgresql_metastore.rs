@@ -878,7 +878,7 @@ impl Metastore for PostgresqlMetastore {
                     index_id = $1
                     AND delete_opstamp < $2
                     AND split_state = $3
-                ORDER BY delete_opstamp ASC
+                ORDER BY delete_opstamp ASC, publish_timestamp ASC
                 LIMIT $4
                 "#,
                 )
