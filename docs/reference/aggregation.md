@@ -305,7 +305,7 @@ Note that this aggregation includes the `from` value and excludes the `to` value
 
 ### Terms
 
-Creates a bucket for every unique term and counts the number of occurences.
+Creates a bucket for every unique term and counts the number of occurrences.
 
 Note that `doc_count` in the response buckets equals term count here.
 If the text is untokenized and single value, that means one term per document and therefore it is in fact doc count.
