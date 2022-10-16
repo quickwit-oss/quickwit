@@ -28,7 +28,7 @@ use tracing::info;
 
 use crate::actors::MergeSplitDownloader;
 use crate::models::{IndexingPipelineId, NewSplits};
-use crate::MergePolicy;
+use crate::{InstrumentMetric, MergePolicy};
 
 /// The merge planner decides when to start a merge task.
 pub struct MergePlanner {
@@ -142,6 +142,7 @@ impl MergePlanner {
                 for merge_operation in merge_operations {
                     info!(merge_operation=?merge_operation, "Planned merge operation.");
                     ctx.send_message(&self.merge_split_downloader_mailbox, merge_operation)
+                        .instrument_waiting_time(&["merge_split_downloader"])
                         .await?;
                 }
             }

@@ -17,10 +17,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 
+use futures::Future;
 use itertools::Itertools;
+use metrics::INDEXER_METRICS;
+use pin_project_lite::pin_project;
 use quickwit_actors::{Mailbox, Universe};
+use quickwit_common::metrics::HistogramTimer;
 use quickwit_config::QuickwitConfig;
 use quickwit_ingest_api::{get_ingest_api_service, QUEUES_DIR_NAME};
 use quickwit_metastore::Metastore;
@@ -96,3 +102,43 @@ pub async fn start_indexing_service(
     }
     Ok(indexing_service)
 }
+
+trait InstrumentMetric: Sized {
+    fn instrument_waiting_time(self, labels: &[&str]) -> InstrumentedMetric<Self> {
+        let histogram = INDEXER_METRICS
+            .message_waiting_time
+            .with_label_values(labels);
+        let histogram_timer = histogram.start_timer();
+        InstrumentedMetric {
+            inner: self,
+            histogram_timer: Some(histogram_timer),
+        }
+    }
+}
+
+pin_project! {
+    pub struct InstrumentedMetric<T> {
+        #[pin]
+        inner: T,
+        #[pin]
+        histogram_timer: Option<HistogramTimer>,
+    }
+}
+
+impl<T: Future> Future for InstrumentedMetric<T> {
+    type Output = T::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut this = self.project();
+        let output = match this.inner.poll(cx) {
+            Poll::Pending => return Poll::Pending,
+            Poll::Ready(output) => output,
+        };
+        if let Some(histogram_timer) = this.histogram_timer.take() {
+            histogram_timer.observe_duration();
+        };
+        Poll::Ready(output)
+    }
+}
+
+impl<T: Sized> InstrumentMetric for T {}

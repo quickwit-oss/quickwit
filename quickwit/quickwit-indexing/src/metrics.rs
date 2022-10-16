@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_counter, new_gauge, IntCounter, IntGauge};
+use quickwit_common::metrics::{new_counter, new_histogram_vec, new_gauge, HistogramVec, IntCounter, IntGauge};
 
 pub struct IndexerMetrics {
     pub parsing_errors_num_docs_total: IntCounter,
@@ -28,6 +28,7 @@ pub struct IndexerMetrics {
     pub missing_field_num_bytes_total: IntCounter,
     pub valid_num_bytes_total: IntCounter,
     pub concurrent_upload_available_permits: IntGauge,
+    pub message_waiting_time: HistogramVec,
 }
 
 impl Default for IndexerMetrics {
@@ -67,6 +68,12 @@ impl Default for IndexerMetrics {
                 "concurrent_upload_available_permits",
                 "Number of concurrent upload available permits.",
                 "quickwit_indexing",
+            ),
+            message_waiting_time: new_histogram_vec(
+                "message_waiting_time",
+                "Waiting time for a message to be processed in indexing pipeline",
+                "quickwit_indexing",
+                &["actor_mailbox"],
             ),
         }
     }

@@ -30,6 +30,7 @@ use tracing::{info, instrument};
 use crate::actors::MergePlanner;
 use crate::models::{NewSplits, SplitsUpdate};
 use crate::source::{SourceActor, SuggestTruncate};
+use crate::InstrumentMetric;
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct PublisherCounters {
@@ -166,6 +167,7 @@ impl Handler<SplitsUpdate> for Publisher {
                         source_mailbox,
                         SuggestTruncate(checkpoint.source_delta.get_source_checkpoint()),
                     )
+                    .instrument_waiting_time(&["source"])
                     .await;
             }
         }
@@ -177,6 +179,7 @@ impl Handler<SplitsUpdate> for Publisher {
         if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
             let _ = ctx
                 .send_message(merge_planner_mailbox, NewSplits { new_splits })
+                .instrument_waiting_time(&["merge_planner"])
                 .await;
         }
 
