@@ -48,6 +48,7 @@ use tracing::{debug, info, warn};
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, PublishLock, RawDocBatch};
 use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
+use crate::InstrumentMetric;
 
 /// Number of bytes after which we cut a new batch.
 ///
@@ -512,7 +513,9 @@ impl Source for KafkaSource {
                 num_millis=%now.elapsed().as_millis(),
                 "Sending doc batch to indexer.");
             let message = batch.build();
-            ctx.send_message(doc_processor_mailbox, message).await?;
+            ctx.send_message(doc_processor_mailbox, message)
+                .instrument_waiting_time(&["doc_processor"])
+                .await?;
         }
         if self.should_exit() {
             info!(topic = %self.topic, "Reached end of topic.");

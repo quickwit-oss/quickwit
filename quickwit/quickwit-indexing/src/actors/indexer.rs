@@ -46,6 +46,7 @@ use crate::models::{
     CommitTrigger, IndexedSplitBatchBuilder, IndexedSplitBuilder, IndexingDirectory,
     IndexingPipelineId, NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock,
 };
+use crate::InstrumentMetric;
 
 #[derive(Debug)]
 struct CommitTimeout {
@@ -500,6 +501,7 @@ impl Indexer {
                 commit_trigger,
             },
         )
+        .instrument_waiting_time(&["index_serializer"])
         .instrument(info_span!(parent: span_id, "send_to_serializer"))
         .await?;
         self.counters.num_docs_in_workbench = 0;

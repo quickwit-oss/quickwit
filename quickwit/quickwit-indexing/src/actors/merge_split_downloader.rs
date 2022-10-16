@@ -29,6 +29,7 @@ use super::MergeExecutor;
 use crate::merge_policy::MergeOperation;
 use crate::models::{MergeScratch, ScratchDirectory};
 use crate::split_store::IndexingSplitStore;
+use crate::InstrumentMetric;
 
 pub struct MergeSplitDownloader {
     pub scratch_directory: ScratchDirectory,
@@ -84,7 +85,9 @@ impl Handler<MergeOperation> for MergeSplitDownloader {
             downloaded_splits_directory,
             tantivy_dirs,
         };
-        ctx.send_message(&self.executor_mailbox, msg).await?;
+        ctx.send_message(&self.executor_mailbox, msg)
+            .instrument_waiting_time(&["executor"])
+            .await?;
         Ok(())
     }
 }

@@ -24,6 +24,8 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use tokio::sync::oneshot;
 
+use crate::InstrumentMetric;
+
 /// The sequencer serves as a proxy to another actor,
 /// delivering message in a specific order.
 ///
@@ -80,6 +82,7 @@ where
             .context("Failed to receive command from uploader.")?;
         if let SequencerCommand::Proceed(msg) = command {
             ctx.send_message(&self.mailbox, msg)
+                .instrument_waiting_time(&["publisher"])
                 .await
                 .context("Failed to send message to publisher.")?;
         }

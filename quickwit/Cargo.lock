@@ -3348,6 +3348,7 @@ dependencies = [
  "once_cell",
  "oneshot",
  "openssl",
+ "pin-project-lite",
  "proptest",
  "quickwit-actors",
  "quickwit-aws",

@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_counter, IntCounter};
+use quickwit_common::metrics::{new_counter, new_histogram_vec, HistogramVec, IntCounter};
 
 pub struct IndexerMetrics {
     pub parsing_errors_num_docs_total: IntCounter,
@@ -27,6 +27,7 @@ pub struct IndexerMetrics {
     pub parsing_errors_num_bytes_total: IntCounter,
     pub missing_field_num_bytes_total: IntCounter,
     pub valid_num_bytes_total: IntCounter,
+    pub message_waiting_time: HistogramVec,
 }
 
 impl Default for IndexerMetrics {
@@ -61,6 +62,12 @@ impl Default for IndexerMetrics {
                 "valid_num_bytes_total",
                 "Sum of bytes of valid documents that have been processed.",
                 "quickwit_indexing",
+            ),
+            message_waiting_time: new_histogram_vec(
+                "message_waiting_time",
+                "Waiting time for a message to be processed in indexing pipeline",
+                "quickwit_indexing",
+                &["actor_mailbox"],
             ),
         }
     }

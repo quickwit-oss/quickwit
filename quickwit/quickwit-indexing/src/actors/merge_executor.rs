@@ -48,6 +48,7 @@ use crate::models::{
     IndexedSplit, IndexedSplitBatch, IndexingPipelineId, MergeScratch, PublishLock,
     ScratchDirectory, SplitAttrs,
 };
+use crate::InstrumentMetric;
 
 pub struct MergeExecutor {
     pipeline_id: IndexingPipelineId,
@@ -117,6 +118,7 @@ impl Handler<MergeScratch> for MergeExecutor {
                     publish_lock: PublishLock::default(),
                 },
             )
+            .instrument_waiting_time(&["merge_packager"])
             .await?;
         }
         Ok(())

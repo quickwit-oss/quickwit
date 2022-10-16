@@ -25,6 +25,7 @@ use tracing::instrument;
 
 use crate::actors::Packager;
 use crate::models::{IndexedSplit, IndexedSplitBatch, IndexedSplitBatchBuilder};
+use crate::InstrumentMetric;
 
 /// The index serializer takes a non-serialized split,
 /// and serializes it before passing it to the packager.
@@ -88,6 +89,7 @@ impl Handler<IndexedSplitBatchBuilder> for IndexSerializer {
             publish_lock: batch_builder.publish_lock,
         };
         ctx.send_message(&self.packager_mailbox, indexed_split_batch)
+            .instrument_waiting_time(&["packager"])
             .await?;
         Ok(())
     }

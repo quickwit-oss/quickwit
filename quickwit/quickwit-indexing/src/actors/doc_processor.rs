@@ -30,6 +30,7 @@ use tracing::warn;
 
 use crate::actors::Indexer;
 use crate::models::{NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock, RawDocBatch};
+use crate::InstrumentMetric;
 
 enum PrepareDocumentError {
     ParsingError,
@@ -238,6 +239,7 @@ impl Handler<RawDocBatch> for DocProcessor {
             checkpoint_delta: raw_doc_batch.checkpoint_delta,
         };
         ctx.send_message(&self.indexer_mailbox, prepared_doc_batch)
+            .instrument_waiting_time(&["indexer"])
             .await?;
         Ok(())
     }

@@ -47,6 +47,7 @@ use crate::actors::Uploader;
 use crate::models::{
     IndexedSplit, IndexedSplitBatch, PackagedSplit, PackagedSplitBatch, ScratchDirectory,
 };
+use crate::InstrumentMetric;
 
 /// The role of the packager is to get an index writer and
 /// produce a split file.
@@ -164,6 +165,7 @@ impl Handler<IndexedSplitBatch> for Packager {
                 batch.batch_parent_span,
             ),
         )
+        .instrument_waiting_time(&["uploader"])
         .await?;
         fail_point!("packager:after");
         Ok(())
