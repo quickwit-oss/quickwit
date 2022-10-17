@@ -21,6 +21,7 @@ use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
@@ -83,6 +84,7 @@ impl Handler<MergeScratch> for MergeExecutor {
         merge_scratch: MergeScratch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        let start = Instant::now();
         let merge_op = merge_scratch.merge_operation;
         let indexed_split_opt: Option<IndexedSplit> = match merge_op.operation_type {
             MergeOperationType::Merge => Some(
@@ -107,6 +109,12 @@ impl Handler<MergeScratch> for MergeExecutor {
             }
         };
         if let Some(indexed_split) = indexed_split_opt {
+            info!(
+                merged_num_docs = %indexed_split.split_attrs.num_docs,
+                elapsed_secs = %start.elapsed().as_secs_f32(),
+                operation_type = %merge_op.operation_type,
+                "merge-operation-success"
+            );
             ctx.send_message(
                 &self.merge_packager_mailbox,
                 IndexedSplitBatch {
@@ -117,6 +125,8 @@ impl Handler<MergeScratch> for MergeExecutor {
                 },
             )
             .await?;
+        } else {
+            info!("no-splits-merged");
         }
         Ok(())
     }
@@ -325,11 +335,6 @@ impl MergeExecutor {
         }
     }
 
-    #[instrument(
-        level = "info"
-        name = "merge",
-        skip_all
-    )]
     async fn process_merge(
         &mut self,
         merge_split_id: String,
@@ -366,11 +371,6 @@ impl MergeExecutor {
         })
     }
 
-    #[instrument(
-        level = "info"
-        name = "delete_and_merge",
-        skip_all
-    )]
     async fn process_delete_and_merge(
         &mut self,
         merge_split_id: String,
