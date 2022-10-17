@@ -204,6 +204,7 @@ pub fn build_node_configs(
     let unique_dir_name = new_coolid("test-dir");
     for node_services in nodes_services.iter() {
         let mut config = QuickwitConfig::for_test();
+        config.enabled_services = node_services.clone();
         config.cluster_id = cluster_id.clone();
         config.data_dir_path = root_data_dir.join(&config.node_id);
         config.metastore_uri =
