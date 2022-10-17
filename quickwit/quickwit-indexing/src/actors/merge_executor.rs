@@ -29,6 +29,7 @@ use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::fast_field_reader::timestamp_field_reader;
+use quickwit_common::metrics::InstrumentHistogramMetric;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::build_doc_mapper;
 use quickwit_directories::UnionDirectory;
@@ -44,11 +45,11 @@ use tracing::{debug, info, instrument, warn};
 use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeOperationType;
+use crate::metrics::INDEXER_METRICS;
 use crate::models::{
     IndexedSplit, IndexedSplitBatch, IndexingPipelineId, MergeScratch, PublishLock,
     ScratchDirectory, SplitAttrs,
 };
-use crate::InstrumentMetric;
 
 pub struct MergeExecutor {
     pipeline_id: IndexingPipelineId,
@@ -118,7 +119,7 @@ impl Handler<MergeScratch> for MergeExecutor {
                     publish_lock: PublishLock::default(),
                 },
             )
-            .instrument_waiting_time(&["merge_packager"])
+            .measure_time(&INDEXER_METRICS.waiting_time_to_send_message, &["merge_packager"])
             .await?;
         }
         Ok(())

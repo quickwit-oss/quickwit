@@ -29,7 +29,7 @@ pub struct IndexerMetrics {
     pub parsing_errors_num_bytes_total: IntCounter,
     pub missing_field_num_bytes_total: IntCounter,
     pub valid_num_bytes_total: IntCounter,
-    pub message_waiting_time: HistogramVec,
+    pub waiting_time_to_send_message: HistogramVec,
     pub concurrent_upload_available_permits: IntGauge,
 }
 
@@ -66,11 +66,11 @@ impl Default for IndexerMetrics {
                 "Sum of bytes of valid documents that have been processed.",
                 "quickwit_indexing",
             ),
-            message_waiting_time: new_histogram_vec(
-                "message_waiting_time",
-                "Waiting time for a message to be processed in indexing pipeline",
+            waiting_time_to_send_message: new_histogram_vec(
+                "waiting_time_to_send_message",
+                "Waiting time to send a message in an actor mailbox.",
                 "quickwit_indexing",
-                &["actor_mailbox"],
+                &["actor_name"],
             ),
             concurrent_upload_available_permits: new_gauge(
                 "concurrent_upload_available_permits",

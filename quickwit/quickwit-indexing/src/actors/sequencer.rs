@@ -22,9 +22,10 @@ use std::fmt::Debug;
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
+use quickwit_common::metrics::InstrumentHistogramMetric;
 use tokio::sync::oneshot;
 
-use crate::InstrumentMetric;
+use crate::metrics::INDEXER_METRICS;
 
 /// The sequencer serves as a proxy to another actor,
 /// delivering message in a specific order.
@@ -82,7 +83,7 @@ where
             .context("Failed to receive command from uploader.")?;
         if let SequencerCommand::Proceed(msg) = command {
             ctx.send_message(&self.mailbox, msg)
-                .instrument_waiting_time(&["publisher"])
+                .measure_time(&INDEXER_METRICS.waiting_time_to_send_message, &["publisher"])
                 .await
                 .context("Failed to send message to publisher.")?;
         }

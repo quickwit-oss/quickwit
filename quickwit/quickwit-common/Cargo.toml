@@ -14,11 +14,13 @@ anyhow = { workspace = true }
 colored = { workspace = true }
 env_logger = { workspace = true }
 fastfield_codecs = { workspace = true }
+futures = { workspace = true }
 home = { workspace = true }
 itertools = { workspace = true }
 num_cpus = { workspace = true }
 once_cell = { workspace = true }
 pnet = { workspace = true }
+pin-project-lite = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }

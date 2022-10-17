@@ -21,15 +21,16 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::metrics::InstrumentHistogramMetric;
 use quickwit_metastore::SplitMetadata;
 use tantivy::Directory;
 use tracing::{debug, info, instrument};
 
 use super::MergeExecutor;
 use crate::merge_policy::MergeOperation;
+use crate::metrics::INDEXER_METRICS;
 use crate::models::{MergeScratch, ScratchDirectory};
 use crate::split_store::IndexingSplitStore;
-use crate::InstrumentMetric;
 
 pub struct MergeSplitDownloader {
     pub scratch_directory: ScratchDirectory,
@@ -86,7 +87,7 @@ impl Handler<MergeOperation> for MergeSplitDownloader {
             tantivy_dirs,
         };
         ctx.send_message(&self.executor_mailbox, msg)
-            .instrument_waiting_time(&["executor"])
+            .measure_time(&INDEXER_METRICS.waiting_time_to_send_message, &["executor"])
             .await?;
         Ok(())
     }

@@ -21,6 +21,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::metrics::InstrumentHistogramMetric;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_doc_mapper::{DocMapper, DocParsingError};
 use serde::Serialize;
@@ -29,8 +30,8 @@ use tokio::runtime::Handle;
 use tracing::warn;
 
 use crate::actors::Indexer;
+use crate::metrics::INDEXER_METRICS;
 use crate::models::{NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock, RawDocBatch};
-use crate::InstrumentMetric;
 
 enum PrepareDocumentError {
     ParsingError,
@@ -239,7 +240,7 @@ impl Handler<RawDocBatch> for DocProcessor {
             checkpoint_delta: raw_doc_batch.checkpoint_delta,
         };
         ctx.send_message(&self.indexer_mailbox, prepared_doc_batch)
-            .instrument_waiting_time(&["indexer"])
+            .measure_time(&INDEXER_METRICS.waiting_time_to_send_message, &["indexer"])
             .await?;
         Ok(())
     }
