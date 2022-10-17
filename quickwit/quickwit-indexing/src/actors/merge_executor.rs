@@ -28,6 +28,7 @@ use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::fast_field_reader::timestamp_field_reader;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::build_doc_mapper;
 use quickwit_directories::UnionDirectory;
@@ -449,7 +450,14 @@ impl MergeExecutor {
                         timestamp_field_name
                     ))
                 })?;
-            let reader = merged_segment_reader.fast_fields().i64(timestamp_field)?;
+            let timestamp_field_entry = merged_segment_reader
+                .schema()
+                .get_field_entry(timestamp_field);
+            let reader = timestamp_field_reader(
+                timestamp_field,
+                timestamp_field_entry,
+                merged_segment_reader.fast_fields(),
+            )?;
             Some(RangeInclusive::new(reader.min_value(), reader.max_value()))
         } else {
             None
@@ -512,13 +520,16 @@ mod tests {
               - name: body
                 type: text
               - name: ts
-                type: i64
+                type: datetime
+                input_formats:
+                - unix_ts_millis
                 fast: true
         "#;
+        let indexing_settings_yaml = "timestamp_field: ts";
         let test_sandbox = TestSandbox::create(
             &pipeline_id.index_id,
             doc_mapping_yaml,
-            "{}",
+            indexing_settings_yaml,
             &["body"],
             None,
         )
@@ -614,11 +625,20 @@ mod tests {
               - name: body
                 type: text
               - name: ts
-                type: i64
+                type: datetime
+                input_formats:
+                - unix_ts_millis
                 fast: true
         "#;
-        let test_sandbox =
-            TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"], None).await?;
+        let indexing_settings_yaml = "timestamp_field: ts";
+        let test_sandbox = TestSandbox::create(
+            index_id,
+            doc_mapping_yaml,
+            indexing_settings_yaml,
+            &["body"],
+            None,
+        )
+        .await?;
         let docs = vec![
             serde_json::json!({"body": "info", "ts": 0 }),
             serde_json::json!({"body": "info", "ts": 0 }),
