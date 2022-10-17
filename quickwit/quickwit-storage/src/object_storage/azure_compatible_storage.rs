@@ -50,7 +50,7 @@ use tracing::instrument;
 use crate::debouncer::DebouncedStorage;
 use crate::{
     MultiPartPolicy, PutPayload, Storage, StorageError, StorageErrorKind, StorageFactory,
-    StorageResolverError, StorageResult,
+    StorageResolverError, StorageResult, STORAGE_METRICS,
 };
 
 /// Azure object storage URI resolver.
@@ -322,7 +322,11 @@ impl Storage for AzureBlobStorage {
                 .into_async_read()
                 .compat();
             let mut body_stream_reader = BufReader::new(chunk_response_body_stream);
-            tokio::io::copy_buf(&mut body_stream_reader, &mut dest_file).await?;
+            let num_bytes_copied =
+                tokio::io::copy_buf(&mut body_stream_reader, &mut dest_file).await?;
+            STORAGE_METRICS
+                .object_storage_download_num_bytes
+                .inc_by(num_bytes_copied);
         }
         dest_file.flush().await?;
         Ok(())

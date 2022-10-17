@@ -84,6 +84,7 @@ impl Handler<MergeScratch> for MergeExecutor {
         merge_scratch: MergeScratch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        let start = Instant::now();
         let merge_op = merge_scratch.merge_operation;
         let indexed_split_opt: Option<IndexedSplit> = match merge_op.operation_type {
             MergeOperationType::Merge => Some(
@@ -108,6 +109,12 @@ impl Handler<MergeScratch> for MergeExecutor {
             }
         };
         if let Some(indexed_split) = indexed_split_opt {
+            info!(
+                merged_num_docs = %indexed_split.split_attrs.num_docs,
+                elapsed_secs = %start.elapsed().as_secs_f32(),
+                operation_type = %merge_op.operation_type,
+                "merge-operation-success"
+            );
             ctx.send_message(
                 &self.merge_packager_mailbox,
                 IndexedSplitBatch {
@@ -118,6 +125,8 @@ impl Handler<MergeScratch> for MergeExecutor {
                 },
             )
             .await?;
+        } else {
+            info!("no-splits-merged");
         }
         Ok(())
     }
@@ -405,8 +414,6 @@ impl MergeExecutor {
             num_delete_tasks = delete_tasks.len()
         );
 
-        info!("delete-task-start");
-        let start = Instant::now();
         let (union_index_meta, split_directories) = open_split_directories(&tantivy_dirs)?;
         let controlled_directory = merge_split_directories(
             union_index_meta,
@@ -417,10 +424,6 @@ impl MergeExecutor {
             ctx,
         )
         .await?;
-        info!(
-            elapsed_secs = start.elapsed().as_secs_f32(),
-            "delete-task-success"
-        );
 
         // This will have the side effect of deleting the directory containing the downloaded split.
         let mut merged_index = Index::open(controlled_directory.clone())?;

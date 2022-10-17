@@ -123,7 +123,7 @@ impl RetentionPolicyExecutor {
                 let message = Execute {
                     index_id: index_metadata.index_id.clone(),
                 };
-                info!(index_id=?index_metadata.index_id, scheduled_in=?next_interval, "retention-policy-shedule-operation");
+                info!(index_id=?index_metadata.index_id, scheduled_in=?next_interval, "retention-policy-schedule-operation");
                 // Inserts & schedule the index's first retention policy execution.
                 self.index_metadatas
                     .insert(index_metadata.index_id.clone(), index_metadata);
@@ -211,7 +211,7 @@ impl Handler<Execute> for RetentionPolicyExecutor {
         }
 
         if let Ok(next_interval) = retention_policy.duration_until_next_evaluation() {
-            info!(index_id=?index_metadata.index_id, scheduled_in=?next_interval, "retention-policy-shedule-operation");
+            info!(index_id=?index_metadata.index_id, scheduled_in=?next_interval, "retention-policy-schedule-operation");
             ctx.schedule_self_msg(next_interval, message).await;
         } else {
             // Since we have failed to schedule next execution for this index,
