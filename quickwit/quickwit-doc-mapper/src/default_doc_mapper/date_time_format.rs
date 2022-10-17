@@ -20,9 +20,76 @@
 use std::fmt::Display;
 use std::str::FromStr;
 
+use ouroboros::self_referencing;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
-use time_fmt::format::time_format_item::parse_to_format_item;
+use time::format_description::FormatItem;
+use time::{OffsetDateTime, PrimitiveDateTime};
+use time_fmt::parse::time_format_item::parse_to_format_item;
+
+/// A date time parser that holds the format specification `Vec<FormatItem>`.
+#[self_referencing]
+pub struct StrptimeParser {
+    format: String,
+    with_timezone: bool,
+    #[borrows(format)]
+    #[covariant]
+    items: Vec<FormatItem<'this>>,
+}
+
+impl StrptimeParser {
+    pub fn make(format_str: &str) -> Result<StrptimeParser, String> {
+        StrptimeParser::try_new(
+            format_str.to_string(),
+            format_str.to_lowercase().contains("%z"),
+            |format: &String| {
+                parse_to_format_item(format).map_err(|err| {
+                    format!("Invalid format specification `{format}`. Error: {err}.")
+                })
+            },
+        )
+    }
+
+    pub fn parse_date_time(&self, date_time_str: &str) -> Result<OffsetDateTime, String> {
+        if *self.borrow_with_timezone() {
+            OffsetDateTime::parse(date_time_str, self.borrow_items()).map_err(|err| err.to_string())
+        } else {
+            PrimitiveDateTime::parse(date_time_str, self.borrow_items())
+                .map(|date| date.assume_utc())
+                .map_err(|err| err.to_string())
+        }
+    }
+}
+
+impl Clone for StrptimeParser {
+    fn clone(&self) -> Self {
+        Self::make(self.borrow_format()).unwrap()
+    }
+}
+
+impl PartialEq for StrptimeParser {
+    fn eq(&self, other: &Self) -> bool {
+        self.borrow_format() == other.borrow_format()
+    }
+}
+
+impl Eq for StrptimeParser {}
+
+impl std::fmt::Debug for StrptimeParser {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("StrptimeParser")
+            .field("with_timezone", &self.borrow_with_timezone())
+            .field("format", &self.borrow_format())
+            .finish()
+    }
+}
+
+impl std::hash::Hash for StrptimeParser {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.borrow_format().hash(state);
+    }
+}
 
 /// Specifies the datetime and unix timestamp formats to use when parsing date strings.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -30,10 +97,7 @@ pub enum DateTimeFormat {
     ISO8601,
     RFC2822,
     RCF3339,
-    Strftime {
-        strftime_format: String,
-        with_timezone: bool,
-    },
+    Strptime(StrptimeParser),
     TimestampSecs,
     TimestampMillis,
     TimestampMicros,
@@ -46,9 +110,7 @@ impl DateTimeFormat {
             DateTimeFormat::ISO8601 => "iso8601",
             DateTimeFormat::RFC2822 => "rfc2822",
             DateTimeFormat::RCF3339 => "rfc3339",
-            DateTimeFormat::Strftime {
-                strftime_format, ..
-            } => strftime_format,
+            DateTimeFormat::Strptime(parser) => parser.borrow_format(),
             DateTimeFormat::TimestampSecs => "unix_ts_secs",
             DateTimeFormat::TimestampMillis => "unix_ts_millis",
             DateTimeFormat::TimestampMicros => "unix_ts_micros",
@@ -68,8 +130,8 @@ impl DateTimeFormat {
 }
 
 impl Display for DateTimeFormat {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.write_str(self.as_str())
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
     }
 }
 
@@ -85,16 +147,7 @@ impl FromStr for DateTimeFormat {
             "unix_ts_millis" => DateTimeFormat::TimestampMillis,
             "unix_ts_micros" => DateTimeFormat::TimestampMicros,
             "unix_ts_nanos" => DateTimeFormat::TimestampNanos,
-            _ => {
-                // Validate the format.
-                let _ = parse_to_format_item(date_time_format_str).map_err(|err| {
-                    format!("Invalid format specification `{date_time_format_str}`. Error: {err}.")
-                })?;
-                DateTimeFormat::Strftime {
-                    strftime_format: date_time_format_str.to_string(),
-                    with_timezone: date_time_format_str.contains("%z"),
-                }
-            }
+            _ => DateTimeFormat::Strptime(StrptimeParser::make(date_time_format_str)?),
         };
         Ok(date_time_format)
     }

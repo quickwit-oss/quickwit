@@ -26,8 +26,8 @@ tantivy = { workspace = true }
 tantivy-query-grammar = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
-time-fmt = "0.3.7"
-time-tz = "0.6.0"
+time-fmt = "0.3.8"
+ouroboros = "0.15.5"
 tracing = { workspace = true }
 typetag = { workspace = true }
 

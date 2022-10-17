@@ -179,10 +179,10 @@ fast: true
 
 The `datetime` type handles dates and datetimes. Quickwit supports multiple input formats configured independently for each field. The following formats are natively supported:
 - `iso8601`, `rfc2822`, `rfc3339`: parse dates using standard ISO and RFC formats.
-- `strftime`: parse dates using the Unix [strftime](https://man7.org/linux/man-pages/man3/strftime.3.html) format with few changes to support things like `%f` for high precision:
-  - ANSI-ISO/POSIX C `strftime`: `%C`, `%d`, `%D`, `%e`, `%F`, `%g`, `%G`, `%h`, `%H`, `%I`, `%j`, `%k`, `%l`, `%m`, `%M`, `%n`, `%R`, `%S`, `%t`, `%T`, `%u`, `%U`, `%V`, `%w`, `%W`, `%y`, `%Y`, `%%`, `%z`, `%Z` `%f`.
-  - Interpreted like C/POSIX locale: `%a`, `%A`, `%b`, `%B`, `%c`, `%p`, `%P`, `%r`, `%x`, `%X`.
-  - Parsed but ignored: `%a`, `%A`, `%U`, `%w`.
+- `strptime`: parse dates using the Unix [strptime](https://man7.org/linux/man-pages/man3/strptime.3.html) format with few changes:
+  - `strptime` format specifiers: `%C`, `%d`, `%D`, `%e`, `%F`, `%g`, `%G`, `%h`, `%H`, `%I`, `%j`, `%k`, `%l`, `%m`, `%M`, `%n`, `%R`, `%S`, `%t`, `%T`, `%u`, `%U`, `%V`, `%w`, `%W`, `%y`, `%Y`, `%%`.
+  - `%f` for milliseconds precision support.
+  - `%z` timezone offsets can be specified as `(+|-)hhmm` or `(+|-)hh:mm`.
 
 - `unix_ts_secs`, `unix_ts_millis`, `unix_ts_micros`, `unix_ts_nanos`: parse Unix timestamps. At most one Unix timestamp format must be specified.
 
@@ -190,6 +190,10 @@ When a `datetime` field is stored as a fast field, the `precision` parameter ind
 
 :::info
 When specifying multiple input formats, the corresponding parsers are attempted in the order they are declared.
+:::
+
+:::warning
+The timezone name format specifier (`%Z`) is not currently supported in `strptime`.
 :::
 
 Example of a mapping for a datetime field:
