@@ -298,6 +298,9 @@ impl IndexingService {
             )
             .await?;
 
+        let max_concurrent_split_uploads_index = (self.max_concurrent_split_uploads / 2).max(1);
+        let max_concurrent_split_uploads_merge =
+            (self.max_concurrent_split_uploads - max_concurrent_split_uploads_index).max(1);
         let pipeline_params = IndexingPipelineParams {
             pipeline_id: pipeline_id.clone(),
             doc_mapper,
@@ -307,7 +310,8 @@ impl IndexingService {
             metastore: self.metastore.clone(),
             storage,
             split_store,
-            max_concurrent_split_uploads: self.max_concurrent_split_uploads,
+            max_concurrent_split_uploads_index,
+            max_concurrent_split_uploads_merge,
             queues_dir_path,
             merge_planner_mailbox,
         };

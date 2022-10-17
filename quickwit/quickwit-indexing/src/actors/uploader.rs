@@ -45,13 +45,21 @@ use crate::models::{
 };
 use crate::split_store::IndexingSplitStore;
 
-/// This semaphore ensures that, at most, `MAX_CONCURRENT_SPLIT_UPLOADS` uploads can happen
-/// concurrently.
+/// The following two semaphores ensures that, we have at most `max_concurrent_split_uploads` split
+/// uploads can happen at the same time, as configured in the `IndexerConfig`.
 ///
-/// This permit applies to all uploader actors. In the future, we might want to have a nicer
-/// granularity, and put that semaphore back into the uploader actor, but have a single uploader
-/// actor for all indexing pipeline.
-static CONCURRENT_UPLOAD_PERMITS: OnceCell<Semaphore> = OnceCell::new();
+/// This "budget" is actually split into two semaphores: one for the indexing pipeline and the merge
+/// pipeline. The idea is that the merge pipeline is by nature a bit irregular, and we don't want it
+/// to stall the indexing pipeline, decreasing its throughput.
+static CONCURRENT_UPLOAD_PERMITS_INDEX: OnceCell<Semaphore> = OnceCell::new();
+static CONCURRENT_UPLOAD_PERMITS_MERGE: OnceCell<Semaphore> = OnceCell::new();
+
+#[derive(Clone, Copy, Debug)]
+pub enum UploaderType {
+    IndexUploader,
+    MergeUploader,
+    DeleteUploader,
+}
 
 /// [`SplitsUpdateMailbox`] wraps either a [`Mailbox<Sequencer>`] or [`Mailbox<Publisher>`].
 /// It makes it possible to send a [`SplitsUpdate`] either to the [`Sequencer`] or directly
@@ -151,7 +159,7 @@ impl SplitsUpdateSender {
 
 #[derive(Clone)]
 pub struct Uploader {
-    actor_name: &'static str,
+    uploader_type: UploaderType,
     metastore: Arc<dyn Metastore>,
     split_store: IndexingSplitStore,
     split_update_mailbox: SplitsUpdateMailbox,
@@ -161,14 +169,14 @@ pub struct Uploader {
 
 impl Uploader {
     pub fn new(
-        actor_name: &'static str,
+        uploader_type: UploaderType,
         metastore: Arc<dyn Metastore>,
         split_store: IndexingSplitStore,
         split_update_mailbox: SplitsUpdateMailbox,
         max_concurrent_split_uploads: usize,
     ) -> Uploader {
         Uploader {
-            actor_name,
+            uploader_type,
             metastore,
             split_store,
             split_update_mailbox,
@@ -181,11 +189,24 @@ impl Uploader {
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<SemaphorePermit<'static>> {
         let _guard = ctx.protect_zone();
-        let concurrent_upload_permits = CONCURRENT_UPLOAD_PERMITS
+        let (concurrent_upload_permits_once_cell, concurrent_upload_permits_gauge) =
+            match self.uploader_type {
+                UploaderType::IndexUploader => (
+                    &CONCURRENT_UPLOAD_PERMITS_INDEX,
+                    &INDEXER_METRICS.concurrent_upload_available_permits_index,
+                ),
+                UploaderType::MergeUploader => (
+                    &CONCURRENT_UPLOAD_PERMITS_MERGE,
+                    &INDEXER_METRICS.concurrent_upload_available_permits_merge,
+                ),
+                UploaderType::DeleteUploader => (
+                    &CONCURRENT_UPLOAD_PERMITS_MERGE,
+                    &INDEXER_METRICS.concurrent_upload_available_permits_merge,
+                ),
+            };
+        let concurrent_upload_permits = concurrent_upload_permits_once_cell
             .get_or_init(|| Semaphore::const_new(self.max_concurrent_split_uploads));
-        INDEXER_METRICS
-            .concurrent_upload_available_permits
-            .set(concurrent_upload_permits.available_permits() as i64);
+        concurrent_upload_permits_gauge.set(concurrent_upload_permits.available_permits() as i64);
         concurrent_upload_permits
             .acquire()
             .await
@@ -220,7 +241,7 @@ impl Actor for Uploader {
     }
 
     fn name(&self) -> String {
-        self.actor_name.to_string()
+        format!("{:?}", self.uploader_type)
     }
 }
 
@@ -404,7 +425,7 @@ mod tests {
         let split_store =
             IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
         let uploader = Uploader::new(
-            "TestUploader",
+            UploaderType::IndexUploader,
             Arc::new(mock_metastore),
             split_store,
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
@@ -504,7 +525,7 @@ mod tests {
         let split_store =
             IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
         let uploader = Uploader::new(
-            "TestUploader",
+            UploaderType::IndexUploader,
             Arc::new(mock_metastore),
             split_store,
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
@@ -630,7 +651,7 @@ mod tests {
         let split_store =
             IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
         let uploader = Uploader::new(
-            "TestUploader",
+            UploaderType::IndexUploader,
             Arc::new(mock_metastore),
             split_store,
             SplitsUpdateMailbox::Publisher(publisher_mailbox),
