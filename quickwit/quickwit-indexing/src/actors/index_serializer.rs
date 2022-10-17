@@ -19,13 +19,14 @@
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::metrics::InstrumentHistogramMetric;
 use quickwit_common::runtimes::RuntimeType;
 use tokio::runtime::Handle;
 use tracing::instrument;
 
 use crate::actors::Packager;
+use crate::metrics::INDEXER_METRICS;
 use crate::models::{IndexedSplit, IndexedSplitBatch, IndexedSplitBatchBuilder};
-use crate::InstrumentMetric;
 
 /// The index serializer takes a non-serialized split,
 /// and serializes it before passing it to the packager.
@@ -89,7 +90,7 @@ impl Handler<IndexedSplitBatchBuilder> for IndexSerializer {
             publish_lock: batch_builder.publish_lock,
         };
         ctx.send_message(&self.packager_mailbox, indexed_split_batch)
-            .instrument_waiting_time(&["packager"])
+            .measure_time(&INDEXER_METRICS.waiting_time_to_send_message, &["packager"])
             .await?;
         Ok(())
     }

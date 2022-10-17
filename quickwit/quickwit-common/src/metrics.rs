@@ -17,6 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::{pin::Pin, task::{Poll, Context}};
+
+use futures::Future;
+use pin_project_lite::pin_project;
 use prometheus::{Encoder, HistogramOpts, Opts, TextEncoder};
 pub use prometheus::{Histogram, HistogramTimer, HistogramVec, IntCounter, IntGauge};
 
@@ -74,3 +78,39 @@ impl Drop for GaugeGuard {
         self.0.dec();
     }
 }
+pub trait InstrumentHistogramMetric: Sized {
+    fn measure_time(self, metric: &HistogramVec, labels: &[&str]) -> InstrumentedMetric<Self> {
+        let histogram_timer = metric.with_label_values(labels).start_timer();
+        InstrumentedMetric {
+            inner: self,
+            histogram_timer: Some(histogram_timer),
+        }
+    }
+}
+
+pin_project! {
+    pub struct InstrumentedMetric<T> {
+        #[pin]
+        inner: T,
+        #[pin]
+        histogram_timer: Option<HistogramTimer>,
+    }
+}
+
+impl<T: Future> Future for InstrumentedMetric<T> {
+    type Output = T::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut this = self.project();
+        let output = match this.inner.poll(cx) {
+            Poll::Pending => return Poll::Pending,
+            Poll::Ready(output) => output,
+        };
+        if let Some(histogram_timer) = this.histogram_timer.take() {
+            histogram_timer.observe_duration();
+        };
+        Poll::Ready(output)
+    }
+}
+
+impl<T: Future + Sized> InstrumentHistogramMetric for T {}

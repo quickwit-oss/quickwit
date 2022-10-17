@@ -23,14 +23,15 @@ use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
 use quickwit_actors::{Actor, ActorContext, Handler, Mailbox};
+use quickwit_common::metrics::InstrumentHistogramMetric;
 use quickwit_metastore::Metastore;
 use serde::Serialize;
 use tracing::{info, instrument};
 
 use crate::actors::MergePlanner;
+use crate::metrics::INDEXER_METRICS;
 use crate::models::{NewSplits, SplitsUpdate};
 use crate::source::{SourceActor, SuggestTruncate};
-use crate::InstrumentMetric;
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct PublisherCounters {
@@ -167,7 +168,7 @@ impl Handler<SplitsUpdate> for Publisher {
                         source_mailbox,
                         SuggestTruncate(checkpoint.source_delta.get_source_checkpoint()),
                     )
-                    .instrument_waiting_time(&["source"])
+                    .measure_time(&INDEXER_METRICS.waiting_time_to_send_message, &["source"])
                     .await;
             }
         }
@@ -179,7 +180,7 @@ impl Handler<SplitsUpdate> for Publisher {
         if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
             let _ = ctx
                 .send_message(merge_planner_mailbox, NewSplits { new_splits })
-                .instrument_waiting_time(&["merge_planner"])
+                .measure_time(&INDEXER_METRICS.waiting_time_to_send_message, &["merge_planner"])
                 .await;
         }
 

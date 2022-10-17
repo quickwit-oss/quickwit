@@ -39,8 +39,6 @@ tokio-stream = { workspace = true }
 tracing = { workspace = true }
 ulid = { workspace = true }
 
-pin-project-lite = "0.2"
-
 quickwit-actors = { workspace = true }
 quickwit-aws = { workspace = true }
 quickwit-common = { workspace = true }

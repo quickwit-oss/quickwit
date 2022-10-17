@@ -27,6 +27,7 @@ use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::metrics::InstrumentHistogramMetric;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_directories::write_hotcache;
 use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
@@ -44,10 +45,10 @@ const MAX_VALUES_PER_TAG_FIELD: usize = if cfg!(any(test, feature = "testsuite")
 };
 
 use crate::actors::Uploader;
+use crate::metrics::INDEXER_METRICS;
 use crate::models::{
     IndexedSplit, IndexedSplitBatch, PackagedSplit, PackagedSplitBatch, ScratchDirectory,
 };
-use crate::InstrumentMetric;
 
 /// The role of the packager is to get an index writer and
 /// produce a split file.
@@ -166,7 +167,7 @@ impl Handler<IndexedSplitBatch> for Packager {
                 batch.batch_parent_span,
             ),
         )
-        .instrument_waiting_time(&["uploader"])
+        .measure_time(&INDEXER_METRICS.waiting_time_to_send_message, &["uploader"])
         .await?;
         fail_point!("packager:after");
         Ok(())

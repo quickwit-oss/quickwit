@@ -23,12 +23,14 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::metrics::InstrumentHistogramMetric;
 use quickwit_metastore::SplitMetadata;
 use tracing::info;
 
 use crate::actors::MergeSplitDownloader;
+use crate::metrics::INDEXER_METRICS;
 use crate::models::{IndexingPipelineId, NewSplits};
-use crate::{InstrumentMetric, MergePolicy};
+use crate::MergePolicy;
 
 /// The merge planner decides when to start a merge task.
 pub struct MergePlanner {
@@ -142,7 +144,7 @@ impl MergePlanner {
                 for merge_operation in merge_operations {
                     info!(merge_operation=?merge_operation, "Planned merge operation.");
                     ctx.send_message(&self.merge_split_downloader_mailbox, merge_operation)
-                        .instrument_waiting_time(&["merge_split_downloader"])
+                        .measure_time(&INDEXER_METRICS.waiting_time_to_send_message, &["merge_split_downloader"])
                         .await?;
                 }
             }

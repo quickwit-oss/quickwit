@@ -28,6 +28,7 @@ use fail::fail_point;
 use fnv::FnvHashMap;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::metrics::InstrumentHistogramMetric;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::{DocMapper, SortBy, QUICKWIT_TOKENIZER_MANAGER};
@@ -42,11 +43,11 @@ use tracing::{info, info_span, Instrument, Span};
 use ulid::Ulid;
 
 use crate::actors::IndexSerializer;
+use crate::metrics::INDEXER_METRICS;
 use crate::models::{
     CommitTrigger, IndexedSplitBatchBuilder, IndexedSplitBuilder, IndexingDirectory,
     IndexingPipelineId, NewPublishLock, PreparedDoc, PreparedDocBatch, PublishLock,
 };
-use crate::InstrumentMetric;
 
 #[derive(Debug)]
 struct CommitTimeout {
@@ -501,7 +502,7 @@ impl Indexer {
                 commit_trigger,
             },
         )
-        .instrument_waiting_time(&["index_serializer"])
+        .measure_time(&INDEXER_METRICS.waiting_time_to_send_message, &["index_serializer"])
         .instrument(info_span!(parent: span_id, "send_to_serializer"))
         .await?;
         self.counters.num_docs_in_workbench = 0;
