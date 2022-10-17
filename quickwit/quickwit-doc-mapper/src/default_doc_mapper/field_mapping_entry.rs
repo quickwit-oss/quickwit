@@ -315,6 +315,7 @@ fn deserialize_mapping_type(
             }
             Ok(FieldMappingType::Json(json_options, cardinality))
         }
+        Type::IpAddr => unimplemented!("IpAddr are not supported in quickwit yet."),
     }
 }
 
