@@ -64,7 +64,7 @@ use quickwit_storage::{StorageErrorKind, StorageResult};
 use tantivy::directory::MmapDirectory;
 use tantivy::Directory;
 use tokio::sync::Mutex;
-use tracing::{error, warn};
+use tracing::warn;
 use ulid::Ulid;
 
 use super::SplitStoreQuota;
@@ -381,7 +381,7 @@ impl LocalSplitStore {
             Ok(Some(split_path)) => Ok(Some(split_path)),
             Ok(None) => Ok(None),
             Err(storage_err) if storage_err.kind() == StorageErrorKind::DoesNotExist => {
-                error!(split_id = split_id, error = ?storage_err, "Cached split file/folder is missing.");
+                warn!(split_id = split_id, error = ?storage_err, "Cached split file/folder is missing.");
                 split_store_lock.split_folders.remove(&split_ulid);
                 Ok(None)
             }
