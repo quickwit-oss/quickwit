@@ -18,7 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_counter, new_histogram_vec, new_gauge, HistogramVec, IntCounter, IntGauge};
+use quickwit_common::metrics::{
+    new_counter, new_gauge, new_histogram_vec, HistogramVec, IntCounter, IntGauge,
+};
 
 pub struct IndexerMetrics {
     pub parsing_errors_num_docs_total: IntCounter,
