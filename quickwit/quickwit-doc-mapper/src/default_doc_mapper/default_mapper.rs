@@ -178,7 +178,9 @@ fn list_required_fields_for_node(node: &MappingNode) -> Vec<Field> {
 fn list_required_fields(field_mappings: &MappingTree) -> Vec<Field> {
     match field_mappings {
         MappingTree::Leaf(leaf) => {
-            if leaf.get_type().is_fast_field() {
+            // single value fast fields are required since null handling in tantivy is broken (will
+            // be fixed with https://github.com/quickwit-oss/tantivy/issues/1575)
+            if leaf.get_type().is_single_value_fast_field() {
                 vec![leaf.field()]
             } else {
                 Vec::new()
