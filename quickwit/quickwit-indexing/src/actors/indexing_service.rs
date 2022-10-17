@@ -34,12 +34,11 @@ use quickwit_ingest_api::{get_ingest_api_service, QUEUES_DIR_NAME};
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
-use quickwit_storage::{Storage, StorageError, StorageResolverError, StorageUriResolver};
+use quickwit_storage::{StorageError, StorageResolverError, StorageUriResolver};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{error, info};
 
-use crate::merge_policy::MergePolicy;
 use crate::models::{
     DetachPipeline, IndexingDirectory, IndexingPipelineId, Observe, ObservePipeline,
     ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
@@ -255,7 +254,11 @@ impl IndexingService {
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let merge_policy =
             crate::merge_policy::merge_policy_from_settings(&index_metadata.indexing_settings);
-        let split_store = self.create_split_store(storage.clone(), merge_policy);
+        let split_store = IndexingSplitStore::new(
+            storage.clone(),
+            merge_policy,
+            self.local_split_store.clone(),
+        );
 
         let pipeline_params = IndexingPipelineParams::try_new(
             pipeline_id.clone(),
@@ -386,18 +389,6 @@ impl IndexingService {
         self.indexing_directories
             .insert(key, indexing_directory.downgrade());
         Ok(indexing_directory)
-    }
-
-    fn create_split_store(
-        &mut self,
-        storage: Arc<dyn Storage>,
-        merge_policy: Arc<dyn MergePolicy>,
-    ) -> IndexingSplitStore {
-        IndexingSplitStore::new(
-            storage.clone(),
-            merge_policy,
-            self.local_split_store.clone(),
-        )
     }
 }
 

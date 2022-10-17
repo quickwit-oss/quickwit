@@ -36,9 +36,7 @@ pub async fn empty_dir<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
 
 /// Helper function to get the cache path.
 pub fn get_cache_directory_path(data_dir_path: &Path) -> PathBuf {
-    data_dir_path
-        .join("cache")
-        .join("splits")
+    data_dir_path.join("cache").join("splits")
 }
 
 #[cfg(test)]
