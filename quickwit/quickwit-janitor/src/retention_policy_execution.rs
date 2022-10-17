@@ -39,12 +39,12 @@ pub async fn run_execute_retention_policy(
     index_id: &str,
     metastore: Arc<dyn Metastore>,
     retention_policy: &RetentionPolicy,
-    ctx_opt: Option<&ActorContext<RetentionPolicyExecutor>>,
+    ctx: &ActorContext<RetentionPolicyExecutor>,
 ) -> anyhow::Result<Vec<SplitMetadata>> {
     // Select published splits and filter for expiration.
     let current_date_time = OffsetDateTime::now_utc();
-    let expired_splits: Vec<SplitMetadata> = metastore
-        .list_splits(index_id, SplitState::Published, None, None)
+    let expired_splits: Vec<SplitMetadata> = ctx
+        .protect_future(metastore.list_splits(index_id, SplitState::Published, None, None))
         .await?
         .into_iter()
         // TODO: possibly move this in DB query
@@ -53,9 +53,6 @@ pub async fn run_execute_retention_policy(
         })
         .map(|meta| meta.split_metadata)
         .collect();
-    if let Some(ctx) = ctx_opt {
-        ctx.record_progress();
-    }
 
     if expired_splits.is_empty() {
         return Ok(expired_splits);
@@ -64,8 +61,7 @@ pub async fn run_execute_retention_policy(
     info!(index_id=%index_id, num_splits=%expired_splits.len(), "retention-policy-mark-splits-for-deletion");
     // Change all expired splits state to MarkedForDeletion.
     let split_ids: Vec<&str> = expired_splits.iter().map(|meta| meta.split_id()).collect();
-    metastore
-        .mark_splits_for_deletion(index_id, &split_ids)
+    ctx.protect_future(metastore.mark_splits_for_deletion(index_id, &split_ids))
         .await?;
 
     Ok(expired_splits)
