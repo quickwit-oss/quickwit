@@ -140,7 +140,7 @@ impl IndexingSplitStore {
         self.inner
             .remote_storage
             .put(&key, put_payload)
-            .instrument(info_span!("store_split_in_remote_rstorage", split=?split.split_id(), is_mature=is_mature, num_bytes=split_num_bytes))
+            .instrument(info_span!("store_split_in_remote_storage", split=?split.split_id(), is_mature=is_mature, num_bytes=split_num_bytes))
             .await
             .with_context(|| {
                 format!(
@@ -218,7 +218,7 @@ impl IndexingSplitStore {
         self.inner
             .remote_storage
             .copy_to_file(&path, &dest_filepath)
-            .instrument(info_span!("fetch_split_from_remote_rstorage", path=?path))
+            .instrument(info_span!("fetch_split_from_remote_storage", path=?path))
             .await?;
         get_tantivy_directory_from_split_bundle(&dest_filepath)
     }
