@@ -39,7 +39,7 @@
 // The cache size is limited by 3 things:
 // - a maximum number of splits as defined in the `SplitStoreQuota`.
 // - a maximum number of bytes as defined in the `SplitStoreQuota`.
-// - finally, we evince older splits to make sure that newest split and the oldest
+// - finally, we evict older splits to make sure that the newest split and the oldest
 // split only differ by at most `SPLIT_MAX_AGE`.
 //
 // The point of this final rule invariant is to make sure that the disk space will be
