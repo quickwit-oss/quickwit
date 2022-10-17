@@ -21,7 +21,6 @@ use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Instant;
 
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
@@ -326,6 +325,11 @@ impl MergeExecutor {
         }
     }
 
+    #[instrument(
+        level = "info"
+        name = "merge",
+        skip_all
+    )]
     async fn process_merge(
         &mut self,
         merge_split_id: String,
@@ -362,6 +366,11 @@ impl MergeExecutor {
         })
     }
 
+    #[instrument(
+        level = "info"
+        name = "delete_and_merge",
+        skip_all
+    )]
     async fn process_delete_and_merge(
         &mut self,
         merge_split_id: String,
@@ -405,8 +414,6 @@ impl MergeExecutor {
             num_delete_tasks = delete_tasks.len()
         );
 
-        info!("delete-task-start");
-        let start = Instant::now();
         let (union_index_meta, split_directories) = open_split_directories(&tantivy_dirs)?;
         let controlled_directory = merge_split_directories(
             union_index_meta,
@@ -417,10 +424,6 @@ impl MergeExecutor {
             ctx,
         )
         .await?;
-        info!(
-            elapsed_secs = start.elapsed().as_secs_f32(),
-            "delete-task-success"
-        );
 
         // This will have the side effect of deleting the directory containing the downloaded split.
         let mut merged_index = Index::open(controlled_directory.clone())?;
