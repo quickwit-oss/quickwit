@@ -143,29 +143,24 @@ async fn test_cmd_create() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_cmd_create_on_existing_index() -> Result<()> {
+async fn test_cmd_create_on_existing_index() {
     let index_id = append_random_suffix("test-create-cmd--index-already-exists");
-    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
 
-    let config_uri = "file://".to_string() + test_env.resource_files["config"].to_str().unwrap();
-    let index_config_uri =
-        "file://".to_string() + test_env.resource_files["index_config"].to_str().unwrap();
     let args = CreateIndexArgs {
-        config_uri: Uri::new(config_uri),
-        index_config_uri: Uri::new(index_config_uri),
+        config_uri: test_env.config_uri,
+        index_config_uri: test_env.index_config_uri,
         data_dir: None,
         overwrite: false,
         assume_yes: false,
     };
 
-    let res = create_index_cli(args).await.unwrap_err();
+    let error = create_index_cli(args).await.unwrap_err();
     assert_eq!(
-        res.root_cause().downcast_ref::<MetastoreError>(),
-        Some(&MetastoreError::IndexAlreadyExists { index_id })
+        error.root_cause().downcast_ref::<MetastoreError>().unwrap(),
+        &MetastoreError::IndexAlreadyExists { index_id }
     );
-
-    Ok(())
 }
 
 #[test]
