@@ -73,7 +73,7 @@ impl QuickwitDateTimeOptions {
                 let timestamp = number.as_i64().ok_or_else(|| {
                     format!("Failed to parse datetime. Expected an integer, got `{number:?}`.")
                 })?;
-                parse_timestamp(timestamp, &self.input_formats.0)?
+                parse_timestamp(timestamp)?
             }
             JsonValue::String(date_time_str) => {
                 parse_date_time(&date_time_str, &self.input_formats.0)?
@@ -94,7 +94,7 @@ pub struct InputFormats(Vec<DateTimeFormat>);
 
 impl Default for InputFormats {
     fn default() -> Self {
-        Self(vec![DateTimeFormat::RCF3339])
+        Self(vec![DateTimeFormat::RCF3339, DateTimeFormat::Timestamp])
     }
 }
 
@@ -105,16 +105,6 @@ impl<'de> Deserialize<'de> for InputFormats {
 
         if date_time_formats.is_empty() {
             return Ok(InputFormats::default());
-        }
-        if date_time_formats
-            .iter()
-            .filter(|dt_fmt| dt_fmt.is_timestamp())
-            .count()
-            > 1
-        {
-            return Err(serde::de::Error::custom(
-                "At most one unix timestamp format must be specified.",
-            ));
         }
         Ok(InputFormats(date_time_formats.into_iter().collect()))
     }
@@ -216,7 +206,7 @@ mod tests {
         assert_eq!(date_time_options, QuickwitDateTimeOptions::default());
         assert_eq!(
             date_time_options.input_formats.0,
-            &[DateTimeFormat::RCF3339]
+            &[DateTimeFormat::RCF3339, DateTimeFormat::Timestamp]
         );
         assert_eq!(date_time_options.precision, DateTimePrecision::Seconds);
         assert!(date_time_options.indexed);
@@ -283,22 +273,18 @@ mod tests {
         {
             let input_formats_json = r#"[]"#;
             let input_formats: InputFormats = serde_json::from_str(input_formats_json).unwrap();
-            assert_eq!(input_formats.0, &[DateTimeFormat::RCF3339]);
-        }
-        {
-            let input_formats_json = r#"["rfc3339", "unix_ts_secs", "unix_ts_secs"]"#;
-            let input_formats: InputFormats = serde_json::from_str(input_formats_json).unwrap();
             assert_eq!(
                 input_formats.0,
-                &[DateTimeFormat::RCF3339, DateTimeFormat::TimestampSecs]
+                &[DateTimeFormat::RCF3339, DateTimeFormat::Timestamp]
             );
         }
         {
-            let input_formats_json = r#"["rfc3339", "unix_ts_secs", "unix_ts_millis"]"#;
-            let error = serde_json::from_str::<InputFormats>(input_formats_json)
-                .unwrap_err()
-                .to_string();
-            assert!(error.contains("At most one unix timestamp format"));
+            let input_formats_json = r#"["rfc3339", "unix_timestamp", "unix_timestamp"]"#;
+            let input_formats: InputFormats = serde_json::from_str(input_formats_json).unwrap();
+            assert_eq!(
+                input_formats.0,
+                &[DateTimeFormat::RCF3339, DateTimeFormat::Timestamp]
+            );
         }
     }
 
@@ -316,10 +302,7 @@ mod tests {
     #[test]
     fn test_date_time_options_parse_json() {
         let date_time_options = QuickwitDateTimeOptions {
-            input_formats: InputFormats(vec![
-                DateTimeFormat::RCF3339,
-                DateTimeFormat::TimestampSecs,
-            ]),
+            input_formats: InputFormats(vec![DateTimeFormat::RCF3339, DateTimeFormat::Timestamp]),
             ..Default::default()
         };
         let expected_timestamp = datetime!(2012-05-21 12:09:14 UTC).unix_timestamp();

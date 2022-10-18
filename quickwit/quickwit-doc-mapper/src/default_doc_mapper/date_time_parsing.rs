@@ -24,6 +24,12 @@ use time::OffsetDateTime;
 
 use super::date_time_format::DateTimeFormat;
 
+// Minimum supported timestamp value in seconds (13 Apr 1972 23:59:55 GMT).
+const MIN_TIMESTAMP_SECONDS: i64 = 72_057_595;
+
+// Maximum supported timestamp value in seconds (16 Mar 2242 12:56:31 GMT).
+const MAX_TIMESTAMP_SECONDS: i64 = 8_589_934_591;
+
 pub(super) fn parse_date_time(
     date_time_str: &str,
     date_time_formats: &[DateTimeFormat],
@@ -66,28 +72,40 @@ fn parse_rfc3339(value: &str) -> Result<OffsetDateTime, String> {
     OffsetDateTime::parse(value, &Rfc3339).map_err(|error| error.to_string())
 }
 
-/// Returns the appropriate tantivy datetime for the specified unix timestamp.
-pub(super) fn parse_timestamp(
-    timestamp: i64,
-    date_time_formats: &[DateTimeFormat],
-) -> Result<TantivyDateTime, String> {
-    for date_time_format in date_time_formats {
-        let date_time = match date_time_format {
-            DateTimeFormat::TimestampSecs => TantivyDateTime::from_timestamp_secs(timestamp),
-            DateTimeFormat::TimestampMillis => TantivyDateTime::from_timestamp_millis(timestamp),
-            DateTimeFormat::TimestampMicros => TantivyDateTime::from_timestamp_micros(timestamp),
-            DateTimeFormat::TimestampNanos => {
-                TantivyDateTime::from_timestamp_micros(timestamp / 1_000)
-            }
-            _ => continue,
-        };
-        return Ok(date_time);
+/// Returns the appropriate [`TantivyDateTime`] for the specified unix timestamp.
+///
+/// This function will choose the timestamp precision based on the value range.
+/// The tradeoff is that we can only support dates ranging:
+/// - from `13 Apr 1972 23:59:55`: smallest value that can be converted to all precisions.
+/// - to: `16 Mar 2242 12:56:31`: greatest value that can be converted to all precisions.
+pub(super) fn parse_timestamp(timestamp: i64) -> Result<TantivyDateTime, String> {
+    const MIN_TIMESTAMP_MILLIS: i64 = MIN_TIMESTAMP_SECONDS * 1000;
+    const MAX_TIMESTAMP_MILLIS: i64 = MAX_TIMESTAMP_SECONDS * 1000;
+
+    const MIN_TIMESTAMP_MICROS: i64 = MIN_TIMESTAMP_SECONDS * 1_000_000;
+    const MAX_TIMESTAMP_MICROS: i64 = MAX_TIMESTAMP_SECONDS * 1_000_000;
+
+    const MIN_TIMESTAMP_NANOS: i64 = MIN_TIMESTAMP_SECONDS * 1_000_000_000;
+    const MAX_TIMESTAMP_NANOS: i64 = MAX_TIMESTAMP_SECONDS * 1_000_000_000;
+
+    match timestamp {
+        MIN_TIMESTAMP_SECONDS..=MAX_TIMESTAMP_SECONDS => {
+            Ok(TantivyDateTime::from_timestamp_secs(timestamp))
+        }
+        MIN_TIMESTAMP_MILLIS..=MAX_TIMESTAMP_MILLIS => {
+            Ok(TantivyDateTime::from_timestamp_millis(timestamp))
+        }
+        MIN_TIMESTAMP_MICROS..=MAX_TIMESTAMP_MICROS => {
+            Ok(TantivyDateTime::from_timestamp_micros(timestamp))
+        }
+        MIN_TIMESTAMP_NANOS..=MAX_TIMESTAMP_NANOS => {
+            Ok(TantivyDateTime::from_timestamp_micros(timestamp / 1_000))
+        }
+        _ => Err(format!(
+            "Failed to parse unix timestamp `{timestamp}`. Quickwit only support timestamp values \
+             ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`."
+        )),
     }
-    Err(format!(
-        "Failed to parse unix timestamp `{timestamp}`. No unix timestamp format is specified for \
-         the field. Allowed formats are: `unix_ts_secs`, `unix_ts_millis`, `unix_ts_micros`, and \
-         `unix_ts_nanos`.",
-    ))
 }
 
 /// Formats the specified timestamp as a RFC3339 date string.
@@ -237,27 +255,103 @@ mod tests {
         let now = time::OffsetDateTime::now_utc();
         {
             let unix_ts_secs = now.unix_timestamp();
-            let date_time =
-                parse_timestamp(unix_ts_secs, &[DateTimeFormat::TimestampSecs]).unwrap();
+            let date_time = parse_timestamp(unix_ts_secs).unwrap();
             assert_eq!(date_time.into_timestamp_secs(), unix_ts_secs);
         }
         {
             let unix_ts_millis = (now.unix_timestamp_nanos() / 1_000_000) as i64;
-            let date_time =
-                parse_timestamp(unix_ts_millis, &[DateTimeFormat::TimestampMillis]).unwrap();
+            let date_time = parse_timestamp(unix_ts_millis).unwrap();
             assert_eq!(date_time.into_timestamp_millis(), unix_ts_millis);
         }
         {
             let unix_ts_micros = (now.unix_timestamp_nanos() / 1_000) as i64;
-            let date_time =
-                parse_timestamp(unix_ts_micros, &[DateTimeFormat::TimestampMicros]).unwrap();
+            let date_time = parse_timestamp(unix_ts_micros).unwrap();
             assert_eq!(date_time.into_timestamp_micros(), unix_ts_micros);
         }
         {
             let unix_ts_nanos = now.unix_timestamp_nanos() as i64;
-            let date_time =
-                parse_timestamp(unix_ts_nanos, &[DateTimeFormat::TimestampNanos]).unwrap();
+            let date_time = parse_timestamp(unix_ts_nanos).unwrap();
             assert_eq!(date_time.into_timestamp_micros(), unix_ts_nanos / 1_000);
+        }
+        {
+            let min_supported_date =
+                OffsetDateTime::parse("1972-04-13T23:59:55.00Z", &Rfc3339).unwrap();
+            let parsed_date_time = parse_timestamp(min_supported_date.unix_timestamp()).unwrap();
+            assert_eq!(
+                parsed_date_time.into_timestamp_secs(),
+                min_supported_date.unix_timestamp()
+            );
+            assert_eq!(
+                parsed_date_time.into_timestamp_micros(),
+                min_supported_date.unix_timestamp_nanos() as i64 / 1_000
+            );
+        }
+        {
+            let max_supported_date =
+                OffsetDateTime::parse("2242-03-16T12:56:31.00Z", &Rfc3339).unwrap();
+            let parsed_date_time = parse_timestamp(max_supported_date.unix_timestamp()).unwrap();
+            assert_eq!(
+                parsed_date_time.into_timestamp_secs(),
+                max_supported_date.unix_timestamp()
+            );
+            assert_eq!(
+                parsed_date_time.into_timestamp_micros(),
+                max_supported_date.unix_timestamp_nanos() as i64 / 1_000
+            );
+        }
+        {
+            let less_than_supported_date = MIN_TIMESTAMP_SECONDS - 1;
+            let parse_err = parse_timestamp(less_than_supported_date).unwrap_err();
+            assert!(parse_err.contains("Failed to parse unix timestamp"));
+        }
+        {
+            let greater_than_supported_date = MAX_TIMESTAMP_SECONDS + 1;
+            let parse_err = parse_timestamp(greater_than_supported_date).unwrap_err();
+            assert!(parse_err.contains("Failed to parse unix timestamp"));
+        }
+        {
+            let unix_epoch = 0;
+            let parse_err = parse_timestamp(unix_epoch).unwrap_err();
+            assert!(parse_err.contains("Failed to parse unix timestamp"));
+
+            let parse_err = parse_timestamp(MIN_TIMESTAMP_SECONDS << 7).unwrap_err();
+            assert!(parse_err.contains("Failed to parse unix timestamp"));
+
+            let parse_err = parse_timestamp(MIN_TIMESTAMP_SECONDS << 17).unwrap_err();
+            assert!(parse_err.contains("Failed to parse unix timestamp"));
+
+            let parse_err = parse_timestamp(MIN_TIMESTAMP_SECONDS << 27).unwrap_err();
+            assert!(parse_err.contains("Failed to parse unix timestamp"));
+        }
+    }
+
+    #[test]
+    fn test_parse_timestamp_min_max_values() {
+        {
+            let min_ts_millis = MIN_TIMESTAMP_SECONDS * 1_000;
+            let date_time = parse_timestamp(min_ts_millis).unwrap();
+            assert_eq!(date_time.into_timestamp_millis(), min_ts_millis);
+
+            let min_ts_micros = MIN_TIMESTAMP_SECONDS * 1_000_000;
+            let date_time = parse_timestamp(min_ts_micros).unwrap();
+            assert_eq!(date_time.into_timestamp_micros(), min_ts_micros);
+
+            let min_ts_nanos = MIN_TIMESTAMP_SECONDS * 1_000_000_000;
+            let date_time = parse_timestamp(min_ts_nanos).unwrap();
+            assert_eq!(date_time.into_timestamp_micros() * 1000, min_ts_nanos);
+        }
+        {
+            let max_ts_seconds = MAX_TIMESTAMP_SECONDS;
+            let date_time = parse_timestamp(max_ts_seconds).unwrap();
+            assert_eq!(date_time.into_timestamp_secs(), max_ts_seconds);
+
+            let max_ts_millis = MAX_TIMESTAMP_SECONDS * 1_000;
+            let date_time = parse_timestamp(max_ts_millis).unwrap();
+            assert_eq!(date_time.into_timestamp_millis(), max_ts_millis);
+
+            let max_ts_micros = MAX_TIMESTAMP_SECONDS * 1_000_000;
+            let date_time = parse_timestamp(max_ts_micros).unwrap();
+            assert_eq!(date_time.into_timestamp_micros(), max_ts_micros);
         }
     }
 

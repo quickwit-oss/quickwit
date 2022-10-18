@@ -35,7 +35,7 @@ mod split_attrs;
 pub use indexed_split::{
     CommitTrigger, IndexedSplit, IndexedSplitBatch, IndexedSplitBatchBuilder, IndexedSplitBuilder,
 };
-pub use indexing_directory::{IndexingDirectory, WeakIndexingDirectory, CACHE};
+pub use indexing_directory::{IndexingDirectory, WeakIndexingDirectory};
 pub use indexing_pipeline_id::IndexingPipelineId;
 pub use indexing_service_message::{
     DetachPipeline, ObservePipeline, ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline,

@@ -216,33 +216,26 @@ impl IndexingPipeline {
         self.kill_switch = KillSwitch::default();
 
         let split_store = self.params.split_store.clone();
-        // TODO: We should not depend on split store when merge pipeline is refactored.
-        // merge pipeline should have been spawned at this point, we only get the handles.
-        let merge_policy = split_store.get_merge_policy();
+        let merge_policy =
+            crate::merge_policy::merge_policy_from_settings(&self.params.indexing_settings);
         info!(
             index_id=%self.params.pipeline_id.index_id,
             source_id=%self.params.pipeline_id.source_id,
             pipeline_ord=%self.params.pipeline_id.pipeline_ord,
             root_dir=%self.params.indexing_directory.path().display(),
-            merge_policy=?merge_policy,
             "Spawning indexing pipeline.",
         );
-        let published_splits = self
-            .params
-            .metastore
-            .list_splits(
+        let published_splits = ctx
+            .protect_future(self.params.metastore.list_splits(
                 &self.params.pipeline_id.index_id,
                 SplitState::Published,
                 None,
                 None,
-            )
+            ))
             .await?
             .into_iter()
             .map(|split| split.split_metadata)
             .collect::<Vec<_>>();
-        split_store
-            .remove_dangling_splits(&published_splits)
-            .await?;
 
         let (merge_planner_mailbox, merge_planner_inbox) =
             create_mailbox::<MergePlanner>("MergePlanner".to_string(), QueueCapacity::Unbounded);

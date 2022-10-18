@@ -18,15 +18,14 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use quickwit_common::fs::empty_dir;
+use quickwit_common::fs::{empty_dir, get_cache_directory_path};
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, QuickwitConfig};
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
-use quickwit_indexing::models::CACHE;
 use quickwit_janitor::{
     delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
 };
@@ -302,27 +301,12 @@ impl IndexService {
     }
 }
 
-/// Helper function to get the cache path.
-pub fn get_cache_directory_path(data_dir_path: &Path, index_id: &str, source_id: &str) -> PathBuf {
-    data_dir_path
-        .join(INDEXING_DIR_NAME)
-        .join(index_id)
-        .join(source_id)
-        .join(CACHE)
-}
-
 /// Clears the cache directory of a given source.
 ///
 /// * `data_dir_path` - Path to directory where data (tmp data, splits kept for caching purpose) is
 ///   persisted.
-/// * `index_id` - The target index Id.
-/// * `source_id` -  The source Id.
-pub async fn clear_cache_directory(
-    data_dir_path: &Path,
-    index_id: String,
-    source_id: String,
-) -> anyhow::Result<()> {
-    let cache_directory_path = get_cache_directory_path(data_dir_path, &index_id, &source_id);
+pub async fn clear_cache_directory(data_dir_path: &Path) -> anyhow::Result<()> {
+    let cache_directory_path = get_cache_directory_path(data_dir_path);
     info!(path = %cache_directory_path.display(), "Clearing cache directory.");
     empty_dir(&cache_directory_path).await?;
     Ok(())

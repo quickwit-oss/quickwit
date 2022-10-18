@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_counter, IntCounter};
+use quickwit_common::metrics::{new_counter, new_gauge, IntCounter, IntGauge};
 
 pub struct IndexerMetrics {
     pub parsing_errors_num_docs_total: IntCounter,
@@ -27,6 +27,7 @@ pub struct IndexerMetrics {
     pub parsing_errors_num_bytes_total: IntCounter,
     pub missing_field_num_bytes_total: IntCounter,
     pub valid_num_bytes_total: IntCounter,
+    pub concurrent_upload_available_permits: IntGauge,
 }
 
 impl Default for IndexerMetrics {
@@ -60,6 +61,11 @@ impl Default for IndexerMetrics {
             valid_num_bytes_total: new_counter(
                 "valid_num_bytes_total",
                 "Sum of bytes of valid documents that have been processed.",
+                "quickwit_indexing",
+            ),
+            concurrent_upload_available_permits: new_gauge(
+                "concurrent_upload_available_permits",
+                "Number of concurrent upload available permits.",
                 "quickwit_indexing",
             ),
         }

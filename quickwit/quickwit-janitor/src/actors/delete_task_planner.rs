@@ -311,11 +311,13 @@ impl DeleteTaskPlanner {
         ongoing_delete_operations: &[MergeOperation],
         ctx: &ActorContext<Self>,
     ) -> MetastoreResult<Vec<Split>> {
-        let stale_splits = self
-            .metastore
-            .list_stale_splits(index_id, last_delete_opstamp, NUM_STALE_SPLITS_TO_FETCH)
+        let stale_splits = ctx
+            .protect_future(self.metastore.list_stale_splits(
+                index_id,
+                last_delete_opstamp,
+                NUM_STALE_SPLITS_TO_FETCH,
+            ))
             .await?;
-        ctx.progress();
         debug!(
             index_id = index_id,
             last_delete_opstamp = last_delete_opstamp,

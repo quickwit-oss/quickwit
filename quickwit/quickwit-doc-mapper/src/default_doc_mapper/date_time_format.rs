@@ -98,10 +98,7 @@ pub enum DateTimeFormat {
     RFC2822,
     RCF3339,
     Strptime(StrptimeParser),
-    TimestampSecs,
-    TimestampMillis,
-    TimestampMicros,
-    TimestampNanos,
+    Timestamp,
 }
 
 impl DateTimeFormat {
@@ -111,21 +108,8 @@ impl DateTimeFormat {
             DateTimeFormat::RFC2822 => "rfc2822",
             DateTimeFormat::RCF3339 => "rfc3339",
             DateTimeFormat::Strptime(parser) => parser.borrow_format(),
-            DateTimeFormat::TimestampSecs => "unix_ts_secs",
-            DateTimeFormat::TimestampMillis => "unix_ts_millis",
-            DateTimeFormat::TimestampMicros => "unix_ts_micros",
-            DateTimeFormat::TimestampNanos => "unix_ts_nanos",
+            DateTimeFormat::Timestamp => "unix_timestamp",
         }
-    }
-
-    pub fn is_timestamp(&self) -> bool {
-        matches!(
-            self,
-            DateTimeFormat::TimestampSecs
-                | DateTimeFormat::TimestampMillis
-                | DateTimeFormat::TimestampMicros
-                | DateTimeFormat::TimestampNanos
-        )
     }
 }
 
@@ -143,10 +127,7 @@ impl FromStr for DateTimeFormat {
             "iso8601" => DateTimeFormat::ISO8601,
             "rfc2822" => DateTimeFormat::RFC2822,
             "rfc3339" => DateTimeFormat::RCF3339,
-            "unix_ts_secs" => DateTimeFormat::TimestampSecs,
-            "unix_ts_millis" => DateTimeFormat::TimestampMillis,
-            "unix_ts_micros" => DateTimeFormat::TimestampMicros,
-            "unix_ts_nanos" => DateTimeFormat::TimestampNanos,
+            "unix_timestamp" => DateTimeFormat::Timestamp,
             _ => DateTimeFormat::Strptime(StrptimeParser::make(date_time_format_str)?),
         };
         Ok(date_time_format)
@@ -180,22 +161,12 @@ mod tests {
             DateTimeFormat::ISO8601,
             DateTimeFormat::RFC2822,
             DateTimeFormat::RCF3339,
-            DateTimeFormat::TimestampSecs,
-            DateTimeFormat::TimestampMillis,
-            DateTimeFormat::TimestampMicros,
-            DateTimeFormat::TimestampNanos,
+            DateTimeFormat::Timestamp,
         ])
         .unwrap();
 
-        let expected_date_time_formats = serde_json::json!([
-            "iso8601",
-            "rfc2822",
-            "rfc3339",
-            "unix_ts_secs",
-            "unix_ts_millis",
-            "unix_ts_micros",
-            "unix_ts_nanos",
-        ]);
+        let expected_date_time_formats =
+            serde_json::json!(["iso8601", "rfc2822", "rfc3339", "unix_timestamp",]);
         assert_eq!(date_time_formats_json, expected_date_time_formats);
     }
 
@@ -206,10 +177,7 @@ mod tests {
                 "iso8601",
                 "rfc2822",
                 "rfc3339",
-                "unix_ts_secs",
-                "unix_ts_millis",
-                "unix_ts_micros",
-                "unix_ts_nanos"
+                "unix_timestamp"
             ]
             "#;
         let date_time_formats: Vec<DateTimeFormat> =
@@ -218,10 +186,7 @@ mod tests {
             DateTimeFormat::ISO8601,
             DateTimeFormat::RFC2822,
             DateTimeFormat::RCF3339,
-            DateTimeFormat::TimestampSecs,
-            DateTimeFormat::TimestampMillis,
-            DateTimeFormat::TimestampMicros,
-            DateTimeFormat::TimestampNanos,
+            DateTimeFormat::Timestamp,
         ];
         assert_eq!(date_time_formats, &expected_date_time_formats);
     }

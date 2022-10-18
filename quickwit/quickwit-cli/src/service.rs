@@ -29,7 +29,7 @@ use quickwit_serve::serve_quickwit;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::debug;
 
-use crate::load_quickwit_config;
+use crate::{load_quickwit_config, start_actor_runtimes};
 
 pub fn build_run_command<'a>() -> Command<'a> {
     Command::new("run")
@@ -60,7 +60,7 @@ pub fn build_run_command<'a>() -> Command<'a> {
 pub struct RunCliCommand {
     pub config_uri: Uri,
     pub data_dir_path: Option<PathBuf>,
-    pub services: HashSet<QuickwitService>,
+    pub services: Option<HashSet<QuickwitService>>,
     pub metastore_uri: Option<Uri>,
     pub cluster_id: Option<String>,
     pub node_id: Option<String>,
@@ -81,15 +81,7 @@ impl RunCliCommand {
                     values.into_iter().map(QuickwitService::from_str).collect();
                 services
             })
-            .transpose()?
-            .unwrap_or_else(|| {
-                HashSet::from_iter([
-                    QuickwitService::Metastore,
-                    QuickwitService::Indexer,
-                    QuickwitService::Searcher,
-                    QuickwitService::Janitor,
-                ])
-            });
+            .transpose()?;
         let metastore_uri = matches
             .value_of("metastore-uri")
             .map(Uri::try_new)
@@ -139,10 +131,15 @@ impl RunCliCommand {
             tracing::info!(peer_seeds = %peer_seeds.join(", "), "Setting peer seeds from override.");
             config.peer_seeds = peer_seeds.clone();
         }
+        if let Some(services) = &self.services {
+            tracing::info!(services = %services.iter().join(", "), "Setting services from override.");
+            config.enabled_services = services.clone();
+        }
         // Revalidate config because of overrides.
         config.validate()?;
-
-        serve_quickwit(config, &self.services).await?;
+        // TODO move in serve quickwit?
+        start_actor_runtimes(&config.enabled_services)?;
+        serve_quickwit(config).await?;
         Ok(())
     }
 }
@@ -167,7 +164,7 @@ mod tests {
                 services,
                 ..
             })
-            if config_uri == expected_config_uri && services.len() == 4
+            if config_uri == expected_config_uri && services.is_none()
         ));
         Ok(())
     }
@@ -192,7 +189,7 @@ mod tests {
                 services,
                 ..
             })
-            if config_uri == expected_config_uri && services.len() == 1 && services.iter().cloned().next().unwrap() == QuickwitService::Indexer
+            if config_uri == expected_config_uri && services.as_ref().unwrap().len() == 1 && services.as_ref().unwrap().iter().cloned().next().unwrap() == QuickwitService::Indexer
         ));
         Ok(())
     }
@@ -221,7 +218,7 @@ mod tests {
                 services,
                 ..
             })
-            if config_uri == expected_config_uri && services.len() == 2 && services == expected_services
+            if config_uri == expected_config_uri && services.as_ref().unwrap().len() == 2 && services.as_ref().unwrap() == &expected_services
         ));
         Ok(())
     }
@@ -246,7 +243,7 @@ mod tests {
                 services,
                 ..
             })
-            if config_uri == expected_config_uri && services.len() == 1 && services.contains(&QuickwitService::Indexer)
+            if config_uri == expected_config_uri && services.as_ref().unwrap().len() == 1 && services.as_ref().unwrap().contains(&QuickwitService::Indexer)
         ));
         Ok(())
     }
