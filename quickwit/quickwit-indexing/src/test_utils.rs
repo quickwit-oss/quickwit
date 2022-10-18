@@ -98,7 +98,8 @@ impl TestSandbox {
             indexer_config,
             metastore.clone(),
             storage_resolver.clone(),
-        );
+        )
+        .await?;
         let (indexing_service, _indexing_service_handle) =
             universe.spawn_builder().spawn(indexing_service_actor);
         Ok(TestSandbox {

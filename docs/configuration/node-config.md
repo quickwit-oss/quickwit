@@ -33,6 +33,7 @@ This section contains the configuration options for an indexer. The split store 
 | --- | --- | --- |
 | split_store_max_num_bytes | Maximum size in bytes allowed in the split store for each index-source pair. | 200G |
 | split_store_max_num_splits | Maximum number of files allowed in the split store for each index-source pair. | 10000 |
+| max_concurrent_split_uploads | Maximum number of concurrent split uploads allowed on the node. | 4 |
 
 ## Searcher configuration
 

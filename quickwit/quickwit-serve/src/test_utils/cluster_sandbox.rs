@@ -77,11 +77,7 @@ impl ClusterSandbox {
         let index_for_test = append_random_suffix("test-standalone-node-index");
         create_index_for_test(&index_for_test, &node_config.quickwit_config).await?;
         tokio::spawn(async move {
-            let result = serve_quickwit(
-                node_config_clone.quickwit_config,
-                &node_config_clone.services,
-            )
-            .await;
+            let result = serve_quickwit(node_config_clone.quickwit_config).await;
             println!("Quickwit server terminated: {:?}", result);
             Result::<_, anyhow::Error>::Ok(())
         });
@@ -112,11 +108,7 @@ impl ClusterSandbox {
         for node_config in node_configs.iter() {
             let node_config_clone = node_config.clone();
             tokio::spawn(async move {
-                let result = serve_quickwit(
-                    node_config_clone.quickwit_config,
-                    &node_config_clone.services,
-                )
-                .await;
+                let result = serve_quickwit(node_config_clone.quickwit_config).await;
                 info!("Quickwit server terminated: {:?}", result);
                 Result::<_, anyhow::Error>::Ok(())
             });
@@ -215,6 +207,7 @@ pub fn build_node_configs(
     let unique_dir_name = new_coolid("test-dir");
     for node_services in nodes_services.iter() {
         let mut config = QuickwitConfig::for_test();
+        config.enabled_services = node_services.clone();
         config.cluster_id = cluster_id.clone();
         config.data_dir_path = root_data_dir.join(&config.node_id);
         config.metastore_uri =

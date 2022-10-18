@@ -2443,6 +2443,16 @@ pub mod test_suite {
             delete_opstamp: 0,
             ..Default::default()
         };
+        let split_id_4 = "list-stale-splits-four";
+        let split_metadata_4 = SplitMetadata {
+            footer_offsets: 1000..2000,
+            split_id: split_id_4.to_string(),
+            num_docs: 1,
+            uncompressed_docs_size_in_bytes: 2,
+            create_timestamp: current_timestamp,
+            delete_opstamp: 20,
+            ..Default::default()
+        };
 
         {
             info!("List stale splits on a non-existent index");
@@ -2468,21 +2478,28 @@ pub mod test_suite {
                 .stage_split(index_id, split_metadata_1.clone())
                 .await
                 .unwrap();
-
             metastore
                 .stage_split(index_id, split_metadata_2.clone())
                 .await
                 .unwrap();
-
             metastore
                 .stage_split(index_id, split_metadata_3.clone())
                 .await
                 .unwrap();
             metastore
+                .stage_split(index_id, split_metadata_4.clone())
+                .await
+                .unwrap();
+            metastore
+                .publish_splits(index_id, &[split_id_4], &[], None)
+                .await
+                .unwrap();
+            // Sleep for 1 second to have different publish timestamps.
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            metastore
                 .publish_splits(index_id, &[split_id_1, split_id_2], &[], None)
                 .await
                 .unwrap();
-
             let splits = metastore.list_stale_splits(index_id, 100, 1).await.unwrap();
             assert_eq!(splits.len(), 1);
             assert_eq!(
@@ -2490,10 +2507,13 @@ pub mod test_suite {
                 split_metadata_2.delete_opstamp
             );
 
-            let splits = metastore.list_stale_splits(index_id, 100, 2).await.unwrap();
-            assert_eq!(splits.len(), 2);
+            let splits = metastore.list_stale_splits(index_id, 100, 4).await.unwrap();
+            assert_eq!(splits.len(), 3);
+            assert_eq!(splits[0].split_id(), split_metadata_2.split_id());
+            assert_eq!(splits[1].split_id(), split_metadata_4.split_id());
+            assert_eq!(splits[2].split_id(), split_metadata_1.split_id());
             assert_eq!(
-                splits[1].split_metadata.delete_opstamp,
+                splits[2].split_metadata.delete_opstamp,
                 split_metadata_1.delete_opstamp
             );
 

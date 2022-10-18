@@ -37,8 +37,8 @@ use quickwit_proto::SearchRequest;
 use quickwit_search::{jobs_to_leaf_request, SearchClientPool, SearchJob};
 use tracing::{debug, info};
 
-const PLANNER_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
-const NUM_STALE_SPLITS_TO_FETCH: usize = 100;
+const PLANNER_REFRESH_INTERVAL: Duration = Duration::from_secs(60 * 60);
+const NUM_STALE_SPLITS_TO_FETCH: usize = 1000;
 
 /// The `DeleteTaskPlanner` plans delete operations on splits for a given index.
 /// For each split, the planner checks if there is some documents to delete:
@@ -72,6 +72,7 @@ const NUM_STALE_SPLITS_TO_FETCH: usize = 100;
 ///      (`leaf_request`) one by one to check if there is a match. + As soon as a hit is returned
 ///      for a given query, the split is sent to the `MergeExecutor`. + If no delete queries match
 ///      documents, update the split `delete_opstamp` to the last `opstamp`.
+#[derive(Clone)]
 pub struct DeleteTaskPlanner {
     index_id: String,
     index_uri: Uri,
@@ -311,11 +312,13 @@ impl DeleteTaskPlanner {
         ongoing_delete_operations: &[MergeOperation],
         ctx: &ActorContext<Self>,
     ) -> MetastoreResult<Vec<Split>> {
-        let stale_splits = self
-            .metastore
-            .list_stale_splits(index_id, last_delete_opstamp, NUM_STALE_SPLITS_TO_FETCH)
+        let stale_splits = ctx
+            .protect_future(self.metastore.list_stale_splits(
+                index_id,
+                last_delete_opstamp,
+                NUM_STALE_SPLITS_TO_FETCH,
+            ))
             .await?;
-        ctx.progress();
         debug!(
             index_id = index_id,
             last_delete_opstamp = last_delete_opstamp,

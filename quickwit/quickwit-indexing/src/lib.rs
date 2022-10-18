@@ -33,10 +33,7 @@ pub use crate::actors::{
 };
 pub use crate::controlled_directory::ControlledDirectory;
 use crate::models::{IndexingStatistics, SpawnPipelines};
-pub use crate::split_store::{
-    get_tantivy_directory_from_split_bundle, IndexingSplitStore, SplitFolder,
-    WeakIndexingSplitStore,
-};
+pub use crate::split_store::{get_tantivy_directory_from_split_bundle, IndexingSplitStore};
 
 pub mod actors;
 mod controlled_directory;
@@ -72,7 +69,8 @@ pub async fn start_indexing_service(
         config.indexer_config.clone(),
         metastore.clone(),
         storage_resolver,
-    );
+    )
+    .await?;
     let (indexing_service, _) = universe.spawn_builder().spawn(indexing_service);
 
     // List indexes and spawn indexing pipeline(s) for each of them.

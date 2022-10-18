@@ -23,22 +23,20 @@ use tracing::{info, warn};
 
 use crate::mailbox::Inbox;
 use crate::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Health, Mailbox,
-    Supervisable,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Health, Supervisable,
 };
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Serialize)]
 pub struct SupervisorState {
-    num_panics: usize,
-    num_errors: usize,
-    num_kills: usize,
+    pub num_panics: usize,
+    pub num_errors: usize,
+    pub num_kills: usize,
 }
 
 pub struct Supervisor<A: Actor> {
     actor_name: String,
     actor_factory: Box<dyn Fn() -> A + Sync + Send>,
     inbox: Inbox<A>,
-    mailbox: Mailbox<A>,
     handle_opt: Option<ActorHandle<A>>,
     state: SupervisorState,
 }
@@ -98,7 +96,6 @@ impl<A: Actor> Supervisor<A> {
         actor_name: String,
         actor_factory: Box<dyn Fn() -> A + Sync + Send>,
         inbox: Inbox<A>,
-        mailbox: Mailbox<A>,
         handle: ActorHandle<A>,
     ) -> Self {
         let state = Default::default();
@@ -106,7 +103,6 @@ impl<A: Actor> Supervisor<A> {
             actor_name,
             actor_factory,
             inbox,
-            mailbox,
             handle_opt: Some(handle),
             state,
         }
@@ -128,6 +124,7 @@ impl<A: Actor> Supervisor<A> {
         warn!("unhealthy-actor");
         // The actor is failing we need to restart it.
         let actor_handle = self.handle_opt.take().unwrap();
+        let actor_mailbox = actor_handle.mailbox().clone();
         let (actor_exit_status, _last_state) = if actor_handle.state() == ActorState::Processing {
             // The actor is probably frozen.
             // Let's kill it.
@@ -159,7 +156,7 @@ impl<A: Actor> Supervisor<A> {
         info!("respawning-actor");
         let (_, actor_handle) = ctx
             .spawn_actor()
-            .set_mailboxes(self.mailbox.clone(), self.inbox.clone())
+            .set_mailboxes(actor_mailbox, self.inbox.clone())
             .set_kill_switch(ctx.kill_switch().child())
             .spawn((*self.actor_factory)());
         self.handle_opt = Some(actor_handle);
@@ -396,5 +393,15 @@ mod tests {
             AskError::MessageNotDelivered
         ));
         assert!(matches!(exit_status, ActorExitStatus::Killed));
+    }
+
+    #[tokio::test]
+    async fn test_supervisor_exits_successfully_when_supervised_actor_mailbox_is_dropped() {
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
+        let actor = FailingActor::default();
+        let (_, supervisor_handle) = universe.spawn_builder().supervise(actor);
+        let (exit_status, _state) = supervisor_handle.join().await;
+        assert!(matches!(exit_status, ActorExitStatus::Success));
     }
 }
