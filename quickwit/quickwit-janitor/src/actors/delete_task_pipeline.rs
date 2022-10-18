@@ -364,9 +364,9 @@ mod tests {
         let (pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
         // Insure that the message sent by initialize method is processed.
         let _ = pipeline_handler.process_pending_and_observe().await.state;
-        // Pipeline will first fail and we need to wait a HEARTBEAT for the pipeline state to be
+        // Pipeline will first fail and we need to wait a HEARTBEAT * 2 for the pipeline state to be
         // updated.
-        universe.simulate_time_shift(HEARTBEAT).await;
+        universe.simulate_time_shift(HEARTBEAT * 2).await;
         let pipeline_state = pipeline_handler.process_pending_and_observe().await.state;
         assert_eq!(pipeline_state.delete_task_planner.num_errors, 1);
         assert_eq!(pipeline_state.downloader.num_errors, 0);
