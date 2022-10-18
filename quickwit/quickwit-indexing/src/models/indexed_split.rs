@@ -19,6 +19,7 @@
 
 use std::fmt;
 use std::path::Path;
+use std::time::Instant;
 
 use quickwit_actors::{KillSwitch, Progress};
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
@@ -153,6 +154,7 @@ pub struct IndexedSplitBatch {
     pub splits: Vec<IndexedSplit>,
     pub checkpoint_delta: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
+    pub workbench_start_time: Option<Instant>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -170,4 +172,5 @@ pub struct IndexedSplitBatchBuilder {
     pub checkpoint_delta: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
     pub commit_trigger: CommitTrigger,
+    pub workbench_start_time: Instant,
 }

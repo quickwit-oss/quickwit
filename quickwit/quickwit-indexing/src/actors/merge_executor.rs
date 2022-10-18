@@ -112,12 +112,16 @@ impl Handler<MergeScratch> for MergeExecutor {
             }
         };
         if let Some(indexed_split) = indexed_split_opt {
+            let elapsed_secs = start.elapsed().as_secs_f64();
             info!(
                 merged_num_docs = %indexed_split.split_attrs.num_docs,
-                elapsed_secs = %start.elapsed().as_secs_f32(),
-                operation_type = %merge_op.operation_type,
+                elapsed_secs = %elapsed_secs,
                 "merge-operation-success"
             );
+            INDEXER_METRICS
+                .processing_message_time
+                .with_label_values(&["merge_executor"])
+                .observe(elapsed_secs);
             ctx.send_message(
                 &self.merge_packager_mailbox,
                 IndexedSplitBatch {
@@ -125,9 +129,13 @@ impl Handler<MergeScratch> for MergeExecutor {
                     splits: vec![indexed_split],
                     checkpoint_delta: Default::default(),
                     publish_lock: PublishLock::default(),
+                    workbench_start_time: None,
                 },
             )
-            .measure_time(&INDEXER_METRICS.waiting_time_to_send_message, &["merge_packager"])
+            .measure_time(
+                &INDEXER_METRICS.waiting_time_to_send_message,
+                &["merge_packager"],
+            )
             .await?;
         } else {
             info!("no-splits-merged");

@@ -30,6 +30,7 @@ pub struct IndexerMetrics {
     pub missing_field_num_bytes_total: IntCounter,
     pub valid_num_bytes_total: IntCounter,
     pub waiting_time_to_send_message: HistogramVec,
+    pub processing_message_time: HistogramVec,
     pub concurrent_upload_available_permits: IntGauge,
 }
 
@@ -74,6 +75,12 @@ impl Default for IndexerMetrics {
             waiting_time_to_send_message: new_histogram_vec(
                 "waiting_time_to_send_message",
                 "Waiting time to send a message in an actor mailbox.",
+                "quickwit_indexing",
+                &["actor_name"],
+            ),
+            processing_message_time: new_histogram_vec(
+                "processing_message_time",
+                "Time to process a message of an actor.",
                 "quickwit_indexing",
                 &["actor_name"],
             ),

@@ -21,6 +21,7 @@ use std::collections::BTreeSet;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::{bail, Context};
 use async_trait::async_trait;
@@ -127,6 +128,7 @@ impl Handler<IndexedSplitBatch> for Packager {
         batch: IndexedSplitBatch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        let start = Instant::now();
         let split_ids: Vec<String> = batch
             .splits
             .iter()
@@ -158,6 +160,12 @@ impl Handler<IndexedSplitBatch> for Packager {
             let packaged_split = self.process_indexed_split(split, ctx).await?;
             packaged_splits.push(packaged_split);
         }
+        let elapsed_secs = start.elapsed().as_secs_f64();
+        info!(elapsed_secs = elapsed_secs, "package-splits-success");
+        INDEXER_METRICS
+            .processing_message_time
+            .with_label_values(&["packager"])
+            .observe(elapsed_secs);
         ctx.send_message(
             &self.uploader_mailbox,
             PackagedSplitBatch::new(
@@ -264,7 +272,6 @@ fn create_packaged_split(
     tag_fields: &[NamedField],
     ctx: &ActorContext<Packager>,
 ) -> anyhow::Result<PackagedSplit> {
-    info!(split_id = split.split_id(), "create-packaged-split");
     let split_files = list_split_files(segment_metas, &split.split_scratch_directory);
 
     // Extracts tag values from inverted indexes only when a field cardinality is less
@@ -443,6 +450,7 @@ mod tests {
                 checkpoint_delta: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
                 publish_lock: PublishLock::default(),
                 batch_parent_span: Span::none(),
+                workbench_start_time: None,
             })
             .await?;
         assert_eq!(

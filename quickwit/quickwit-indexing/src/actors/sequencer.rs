@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt::Debug;
+use std::time::Instant;
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -77,13 +78,21 @@ where
         message: oneshot::Receiver<SequencerCommand<M>>,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        let start = Instant::now();
         let command = ctx
             .protect_future(message)
             .await
             .context("Failed to receive command from uploader.")?;
         if let SequencerCommand::Proceed(msg) = command {
+            INDEXER_METRICS
+                .processing_message_time
+                .with_label_values(&["sequencer"])
+                .observe(start.elapsed().as_secs_f64());
             ctx.send_message(&self.mailbox, msg)
-                .measure_time(&INDEXER_METRICS.waiting_time_to_send_message, &["publisher"])
+                .measure_time(
+                    &INDEXER_METRICS.waiting_time_to_send_message,
+                    &["publisher"],
+                )
                 .await
                 .context("Failed to send message to publisher.")?;
         }

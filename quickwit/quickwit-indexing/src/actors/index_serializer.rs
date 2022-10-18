@@ -17,12 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::time::Instant;
+
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::metrics::InstrumentHistogramMetric;
 use quickwit_common::runtimes::RuntimeType;
 use tokio::runtime::Handle;
-use tracing::instrument;
+use tracing::{info, instrument};
 
 use crate::actors::Packager;
 use crate::metrics::INDEXER_METRICS;
@@ -75,6 +77,7 @@ impl Handler<IndexedSplitBatchBuilder> for IndexSerializer {
         batch_builder: IndexedSplitBatchBuilder,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        let start = Instant::now();
         let splits: Vec<IndexedSplit> = {
             let _protect = ctx.protect_zone();
             batch_builder
@@ -88,7 +91,14 @@ impl Handler<IndexedSplitBatchBuilder> for IndexSerializer {
             splits,
             checkpoint_delta: batch_builder.checkpoint_delta,
             publish_lock: batch_builder.publish_lock,
+            workbench_start_time: Some(batch_builder.workbench_start_time),
         };
+        let elapsed_secs = start.elapsed().as_secs_f64();
+        info!(elapsed_secs = elapsed_secs, "serialize-split-batch-success");
+        INDEXER_METRICS
+            .processing_message_time
+            .with_label_values(&["index_serializer"])
+            .observe(elapsed_secs);
         ctx.send_message(&self.packager_mailbox, indexed_split_batch)
             .measure_time(&INDEXER_METRICS.waiting_time_to_send_message, &["packager"])
             .await?;

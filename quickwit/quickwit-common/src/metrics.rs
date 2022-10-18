@@ -17,7 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::{pin::Pin, task::{Poll, Context}};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use futures::Future;
 use pin_project_lite::pin_project;

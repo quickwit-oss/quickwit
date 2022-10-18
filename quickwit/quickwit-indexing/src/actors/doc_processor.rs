@@ -218,6 +218,10 @@ impl Handler<RawDocBatch> for DocProcessor {
         if self.publish_lock.is_dead() {
             return Ok(());
         }
+        let histogram_timer = INDEXER_METRICS
+            .processing_message_time
+            .with_label_values(&["doc_processor"])
+            .start_timer();
         let mut prepared_docs: Vec<PreparedDoc> = Vec::with_capacity(raw_doc_batch.docs.len());
         for doc_json in raw_doc_batch.docs {
             let doc_json_num_bytes = doc_json.len() as u64;
@@ -239,6 +243,7 @@ impl Handler<RawDocBatch> for DocProcessor {
             docs: prepared_docs,
             checkpoint_delta: raw_doc_batch.checkpoint_delta,
         };
+        histogram_timer.observe_duration();
         ctx.send_message(&self.indexer_mailbox, prepared_doc_batch)
             .measure_time(&INDEXER_METRICS.waiting_time_to_send_message, &["indexer"])
             .await?;

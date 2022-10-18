@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::path::Path;
+use std::time::Instant;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
@@ -66,6 +67,7 @@ impl Handler<MergeOperation> for MergeSplitDownloader {
         merge_operation: MergeOperation,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
+        let start = Instant::now();
         let merge_scratch_directory = self
             .scratch_directory
             .named_temp_child("merge-")
@@ -87,6 +89,10 @@ impl Handler<MergeOperation> for MergeSplitDownloader {
             downloaded_splits_directory,
             tantivy_dirs,
         };
+        INDEXER_METRICS
+            .processing_message_time
+            .with_label_values(&["merge_split_downloader"])
+            .observe(start.elapsed().as_secs_f64());
         ctx.send_message(&self.executor_mailbox, msg)
             .measure_time(&INDEXER_METRICS.waiting_time_to_send_message, &["executor"])
             .await?;

@@ -20,6 +20,7 @@
 use std::collections::hash_map::Entry;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -141,6 +142,7 @@ impl IndexerState {
             publish_lock: self.publish_lock.clone(),
             last_delete_opstamp,
             memory_usage: Byte::from_bytes(0),
+            start_time: Instant::now(),
         };
         Ok(workbench)
     }
@@ -247,6 +249,7 @@ struct IndexingWorkbench {
     last_delete_opstamp: u64,
     // Number of bytes declared as used by tantivy.
     memory_usage: Byte,
+    start_time: Instant,
 }
 
 pub struct Indexer {
@@ -450,6 +453,7 @@ impl Indexer {
             checkpoint_delta,
             publish_lock,
             batch_parent_span,
+            start_time,
             ..
         } = if let Some(indexing_workbench) = self.indexing_workbench_opt.take() {
             indexing_workbench
@@ -490,7 +494,12 @@ impl Indexer {
         let num_splits = splits.len() as u64;
         let split_ids = splits.iter().map(|split| split.split_id()).join(",");
 
-        info!(commit_trigger=?commit_trigger, split_ids=%split_ids, num_docs=self.counters.num_docs_in_workbench, "send-to-index-serializer");
+        let elapsed_secs = start_time.elapsed().as_secs_f64();
+        info!(commit_trigger=?commit_trigger, split_ids=%split_ids, num_docs=self.counters.num_docs_in_workbench, elapsed_secs=elapsed_secs, "index-splits-success");
+        INDEXER_METRICS
+            .processing_message_time
+            .with_label_values(&["indexer"])
+            .observe(elapsed_secs);
         let span_id = batch_parent_span.id();
         ctx.send_message(
             &self.index_serializer_mailbox,
@@ -500,9 +509,13 @@ impl Indexer {
                 checkpoint_delta: Some(checkpoint_delta),
                 publish_lock,
                 commit_trigger,
+                workbench_start_time: start_time,
             },
         )
-        .measure_time(&INDEXER_METRICS.waiting_time_to_send_message, &["index_serializer"])
+        .measure_time(
+            &INDEXER_METRICS.waiting_time_to_send_message,
+            &["index_serializer"],
+        )
         .instrument(info_span!(parent: span_id, "send_to_serializer"))
         .await?;
         self.counters.num_docs_in_workbench = 0;

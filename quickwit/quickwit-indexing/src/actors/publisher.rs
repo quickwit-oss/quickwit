@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -121,6 +122,7 @@ impl Handler<SplitsUpdate> for Publisher {
         split_update: SplitsUpdate,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
+        let start = Instant::now();
         fail_point!("publisher:before");
 
         let SplitsUpdate {
@@ -154,6 +156,10 @@ impl Handler<SplitsUpdate> for Publisher {
             );
             return Ok(());
         }
+        INDEXER_METRICS
+            .processing_message_time
+            .with_label_values(&["publisher"])
+            .observe(start.elapsed().as_secs_f64());
         info!(new_splits=?split_ids, checkpoint_delta=?checkpoint_delta_opt, "publish-new-splits");
         if let Some(source_mailbox) = self.source_mailbox_opt.as_ref() {
             if let Some(checkpoint) = checkpoint_delta_opt {
@@ -180,7 +186,10 @@ impl Handler<SplitsUpdate> for Publisher {
         if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
             let _ = ctx
                 .send_message(merge_planner_mailbox, NewSplits { new_splits })
-                .measure_time(&INDEXER_METRICS.waiting_time_to_send_message, &["merge_planner"])
+                .measure_time(
+                    &INDEXER_METRICS.waiting_time_to_send_message,
+                    &["merge_planner"],
+                )
                 .await;
         }
 

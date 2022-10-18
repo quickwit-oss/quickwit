@@ -22,6 +22,7 @@ use std::iter::FromIterator;
 use std::mem;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::{bail, Context};
 use async_trait::async_trait;
@@ -224,6 +225,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
         batch: PackagedSplitBatch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        let start = Instant::now();
         fail_point!("uploader:before");
         let split_udpate_sender = self
             .split_update_mailbox
@@ -285,7 +287,10 @@ impl Handler<PackagedSplitBatch> for Uploader {
             }
             .instrument(Span::current()),
         );
-        fail_point!("uploader:intask:after");
+        INDEXER_METRICS
+            .processing_message_time
+            .with_label_values(&["uploader"])
+            .observe(start.elapsed().as_secs_f64());
         Ok(())
     }
 }

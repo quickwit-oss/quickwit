@@ -144,7 +144,10 @@ impl MergePlanner {
                 for merge_operation in merge_operations {
                     info!(merge_operation=?merge_operation, "Planned merge operation.");
                     ctx.send_message(&self.merge_split_downloader_mailbox, merge_operation)
-                        .measure_time(&INDEXER_METRICS.waiting_time_to_send_message, &["merge_split_downloader"])
+                        .measure_time(
+                            &INDEXER_METRICS.waiting_time_to_send_message,
+                            &["merge_split_downloader"],
+                        )
                         .await?;
                 }
             }
