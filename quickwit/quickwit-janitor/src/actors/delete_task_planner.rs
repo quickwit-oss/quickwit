@@ -37,8 +37,8 @@ use quickwit_proto::SearchRequest;
 use quickwit_search::{jobs_to_leaf_request, SearchClientPool, SearchJob};
 use tracing::{debug, info};
 
-const PLANNER_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
-const NUM_STALE_SPLITS_TO_FETCH: usize = 100;
+const PLANNER_REFRESH_INTERVAL: Duration = Duration::from_secs(60 * 60);
+const NUM_STALE_SPLITS_TO_FETCH: usize = 1000;
 
 /// The `DeleteTaskPlanner` plans delete operations on splits for a given index.
 /// For each split, the planner checks if there is some documents to delete:
