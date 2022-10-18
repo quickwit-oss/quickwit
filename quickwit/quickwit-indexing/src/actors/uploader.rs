@@ -137,6 +137,7 @@ impl SplitsUpdateSender {
     }
 }
 
+#[derive(Clone)]
 pub struct Uploader {
     actor_name: &'static str,
     metastore: Arc<dyn Metastore>,

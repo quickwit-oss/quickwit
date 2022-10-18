@@ -30,6 +30,7 @@ use crate::merge_policy::MergeOperation;
 use crate::models::{MergeScratch, ScratchDirectory};
 use crate::split_store::IndexingSplitStore;
 
+#[derive(Clone)]
 pub struct MergeSplitDownloader {
     pub scratch_directory: ScratchDirectory,
     pub split_store: IndexingSplitStore,

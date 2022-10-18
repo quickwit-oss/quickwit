@@ -72,6 +72,7 @@ const NUM_STALE_SPLITS_TO_FETCH: usize = 100;
 ///      (`leaf_request`) one by one to check if there is a match. + As soon as a hit is returned
 ///      for a given query, the split is sent to the `MergeExecutor`. + If no delete queries match
 ///      documents, update the split `delete_opstamp` to the last `opstamp`.
+#[derive(Clone)]
 pub struct DeleteTaskPlanner {
     index_id: String,
     index_uri: Uri,
