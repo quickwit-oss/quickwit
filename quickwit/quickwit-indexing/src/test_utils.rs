@@ -100,7 +100,8 @@ impl TestSandbox {
             metastore.clone(),
             storage_resolver.clone(),
             enable_ingest_api,
-        );
+        )
+        .await?;
         let (indexing_service, _indexing_service_handle) =
             universe.spawn_builder().spawn(indexing_service_actor);
         Ok(TestSandbox {

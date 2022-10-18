@@ -225,7 +225,8 @@ mod tests {
             metastore.clone(),
             storage_resolver.clone(),
             enable_ingest_api,
-        );
+        )
+        .await?;
         let (indexing_server_mailbox, _indexing_server_handle) =
             universe.spawn_builder().spawn(indexing_server);
 

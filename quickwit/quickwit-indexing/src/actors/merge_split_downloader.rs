@@ -109,7 +109,7 @@ impl MergeSplitDownloader {
             let _protect_guard = ctx.protect_zone();
             let tantivy_dir = self
                 .split_store
-                .fetch_split(split.split_id(), download_directory)
+                .fetch_and_open_split(split.split_id(), download_directory)
                 .await
                 .map_err(|error| {
                     let split_id = split.split_id();

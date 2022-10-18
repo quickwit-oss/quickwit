@@ -18,13 +18,14 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Observation, Supervisable,
 };
+use quickwit_common::fs::get_cache_directory_path;
 use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_config::{
     IndexerConfig, IngestApiSourceParams, SourceConfig, SourceParams, VecSourceParams,
@@ -33,24 +34,19 @@ use quickwit_ingest_api::{get_ingest_api_service, QUEUES_DIR_NAME};
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
-use quickwit_storage::{Storage, StorageError, StorageResolverError, StorageUriResolver};
+use quickwit_storage::{StorageError, StorageResolverError, StorageUriResolver};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tokio::sync::Mutex;
 use tracing::{error, info};
 
-use crate::merge_policy::MergePolicy;
 use crate::models::{
     DetachPipeline, IndexingDirectory, IndexingPipelineId, Observe, ObservePipeline,
     ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
     WeakIndexingDirectory,
 };
 use crate::source::INGEST_API_SOURCE_ID;
-use crate::split_store::SplitStoreSpaceQuota;
-use crate::{
-    IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics,
-    WeakIndexingSplitStore,
-};
+use crate::split_store::{IndexingSplitStore, LocalSplitStore, SplitStoreQuota};
+use crate::{IndexingPipeline, IndexingPipelineParams, IndexingStatistics};
 
 /// Name of the indexing directory, usually located at `<data_dir_path>/indexing`.
 pub const INDEXING_DIR_NAME: &str = "indexing";
@@ -108,8 +104,7 @@ pub struct IndexingService {
     state: IndexingServiceState,
     enable_ingest_api: bool,
     indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
-    split_stores: HashMap<(IndexId, SourceId), WeakIndexingSplitStore>,
-    split_store_space_quota: Arc<Mutex<SplitStoreSpaceQuota>>,
+    local_split_store: Arc<LocalSplitStore>,
     max_concurrent_split_uploads: usize,
 }
 
@@ -119,15 +114,22 @@ impl IndexingService {
         Health::Healthy
     }
 
-    pub fn new(
+    pub async fn new(
         node_id: String,
         data_dir_path: PathBuf,
         indexer_config: IndexerConfig,
         metastore: Arc<dyn Metastore>,
         storage_resolver: StorageUriResolver,
         enable_ingest_api: bool,
-    ) -> IndexingService {
-        Self {
+    ) -> anyhow::Result<IndexingService> {
+        let split_store_space_quota = SplitStoreQuota::new(
+            indexer_config.split_store_max_num_splits,
+            indexer_config.split_store_max_num_bytes,
+        );
+        let split_cache_dir_path = get_cache_directory_path(&data_dir_path);
+        let local_split_store =
+            LocalSplitStore::open(split_cache_dir_path, split_store_space_quota).await?;
+        Ok(Self {
             node_id,
             data_dir_path,
             metastore,
@@ -136,13 +138,9 @@ impl IndexingService {
             state: Default::default(),
             enable_ingest_api,
             indexing_directories: HashMap::new(),
-            split_stores: HashMap::new(),
-            split_store_space_quota: Arc::new(Mutex::new(SplitStoreSpaceQuota::new(
-                indexer_config.split_store_max_num_splits,
-                indexer_config.split_store_max_num_bytes.get_bytes() as usize,
-            ))),
             max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
-        }
+            local_split_store: Arc::new(local_split_store),
+        })
     }
 
     async fn detach_pipeline(
@@ -256,14 +254,11 @@ impl IndexingService {
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let merge_policy =
             crate::merge_policy::merge_policy_from_settings(&index_metadata.indexing_settings);
-        let split_store = self
-            .get_or_create_split_store(
-                &pipeline_id,
-                indexing_directory.cache_directory(),
-                storage.clone(),
-                merge_policy,
-            )
-            .await?;
+        let split_store = IndexingSplitStore::new(
+            storage.clone(),
+            merge_policy,
+            self.local_split_store.clone(),
+        );
 
         let pipeline_params = IndexingPipelineParams::try_new(
             pipeline_id.clone(),
@@ -394,33 +389,6 @@ impl IndexingService {
         self.indexing_directories
             .insert(key, indexing_directory.downgrade());
         Ok(indexing_directory)
-    }
-
-    async fn get_or_create_split_store(
-        &mut self,
-        pipeline_id: &IndexingPipelineId,
-        cache_directory: &Path,
-        storage: Arc<dyn Storage>,
-        merge_policy: Arc<dyn MergePolicy>,
-    ) -> Result<IndexingSplitStore, IndexingServiceError> {
-        let key = (pipeline_id.index_id.clone(), pipeline_id.source_id.clone());
-        if let Some(split_store) = self
-            .split_stores
-            .get(&key)
-            .and_then(WeakIndexingSplitStore::upgrade)
-        {
-            return Ok(split_store);
-        }
-        let split_store = IndexingSplitStore::create_with_local_store(
-            storage.clone(),
-            cache_directory,
-            merge_policy,
-            self.split_store_space_quota.clone(),
-        )
-        .await?;
-
-        self.split_stores.insert(key, split_store.downgrade());
-        Ok(split_store)
     }
 }
 
@@ -659,7 +627,9 @@ mod tests {
             metastore.clone(),
             storage_resolver.clone(),
             enable_ingest_api,
-        );
+        )
+        .await
+        .unwrap();
         let (indexing_server_mailbox, indexing_server_handle) =
             universe.spawn_builder().spawn(indexing_server);
         let observation = indexing_server_handle.observe().await;

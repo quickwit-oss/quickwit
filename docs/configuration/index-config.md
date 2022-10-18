@@ -526,6 +526,44 @@ This section describes search settings for a given index.
 | ------------- | ------------- | ------------- |
 | `search_default_fields`      | Default list of fields that will be used for search.   | None |
 
+## Retention policy
+
+This section describes how Quickwit manages data retention. In Quickwit, the retention policy manager drops data on a split basis as opposed to individually dropping documents.
+
+```yaml
+version: 0
+index_id: hdfs
+# ...
+retention:
+  period: 90 days
+  cutoff_reference: split_timestamp_field
+  schedule: daily
+```
+
+| Variable      | Description   | Default value |
+| ------------- | ------------- | ------------- |
+| `period`      | Duration after which splits are dropped, expressed in a human-readable way (`1 day`, `2 hours`, `a week`, ...). (1) | required |
+| `cutoff_reference`      | Split attribute from which the retention policy is applied relatively, possible values are: `publish_timestamp`, and `split_timestamp_field`. (2) | required |
+| `schedule`      | Frequency at which the retention policy is evaluated and applied, expressed as a cron expression (`0 0 * * * *`) or human-readable form (`hourly`, `daily`, `weekly`, `monthly`, `yearly`). | `hourly` |
+
+
+(1) `period` is specified as set of time spans. Each time span is an integer followed by a unit suffix like: `2 days 3h 24min`. The supported units are:
+  - `nsec`, `ns` -- nanoseconds
+  - `usec`, `us` -- microseconds
+  - `msec`, `ms` -- milliseconds
+  - `seconds`, `second`, `sec`, `s`
+  - `minutes`, `minute`, `min`, `m`
+  - `hours`, `hour`, `hr`, `h`
+  - `days`, `day`, `d`
+  - `weeks`, `week`, `w`
+  - `months`, `month`, `M` -- a month is defined as `30.44 days`
+  - `years`, `year`, `y` -- a year is defined as `365.25 days`
+
+(2) `cutoff_reference` possible values:
+  - `publish_timestamp` will evaluate based on the timestamp the split was published at.
+  - `split_timestamp_field` will evaluate based on the index timestamp field specified in the (`indexing_settings.timestamp_field`) settings.
+
+
 ## Sources
 
 An index can have one or several data sources. [Learn how to configure them](source-config.md).

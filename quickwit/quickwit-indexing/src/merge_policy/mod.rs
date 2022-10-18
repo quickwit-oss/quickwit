@@ -24,6 +24,7 @@ mod stable_log_merge_policy;
 use std::fmt;
 use std::sync::Arc;
 
+use itertools::Itertools;
 pub use nop_merge_policy::NopMergePolicy;
 use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_config::IndexingSettings;
@@ -57,7 +58,8 @@ pub struct MergeOperation {
 impl MergeOperation {
     pub fn new_merge_operation(splits: Vec<SplitMetadata>) -> Self {
         let merge_split_id = new_split_id();
-        let merge_parent_span = info_span!("merge", merge_split_id=%merge_split_id, splits=?splits, typ=%MergeOperationType::Merge);
+        let split_ids = splits.iter().map(|split| split.split_id()).collect_vec();
+        let merge_parent_span = info_span!("merge", merge_split_id=%merge_split_id, split_ids=?split_ids, typ=%MergeOperationType::Merge);
         Self {
             merge_parent_span,
             merge_split_id,
@@ -68,7 +70,7 @@ impl MergeOperation {
 
     pub fn new_delete_and_merge_operation(split: SplitMetadata) -> Self {
         let merge_split_id = new_split_id();
-        let merge_parent_span = info_span!("delete", merge_split_id=%merge_split_id, split=?split, typ=%MergeOperationType::DeleteAndMerge);
+        let merge_parent_span = info_span!("delete", merge_split_id=%merge_split_id, split_ids=?split.split_id(), typ=%MergeOperationType::DeleteAndMerge);
         Self {
             merge_parent_span,
             merge_split_id,

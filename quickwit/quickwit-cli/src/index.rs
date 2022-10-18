@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::fmt::Display;
 use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
@@ -32,6 +32,7 @@ use itertools::Itertools;
 use quickwit_actors::{ActorHandle, ObservationType, Universe};
 use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
+use quickwit_config::service::QuickwitService;
 use quickwit_config::{
     IndexConfig, IndexerConfig, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
 };
@@ -55,7 +56,7 @@ use tracing::{debug, warn, Level};
 use crate::stats::{mean, percentile, std_deviation};
 use crate::{
     load_quickwit_config, make_table, parse_duration_with_unit, prompt_confirmation,
-    run_index_checklist, THROUGHPUT_WINDOW_SIZE,
+    run_index_checklist, start_actor_runtimes, THROUGHPUT_WINDOW_SIZE,
 };
 
 pub fn build_index_command<'a>() -> Command<'a> {
@@ -900,6 +901,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
+    start_actor_runtimes(&HashSet::from_iter([QuickwitService::Indexer]))?;
     let universe = Universe::new();
     let enable_ingest_api = false;
     let indexing_server = IndexingService::new(
@@ -909,7 +911,8 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         metastore,
         quickwit_storage_uri_resolver().clone(),
         enable_ingest_api,
-    );
+    )
+    .await?;
     let (indexing_server_mailbox, _) = universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_server_mailbox
         .ask_for_res(SpawnPipeline {
@@ -945,12 +948,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
 
     if args.clear_cache {
         println!("Clearing local cache directory...");
-        clear_cache_directory(
-            &config.data_dir_path,
-            args.index_id.clone(),
-            CLI_INGEST_SOURCE_ID.to_string(),
-        )
-        .await?;
+        clear_cache_directory(&config.data_dir_path).await?;
     }
 
     match statistics.num_invalid_docs {
@@ -1013,7 +1011,8 @@ pub async fn merge_cli(args: MergeArgs, merge_enabled: bool) -> anyhow::Result<(
         metastore,
         storage_resolver,
         enable_ingest_api,
-    );
+    )
+    .await?;
     let universe = Universe::new();
     let (indexing_server_mailbox, _) = universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_server_mailbox

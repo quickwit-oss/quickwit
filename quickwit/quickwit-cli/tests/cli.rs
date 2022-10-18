@@ -28,10 +28,9 @@ use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_cli::index::{create_index_cli, search_index, CreateIndexArgs, SearchIndexArgs};
+use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
-use quickwit_config::CLI_INGEST_SOURCE_ID;
-use quickwit_core::get_cache_directory_path;
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore};
 use serde_json::{json, Number, Value};
@@ -220,13 +219,8 @@ fn test_cmd_ingest_keep_cache() -> Result<()> {
         &test_env,
         "--keep-cache",
     );
-
     // Ensure cache directory is not empty.
-    let cache_directory_path = get_cache_directory_path(
-        &test_env.data_dir_path,
-        &test_env.index_id,
-        CLI_INGEST_SOURCE_ID,
-    );
+    let cache_directory_path = get_cache_directory_path(&test_env.data_dir_path);
     assert!(cache_directory_path.read_dir()?.next().is_some());
     Ok(())
 }
@@ -265,11 +259,8 @@ fn test_cmd_ingest_simple() -> Result<()> {
     .stdout(predicate::str::contains("Now, you can query the index"));
 
     // Ensure cache directory is empty.
-    let cache_directory_path = get_cache_directory_path(
-        &test_env.data_dir_path,
-        &test_env.index_id,
-        CLI_INGEST_SOURCE_ID,
-    );
+    let cache_directory_path = get_cache_directory_path(&test_env.data_dir_path);
+
     assert!(cache_directory_path.read_dir()?.next().is_none());
 
     Ok(())
@@ -823,6 +814,7 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
 #[tokio::test]
 #[serial]
 async fn test_all_local_index() -> Result<()> {
+    quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-all");
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
     make_command(
@@ -841,7 +833,7 @@ async fn test_all_local_index() -> Result<()> {
         .exists(&Path::new(&test_env.index_id).join("metastore.json"))
         .await
         .unwrap();
-    assert_eq!(metadata_file_exists, true);
+    assert!(metadata_file_exists);
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 

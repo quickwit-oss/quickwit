@@ -71,9 +71,9 @@ impl LeafType {
         }
     }
 
-    pub fn is_fast_field(&self) -> bool {
+    pub fn is_single_value_fast_field(&self) -> bool {
         match self {
-            LeafType::Text(_opt) => false, // TODO fixme once we have text fast field
+            LeafType::Text(_) => false, // Text is always multivalue
             LeafType::I64(opt)
             | LeafType::U64(opt)
             | LeafType::F64(opt)
