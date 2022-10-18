@@ -175,6 +175,7 @@ impl Uploader {
         INDEXER_METRICS
             .concurrent_upload_available_permits
             .set(concurrent_upload_permits.available_permits() as i64);
+        info!(num=concurrent_upload_permits.available_permits(), "concurrent-upload-available-permits");
         concurrent_upload_permits
             .acquire()
             .await
