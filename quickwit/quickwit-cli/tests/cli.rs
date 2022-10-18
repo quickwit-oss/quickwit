@@ -32,7 +32,7 @@ use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
-use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore};
+use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreError};
 use serde_json::{json, Number, Value};
 use serial_test::serial;
 use tokio::time::{sleep, Duration};
@@ -142,23 +142,28 @@ async fn test_cmd_create() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn test_cmd_create_on_existing_index() -> Result<()> {
+#[tokio::test]
+async fn test_cmd_create_on_existing_index() -> Result<()> {
     let index_id = append_random_suffix("test-create-cmd--index-already-exists");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem)?;
     create_logs_index(&test_env);
 
-    make_command(
-        format!(
-            "index create --index-config {} --config {}",
-            test_env.resource_files["index_config"].display(),
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .failure()
-    .stderr(predicate::str::contains("already exists"));
+    let config_uri = "file://".to_string() + test_env.resource_files["config"].to_str().unwrap();
+    let index_config_uri =
+        "file://".to_string() + test_env.resource_files["index_config"].to_str().unwrap();
+    let args = CreateIndexArgs {
+        config_uri: Uri::new(config_uri),
+        index_config_uri: Uri::new(index_config_uri),
+        data_dir: None,
+        overwrite: false,
+        assume_yes: false,
+    };
+
+    let res = create_index_cli(args).await.unwrap_err();
+    assert_eq!(
+        res.root_cause().downcast_ref::<MetastoreError>(),
+        Some(&MetastoreError::IndexAlreadyExists { index_id })
+    );
 
     Ok(())
 }
