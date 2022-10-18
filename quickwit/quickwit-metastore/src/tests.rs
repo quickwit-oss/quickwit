@@ -2443,8 +2443,8 @@ pub mod test_suite {
                 .publish_splits(index_id, &[split_id_4], &[], None)
                 .await
                 .unwrap();
-            // Sleep 1 millisecond to have different publish timestamp.
-            tokio::time::sleep(Duration::from_millis(1000)).await;
+            // Sleep for 1 second to have different publish timestamps.
+            tokio::time::sleep(Duration::from_secs(1)).await;
             metastore
                 .publish_splits(index_id, &[split_id_1, split_id_2], &[], None)
                 .await
