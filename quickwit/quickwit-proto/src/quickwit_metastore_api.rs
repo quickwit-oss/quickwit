@@ -147,8 +147,6 @@ pub struct ResetSourceCheckpointRequest {
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SourceResponse {
-    #[prost(bool, tag="1")]
-    pub has_changed: bool,
 }
 // /
 // / Delete tasks.

@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context};
 use json_comments::StripComments;
 use quickwit_common::uri::{Extension, Uri};
-use serde::de::{Error, IgnoredAny};
+use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::{is_false, validate_identifier};
@@ -31,7 +31,7 @@ use crate::{is_false, validate_identifier};
 pub const CLI_INGEST_SOURCE_ID: &str = ".cli-ingest-source";
 
 /// Reserved source ID used for Quickwit ingest API.
-pub const INGEST_API_SOURCE_ID: &str = ".ingest-api";
+pub const INGEST_API_SOURCE_ID: &str = "_ingest-api";
 
 fn default_num_pipelines() -> usize {
     1
@@ -177,8 +177,6 @@ impl SourceConfig {
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::IngestApi(IngestApiSourceParams {
-                __index_id_deprecated: IgnoredAny,
-                __queues_dir_path_deprecated: IgnoredAny,
                 batch_num_bytes_limit: None,
             }),
         }
@@ -333,10 +331,6 @@ pub struct VoidSourceParams;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IngestApiSourceParams {
-    #[serde(default, rename = "index_id", skip_serializing)]
-    pub __index_id_deprecated: IgnoredAny, // DEPRECATED
-    #[serde(default, rename = "queues_dir_path", skip_serializing)]
-    pub __queues_dir_path_deprecated: IgnoredAny, // DEPRECATED
     #[serde(skip_serializing_if = "Option::is_none")]
     pub batch_num_bytes_limit: Option<u64>,
 }
@@ -589,12 +583,10 @@ mod tests {
             .await
             .unwrap();
         let expected_source_config = SourceConfig {
-            source_id: ".ingest-api".to_string(),
+            source_id: "_ingest-api".to_string(),
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::IngestApi(IngestApiSourceParams {
-                __index_id_deprecated: IgnoredAny,
-                __queues_dir_path_deprecated: IgnoredAny,
                 batch_num_bytes_limit: Some(2000),
             }),
         };
@@ -613,29 +605,5 @@ mod tests {
         let json = r#"{}"#;
         let ingest_api_params = serde_json::from_str::<IngestApiSourceParams>(json).unwrap();
         assert_eq!(ingest_api_params.batch_num_bytes_limit, None);
-    }
-
-    #[test]
-    fn test_ingest_api_source_params_backward_compatibility() {
-        let old_format_yaml = r#"
-            index_id: wikipedia
-            batch_num_bytes_limit: 2000
-            queues_dir_path: ./qwdata/queues
-        "#;
-        let ingest_api_params =
-            serde_yaml::from_str::<IngestApiSourceParams>(old_format_yaml).unwrap();
-        assert_eq!(ingest_api_params.batch_num_bytes_limit, Some(2000));
-
-        let serialized_json = serde_json::to_string(&ingest_api_params).unwrap();
-        let expected_json = serde_json::to_string(&IngestApiSourceParams {
-            __index_id_deprecated: IgnoredAny,
-            __queues_dir_path_deprecated: IgnoredAny,
-            batch_num_bytes_limit: Some(2000),
-        })
-        .unwrap();
-        assert_eq!(
-            serialized_json, expected_json,
-            "Expected to serialize to new format"
-        );
     }
 }

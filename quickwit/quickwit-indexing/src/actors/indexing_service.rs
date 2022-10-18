@@ -27,9 +27,8 @@ use quickwit_actors::{
 };
 use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_config::{IndexerConfig, SourceConfig, SourceParams, VecSourceParams};
-use quickwit_ingest_api::{get_ingest_api_service, QUEUES_DIR_NAME};
+use quickwit_ingest_api::QUEUES_DIR_NAME;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
-use quickwit_proto::ingest_api::CreateQueueIfNotExistsRequest;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use quickwit_storage::{Storage, StorageError, StorageResolverError, StorageUriResolver};
 use serde::{Deserialize, Serialize};
@@ -192,7 +191,6 @@ impl IndexingService {
         index_id: String,
     ) -> Result<Vec<IndexingPipelineId>, IndexingServiceError> {
         let mut pipeline_ids = Vec::new();
-        let queues_dir_path = self.data_dir_path.join(QUEUES_DIR_NAME);
         let index_metadata = self.index_metadata(ctx, &index_id).await?;
 
         for source_config in index_metadata.sources.values() {
@@ -213,9 +211,6 @@ impl IndexingService {
                     continue;
                 }
 
-                if let SourceParams::IngestApi(_) = &source_config.source_params {
-                    self.ensure_ingest_api(&index_id, &queues_dir_path).await?;
-                }
                 self.spawn_pipeline_inner(
                     ctx,
                     pipeline_id.clone(),
@@ -278,26 +273,6 @@ impl IndexingService {
         self.indexing_pipeline_handles
             .insert(pipeline_id, pipeline_handle);
         self.state.num_running_pipelines += 1;
-        Ok(())
-    }
-
-    async fn ensure_ingest_api(
-        &mut self,
-        index_id: &str,
-        queues_dir_path: &Path,
-    ) -> Result<(), IndexingServiceError> {
-        let ingest_api_service = get_ingest_api_service(queues_dir_path)
-            .await
-            .expect("The ingest API service should have been initialized beforehand.");
-
-        // Ensure the queue exists.
-        let create_queue_req = CreateQueueIfNotExistsRequest {
-            queue_id: index_id.to_string(),
-        };
-        ingest_api_service
-            .ask_for_res(create_queue_req)
-            .await
-            .map_err(|err| IndexingServiceError::InvalidParams(err.into()))?;
         Ok(())
     }
 

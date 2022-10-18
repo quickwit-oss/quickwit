@@ -333,29 +333,19 @@ async fn toggle_source_cli(args: ToggleSourceArgs) -> anyhow::Result<()> {
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri)
         .await?;
-    if let Err(err) = validate_identifier("Source ID", &args.source_id) {
-        if args.source_id == INGEST_API_SOURCE_ID {
-            bail!(
-                "Source `{}` is managed by Quickwit, you cannot enable or disable a source \
-                 managed by Quickwit.",
-                args.source_id
-            );
-        }
-        bail!(err);
+    if args.source_id == INGEST_API_SOURCE_ID {
+        bail!(
+            "Source `{}` is managed by Quickwit, you cannot enable or disable a source managed by \
+             Quickwit.",
+            args.source_id
+        );
     }
+    validate_identifier("Source ID", &args.source_id)?;
 
-    let has_changed = metastore
+    metastore
         .toggle_source(&args.index_id, &args.source_id, args.enable)
         .await?;
     let toggled_state_name = if args.enable { "enabled" } else { "disabled" };
-    if !has_changed {
-        println!(
-            "Source `{}` already {} for index `{}`.",
-            args.source_id, toggled_state_name, args.index_id
-        );
-        return Ok(());
-    }
-
     println!(
         "Source `{}` successfully {} for index `{}`.",
         args.source_id, toggled_state_name, args.index_id
@@ -368,16 +358,14 @@ async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri)
         .await?;
-    if let Err(err) = validate_identifier("Source ID", &args.source_id) {
-        if args.source_id == INGEST_API_SOURCE_ID {
-            bail!(
-                "Source `{}` is managed by Quickwit, you cannot delete a source managed by \
-                 Quickwit.",
-                args.source_id
-            );
-        }
-        bail!(err);
+
+    if args.source_id == INGEST_API_SOURCE_ID {
+        bail!(
+            "Source `{}` is managed by Quickwit, you cannot delete a source managed by Quickwit.",
+            args.source_id
+        );
     }
+    validate_identifier("Source ID", &args.source_id)?;
 
     metastore
         .delete_source(&args.index_id, &args.source_id)

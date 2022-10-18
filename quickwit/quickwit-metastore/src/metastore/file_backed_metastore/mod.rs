@@ -450,9 +450,10 @@ impl Metastore for FileBackedMetastore {
         index_id: &str,
         source_id: &str,
         enable: bool,
-    ) -> MetastoreResult<bool> {
+    ) -> MetastoreResult<()> {
         self.mutate(index_id, |index| index.toggle_source(source_id, enable))
-            .await
+            .await?;
+        Ok(())
     }
 
     async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()> {

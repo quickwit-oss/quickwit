@@ -716,12 +716,13 @@ impl Metastore for PostgresqlMetastore {
         index_id: &str,
         source_id: &str,
         enable: bool,
-    ) -> MetastoreResult<bool> {
+    ) -> MetastoreResult<()> {
         run_with_tx!(self.connection_pool, tx, {
             mutate_index_metadata(tx, index_id, |index_metadata| {
                 index_metadata.toggle_source(source_id, enable)
             })
-            .await
+            .await?;
+            Ok(())
         })
     }
 

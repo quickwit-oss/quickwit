@@ -179,13 +179,9 @@ impl IndexMetadata {
                 .ok_or_else(|| MetastoreError::SourceDoesNotExist {
                     source_id: source_id.to_string(),
                 })?;
-        let has_changed = if source.enabled != enable {
-            source.enabled = enable;
-            true
-        } else {
-            false
-        };
-        Ok(has_changed)
+        let mutation_occurred = source.enabled != enable;
+        source.enabled = enable;
+        Ok(mutation_occurred)
     }
 
     /// Deletes a source from the index. Returns whether the index was modified (true).
