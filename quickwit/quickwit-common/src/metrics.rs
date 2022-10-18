@@ -45,7 +45,9 @@ pub fn new_histogram_vec(
     namespace: &str,
     label_names: &[&str],
 ) -> HistogramVec {
-    let histogram_opts = HistogramOpts::new(name, description).namespace(namespace);
+    let histogram_opts = HistogramOpts::new(name, description)
+        .namespace(namespace)
+        .buckets(vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 20.0, 40.0, 80.0, 160.0]);
     let histogram_vec =
         HistogramVec::new(histogram_opts, label_names).expect("metric can be created");
     prometheus::register(Box::new(histogram_vec.clone())).expect("Failed to register counter");
