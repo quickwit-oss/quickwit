@@ -193,7 +193,7 @@ When specifying multiple input formats, the corresponding parsers are attempted 
 :::
 
 :::warning
-The timezone name format specifier (`%Z`) is not currently supported in `strptime`.
+The timezone name format specifier (`%Z`) is not currently supported in `strptime` format.
 :::
 
 Example of a mapping for a datetime field:

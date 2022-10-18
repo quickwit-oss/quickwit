@@ -72,7 +72,7 @@ fn parse_rfc3339(value: &str) -> Result<OffsetDateTime, String> {
     OffsetDateTime::parse(value, &Rfc3339).map_err(|error| error.to_string())
 }
 
-/// Returns the appropriate [`TantivyDateTime`] for the specified unix timestamp.
+/// Returns the appropriate [`TantivyDateTime`] for the specified Unix timestamp.
 ///
 /// This function will choose the timestamp precision based on the value range.
 /// The tradeoff is that we can only support dates ranging:
@@ -154,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_strptime_with_tz() {
+    fn test_parse_strptime() {
         let test_data = vec![
             (
                 "%Y-%m-%d %H:%M:%S",
@@ -186,7 +186,7 @@ mod tests {
             let parser = StrptimeParser::make(fmt).unwrap();
             let result = parser.parse_date_time(date_time_str);
             if let Err(error) = &result {
-                println!("{} {} {}", fmt, date_time_str, error)
+                println!("Failed to parse: {} {} {}", date_time_str, fmt, error)
             }
             assert_eq!(result.unwrap(), expected);
         }
@@ -200,7 +200,7 @@ mod tests {
             "2012-05-21T12:09:14-00:00",
             "2012-05-21 12:09:14",
             "2012/05/21 12:09:14",
-            "2012/05/21 12:09:14 +0000",
+            "2012/05/21 12:09:14 +00:00",
         ] {
             let date_time = parse_date_time(
                 date_time_str,

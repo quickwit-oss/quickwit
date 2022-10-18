@@ -55,7 +55,7 @@ impl StrptimeParser {
             OffsetDateTime::parse(date_time_str, self.borrow_items()).map_err(|err| err.to_string())
         } else {
             PrimitiveDateTime::parse(date_time_str, self.borrow_items())
-                .map(|date| date.assume_utc())
+                .map(|date_time| date_time.assume_utc())
                 .map_err(|err| err.to_string())
         }
     }
@@ -63,6 +63,7 @@ impl StrptimeParser {
 
 impl Clone for StrptimeParser {
     fn clone(&self) -> Self {
+        // `self.format` is already known to be a valid format.
         Self::make(self.borrow_format()).unwrap()
     }
 }
@@ -79,7 +80,6 @@ impl std::fmt::Debug for StrptimeParser {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("StrptimeParser")
-            .field("with_timezone", &self.borrow_with_timezone())
             .field("format", &self.borrow_format())
             .finish()
     }
