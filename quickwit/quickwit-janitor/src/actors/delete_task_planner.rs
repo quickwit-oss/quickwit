@@ -143,7 +143,7 @@ impl DeleteTaskPlanner {
                     ctx,
                 )
                 .await?;
-            ctx.progress();
+            ctx.record_progress();
             info!(
                 index_id = self.index_id,
                 last_delete_opstamp = last_delete_opstamp,
@@ -161,21 +161,19 @@ impl DeleteTaskPlanner {
                 splits_with_deletes.len(),
                 splits_without_deletes.len()
             );
-            ctx.progress();
+            ctx.record_progress();
 
             // Updates `delete_opstamp` of splits that won't undergo delete operations.
             let split_ids_without_delete = splits_without_deletes
                 .iter()
                 .map(|split| split.split_id())
                 .collect_vec();
-            self.metastore
-                .update_splits_delete_opstamp(
-                    &self.index_id,
-                    &split_ids_without_delete,
-                    last_delete_opstamp,
-                )
-                .await?;
-            ctx.progress();
+            ctx.protect_future(self.metastore.update_splits_delete_opstamp(
+                &self.index_id,
+                &split_ids_without_delete,
+                last_delete_opstamp,
+            ))
+            .await?;
 
             // Sends delete operations.
             for split_with_deletes in splits_with_deletes {
@@ -206,11 +204,14 @@ impl DeleteTaskPlanner {
         let mut splits_with_deletes: Vec<Split> = Vec::new();
 
         for stale_split in stale_splits {
-            let pending_tasks = self
-                .metastore
-                .list_delete_tasks(&self.index_id, stale_split.split_metadata.delete_opstamp)
+            let pending_tasks = ctx
+                .protect_future(
+                    self.metastore.list_delete_tasks(
+                        &self.index_id,
+                        stale_split.split_metadata.delete_opstamp,
+                    ),
+                )
                 .await?;
-            ctx.progress();
 
             // Keep only delete tasks that matches the split metadata.
             let pending_and_matching_metadata_tasks = pending_tasks
@@ -248,7 +249,7 @@ impl DeleteTaskPlanner {
                     ctx,
                 )
                 .await?;
-            ctx.progress();
+            ctx.record_progress();
 
             if has_split_docs_to_delete {
                 splits_with_deletes.push(stale_split.clone());
@@ -295,7 +296,7 @@ impl DeleteTaskPlanner {
                 vec![search_job.clone()],
             );
             let response = search_client.leaf_search(leaf_search_request).await?;
-            ctx.progress();
+            ctx.record_progress();
             if response.num_hits > 0 {
                 return Ok(true);
             }
