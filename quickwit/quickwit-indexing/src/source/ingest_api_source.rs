@@ -288,9 +288,9 @@ mod tests {
 
         let ingest_req = make_ingest_request(index_id.clone(), 2, 1000);
         ingest_api_service
-                .ask_for_res(ingest_req)
-                .await
-                .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+            .ask_for_res(ingest_req)
+            .await
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
         tokio::time::sleep(Duration::from_secs(2)).await;
         let counters = ingest_api_source_handle
             .process_pending_and_observe()

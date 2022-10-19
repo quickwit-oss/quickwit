@@ -148,7 +148,8 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
 
     let (ingest_api_service, indexer_service) =
         if config.enabled_services.contains(&QuickwitService::Indexer) {
-            let ingest_api_service = start_ingest_api_service(&universe, &config.data_dir_path).await?;
+            let ingest_api_service =
+                start_ingest_api_service(&universe, &config.data_dir_path).await?;
             let indexing_service = start_indexing_service(
                 &universe,
                 &config,

@@ -41,14 +41,8 @@ use crate::models::{
     ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
     WeakIndexingDirectory,
 };
-use crate::split_store::SplitStoreSpaceQuota;
-use crate::{
-    IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics,
-    WeakIndexingSplitStore,
-};
-use crate::source::INGEST_API_SOURCE_ID;
-use crate::split_store::{IndexingSplitStore, LocalSplitStore, SplitStoreQuota};
-use crate::{IndexingPipeline, IndexingPipelineParams, IndexingStatistics};
+use crate::split_store::{LocalSplitStore, SplitStoreQuota};
+use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics};
 
 /// Name of the indexing directory, usually located at `<data_dir_path>/indexing`.
 pub const INDEXING_DIR_NAME: &str = "indexing";
