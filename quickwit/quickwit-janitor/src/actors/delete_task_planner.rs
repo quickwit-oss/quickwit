@@ -168,14 +168,12 @@ impl DeleteTaskPlanner {
                 .iter()
                 .map(|split| split.split_id())
                 .collect_vec();
-            self.metastore
-                .update_splits_delete_opstamp(
-                    &self.index_id,
-                    &split_ids_without_delete,
-                    last_delete_opstamp,
-                )
-                .await?;
-            ctx.record_progress();
+            ctx.protect_future(self.metastore.update_splits_delete_opstamp(
+                &self.index_id,
+                &split_ids_without_delete,
+                last_delete_opstamp,
+            ))
+            .await?;
 
             // Sends delete operations.
             for split_with_deletes in splits_with_deletes {
@@ -206,11 +204,14 @@ impl DeleteTaskPlanner {
         let mut splits_with_deletes: Vec<Split> = Vec::new();
 
         for stale_split in stale_splits {
-            let pending_tasks = self
-                .metastore
-                .list_delete_tasks(&self.index_id, stale_split.split_metadata.delete_opstamp)
+            let pending_tasks = ctx
+                .protect_future(
+                    self.metastore.list_delete_tasks(
+                        &self.index_id,
+                        stale_split.split_metadata.delete_opstamp,
+                    ),
+                )
                 .await?;
-            ctx.record_progress();
 
             // Keep only delete tasks that matches the split metadata.
             let pending_and_matching_metadata_tasks = pending_tasks
