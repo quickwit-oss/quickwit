@@ -20,7 +20,7 @@
 use std::fmt;
 use std::path::Path;
 
-use quickwit_actors::{KillSwitch, ActorState};
+use quickwit_actors::{ActorState, KillSwitch};
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use tantivy::directory::MmapDirectory;
 use tantivy::IndexBuilder;

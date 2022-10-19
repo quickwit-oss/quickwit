@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::{fmt, io};
 
 use arc_swap::ArcSwap;
-use quickwit_actors::{KillSwitch, ProtectedZoneGuard, ActorState};
+use quickwit_actors::{ActorState, KillSwitch, ProtectedZoneGuard};
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
 use tantivy::directory::{
     AntiCallToken, FileHandle, TerminatingWrite, WatchCallback, WatchHandle, WritePtr,
@@ -67,7 +67,11 @@ impl ControlledDirectory {
         self.inner.controls.load().check_if_alive()
     }
 
-    pub fn set_actor_state_and_kill_switch(&self, actor_state: ActorState, kill_switch: KillSwitch) {
+    pub fn set_actor_state_and_kill_switch(
+        &self,
+        actor_state: ActorState,
+        kill_switch: KillSwitch,
+    ) {
         actor_state.record_progress();
         self.inner.controls.store(Arc::new(Controls {
             actor_state,
@@ -234,8 +238,11 @@ mod tests {
     fn test_records_progress_on_write() -> anyhow::Result<()> {
         let directory = RamDirectory::default();
         let actor_state = ActorState::default();
-        let controlled_directory =
-            ControlledDirectory::new(Box::new(directory), actor_state.clone(), KillSwitch::default());
+        let controlled_directory = ControlledDirectory::new(
+            Box::new(directory),
+            actor_state.clone(),
+            KillSwitch::default(),
+        );
         assert!(actor_state.registered_activity_since_last_call());
         assert!(!actor_state.registered_activity_since_last_call());
         let mut wrt = controlled_directory.open_write(Path::new("test"))?;

@@ -92,7 +92,7 @@ impl IndexerState {
             last_delete_opstamp,
             self.indexing_directory.scratch_directory().clone(),
             index_builder,
-             ctx.actor_state().clone(),
+            ctx.actor_state().clone(),
             ctx.kill_switch().clone(),
         )?;
         info!(

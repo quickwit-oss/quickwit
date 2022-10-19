@@ -226,13 +226,11 @@ impl<A: Actor> ActorExecutionEnv<A> {
         }
         self.actor.on_drained_messages(&self.ctx).await?;
         self.ctx.idle();
-
         if self.ctx.mailbox().is_last_mailbox() {
             // No one will be able to send us more messages.
             // We can exit the actor.
             return Err(ActorExitStatus::Success);
         }
-
         Ok(())
     }
 

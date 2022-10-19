@@ -31,7 +31,7 @@ use thiserror::Error;
 use tokio::sync::{oneshot, watch};
 use tracing::{debug, error};
 
-use crate::actor_state::{ActorStateId, ActorState, ProtectedZoneGuard};
+use crate::actor_state::{ActorState, ActorStateId, ProtectLocation, ProtectedZoneGuard};
 use crate::registry::ActorRegistry;
 use crate::scheduler::{Callback, ScheduleEvent, Scheduler};
 use crate::spawn_builder::SpawnBuilder;
@@ -325,11 +325,20 @@ impl<A: Actor> ActorContext<A> {
     /// In an ideal world, you should never need to call this function.
     /// It is only useful in some corner cases, like calling a long blocking
     /// from an external library that you trust.
+    #[track_caller]
     pub fn protect_zone(&self) -> ProtectedZoneGuard {
-        self.actor_state.protect_zone()
+        let location = core::panic::Location::caller();
+        let protect_location = ProtectLocation::Waiting {
+            file: location.file(),
+            line: location.line(),
+        };
+        self.actor_state
+            .protect_zone_with_location(protect_location)
     }
 
     /// Executes a future in a protected zone.
+    #[track_caller]
+    // desugarify
     pub async fn protect_future<Fut, T>(&self, future: Fut) -> T
     where Fut: Future<Output = T> {
         let _guard = self.protect_zone();

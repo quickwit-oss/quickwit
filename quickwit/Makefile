@@ -46,3 +46,14 @@ build-ui:
 
 rm-postgres:
 	rm -fr /tmp/quickwit/services/postgres
+
+
+grafana:
+	# runs grafana with the tokio-console plugins
+	docker run -d \
+  -p 3000:3000 \
+  --name=grafana \
+  -e "GF_INSTALL_PLUGINS=bsull-console-datasource" \
+  grafana/grafana-enterprise
+
+

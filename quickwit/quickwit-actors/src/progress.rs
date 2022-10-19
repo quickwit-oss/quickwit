@@ -101,7 +101,6 @@ impl Progress {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::Progress;
