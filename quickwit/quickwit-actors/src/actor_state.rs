@@ -17,11 +17,65 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{atomic::{AtomicU32, Ordering}, Arc};
+
+use crate::progress::{ProgressState, Progress};
+
+#[derive(Clone, Default)]
+pub struct ActorState {
+    // TODO make it a single Arc
+    pub progress: Arc<Progress>,
+    pub state_id: Arc<AtomicState>,
+}
+
+
+impl ActorState {
+
+    pub fn record_progress(&self) {
+        self.progress.record_progress();
+    }
+
+    pub fn registered_activity_since_last_call(&self) -> bool {
+        self.progress.registered_activity_since_last_call()
+    }
+
+    pub fn protect_zone(&self) -> ProtectedZoneGuard {
+        loop {
+            let previous_state: ProgressState = self.progress.0.load(Ordering::SeqCst).into();
+            let new_state = match previous_state {
+                ProgressState::NoUpdate | ProgressState::Updated => ProgressState::ProtectedZone(0),
+                ProgressState::ProtectedZone(level) => ProgressState::ProtectedZone(level + 1),
+            };
+            if self
+                .progress
+                .0
+                .compare_exchange(
+                    previous_state.into(),
+                    new_state.into(),
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                )
+                .is_ok()
+            {
+                return ProtectedZoneGuard(self.clone());
+            }
+        }
+    }
+}
+
+
+pub struct ProtectedZoneGuard(ActorState);
+
+impl Drop for ProtectedZoneGuard {
+    fn drop(&mut self) {
+        let previous_state: ProgressState = self.0.progress.0.fetch_sub(1, Ordering::SeqCst).into();
+        assert!(matches!(previous_state, ProgressState::ProtectedZone(_)));
+    }
+}
 
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ActorState {
+pub enum ActorStateId {
     /// Processing implies that the actor has some message(s) (this includes commands) to process.
     Processing = 0,
     /// Idle means that the actor is currently waiting for messages.
@@ -34,14 +88,14 @@ pub enum ActorState {
     Failure = 4,
 }
 
-impl From<u32> for ActorState {
+impl From<u32> for ActorStateId {
     fn from(actor_state_u32: u32) -> Self {
         match actor_state_u32 {
-            0 => ActorState::Processing,
-            1 => ActorState::Idle,
-            2 => ActorState::Paused,
-            3 => ActorState::Success,
-            4 => ActorState::Failure,
+            0 => ActorStateId::Processing,
+            1 => ActorStateId::Idle,
+            2 => ActorStateId::Paused,
+            3 => ActorStateId::Success,
+            4 => ActorStateId::Failure,
             _ => {
                 panic!(
                     "Found forbidden u32 value for ActorState `{}`. This should never happen.",
@@ -52,21 +106,21 @@ impl From<u32> for ActorState {
     }
 }
 
-impl From<ActorState> for AtomicState {
-    fn from(state: ActorState) -> Self {
+impl From<ActorStateId> for AtomicState {
+    fn from(state: ActorStateId) -> Self {
         AtomicState(AtomicU32::from(state as u32))
     }
 }
 
-impl ActorState {
+impl ActorStateId {
     pub fn is_running(&self) -> bool {
-        *self == ActorState::Idle || *self == ActorState::Processing
+        *self == ActorStateId::Idle || *self == ActorStateId::Processing
     }
 
     pub fn is_exit(&self) -> bool {
         match self {
-            ActorState::Processing | ActorState::Idle | ActorState::Paused => false,
-            ActorState::Success | ActorState::Failure => true,
+            ActorStateId::Processing | ActorStateId::Idle | ActorStateId::Paused => false,
+            ActorStateId::Success | ActorStateId::Failure => true,
         }
     }
 }
@@ -75,15 +129,15 @@ pub struct AtomicState(AtomicU32);
 
 impl Default for AtomicState {
     fn default() -> Self {
-        AtomicState(AtomicU32::new(ActorState::Processing as u32))
+        AtomicState(AtomicU32::new(ActorStateId::Processing as u32))
     }
 }
 
 impl AtomicState {
     pub fn process(&self) {
         let _ = self.0.compare_exchange(
-            ActorState::Idle as u32,
-            ActorState::Processing as u32,
+            ActorStateId::Idle as u32,
+            ActorStateId::Processing as u32,
             Ordering::SeqCst,
             Ordering::SeqCst,
         );
@@ -91,8 +145,8 @@ impl AtomicState {
 
     pub fn idle(&self) {
         let _ = self.0.compare_exchange(
-            ActorState::Processing as u32,
-            ActorState::Idle as u32,
+            ActorStateId::Processing as u32,
+            ActorStateId::Idle as u32,
             Ordering::SeqCst,
             Ordering::SeqCst,
         );
@@ -102,8 +156,8 @@ impl AtomicState {
         let _ = self
             .0
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |state| {
-                if ActorState::from(state).is_running() {
-                    return Some(ActorState::Paused as u32);
+                if ActorStateId::from(state).is_running() {
+                    return Some(ActorStateId::Paused as u32);
                 }
                 None
             });
@@ -111,8 +165,8 @@ impl AtomicState {
 
     pub fn resume(&self) {
         let _ = self.0.compare_exchange(
-            ActorState::Paused as u32,
-            ActorState::Processing as u32,
+            ActorStateId::Paused as u32,
+            ActorStateId::Processing as u32,
             Ordering::SeqCst,
             Ordering::SeqCst,
         );
@@ -120,15 +174,15 @@ impl AtomicState {
 
     pub(crate) fn exit(&self, success: bool) {
         let new_state = if success {
-            ActorState::Success
+            ActorStateId::Success
         } else {
-            ActorState::Failure
+            ActorStateId::Failure
         };
         self.0.fetch_max(new_state as u32, Ordering::Release);
     }
 
-    pub fn get_state(&self) -> ActorState {
-        ActorState::from(self.0.load(Ordering::Acquire))
+    pub fn get_state(&self) -> ActorStateId {
+        ActorStateId::from(self.0.load(Ordering::Acquire))
     }
 }
 
@@ -165,7 +219,7 @@ mod tests {
     }
 
     #[track_caller]
-    fn test_transition(from_state: ActorState, op: Operation, expected_state: ActorState) {
+    fn test_transition(from_state: ActorStateId, op: Operation, expected_state: ActorStateId) {
         let state = AtomicState::from(from_state);
         op.apply(&state);
         assert_eq!(state.get_state(), expected_state);
@@ -173,60 +227,93 @@ mod tests {
 
     #[test]
     fn test_atomic_state_from_running() {
-        test_transition(ActorState::Idle, Operation::Process, ActorState::Processing);
-        test_transition(ActorState::Processing, Operation::Idle, ActorState::Idle);
-        test_transition(ActorState::Processing, Operation::Pause, ActorState::Paused);
-        test_transition(ActorState::Idle, Operation::Pause, ActorState::Paused);
+        test_transition(ActorStateId::Idle, Operation::Process, ActorStateId::Processing);
+        test_transition(ActorStateId::Processing, Operation::Idle, ActorStateId::Idle);
+        test_transition(ActorStateId::Processing, Operation::Pause, ActorStateId::Paused);
+        test_transition(ActorStateId::Idle, Operation::Pause, ActorStateId::Paused);
         test_transition(
-            ActorState::Processing,
+            ActorStateId::Processing,
             Operation::Resume,
-            ActorState::Processing,
+            ActorStateId::Processing,
         );
         test_transition(
-            ActorState::Processing,
+            ActorStateId::Processing,
             Operation::ExitSuccess,
-            ActorState::Success,
+            ActorStateId::Success,
         );
-        test_transition(ActorState::Paused, Operation::Pause, ActorState::Paused);
+        test_transition(ActorStateId::Paused, Operation::Pause, ActorStateId::Paused);
         test_transition(
-            ActorState::Paused,
+            ActorStateId::Paused,
             Operation::Resume,
-            ActorState::Processing,
+            ActorStateId::Processing,
         );
         test_transition(
-            ActorState::Paused,
+            ActorStateId::Paused,
             Operation::ExitSuccess,
-            ActorState::Success,
+            ActorStateId::Success,
         );
         test_transition(
-            ActorState::Success,
+            ActorStateId::Success,
             Operation::ExitFailure,
-            ActorState::Failure,
+            ActorStateId::Failure,
         );
 
-        test_transition(ActorState::Success, Operation::Process, ActorState::Success);
-        test_transition(ActorState::Success, Operation::Idle, ActorState::Success);
-        test_transition(ActorState::Success, Operation::Pause, ActorState::Success);
-        test_transition(ActorState::Success, Operation::Resume, ActorState::Success);
+        test_transition(ActorStateId::Success, Operation::Process, ActorStateId::Success);
+        test_transition(ActorStateId::Success, Operation::Idle, ActorStateId::Success);
+        test_transition(ActorStateId::Success, Operation::Pause, ActorStateId::Success);
+        test_transition(ActorStateId::Success, Operation::Resume, ActorStateId::Success);
         test_transition(
-            ActorState::Success,
+            ActorStateId::Success,
             Operation::ExitSuccess,
-            ActorState::Success,
+            ActorStateId::Success,
         );
 
-        test_transition(ActorState::Failure, Operation::Process, ActorState::Failure);
-        test_transition(ActorState::Failure, Operation::Idle, ActorState::Failure);
-        test_transition(ActorState::Failure, Operation::Pause, ActorState::Failure);
-        test_transition(ActorState::Failure, Operation::Resume, ActorState::Failure);
+        test_transition(ActorStateId::Failure, Operation::Process, ActorStateId::Failure);
+        test_transition(ActorStateId::Failure, Operation::Idle, ActorStateId::Failure);
+        test_transition(ActorStateId::Failure, Operation::Pause, ActorStateId::Failure);
+        test_transition(ActorStateId::Failure, Operation::Resume, ActorStateId::Failure);
         test_transition(
-            ActorState::Failure,
+            ActorStateId::Failure,
             Operation::ExitSuccess,
-            ActorState::Failure,
+            ActorStateId::Failure,
         );
         test_transition(
-            ActorState::Failure,
+            ActorStateId::Failure,
             Operation::ExitFailure,
-            ActorState::Failure,
+            ActorStateId::Failure,
         );
+    }
+
+    #[test]
+    fn test_progress_protect_zone() {
+        let actor_state = ActorState::default();
+        assert!(actor_state.registered_activity_since_last_call());
+        actor_state.record_progress();
+        assert!(actor_state.registered_activity_since_last_call());
+        {
+            let _protect_guard = actor_state.protect_zone();
+            assert!(actor_state.registered_activity_since_last_call());
+            assert!(actor_state.registered_activity_since_last_call());
+        }
+        assert!(actor_state.registered_activity_since_last_call());
+        assert!(!actor_state.registered_activity_since_last_call());
+    }
+
+    #[test]
+    fn test_progress_several_protect_zone() {
+        let actor_state = ActorState::default();
+        assert!(actor_state.registered_activity_since_last_call());
+        actor_state.record_progress();
+        assert!(actor_state.registered_activity_since_last_call());
+        let first_protect_guard = actor_state.protect_zone();
+        let second_protect_guard = actor_state.protect_zone();
+        assert!(actor_state.registered_activity_since_last_call());
+        assert!(actor_state.registered_activity_since_last_call());
+        std::mem::drop(first_protect_guard);
+        assert!(actor_state.registered_activity_since_last_call());
+        assert!(actor_state.registered_activity_since_last_call());
+        std::mem::drop(second_protect_guard);
+        assert!(actor_state.registered_activity_since_last_call());
+        assert!(!actor_state.registered_activity_since_last_call());
     }
 }

@@ -231,7 +231,7 @@ async fn merge_split_directories(
     // This directory is here to receive the merged split, as well as the final meta.json file.
     let output_directory = ControlledDirectory::new(
         Box::new(MmapDirectory::open(output_path)?),
-        ctx.progress().clone(),
+        ctx.actor_state().clone(),
         ctx.kill_switch().clone(),
     );
     let mut directory_stack: Vec<Box<dyn Directory>> = vec![

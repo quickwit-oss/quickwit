@@ -31,8 +31,7 @@ use thiserror::Error;
 use tokio::sync::{oneshot, watch};
 use tracing::{debug, error};
 
-use crate::actor_state::{ActorState, AtomicState};
-use crate::progress::{Progress, ProtectedZoneGuard};
+use crate::actor_state::{ActorStateId, ActorState, ProtectedZoneGuard};
 use crate::registry::ActorRegistry;
 use crate::scheduler::{Callback, ScheduleEvent, Scheduler};
 use crate::spawn_builder::SpawnBuilder;
@@ -229,11 +228,10 @@ impl<A: Actor> Deref for ActorContext<A> {
 
 pub struct ActorContextInner<A: Actor> {
     self_mailbox: Mailbox<A>,
-    progress: Progress,
+    actor_state: ActorState,
     kill_switch: KillSwitch,
     scheduler_mailbox: Mailbox<Scheduler>,
     registry: ActorRegistry,
-    actor_state: AtomicState,
     // Count the number of times the actor has slept.
     // This counter is useful to unsure that obsolete WakeUp
     // events do not effect ulterior `sleep`.
@@ -278,11 +276,10 @@ impl<A: Actor> ActorContext<A> {
         ActorContext {
             inner: ActorContextInner {
                 self_mailbox,
-                progress: Progress::default(),
+                actor_state: ActorState::default(),
                 kill_switch,
                 scheduler_mailbox,
                 registry,
-                actor_state: AtomicState::default(),
                 sleep_count: AtomicUsize::default(),
                 observable_state_tx: Mutex::new(observable_state_tx),
             }
@@ -329,7 +326,7 @@ impl<A: Actor> ActorContext<A> {
     /// It is only useful in some corner cases, like calling a long blocking
     /// from an external library that you trust.
     pub fn protect_zone(&self) -> ProtectedZoneGuard {
-        self.progress.protect_zone()
+        self.actor_state.protect_zone()
     }
 
     /// Executes a future in a protected zone.
@@ -348,9 +345,8 @@ impl<A: Actor> ActorContext<A> {
         &self.kill_switch
     }
 
-    #[must_use]
-    pub fn progress(&self) -> &Progress {
-        &self.progress
+    pub fn actor_state(&self) -> &ActorState {
+        &self.actor_state
     }
 
     pub fn spawn_actor<SpawnedActor: Actor>(&self) -> SpawnBuilder<SpawnedActor> {
@@ -367,23 +363,23 @@ impl<A: Actor> ActorContext<A> {
     /// In that case, you can call this function in the middle of the process_message method
     /// to prevent the actor from being identified as blocked or dead.
     pub fn record_progress(&self) {
-        self.progress.record_progress();
+        self.actor_state.progress.record_progress();
     }
 
-    pub(crate) fn state(&self) -> ActorState {
-        self.actor_state.get_state()
+    pub(crate) fn state(&self) -> ActorStateId {
+        self.actor_state.state_id.get_state()
     }
 
     pub(crate) fn process(&self) {
-        self.actor_state.process();
+        self.actor_state.state_id.process();
     }
 
     pub(crate) fn idle(&self) {
-        self.actor_state.idle();
+        self.actor_state.state_id.idle();
     }
 
     pub(crate) fn pause(&self) {
-        self.actor_state.pause();
+        self.actor_state.state_id.pause();
     }
 
     /// Puts the actor to sleep for the given duration.
@@ -402,7 +398,7 @@ impl<A: Actor> ActorContext<A> {
     }
 
     pub(crate) fn resume(&self) {
-        self.actor_state.resume();
+        self.actor_state.state_id.resume();
     }
 
     pub(crate) fn observe(&self, actor: &mut A) -> A::ObservableState {
@@ -419,7 +415,7 @@ impl<A: Actor> ActorContext<A> {
         if !exit_status.is_success() {
             error!(actor_name=self.actor_instance_id(), actor_exit_status=?exit_status, "actor-failure");
         }
-        self.actor_state.exit(exit_status.is_success());
+        self.actor_state.state_id.exit(exit_status.is_success());
         if should_activate_kill_switch(exit_status) {
             error!(actor=%self.actor_instance_id(), exit_status=?exit_status, "exit activating-kill-switch");
             self.kill_switch().kill();

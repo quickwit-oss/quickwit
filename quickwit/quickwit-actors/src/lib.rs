@@ -54,13 +54,12 @@ pub use actor_handle::{ActorHandle, Health, Supervisable};
 pub use command::Command;
 pub use kill_switch::KillSwitch;
 pub use observation::{Observation, ObservationType};
-pub use progress::{Progress, ProtectedZoneGuard};
 pub(crate) use scheduler::Scheduler;
 use thiserror::Error;
 pub use universe::Universe;
 
 pub use self::actor::ActorContext;
-pub use self::actor_state::ActorState;
+pub use self::actor_state::{ActorState, ProtectedZoneGuard, ActorStateId};
 pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError};
 pub use self::mailbox::{create_mailbox, create_test_mailbox, Inbox, Mailbox};
 pub use self::registry::ActorObservation;

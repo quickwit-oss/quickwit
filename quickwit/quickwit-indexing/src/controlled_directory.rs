@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::{fmt, io};
 
 use arc_swap::ArcSwap;
-use quickwit_actors::{KillSwitch, Progress, ProtectedZoneGuard};
+use quickwit_actors::{KillSwitch, ProtectedZoneGuard, ActorState};
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
 use tantivy::directory::{
     AntiCallToken, FileHandle, TerminatingWrite, WatchCallback, WatchHandle, WritePtr,
@@ -49,13 +49,13 @@ pub struct ControlledDirectory {
 impl ControlledDirectory {
     pub fn new(
         directory: Box<dyn Directory>,
-        progress: Progress,
+        actor_state: ActorState,
         kill_switch: KillSwitch,
     ) -> ControlledDirectory {
         ControlledDirectory {
             inner: Inner {
                 controls: Arc::new(ArcSwap::new(Arc::new(Controls {
-                    progress,
+                    actor_state,
                     kill_switch,
                 }))),
                 underlying: directory.into(),
@@ -67,10 +67,10 @@ impl ControlledDirectory {
         self.inner.controls.load().check_if_alive()
     }
 
-    pub fn set_progress_and_kill_switch(&self, progress: Progress, kill_switch: KillSwitch) {
-        progress.record_progress();
+    pub fn set_actor_state_and_kill_switch(&self, actor_state: ActorState, kill_switch: KillSwitch) {
+        actor_state.record_progress();
         self.inner.controls.store(Arc::new(Controls {
-            progress,
+            actor_state,
             kill_switch,
         }));
     }
@@ -84,7 +84,7 @@ impl fmt::Debug for ControlledDirectory {
 
 #[derive(Clone)]
 struct Controls {
-    progress: Progress,
+    actor_state: ActorState,
     kill_switch: KillSwitch,
 }
 
@@ -96,7 +96,7 @@ impl Controls {
                 "Directory kill switch was activated.",
             ));
         }
-        let guard = self.progress.protect_zone();
+        let guard = self.actor_state.protect_zone();
         Ok(guard)
     }
 }
@@ -233,26 +233,26 @@ mod tests {
     #[test]
     fn test_records_progress_on_write() -> anyhow::Result<()> {
         let directory = RamDirectory::default();
-        let progress = Progress::default();
+        let actor_state = ActorState::default();
         let controlled_directory =
-            ControlledDirectory::new(Box::new(directory), progress.clone(), KillSwitch::default());
-        assert!(progress.registered_activity_since_last_call());
-        assert!(!progress.registered_activity_since_last_call());
+            ControlledDirectory::new(Box::new(directory), actor_state.clone(), KillSwitch::default());
+        assert!(actor_state.registered_activity_since_last_call());
+        assert!(!actor_state.registered_activity_since_last_call());
         let mut wrt = controlled_directory.open_write(Path::new("test"))?;
-        assert!(progress.registered_activity_since_last_call());
+        assert!(actor_state.registered_activity_since_last_call());
         // We use a large buffer to force the buf writer to flush at least once.
         let large_buffer = vec![0u8; wrt.capacity() + 1];
         wrt.write_all(&large_buffer)?;
-        assert!(progress.registered_activity_since_last_call());
+        assert!(actor_state.registered_activity_since_last_call());
         wrt.write_all(b"small payload")?;
         // Here we check that the progress only concerns is only
         // trigger when the BufWriter flushes.
-        assert!(!progress.registered_activity_since_last_call());
+        assert!(!actor_state.registered_activity_since_last_call());
         wrt.write_all(&large_buffer)?;
-        assert!(progress.registered_activity_since_last_call());
-        assert!(!progress.registered_activity_since_last_call());
+        assert!(actor_state.registered_activity_since_last_call());
+        assert!(!actor_state.registered_activity_since_last_call());
         wrt.terminate()?;
-        assert!(progress.registered_activity_since_last_call());
+        assert!(actor_state.registered_activity_since_last_call());
         Ok(())
     }
 
@@ -262,7 +262,7 @@ mod tests {
         let kill_switch = KillSwitch::default();
         let controlled_directory = ControlledDirectory::new(
             Box::new(directory),
-            Progress::default(),
+            ActorState::default(),
             kill_switch.clone(),
         );
         let mut wrt = controlled_directory.open_write(Path::new("test"))?;

@@ -136,8 +136,8 @@ impl Handler<IndexedSplitBatch> for Packager {
         );
         for split in &batch.splits {
             if let Some(controlled_directory) = &split.controlled_directory_opt {
-                controlled_directory.set_progress_and_kill_switch(
-                    ctx.progress().clone(),
+                controlled_directory.set_actor_state_and_kill_switch(
+                    ctx.actor_state().clone(),
                     ctx.kill_switch().clone(),
                 );
             }

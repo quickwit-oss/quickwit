@@ -18,17 +18,15 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
 
 /// Progress makes it possible to register some progress.
 /// It is used in lieu of healthcheck.
 ///
 /// If no progress is observed until the next heartbeat, the actor will be killed.
-#[derive(Clone)]
-pub struct Progress(Arc<AtomicU32>);
+pub struct Progress(pub AtomicU32);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ProgressState {
+pub(crate) enum ProgressState {
     // No update recorded since the last call to .check_for_update()
     NoUpdate,
     // An update was recorded since the last call to .check_for_update()
@@ -73,7 +71,7 @@ impl From<u32> for ProgressState {
 
 impl Default for Progress {
     fn default() -> Progress {
-        Progress(Arc::new(AtomicU32::new(ProgressState::Updated.into())))
+        Progress(AtomicU32::new(ProgressState::Updated.into()))
     }
 }
 
@@ -81,28 +79,6 @@ impl Progress {
     pub fn record_progress(&self) {
         self.0
             .fetch_max(ProgressState::Updated.into(), Ordering::Relaxed);
-    }
-
-    pub fn protect_zone(&self) -> ProtectedZoneGuard {
-        loop {
-            let previous_state: ProgressState = self.0.load(Ordering::SeqCst).into();
-            let new_state = match previous_state {
-                ProgressState::NoUpdate | ProgressState::Updated => ProgressState::ProtectedZone(0),
-                ProgressState::ProtectedZone(level) => ProgressState::ProtectedZone(level + 1),
-            };
-            if self
-                .0
-                .compare_exchange(
-                    previous_state.into(),
-                    new_state.into(),
-                    Ordering::SeqCst,
-                    Ordering::SeqCst,
-                )
-                .is_ok()
-            {
-                return ProtectedZoneGuard(self.0.clone());
-            }
-        }
     }
 
     /// This method mutates the state as follows and returns true if
@@ -125,14 +101,6 @@ impl Progress {
     }
 }
 
-pub struct ProtectedZoneGuard(Arc<AtomicU32>);
-
-impl Drop for ProtectedZoneGuard {
-    fn drop(&mut self) {
-        let previous_state: ProgressState = self.0.fetch_sub(1, Ordering::SeqCst).into();
-        assert!(matches!(previous_state, ProgressState::ProtectedZone(_)));
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -143,39 +111,6 @@ mod tests {
         let progress = Progress::default();
         assert!(progress.registered_activity_since_last_call());
         progress.record_progress();
-        assert!(progress.registered_activity_since_last_call());
-        assert!(!progress.registered_activity_since_last_call());
-    }
-
-    #[test]
-    fn test_progress_protect_zone() {
-        let progress = Progress::default();
-        assert!(progress.registered_activity_since_last_call());
-        progress.record_progress();
-        assert!(progress.registered_activity_since_last_call());
-        {
-            let _protect_guard = progress.protect_zone();
-            assert!(progress.registered_activity_since_last_call());
-            assert!(progress.registered_activity_since_last_call());
-        }
-        assert!(progress.registered_activity_since_last_call());
-        assert!(!progress.registered_activity_since_last_call());
-    }
-
-    #[test]
-    fn test_progress_several_protect_zone() {
-        let progress = Progress::default();
-        assert!(progress.registered_activity_since_last_call());
-        progress.record_progress();
-        assert!(progress.registered_activity_since_last_call());
-        let first_protect_guard = progress.protect_zone();
-        let second_protect_guard = progress.protect_zone();
-        assert!(progress.registered_activity_since_last_call());
-        assert!(progress.registered_activity_since_last_call());
-        std::mem::drop(first_protect_guard);
-        assert!(progress.registered_activity_since_last_call());
-        assert!(progress.registered_activity_since_last_call());
-        std::mem::drop(second_protect_guard);
         assert!(progress.registered_activity_since_last_call());
         assert!(!progress.registered_activity_since_last_call());
     }

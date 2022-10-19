@@ -27,7 +27,7 @@ use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tracing::error;
 
-use crate::actor_state::ActorState;
+use crate::actor_state::ActorStateId;
 use crate::observation::ObservationType;
 use crate::{Actor, ActorContext, ActorExitStatus, Command, Mailbox, Observation};
 
@@ -70,14 +70,15 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
 
     fn health(&self) -> Health {
         let actor_state = self.state();
-        if actor_state == ActorState::Success {
+        if actor_state == ActorStateId::Success {
             Health::Success
-        } else if actor_state == ActorState::Failure {
+        } else if actor_state == ActorStateId::Failure {
             error!(actor = self.name(), "actor-exit-without-success");
             Health::FailureOrUnhealthy
         } else if self
             .actor_context
-            .progress()
+            .actor_state()
+            .progress
             .registered_activity_since_last_call()
         {
             Health::Healthy
@@ -101,7 +102,7 @@ impl<A: Actor> ActorHandle<A> {
         }
     }
 
-    pub fn state(&self) -> ActorState {
+    pub fn state(&self) -> ActorStateId {
         self.actor_context.state()
     }
 

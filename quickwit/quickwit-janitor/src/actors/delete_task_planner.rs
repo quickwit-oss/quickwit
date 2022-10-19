@@ -174,7 +174,6 @@ impl DeleteTaskPlanner {
                 last_delete_opstamp,
             ))
             .await?;
-
             // Sends delete operations.
             for split_with_deletes in splits_with_deletes {
                 let delete_operation = MergeOperation::new_delete_and_merge_operation(
@@ -366,7 +365,7 @@ impl Handler<PlanDeleteOperationsLoop> for DeleteTaskPlanner {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::{create_test_mailbox, ActorState, Universe};
+    use quickwit_actors::{create_test_mailbox, ActorStateId, Universe};
     use quickwit_config::build_doc_mapper;
     use quickwit_indexing::merge_policy::{MergeOperation, NopMergePolicy};
     use quickwit_indexing::TestSandbox;
@@ -497,7 +496,7 @@ mod tests {
         assert_eq!(all_splits[2].split_metadata.delete_opstamp, 0);
 
         // Check actor state.
-        assert_eq!(delete_planner_executor_handle.state(), ActorState::Idle);
+        assert_eq!(delete_planner_executor_handle.state(), ActorStateId::Idle);
 
         Ok(())
     }
