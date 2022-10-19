@@ -63,6 +63,5 @@ pub struct ObservePipeline {
 
 #[derive(Debug)]
 pub struct SpawnMergePipeline {
-    pub index_id: String,
-    pub merge_enabled: bool,
+    pub pipeline_id: IndexingPipelineId,
 }

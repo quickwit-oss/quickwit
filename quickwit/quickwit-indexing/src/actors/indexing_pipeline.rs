@@ -237,6 +237,7 @@ impl IndexingPipeline {
             .map(|split| split.split_metadata)
             .collect::<Vec<_>>();
 
+        info!("splits {:?}", published_splits);
         let (merge_planner_mailbox, merge_planner_inbox) =
             create_mailbox::<MergePlanner>("MergePlanner".to_string(), QueueCapacity::Unbounded);
 
