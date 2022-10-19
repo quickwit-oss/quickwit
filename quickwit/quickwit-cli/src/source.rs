@@ -307,7 +307,7 @@ async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
     let source_config_content = load_file(&args.source_config_uri).await?;
     let source_config =
         SourceConfig::load(&args.source_config_uri, source_config_content.as_slice()).await?;
-    if let SourceParams::IngestApi(_) = source_config.source_params {
+    if let SourceParams::IngestApi = source_config.source_params {
         bail!(
             "Failed to create Ingest API source `{}` for index `{}`. Ingest API sources are \
              created and managed by Quickwit and cannot be created via the `source create` CLI \

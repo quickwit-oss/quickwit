@@ -23,7 +23,6 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
-use quickwit_config::IngestApiSourceParams;
 use quickwit_ingest_api::{get_ingest_api_service, iter_doc_payloads, IngestApiService};
 use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
 use quickwit_proto::ingest_api::{
@@ -31,7 +30,6 @@ use quickwit_proto::ingest_api::{
 };
 use serde::Serialize;
 
-use super::file_source::BATCH_NUM_BYTES_LIMIT;
 use super::{Source, SourceActor, SourceContext, TypedSourceFactory};
 use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
@@ -59,7 +57,6 @@ pub struct IngestApiSource {
     ctx: Arc<SourceExecutionContext>,
     source_id: String,
     partition_id: PartitionId,
-    params: IngestApiSourceParams,
     ingest_api_service: Mailbox<IngestApiService>,
     counters: IngestApiSourceCounters,
 }
@@ -73,7 +70,6 @@ impl fmt::Debug for IngestApiSource {
 impl IngestApiSource {
     pub async fn try_new(
         ctx: Arc<SourceExecutionContext>,
-        params: IngestApiSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
         let source_id = ctx.source_config.source_id.clone();
@@ -97,7 +93,6 @@ impl IngestApiSource {
             ctx,
             source_id,
             partition_id,
-            params,
             ingest_api_service,
             counters: IngestApiSourceCounters {
                 previous_offset,
@@ -125,10 +120,7 @@ impl Source for IngestApiSource {
         let fetch_req = FetchRequest {
             index_id: self.ctx.index_id.clone(),
             start_after: self.counters.current_offset,
-            num_bytes_limit: self
-                .params
-                .batch_num_bytes_limit
-                .or(Some(BATCH_NUM_BYTES_LIMIT)),
+            num_bytes_limit: None,
         };
         let FetchResponse {
             first_position: first_position_opt,
@@ -205,14 +197,14 @@ pub struct IngestApiSourceFactory;
 #[async_trait]
 impl TypedSourceFactory for IngestApiSourceFactory {
     type Source = IngestApiSource;
-    type Params = IngestApiSourceParams;
+    type Params = ();
 
     async fn typed_create_source(
         ctx: Arc<SourceExecutionContext>,
-        params: IngestApiSourceParams,
+        _: (),
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
-        IngestApiSource::try_new(ctx, params, checkpoint).await
+        IngestApiSource::try_new(ctx, checkpoint).await
     }
 }
 
@@ -240,7 +232,14 @@ mod tests {
                 ..Default::default()
             };
             while doc_batch.doc_lens.len() < batch_size {
-                add_doc(format!("{:0>4}", doc_id).as_bytes(), &mut doc_batch);
+                add_doc(
+                    format!(
+                        "{:0>6} - The quick brown fox jumps over the lazy dog",
+                        doc_id
+                    )
+                    .as_bytes(),
+                    &mut doc_batch,
+                );
                 doc_id += 1;
             }
             doc_batches.push(doc_batch);
@@ -248,12 +247,12 @@ mod tests {
         IngestRequest { doc_batches }
     }
 
-    fn make_source_config(ingest_api_source_params: IngestApiSourceParams) -> SourceConfig {
+    fn make_source_config() -> SourceConfig {
         SourceConfig {
             source_id: INGEST_API_SOURCE_ID.to_string(),
             num_pipelines: 1,
             enabled: true,
-            source_params: SourceParams::IngestApi(ingest_api_source_params),
+            source_params: SourceParams::IngestApi,
         }
     }
 
@@ -267,18 +266,14 @@ mod tests {
 
         let ingest_api_service = init_ingest_api(&universe, queues_dir_path).await?;
         let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
-        let params = IngestApiSourceParams {
-            batch_num_bytes_limit: Some(4 * 500),
-        };
-        let source_config = make_source_config(params.clone());
+        let source_config = make_source_config();
         let ctx = SourceExecutionContext::for_test(
             metastore,
             &index_id,
             queues_dir_path.to_path_buf(),
             source_config,
         );
-        let ingest_api_source =
-            IngestApiSource::try_new(ctx, params, SourceCheckpoint::default()).await?;
+        let ingest_api_source = IngestApiSource::try_new(ctx, SourceCheckpoint::default()).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
             doc_processor_mailbox,
@@ -286,7 +281,7 @@ mod tests {
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_builder().spawn(ingest_api_source_actor);
 
-        let ingest_req = make_ingest_request(index_id.clone(), 2, 1000);
+        let ingest_req = make_ingest_request(index_id.clone(), 2, 20_000);
         ingest_api_service
             .ask_for_res(ingest_req)
             .await
@@ -299,14 +294,14 @@ mod tests {
         assert_eq!(
             counters,
             serde_json::json!({
-                "previous_offset": 1999u64,
-                "current_offset": 1999u64,
-                "num_docs_processed": 2000u64
+                "previous_offset": 39999u64,
+                "current_offset": 39999u64,
+                "num_docs_processed": 40000u64
             })
         );
         let doc_batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
-        assert_eq!(doc_batches.len(), 4);
-        assert!(doc_batches[1].docs[0].starts_with("0501"));
+        assert_eq!(doc_batches.len(), 2);
+        assert!(doc_batches[1].docs[0].starts_with("038462"));
         Ok(())
     }
 
@@ -329,17 +324,14 @@ mod tests {
         );
         checkpoint.try_apply_delta(checkpoint_delta)?;
 
-        let params = IngestApiSourceParams {
-            batch_num_bytes_limit: None,
-        };
-        let source_config = make_source_config(params.clone());
+        let source_config = make_source_config();
         let ctx = SourceExecutionContext::for_test(
             metastore,
             &index_id,
             queues_dir_path.to_path_buf(),
             source_config,
         );
-        let ingest_api_source = IngestApiSource::try_new(ctx, params, checkpoint).await?;
+        let ingest_api_source = IngestApiSource::try_new(ctx, checkpoint).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
             doc_processor_mailbox,
@@ -367,7 +359,7 @@ mod tests {
         );
         let doc_batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert_eq!(doc_batches.len(), 1);
-        assert!(doc_batches[0].docs[0].starts_with("1201"));
+        assert!(doc_batches[0].docs[0].starts_with("001201"));
         Ok(())
     }
 
@@ -381,18 +373,14 @@ mod tests {
         let ingest_api_service = init_ingest_api(&universe, queues_dir_path).await?;
 
         let (doc_processor_mailbox, doc_processor_inbox) = create_test_mailbox();
-        let params = IngestApiSourceParams {
-            batch_num_bytes_limit: None,
-        };
-        let source_config = make_source_config(params.clone());
+        let source_config = make_source_config();
         let ctx = SourceExecutionContext::for_test(
             metastore,
             &index_id,
             queues_dir_path.to_path_buf(),
             source_config,
         );
-        let ingest_api_source =
-            IngestApiSource::try_new(ctx, params, SourceCheckpoint::default()).await?;
+        let ingest_api_source = IngestApiSource::try_new(ctx, SourceCheckpoint::default()).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),
             doc_processor_mailbox,
@@ -420,7 +408,7 @@ mod tests {
         );
         let doc_batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert_eq!(doc_batches.len(), 1);
-        assert!(doc_batches[0].docs[0].starts_with("0000"));
+        assert!(doc_batches[0].docs[0].starts_with("000000"));
         Ok(())
     }
 }

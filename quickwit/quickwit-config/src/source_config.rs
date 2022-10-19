@@ -135,7 +135,7 @@ impl SourceConfig {
                 // TODO consider any validation opportunity
                 Ok(())
             }
-            SourceParams::Vec(_) | SourceParams::Void(_) | SourceParams::IngestApi(_) => Ok(()),
+            SourceParams::Vec(_) | SourceParams::Void(_) | SourceParams::IngestApi => Ok(()),
         }
     }
 
@@ -146,7 +146,7 @@ impl SourceConfig {
             SourceParams::Kinesis(_) => "kinesis",
             SourceParams::Vec(_) => "vec",
             SourceParams::Void(_) => "void",
-            SourceParams::IngestApi(_) => "ingest-api",
+            SourceParams::IngestApi => "ingest-api",
         }
     }
 
@@ -158,7 +158,7 @@ impl SourceConfig {
             SourceParams::Kinesis(params) => serde_json::to_value(params),
             SourceParams::Vec(params) => serde_json::to_value(params),
             SourceParams::Void(params) => serde_json::to_value(params),
-            SourceParams::IngestApi(params) => serde_json::to_value(params),
+            SourceParams::IngestApi => serde_json::to_value(()),
         }
         .unwrap()
     }
@@ -176,9 +176,7 @@ impl SourceConfig {
             source_id: INGEST_API_SOURCE_ID.to_string(),
             num_pipelines: 1,
             enabled: true,
-            source_params: SourceParams::IngestApi(IngestApiSourceParams {
-                batch_num_bytes_limit: None,
-            }),
+            source_params: SourceParams::IngestApi,
         }
     }
 }
@@ -197,7 +195,7 @@ pub enum SourceParams {
     #[serde(rename = "void")]
     Void(VoidSourceParams),
     #[serde(rename = "ingest-api")]
-    IngestApi(IngestApiSourceParams),
+    IngestApi,
 }
 
 impl SourceParams {
@@ -328,21 +326,6 @@ pub struct VecSourceParams {
 #[serde(deny_unknown_fields)]
 pub struct VoidSourceParams;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct IngestApiSourceParams {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub batch_num_bytes_limit: Option<u64>,
-}
-
-impl PartialEq for IngestApiSourceParams {
-    fn eq(&self, other: &Self) -> bool {
-        self.batch_num_bytes_limit == other.batch_num_bytes_limit
-    }
-}
-
-impl Eq for IngestApiSourceParams {}
-
 #[cfg(test)]
 mod tests {
     use quickwit_common::uri::Uri;
@@ -350,7 +333,7 @@ mod tests {
 
     use super::*;
     use crate::source_config::RegionOrEndpoint;
-    use crate::{FileSourceParams, IngestApiSourceParams, KinesisSourceParams};
+    use crate::{FileSourceParams, KinesisSourceParams};
 
     fn get_source_config_filepath(source_config_filename: &str) -> String {
         format!(
@@ -583,27 +566,12 @@ mod tests {
             .await
             .unwrap();
         let expected_source_config = SourceConfig {
-            source_id: "_ingest-api".to_string(),
+            source_id: INGEST_API_SOURCE_ID.to_string(),
             num_pipelines: 1,
             enabled: true,
-            source_params: SourceParams::IngestApi(IngestApiSourceParams {
-                batch_num_bytes_limit: Some(2000),
-            }),
+            source_params: SourceParams::IngestApi,
         };
         assert_eq!(source_config, expected_source_config);
         assert!(source_config.num_pipelines().is_none());
-    }
-
-    #[test]
-    fn test_ingest_api_source_params_deserialization() {
-        let yaml = r#"
-            batch_num_bytes_limit: 2000
-        "#;
-        let ingest_api_params = serde_yaml::from_str::<IngestApiSourceParams>(yaml).unwrap();
-        assert_eq!(ingest_api_params.batch_num_bytes_limit, Some(2000));
-
-        let json = r#"{}"#;
-        let ingest_api_params = serde_json::from_str::<IngestApiSourceParams>(json).unwrap();
-        assert_eq!(ingest_api_params.batch_num_bytes_limit, None);
     }
 }
