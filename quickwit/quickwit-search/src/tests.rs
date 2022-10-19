@@ -25,6 +25,7 @@ use quickwit_doc_mapper::DefaultDocMapper;
 use quickwit_indexing::TestSandbox;
 use quickwit_proto::{LeafHit, SearchRequest, SortOrder};
 use serde_json::json;
+use tantivy::time::OffsetDateTime;
 
 use super::*;
 use crate::single_node_search;
@@ -284,7 +285,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
                 type: datetime
                 input_formats:
                     - "rfc3339"
-                    - "unix_ts_secs"
+                    - "unix_timestamp"
                 fast: true
               - name: owner
                 type: text
@@ -305,9 +306,10 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
     .await?;
 
     let mut docs = vec![];
+    let start_timestamp = OffsetDateTime::now_utc().unix_timestamp();
     for i in 0..30 {
         let body = format!("info @ t:{}", i + 1);
-        docs.push(json!({"body": body, "ts": i+1}));
+        docs.push(json!({"body": body, "ts": start_timestamp + i + 1}));
     }
     test_sandbox.add_documents(docs).await?;
 
@@ -315,8 +317,8 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         index_id: index_id.to_string(),
         query: "info".to_string(),
         search_fields: vec![],
-        start_timestamp: Some(10),
-        end_timestamp: Some(20),
+        start_timestamp: Some(start_timestamp + 10),
+        end_timestamp: Some(start_timestamp + 20),
         max_hits: 15,
         start_offset: 0,
         ..Default::default()
@@ -338,7 +340,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         query: "info".to_string(),
         search_fields: vec![],
         start_timestamp: None,
-        end_timestamp: Some(20),
+        end_timestamp: Some(start_timestamp + 20),
         max_hits: 25,
         start_offset: 0,
         ..Default::default()

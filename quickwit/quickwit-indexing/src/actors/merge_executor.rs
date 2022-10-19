@@ -49,6 +49,7 @@ use crate::models::{
     ScratchDirectory, SplitAttrs,
 };
 
+#[derive(Clone)]
 pub struct MergeExecutor {
     pipeline_id: IndexingPipelineId,
     metastore: Arc<dyn Metastore>,
@@ -504,6 +505,7 @@ mod tests {
     use quickwit_common::split_file;
     use quickwit_metastore::SplitMetadata;
     use quickwit_proto::metastore_api::DeleteQuery;
+    use time::OffsetDateTime;
 
     use super::*;
     use crate::merge_policy::MergeOperation;
@@ -525,7 +527,7 @@ mod tests {
               - name: ts
                 type: datetime
                 input_formats:
-                - unix_ts_millis
+                - unix_timestamp
                 fast: true
         "#;
         let indexing_settings_yaml = "timestamp_field: ts";
@@ -630,7 +632,7 @@ mod tests {
               - name: ts
                 type: datetime
                 input_formats:
-                - unix_ts_millis
+                - unix_timestamp
                 fast: true
         "#;
         let indexing_settings_yaml = "timestamp_field: ts";
@@ -642,10 +644,11 @@ mod tests {
             None,
         )
         .await?;
+        let start_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let docs = vec![
-            serde_json::json!({"body": "info", "ts": 0 }),
-            serde_json::json!({"body": "info", "ts": 0 }),
-            serde_json::json!({"body": "delete", "ts": 0 }),
+            serde_json::json!({"body": "info", "ts": start_timestamp }),
+            serde_json::json!({"body": "info", "ts": start_timestamp }),
+            serde_json::json!({"body": "delete", "ts": start_timestamp }),
         ];
         test_sandbox.add_documents(docs).await?;
         let metastore = test_sandbox.metastore();
