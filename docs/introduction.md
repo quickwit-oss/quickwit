@@ -3,6 +3,7 @@ title: Introduction
 slug: /
 sidebar_position: 1
 ---
+
 import CallToAction from '@theme/CallToAction';
 
 Quickwit is an open-source, cloud-native, distributed search engine for log management and analytics. Written in Rust and designed from the ground up to offer cost-efficiency and high scalability on large datasets, Quickwit is a modern and reliable alternative to Elasticsearch.
@@ -10,13 +11,14 @@ Quickwit is an open-source, cloud-native, distributed search engine for log mana
 <CallToAction
 heading='Get started with Quickwit'
 description='Get up and running in minutes and start harnessing the power of Quickwit today!'
-buttonText='GET STARTED'
-to='/docs/get-started/quickstart'>
+buttontext='GET STARTED'
+to='/docs/main-branch/get-started/quickstart'>
 </CallToAction>
 
 Quickwit is particularly well-suited for dealing with large, immutable datasets and relatively low average QPS<sup>[1](#footnote1)</sup>. Its benefits are most apparent in multi-tenancy or multi-index settings.
 
 Common use cases for Quickwit include:
+
 - Searching and analyzing logs, from small amounts of data to terabytes.
 - Adding full-text search capabilities to [OLAP databases such as ClickHouse](/tutorials/add-full-text-search-to-your-olap-db).
 - Searching through backups sitting on your cloud storage by adding Quickwit index files on your same storage.
@@ -55,6 +57,6 @@ Use cases where you would likely *not* want to use Quickwit include:
 - [Concepts](./concepts/architecture.md)
 - [Last release blog post](https://quickwit.io/blog/quickwit-0.3)
 
-
 ---
+
 <a name="footnote1">1.</a>: QPS stands for Queries per second. It is a standard measure of the amount of search traffic. Low average QPS is typically under 10. This is the case for most search use cases as long as search is not public: enterprise search, log search, email search, security search, ...
