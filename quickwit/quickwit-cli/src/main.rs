@@ -30,8 +30,6 @@ use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::{
     QW_ENABLE_JAEGER_EXPORTER_ENV_KEY, QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY,
 };
-use quickwit_common::runtimes::RuntimesConfiguration;
-use quickwit_config::service::QuickwitService;
 use quickwit_serve::{build_quickwit_build_info, QuickwitBuildInfo};
 use quickwit_telemetry::payload::TelemetryEvent;
 use tonic::metadata::MetadataMap;
@@ -107,34 +105,6 @@ fn setup_logging_and_tracing(level: Level, build_info: &QuickwitBuildInfo) -> an
     Ok(())
 }
 
-/// If a bunch of tokio runtimes need to be started for actors,
-/// return the right configuration.
-///
-/// TODO making it configurable could be useful in the future.
-fn runtime_configuration_for_cmd(command: &CliCommand) -> Option<RuntimesConfiguration> {
-    match command {
-        CliCommand::Run(run_cli_command) => {
-            if run_cli_command.services.contains(&QuickwitService::Indexer)
-                || run_cli_command.services.contains(&QuickwitService::Janitor)
-            {
-                Some(RuntimesConfiguration::default())
-            } else {
-                None
-            }
-        }
-        CliCommand::Index(_) => Some(RuntimesConfiguration::default()),
-        CliCommand::Split(_) | CliCommand::Source(_) => None,
-    }
-}
-
-fn start_actor_runtimes(cli_command: &CliCommand) -> anyhow::Result<()> {
-    if let Some(runtime_configuration) = runtime_configuration_for_cmd(cli_command) {
-        quickwit_common::runtimes::initialize_runtimes(runtime_configuration)
-            .context("Failed to start actor runtimes.")?;
-    }
-    Ok(())
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     #[cfg(feature = "openssl-support")]
@@ -156,8 +126,6 @@ async fn main() -> anyhow::Result<()> {
             std::process::exit(1);
         }
     };
-
-    start_actor_runtimes(&command)?;
 
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();

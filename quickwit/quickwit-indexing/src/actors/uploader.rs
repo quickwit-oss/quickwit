@@ -39,6 +39,7 @@ use tracing::{info, instrument, warn, Instrument, Span};
 
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::Publisher;
+use crate::metrics::INDEXER_METRICS;
 use crate::models::{
     create_split_metadata, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate,
 };
@@ -136,6 +137,7 @@ impl SplitsUpdateSender {
     }
 }
 
+#[derive(Clone)]
 pub struct Uploader {
     actor_name: &'static str,
     metastore: Arc<dyn Metastore>,
@@ -167,8 +169,12 @@ impl Uploader {
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<SemaphorePermit<'static>> {
         let _guard = ctx.protect_zone();
-        CONCURRENT_UPLOAD_PERMITS
-            .get_or_init(|| Semaphore::const_new(self.max_concurrent_split_uploads))
+        let concurrent_upload_permits = CONCURRENT_UPLOAD_PERMITS
+            .get_or_init(|| Semaphore::const_new(self.max_concurrent_split_uploads));
+        INDEXER_METRICS
+            .concurrent_upload_available_permits
+            .set(concurrent_upload_permits.available_permits() as i64);
+        concurrent_upload_permits
             .acquire()
             .await
             .context("The uploader semaphore is closed. (This should never happen.)")

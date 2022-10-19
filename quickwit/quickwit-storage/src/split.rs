@@ -237,13 +237,15 @@ mod tests {
         let test_filepath2 = temp_dir.path().join("f2");
 
         let mut file1 = File::create(&test_filepath1)?;
-        file1.write_all(&[123, 76])?;
+        file1.write_all(b"hello")?;
 
         let mut file2 = File::create(&test_filepath2)?;
-        file2.write_all(&[99, 55, 44])?;
+        file2.write_all(b"world")?;
 
-        let _split_streamer =
-            SplitPayloadBuilder::get_split_payload(&[test_filepath1, test_filepath2], &[1, 2, 3])?;
+        let split_payload =
+            SplitPayloadBuilder::get_split_payload(&[test_filepath1, test_filepath2], b"abc")?;
+
+        assert_eq!(split_payload.len(), 91);
 
         Ok(())
     }

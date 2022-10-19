@@ -28,6 +28,7 @@ use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::fast_field_reader::timestamp_field_reader;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::build_doc_mapper;
 use quickwit_directories::UnionDirectory;
@@ -48,6 +49,7 @@ use crate::models::{
     ScratchDirectory, SplitAttrs,
 };
 
+#[derive(Clone)]
 pub struct MergeExecutor {
     pipeline_id: IndexingPipelineId,
     metastore: Arc<dyn Metastore>,
@@ -83,6 +85,7 @@ impl Handler<MergeScratch> for MergeExecutor {
         merge_scratch: MergeScratch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        let start = Instant::now();
         let merge_op = merge_scratch.merge_operation;
         let indexed_split_opt: Option<IndexedSplit> = match merge_op.operation_type {
             MergeOperationType::Merge => Some(
@@ -107,6 +110,12 @@ impl Handler<MergeScratch> for MergeExecutor {
             }
         };
         if let Some(indexed_split) = indexed_split_opt {
+            info!(
+                merged_num_docs = %indexed_split.split_attrs.num_docs,
+                elapsed_secs = %start.elapsed().as_secs_f32(),
+                operation_type = %merge_op.operation_type,
+                "merge-operation-success"
+            );
             ctx.send_message(
                 &self.merge_packager_mailbox,
                 IndexedSplitBatch {
@@ -117,6 +126,8 @@ impl Handler<MergeScratch> for MergeExecutor {
                 },
             )
             .await?;
+        } else {
+            info!("no-splits-merged");
         }
         Ok(())
     }
@@ -404,8 +415,6 @@ impl MergeExecutor {
             num_delete_tasks = delete_tasks.len()
         );
 
-        info!("delete-task-start");
-        let start = Instant::now();
         let (union_index_meta, split_directories) = open_split_directories(&tantivy_dirs)?;
         let controlled_directory = merge_split_directories(
             union_index_meta,
@@ -416,10 +425,6 @@ impl MergeExecutor {
             ctx,
         )
         .await?;
-        info!(
-            elapsed_secs = start.elapsed().as_secs_f32(),
-            "delete-task-success"
-        );
 
         // This will have the side effect of deleting the directory containing the downloaded split.
         let mut merged_index = Index::open(controlled_directory.clone())?;
@@ -449,7 +454,14 @@ impl MergeExecutor {
                         timestamp_field_name
                     ))
                 })?;
-            let reader = merged_segment_reader.fast_fields().i64(timestamp_field)?;
+            let timestamp_field_entry = merged_segment_reader
+                .schema()
+                .get_field_entry(timestamp_field);
+            let reader = timestamp_field_reader(
+                timestamp_field,
+                timestamp_field_entry,
+                merged_segment_reader.fast_fields(),
+            )?;
             Some(RangeInclusive::new(reader.min_value(), reader.max_value()))
         } else {
             None
@@ -493,6 +505,7 @@ mod tests {
     use quickwit_common::split_file;
     use quickwit_metastore::SplitMetadata;
     use quickwit_proto::metastore_api::DeleteQuery;
+    use time::OffsetDateTime;
 
     use super::*;
     use crate::merge_policy::MergeOperation;
@@ -512,13 +525,16 @@ mod tests {
               - name: body
                 type: text
               - name: ts
-                type: i64
+                type: datetime
+                input_formats:
+                - unix_timestamp
                 fast: true
         "#;
+        let indexing_settings_yaml = "timestamp_field: ts";
         let test_sandbox = TestSandbox::create(
             &pipeline_id.index_id,
             doc_mapping_yaml,
-            "{}",
+            indexing_settings_yaml,
             &["body"],
             None,
         )
@@ -614,15 +630,25 @@ mod tests {
               - name: body
                 type: text
               - name: ts
-                type: i64
+                type: datetime
+                input_formats:
+                - unix_timestamp
                 fast: true
         "#;
-        let test_sandbox =
-            TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"], None).await?;
+        let indexing_settings_yaml = "timestamp_field: ts";
+        let test_sandbox = TestSandbox::create(
+            index_id,
+            doc_mapping_yaml,
+            indexing_settings_yaml,
+            &["body"],
+            None,
+        )
+        .await?;
+        let start_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let docs = vec![
-            serde_json::json!({"body": "info", "ts": 0 }),
-            serde_json::json!({"body": "info", "ts": 0 }),
-            serde_json::json!({"body": "delete", "ts": 0 }),
+            serde_json::json!({"body": "info", "ts": start_timestamp }),
+            serde_json::json!({"body": "info", "ts": start_timestamp }),
+            serde_json::json!({"body": "delete", "ts": start_timestamp }),
         ];
         test_sandbox.add_documents(docs).await?;
         let metastore = test_sandbox.metastore();

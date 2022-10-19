@@ -524,7 +524,7 @@ mod tests {
               - name: ts
                 type: datetime
                 input_formats:
-                  - "unix_ts_secs"
+                  - "unix_timestamp"
                 fast: true
         "#;
         let indexing_settings_yaml = r#"
@@ -540,7 +540,7 @@ mod tests {
         .await?;
         let mut docs = vec![];
         let mut filtered_timestamp_values = vec![];
-        let start_date = OffsetDateTime::from_unix_timestamp(0)?;
+        let start_date = OffsetDateTime::now_utc();
         let num_days = 20;
         for i in 0..30 {
             let dt = start_date.checked_add(Duration::days(i + 1)).unwrap();

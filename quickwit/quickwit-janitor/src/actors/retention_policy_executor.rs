@@ -26,7 +26,7 @@ use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_metastore::{IndexMetadata, Metastore};
 use serde::Serialize;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use crate::retention_policy_execution::run_execute_retention_policy;
 
@@ -123,6 +123,7 @@ impl RetentionPolicyExecutor {
                 let message = Execute {
                     index_id: index_metadata.index_id.clone(),
                 };
+                info!(index_id=?index_metadata.index_id, scheduled_in=?next_interval, "retention-policy-schedule-operation");
                 // Inserts & schedule the index's first retention policy execution.
                 self.index_metadatas
                     .insert(index_metadata.index_id.clone(), index_metadata);
@@ -179,7 +180,7 @@ impl Handler<Execute> for RetentionPolicyExecutor {
         message: Execute,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
-        debug!(index_id=%message.index_id, "retention-policy-execution-operation");
+        info!(index_id=%message.index_id, "retention-policy-execute-operation");
         self.counters.num_execution_passes += 1;
 
         let index_metadata = match self.index_metadatas.get(&message.index_id) {
@@ -199,7 +200,7 @@ impl Handler<Execute> for RetentionPolicyExecutor {
             &message.index_id,
             self.metastore.clone(),
             retention_policy,
-            Some(ctx),
+            ctx,
         )
         .await;
         match execution_result {
@@ -210,6 +211,7 @@ impl Handler<Execute> for RetentionPolicyExecutor {
         }
 
         if let Ok(next_interval) = retention_policy.duration_until_next_evaluation() {
+            info!(index_id=?index_metadata.index_id, scheduled_in=?next_interval, "retention-policy-schedule-operation");
             ctx.schedule_self_msg(next_interval, message).await;
         } else {
             // Since we have failed to schedule next execution for this index,

@@ -21,7 +21,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::StreamExt;
+use futures::{Future, StreamExt};
 use quickwit_actors::ActorContext;
 use quickwit_metastore::{Metastore, MetastoreError, SplitMetadata, SplitState};
 use quickwit_storage::{Storage, StorageError};
@@ -63,6 +63,20 @@ impl From<&SplitMetadata> for FileEntry {
     }
 }
 
+async fn protect_future<Fut, T>(
+    ctx_opt: Option<&ActorContext<GarbageCollector>>,
+    future: Fut,
+) -> T
+where
+    Fut: Future<Output = T>,
+{
+    if let Some(ctx) = ctx_opt {
+        ctx.protect_future(future).await
+    } else {
+        future.await
+    }
+}
+
 /// Detect all dangling splits and associated files from the index and removes them.
 ///
 /// * `index_id` - The target index id.
@@ -87,25 +101,26 @@ pub async fn run_garbage_collect(
     let grace_period_timestamp =
         OffsetDateTime::now_utc().unix_timestamp() - staged_grace_period.as_secs() as i64;
 
-    let deletable_staged_splits: Vec<SplitMetadata> = metastore
-        .list_splits(index_id, SplitState::Staged, None, None)
-        .await?
-        .into_iter()
-        // TODO: Update metastore API and push this filter down.
-        .filter(|meta| meta.update_timestamp < grace_period_timestamp)
-        .map(|meta| meta.split_metadata)
-        .collect();
-    if let Some(ctx) = ctx_opt {
-        ctx.record_progress();
-    }
+    let deletable_staged_splits: Vec<SplitMetadata> = protect_future(
+        ctx_opt,
+        metastore.list_splits(index_id, SplitState::Staged, None, None),
+    )
+    .await?
+    .into_iter()
+    // TODO: Update metastore API and push this filter down.
+    .filter(|meta| meta.update_timestamp < grace_period_timestamp)
+    .map(|meta| meta.split_metadata)
+    .collect();
 
     if dry_run {
-        let mut splits_marked_for_deletion = metastore
-            .list_splits(index_id, SplitState::MarkedForDeletion, None, None)
-            .await?
-            .into_iter()
-            .map(|meta| meta.split_metadata)
-            .collect::<Vec<_>>();
+        let mut splits_marked_for_deletion = protect_future(
+            ctx_opt,
+            metastore.list_splits(index_id, SplitState::MarkedForDeletion, None, None),
+        )
+        .await?
+        .into_iter()
+        .map(|meta| meta.split_metadata)
+        .collect::<Vec<_>>();
         splits_marked_for_deletion.extend(deletable_staged_splits);
 
         let candidate_entries: Vec<FileEntry> = splits_marked_for_deletion
@@ -120,21 +135,25 @@ pub async fn run_garbage_collect(
         .iter()
         .map(|meta| meta.split_id())
         .collect();
-    metastore
-        .mark_splits_for_deletion(index_id, &split_ids)
-        .await?;
+    protect_future(
+        ctx_opt,
+        metastore.mark_splits_for_deletion(index_id, &split_ids),
+    )
+    .await?;
 
     // We wait another 2 minutes until the split is actually deleted.
     let grace_period_deletion =
         OffsetDateTime::now_utc().unix_timestamp() - deletion_grace_period.as_secs() as i64;
-    let splits_to_delete = metastore
-        .list_splits(index_id, SplitState::MarkedForDeletion, None, None)
-        .await?
-        .into_iter()
-        // TODO: Update metastore API and push this filter down.
-        .filter(|meta| meta.update_timestamp <= grace_period_deletion)
-        .map(|meta| meta.split_metadata)
-        .collect();
+    let splits_to_delete = protect_future(
+        ctx_opt,
+        metastore.list_splits(index_id, SplitState::MarkedForDeletion, None, None),
+    )
+    .await?
+    .into_iter()
+    // TODO: Update metastore API and push this filter down.
+    .filter(|meta| meta.update_timestamp <= grace_period_deletion)
+    .map(|meta| meta.split_metadata)
+    .collect();
 
     let deleted_files = delete_splits_with_files(
         index_id,
@@ -204,8 +223,7 @@ pub async fn delete_splits_with_files(
 
     if !deleted_split_ids.is_empty() {
         let split_ids: Vec<&str> = deleted_split_ids.iter().map(String::as_str).collect();
-        metastore
-            .delete_splits(index_id, &split_ids)
+        protect_future(ctx_opt, metastore.delete_splits(index_id, &split_ids))
             .await
             .map_err(SplitDeletionError::MetastoreFailure)?;
     }

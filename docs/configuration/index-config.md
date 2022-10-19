@@ -180,7 +180,7 @@ fast: true
 The `datetime` type handles dates and datetimes. Quickwit supports multiple input formats configured independently for each field. The following formats are natively supported:
 - `iso8601`, `rfc2822`, `rfc3339`: parse dates using standard ISO and RFC formats.
 - `strftime`: parse dates using the Unix [strftime](https://man7.org/linux/man-pages/man3/strftime.3.html) format.
-- `unix_ts_secs`, `unix_ts_millis`, `unix_ts_micros`, `unix_ts_nanos`: parse Unix timestamps. At most one Unix timestamp format must be specified.
+- `unix_timestamp`: parse Unix timestamp values. Timestamp values come in different precision, namely: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. Quickwit is capable of inferring the precision from the value. Because of this feature, Quickwit only supports timestamp values ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`.
 
 When a `datetime` field is stored as a fast field, the `precision` parameter indicates the precision used to truncate the values before encoding and compressing them. The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`.
 
@@ -196,7 +196,7 @@ type: datetime
 description: Time at which the event was emitted
 input_formats:
   - rfc3339
-  - unix_ts_millis
+  - unix_timestamp
   - "%Y %m %d %H:%M:%S.%3f %z"
 stored: true
 indexed: true
@@ -208,7 +208,7 @@ precision: milliseconds
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `input_formats` | Formats used to parse input dates | [`rfc3339`] |
+| `input_formats` | Formats used to parse input dates | [`rfc3339`, `unix_timestamp`] |
 | `stored`        | Whether the field values are stored in the document store | `true` |
 | `indexed`       | Whether the field values are indexed | `true` |
 | `fast`          | Whether the field values are stored in a fast field | `false` |
@@ -525,6 +525,44 @@ This section describes search settings for a given index.
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | `search_default_fields`      | Default list of fields that will be used for search.   | None |
+
+## Retention policy
+
+This section describes how Quickwit manages data retention. In Quickwit, the retention policy manager drops data on a split basis as opposed to individually dropping documents.
+
+```yaml
+version: 0
+index_id: hdfs
+# ...
+retention:
+  period: 90 days
+  cutoff_reference: split_timestamp_field
+  schedule: daily
+```
+
+| Variable      | Description   | Default value |
+| ------------- | ------------- | ------------- |
+| `period`      | Duration after which splits are dropped, expressed in a human-readable way (`1 day`, `2 hours`, `a week`, ...). (1) | required |
+| `cutoff_reference`      | Split attribute from which the retention policy is applied relatively, possible values are: `publish_timestamp`, and `split_timestamp_field`. (2) | required |
+| `schedule`      | Frequency at which the retention policy is evaluated and applied, expressed as a cron expression (`0 0 * * * *`) or human-readable form (`hourly`, `daily`, `weekly`, `monthly`, `yearly`). | `hourly` |
+
+
+(1) `period` is specified as set of time spans. Each time span is an integer followed by a unit suffix like: `2 days 3h 24min`. The supported units are:
+  - `nsec`, `ns` -- nanoseconds
+  - `usec`, `us` -- microseconds
+  - `msec`, `ms` -- milliseconds
+  - `seconds`, `second`, `sec`, `s`
+  - `minutes`, `minute`, `min`, `m`
+  - `hours`, `hour`, `hr`, `h`
+  - `days`, `day`, `d`
+  - `weeks`, `week`, `w`
+  - `months`, `month`, `M` -- a month is defined as `30.44 days`
+  - `years`, `year`, `y` -- a year is defined as `365.25 days`
+
+(2) `cutoff_reference` possible values:
+  - `publish_timestamp` will evaluate based on the timestamp the split was published at.
+  - `split_timestamp_field` will evaluate based on the index timestamp field specified in the (`indexing_settings.timestamp_field`) settings.
+
 
 ## Sources
 
