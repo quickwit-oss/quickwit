@@ -388,7 +388,6 @@ impl MergeExecutor {
         assert_eq!(tantivy_dirs.len(), 1);
         let split = &splits[0];
         let index_metadata = self.metastore.index_metadata(&split.index_id).await?;
-        ctx.record_progress();
         let doc_mapper = build_doc_mapper(
             &index_metadata.doc_mapping,
             &index_metadata.search_settings,
@@ -398,7 +397,6 @@ impl MergeExecutor {
             .metastore
             .list_delete_tasks(&split.index_id, split.delete_opstamp)
             .await?;
-        ctx.record_progress();
         if delete_tasks.is_empty() {
             warn!(
                 "No delete task found for split `{}` with `delete_optamp` = `{}`.",
@@ -508,7 +506,6 @@ mod tests {
     use quickwit_common::split_file;
     use quickwit_metastore::SplitMetadata;
     use quickwit_proto::metastore_api::DeleteQuery;
-    use time::OffsetDateTime;
 
     use super::*;
     use crate::merge_policy::MergeOperation;
@@ -653,7 +650,6 @@ mod tests {
             None,
         )
         .await?;
-        let start_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let docs = vec![
             serde_json::json!({"body": "info", "ts": 0 }),
             serde_json::json!({"body": "delete", "ts": 0 }),
