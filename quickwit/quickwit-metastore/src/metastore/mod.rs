@@ -25,8 +25,6 @@ pub mod postgresql_metastore;
 #[cfg(feature = "postgres")]
 mod postgresql_model;
 
-use std::ops::Range;
-
 use async_trait::async_trait;
 pub use index_metadata::IndexMetadata;
 use quickwit_common::uri::Uri;
@@ -154,18 +152,34 @@ pub trait Metastore: Send + Sync + 'static {
     /// Returns a list of splits that intersects the given `time_range`, `split_state`, and `tag`.
     /// Regardless of the time range filter, if a split has no timestamp it is always returned.
     /// An error will occur if an index that does not exist in the storage is specified.
-    async fn list_splits(
+    async fn list_splits<'a>(
         &self,
-        index_id: &str,
-        split_state: SplitState,
-        time_range: Option<Range<i64>>,
-        tags: Option<TagFilterAst>,
+        filter: SplitFilter<'a>,
     ) -> MetastoreResult<Vec<Split>>;
 
     /// Lists all the splits without filtering.
     ///
     /// Returns a list of all splits currently known to the metastore regardless of their state.
-    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>>;
+    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
+        let filter = SplitFilter::default().for_index(index_id);
+        self.list_splits(filter).await
+    }
+
+    /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
+    /// These splits are called "stale" as they have an `delete_opstamp` strictly inferior
+    /// to the given `delete_opstamp`.
+    async fn list_stale_splits(
+        &self,
+        index_id: &str,
+        delete_opstamp: u64,
+        num_splits: usize,
+    ) -> MetastoreResult<Vec<Split>> {
+        let filter = SplitFilter::default()
+            .for_index(index_id)
+            .with_opstamp_older_than(delete_opstamp)
+            .with_limit(num_splits);
+        self.list_splits(filter).await
+    }
 
     /// Marks a list of splits for deletion.
     ///
@@ -229,14 +243,99 @@ pub trait Metastore: Send + Sync + 'static {
         index_id: &str,
         opstamp_start: u64,
     ) -> MetastoreResult<Vec<DeleteTask>>;
+}
 
-    /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
-    /// These splits are called "stale" as they have an `delete_opstamp` strictly inferior
-    /// to the given `delete_opstamp`.
-    async fn list_stale_splits(
-        &self,
-        index_id: &str,
-        delete_opstamp: u64,
-        num_splits: usize,
-    ) -> MetastoreResult<Vec<Split>>;
+#[derive(Debug, Default, Clone)]
+pub struct SplitFilter<'a> {
+    /// The specific index to get splits from.
+    pub index: Option<&'a str>,
+
+    /// The maximum number of splits to retrieve.
+    pub limit: Option<usize>,
+
+    /// The number of splits to skip.
+    pub offset: Option<usize>,
+
+    /// The timestamp which splits must be newer than.
+    pub time_range_start: Option<i64>,
+    
+    /// The timestamp which splits must be older than.
+    pub time_range_end: Option<i64>,
+
+    /// The timestamp which splits must be updated after.
+    pub updated_after: Option<i64>,
+
+    /// The timestamp which splits must be updated before.
+    pub updated_before: Option<i64>,
+
+    /// Filter splits with `split.delete_opstamp` < `delete_opstamp`.
+    pub delete_opstamp: Option<u64>,
+
+    /// A specific split state to filter by.
+    pub split_state: Option<SplitState>,
+
+    /// A specific set of tag(s) to filter by.
+    pub tags: Option<TagFilterAst>,
+}
+
+#[allow(unused_attributes)]
+impl<'a> SplitFilter<'a> {
+    pub fn for_index(mut self, index: &'a str) -> Self {
+        self.index = Some(index);
+        self
+    }
+
+    /// Set the maximum number of splits to retrieve.
+    pub fn with_limit(mut self, n: usize) -> Self {
+        self.limit = Some(n);
+        self
+    }
+
+    /// Set the number of splits to skip.
+    pub fn with_offset(mut self, n: usize) -> Self {
+        self.offset = Some(n);
+        self
+    }
+
+    /// Select splits which are newer than or equal to this timestamp.
+    pub fn with_time_range_from(mut self, ts: i64) -> Self {
+        self.time_range_start = Some(ts);
+        self
+    }
+
+    /// Select splits which are older than this timestamp.
+    pub fn with_time_range_to(mut self, ts: i64) -> Self {
+        self.time_range_end = Some(ts);
+        self
+    }
+
+    /// Select splits which are newer than or equal to this timestamp.
+    pub fn updated_after(mut self, ts: i64) -> Self {
+        self.updated_after = Some(ts);
+        self
+    }
+
+    /// Select splits which are older than this timestamp.
+    pub fn updated_before(mut self, ts: i64) -> Self {
+        self.updated_before = Some(ts);
+        self
+    }
+
+    /// Filter splits with `split.delete_opstamp` < `delete_opstamp`.
+    pub fn with_opstamp_older_than(mut self, opstamp: u64) -> Self {
+        self.delete_opstamp = Some(opstamp);
+        self
+    }
+
+    /// Select splits which have the are in the given split state.
+    pub fn with_split_state(mut self, state: SplitState) -> Self {
+        self.split_state = Some(state);
+        self
+    }
+
+    /// Select splits which match the given tag filter.
+    pub fn with_tags_filter(mut self, tags: TagFilterAst) -> Self {
+        self.tags = Some(tags);
+        self
+    }
 }
