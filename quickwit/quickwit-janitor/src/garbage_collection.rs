@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use futures::{Future, StreamExt};
 use quickwit_actors::ActorContext;
-use quickwit_metastore::{Metastore, MetastoreError, SplitMetadata, SplitState};
+use quickwit_metastore::{Metastore, MetastoreError, SplitMetadata, SplitState, SplitFilter};
 use quickwit_storage::{Storage, StorageError};
 use serde::Serialize;
 use thiserror::Error;
@@ -101,21 +101,28 @@ pub async fn run_garbage_collect(
     let grace_period_timestamp =
         OffsetDateTime::now_utc().unix_timestamp() - staged_grace_period.as_secs() as i64;
 
+    let filter = SplitFilter::default()
+        .for_index(index_id)
+        .with_split_state(SplitState::Staged)
+        .updated_after(grace_period_timestamp);
+
     let deletable_staged_splits: Vec<SplitMetadata> = protect_future(
         ctx_opt,
-        metastore.list_splits(index_id, SplitState::Staged, None, None),
+        metastore.list_splits(filter),
     )
     .await?
     .into_iter()
-    // TODO: Update metastore API and push this filter down.
-    .filter(|meta| meta.update_timestamp < grace_period_timestamp)
     .map(|meta| meta.split_metadata)
     .collect();
 
-    if dry_run {
+    if dry_run {        
+        let filter = SplitFilter::default()
+            .for_index(index_id)
+            .with_split_state(SplitState::MarkedForDeletion);
+
         let mut splits_marked_for_deletion = protect_future(
             ctx_opt,
-            metastore.list_splits(index_id, SplitState::MarkedForDeletion, None, None),
+            metastore.list_splits(filter),
         )
         .await?
         .into_iter()
@@ -144,14 +151,18 @@ pub async fn run_garbage_collect(
     // We wait another 2 minutes until the split is actually deleted.
     let grace_period_deletion =
         OffsetDateTime::now_utc().unix_timestamp() - deletion_grace_period.as_secs() as i64;
+
+    let filter = SplitFilter::default()
+        .for_index(index_id)
+        .with_split_state(SplitState::MarkedForDeletion)
+        .updated_after_or_at(grace_period_deletion);
+    
     let splits_to_delete = protect_future(
         ctx_opt,
-        metastore.list_splits(index_id, SplitState::MarkedForDeletion, None, None),
+        metastore.list_splits(filter),
     )
     .await?
     .into_iter()
-    // TODO: Update metastore API and push this filter down.
-    .filter(|meta| meta.update_timestamp <= grace_period_deletion)
     .map(|meta| meta.split_metadata)
     .collect();
 
