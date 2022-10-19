@@ -173,7 +173,7 @@ async fn test_cmd_ingest_on_non_existing_index() {
 
     let args = IngestDocsArgs {
         config_uri: test_env.config_uri,
-        index_id: "index-does-no-exist".to_string(),
+        index_id: "index-does-not-exist".to_string(),
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
         data_dir: None,
         overwrite: false,
@@ -185,7 +185,7 @@ async fn test_cmd_ingest_on_non_existing_index() {
     assert_eq!(
         error.root_cause().downcast_ref::<MetastoreError>().unwrap(),
         &MetastoreError::IndexDoesNotExist {
-            index_id: "index-does-no-exist".to_string()
+            index_id: "index-does-not-exist".to_string()
         }
     );
 }
