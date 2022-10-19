@@ -651,8 +651,8 @@ mod tests {
         )
         .await?;
         let docs = vec![
-            serde_json::json!({"body": "info", "ts": 0 }),
-            serde_json::json!({"body": "delete", "ts": 0 }),
+            serde_json::json!({"body": "info", "ts": 1624928208 }),
+            serde_json::json!({"body": "delete", "ts": 1634928208 }),
         ];
         test_sandbox.add_documents(docs).await?;
         let metastore = test_sandbox.metastore();
