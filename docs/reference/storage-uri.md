@@ -57,40 +57,44 @@ The credentials, as well as the region or the custom endpoint, have to be config
 Quickwit will detect the S3 credentials using the first successful method in this list (order matters)
 
 - check for environment variables (`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`)
-- check for the configuration in the  `~/.aws/credentials` filepath.
+- check for the configuration in the `~/.aws/credentials` filepath.
 - check for the [Amazon ECS environment](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-iam-roles.html)
 - check the [EC2 instance metadata API](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html)
 
 ### Region
 
 The region or custom endpoint will be detected using the first successful method in this list (order matters)
+
 - `AWS_DEFAULT_REGION` environment variable
 - `AWS_REGION` environment variable
 - Amazon’s instance metadata API [https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html)
 
 ### S3-compatible Object Storage like Minio, Google Cloud Storage, and more.
 
-
 Quickwit can target other S3-compatible storage.
 This is done by setting an endpoint url in the `QW_S3_ENDPOINT` environment variable.
 
 In this case, the region will be ignored.
 
-Example: 
+Example:
+
 ```bash
 export QW_S3_ENDPOINT=http://localhost:9000/
 ```
+
 Example for Google Cloud Storage:
+
 ```bash
 export QW_S3_ENDPOINT=https://storage.googleapis.com
 ```
 
 Get an access key & a secret key from the object storage of your preference and run the following commands:
+
 ```bash
 export AWS_SECRET_ACCESS_KEY=***
 export AWS_ACCESS_KEY_ID=***
 ```
 
 :::note
-We also support Azure storage, however since it is not S3-Compatible, you can refer to our [Azure Setup Guide](../guides/azure-setup) for more info and steps to connect. 
+We also support Azure storage, however since it is not S3-Compatible, you can refer to our [Azure Setup Guide](../guides/storage-setup/azure-setup) for more info and steps to connect.
 :::
