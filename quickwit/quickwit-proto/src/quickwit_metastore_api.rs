@@ -54,15 +54,7 @@ pub struct ListAllSplitsRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSplitsRequest {
     #[prost(string, tag="1")]
-    pub index_id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub split_state: ::prost::alloc::string::String,
-    #[prost(int64, optional, tag="3")]
-    pub time_range_start: ::core::option::Option<i64>,
-    #[prost(int64, optional, tag="4")]
-    pub time_range_end: ::core::option::Option<i64>,
-    #[prost(string, optional, tag="5")]
-    pub tags_serialized_json: ::core::option::Option<::prost::alloc::string::String>,
+    pub filter_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
