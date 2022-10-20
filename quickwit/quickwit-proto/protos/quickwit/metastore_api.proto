@@ -111,11 +111,7 @@ message ListAllSplitsRequest {
 }
 
 message ListSplitsRequest {
-  string index_id = 1;
-  string split_state = 2;
-  optional int64 time_range_start = 3;
-  optional int64 time_range_end = 4;
-  optional string tags_serialized_json = 5;
+  string filter_json = 1;
 }
 
 message ListSplitsResponse {

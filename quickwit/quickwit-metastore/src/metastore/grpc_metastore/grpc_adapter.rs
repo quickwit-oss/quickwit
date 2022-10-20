@@ -17,13 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::str::FromStr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use itertools::Itertools;
-use quickwit_common::extract_time_range;
-use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::metastore_api_service_server::{self as grpc};
 use quickwit_proto::metastore_api::{
     AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
@@ -37,7 +34,7 @@ use quickwit_proto::metastore_api::{
 };
 use quickwit_proto::tonic;
 
-use crate::{IndexMetadata, Metastore, MetastoreError, SplitState};
+use crate::{IndexMetadata, Metastore, MetastoreError, SplitFilter};
 
 #[allow(missing_docs)]
 #[derive(Clone)]
@@ -147,30 +144,13 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
         request: tonic::Request<ListSplitsRequest>,
     ) -> Result<tonic::Response<ListSplitsResponse>, tonic::Status> {
         let list_splits_request = request.into_inner();
-        let split_state: SplitState = SplitState::from_str(&list_splits_request.split_state)
+        let filter: SplitFilter<'_> = serde_json::from_str(&list_splits_request.filter_json)
             .map_err(|error| MetastoreError::JsonDeserializeError {
-                name: "SplitState".to_string(),
-                message: error,
+                name: "SplitFilter".to_string(),
+                message: error.to_string(),
             })?;
-        let time_range = extract_time_range(
-            list_splits_request.time_range_start,
-            list_splits_request.time_range_end,
-        );
-        let tags = list_splits_request
-            .tags_serialized_json
-            .map(|tags| {
-                serde_json::from_str::<TagFilterAst>(&tags).map_err(|error| {
-                    MetastoreError::JsonDeserializeError {
-                        name: "TagFilterAst".to_string(),
-                        message: error.to_string(),
-                    }
-                })
-            })
-            .transpose()?;
-        let splits = self
-            .0
-            .list_splits(&list_splits_request.index_id, split_state, time_range, tags)
-            .await?;
+
+        let splits = self.0.list_splits(filter).await?;
         let list_splits_reply = serde_json::to_string(&splits)
             .map(|splits_serialized_json| ListSplitsResponse {
                 splits_serialized_json,
