@@ -437,7 +437,7 @@ mod tests {
                 ))
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+            |_filter| {
                 Ok(vec![mock_split("split1"), mock_split("split2")])
             },
         );
@@ -521,7 +521,7 @@ mod tests {
                 ))
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+            |_filter| {
                 Ok(vec![mock_split("split1")])
             },
         );
@@ -579,7 +579,7 @@ mod tests {
                 ))
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+            |_filter| {
                 Ok(vec![mock_split("split1"), mock_split("split2")])
             },
         );
@@ -659,7 +659,7 @@ mod tests {
                 ))
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+            |_filter| {
                 Ok(vec![mock_split("split1"), mock_split("split2")])
             },
         );
@@ -766,7 +766,7 @@ mod tests {
                 ))
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+            |_filter| {
                 Ok(vec![mock_split("split1"), mock_split("split2")])
             },
         );
@@ -890,7 +890,7 @@ mod tests {
                 ))
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+            |_filter| {
                 Ok(vec![mock_split("split1")])
             },
         );
@@ -963,7 +963,7 @@ mod tests {
                 ))
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+            |_filter| {
                 Ok(vec![mock_split("split1")])
             },
         );
@@ -1022,7 +1022,7 @@ mod tests {
                 ))
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+            |_filter| {
                 Ok(vec![mock_split("split1")])
             },
         );
@@ -1105,7 +1105,7 @@ mod tests {
                 ))
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+            |_filter| {
                 Ok(vec![mock_split("split1")])
             },
         );
@@ -1167,7 +1167,7 @@ mod tests {
                 ))
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+            |_filter| {
                 Ok(vec![mock_split("split")])
             },
         );
@@ -1257,7 +1257,7 @@ mod tests {
                 ))
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+            |_filter| {
                 Ok(vec![mock_split("split1")])
             },
         );
@@ -1297,7 +1297,7 @@ mod tests {
                 ))
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+            |_filter| {
                 Ok(vec![mock_split("split1")])
             },
         );

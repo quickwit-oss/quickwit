@@ -240,9 +240,9 @@ mod tests {
 
         let mut mock_metastore = MockMetastore::default();
         mock_metastore.expect_list_splits().times(2).returning(
-            |index_id, split_state, _time_range, _tags| {
-                assert_eq!(index_id, "test-index");
-                let splits = match split_state {
+            |filter| {
+                assert_eq!(filter.index, "test-index");
+                let splits = match filter.split_state.expect("Filter should be constructed with split state set.") {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         make_splits(&["a", "b", "c"], SplitState::MarkedForDeletion)
@@ -296,9 +296,9 @@ mod tests {
                 )])
             });
         mock_metastore.expect_list_splits().times(2).returning(
-            |index_id, split_state, _time_range, _tags| {
-                assert_eq!(index_id, "test-index");
-                let splits = match split_state {
+            |filter| {
+                assert_eq!(filter.index, "test-index");
+                let splits = match filter.split_state.expect("Filter should be constructed with split state set.") {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         make_splits(&["a", "b", "c"], SplitState::MarkedForDeletion)
@@ -350,9 +350,9 @@ mod tests {
                 )])
             });
         mock_metastore.expect_list_splits().times(4).returning(
-            |index_id, split_state, _time_range, _tags| {
-                assert_eq!(index_id, "test-index");
-                let splits = match split_state {
+            |filter| {
+                assert_eq!(filter.index, "test-index");
+                let splits = match filter.split_state.expect("Filter should be constructed with split state set.") {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         make_splits(&["a", "b"], SplitState::MarkedForDeletion)
@@ -485,9 +485,9 @@ mod tests {
                 ])
             });
         mock_metastore.expect_list_splits().times(4).returning(
-            |index_id, split_state, _time_range, _tags| {
-                assert!(["test-index-1", "test-index-2"].contains(&index_id));
-                let splits = match split_state {
+            |filter| {
+                assert!(["test-index-1", "test-index-2"].contains(&filter.index));
+                let splits = match filter.split_state.expect("Filter should be constructed with split state set.") {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         make_splits(&["a", "b"], SplitState::MarkedForDeletion)

@@ -335,7 +335,7 @@ mod tests {
         mock_metastore
             .expect_list_splits()
             .times(..)
-            .returning(|_, _, _, _| Ok(vec![]));
+            .returning(|_| Ok(vec![]));
         mock_metastore
             .expect_list_indexes_metadatas()
             .times(1)
@@ -430,12 +430,12 @@ mod tests {
         mock_metastore
             .expect_list_splits()
             .times(2)
-            .returning(|index_id, split_state, _, _| {
-                assert_eq!(split_state, SplitState::Published);
+            .returning(|filter| {
+                assert_eq!(filter.split_state, Some(SplitState::Published));
                 let now = OffsetDateTime::now_utc().unix_timestamp();
                 let two_hours_ago = now - (60 * 60 * 2);
                 let three_hours_ago = now - (60 * 60 * 3);
-                let splits = match index_id {
+                let splits = match filter.index {
                     "a" => vec![
                         make_split("split-1", Some(two_hours_ago), None),
                         make_split("split-2", Some(three_hours_ago), None),

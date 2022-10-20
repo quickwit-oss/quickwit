@@ -82,7 +82,7 @@ mod tests {
                 ))
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+            |_filter| {
                 Ok(vec![mock_split("split_1"), mock_split("split_2")])
             },
         );
