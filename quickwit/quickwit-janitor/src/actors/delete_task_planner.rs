@@ -496,7 +496,10 @@ mod tests {
         assert_eq!(all_splits[2].split_metadata.delete_opstamp, 0);
 
         // Check actor state.
-        assert_eq!(delete_planner_executor_handle.state(), ActorStateId::Idle);
+        assert!(matches!(
+            delete_planner_executor_handle.state(),
+            ActorStateId::Idle
+        ));
 
         Ok(())
     }

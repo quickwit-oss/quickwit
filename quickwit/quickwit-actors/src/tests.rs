@@ -60,7 +60,7 @@ impl Handler<Ping> for PingReceiverActor {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.ping_count += 1;
-        assert_eq!(ctx.state(), ActorStateId::Processing);
+        assert!(matches!(ctx.state(), ActorStateId::Processing));
         Ok(())
     }
 }
@@ -313,13 +313,13 @@ async fn test_actor_running_states() {
     quickwit_common::setup_logging_for_tests();
     let universe = Universe::new();
     let (ping_mailbox, ping_handle) = universe.spawn_builder().spawn(PingReceiverActor::default());
-    assert!(ping_handle.state() == ActorStateId::Processing);
+    assert!(matches!(ping_handle.state(), ActorStateId::Processing));
     for _ in 0u32..10u32 {
         assert!(ping_mailbox.send_message(Ping).await.is_ok());
     }
     let obs = ping_handle.process_pending_and_observe().await;
     assert_eq!(*obs, 10);
-    assert_eq!(ping_handle.state(), ActorStateId::Idle);
+    assert!(matches!(ping_handle.state(), ActorStateId::Idle));
 }
 
 #[derive(Clone, Debug, Default, Serialize)]

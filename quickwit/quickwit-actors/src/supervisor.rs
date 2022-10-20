@@ -22,9 +22,7 @@ use serde::Serialize;
 use tracing::{info, warn};
 
 use crate::mailbox::Inbox;
-use crate::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorStateId, Handler, Health, Supervisable,
-};
+use crate::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Supervisable};
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Serialize)]
 pub struct SupervisorState {
@@ -125,7 +123,7 @@ impl<A: Actor> Supervisor<A> {
         // The actor is failing we need to restart it.
         let actor_handle = self.handle_opt.take().unwrap();
         let actor_mailbox = actor_handle.mailbox().clone();
-        let (actor_exit_status, _last_state) = if actor_handle.state().is_exit()  {
+        let (actor_exit_status, _last_state) = if actor_handle.state().is_exit() {
             actor_handle.join().await
         } else {
             // The actor is probably frozen.

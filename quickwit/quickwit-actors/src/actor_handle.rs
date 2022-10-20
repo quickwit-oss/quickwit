@@ -71,32 +71,26 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
     fn health(&self) -> Health {
         let actor_state = self.state();
         match actor_state {
-            ActorStateId::Success => {
-                Health::Success
-            }
+            ActorStateId::Success => Health::Success,
             ActorStateId::Failure => {
                 error!(actor = self.name(), "actor-exit-without-success");
                 Health::FailureOrUnhealthy
             }
-            ActorStateId::Waiting => {
-                Health::Healthy
-            }
+            ActorStateId::Waiting | ActorStateId::Idle => Health::Healthy,
             ActorStateId::Processing => {
-                 if self
+                if self
                     .actor_context
                     .actor_state()
                     .progress
                     .registered_activity_since_last_call()
-            {
-                Health::Healthy
-            } else {
-                error!(actor = self.name(), "actor-timeout");
-                Health::FailureOrUnhealthy
+                {
+                    Health::Healthy
+                } else {
+                    error!(actor = self.name(), "actor-timeout");
+                    Health::FailureOrUnhealthy
                 }
             }
-            ActorStateId::Paused => {
-                Health::Healthy
-            }
+            ActorStateId::Paused => Health::Healthy,
         }
     }
 }

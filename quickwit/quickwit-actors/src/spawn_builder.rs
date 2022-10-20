@@ -218,14 +218,13 @@ impl<A: Actor> ActorExecutionEnv<A> {
 
     async fn process_all_available_messages(&mut self) -> Result<(), ActorExitStatus> {
         self.yield_and_check_if_killed().await?;
-        let envelope = get_envelope(&mut self.inbox, &self.ctx).await;
-        self.ctx.protect_future(future)
+        let envelope_fut = get_envelope(&mut self.inbox, &self.ctx);
+        let envelope = self.ctx.protect_future(envelope_fut).await;
         self.process_one_message(envelope).await?;
         while let Some(envelope) = try_get_envelope(&mut self.inbox, &self.ctx) {
             self.process_one_message(envelope).await?;
         }
         self.actor.on_drained_messages(&self.ctx).await?;
-        self.ctx.idle();
         if self.ctx.mailbox().is_last_mailbox() {
             // No one will be able to send us more messages.
             // We can exit the actor.

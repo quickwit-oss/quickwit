@@ -347,9 +347,17 @@ impl<A: Actor> ActorContext<A> {
 
     #[track_caller]
     // desugarify
-    pub async fn protect_future_with_location<Fut, T>(&self, future: Fut, protect_location: ProtectLocation) -> T
-    where Fut: Future<Output = T> {
-        let _guard = self.actor_state.protect_zone_with_location(protect_location);
+    pub async fn protect_future_with_location<Fut, T>(
+        &self,
+        future: Fut,
+        protect_location: ProtectLocation,
+    ) -> T
+    where
+        Fut: Future<Output = T>,
+    {
+        let _guard = self
+            .actor_state
+            .protect_zone_with_location(protect_location);
         future.await
     }
 
@@ -385,10 +393,6 @@ impl<A: Actor> ActorContext<A> {
 
     pub(crate) fn state(&self) -> ActorStateId {
         self.actor_state.state_id.get_state()
-    }
-
-    pub(crate) fn process(&self) {
-        self.actor_state.state_id.process();
     }
 
     pub(crate) fn pause(&self) {
