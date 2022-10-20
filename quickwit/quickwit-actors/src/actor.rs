@@ -345,6 +345,14 @@ impl<A: Actor> ActorContext<A> {
         future.await
     }
 
+    #[track_caller]
+    // desugarify
+    pub async fn protect_future_with_location<Fut, T>(&self, future: Fut, protect_location: ProtectLocation) -> T
+    where Fut: Future<Output = T> {
+        let _guard = self.actor_state.protect_zone_with_location(protect_location);
+        future.await
+    }
+
     /// Gets a copy of the actor kill switch.
     /// This should rarely be used.
     ///
@@ -381,10 +389,6 @@ impl<A: Actor> ActorContext<A> {
 
     pub(crate) fn process(&self) {
         self.actor_state.state_id.process();
-    }
-
-    pub(crate) fn idle(&self) {
-        self.actor_state.state_id.idle();
     }
 
     pub(crate) fn pause(&self) {

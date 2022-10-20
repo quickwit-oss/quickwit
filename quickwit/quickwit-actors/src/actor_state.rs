@@ -108,33 +108,28 @@ impl Drop for ProtectedZoneGuard {
 }
 
 #[repr(u32)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug)]
 pub enum ActorStateId {
     /// Processing implies that the actor has some message(s) (this includes commands) to process.
     Processing = 0,
-    /// Idle means that the actor is currently waiting for messages.
-    Idle = 1,
     /// Pause means that the actor processes no message but can process commands.
-    Paused = 2,
+    Paused = 1,
     /// Success means that the actor exited and cannot return to any other states.
-    Success = 3,
+    Success = 2,
     /// Failure means that the actor exited with a failure or panicked.
-    Failure = 4,
+    Failure = 3,
     /// Protected
-    Waiting = 5,
-    BackPressure = 6,
+    Waiting = 4,
 }
 
 impl From<u32> for ActorStateId {
     fn from(actor_state_u32: u32) -> Self {
         match actor_state_u32 {
             0 => ActorStateId::Processing,
-            1 => ActorStateId::Idle,
-            2 => ActorStateId::Paused,
-            3 => ActorStateId::Success,
-            4 => ActorStateId::Failure,
-            5 => ActorStateId::Waiting,
-            6 => ActorStateId::BackPressure,
+            1 => ActorStateId::Paused,
+            2 => ActorStateId::Success,
+            3 => ActorStateId::Failure,
+            4 => ActorStateId::Waiting,
             _ => {
                 panic!(
                     "Found forbidden u32 value for ActorState `{}`. This should never happen.",
@@ -153,16 +148,17 @@ impl From<ActorStateId> for AtomicState {
 
 impl ActorStateId {
     pub fn is_running(&self) -> bool {
-        *self == ActorStateId::Idle || *self == ActorStateId::Processing
+        match self {
+            ActorStateId::Processing | ActorStateId::Waiting => true,
+            ActorStateId::Paused | ActorStateId::Success | ActorStateId::Failure => false,
+        }
     }
 
     pub fn is_exit(&self) -> bool {
         match self {
             ActorStateId::Processing
-            | ActorStateId::Idle
             | ActorStateId::Paused
-            | ActorStateId::Waiting
-            | ActorStateId::BackPressure => false,
+            | ActorStateId::Waiting => false,
             ActorStateId::Success | ActorStateId::Failure => true,
         }
     }
@@ -179,17 +175,8 @@ impl Default for AtomicState {
 impl AtomicState {
     pub fn process(&self) {
         let _ = self.0.compare_exchange(
-            ActorStateId::Idle as u32,
+            ActorStateId::Waiting as u32,
             ActorStateId::Processing as u32,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-        );
-    }
-
-    pub fn idle(&self) {
-        let _ = self.0.compare_exchange(
-            ActorStateId::Processing as u32,
-            ActorStateId::Idle as u32,
             Ordering::SeqCst,
             Ordering::SeqCst,
         );
@@ -235,7 +222,6 @@ mod tests {
 
     enum Operation {
         Process,
-        Idle,
         Pause,
         Resume,
         ExitSuccess,
@@ -247,9 +233,6 @@ mod tests {
             match self {
                 Operation::Process => {
                     state.process();
-                }
-                Operation::Idle => {
-                    state.idle();
                 }
                 Operation::Pause => {
                     state.pause();
@@ -265,7 +248,7 @@ mod tests {
     fn test_transition(from_state: ActorStateId, op: Operation, expected_state: ActorStateId) {
         let state = AtomicState::from(from_state);
         op.apply(&state);
-        assert_eq!(state.get_state(), expected_state);
+        assert!(matches!(state.get_state(), expected_state));
     }
 
     #[test]
