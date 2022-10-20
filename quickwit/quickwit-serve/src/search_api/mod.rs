@@ -26,12 +26,11 @@ pub use self::rest_handler::{search_get_handler, search_post_handler, search_str
 #[cfg(test)]
 mod tests {
     use std::net::SocketAddr;
-    use std::ops::Range;
     use std::sync::Arc;
 
     use futures::TryStreamExt;
     use quickwit_indexing::mock_split;
-    use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
+    use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_proto::search_service_server::SearchServiceServer;
     use quickwit_proto::{tonic, OutputFormat};
     use quickwit_search::{
