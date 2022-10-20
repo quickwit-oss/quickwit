@@ -75,11 +75,13 @@ impl IngestApiSource {
         let source_id = ctx.source_config.source_id.clone();
         let queues_dir_path = ctx.queues_dir_path.as_path();
         let ingest_api_service = get_ingest_api_service(queues_dir_path).await?;
+
         // Ensure a queue for this index exists.
         let create_queue_req = CreateQueueIfNotExistsRequest {
             queue_id: ctx.index_id.clone(),
         };
         ingest_api_service.ask_for_res(create_queue_req).await?;
+
         let partition_id = PartitionId::from(ctx.index_id.clone());
         let previous_offset = if let Some(Position::Offset(offset_str)) =
             checkpoint.position_for_partition(&partition_id)

@@ -1427,6 +1427,18 @@ mod test {
             ]);
             assert!(matches.is_err());
         }
+        {
+            let app = build_cli().no_binary_name(true);
+            let matches = app.try_get_matches_from(vec![
+                "index",
+                "ingest-api",
+                "--config",
+                "/config.yaml",
+                "--index",
+                "foo",
+            ]);
+            assert!(matches.is_err());
+        }
         Ok(())
     }
 

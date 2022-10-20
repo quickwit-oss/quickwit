@@ -147,11 +147,18 @@ impl IndexService {
             );
             index_uri
         };
-        let mut index_metadata = IndexMetadata {
+        // Add default ingest-api source config.
+        let ingest_api_source_config = SourceConfig::ingest_api_default();
+        let mut sources = index_config.sources();
+        sources.insert(
+            ingest_api_source_config.source_id.clone(),
+            ingest_api_source_config,
+        );
+        let index_metadata = IndexMetadata {
             index_id,
             index_uri,
             checkpoint: Default::default(),
-            sources: index_config.sources(),
+            sources,
             doc_mapping: index_config.doc_mapping,
             indexing_settings: index_config.indexing_settings,
             search_settings: index_config.search_settings,
@@ -159,13 +166,8 @@ impl IndexService {
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
             update_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
         };
-        let source_config = SourceConfig::ingest_api_default();
-        index_metadata
-            .sources
-            .insert(source_config.source_id.clone(), source_config);
 
         self.metastore.create_index(index_metadata).await?;
-
         let index_metadata = self
             .metastore
             .index_metadata(&index_config.index_id)
