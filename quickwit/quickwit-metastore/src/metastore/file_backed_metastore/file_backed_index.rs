@@ -366,7 +366,7 @@ impl FileBackedIndex {
             .filter(|split| split_tag_filter(split, filter.tags.as_ref()))
             .filter(delete_opstamp_filter)
             .skip(filter.offset.unwrap_or_default())
-            .take(filter.limit.unwrap_or_default())
+            .take(filter.limit.unwrap_or(usize::MAX))
             .cloned()
             .collect();
 
