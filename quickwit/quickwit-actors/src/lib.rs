@@ -64,7 +64,7 @@ pub use self::actor_state::ActorState;
 pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError};
 pub use self::mailbox::{create_mailbox, create_test_mailbox, Inbox, Mailbox};
 pub use self::registry::ActorObservation;
-pub use self::supervisor::Supervisor;
+pub use self::supervisor::{Supervisor, SupervisorState};
 
 /// Heartbeat used to verify that actors are progressing.
 ///

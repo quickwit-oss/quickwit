@@ -135,6 +135,8 @@ pub struct TestEnv {
     pub resource_files: HashMap<&'static str, PathBuf>,
     /// The metastore URI.
     pub metastore_uri: Uri,
+    pub config_uri: Uri,
+    pub index_config_uri: Uri,
     /// The index ID.
     pub index_id: String,
     pub index_uri: Uri,
@@ -216,12 +218,20 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
     resource_files.insert("logs", log_docs_path);
     resource_files.insert("wiki", wikipedia_docs_path);
 
+    let config_uri = Uri::new(format!("file://{}", resource_files["config"].display()));
+    let index_config_uri = Uri::new(format!(
+        "file://{}",
+        resource_files["index_config"].display()
+    ));
+
     Ok(TestEnv {
         _tempdir: tempdir,
         data_dir_path,
         indexes_dir_path,
         resource_files,
         metastore_uri,
+        config_uri,
+        index_config_uri,
         index_id,
         index_uri,
         rest_listen_port,

@@ -189,14 +189,14 @@ quickwit-serve = { version = "0.3.1", path = "./quickwit-serve" }
 quickwit-storage = { version = "0.3.1", path = "./quickwit-storage" }
 quickwit-telemetry = { version = "0.3.1", path = "./quickwit-telemetry" }
 
-fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", rev = "97ccd6d" }
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "97ccd6d", default-features = false, features = [
+fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", rev = "c9cf9c95" }
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "c9cf9c95", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",
   "quickwit",
 ] }
-tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "97ccd6d" }
+tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "c9cf9c95" }
 
 
 # This is actually not used directly the goal is to fix the version

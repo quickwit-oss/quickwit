@@ -59,6 +59,7 @@ use crate::models::{
 /// - appending it to the split file.
 ///
 /// The split format is described in `internals/split-format.md`
+#[derive(Clone)]
 pub struct Packager {
     actor_name: &'static str,
     uploader_mailbox: Mailbox<Uploader>,

@@ -1212,7 +1212,7 @@ checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 [[package]]
 name = "fastfield_codecs"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=97ccd6d#97ccd6d71200288a8ebb54d2acf596465a8aba3c"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c9cf9c95#c9cf9c952a6830290c482e2d27c83464943aeef5"
 dependencies = [
  "fastdivide",
  "itertools",
@@ -2607,7 +2607,7 @@ dependencies = [
 [[package]]
 name = "ownedbytes"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=97ccd6d#97ccd6d71200288a8ebb54d2acf596465a8aba3c"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c9cf9c95#c9cf9c952a6830290c482e2d27c83464943aeef5"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -3019,7 +3019,7 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rand_xorshift",
- "regex-syntax 0.6.27",
+ "regex-syntax",
  "rusty-fork",
  "tempfile",
 ]
@@ -3874,7 +3874,7 @@ checksum = "4c4eb3267174b8c6c2f654116623910a0fef09c4753f8dd83db29c48a0df988b"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-syntax 0.6.27",
+ "regex-syntax",
 ]
 
 [[package]]
@@ -3883,14 +3883,8 @@ version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c230d73fb8d8c1b9c0b3135c5142a8acee3a0558fb8db5cf1cb65f8d7862132"
 dependencies = [
- "regex-syntax 0.6.27",
+ "regex-syntax",
 ]
-
-[[package]]
-name = "regex-syntax"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e931c58b93d86f080c734bfd2bce7dd0079ae2331235818133c8be7f422e20e"
 
 [[package]]
 name = "regex-syntax"
@@ -4839,7 +4833,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.18.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=97ccd6d#97ccd6d71200288a8ebb54d2acf596465a8aba3c"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c9cf9c95#c9cf9c952a6830290c482e2d27c83464943aeef5"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -4847,6 +4841,7 @@ dependencies = [
  "bitpacking",
  "byteorder",
  "census",
+ "ciborium",
  "crc32fast",
  "crossbeam-channel",
  "downcast-rs",
@@ -4872,7 +4867,6 @@ dependencies = [
  "regex",
  "rust-stemmers",
  "serde",
- "serde_cbor",
  "serde_json",
  "smallvec",
  "stable_deref_trait",
@@ -4891,12 +4885,12 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=97ccd6d#97ccd6d71200288a8ebb54d2acf596465a8aba3c"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c9cf9c95#c9cf9c952a6830290c482e2d27c83464943aeef5"
 
 [[package]]
 name = "tantivy-common"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=97ccd6d#97ccd6d71200288a8ebb54d2acf596465a8aba3c"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c9cf9c95#c9cf9c952a6830290c482e2d27c83464943aeef5"
 dependencies = [
  "byteorder",
  "ownedbytes",
@@ -4904,19 +4898,19 @@ dependencies = [
 
 [[package]]
 name = "tantivy-fst"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb20cdc0d83e9184560bdde9cd60142dbb4af2e0f770e88fce45770495224205"
+checksum = "fc3c506b1a8443a3a65352df6382a1fb6a7afe1a02e871cee0d25e2c3d5f3944"
 dependencies = [
  "byteorder",
- "regex-syntax 0.4.2",
+ "regex-syntax",
  "utf8-ranges",
 ]
 
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.18.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=97ccd6d#97ccd6d71200288a8ebb54d2acf596465a8aba3c"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c9cf9c95#c9cf9c952a6830290c482e2d27c83464943aeef5"
 dependencies = [
  "combine",
  "once_cell",
