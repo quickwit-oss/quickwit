@@ -134,12 +134,19 @@ impl SplitFolder {
     }
 }
 
-fn split_id_from_split_folder(dir_path: &Path) -> Option<&str> {
-    if !dir_path.is_dir() {
-        return None;
+fn split_id_from_split_folder(dir_path: &Path) -> io::Result<Option<&str>> {
+    let metadata = dir_path.metadata()?;
+
+    if !metadata.is_dir() {
+        return Ok(None);
     }
-    let split_id: &str = dir_path.file_name()?.to_str()?.strip_suffix(".split")?;
-    Some(split_id)
+
+    let split_id = dir_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_suffix(".split"));
+
+    Ok(split_id)
 }
 
 pub struct LocalSplitStore {
@@ -307,7 +314,7 @@ impl LocalSplitStore {
         for dir_entry_result in fs::read_dir(&split_store_folder)? {
             let dir_entry = dir_entry_result?;
             let dir_path: PathBuf = dir_entry.path();
-            let split_id = split_id_from_split_folder(&dir_path)
+            let split_id = split_id_from_split_folder(&dir_path)?
                 .ok_or_else(|| {
                     let error_msg = format!(
                         "Split folder name should match the format `<split_id>.split`. Got \
