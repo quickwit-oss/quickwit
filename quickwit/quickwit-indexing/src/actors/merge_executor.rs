@@ -99,9 +99,16 @@ impl Handler<MergeScratch> for MergeExecutor {
                 .await?,
             ),
             MergeOperationType::DeleteAndMerge => {
+                assert_eq!(
+                    merge_op.splits.len(),
+                    1,
+                    "Delete tasks can be applied only on one split."
+                );
+                assert_eq!(merge_scratch.tantivy_dirs.len(), 1);
+                let split_with_docs_to_delete = merge_op.splits.into_iter().next().unwrap();
                 self.process_delete_and_merge(
                     merge_op.merge_split_id.clone(),
-                    merge_op.splits.clone(),
+                    split_with_docs_to_delete,
                     merge_scratch.tantivy_dirs,
                     merge_scratch.merge_scratch_directory,
                     ctx,
@@ -375,18 +382,11 @@ impl MergeExecutor {
     async fn process_delete_and_merge(
         &mut self,
         merge_split_id: String,
-        splits: Vec<SplitMetadata>,
+        split: SplitMetadata,
         tantivy_dirs: Vec<Box<dyn Directory>>,
         merge_scratch_directory: ScratchDirectory,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<Option<IndexedSplit>> {
-        assert_eq!(
-            splits.len(),
-            1,
-            "Delete tasks can be applied only on one split."
-        );
-        assert_eq!(tantivy_dirs.len(), 1);
-        let split = &splits[0];
         let index_metadata = self.metastore.index_metadata(&split.index_id).await?;
         let doc_mapper = build_doc_mapper(
             &index_metadata.doc_mapping,
@@ -484,7 +484,7 @@ impl MergeExecutor {
                 num_docs,
                 uncompressed_docs_size_in_bytes,
                 delete_opstamp: last_delete_opstamp,
-                num_merge_ops: max_merge_ops(&splits[..]),
+                num_merge_ops: max_merge_ops(&[split]),
             },
             index: merged_index,
             split_scratch_directory: merge_scratch_directory,
