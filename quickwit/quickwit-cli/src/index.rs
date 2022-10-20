@@ -144,10 +144,10 @@ pub fn build_index_command<'a>() -> Command<'a> {
             )
         .subcommand(
             Command::new("merge")
-                .about("Merges splits of a pipeline.")
+                .about("Merges all the splits of the index pipeline defined by the tuple (index ID, source ID, pipeline ordinal). The pipeline ordinal is 0 by default. If you have a source with `num_pipelines > 0`, you may want to merge splits on ordinals > 0.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
-                    arg!(--source <INDEX> "ID of the target source"),
+                    arg!(--index <INDEX> "ID of the target index."),
+                    arg!(--source <INDEX> "ID of the target source."),
                     arg!(--"pipeline-ord" <PIPELINE_ORD> "Pipeline ordinal.")
                         .default_value("0")
                         .required(false),
@@ -482,7 +482,7 @@ impl IndexCliCommand {
             .value_of("pipeline-ord")
             .map(|value| value.parse::<usize>())
             .transpose()
-            .context("`pipeline_ord` must be an integer >= 0.")?;
+            .context("`pipeline-ord` must be an integer >= 0.")?;
         let config_uri = matches
             .value_of("config")
             .map(Uri::try_new)
@@ -549,7 +549,7 @@ impl IndexCliCommand {
             Self::GarbageCollect(args) => garbage_collect_index_cli(args).await,
             Self::Ingest(args) => ingest_docs_cli(args).await,
             Self::List(args) => list_index_cli(args).await,
-            Self::Merge(args) => merge_cli(args, true).await,
+            Self::Merge(args) => merge_cli(args).await,
             Self::Search(args) => search_index_cli(args).await,
         }
     }
@@ -1008,11 +1008,10 @@ pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn merge_cli(args: MergeArgs, merge_enabled: bool) -> anyhow::Result<()> {
-    debug!(args=?args, merge_enabled = merge_enabled, "run-merge-operations");
+pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
+    debug!(args=?args, "run-merge-operations");
     let config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     run_index_checklist(&config.metastore_uri, &args.index_id, None).await?;
-    start_actor_runtimes(&HashSet::from_iter([QuickwitService::Indexer]))?;
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
@@ -1021,6 +1020,7 @@ pub async fn merge_cli(args: MergeArgs, merge_enabled: bool) -> anyhow::Result<(
         .resolve(&config.metastore_uri)
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
+    start_actor_runtimes(&HashSet::from_iter([QuickwitService::Indexer]))?;
     let enable_ingest_api = false;
     let node_id = config.node_id.clone();
     let indexing_server = IndexingService::new(
