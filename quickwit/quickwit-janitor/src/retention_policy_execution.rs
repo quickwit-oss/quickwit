@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use quickwit_actors::ActorContext;
 use quickwit_config::{RetentionPolicy, RetentionPolicyCutoffReference};
-use quickwit_metastore::{Metastore, Split, SplitMetadata, SplitState};
+use quickwit_metastore::{Metastore, Split, SplitMetadata, SplitState, SplitFilter};
 use time::OffsetDateTime;
 use tracing::{info, warn};
 
@@ -43,8 +43,11 @@ pub async fn run_execute_retention_policy(
 ) -> anyhow::Result<Vec<SplitMetadata>> {
     // Select published splits and filter for expiration.
     let current_date_time = OffsetDateTime::now_utc();
+
+    let filter = SplitFilter::for_index(index_id)
+        .with_split_state(SplitState::Published);
     let expired_splits: Vec<SplitMetadata> = ctx
-        .protect_future(metastore.list_splits(index_id, SplitState::Published, None, None))
+        .protect_future(metastore.list_splits(filter))
         .await?
         .into_iter()
         // TODO: possibly move this in DB query

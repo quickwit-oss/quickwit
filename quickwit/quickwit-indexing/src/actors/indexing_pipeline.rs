@@ -27,7 +27,7 @@ use quickwit_actors::{
 };
 use quickwit_config::{build_doc_mapper, IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError, SplitState};
+use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError, SplitState, SplitFilter};
 use quickwit_storage::Storage;
 use tokio::join;
 use tokio::sync::Semaphore;
@@ -225,13 +225,11 @@ impl IndexingPipeline {
             root_dir=%self.params.indexing_directory.path().display(),
             "Spawning indexing pipeline.",
         );
+
+        let filter = SplitFilter::for_index(&self.params.pipeline_id.index_id)
+            .with_split_state(SplitState::Published);
         let published_splits = ctx
-            .protect_future(self.params.metastore.list_splits(
-                &self.params.pipeline_id.index_id,
-                SplitState::Published,
-                None,
-                None,
-            ))
+            .protect_future(self.params.metastore.list_splits(filter))
             .await?
             .into_iter()
             .map(|split| split.split_metadata)
@@ -667,7 +665,7 @@ mod tests {
             });
         metastore
             .expect_list_splits()
-            .returning(|_, _, _, _| Ok(Vec::new()));
+            .returning(|_| Ok(Vec::new()));
         metastore
             .expect_mark_splits_for_deletion()
             .returning(|_, _| Ok(()));
@@ -757,7 +755,7 @@ mod tests {
         metastore
             .expect_list_splits()
             .times(1)
-            .returning(|_, _, _, _| Ok(Vec::new()));
+            .returning(|_| Ok(Vec::new()));
         metastore
             .expect_stage_split()
             .withf(|index_id, _metadata| index_id == "test-index")

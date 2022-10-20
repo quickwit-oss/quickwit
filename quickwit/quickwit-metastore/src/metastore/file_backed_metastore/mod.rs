@@ -27,7 +27,6 @@ mod lazy_file_backed_index;
 mod store_operations;
 
 use std::collections::HashMap;
-use std::ops::Range;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -36,7 +35,6 @@ use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
-use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use quickwit_storage::Storage;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
@@ -50,7 +48,7 @@ use self::store_operations::{
 };
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    IndexMetadata, Metastore, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState,
+    IndexMetadata, Metastore, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState, SplitFilter,
 };
 
 /// State of an index tracked by the metastore.
@@ -457,21 +455,18 @@ impl Metastore for FileBackedMetastore {
     /// -------------------------------------------------------------------------------
     /// Read-only accessors
 
-    async fn list_splits(
+    async fn list_splits<'a>(
         &self,
-        index_id: &str,
-        state: SplitState,
-        time_range_opt: Option<Range<i64>>,
-        tags: Option<TagFilterAst>,
+        filter: SplitFilter<'a>
     ) -> MetastoreResult<Vec<Split>> {
-        self.read(index_id, |index| {
-            index.list_splits(state, time_range_opt, tags, None)
+        self.read(filter.index, |index| {
+            if filter.is_default() {
+                index.list_all_splits()
+            } else {
+                index.list_splits(filter)
+            }
         })
         .await
-    }
-
-    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
-        self.read(index_id, |index| index.list_all_splits()).await
     }
 
     async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata> {
@@ -493,6 +488,7 @@ impl Metastore for FileBackedMetastore {
         .await
     }
 
+    // TODO: Switch over to trait defined implemenation once order issue is sorted.
     async fn list_stale_splits(
         &self,
         index_id: &str,
@@ -500,12 +496,17 @@ impl Metastore for FileBackedMetastore {
         num_splits: usize,
     ) -> MetastoreResult<Vec<Split>> {
         self.read(index_id, |index| {
+            let filter = SplitFilter::for_index(index_id)
+                .with_opstamp_older_than(delete_opstamp)
+                .with_limit(num_splits);
+
             let splits = index
-                .list_splits(SplitState::Published, None, None, Some(delete_opstamp))?
+                .list_splits(filter)?
                 .into_iter()
                 .sorted_by_key(|split| split.split_metadata.delete_opstamp)
                 .take(num_splits)
                 .collect_vec();
+
             Ok(splits)
         })
         .await
@@ -625,7 +626,7 @@ mod tests {
     };
     use super::{FileBackedIndex, FileBackedMetastore, IndexState};
     use crate::tests::test_suite::DefaultForTest;
-    use crate::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
+    use crate::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState, SplitFilter};
 
     #[tokio::test]
     async fn test_file_backed_metastore_index_exists() {
@@ -732,16 +733,21 @@ mod tests {
             .await;
         assert!(err.is_err());
 
+
         // empty
+        let filter = SplitFilter::for_index(index_id)
+            .with_split_state(SplitState::Published);
         let split = metastore
-            .list_splits(index_id, SplitState::Published, None, None)
+            .list_splits(filter)
             .await
             .unwrap();
         assert!(split.is_empty());
 
         // not empty
+        let filter = SplitFilter::for_index(index_id)
+        .with_split_state(SplitState::Staged);
         let split = metastore
-            .list_splits(index_id, SplitState::Staged, None, None)
+            .list_splits(filter)
             .await
             .unwrap();
         assert!(!split.is_empty());
@@ -902,8 +908,10 @@ mod tests {
 
         futures::future::try_join_all(handles).await.unwrap();
 
+        let filter = SplitFilter::for_index(index_id)
+            .with_split_state(SplitState::Published);
         let splits = metastore
-            .list_splits(index_id, SplitState::Published, None, None)
+            .list_splits(filter)
             .await
             .unwrap();
 
