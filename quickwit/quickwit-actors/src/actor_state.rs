@@ -17,20 +17,24 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::panic::Location;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
-use crate::progress::{Progress, ProgressState};
+use crate::progress::Progress;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub enum ProtectLocation {
     #[default]
     Idle,
-    Waiting {
-        file: &'static str,
-        line: u32,
-    },
+    Waiting(&'static Location<'static>),
     Backpressure,
+}
+
+#[derive(Default)]
+struct LockedState {
+    root_state: ActorStateId,
+    location_stack: Vec<ProtectLocation>,
 }
 
 #[derive(Clone, Default)]
@@ -38,7 +42,7 @@ pub struct ActorState {
     // TODO make it a single Arc
     pub progress: Arc<Progress>,
     pub state_id: Arc<AtomicState>,
-    pub wait_location: Arc<RwLock<ProtectLocation>>,
+    pub locked_state: Arc<Mutex<LockedState>>,
 }
 
 impl ActorState {
@@ -60,57 +64,54 @@ impl ActorState {
     #[track_caller]
     pub fn protect_zone(&self) -> ProtectedZoneGuard {
         let location = core::panic::Location::caller();
-        let protect_location = ProtectLocation::Waiting {
-            file: location.file(),
-            line: location.line(),
-        };
+        let protect_location = ProtectLocation::Waiting(location);
         self.protect_zone_with_location(protect_location)
     }
 
+    fn pop_stack(&self) {
+        let mut locked_state = self.locked_state.lock().unwrap();
+        locked_state.location_stack.pop();
+        if locked_state.location_stack.is_empty() {
+            self.state_id.set_state(locked_state.root_state);
+        }
+    }
+
     pub fn protect_zone_with_location(&self, location: ProtectLocation) -> ProtectedZoneGuard {
-        let previous_state = loop {
-            let previous_state: ProgressState = self.progress.0.load(Ordering::SeqCst).into();
-            let new_state = match previous_state {
-                ProgressState::NoUpdate | ProgressState::Updated => ProgressState::ProtectedZone(0),
-                ProgressState::ProtectedZone(level) => ProgressState::ProtectedZone(level + 1),
-            };
-            if self
-                .progress
-                .0
-                .compare_exchange(
-                    previous_state.into(),
-                    new_state.into(),
-                    Ordering::SeqCst,
-                    Ordering::SeqCst,
-                )
-                .is_ok()
-            {
-                break previous_state;
+        let mut locked_state = self.locked_state.lock().unwrap();
+        locked_state.location_stack.push(location);
+        self.progress.protect();
+        match location {
+            ProtectLocation::Idle => {
+                self.state_id.set_state(ActorStateId::Idle);
+            }
+            ProtectLocation::Waiting(_) => {
+                self.state_id.set_state(ActorStateId::Waiting);
+            }
+            ProtectLocation::Backpressure => {
+                self.state_id.set_state(ActorStateId::BackPressure);
             }
         };
-        match previous_state {
-            ProgressState::NoUpdate | ProgressState::Updated => {}
-            ProgressState::ProtectedZone(_) => {
-                *self.wait_location.write().unwrap() = location;
-            }
+        ProtectedZoneGuard {
+            actor_state: self.clone(),
         }
-        ProtectedZoneGuard(self.clone())
     }
 }
 
-pub struct ProtectedZoneGuard(ActorState);
+pub struct ProtectedZoneGuard {
+    actor_state: ActorState,
+}
 
 impl Drop for ProtectedZoneGuard {
     fn drop(&mut self) {
-        let previous_state: ProgressState = self.0.progress.0.fetch_sub(1, Ordering::SeqCst).into();
-        assert!(matches!(previous_state, ProgressState::ProtectedZone(_)));
+        self.actor_state.pop_stack();
     }
 }
 
 #[repr(u32)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub enum ActorStateId {
     /// Processing implies that the actor has some message(s) (this includes commands) to process.
+    #[default]
     Processing = 0,
     Idle = 1,
     /// Pause means that the actor processes no message but can process commands.
@@ -121,6 +122,7 @@ pub enum ActorStateId {
     Failure = 4,
     /// Protected
     Waiting = 5,
+    BackPressure = 6,
 }
 
 impl From<u32> for ActorStateId {
@@ -132,6 +134,7 @@ impl From<u32> for ActorStateId {
             3 => ActorStateId::Success,
             4 => ActorStateId::Failure,
             5 => ActorStateId::Waiting,
+            6 => ActorStateId::BackPressure,
             _ => {
                 panic!(
                     "Found forbidden u32 value for ActorState `{}`. This should never happen.",
@@ -151,7 +154,10 @@ impl From<ActorStateId> for AtomicState {
 impl ActorStateId {
     pub fn is_running(&self) -> bool {
         match self {
-            ActorStateId::Processing | ActorStateId::Waiting | ActorStateId::Idle => true,
+            ActorStateId::Processing
+            | ActorStateId::Waiting
+            | ActorStateId::Idle
+            | ActorStateId::BackPressure => true,
             ActorStateId::Paused | ActorStateId::Success | ActorStateId::Failure => false,
         }
     }
@@ -161,7 +167,8 @@ impl ActorStateId {
             ActorStateId::Processing
             | ActorStateId::Paused
             | ActorStateId::Idle
-            | ActorStateId::Waiting => false,
+            | ActorStateId::Waiting
+            | ActorStateId::BackPressure => false,
             ActorStateId::Success | ActorStateId::Failure => true,
         }
     }
@@ -176,6 +183,14 @@ impl Default for AtomicState {
 }
 
 impl AtomicState {
+    pub fn set_state(&self, state_id: ActorStateId) {
+        self.0.store(state_id as u32, Ordering::SeqCst);
+    }
+
+    pub fn swap_state(&self, state_id: ActorStateId) -> ActorStateId {
+        self.0.swap(state_id as u32, Ordering::SeqCst).into()
+    }
+
     pub fn process(&self) {
         let _ = self.0.compare_exchange(
             ActorStateId::Waiting as u32,

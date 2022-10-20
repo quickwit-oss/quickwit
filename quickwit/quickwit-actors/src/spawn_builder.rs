@@ -21,6 +21,7 @@ use anyhow::Context;
 use tokio::sync::watch;
 use tracing::{debug, error, info};
 
+use crate::actor_state::ProtectLocation;
 use crate::envelope::Envelope;
 use crate::mailbox::Inbox;
 use crate::registry::ActorRegistry;
@@ -153,9 +154,11 @@ impl<A: Actor + Default> SpawnBuilder<A> {
 /// Returns `None` if no message is available at the moment.
 async fn get_envelope<A: Actor>(inbox: &mut Inbox<A>, ctx: &ActorContext<A>) -> Envelope<A> {
     if ctx.state().is_running() {
-        ctx.protect_future(inbox.recv()).await.expect(
-            "Disconnection should be impossible because the ActorContext holds a Mailbox too",
-        )
+        ctx.protect_future_with_location(inbox.recv(), ProtectLocation::Idle)
+            .await
+            .expect(
+                "Disconnection should be impossible because the ActorContext holds a Mailbox too",
+            )
     } else {
         // The actor is paused. We only process command and scheduled message.
         ctx.protect_future(inbox.recv_cmd_and_scheduled_msg_only())
@@ -218,8 +221,7 @@ impl<A: Actor> ActorExecutionEnv<A> {
 
     async fn process_all_available_messages(&mut self) -> Result<(), ActorExitStatus> {
         self.yield_and_check_if_killed().await?;
-        let envelope_fut = get_envelope(&mut self.inbox, &self.ctx);
-        let envelope = self.ctx.protect_future(envelope_fut).await;
+        let envelope = get_envelope(&mut self.inbox, &self.ctx).await;
         self.process_one_message(envelope).await?;
         while let Some(envelope) = try_get_envelope(&mut self.inbox, &self.ctx) {
             self.process_one_message(envelope).await?;

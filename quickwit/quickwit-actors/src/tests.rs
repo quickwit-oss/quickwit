@@ -319,6 +319,8 @@ async fn test_actor_running_states() {
     }
     let obs = ping_handle.process_pending_and_observe().await;
     assert_eq!(*obs, 10);
+    std::thread::sleep(Duration::from_secs(1));
+    dbg!(ping_handle.state());
     assert!(matches!(ping_handle.state(), ActorStateId::Idle));
 }
 

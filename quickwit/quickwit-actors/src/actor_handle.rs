@@ -76,7 +76,10 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
                 error!(actor = self.name(), "actor-exit-without-success");
                 Health::FailureOrUnhealthy
             }
-            ActorStateId::Waiting | ActorStateId::Idle => Health::Healthy,
+            ActorStateId::Waiting
+            | ActorStateId::Idle
+            | ActorStateId::Paused
+            | ActorStateId::BackPressure => Health::Healthy,
             ActorStateId::Processing => {
                 if self
                     .actor_context
@@ -90,7 +93,6 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
                     Health::FailureOrUnhealthy
                 }
             }
-            ActorStateId::Paused => Health::Healthy,
         }
     }
 }

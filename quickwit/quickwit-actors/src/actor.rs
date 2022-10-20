@@ -328,12 +328,12 @@ impl<A: Actor> ActorContext<A> {
     #[track_caller]
     pub fn protect_zone(&self) -> ProtectedZoneGuard {
         let location = core::panic::Location::caller();
-        let protect_location = ProtectLocation::Waiting {
-            file: location.file(),
-            line: location.line(),
-        };
-        self.actor_state
-            .protect_zone_with_location(protect_location)
+        let protect_location = ProtectLocation::Waiting(location);
+        self.protect_zone_with_location(protect_location)
+    }
+
+    pub fn protect_zone_with_location(&self, location: ProtectLocation) -> ProtectedZoneGuard {
+        self.actor_state.protect_zone_with_location(location)
     }
 
     /// Executes a future in a protected zone.
@@ -483,7 +483,7 @@ impl<A: Actor> ActorContext<A> {
         DestActor: Handler<M>,
         M: 'static + Send + Sync + fmt::Debug,
     {
-        let _guard = self.protect_zone();
+        let _guard = self.protect_zone_with_location(ProtectLocation::Backpressure);
         debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg);
         mailbox.send_message(msg).await
     }

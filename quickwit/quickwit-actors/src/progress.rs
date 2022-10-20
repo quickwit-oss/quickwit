@@ -99,6 +99,41 @@ impl Progress {
             .into();
         previous_state != ProgressState::NoUpdate
     }
+
+    /// Increase the protect level.
+    /// Returns true if and only if the state was not protected yet.
+    pub(crate) fn protect(&self) -> bool {
+        loop {
+            let previous_state: ProgressState = self.0.load(Ordering::SeqCst).into();
+            let new_state = match previous_state {
+                ProgressState::NoUpdate | ProgressState::Updated => ProgressState::ProtectedZone(0),
+                ProgressState::ProtectedZone(level) => ProgressState::ProtectedZone(level + 1),
+            };
+            if self
+                .0
+                .compare_exchange(
+                    previous_state.into(),
+                    new_state.into(),
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                )
+                .is_ok()
+            {
+                return !matches!(previous_state, ProgressState::ProtectedZone(_));
+            }
+        }
+    }
+
+    /// Returns true if it was the last protect level.
+    pub(crate) fn dec_progress_state(&self) -> bool {
+        let previous_state = self.0.fetch_sub(1, Ordering::SeqCst).into();
+        match previous_state {
+            ProgressState::NoUpdate | ProgressState::Updated => {
+                panic!("Error");
+            }
+            ProgressState::ProtectedZone(level) => level == 0u32,
+        }
+    }
 }
 
 #[cfg(test)]
