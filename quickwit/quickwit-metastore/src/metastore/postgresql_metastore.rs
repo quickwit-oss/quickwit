@@ -277,7 +277,7 @@ fn build_query_filter(mut sql: String, filter: &ListSplitsQuery<'_>) -> String {
     if let Some(tags) = filter.tags.as_ref() {
         sql.push_str(" AND (");
         sql.push_str(&tags_filter_expression_helper(tags));
-        sql.push_str(")");
+        sql.push(')');
     }
 
     if let Some(limit) = filter.limit {
@@ -954,7 +954,7 @@ fn tags_filter_expression_helper(tags: &TagFilterAst) -> String {
                 return "TRUE".to_string();
             }
             let expr_without_parenthesis = child_asts
-                .into_iter()
+                .iter()
                 .map(tags_filter_expression_helper)
                 .join(" AND ");
             format!("({expr_without_parenthesis})")
@@ -964,13 +964,13 @@ fn tags_filter_expression_helper(tags: &TagFilterAst) -> String {
                 return "TRUE".to_string();
             }
             let expr_without_parenthesis = child_asts
-                .into_iter()
+                .iter()
                 .map(tags_filter_expression_helper)
                 .join(" OR ");
             format!("({expr_without_parenthesis})")
         }
         TagFilterAst::Tag { is_present, tag } => {
-            let dollar_guard = generate_dollar_guard(&tag);
+            let dollar_guard = generate_dollar_guard(tag);
             if *is_present {
                 format!("${dollar_guard}${tag}${dollar_guard}$ = ANY(tags)")
             } else {
