@@ -57,7 +57,7 @@ use itertools::Itertools;
 use quickwit_config::{build_doc_mapper, QuickwitConfig, SearcherConfig};
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::{Metastore, SplitFilter, SplitMetadata, SplitState};
+use quickwit_metastore::{Metastore, ListSplitsQuery, SplitMetadata, SplitState};
 use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
 use serde_json::Value as JsonValue;
@@ -118,7 +118,7 @@ async fn list_relevant_splits(
     metastore: &dyn Metastore,
 ) -> crate::Result<Vec<SplitMetadata>> {
     let mut filter =
-        SplitFilter::for_index(&search_request.index_id).with_split_state(SplitState::Published);
+        ListSplitsQuery::for_index(&search_request.index_id).with_split_state(SplitState::Published);
 
     if let Some(start_ts) = search_request.start_timestamp {
         filter = filter.with_time_range_from(start_ts);

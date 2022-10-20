@@ -34,7 +34,7 @@ use quickwit_proto::metastore_api::{
 };
 use quickwit_proto::tonic;
 
-use crate::{IndexMetadata, Metastore, MetastoreError, SplitFilter};
+use crate::{IndexMetadata, Metastore, MetastoreError, ListSplitsQuery};
 
 #[allow(missing_docs)]
 #[derive(Clone)]
@@ -144,7 +144,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
         request: tonic::Request<ListSplitsRequest>,
     ) -> Result<tonic::Response<ListSplitsResponse>, tonic::Status> {
         let list_splits_request = request.into_inner();
-        let filter: SplitFilter<'_> = serde_json::from_str(&list_splits_request.filter_json)
+        let filter: ListSplitsQuery<'_> = serde_json::from_str(&list_splits_request.filter_json)
             .map_err(|error| MetastoreError::JsonDeserializeError {
                 name: "SplitFilter".to_string(),
                 message: error.to_string(),

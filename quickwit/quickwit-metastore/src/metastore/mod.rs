@@ -154,13 +154,13 @@ pub trait Metastore: Send + Sync + 'static {
     /// Returns a list of splits that intersects the given `time_range`, `split_state`, and `tag`.
     /// Regardless of the time range filter, if a split has no timestamp it is always returned.
     /// An error will occur if an index that does not exist in the storage is specified.
-    async fn list_splits<'a>(&self, filter: SplitFilter<'a>) -> MetastoreResult<Vec<Split>>;
+    async fn list_splits<'a>(&self, filter: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>>;
 
     /// Lists all the splits without filtering.
     ///
     /// Returns a list of all splits currently known to the metastore regardless of their state.
     async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
-        let filter = SplitFilter::for_index(index_id);
+        let filter = ListSplitsQuery::for_index(index_id);
         self.list_splits(filter).await
     }
 
@@ -173,7 +173,7 @@ pub trait Metastore: Send + Sync + 'static {
         delete_opstamp: u64,
         num_splits: usize,
     ) -> MetastoreResult<Vec<Split>> {
-        let filter = SplitFilter::for_index(index_id)
+        let filter = ListSplitsQuery::for_index(index_id)
             .with_opstamp_older_than(delete_opstamp)
             .with_limit(num_splits);
         self.list_splits(filter).await
@@ -245,7 +245,7 @@ pub trait Metastore: Send + Sync + 'static {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 /// A filter builder for filtering splits within the metastore.
-pub struct SplitFilter<'a> {
+pub struct ListSplitsQuery<'a> {
     /// The index to get splits from.
     pub index: &'a str,
 
@@ -278,7 +278,7 @@ pub struct SplitFilter<'a> {
 }
 
 #[allow(unused_attributes)]
-impl<'a> SplitFilter<'a> {
+impl<'a> ListSplitsQuery<'a> {
     /// Create a new index for a specific index.
     pub fn for_index(index: &'a str) -> Self {
         Self {

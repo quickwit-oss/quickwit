@@ -32,7 +32,7 @@ pub mod test_suite {
     use tracing::{error, info};
 
     use crate::checkpoint::{IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint};
-    use crate::{IndexMetadata, Metastore, MetastoreError, SplitFilter, SplitMetadata, SplitState};
+    use crate::{IndexMetadata, Metastore, MetastoreError, ListSplitsQuery, SplitMetadata, SplitState};
 
     #[async_trait]
     pub trait DefaultForTest {
@@ -1540,7 +1540,7 @@ pub mod test_suite {
             info!("List all splits on a non-existent index");
 
             let filter =
-                SplitFilter::for_index("non-existent-index").with_split_state(SplitState::Staged);
+                ListSplitsQuery::for_index("non-existent-index").with_split_state(SplitState::Staged);
 
             let metastore_err = metastore.list_splits(filter).await.unwrap_err();
             error!(err=?metastore_err);
@@ -1583,7 +1583,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(0)
                 .with_time_range_to(99);
@@ -1598,7 +1598,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-five"])
             );
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(200);
 
@@ -1612,7 +1612,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-three", "list-splits-four", "list-splits-five"])
             );
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_to(200);
             let splits = metastore.list_splits(filter).await.unwrap();
@@ -1625,7 +1625,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-two", "list-splits-five"])
             );
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(0)
                 .with_time_range_to(200);
@@ -1639,7 +1639,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-five"])
             );
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(0)
                 .with_time_range_to(101);
@@ -1653,7 +1653,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-two", "list-splits-five"])
             );
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(0)
                 .with_time_range_to(199);
@@ -1667,7 +1667,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-two", "list-splits-five"])
             );
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(0)
                 .with_time_range_to(200);
@@ -1681,7 +1681,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-two", "list-splits-five"])
             );
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(0)
                 .with_time_range_to(201);
@@ -1700,7 +1700,7 @@ pub mod test_suite {
                 ])
             );
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(0)
                 .with_time_range_to(299);
@@ -1719,7 +1719,7 @@ pub mod test_suite {
                 ])
             );
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(0)
                 .with_time_range_to(300);
@@ -1738,7 +1738,7 @@ pub mod test_suite {
                 ])
             );
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(0)
                 .with_time_range_to(301);
@@ -1758,7 +1758,7 @@ pub mod test_suite {
                 ])
             );
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(301)
                 .with_time_range_to(400);
@@ -1772,7 +1772,7 @@ pub mod test_suite {
                 split_ids,
                 to_hash_set(&["list-splits-four", "list-splits-five"])
             );
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(300)
                 .with_time_range_to(400);
@@ -1786,7 +1786,7 @@ pub mod test_suite {
                 split_ids,
                 to_hash_set(&["list-splits-four", "list-splits-five"])
             );
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(299)
                 .with_time_range_to(400);
@@ -1800,7 +1800,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-three", "list-splits-four", "list-splits-five"])
             );
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(201)
                 .with_time_range_to(400);
@@ -1814,7 +1814,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-three", "list-splits-four", "list-splits-five"])
             );
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(200)
                 .with_time_range_to(400);
@@ -1829,7 +1829,7 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-three", "list-splits-four", "list-splits-five"])
             );
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(199)
                 .with_time_range_to(400);
@@ -1848,7 +1848,7 @@ pub mod test_suite {
                 ])
             );
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(101)
                 .with_time_range_to(400);
@@ -1867,7 +1867,7 @@ pub mod test_suite {
                 ])
             );
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(101)
                 .with_time_range_to(400);
@@ -1886,7 +1886,7 @@ pub mod test_suite {
                 ])
             );
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(100)
                 .with_time_range_to(400);
@@ -1906,7 +1906,7 @@ pub mod test_suite {
                 ])
             );
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(99)
                 .with_time_range_to(400);
@@ -1926,7 +1926,7 @@ pub mod test_suite {
                 ])
             );
 
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(1000)
                 .with_time_range_to(1100);
@@ -1955,7 +1955,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let filter = SplitFilter::for_index(index_id).with_split_state(SplitState::Staged);
+            let filter = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
             let splits = metastore.list_splits(filter).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
@@ -1977,7 +1977,7 @@ pub mod test_suite {
                 TagFilterAst::Or(vec![no_tag("tag!"), tag("tag:bar")]),
                 TagFilterAst::Or(vec![no_tag("tag!"), tag("tag:baz")]),
             ]);
-            let filter = SplitFilter::for_index(index_id)
+            let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_tags_filter(tag_filter_ast);
             let splits = metastore.list_splits(filter).await.unwrap();

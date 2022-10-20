@@ -40,7 +40,7 @@ use crate::checkpoint::IndexCheckpointDelta;
 use crate::metastore::postgresql_model::{self, Index, IndexIdSplitIdRow};
 use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
-    MetastoreResult, Split, SplitFilter, SplitMetadata, SplitState,
+    MetastoreResult, Split, ListSplitsQuery, SplitMetadata, SplitState,
 };
 
 static MIGRATOR: Migrator = sqlx::migrate!("migrations/postgresql");
@@ -210,7 +210,7 @@ async fn mark_splits_for_deletion(
 
 async fn list_splits_helper(
     tx: &mut Transaction<'_, Postgres>,
-    filter: SplitFilter<'_>,
+    filter: ListSplitsQuery<'_>,
 ) -> MetastoreResult<Vec<Split>> {
     let sql_base = "SELECT * FROM splits".to_string();
     let sql = build_query_filter(sql_base, &filter);
@@ -231,7 +231,7 @@ async fn list_splits_helper(
     splits.into_iter().map(|split| split.try_into()).collect()
 }
 
-fn build_query_filter(mut sql: String, filter: &SplitFilter<'_>) -> String {
+fn build_query_filter(mut sql: String, filter: &ListSplitsQuery<'_>) -> String {
     sql.push_str(" WHERE index_id = $1");
 
     if let Some(state) = filter.split_state {
@@ -631,7 +631,7 @@ impl Metastore for PostgresqlMetastore {
     }
 
     #[instrument(skip(self))]
-    async fn list_splits<'a>(&self, filter: SplitFilter<'a>) -> MetastoreResult<Vec<Split>> {
+    async fn list_splits<'a>(&self, filter: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>> {
         run_with_tx!(self.connection_pool, tx, {
             list_splits_helper(tx, filter).await
         })

@@ -33,7 +33,7 @@ use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    split_tag_filter, IndexMetadata, MetastoreError, MetastoreResult, Split, SplitFilter,
+    split_tag_filter, IndexMetadata, MetastoreError, MetastoreResult, Split, ListSplitsQuery,
     SplitMetadata, SplitState,
 };
 
@@ -317,7 +317,7 @@ impl FileBackedIndex {
     }
 
     /// Lists splits.
-    pub(crate) fn list_splits(&self, filter: SplitFilter<'_>) -> MetastoreResult<Vec<Split>> {
+    pub(crate) fn list_splits(&self, filter: ListSplitsQuery<'_>) -> MetastoreResult<Vec<Split>> {
         let split_state_filter = |split: &&Split| {
             filter
                 .split_state

@@ -27,7 +27,7 @@ use quickwit_actors::{
 };
 use quickwit_config::{build_doc_mapper, IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError, SplitFilter, SplitState};
+use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError, ListSplitsQuery, SplitState};
 use quickwit_storage::Storage;
 use tokio::join;
 use tokio::sync::Semaphore;
@@ -226,7 +226,7 @@ impl IndexingPipeline {
             "Spawning indexing pipeline.",
         );
 
-        let filter = SplitFilter::for_index(&self.params.pipeline_id.index_id)
+        let filter = ListSplitsQuery::for_index(&self.params.pipeline_id.index_id)
             .with_split_state(SplitState::Published);
         let published_splits = ctx
             .protect_future(self.params.metastore.list_splits(filter))

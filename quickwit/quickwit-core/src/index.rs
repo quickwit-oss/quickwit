@@ -30,7 +30,7 @@ use quickwit_janitor::{
     delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
 };
 use quickwit_metastore::{
-    quickwit_metastore_uri_resolver, IndexMetadata, Metastore, MetastoreError, Split, SplitFilter,
+    quickwit_metastore_uri_resolver, IndexMetadata, Metastore, MetastoreError, Split, ListSplitsQuery,
     SplitMetadata, SplitState,
 };
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -196,10 +196,10 @@ impl IndexService {
         }
 
         // Schedule staged and published splits for deletion.
-        let filter = SplitFilter::for_index(index_id).with_split_state(SplitState::Staged);
+        let filter = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
         let staged_splits = self.metastore.list_splits(filter).await?;
 
-        let filter = SplitFilter::for_index(index_id).with_split_state(SplitState::Published);
+        let filter = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Published);
         let published_splits = self.metastore.list_splits(filter).await?;
         let split_ids = staged_splits
             .iter()
@@ -212,7 +212,7 @@ impl IndexService {
 
         // Select splits to delete
         let filter =
-            SplitFilter::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
+            ListSplitsQuery::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
         let splits_to_delete = self
             .metastore
             .list_splits(filter)
