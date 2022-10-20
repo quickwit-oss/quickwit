@@ -23,19 +23,18 @@
 
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::ops::Range;
+use std::ops::Bound;
 
 use itertools::Itertools;
 use quickwit_config::SourceConfig;
-use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    split_tag_filter, split_time_range_filter, IndexMetadata, MetastoreError, MetastoreResult,
-    Split, SplitMetadata, SplitState,
+    split_tag_filter, IndexMetadata, MetastoreError, MetastoreResult,
+    Split, SplitMetadata, SplitState, SplitFilter,
 };
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
@@ -320,13 +319,41 @@ impl FileBackedIndex {
     /// Lists splits.
     pub(crate) fn list_splits(
         &self,
-        state: SplitState,
-        time_range_opt: Option<Range<i64>>,
-        tags_filter: Option<TagFilterAst>,
-        delete_opstamp_opt: Option<u64>,
+        filter: SplitFilter<'_>,
     ) -> MetastoreResult<Vec<Split>> {
+        let split_state_filter = |split: &&Split| {
+            filter.split_state
+                .map(|state| split.split_state == state)
+                .unwrap_or(true)
+        };
+        let time_range_start_filter = |split: &&Split| {
+            filter.time_range_start
+                .and_then(|ts| Some((ts, split.split_metadata.time_range.as_ref()?)))
+                .map(|(ts, range)| range.start() >= &ts)
+                .unwrap_or(true)
+        };
+        let time_range_end_filter = |split: &&Split| {
+            filter.time_range_end
+                .and_then(|ts| Some((ts, split.split_metadata.time_range.as_ref()?)))
+                .map(|(ts, range)| range.end() < &ts)
+                .unwrap_or(true)
+        };
+        let update_after_filter = |split: &&Split| {
+            match filter.updated_after {
+                Bound::Excluded(ts) => split.update_timestamp > ts,
+                Bound::Included(ts) => split.update_timestamp >= ts,
+                Bound::Unbounded => true,
+            }
+        };
+        let update_before_filter = |split: &&Split| {
+            match filter.updated_before {
+                Bound::Excluded(ts) => split.update_timestamp < ts,
+                Bound::Included(ts) => split.update_timestamp <= ts,
+                Bound::Unbounded => true,
+            }
+        };
         let delete_opstamp_filter = |split: &&Split| {
-            delete_opstamp_opt
+            filter.delete_opstamp
                 .map(|delete_opstamp| split.split_metadata.delete_opstamp < delete_opstamp)
                 .unwrap_or(true)
         };
@@ -334,10 +361,15 @@ impl FileBackedIndex {
         let splits = self
             .splits
             .values()
-            .filter(|&split| split.split_state == state)
-            .filter(|split| split_time_range_filter(split, time_range_opt.as_ref()))
-            .filter(|split| split_tag_filter(split, tags_filter.as_ref()))
+            .filter(split_state_filter)
+            .filter(time_range_start_filter)
+            .filter(time_range_end_filter)
+            .filter(update_after_filter)
+            .filter(update_before_filter)
+            .filter(|split| split_tag_filter(split, filter.tags.as_ref()))
             .filter(delete_opstamp_filter)
+            .skip(filter.offset.unwrap_or_default())
+            .take(filter.limit.unwrap_or_default())
             .cloned()
             .collect();
 

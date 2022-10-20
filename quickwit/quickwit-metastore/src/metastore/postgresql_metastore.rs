@@ -19,7 +19,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
-use std::ops::Range;
+use std::ops::Bound;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -40,7 +40,7 @@ use crate::checkpoint::IndexCheckpointDelta;
 use crate::metastore::postgresql_model::{self, Index, IndexIdSplitIdRow};
 use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
-    MetastoreResult, Split, SplitMetadata, SplitState,
+    MetastoreResult, Split, SplitMetadata, SplitState, SplitFilter,
 };
 
 static MIGRATOR: Migrator = sqlx::migrate!("migrations/postgresql");
@@ -210,53 +210,85 @@ async fn mark_splits_for_deletion(
 
 async fn list_splits_helper(
     tx: &mut Transaction<'_, Postgres>,
-    index_id: &str,
-    state_opt: Option<SplitState>,
-    time_range_opt: Option<Range<i64>>,
-    tags_opt: Option<TagFilterAst>,
+    filter: SplitFilter<'_>
 ) -> MetastoreResult<Vec<Split>> {
-    let mut sql = r#"
-        SELECT *
-        FROM splits
-        WHERE index_id = $1
-    "#
-    .to_string();
-    if let Some(state) = state_opt {
-        let _ = write!(sql, " AND split_state = '{}'", state.as_str());
-    }
-    if let Some(time_range) = time_range_opt {
-        let _ = write!(
-            sql,
-            " AND (time_range_end >= {} OR time_range_end IS NULL) ",
-            time_range.start
-        );
-        let _ = write!(
-            sql,
-            " AND (time_range_start < {} OR time_range_start IS NULL) ",
-            time_range.end
-        );
-    }
-
-    if let Some(tags) = tags_opt {
-        sql.push_str(" AND (");
-        sql.push_str(&tags_filter_expression_helper(tags));
-        sql.push_str(") ");
-    }
-
+    let sql_base = "SELECT * FROM splits".to_string();
+    let sql = build_query_filter(sql_base, &filter);
+    
     let splits = sqlx::query_as::<_, postgresql_model::Split>(&sql)
-        .bind(index_id)
+        .bind(filter.index)
         .fetch_all(&mut *tx)
         .await?;
 
     // If no splits was returned, maybe the index itself does not exist
     // in the first place?
-    if splits.is_empty() && index_opt(&mut *tx, index_id).await?.is_none() {
+    if splits.is_empty() && index_opt(&mut *tx, filter.index).await?.is_none() {
         return Err(MetastoreError::IndexDoesNotExist {
-            index_id: index_id.to_string(),
+            index_id: filter.index.to_string(),
         });
     }
 
     splits.into_iter().map(|split| split.try_into()).collect()
+}
+
+fn build_query_filter(mut sql: String, filter: &SplitFilter<'_>) -> String {
+    sql.push_str(" WHERE index_id = $1");
+
+    if let Some(state) = filter.split_state {
+        let _ = write!(sql, " AND split_state = '{}'", state.as_str());
+    }
+    if let Some(start) = filter.time_range_start {
+        let _ = write!(
+            sql,
+            " AND (time_range_end >= {} OR time_range_end IS NULL) ",
+            start
+        );
+    }
+    if let Some(end) = filter.time_range_end {
+        let _ = write!(
+            sql,
+            " AND (time_range_start < {} OR time_range_start IS NULL) ",
+            end
+        );
+    }
+    if let Some(opstamp) = filter.delete_opstamp {
+        let _ = write!(sql, " AND delete_opstamp < {}", opstamp);
+    }
+    
+    match filter.updated_after {
+        Bound::Unbounded => {},
+        Bound::Excluded(ts) => {
+            let _ = write!(sql, " AND update_timestamp > {}", ts);
+        },
+        Bound::Included(ts) => {
+            let _ = write!(sql, " AND update_timestamp >= {}", ts);
+        },
+    }
+    match filter.updated_before {
+        Bound::Unbounded => {},
+        Bound::Excluded(ts) => {
+            let _ = write!(sql, " AND update_timestamp < {}", ts);
+        },
+        Bound::Included(ts) => {
+            let _ = write!(sql, " AND update_timestamp <= {}", ts);
+        },
+    }
+
+    if let Some(tags) = filter.tags.as_ref() {
+        sql.push_str(" AND (");
+        sql.push_str(&tags_filter_expression_helper(tags));
+        sql.push_str(")");
+    }
+
+    if let Some(limit) = filter.limit {
+        let _ = write!(sql, " LIMIT {}", limit);
+    }
+
+    if let Some(offset) = filter.offset {
+        let _ = write!(sql, " OFFSET {}", offset);
+    }
+
+    sql
 }
 
 /// Query the database to find out if:
@@ -599,22 +631,12 @@ impl Metastore for PostgresqlMetastore {
     }
 
     #[instrument(skip(self))]
-    async fn list_splits(
+    async fn list_splits<'a>(
         &self,
-        index_id: &str,
-        state: SplitState,
-        time_range_opt: Option<Range<i64>>,
-        tags: Option<TagFilterAst>,
+        filter: SplitFilter<'a>,
     ) -> MetastoreResult<Vec<Split>> {
         run_with_tx!(self.connection_pool, tx, {
-            list_splits_helper(tx, index_id, Some(state), time_range_opt, tags).await
-        })
-    }
-
-    #[instrument(skip(self))]
-    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
-        run_with_tx!(self.connection_pool, tx, {
-            list_splits_helper(tx, index_id, None, None, None).await
+            list_splits_helper(tx, filter).await
         })
     }
 
@@ -868,6 +890,8 @@ impl Metastore for PostgresqlMetastore {
         delete_opstamp: u64,
         num_splits: usize,
     ) -> MetastoreResult<Vec<Split>> {
+        // TODO: Remove as this can be done automatically by the trait.
+        //       Need to clarify about if order is important here or not.
         run_with_tx!(self.connection_pool, tx, {
             let stale_splits: Vec<postgresql_model::Split> =
                 sqlx::query_as::<_, postgresql_model::Split>(
@@ -926,7 +950,7 @@ fn generate_dollar_guard(s: &str) -> String {
 
 /// Takes a tag filters AST and returns a sql expression that can be used as
 /// a filter.
-fn tags_filter_expression_helper(tags: TagFilterAst) -> String {
+fn tags_filter_expression_helper(tags: &TagFilterAst) -> String {
     match tags {
         TagFilterAst::And(child_asts) => {
             if child_asts.is_empty() {
@@ -950,7 +974,7 @@ fn tags_filter_expression_helper(tags: TagFilterAst) -> String {
         }
         TagFilterAst::Tag { is_present, tag } => {
             let dollar_guard = generate_dollar_guard(&tag);
-            if is_present {
+            if *is_present {
                 format!("${dollar_guard}${tag}${dollar_guard}$ = ANY(tags)")
             } else {
                 format!("NOT (${dollar_guard}${tag}${dollar_guard}$ = ANY(tags))")
@@ -1041,7 +1065,7 @@ mod tests {
     use super::tags_filter_expression_helper;
 
     fn test_tags_filter_expression_helper(tags_ast: TagFilterAst, expected: &str) {
-        assert_eq!(tags_filter_expression_helper(tags_ast), expected);
+        assert_eq!(tags_filter_expression_helper(&tags_ast), expected);
     }
 
     #[test]
