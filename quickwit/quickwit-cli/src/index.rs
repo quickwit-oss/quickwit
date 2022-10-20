@@ -43,7 +43,9 @@ use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
 use quickwit_indexing::models::{
     DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
 };
-use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Split, SplitState, SplitFilter};
+use quickwit_metastore::{
+    quickwit_metastore_uri_resolver, IndexMetadata, Split, SplitFilter, SplitState,
+};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
@@ -646,12 +648,9 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri)
         .await?;
-    
-    let filter = SplitFilter::for_index(&args.index_id)
-        .with_split_state(SplitState::Published);
-    let splits = metastore
-        .list_splits(filter)
-        .await?;
+
+    let filter = SplitFilter::for_index(&args.index_id).with_split_state(SplitState::Published);
+    let splits = metastore.list_splits(filter).await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let index_stats = IndexStats::from_metadata(index_metadata, splits)?;
     println!("{}", index_stats.display_as_table());

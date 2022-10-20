@@ -27,7 +27,7 @@ use quickwit_actors::{
 };
 use quickwit_config::{build_doc_mapper, IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError, SplitState, SplitFilter};
+use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError, SplitFilter, SplitState};
 use quickwit_storage::Storage;
 use tokio::join;
 use tokio::sync::Semaphore;
@@ -663,9 +663,7 @@ mod tests {
                 assert_eq!("test-index", index_id);
                 Ok(10)
             });
-        metastore
-            .expect_list_splits()
-            .returning(|_| Ok(Vec::new()));
+        metastore.expect_list_splits().returning(|_| Ok(Vec::new()));
         metastore
             .expect_mark_splits_for_deletion()
             .returning(|_, _| Ok(()));

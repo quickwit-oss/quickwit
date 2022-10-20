@@ -134,11 +134,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_filter| {
-                Ok(vec![mock_split("split1")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split1")]));
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {
@@ -192,11 +190,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_filter| {
-                Ok(vec![mock_split("split1")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split1")]));
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {
@@ -246,11 +242,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_filter| {
-                Ok(vec![mock_split("split1"), mock_split("split2")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split1"), mock_split("split2")]));
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {
@@ -296,11 +290,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_filter| {
-                Ok(vec![mock_split("split")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split")]));
 
         let client_pool =
             SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;

@@ -154,10 +154,7 @@ pub trait Metastore: Send + Sync + 'static {
     /// Returns a list of splits that intersects the given `time_range`, `split_state`, and `tag`.
     /// Regardless of the time range filter, if a split has no timestamp it is always returned.
     /// An error will occur if an index that does not exist in the storage is specified.
-    async fn list_splits<'a>(
-        &self,
-        filter: SplitFilter<'a>,
-    ) -> MetastoreResult<Vec<Split>>;
+    async fn list_splits<'a>(&self, filter: SplitFilter<'a>) -> MetastoreResult<Vec<Split>>;
 
     /// Lists all the splits without filtering.
     ///
@@ -260,7 +257,7 @@ pub struct SplitFilter<'a> {
 
     /// The timestamp which splits must be newer than.
     pub time_range_start: Option<i64>,
-    
+
     /// The timestamp which splits must be older than.
     pub time_range_end: Option<i64>,
 

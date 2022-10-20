@@ -40,7 +40,7 @@ use crate::checkpoint::IndexCheckpointDelta;
 use crate::metastore::postgresql_model::{self, Index, IndexIdSplitIdRow};
 use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
-    MetastoreResult, Split, SplitMetadata, SplitState, SplitFilter,
+    MetastoreResult, Split, SplitFilter, SplitMetadata, SplitState,
 };
 
 static MIGRATOR: Migrator = sqlx::migrate!("migrations/postgresql");
@@ -210,11 +210,11 @@ async fn mark_splits_for_deletion(
 
 async fn list_splits_helper(
     tx: &mut Transaction<'_, Postgres>,
-    filter: SplitFilter<'_>
+    filter: SplitFilter<'_>,
 ) -> MetastoreResult<Vec<Split>> {
     let sql_base = "SELECT * FROM splits".to_string();
     let sql = build_query_filter(sql_base, &filter);
-    
+
     let splits = sqlx::query_as::<_, postgresql_model::Split>(&sql)
         .bind(filter.index)
         .fetch_all(&mut *tx)
@@ -254,24 +254,24 @@ fn build_query_filter(mut sql: String, filter: &SplitFilter<'_>) -> String {
     if let Some(opstamp) = filter.delete_opstamp {
         let _ = write!(sql, " AND delete_opstamp < {}", opstamp);
     }
-    
+
     match filter.updated_after {
-        Bound::Unbounded => {},
+        Bound::Unbounded => {}
         Bound::Excluded(ts) => {
             let _ = write!(sql, " AND update_timestamp > {}", ts);
-        },
+        }
         Bound::Included(ts) => {
             let _ = write!(sql, " AND update_timestamp >= {}", ts);
-        },
+        }
     }
     match filter.updated_before {
-        Bound::Unbounded => {},
+        Bound::Unbounded => {}
         Bound::Excluded(ts) => {
             let _ = write!(sql, " AND update_timestamp < {}", ts);
-        },
+        }
         Bound::Included(ts) => {
             let _ = write!(sql, " AND update_timestamp <= {}", ts);
-        },
+        }
     }
 
     if let Some(tags) = filter.tags.as_ref() {
@@ -631,10 +631,7 @@ impl Metastore for PostgresqlMetastore {
     }
 
     #[instrument(skip(self))]
-    async fn list_splits<'a>(
-        &self,
-        filter: SplitFilter<'a>,
-    ) -> MetastoreResult<Vec<Split>> {
+    async fn list_splits<'a>(&self, filter: SplitFilter<'a>) -> MetastoreResult<Vec<Split>> {
         run_with_tx!(self.connection_pool, tx, {
             list_splits_helper(tx, filter).await
         })

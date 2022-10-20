@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use futures::{Future, StreamExt};
 use quickwit_actors::ActorContext;
-use quickwit_metastore::{Metastore, MetastoreError, SplitMetadata, SplitState, SplitFilter};
+use quickwit_metastore::{Metastore, MetastoreError, SplitFilter, SplitMetadata, SplitState};
 use quickwit_storage::{Storage, StorageError};
 use serde::Serialize;
 use thiserror::Error;
@@ -105,27 +105,22 @@ pub async fn run_garbage_collect(
         .with_split_state(SplitState::Staged)
         .updated_after(grace_period_timestamp);
 
-    let deletable_staged_splits: Vec<SplitMetadata> = protect_future(
-        ctx_opt,
-        metastore.list_splits(filter),
-    )
-    .await?
-    .into_iter()
-    .map(|meta| meta.split_metadata)
-    .collect();
+    let deletable_staged_splits: Vec<SplitMetadata> =
+        protect_future(ctx_opt, metastore.list_splits(filter))
+            .await?
+            .into_iter()
+            .map(|meta| meta.split_metadata)
+            .collect();
 
-    if dry_run {        
-        let filter = SplitFilter::for_index(index_id)
-            .with_split_state(SplitState::MarkedForDeletion);
+    if dry_run {
+        let filter =
+            SplitFilter::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
 
-        let mut splits_marked_for_deletion = protect_future(
-            ctx_opt,
-            metastore.list_splits(filter),
-        )
-        .await?
-        .into_iter()
-        .map(|meta| meta.split_metadata)
-        .collect::<Vec<_>>();
+        let mut splits_marked_for_deletion = protect_future(ctx_opt, metastore.list_splits(filter))
+            .await?
+            .into_iter()
+            .map(|meta| meta.split_metadata)
+            .collect::<Vec<_>>();
         splits_marked_for_deletion.extend(deletable_staged_splits);
 
         let candidate_entries: Vec<FileEntry> = splits_marked_for_deletion
@@ -153,15 +148,12 @@ pub async fn run_garbage_collect(
     let filter = SplitFilter::for_index(index_id)
         .with_split_state(SplitState::MarkedForDeletion)
         .updated_after_or_at(grace_period_deletion);
-    
-    let splits_to_delete = protect_future(
-        ctx_opt,
-        metastore.list_splits(filter),
-    )
-    .await?
-    .into_iter()
-    .map(|meta| meta.split_metadata)
-    .collect();
+
+    let splits_to_delete = protect_future(ctx_opt, metastore.list_splits(filter))
+        .await?
+        .into_iter()
+        .map(|meta| meta.split_metadata)
+        .collect();
 
     let deleted_files = delete_splits_with_files(
         index_id,

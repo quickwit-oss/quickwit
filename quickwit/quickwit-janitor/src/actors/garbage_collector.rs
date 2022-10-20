@@ -239,10 +239,15 @@ mod tests {
         });
 
         let mut mock_metastore = MockMetastore::default();
-        mock_metastore.expect_list_splits().times(2).returning(
-            |filter| {
+        mock_metastore
+            .expect_list_splits()
+            .times(2)
+            .returning(|filter| {
                 assert_eq!(filter.index, "test-index");
-                let splits = match filter.split_state.expect("Filter should be constructed with split state set.") {
+                let splits = match filter
+                    .split_state
+                    .expect("Filter should be constructed with split state set.")
+                {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         make_splits(&["a", "b", "c"], SplitState::MarkedForDeletion)
@@ -250,8 +255,7 @@ mod tests {
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
                 Ok(splits)
-            },
-        );
+            });
         mock_metastore
             .expect_mark_splits_for_deletion()
             .times(1)
@@ -295,10 +299,15 @@ mod tests {
                     "ram://indexes/test-index",
                 )])
             });
-        mock_metastore.expect_list_splits().times(2).returning(
-            |filter| {
+        mock_metastore
+            .expect_list_splits()
+            .times(2)
+            .returning(|filter| {
                 assert_eq!(filter.index, "test-index");
-                let splits = match filter.split_state.expect("Filter should be constructed with split state set.") {
+                let splits = match filter
+                    .split_state
+                    .expect("Filter should be constructed with split state set.")
+                {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         make_splits(&["a", "b", "c"], SplitState::MarkedForDeletion)
@@ -306,8 +315,7 @@ mod tests {
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
                 Ok(splits)
-            },
-        );
+            });
         mock_metastore
             .expect_mark_splits_for_deletion()
             .times(1)
@@ -349,10 +357,15 @@ mod tests {
                     "ram://indexes/test-index",
                 )])
             });
-        mock_metastore.expect_list_splits().times(4).returning(
-            |filter| {
+        mock_metastore
+            .expect_list_splits()
+            .times(4)
+            .returning(|filter| {
                 assert_eq!(filter.index, "test-index");
-                let splits = match filter.split_state.expect("Filter should be constructed with split state set.") {
+                let splits = match filter
+                    .split_state
+                    .expect("Filter should be constructed with split state set.")
+                {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         make_splits(&["a", "b"], SplitState::MarkedForDeletion)
@@ -360,8 +373,7 @@ mod tests {
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
                 Ok(splits)
-            },
-        );
+            });
         mock_metastore
             .expect_mark_splits_for_deletion()
             .times(2)
@@ -484,10 +496,15 @@ mod tests {
                     IndexMetadata::for_test("test-index-2", "ram://indexes/test-index-2"),
                 ])
             });
-        mock_metastore.expect_list_splits().times(4).returning(
-            |filter| {
+        mock_metastore
+            .expect_list_splits()
+            .times(4)
+            .returning(|filter| {
                 assert!(["test-index-1", "test-index-2"].contains(&filter.index));
-                let splits = match filter.split_state.expect("Filter should be constructed with split state set.") {
+                let splits = match filter
+                    .split_state
+                    .expect("Filter should be constructed with split state set.")
+                {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         make_splits(&["a", "b"], SplitState::MarkedForDeletion)
@@ -495,8 +512,7 @@ mod tests {
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
                 Ok(splits)
-            },
-        );
+            });
         mock_metastore
             .expect_mark_splits_for_deletion()
             .times(2)

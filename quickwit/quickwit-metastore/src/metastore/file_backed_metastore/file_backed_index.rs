@@ -33,8 +33,8 @@ use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    split_tag_filter, IndexMetadata, MetastoreError, MetastoreResult,
-    Split, SplitMetadata, SplitState, SplitFilter,
+    split_tag_filter, IndexMetadata, MetastoreError, MetastoreResult, Split, SplitFilter,
+    SplitMetadata, SplitState,
 };
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
@@ -317,43 +317,40 @@ impl FileBackedIndex {
     }
 
     /// Lists splits.
-    pub(crate) fn list_splits(
-        &self,
-        filter: SplitFilter<'_>,
-    ) -> MetastoreResult<Vec<Split>> {
+    pub(crate) fn list_splits(&self, filter: SplitFilter<'_>) -> MetastoreResult<Vec<Split>> {
         let split_state_filter = |split: &&Split| {
-            filter.split_state
+            filter
+                .split_state
                 .map(|state| split.split_state == state)
                 .unwrap_or(true)
         };
         let time_range_start_filter = |split: &&Split| {
-            filter.time_range_start
+            filter
+                .time_range_start
                 .and_then(|ts| Some((ts, split.split_metadata.time_range.as_ref()?)))
                 .map(|(ts, range)| range.start() >= &ts)
                 .unwrap_or(true)
         };
         let time_range_end_filter = |split: &&Split| {
-            filter.time_range_end
+            filter
+                .time_range_end
                 .and_then(|ts| Some((ts, split.split_metadata.time_range.as_ref()?)))
                 .map(|(ts, range)| range.end() < &ts)
                 .unwrap_or(true)
         };
-        let update_after_filter = |split: &&Split| {
-            match filter.updated_after {
-                Bound::Excluded(ts) => split.update_timestamp > ts,
-                Bound::Included(ts) => split.update_timestamp >= ts,
-                Bound::Unbounded => true,
-            }
+        let update_after_filter = |split: &&Split| match filter.updated_after {
+            Bound::Excluded(ts) => split.update_timestamp > ts,
+            Bound::Included(ts) => split.update_timestamp >= ts,
+            Bound::Unbounded => true,
         };
-        let update_before_filter = |split: &&Split| {
-            match filter.updated_before {
-                Bound::Excluded(ts) => split.update_timestamp < ts,
-                Bound::Included(ts) => split.update_timestamp <= ts,
-                Bound::Unbounded => true,
-            }
+        let update_before_filter = |split: &&Split| match filter.updated_before {
+            Bound::Excluded(ts) => split.update_timestamp < ts,
+            Bound::Included(ts) => split.update_timestamp <= ts,
+            Bound::Unbounded => true,
         };
         let delete_opstamp_filter = |split: &&Split| {
-            filter.delete_opstamp
+            filter
+                .delete_opstamp
                 .map(|delete_opstamp| split.split_metadata.delete_opstamp < delete_opstamp)
                 .unwrap_or(true)
         };

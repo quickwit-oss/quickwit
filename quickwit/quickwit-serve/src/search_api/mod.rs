@@ -81,11 +81,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_filter| {
-                Ok(vec![mock_split("split_1"), mock_split("split_2")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split_1"), mock_split("split_2")]));
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {

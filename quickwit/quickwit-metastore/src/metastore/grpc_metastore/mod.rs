@@ -53,7 +53,7 @@ use tracing::{error, info};
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    IndexMetadata, Metastore, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitFilter,
+    IndexMetadata, Metastore, MetastoreError, MetastoreResult, Split, SplitFilter, SplitMetadata,
 };
 
 const CLIENT_TIMEOUT_DURATION: Duration = if cfg!(test) {
@@ -264,12 +264,9 @@ impl Metastore for MetastoreGrpcClient {
     }
 
     /// Lists the splits.
-    async fn list_splits<'a>(
-        &self,
-        filter: SplitFilter<'a>,
-    ) -> MetastoreResult<Vec<Split>> {
-        let filter_json = serde_json::to_string(&filter)
-            .map_err(|error| MetastoreError::JsonSerializeError {
+    async fn list_splits<'a>(&self, filter: SplitFilter<'a>) -> MetastoreResult<Vec<Split>> {
+        let filter_json =
+            serde_json::to_string(&filter).map_err(|error| MetastoreError::JsonSerializeError {
                 name: "SplitFilter".to_string(),
                 message: error.to_string(),
             })?;
