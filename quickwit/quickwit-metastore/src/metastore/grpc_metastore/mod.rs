@@ -53,7 +53,8 @@ use tracing::{error, info};
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    IndexMetadata, Metastore, MetastoreError, MetastoreResult, Split, ListSplitsQuery, SplitMetadata,
+    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, Split,
+    SplitMetadata,
 };
 
 const CLIENT_TIMEOUT_DURATION: Duration = if cfg!(test) {

@@ -30,8 +30,8 @@ use quickwit_janitor::{
     delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
 };
 use quickwit_metastore::{
-    quickwit_metastore_uri_resolver, IndexMetadata, Metastore, MetastoreError, Split, ListSplitsQuery,
-    SplitMetadata, SplitState,
+    quickwit_metastore_uri_resolver, IndexMetadata, ListSplitsQuery, Metastore, MetastoreError,
+    Split, SplitMetadata, SplitState,
 };
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use quickwit_storage::{quickwit_storage_uri_resolver, StorageResolverError, StorageUriResolver};

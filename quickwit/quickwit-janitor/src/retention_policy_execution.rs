@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use quickwit_actors::ActorContext;
 use quickwit_config::{RetentionPolicy, RetentionPolicyCutoffReference};
-use quickwit_metastore::{Metastore, Split, ListSplitsQuery, SplitMetadata, SplitState};
+use quickwit_metastore::{ListSplitsQuery, Metastore, Split, SplitMetadata, SplitState};
 use time::OffsetDateTime;
 use tracing::{info, warn};
 

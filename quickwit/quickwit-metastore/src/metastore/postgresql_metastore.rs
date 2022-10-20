@@ -39,8 +39,8 @@ use tracing::{debug, error, instrument, warn};
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::metastore::postgresql_model::{self, Index, IndexIdSplitIdRow};
 use crate::{
-    IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
-    MetastoreResult, Split, ListSplitsQuery, SplitMetadata, SplitState,
+    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreFactory,
+    MetastoreResolverError, MetastoreResult, Split, SplitMetadata, SplitState,
 };
 
 static MIGRATOR: Migrator = sqlx::migrate!("migrations/postgresql");

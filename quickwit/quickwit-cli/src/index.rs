@@ -44,7 +44,7 @@ use quickwit_indexing::models::{
     DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
 };
 use quickwit_metastore::{
-    quickwit_metastore_uri_resolver, IndexMetadata, Split, ListSplitsQuery, SplitState,
+    quickwit_metastore_uri_resolver, IndexMetadata, ListSplitsQuery, Split, SplitState,
 };
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};

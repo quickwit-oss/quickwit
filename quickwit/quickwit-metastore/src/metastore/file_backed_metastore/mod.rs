@@ -48,8 +48,8 @@ use self::store_operations::{
 };
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    IndexMetadata, Metastore, MetastoreError, MetastoreResult, Split, ListSplitsQuery, SplitMetadata,
-    SplitState,
+    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, Split,
+    SplitMetadata, SplitState,
 };
 
 /// State of an index tracked by the metastore.
@@ -624,7 +624,9 @@ mod tests {
     };
     use super::{FileBackedIndex, FileBackedMetastore, IndexState};
     use crate::tests::test_suite::DefaultForTest;
-    use crate::{IndexMetadata, Metastore, MetastoreError, ListSplitsQuery, SplitMetadata, SplitState};
+    use crate::{
+        IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState,
+    };
 
     #[tokio::test]
     async fn test_file_backed_metastore_index_exists() {

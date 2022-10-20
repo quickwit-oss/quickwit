@@ -34,7 +34,7 @@ use quickwit_proto::metastore_api::{
 };
 use quickwit_proto::tonic;
 
-use crate::{IndexMetadata, Metastore, MetastoreError, ListSplitsQuery};
+use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreError};
 
 #[allow(missing_docs)]
 #[derive(Clone)]

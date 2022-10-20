@@ -27,7 +27,7 @@ use quickwit_actors::{
 };
 use quickwit_config::{build_doc_mapper, IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError, ListSplitsQuery, SplitState};
+use quickwit_metastore::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, SplitState};
 use quickwit_storage::Storage;
 use tokio::join;
 use tokio::sync::Semaphore;

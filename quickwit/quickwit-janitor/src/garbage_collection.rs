@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use futures::{Future, StreamExt};
 use quickwit_actors::ActorContext;
-use quickwit_metastore::{Metastore, MetastoreError, ListSplitsQuery, SplitMetadata, SplitState};
+use quickwit_metastore::{ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState};
 use quickwit_storage::{Storage, StorageError};
 use serde::Serialize;
 use thiserror::Error;

@@ -33,7 +33,7 @@ use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    split_tag_filter, IndexMetadata, MetastoreError, MetastoreResult, Split, ListSplitsQuery,
+    split_tag_filter, IndexMetadata, ListSplitsQuery, MetastoreError, MetastoreResult, Split,
     SplitMetadata, SplitState,
 };
 

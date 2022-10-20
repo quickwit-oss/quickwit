@@ -32,7 +32,9 @@ pub mod test_suite {
     use tracing::{error, info};
 
     use crate::checkpoint::{IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint};
-    use crate::{IndexMetadata, Metastore, MetastoreError, ListSplitsQuery, SplitMetadata, SplitState};
+    use crate::{
+        IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState,
+    };
 
     #[async_trait]
     pub trait DefaultForTest {
@@ -1539,8 +1541,8 @@ pub mod test_suite {
         {
             info!("List all splits on a non-existent index");
 
-            let filter =
-                ListSplitsQuery::for_index("non-existent-index").with_split_state(SplitState::Staged);
+            let filter = ListSplitsQuery::for_index("non-existent-index")
+                .with_split_state(SplitState::Staged);
 
             let metastore_err = metastore.list_splits(filter).await.unwrap_err();
             error!(err=?metastore_err);

@@ -45,7 +45,7 @@ pub use metastore::grpc_metastore::{GrpcMetastoreAdapter, MetastoreGrpcClient};
 pub use metastore::postgresql_metastore::PostgresqlMetastore;
 #[cfg(any(test, feature = "testsuite"))]
 pub use metastore::MockMetastore;
-pub use metastore::{file_backed_metastore, IndexMetadata, Metastore, ListSplitsQuery};
+pub use metastore::{file_backed_metastore, IndexMetadata, ListSplitsQuery, Metastore};
 pub use metastore_resolver::{
     quickwit_metastore_uri_resolver, MetastoreFactory, MetastoreUriResolver,
 };
