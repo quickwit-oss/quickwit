@@ -329,7 +329,7 @@ mod tests {
                 }],
                 "body": ["happy"],
                 "response_date": ["2021-12-19T16:39:59Z"],
-                 "response_payload": [[97, 98, 99]],
+                 "response_payload": ["YWJj"],
                  "response_time": [2.0],
                  "timestamp": [1628837062]
             })
