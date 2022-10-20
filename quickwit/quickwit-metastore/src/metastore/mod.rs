@@ -25,6 +25,8 @@ pub mod postgresql_metastore;
 #[cfg(feature = "postgres")]
 mod postgresql_model;
 
+use std::ops::Bound;
+
 use async_trait::async_trait;
 pub use index_metadata::IndexMetadata;
 use quickwit_common::uri::Uri;
@@ -161,7 +163,7 @@ pub trait Metastore: Send + Sync + 'static {
     ///
     /// Returns a list of all splits currently known to the metastore regardless of their state.
     async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
-        let filter = SplitFilter::default().for_index(index_id);
+        let filter = SplitFilter::for_index(index_id);
         self.list_splits(filter).await
     }
 
@@ -174,8 +176,7 @@ pub trait Metastore: Send + Sync + 'static {
         delete_opstamp: u64,
         num_splits: usize,
     ) -> MetastoreResult<Vec<Split>> {
-        let filter = SplitFilter::default()
-            .for_index(index_id)
+        let filter = SplitFilter::for_index(index_id)
             .with_opstamp_older_than(delete_opstamp)
             .with_limit(num_splits);
         self.list_splits(filter).await
@@ -245,10 +246,11 @@ pub trait Metastore: Send + Sync + 'static {
     ) -> MetastoreResult<Vec<DeleteTask>>;
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// A filter builder for filtering splits within the metastore.
 pub struct SplitFilter<'a> {
-    /// The specific index to get splits from.
-    pub index: Option<&'a str>,
+    /// The index to get splits from.
+    pub index: &'a str,
 
     /// The maximum number of splits to retrieve.
     pub limit: Option<usize>,
@@ -263,10 +265,10 @@ pub struct SplitFilter<'a> {
     pub time_range_end: Option<i64>,
 
     /// The timestamp which splits must be updated after.
-    pub updated_after: Option<i64>,
+    pub updated_after: Bound<i64>,
 
     /// The timestamp which splits must be updated before.
-    pub updated_before: Option<i64>,
+    pub updated_before: Bound<i64>,
 
     /// Filter splits with `split.delete_opstamp` < `delete_opstamp`.
     pub delete_opstamp: Option<u64>,
@@ -280,9 +282,20 @@ pub struct SplitFilter<'a> {
 
 #[allow(unused_attributes)]
 impl<'a> SplitFilter<'a> {
-    pub fn for_index(mut self, index: &'a str) -> Self {
-        self.index = Some(index);
-        self
+    /// Create a new index for a specific index.
+    pub fn for_index(index: &'a str) -> Self {
+        Self {
+            index,
+            limit: None,
+            offset: None,
+            time_range_start: None,
+            time_range_end: None,
+            updated_after: Bound::Unbounded,
+            updated_before: Bound::Unbounded,
+            delete_opstamp: None,
+            split_state: None,
+            tags: None,
+        }
     }
 
     /// Set the maximum number of splits to retrieve.
@@ -311,13 +324,25 @@ impl<'a> SplitFilter<'a> {
 
     /// Select splits which are newer than or equal to this timestamp.
     pub fn updated_after(mut self, ts: i64) -> Self {
-        self.updated_after = Some(ts);
+        self.updated_after = Bound::Excluded(ts);
+        self
+    }
+
+    /// Select splits which are newer than or equal to this timestamp.
+    pub fn updated_after_or_at(mut self, ts: i64) -> Self {
+        self.updated_after = Bound::Included(ts);
         self
     }
 
     /// Select splits which are older than this timestamp.
     pub fn updated_before(mut self, ts: i64) -> Self {
-        self.updated_before = Some(ts);
+        self.updated_before = Bound::Excluded(ts);
+        self
+    }
+
+    /// Select splits which are older than this timestamp.
+    pub fn updated_before_or_at(mut self, ts: i64) -> Self {
+        self.updated_before = Bound::Included(ts);
         self
     }
 
@@ -337,5 +362,19 @@ impl<'a> SplitFilter<'a> {
     pub fn with_tags_filter(mut self, tags: TagFilterAst) -> Self {
         self.tags = Some(tags);
         self
+    }
+
+    /// Returns if the filter has no additional constraints set and is
+    /// just a filter by `index_id`.
+    pub fn is_default(&self) -> bool {
+        self.limit.is_none()
+            | self.offset.is_none()
+            | self.time_range_start.is_none()
+            | self.time_range_end.is_none()
+            | (self.updated_after == Bound::Unbounded)
+            | (self.updated_before == Bound::Unbounded)
+            | self.delete_opstamp.is_none()
+            | self.split_state.is_none()
+            | self.tags.is_none()
     }
 }
