@@ -3383,6 +3383,7 @@ dependencies = [
  "once_cell",
  "oneshot",
  "openssl",
+ "parking_lot 0.12.1",
  "proptest",
  "quickwit-actors",
  "quickwit-aws",

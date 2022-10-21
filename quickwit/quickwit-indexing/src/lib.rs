@@ -44,6 +44,7 @@ pub mod source;
 mod split_store;
 #[cfg(any(test, feature = "testsuite"))]
 mod test_utils;
+pub(crate) mod throttle;
 
 #[cfg(any(test, feature = "testsuite"))]
 pub use test_utils::{mock_split, mock_split_meta, TestSandbox};
