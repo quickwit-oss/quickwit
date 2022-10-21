@@ -179,13 +179,21 @@ fast: true
 
 The `datetime` type handles dates and datetimes. Quickwit supports multiple input formats configured independently for each field. The following formats are natively supported:
 - `iso8601`, `rfc2822`, `rfc3339`: parse dates using standard ISO and RFC formats.
-- `strftime`: parse dates using the Unix [strftime](https://man7.org/linux/man-pages/man3/strftime.3.html) format.
+- `strptime`: parse dates using the Unix [strptime](https://man7.org/linux/man-pages/man3/strptime.3.html) format with few changes:
+  - `strptime` format specifiers: `%C`, `%d`, `%D`, `%e`, `%F`, `%g`, `%G`, `%h`, `%H`, `%I`, `%j`, `%k`, `%l`, `%m`, `%M`, `%n`, `%R`, `%S`, `%t`, `%T`, `%u`, `%U`, `%V`, `%w`, `%W`, `%y`, `%Y`, `%%`.
+  - `%f` for milliseconds precision support.
+  - `%z` timezone offsets can be specified as `(+|-)hhmm` or `(+|-)hh:mm`.
+
 - `unix_timestamp`: parse Unix timestamp values. Timestamp values come in different precision, namely: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. Quickwit is capable of inferring the precision from the value. Because of this feature, Quickwit only supports timestamp values ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`.
 
 When a `datetime` field is stored as a fast field, the `precision` parameter indicates the precision used to truncate the values before encoding and compressing them. The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`.
 
 :::info
 When specifying multiple input formats, the corresponding parsers are attempted in the order they are declared.
+:::
+
+:::warning
+The timezone name format specifier (`%Z`) is not currently supported in `strptime` format.
 :::
 
 Example of a mapping for a datetime field:
@@ -197,7 +205,7 @@ description: Time at which the event was emitted
 input_formats:
   - rfc3339
   - unix_timestamp
-  - "%Y %m %d %H:%M:%S.%3f %z"
+  - "%Y %m %d %H:%M:%S.%f %z"
 stored: true
 indexed: true
 fast: true
