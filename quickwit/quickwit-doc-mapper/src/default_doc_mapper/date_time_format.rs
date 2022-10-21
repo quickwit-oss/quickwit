@@ -30,26 +30,30 @@ use time_fmt::parse::time_format_item::parse_to_format_item;
 /// A date time parser that holds the format specification `Vec<FormatItem>`.
 #[self_referencing]
 pub struct StrptimeParser {
-    format: String,
+    strptime_format: String,
     with_timezone: bool,
-    #[borrows(format)]
+    #[borrows(strptime_format)]
     #[covariant]
     items: Vec<FormatItem<'this>>,
 }
 
-impl StrptimeParser {
-    pub fn make(format_str: &str) -> Result<StrptimeParser, String> {
+impl FromStr for StrptimeParser {
+    type Err = String;
+
+    fn from_str(strptime_format_str: &str) -> Result<Self, Self::Err> {
         StrptimeParser::try_new(
-            format_str.to_string(),
-            format_str.to_lowercase().contains("%z"),
-            |format: &String| {
-                parse_to_format_item(format).map_err(|err| {
-                    format!("Invalid format specification `{format}`. Error: {err}.")
+            strptime_format_str.to_string(),
+            strptime_format_str.to_lowercase().contains("%z"),
+            |strptime_format: &String| {
+                parse_to_format_item(strptime_format).map_err(|err| {
+                    format!("Invalid format specification `{strptime_format}`. Error: {err}.")
                 })
             },
         )
     }
+}
 
+impl StrptimeParser {
     pub fn parse_date_time(&self, date_time_str: &str) -> Result<OffsetDateTime, String> {
         if *self.borrow_with_timezone() {
             OffsetDateTime::parse(date_time_str, self.borrow_items()).map_err(|err| err.to_string())
@@ -64,13 +68,13 @@ impl StrptimeParser {
 impl Clone for StrptimeParser {
     fn clone(&self) -> Self {
         // `self.format` is already known to be a valid format.
-        Self::make(self.borrow_format()).unwrap()
+        Self::from_str(self.borrow_strptime_format().as_str()).unwrap()
     }
 }
 
 impl PartialEq for StrptimeParser {
     fn eq(&self, other: &Self) -> bool {
-        self.borrow_format() == other.borrow_format()
+        self.borrow_strptime_format() == other.borrow_strptime_format()
     }
 }
 
@@ -80,14 +84,14 @@ impl std::fmt::Debug for StrptimeParser {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("StrptimeParser")
-            .field("format", &self.borrow_format())
+            .field("format", &self.borrow_strptime_format())
             .finish()
     }
 }
 
 impl std::hash::Hash for StrptimeParser {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.borrow_format().hash(state);
+        self.borrow_strptime_format().hash(state);
     }
 }
 
@@ -107,7 +111,7 @@ impl DateTimeFormat {
             DateTimeFormat::ISO8601 => "iso8601",
             DateTimeFormat::RFC2822 => "rfc2822",
             DateTimeFormat::RCF3339 => "rfc3339",
-            DateTimeFormat::Strptime(parser) => parser.borrow_format(),
+            DateTimeFormat::Strptime(parser) => parser.borrow_strptime_format(),
             DateTimeFormat::Timestamp => "unix_timestamp",
         }
     }
@@ -128,7 +132,7 @@ impl FromStr for DateTimeFormat {
             "rfc2822" => DateTimeFormat::RFC2822,
             "rfc3339" => DateTimeFormat::RCF3339,
             "unix_timestamp" => DateTimeFormat::Timestamp,
-            _ => DateTimeFormat::Strptime(StrptimeParser::make(date_time_format_str)?),
+            _ => DateTimeFormat::Strptime(StrptimeParser::from_str(date_time_format_str)?),
         };
         Ok(date_time_format)
     }

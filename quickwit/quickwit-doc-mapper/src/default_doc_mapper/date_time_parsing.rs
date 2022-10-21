@@ -130,6 +130,8 @@ pub(crate) fn format_timestamp(
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use time::macros::datetime;
 
     use super::*;
@@ -183,7 +185,7 @@ mod tests {
             ),
         ];
         for (fmt, date_time_str, expected) in test_data {
-            let parser = StrptimeParser::make(fmt).unwrap();
+            let parser = StrptimeParser::from_str(fmt).unwrap();
             let result = parser.parse_date_time(date_time_str);
             if let Err(error) = &result {
                 println!("Failed to parse: {} {} {}", date_time_str, fmt, error)
@@ -208,9 +210,15 @@ mod tests {
                     DateTimeFormat::ISO8601,
                     DateTimeFormat::RFC2822,
                     DateTimeFormat::RCF3339,
-                    DateTimeFormat::Strptime(StrptimeParser::make("%Y-%m-%d %H:%M:%S").unwrap()),
-                    DateTimeFormat::Strptime(StrptimeParser::make("%Y/%m/%d %H:%M:%S").unwrap()),
-                    DateTimeFormat::Strptime(StrptimeParser::make("%Y/%m/%d %H:%M:%S %z").unwrap()),
+                    DateTimeFormat::Strptime(
+                        StrptimeParser::from_str("%Y-%m-%d %H:%M:%S").unwrap(),
+                    ),
+                    DateTimeFormat::Strptime(
+                        StrptimeParser::from_str("%Y/%m/%d %H:%M:%S").unwrap(),
+                    ),
+                    DateTimeFormat::Strptime(
+                        StrptimeParser::from_str("%Y/%m/%d %H:%M:%S %z").unwrap(),
+                    ),
                 ],
             )
             .unwrap();
@@ -239,7 +247,9 @@ mod tests {
                 &[
                     DateTimeFormat::ISO8601,
                     DateTimeFormat::RCF3339,
-                    DateTimeFormat::Strptime(StrptimeParser::make("%Y-%m-%d %H:%M:%S.%f").unwrap()),
+                    DateTimeFormat::Strptime(
+                        StrptimeParser::from_str("%Y-%m-%d %H:%M:%S.%f").unwrap(),
+                    ),
                 ],
             )
             .unwrap();
