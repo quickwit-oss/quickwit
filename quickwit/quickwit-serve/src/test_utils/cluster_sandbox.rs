@@ -28,7 +28,7 @@ use quickwit_common::new_coolid;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::QuickwitConfig;
+use quickwit_config::{QuickwitConfig, SourceConfig};
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
 use quickwit_proto::tonic::transport::Endpoint;
 use quickwit_search::{create_search_service_client, SearchServiceClient};
@@ -181,6 +181,9 @@ async fn create_index_for_test(
         .resolve(&quickwit_config.metastore_uri)
         .await?;
     metastore.create_index(index_meta.clone()).await?;
+    metastore
+        .add_source(index_id_for_test, SourceConfig::ingest_api_default())
+        .await?;
     Ok(())
 }
 
