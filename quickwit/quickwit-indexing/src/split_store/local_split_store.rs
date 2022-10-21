@@ -54,7 +54,7 @@ use std::collections::{BinaryHeap, HashMap};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::{Duration, SystemTime};
-use std::{fs, io};
+use std::io;
 
 use anyhow::Context;
 use byte_unit::Byte;
