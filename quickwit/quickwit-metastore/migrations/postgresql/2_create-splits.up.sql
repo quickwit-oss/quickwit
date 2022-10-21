@@ -12,8 +12,6 @@ CREATE TABLE IF NOT EXISTS splits (
     FOREIGN KEY(index_id) REFERENCES indexes(index_id)
 );
 
-DROP TRIGGER IF EXISTS quickwit_set_index_update_timestamp_on_split_change ON splits CASCADE;
-
 -- apply the trigger to the `splits` table
 SELECT quickwit_manage_update_timestamp('splits');
 
