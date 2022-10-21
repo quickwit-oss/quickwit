@@ -2014,7 +2014,7 @@ pub mod test_suite {
             .stage_split(index_id, split_metadata.clone())
             .await
             .unwrap();
-        
+
         sleep(Duration::from_secs(1)).await;
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
