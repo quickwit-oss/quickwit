@@ -21,7 +21,7 @@ use anyhow::{bail, Context};
 use clap::{arg, ArgMatches, Command};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
-use quickwit_config::SourceConfig;
+use quickwit_config::{validate_identifier, SourceConfig, SourceParams, INGEST_API_SOURCE_ID};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
@@ -40,6 +40,22 @@ pub fn build_source_command<'a>() -> Command<'a> {
                 .args(&[
                     arg!(--index <INDEX_ID> "ID of the target index"),
                     arg!(--"source-config" <SOURCE_CONFIG> "Path to source config file. Please, refer to the documentation for more details."),
+                ])
+            )
+        .subcommand(
+            Command::new("enable")
+                .about("Enables a source for an index.")
+                .args(&[
+                    arg!(--index <INDEX_ID> "ID of the target index"),
+                    arg!(--source <SOURCE_ID> "ID of the source."),
+                ])
+            )
+        .subcommand(
+            Command::new("disable")
+                .about("Disables a source for an index.")
+                .args(&[
+                    arg!(--index <INDEX_ID> "ID of the target index"),
+                    arg!(--source <SOURCE_ID> "ID of the source."),
                 ])
             )
         .subcommand(
@@ -84,6 +100,14 @@ pub struct CreateSourceArgs {
 }
 
 #[derive(Debug, Eq, PartialEq)]
+pub struct ToggleSourceArgs {
+    pub config_uri: Uri,
+    pub index_id: String,
+    pub source_id: String,
+    pub enable: bool,
+}
+
+#[derive(Debug, Eq, PartialEq)]
 pub struct DeleteSourceArgs {
     pub config_uri: Uri,
     pub index_id: String,
@@ -113,6 +137,7 @@ pub struct ResetCheckpointArgs {
 #[derive(Debug, Eq, PartialEq)]
 pub enum SourceCliCommand {
     CreateSource(CreateSourceArgs),
+    ToggleSource(ToggleSourceArgs),
     DeleteSource(DeleteSourceArgs),
     DescribeSource(DescribeSourceArgs),
     ListSources(ListSourcesArgs),
@@ -123,6 +148,7 @@ impl SourceCliCommand {
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
             Self::CreateSource(args) => create_source_cli(args).await,
+            Self::ToggleSource(args) => toggle_source_cli(args).await,
             Self::DeleteSource(args) => delete_source_cli(args).await,
             Self::DescribeSource(args) => describe_source_cli(args).await,
             Self::ListSources(args) => list_sources_cli(args).await,
@@ -136,6 +162,12 @@ impl SourceCliCommand {
             .ok_or_else(|| anyhow::anyhow!("Failed to parse source subcommand arguments."))?;
         match subcommand {
             "create" => Self::parse_create_args(submatches).map(Self::CreateSource),
+            "enable" => {
+                Self::parse_toggle_source_args(subcommand, submatches).map(Self::ToggleSource)
+            }
+            "disable" => {
+                Self::parse_toggle_source_args(subcommand, submatches).map(Self::ToggleSource)
+            }
             "delete" => Self::parse_delete_args(submatches).map(Self::DeleteSource),
             "describe" => Self::parse_describe_args(submatches).map(Self::DescribeSource),
             "list" => Self::parse_list_args(submatches).map(Self::ListSources),
@@ -163,6 +195,31 @@ impl SourceCliCommand {
             config_uri,
             index_id,
             source_config_uri,
+        })
+    }
+
+    fn parse_toggle_source_args(
+        subcommand: &str,
+        matches: &ArgMatches,
+    ) -> anyhow::Result<ToggleSourceArgs> {
+        let config_uri = matches
+            .value_of("config")
+            .map(Uri::try_new)
+            .expect("`config` is a required arg.")?;
+        let index_id = matches
+            .value_of("index")
+            .map(String::from)
+            .expect("`index` is a required arg.");
+        let source_id = matches
+            .value_of("source")
+            .map(String::from)
+            .expect("`source` is a required arg.");
+        let enable = matches!(subcommand, "enable");
+        Ok(ToggleSourceArgs {
+            config_uri,
+            index_id,
+            source_id,
+            enable,
         })
     }
 
@@ -248,15 +305,50 @@ async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
         .resolve(&qw_config.metastore_uri)
         .await?;
     let source_config_content = load_file(&args.source_config_uri).await?;
-    let source =
+    let source_config =
         SourceConfig::load(&args.source_config_uri, source_config_content.as_slice()).await?;
-    let source_id = source.source_id.clone();
-    check_source_connectivity(&source).await?;
+    if let SourceParams::IngestApi = source_config.source_params {
+        bail!(
+            "Failed to create Ingest API source `{}` for index `{}`. Ingest API sources are \
+             created and managed by Quickwit and cannot be created via the `source create` CLI \
+             command.",
+            source_config.source_id,
+            args.index_id,
+        );
+    };
 
-    metastore.add_source(&args.index_id, source).await?;
+    let source_id = source_config.source_id.clone();
+    check_source_connectivity(&source_config).await?;
+
+    metastore.add_source(&args.index_id, source_config).await?;
     println!(
         "Source `{}` successfully created for index `{}`.",
         source_id, args.index_id
+    );
+    Ok(())
+}
+
+async fn toggle_source_cli(args: ToggleSourceArgs) -> anyhow::Result<()> {
+    let config = load_quickwit_config(&args.config_uri, None).await?;
+    let metastore = quickwit_metastore_uri_resolver()
+        .resolve(&config.metastore_uri)
+        .await?;
+    if args.source_id == INGEST_API_SOURCE_ID {
+        bail!(
+            "Source `{}` is managed by Quickwit, you cannot enable or disable a source managed by \
+             Quickwit.",
+            args.source_id
+        );
+    }
+    validate_identifier("Source ID", &args.source_id)?;
+
+    metastore
+        .toggle_source(&args.index_id, &args.source_id, args.enable)
+        .await?;
+    let toggled_state_name = if args.enable { "enabled" } else { "disabled" };
+    println!(
+        "Source `{}` successfully {} for index `{}`.",
+        args.source_id, toggled_state_name, args.index_id
     );
     Ok(())
 }
@@ -266,6 +358,15 @@ async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri)
         .await?;
+
+    if args.source_id == INGEST_API_SOURCE_ID {
+        bail!(
+            "Source `{}` is managed by Quickwit, you cannot delete a source managed by Quickwit.",
+            args.source_id
+        );
+    }
+    validate_identifier("Source ID", &args.source_id)?;
+
     metastore
         .delete_source(&args.index_id, &args.source_id)
         .await?;
@@ -481,6 +582,58 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_toggle_source_args() {
+        {
+            let app = build_cli().no_binary_name(true);
+            let matches = app
+                .try_get_matches_from(vec![
+                    "source",
+                    "enable",
+                    "--index",
+                    "hdfs-logs",
+                    "--source",
+                    "kafka-foo",
+                    "--config",
+                    "/conf.yaml",
+                ])
+                .unwrap();
+            let command = CliCommand::parse_cli_args(&matches).unwrap();
+            let expected_command =
+                CliCommand::Source(SourceCliCommand::ToggleSource(ToggleSourceArgs {
+                    config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+                    index_id: "hdfs-logs".to_string(),
+                    source_id: "kafka-foo".to_string(),
+                    enable: true,
+                }));
+            assert_eq!(command, expected_command);
+        }
+        {
+            let app = build_cli().no_binary_name(true);
+            let matches = app
+                .try_get_matches_from(vec![
+                    "source",
+                    "disable",
+                    "--index",
+                    "hdfs-logs",
+                    "--source",
+                    "kafka-foo",
+                    "--config",
+                    "/conf.yaml",
+                ])
+                .unwrap();
+            let command = CliCommand::parse_cli_args(&matches).unwrap();
+            let expected_command =
+                CliCommand::Source(SourceCliCommand::ToggleSource(ToggleSourceArgs {
+                    config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+                    index_id: "hdfs-logs".to_string(),
+                    source_id: "kafka-foo".to_string(),
+                    enable: false,
+                }));
+            assert_eq!(command, expected_command);
+        }
+    }
+
+    #[test]
     fn test_parse_delete_source_args() {
         let app = build_cli().no_binary_name(true);
         let matches = app
@@ -571,6 +724,7 @@ mod tests {
         let sources = vec![SourceConfig {
             source_id: "foo-source".to_string(),
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::file("path/to/file"),
         }];
         let expected_source = vec![SourceRow {
@@ -634,11 +788,13 @@ mod tests {
             SourceConfig {
                 source_id: "foo-source".to_string(),
                 num_pipelines: 1,
+                enabled: true,
                 source_params: SourceParams::stdin(),
             },
             SourceConfig {
                 source_id: "bar-source".to_string(),
                 num_pipelines: 1,
+                enabled: true,
                 source_params: SourceParams::stdin(),
             },
         ];
