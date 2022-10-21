@@ -51,10 +51,10 @@
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::{Duration, SystemTime};
-use std::io;
 
 use anyhow::Context;
 use byte_unit::Byte;
