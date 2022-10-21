@@ -19,7 +19,6 @@
 
 use byte_unit::Byte;
 use quickwit_config::IndexerConfig;
-use tracing::warn;
 
 /// A struct for keeping in check multiple SplitStore.
 #[derive(Debug)]
