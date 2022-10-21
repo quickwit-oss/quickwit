@@ -50,7 +50,7 @@ use tracing::instrument;
 use crate::debouncer::DebouncedStorage;
 use crate::{
     MultiPartPolicy, PutPayload, Storage, StorageError, StorageErrorKind, StorageFactory,
-    StorageResolverError, StorageResult,
+    StorageResolverError, StorageResult, STORAGE_METRICS,
 };
 
 /// Azure object storage URI resolver.
@@ -194,6 +194,10 @@ impl AzureBlobStorage {
         name: &'a str,
         payload: Box<dyn crate::PutPayload>,
     ) -> StorageResult<()> {
+        crate::STORAGE_METRICS.object_storage_put_parts.inc();
+        crate::STORAGE_METRICS
+            .object_storage_upload_num_bytes
+            .inc_by(payload.len());
         retry(&self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
             let hash = md5::compute(&data[..]);
@@ -226,6 +230,10 @@ impl AzureBlobStorage {
             .map(|(num, range)| {
                 let moved_blob_client = blob_client.clone();
                 let moved_payload = payload.clone();
+                crate::STORAGE_METRICS.object_storage_put_parts.inc();
+                crate::STORAGE_METRICS
+                    .object_storage_upload_num_bytes
+                    .inc_by(range.end - range.start);
                 async move {
                     retry(&self.retry_params, || async {
                         let block_id = format!("block:{}", num);
@@ -314,7 +322,11 @@ impl Storage for AzureBlobStorage {
                 .into_async_read()
                 .compat();
             let mut body_stream_reader = BufReader::new(chunk_response_body_stream);
-            tokio::io::copy_buf(&mut body_stream_reader, &mut dest_file).await?;
+            let num_bytes_copied =
+                tokio::io::copy_buf(&mut body_stream_reader, &mut dest_file).await?;
+            STORAGE_METRICS
+                .object_storage_download_num_bytes
+                .inc_by(num_bytes_copied);
         }
         dest_file.flush().await?;
         Ok(())
@@ -442,9 +454,6 @@ async fn download_all(
     output: &mut Vec<u8>,
 ) -> Result<(), AzureErrorWrapper> {
     output.clear();
-    let object_storage_download_num_bytes = crate::STORAGE_METRICS
-        .object_storage_download_num_bytes
-        .clone();
     while let Some(chunk_result) = chunk_stream.next().await {
         let chunk_response = chunk_result?;
         let chunk_response_body_stream = chunk_response
@@ -454,7 +463,9 @@ async fn download_all(
             .compat();
         let mut body_stream_reader = BufReader::new(chunk_response_body_stream);
         let num_bytes_copied = tokio::io::copy_buf(&mut body_stream_reader, output).await?;
-        object_storage_download_num_bytes.inc_by(num_bytes_copied);
+        crate::STORAGE_METRICS
+            .object_storage_download_num_bytes
+            .inc_by(num_bytes_copied);
     }
     // When calling `get_all`, the Vec capacity is not properly set.
     output.shrink_to_fit();

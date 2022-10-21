@@ -45,6 +45,7 @@ pub struct DeleteTaskService {
     storage_resolver: StorageUriResolver,
     data_dir_path: PathBuf,
     pipeline_handles_by_index_id: HashMap<String, ActorHandle<DeleteTaskPipeline>>,
+    max_concurrent_split_uploads: usize,
 }
 
 impl DeleteTaskService {
@@ -53,6 +54,7 @@ impl DeleteTaskService {
         search_client_pool: SearchClientPool,
         storage_resolver: StorageUriResolver,
         data_dir_path: PathBuf,
+        max_concurrent_split_uploads: usize,
     ) -> Self {
         Self {
             metastore,
@@ -60,6 +62,7 @@ impl DeleteTaskService {
             storage_resolver,
             data_dir_path,
             pipeline_handles_by_index_id: Default::default(),
+            max_concurrent_split_uploads,
         }
     }
 }
@@ -140,6 +143,7 @@ impl DeleteTaskService {
             index_metadata.indexing_settings,
             index_storage,
             delete_task_service_dir,
+            self.max_concurrent_split_uploads,
         );
         let (_pipeline_mailbox, pipeline_handler) = ctx.spawn_actor().spawn(pipeline);
         self.pipeline_handles_by_index_id
@@ -225,6 +229,7 @@ mod tests {
             client_pool,
             StorageUriResolver::for_test(),
             data_dir_path,
+            4,
         );
         let universe = Universe::new();
         let (delete_task_service_mailbox, delete_task_service_handler) =

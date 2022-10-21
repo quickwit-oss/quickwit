@@ -145,21 +145,21 @@ impl FileBackedMetastore {
         &self,
         index_id: &str,
         mutate_fn: impl FnOnce(&mut FileBackedIndex) -> crate::MetastoreResult<bool>,
-    ) -> MetastoreResult<()> {
+    ) -> MetastoreResult<bool> {
         let mut locked_index = self.get_locked_index(index_id).await?;
         let mut index = locked_index.clone();
         let mutation_occurred = mutate_fn(&mut index)?;
         if !mutation_occurred {
-            return Ok(());
+            return Ok(false);
         }
 
         let put_result = put_index(&*self.storage, &index).await;
         match put_result {
             Ok(()) => {
                 *locked_index = index;
-                Ok(())
+                Ok(true)
             }
-            err @ Err(_) => {
+            Err(err) => {
                 // For some of the error type here, we cannot know for sure
                 // whether the content was written or not.
                 //
@@ -178,7 +178,7 @@ impl FileBackedMetastore {
                 );
                 locked_index.discarded = true;
 
-                err
+                Err(err)
             }
         }
     }
@@ -388,7 +388,8 @@ impl Metastore for FileBackedMetastore {
             index.stage_split(split_metadata)?;
             Ok(true)
         })
-        .await
+        .await?;
+        Ok(())
     }
 
     async fn publish_splits<'a>(
@@ -402,7 +403,8 @@ impl Metastore for FileBackedMetastore {
             index.publish_splits(split_ids, replaced_split_ids, checkpoint_delta_opt)?;
             Ok(true)
         })
-        .await
+        .await?;
+        Ok(())
     }
 
     async fn mark_splits_for_deletion<'a>(
@@ -420,7 +422,8 @@ impl Metastore for FileBackedMetastore {
                 ],
             )
         })
-        .await
+        .await?;
+        Ok(())
     }
 
     async fn delete_splits<'a>(
@@ -432,17 +435,31 @@ impl Metastore for FileBackedMetastore {
             index.delete_splits(split_ids)?;
             Ok(true)
         })
-        .await
+        .await?;
+        Ok(())
     }
 
     async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()> {
         self.mutate(index_id, |index| index.add_source(source))
-            .await
+            .await?;
+        Ok(())
+    }
+
+    async fn toggle_source(
+        &self,
+        index_id: &str,
+        source_id: &str,
+        enable: bool,
+    ) -> MetastoreResult<()> {
+        self.mutate(index_id, |index| index.toggle_source(source_id, enable))
+            .await?;
+        Ok(())
     }
 
     async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()> {
         self.mutate(index_id, |index| index.delete_source(source_id))
-            .await
+            .await?;
+        Ok(())
     }
 
     async fn reset_source_checkpoint(
@@ -451,7 +468,8 @@ impl Metastore for FileBackedMetastore {
         source_id: &str,
     ) -> MetastoreResult<()> {
         self.mutate(index_id, |index| index.reset_source_checkpoint(source_id))
-            .await
+            .await?;
+        Ok(())
     }
 
     /// -------------------------------------------------------------------------------
@@ -503,7 +521,20 @@ impl Metastore for FileBackedMetastore {
             let splits = index
                 .list_splits(SplitState::Published, None, None, Some(delete_opstamp))?
                 .into_iter()
-                .sorted_by_key(|split| split.split_metadata.delete_opstamp)
+                // Ordering by:
+                // - delete_opstamp ASC
+                // - publish_timestamp ASC
+                .sorted_by(|split_left, split_right| {
+                    split_left
+                        .split_metadata
+                        .delete_opstamp
+                        .cmp(&split_right.split_metadata.delete_opstamp)
+                        .then_with(|| {
+                            split_left
+                                .publish_timestamp
+                                .cmp(&split_right.publish_timestamp)
+                        })
+                })
                 .take(num_splits)
                 .collect_vec();
             Ok(splits)
@@ -556,7 +587,8 @@ impl Metastore for FileBackedMetastore {
         self.mutate(index_id, |index| {
             index.update_splits_delete_opstamp(split_ids, delete_opstamp)
         })
-        .await
+        .await?;
+        Ok(())
     }
 
     async fn list_delete_tasks(

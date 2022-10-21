@@ -402,14 +402,14 @@ async fn mutate_index_metadata<E, M: FnOnce(&mut IndexMetadata) -> Result<bool, 
     tx: &mut Transaction<'_, Postgres>,
     index_id: &str,
     mutate_fn: M,
-) -> MetastoreResult<()>
+) -> MetastoreResult<bool>
 where
     MetastoreError: From<E>,
 {
     let mut index_metadata = index_metadata(tx, index_id).await?;
     let mutation_occurred = mutate_fn(&mut index_metadata)?;
     if !mutation_occurred {
-        return Ok(());
+        return Ok(mutation_occurred);
     }
     let index_metadata_json =
         serde_json::to_string(&index_metadata).map_err(|err| MetastoreError::InternalError {
@@ -432,7 +432,7 @@ where
             index_id: index_id.to_string(),
         });
     }
-    Ok(())
+    Ok(mutation_occurred)
 }
 
 #[async_trait]
@@ -705,7 +705,24 @@ impl Metastore for PostgresqlMetastore {
             mutate_index_metadata(tx, index_id, |index_metadata| {
                 index_metadata.add_source(source)
             })
-            .await
+            .await?;
+            Ok(())
+        })
+    }
+
+    #[instrument(skip(self))]
+    async fn toggle_source(
+        &self,
+        index_id: &str,
+        source_id: &str,
+        enable: bool,
+    ) -> MetastoreResult<()> {
+        run_with_tx!(self.connection_pool, tx, {
+            mutate_index_metadata(tx, index_id, |index_metadata| {
+                index_metadata.toggle_source(source_id, enable)
+            })
+            .await?;
+            Ok(())
         })
     }
 
@@ -715,7 +732,8 @@ impl Metastore for PostgresqlMetastore {
             mutate_index_metadata(tx, index_id, |index_metadata| {
                 index_metadata.delete_source(source_id)
             })
-            .await
+            .await?;
+            Ok(())
         })
     }
 
@@ -729,7 +747,8 @@ impl Metastore for PostgresqlMetastore {
             mutate_index_metadata(tx, index_id, |index_metadata| {
                 Ok::<_, MetastoreError>(index_metadata.checkpoint.reset_source(source_id))
             })
-            .await
+            .await?;
+            Ok(())
         })
     }
 
@@ -878,7 +897,7 @@ impl Metastore for PostgresqlMetastore {
                     index_id = $1
                     AND delete_opstamp < $2
                     AND split_state = $3
-                ORDER BY delete_opstamp ASC
+                ORDER BY delete_opstamp ASC, publish_timestamp ASC
                 LIMIT $4
                 "#,
                 )

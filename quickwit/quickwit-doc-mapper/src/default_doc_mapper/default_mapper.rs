@@ -178,7 +178,9 @@ fn list_required_fields_for_node(node: &MappingNode) -> Vec<Field> {
 fn list_required_fields(field_mappings: &MappingTree) -> Vec<Field> {
     match field_mappings {
         MappingTree::Leaf(leaf) => {
-            if leaf.get_type().is_fast_field() {
+            // single value fast fields are required since null handling in tantivy is broken (will
+            // be fixed with https://github.com/quickwit-oss/tantivy/issues/1575)
+            if leaf.get_type().is_single_value_fast_field() {
                 vec![leaf.field()]
             } else {
                 Vec::new()
@@ -516,12 +518,12 @@ mod tests {
             "body": ["20200415T072306-0700 INFO This is a great log"],
             "response_date": ["2021-12-19T16:39:57Z"],
             "response_time": [2.3],
-            "response_payload": [[97,98,99]],
+            "response_payload": ["YWJj"],
             "owner": ["foo"],
             "isImportant": [false],
             "body_other_tokenizer": ["20200415T072306-0700 INFO This is a great log"],
             "attributes.server": ["ABC"],
-            "attributes.server\\.payload": [[97], [98]],
+            "attributes.server\\.payload": ["YQ==", "Yg=="],
             "attributes.tags": [22, 23],
             "attributes.server\\.status": ["200", "201"]
         }"#;
@@ -789,7 +791,7 @@ mod tests {
         let expected_json_paths_and_values: HashMap<String, JsonValue> = serde_json::from_str(
             r#"{
                 "city": ["tokio"],
-                "image": [[97,98,99]]
+                "image": ["YWJj"]
             }"#,
         )
         .unwrap();

@@ -54,7 +54,7 @@ async fn test_check_cluster_configuration() {
 }
 
 #[tokio::test]
-async fn test_standalone_server() -> anyhow::Result<()> {
+async fn test_standalone_server_no_indexer() -> anyhow::Result<()> {
     quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
     let mut search_client = sandbox.get_random_search_client();

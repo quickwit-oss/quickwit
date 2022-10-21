@@ -398,6 +398,10 @@ impl FileBackedIndex {
         self.metadata.add_source(source)
     }
 
+    pub(crate) fn toggle_source(&mut self, source_id: &str, enable: bool) -> MetastoreResult<bool> {
+        self.metadata.toggle_source(source_id, enable)
+    }
+
     /// Deletes the source. Returns whether a mutation occurred.
     pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<bool> {
         self.metadata.delete_source(source_id)

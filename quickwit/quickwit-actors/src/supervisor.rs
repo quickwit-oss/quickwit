@@ -28,9 +28,9 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Serialize)]
 pub struct SupervisorState {
-    num_panics: usize,
-    num_errors: usize,
-    num_kills: usize,
+    pub num_panics: usize,
+    pub num_errors: usize,
+    pub num_kills: usize,
 }
 
 pub struct Supervisor<A: Actor> {

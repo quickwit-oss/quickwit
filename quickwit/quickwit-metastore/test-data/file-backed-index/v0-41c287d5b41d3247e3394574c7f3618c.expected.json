@@ -79,6 +79,7 @@
     },
     "sources": [
       {
+        "enabled": true,
         "params": {
           "client_params": {},
           "topic": "kafka-topic"

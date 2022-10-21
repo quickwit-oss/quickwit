@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -216,34 +217,28 @@ impl IndexingPipeline {
         self.kill_switch = KillSwitch::default();
 
         let split_store = self.params.split_store.clone();
-        // TODO: We should not depend on split store when merge pipeline is refactored.
-        // merge pipeline should have been spawned at this point, we only get the handles.
-        let merge_policy = split_store.get_merge_policy();
+        let merge_policy =
+            crate::merge_policy::merge_policy_from_settings(&self.params.indexing_settings);
         info!(
             index_id=%self.params.pipeline_id.index_id,
             source_id=%self.params.pipeline_id.source_id,
             pipeline_ord=%self.params.pipeline_id.pipeline_ord,
             root_dir=%self.params.indexing_directory.path().display(),
-            merge_policy=?merge_policy,
             "Spawning indexing pipeline.",
         );
-        let published_splits = self
-            .params
-            .metastore
-            .list_splits(
+        let published_splits = ctx
+            .protect_future(self.params.metastore.list_splits(
                 &self.params.pipeline_id.index_id,
                 SplitState::Published,
                 None,
                 None,
-            )
+            ))
             .await?
             .into_iter()
             .map(|split| split.split_metadata)
             .collect::<Vec<_>>();
-        split_store
-            .remove_dangling_splits(&published_splits)
-            .await?;
 
+        info!("splits {:?}", published_splits);
         let (merge_planner_mailbox, merge_planner_inbox) =
             create_mailbox::<MergePlanner>("MergePlanner".to_string(), QueueCapacity::Unbounded);
 
@@ -265,6 +260,7 @@ impl IndexingPipeline {
             self.params.metastore.clone(),
             split_store.clone(),
             SplitsUpdateMailbox::Publisher(merge_publisher_mailbox),
+            self.params.max_concurrent_split_uploads,
         );
         let (merge_uploader_mailbox, merge_uploader_handler) = ctx
             .spawn_actor()
@@ -340,6 +336,7 @@ impl IndexingPipeline {
             self.params.metastore.clone(),
             split_store.clone(),
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
+            self.params.max_concurrent_split_uploads,
         );
         let (uploader_mailbox, uploader_handler) = ctx
             .spawn_actor()
@@ -396,6 +393,7 @@ impl IndexingPipeline {
                 Arc::new(SourceExecutionContext {
                     metastore: self.params.metastore.clone(),
                     index_id: self.params.pipeline_id.index_id.clone(),
+                    queues_dir_path: self.params.queues_dir_path.clone(),
                     source_config: self.params.source_config.clone(),
                 }),
                 source_checkpoint,
@@ -565,11 +563,13 @@ pub struct IndexingPipelineParams {
     pub pipeline_id: IndexingPipelineId,
     pub doc_mapper: Arc<dyn DocMapper>,
     pub indexing_directory: IndexingDirectory,
+    pub queues_dir_path: PathBuf,
     pub indexing_settings: IndexingSettings,
     pub source_config: SourceConfig,
     pub metastore: Arc<dyn Metastore>,
     pub storage: Arc<dyn Storage>,
     pub split_store: IndexingSplitStore,
+    pub max_concurrent_split_uploads: usize,
 }
 
 impl IndexingPipelineParams {
@@ -579,9 +579,11 @@ impl IndexingPipelineParams {
         index_metadata: IndexMetadata,
         source_config: SourceConfig,
         indexing_directory: IndexingDirectory,
+        queues_dir_path: PathBuf,
         split_store: IndexingSplitStore,
         metastore: Arc<dyn Metastore>,
         storage: Arc<dyn Storage>,
+        max_concurrent_split_uploads: usize,
     ) -> anyhow::Result<Self> {
         let doc_mapper = build_doc_mapper(
             &index_metadata.doc_mapping,
@@ -592,11 +594,13 @@ impl IndexingPipelineParams {
             pipeline_id,
             doc_mapper,
             indexing_directory,
+            queues_dir_path,
             indexing_settings: index_metadata.indexing_settings,
             source_config,
             metastore,
             storage,
             split_store,
+            max_concurrent_split_uploads,
         })
     }
 }
@@ -703,6 +707,7 @@ mod tests {
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
         };
         let storage = Arc::new(RamStorage::default());
@@ -712,10 +717,12 @@ mod tests {
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             indexing_directory: IndexingDirectory::for_test().await,
+            queues_dir_path: PathBuf::from("./queues"),
             indexing_settings: IndexingSettings::for_test(),
             metastore: Arc::new(metastore),
             storage,
             split_store,
+            max_concurrent_split_uploads: 4,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
@@ -789,6 +796,7 @@ mod tests {
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
         };
         let storage = Arc::new(RamStorage::default());
@@ -798,10 +806,12 @@ mod tests {
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             indexing_directory: IndexingDirectory::for_test().await,
+            queues_dir_path: PathBuf::from("./queues"),
             indexing_settings: IndexingSettings::for_test(),
             metastore: Arc::new(metastore),
             storage,
             split_store,
+            max_concurrent_split_uploads: 4,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);

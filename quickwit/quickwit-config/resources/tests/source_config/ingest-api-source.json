@@ -1,0 +1,5 @@
+{
+  "source_id": "_ingest-api",
+  "enabled": true,
+  "source_type": "ingest-api"
+}

@@ -31,6 +31,7 @@ pub struct StorageMetrics {
     pub object_storage_put_total: IntCounter,
     pub object_storage_put_parts: IntCounter,
     pub object_storage_download_num_bytes: IntCounter,
+    pub object_storage_upload_num_bytes: IntCounter,
 }
 
 impl Default for StorageMetrics {
@@ -58,6 +59,11 @@ impl Default for StorageMetrics {
             object_storage_download_num_bytes: new_counter(
                 "object_storage_download_num_bytes",
                 "Amount of data downloaded from an object storage.",
+                "quickwit_storage",
+            ),
+            object_storage_upload_num_bytes: new_counter(
+                "object_storage_upload_num_bytes",
+                "Amount of data uploaded to an object storage.",
                 "quickwit_storage",
             ),
         }

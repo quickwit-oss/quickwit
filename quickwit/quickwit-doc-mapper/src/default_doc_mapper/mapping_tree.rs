@@ -71,9 +71,9 @@ impl LeafType {
         }
     }
 
-    pub fn is_fast_field(&self) -> bool {
+    pub fn is_single_value_fast_field(&self) -> bool {
         match self {
-            LeafType::Text(_opt) => false, // TODO fixme once we have text fast field
+            LeafType::Text(_) => false, // Text is always multivalue
             LeafType::I64(opt)
             | LeafType::U64(opt)
             | LeafType::F64(opt)
@@ -949,7 +949,8 @@ mod tests {
         let err = typ.value_from_json(json!("foo-datetime")).unwrap_err();
         assert_eq!(
             err,
-            "Failed to parse datetime `foo-datetime` using the following formats: `rfc3339`."
+            "Failed to parse datetime `foo-datetime` using the following formats: `rfc3339`, \
+             `unix_timestamp`."
         );
     }
 

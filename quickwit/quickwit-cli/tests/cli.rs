@@ -27,13 +27,15 @@ use std::str::from_utf8;
 use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
-use quickwit_cli::index::{create_index_cli, search_index, CreateIndexArgs, SearchIndexArgs};
+use quickwit_cli::index::{
+    create_index_cli, ingest_docs_cli, search_index, CreateIndexArgs, IngestDocsArgs,
+    SearchIndexArgs,
+};
+use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
-use quickwit_config::CLI_INGEST_SOURCE_ID;
-use quickwit_core::get_cache_directory_path;
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
-use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore};
+use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreError};
 use serde_json::{json, Number, Value};
 use serial_test::serial;
 use tokio::time::{sleep, Duration};
@@ -143,47 +145,49 @@ async fn test_cmd_create() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn test_cmd_create_on_existing_index() -> Result<()> {
+#[tokio::test]
+async fn test_cmd_create_on_existing_index() {
     let index_id = append_random_suffix("test-create-cmd--index-already-exists");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
 
-    make_command(
-        format!(
-            "index create --index-config {} --config {}",
-            test_env.resource_files["index_config"].display(),
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .failure()
-    .stderr(predicate::str::contains("already exists"));
+    let args = CreateIndexArgs {
+        config_uri: test_env.config_uri,
+        index_config_uri: test_env.index_config_uri,
+        data_dir: None,
+        overwrite: false,
+        assume_yes: false,
+    };
 
-    Ok(())
+    let error = create_index_cli(args).await.unwrap_err();
+    assert_eq!(
+        error.root_cause().downcast_ref::<MetastoreError>().unwrap(),
+        &MetastoreError::IndexAlreadyExists { index_id }
+    );
 }
 
-#[test]
-fn test_cmd_ingest_on_non_existing_index() -> Result<()> {
+#[tokio::test]
+async fn test_cmd_ingest_on_non_existing_index() {
     let index_id = append_random_suffix("index-does-not-exist");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
-    make_command(
-        format!(
-            "index ingest --index {} --input-path {} --config {}",
-            "index-does-no-exist",
-            test_env.resource_files["logs"].display(),
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .failure()
-    .stderr(predicate::str::contains(
-        "Index `index-does-no-exist` does not exist",
-    ));
+    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem).unwrap();
 
-    Ok(())
+    let args = IngestDocsArgs {
+        config_uri: test_env.config_uri,
+        index_id: "index-does-not-exist".to_string(),
+        input_path_opt: Some(test_env.resource_files["logs"].clone()),
+        data_dir: None,
+        overwrite: false,
+        clear_cache: true,
+    };
+
+    let error = ingest_docs_cli(args).await.unwrap_err();
+
+    assert_eq!(
+        error.root_cause().downcast_ref::<MetastoreError>().unwrap(),
+        &MetastoreError::IndexDoesNotExist {
+            index_id: "index-does-not-exist".to_string()
+        }
+    );
 }
 
 #[test]
@@ -220,13 +224,8 @@ fn test_cmd_ingest_keep_cache() -> Result<()> {
         &test_env,
         "--keep-cache",
     );
-
     // Ensure cache directory is not empty.
-    let cache_directory_path = get_cache_directory_path(
-        &test_env.data_dir_path,
-        &test_env.index_id,
-        CLI_INGEST_SOURCE_ID,
-    );
+    let cache_directory_path = get_cache_directory_path(&test_env.data_dir_path);
     assert!(cache_directory_path.read_dir()?.next().is_some());
     Ok(())
 }
@@ -265,11 +264,8 @@ fn test_cmd_ingest_simple() -> Result<()> {
     .stdout(predicate::str::contains("Now, you can query the index"));
 
     // Ensure cache directory is empty.
-    let cache_directory_path = get_cache_directory_path(
-        &test_env.data_dir_path,
-        &test_env.index_id,
-        CLI_INGEST_SOURCE_ID,
-    );
+    let cache_directory_path = get_cache_directory_path(&test_env.data_dir_path);
+
     assert!(cache_directory_path.read_dir()?.next().is_none());
 
     Ok(())
@@ -823,6 +819,7 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
 #[tokio::test]
 #[serial]
 async fn test_all_local_index() -> Result<()> {
+    quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-all");
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
     make_command(
@@ -841,7 +838,7 @@ async fn test_all_local_index() -> Result<()> {
         .exists(&Path::new(&test_env.index_id).join("metastore.json"))
         .await
         .unwrap();
-    assert_eq!(metadata_file_exists, true);
+    assert!(metadata_file_exists);
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
