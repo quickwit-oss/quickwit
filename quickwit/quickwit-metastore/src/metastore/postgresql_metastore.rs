@@ -172,7 +172,6 @@ async fn mark_splits_as_published_helper(
     .map(|row| row.get(0))
     .fetch_all(tx)
     .await?;
-
     Ok(published_split_ids)
 }
 
