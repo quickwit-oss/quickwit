@@ -67,7 +67,7 @@ mod source_factory;
 mod vec_source;
 mod void_source;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -100,6 +100,8 @@ pub const INGEST_API_SOURCE_ID: &str = "_ingest-api";
 pub struct SourceExecutionContext {
     pub metastore: Arc<dyn Metastore>,
     pub index_id: String,
+    // Ingest API queues directory path.
+    pub queues_dir_path: PathBuf,
     pub source_config: SourceConfig,
 }
 
@@ -108,11 +110,13 @@ impl SourceExecutionContext {
     fn for_test(
         metastore: Arc<dyn Metastore>,
         index_id: &str,
+        queues_dir_path: PathBuf,
         source_config: SourceConfig,
     ) -> Arc<SourceExecutionContext> {
         Arc::new(Self {
             metastore,
             index_id: index_id.to_string(),
+            queues_dir_path,
             source_config,
         })
     }
@@ -361,6 +365,7 @@ mod tests {
             let source_config = SourceConfig {
                 source_id: "void".to_string(),
                 num_pipelines: 1,
+                enabled: true,
                 source_params: SourceParams::void(),
             };
             check_source_connectivity(&source_config).await?;
@@ -369,6 +374,7 @@ mod tests {
             let source_config = SourceConfig {
                 source_id: "vec".to_string(),
                 num_pipelines: 1,
+                enabled: true,
                 source_params: SourceParams::Vec(VecSourceParams::default()),
             };
             check_source_connectivity(&source_config).await?;
@@ -377,6 +383,7 @@ mod tests {
             let source_config = SourceConfig {
                 source_id: "file".to_string(),
                 num_pipelines: 1,
+                enabled: true,
                 source_params: SourceParams::file("file-does-not-exist.json"),
             };
             assert!(check_source_connectivity(&source_config).await.is_err());
@@ -385,6 +392,7 @@ mod tests {
             let source_config = SourceConfig {
                 source_id: "file".to_string(),
                 num_pipelines: 1,
+                enabled: true,
                 source_params: SourceParams::file("data/test_corpus.json"),
             };
             assert!(check_source_connectivity(&source_config).await.is_ok());

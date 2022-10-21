@@ -40,7 +40,6 @@ azure_storage_blobs = { workspace = true, optional = true }
 
 quickwit-aws = { workspace = true }
 quickwit-common = { workspace = true }
-quickwit-config = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
