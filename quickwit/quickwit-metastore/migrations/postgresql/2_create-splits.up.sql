@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS splits (
 DROP TRIGGER IF EXISTS quickwit_set_index_update_timestamp_on_split_change ON splits CASCADE;
 CREATE TRIGGER quickwit_set_index_update_timestamp_on_split_change
     AFTER INSERT OR DELETE OR UPDATE ON splits
-    FOR EACH ROW
+    FOR EACH STATEMENT
     EXECUTE PROCEDURE set_index_update_timestamp_for_split();
 
 -- We also want to update an index `update_timestamp` field whenever a related split
