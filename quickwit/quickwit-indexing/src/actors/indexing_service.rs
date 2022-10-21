@@ -26,7 +26,6 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Observation, Supervisable,
 };
 use quickwit_common::fs::get_cache_directory_path;
-use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_config::{IndexerConfig, SourceConfig, SourceParams, VecSourceParams};
 use quickwit_ingest_api::QUEUES_DIR_NAME;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
