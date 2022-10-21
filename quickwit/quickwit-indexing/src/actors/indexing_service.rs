@@ -26,7 +26,6 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Observation, Supervisable,
 };
 use quickwit_common::fs::get_cache_directory_path;
-use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_config::{
     IndexerConfig, IngestApiSourceParams, SourceConfig, SourceParams, VecSourceParams,
 };
@@ -333,19 +332,9 @@ impl IndexingService {
     async fn spawn_merge_pipeline(
         &mut self,
         ctx: &ActorContext<Self>,
-        index_id: String,
-        merge_enabled: bool,
+        pipeline_id: IndexingPipelineId,
     ) -> Result<IndexingPipelineId, IndexingServiceError> {
-        let pipeline_id = IndexingPipelineId {
-            index_id: index_id.clone(),
-            source_id: "void-source".to_string(),
-            node_id: self.node_id.clone(),
-            pipeline_ord: 0,
-        };
-        let mut index_metadata = self.index_metadata(ctx, &pipeline_id.index_id).await?;
-        if !merge_enabled {
-            index_metadata.indexing_settings.merge_policy = MergePolicyConfig::Nop
-        }
+        let index_metadata = self.index_metadata(ctx, &pipeline_id.index_id).await?;
         let source_config = SourceConfig {
             source_id: pipeline_id.source_id.clone(),
             num_pipelines: 1,
@@ -486,9 +475,7 @@ impl Handler<SpawnMergePipeline> for IndexingService {
         message: SpawnMergePipeline,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self
-            .spawn_merge_pipeline(ctx, message.index_id, message.merge_enabled)
-            .await)
+        Ok(self.spawn_merge_pipeline(ctx, message.pipeline_id).await)
     }
 }
 
@@ -679,7 +666,7 @@ mod tests {
         // Test `detach_pipeline`.
         let pipeline_handle = indexing_server_mailbox
             .ask_for_res(DetachPipeline {
-                pipeline_id: pipeline_id_0,
+                pipeline_id: pipeline_id_0.clone(),
             })
             .await
             .unwrap();
@@ -782,8 +769,7 @@ mod tests {
         // Test `spawn_merge_pipeline`.
         indexing_server_mailbox
             .ask_for_res(SpawnMergePipeline {
-                index_id: index_id.clone(),
-                merge_enabled: true,
+                pipeline_id: pipeline_id_0,
             })
             .await
             .unwrap();
