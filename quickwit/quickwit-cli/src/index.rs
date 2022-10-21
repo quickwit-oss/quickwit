@@ -35,13 +35,14 @@ use quickwit_common::GREEN_COLOR;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
     IndexConfig, IndexerConfig, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
+    INGEST_API_SOURCE_ID,
 };
 use quickwit_core::{
     clear_cache_directory, remove_indexing_directory, validate_storage_uri, IndexService,
 };
 use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
 use quickwit_indexing::models::{
-    DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
+    DetachPipeline, IndexingPipelineId, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
 };
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
@@ -102,6 +103,20 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 ])
             )
         .subcommand(
+            Command::new("ingest-api")
+                .about("Enables/disables the ingest API of an index.")
+                .args(&[
+                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--enable "Enables the ingest API.")
+                        .required(true)
+                        .conflicts_with("disable")
+                        .takes_value(false),
+                    arg!(--disable "Disables the ingest API.")
+                        .takes_value(false)
+                        .required(false),
+                ])
+            )
+        .subcommand(
             Command::new("describe")
                 .about("Displays descriptive statistics of an index: number of published splits, number of documents, splits min/max timestamps, size of splits.")
                 .args(&[
@@ -144,9 +159,13 @@ pub fn build_index_command<'a>() -> Command<'a> {
             )
         .subcommand(
             Command::new("merge")
-                .about("Merges an index.")
+                .about("Merges all the splits of the index pipeline defined by the tuple (index ID, source ID, pipeline ordinal). The pipeline ordinal is 0 by default. If you have a source with `num_pipelines > 0`, you may want to merge splits on ordinals > 0.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--index <INDEX> "ID of the target index."),
+                    arg!(--source <INDEX> "ID of the target source."),
+                    arg!(--"pipeline-ord" <PIPELINE_ORD> "Pipeline ordinal.")
+                        .default_value("0")
+                        .required(false),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
                         .required(false),
@@ -226,6 +245,13 @@ pub struct IngestDocsArgs {
 }
 
 #[derive(Debug, Eq, PartialEq)]
+pub struct ToggleIngestApiArgs {
+    pub config_uri: Uri,
+    pub index_id: String,
+    pub enable: bool,
+}
+
+#[derive(Debug, Eq, PartialEq)]
 pub struct SearchIndexArgs {
     pub config_uri: Uri,
     pub index_id: String,
@@ -262,6 +288,8 @@ pub struct GarbageCollectIndexArgs {
 pub struct MergeArgs {
     pub config_uri: Uri,
     pub index_id: String,
+    pub source_id: String,
+    pub pipeline_ord: Option<usize>,
     pub data_dir: Option<PathBuf>,
 }
 
@@ -279,6 +307,7 @@ pub enum IndexCliCommand {
     Describe(DescribeIndexArgs),
     GarbageCollect(GarbageCollectIndexArgs),
     Ingest(IngestDocsArgs),
+    ToggleIngestApi(ToggleIngestApiArgs),
     List(ListIndexesArgs),
     Merge(MergeArgs),
     Search(SearchIndexArgs),
@@ -303,6 +332,7 @@ impl IndexCliCommand {
             "describe" => Self::parse_describe_args(submatches),
             "gc" => Self::parse_garbage_collect_args(submatches),
             "ingest" => Self::parse_ingest_args(submatches),
+            "ingest-api" => Self::parse_toggle_ingest_api_args(submatches),
             "list" => Self::parse_list_args(submatches),
             "merge" => Self::parse_merge_args(submatches),
             "search" => Self::parse_search_args(submatches),
@@ -412,6 +442,22 @@ impl IndexCliCommand {
         }))
     }
 
+    fn parse_toggle_ingest_api_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let index_id = matches
+            .value_of("index")
+            .expect("`index` is a required arg.")
+            .to_string();
+        let config_uri = matches
+            .value_of("config")
+            .map(Uri::try_new)
+            .expect("`config` is a required arg.")?;
+        let enable = matches.is_present("enable");
+        Ok(Self::ToggleIngestApi(ToggleIngestApiArgs {
+            config_uri,
+            index_id,
+            enable,
+        }))
+    }
     fn parse_search_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
             .value_of("index")
@@ -468,6 +514,15 @@ impl IndexCliCommand {
             .value_of("index")
             .context("'index-id' is a required arg.")?
             .to_string();
+        let source_id = matches
+            .value_of("source")
+            .context("'source-id' is a required arg.")?
+            .to_string();
+        let pipeline_ord = matches
+            .value_of("pipeline-ord")
+            .map(|value| value.parse::<usize>())
+            .transpose()
+            .context("`pipeline-ord` must be an integer >= 0.")?;
         let config_uri = matches
             .value_of("config")
             .map(Uri::try_new)
@@ -475,6 +530,8 @@ impl IndexCliCommand {
         let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         Ok(Self::Merge(MergeArgs {
             index_id,
+            source_id,
+            pipeline_ord,
             config_uri,
             data_dir,
         }))
@@ -531,8 +588,9 @@ impl IndexCliCommand {
             Self::Describe(args) => describe_index_cli(args).await,
             Self::GarbageCollect(args) => garbage_collect_index_cli(args).await,
             Self::Ingest(args) => ingest_docs_cli(args).await,
+            Self::ToggleIngestApi(args) => toggle_ingest_api_index_cli(args).await,
             Self::List(args) => list_index_cli(args).await,
-            Self::Merge(args) => merge_cli(args, true).await,
+            Self::Merge(args) => merge_cli(args).await,
             Self::Search(args) => search_index_cli(args).await,
         }
     }
@@ -882,6 +940,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     let source_config = SourceConfig {
         source_id: CLI_INGEST_SOURCE_ID.to_string(),
         num_pipelines: 1,
+        enabled: true,
         source_params,
     };
     run_index_checklist(&config.metastore_uri, &args.index_id, Some(&source_config)).await?;
@@ -903,14 +962,12 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     };
     start_actor_runtimes(&HashSet::from_iter([QuickwitService::Indexer]))?;
     let universe = Universe::new();
-    let enable_ingest_api = false;
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
         indexer_config,
         metastore,
         quickwit_storage_uri_resolver().clone(),
-        enable_ingest_api,
     )
     .await?;
     let (indexing_server_mailbox, _) = universe.spawn_builder().spawn(indexing_server);
@@ -957,6 +1014,22 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     }
 }
 
+pub async fn toggle_ingest_api_index_cli(args: ToggleIngestApiArgs) -> anyhow::Result<()> {
+    let config = load_quickwit_config(&args.config_uri, None).await?;
+    let metastore = quickwit_metastore_uri_resolver()
+        .resolve(&config.metastore_uri)
+        .await?;
+    metastore
+        .toggle_source(&args.index_id, INGEST_API_SOURCE_ID, args.enable)
+        .await?;
+    let toggled_state_name = if args.enable { "enabled" } else { "disabled" };
+    println!(
+        "Ingest API successfully {} for index `{}`.",
+        toggled_state_name, args.index_id
+    );
+    Ok(())
+}
+
 pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResponse> {
     debug!(args=?args, "search-index");
     let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
@@ -991,8 +1064,8 @@ pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn merge_cli(args: MergeArgs, merge_enabled: bool) -> anyhow::Result<()> {
-    debug!(args=?args, merge_enabled = merge_enabled, "run-merge-operations");
+pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
+    debug!(args=?args, "run-merge-operations");
     let config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     run_index_checklist(&config.metastore_uri, &args.index_id, None).await?;
     let indexer_config = IndexerConfig {
@@ -1003,28 +1076,35 @@ pub async fn merge_cli(args: MergeArgs, merge_enabled: bool) -> anyhow::Result<(
         .resolve(&config.metastore_uri)
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
-    let enable_ingest_api = false;
+    start_actor_runtimes(&HashSet::from_iter([QuickwitService::Indexer]))?;
+    let node_id = config.node_id.clone();
     let indexing_server = IndexingService::new(
         config.node_id,
         config.data_dir_path,
         indexer_config,
         metastore,
         storage_resolver,
-        enable_ingest_api,
     )
     .await?;
     let universe = Universe::new();
-    let (indexing_server_mailbox, _) = universe.spawn_builder().spawn(indexing_server);
-    let pipeline_id = indexing_server_mailbox
+    let (indexing_service_mailbox, indexing_service_handle) =
+        universe.spawn_builder().spawn(indexing_server);
+    let pipeline_id = IndexingPipelineId {
+        index_id: args.index_id,
+        source_id: args.source_id,
+        node_id,
+        pipeline_ord: args.pipeline_ord.unwrap_or(0),
+    };
+    indexing_service_mailbox
         .ask_for_res(SpawnMergePipeline {
-            index_id: args.index_id.clone(),
-            merge_enabled,
+            pipeline_id: pipeline_id.clone(),
         })
         .await?;
-    let pipeline_handle = indexing_server_mailbox
+    let pipeline_handle = indexing_service_mailbox
         .ask_for_res(DetachPipeline { pipeline_id })
         .await?;
     let (pipeline_exit_status, _pipeline_statistics) = pipeline_handle.join().await;
+    indexing_service_handle.quit().await;
     if !pipeline_exit_status.is_success() {
         bail!(pipeline_exit_status);
     }
@@ -1302,6 +1382,7 @@ mod test {
     use quickwit_metastore::SplitMetadata;
 
     use super::*;
+    use crate::cli::{build_cli, CliCommand};
 
     pub fn split_metadata_for_test(
         split_id: &str,
@@ -1314,6 +1395,77 @@ mod test {
         split_metadata.time_range = Some(time_range);
         split_metadata.footer_offsets = 0..size;
         split_metadata
+    }
+
+    #[test]
+    fn test_parse_ingest_api_args() -> anyhow::Result<()> {
+        {
+            let app = build_cli().no_binary_name(true);
+            let matches = app.try_get_matches_from(vec![
+                "index",
+                "ingest-api",
+                "--config",
+                "/config.yaml",
+                "--index",
+                "foo",
+                "--enable",
+            ])?;
+            let command = CliCommand::parse_cli_args(&matches)?;
+            let expected_command =
+                CliCommand::Index(IndexCliCommand::ToggleIngestApi(ToggleIngestApiArgs {
+                    config_uri: Uri::try_new("file:///config.yaml").unwrap(),
+                    index_id: "foo".to_string(),
+                    enable: true,
+                }));
+            assert_eq!(command, expected_command);
+        }
+        {
+            let app = build_cli().no_binary_name(true);
+            let matches = app.try_get_matches_from(vec![
+                "index",
+                "ingest-api",
+                "--config",
+                "/config.yaml",
+                "--index",
+                "foo",
+                "--disable",
+            ])?;
+            let command = CliCommand::parse_cli_args(&matches)?;
+            let expected_command =
+                CliCommand::Index(IndexCliCommand::ToggleIngestApi(ToggleIngestApiArgs {
+                    config_uri: Uri::try_new("file:///config.yaml").unwrap(),
+                    index_id: "foo".to_string(),
+                    enable: false,
+                }));
+            assert_eq!(command, expected_command);
+        }
+        {
+            let app = build_cli().no_binary_name(true);
+            let matches = app.try_get_matches_from(vec![
+                "index",
+                "ingest-api",
+                "--config",
+                "/config.yaml",
+                "--index",
+                "foo",
+                "--enable",
+                "--disable",
+            ]);
+            assert!(matches.is_err());
+        }
+        {
+            let app = build_cli().no_binary_name(true);
+            let matches = app.try_get_matches_from(vec![
+                "index",
+                "ingest-api",
+                "--config",
+                "/config.yaml",
+                "--index",
+                "foo",
+            ]);
+            assert!(matches.is_err());
+        }
+        Ok(())
     }
 
     #[test]

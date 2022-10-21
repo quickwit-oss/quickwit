@@ -95,7 +95,11 @@ impl IndexerState {
             ctx.progress().clone(),
             ctx.kill_switch().clone(),
         )?;
-        info!(split_id = indexed_split.split_id(), "new-split");
+        info!(
+            split_id = indexed_split.split_id(),
+            partition_id = partition_id,
+            "new-split"
+        );
         Ok(indexed_split)
     }
 

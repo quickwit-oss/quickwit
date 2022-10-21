@@ -33,7 +33,8 @@ use quickwit_proto::metastore_api::{
     ListDeleteTasksResponse, ListIndexesMetadatasRequest, ListIndexesMetadatasResponse,
     ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
     PublishSplitsRequest, ResetSourceCheckpointRequest, SourceResponse, SplitResponse,
-    StageSplitRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    StageSplitRequest, ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest,
+    UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::tonic;
 
@@ -290,6 +291,23 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
             .await
             .map(|_| SourceResponse {})?;
         Ok(tonic::Response::new(add_source_reply))
+    }
+
+    async fn toggle_source(
+        &self,
+        request: tonic::Request<ToggleSourceRequest>,
+    ) -> Result<tonic::Response<SourceResponse>, tonic::Status> {
+        let toggle_source_request = request.into_inner();
+        let toggle_source_reply = self
+            .0
+            .toggle_source(
+                &toggle_source_request.index_id,
+                &toggle_source_request.source_id,
+                toggle_source_request.enable,
+            )
+            .await
+            .map(|_| SourceResponse {})?;
+        Ok(tonic::Response::new(toggle_source_reply))
     }
 
     async fn delete_source(

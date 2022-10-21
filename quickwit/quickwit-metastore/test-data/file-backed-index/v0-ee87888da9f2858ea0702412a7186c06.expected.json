@@ -1,5 +1,15 @@
 {
-  "delete_tasks": [],
+  "delete_tasks": [
+    {
+      "create_timestamp": 0,
+      "delete_query": {
+        "index_id": "index",
+        "query": "Harry Potter",
+        "search_fields": []
+      },
+      "opstamp": 10
+    }
+  ],
   "index": {
     "checkpoint": {
       "kafka-source": {
@@ -28,7 +38,6 @@
           "fieldnorms": false,
           "indexed": true,
           "name": "log_level",
-          "record": "basic",
           "stored": true,
           "tokenizer": "raw",
           "type": "text"
@@ -101,7 +110,7 @@
   "splits": [
     {
       "create_timestamp": 3,
-      "delete_opstamp": 0,
+      "delete_opstamp": 10,
       "footer_offsets": {
         "end": 2000,
         "start": 1000
@@ -109,9 +118,9 @@
       "index_id": "my-index",
       "node_id": "node/1",
       "num_docs": 12303,
-      "num_merge_ops": 0,
+      "num_merge_ops": 3,
       "partition_id": 7,
-      "publish_timestamp": null,
+      "publish_timestamp": 1789,
       "source_id": "source",
       "split_id": "split",
       "split_state": "Published",
