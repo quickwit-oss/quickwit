@@ -51,6 +51,7 @@ impl ControlledDirectory {
         directory: Box<dyn Directory>,
         progress: Progress,
         kill_switch: KillSwitch,
+        // write_throttle_per_secs: Byte
     ) -> ControlledDirectory {
         ControlledDirectory {
             inner: Inner {
@@ -81,7 +82,6 @@ impl fmt::Debug for ControlledDirectory {
         f.debug_struct("ControlledDirectory").finish()
     }
 }
-
 #[derive(Clone)]
 struct Controls {
     progress: Progress,

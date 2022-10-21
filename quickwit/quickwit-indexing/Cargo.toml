@@ -24,6 +24,7 @@ libz-sys = { workspace = true, optional = true }
 once_cell = { workspace = true }
 oneshot = { workspace = true }
 openssl = { workspace = true, optional = true }
+parking_lot = { workspace = true }
 rdkafka = { workspace = true, optional = true }
 rusoto_core = { workspace = true, optional = true }
 rusoto_kinesis = { workspace = true, optional = true }
