@@ -17,7 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt::Display;
+
 use colored::{Color, Colorize};
+use itertools::Itertools;
+use thiserror::Error;
 
 /// Quickwit main colors slightly adapted to be readable on a terminal.
 pub const BLUE_COLOR: Color = Color::TrueColor {
@@ -84,12 +88,47 @@ pub fn print_checklist(check_list_results: &[(&str, anyhow::Result<()>)]) {
 /// Run a checklist and print out its successes and failures on stdout.
 ///
 /// If an error is encountered, the proccess will exit with exit code 1.
-pub fn run_checklist(checks: Vec<(&str, anyhow::Result<()>)>) {
+pub fn run_checklist(checks: Vec<(&str, anyhow::Result<()>)>) -> Result<(), ChecklistError> {
     print_checklist(&checks);
     if !checks
         .iter()
         .all(|(_, check_items_res)| check_items_res.is_ok())
     {
-        std::process::exit(1);
+        return Err(ChecklistError::from(checks));
+    }
+
+    Ok(())
+}
+
+#[derive(Error, Debug)]
+pub struct ChecklistError {
+    pub errors: Vec<(String, anyhow::Result<()>)>,
+}
+
+impl From<Vec<(&str, anyhow::Result<()>)>> for ChecklistError {
+    fn from(check_results: Vec<(&str, anyhow::Result<()>)>) -> Self {
+        let errors = check_results
+            .into_iter()
+            .filter(|(_, check_res)| check_res.is_err())
+            .map(|(check_elem, check_res)| (check_elem.to_string(), check_res))
+            .collect();
+        ChecklistError { errors }
+    }
+}
+
+impl Display for ChecklistError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let err_string = self
+            .errors
+            .iter()
+            .map(|(check_item, check_item_err)| {
+                format!(
+                    "\n{}: {}",
+                    check_item,
+                    check_item_err.as_ref().err().unwrap()
+                )
+            })
+            .join("");
+        write!(f, "{}", err_string)
     }
 }
