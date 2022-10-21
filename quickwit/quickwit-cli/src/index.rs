@@ -41,7 +41,7 @@ use quickwit_core::{
 };
 use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
 use quickwit_indexing::models::{
-    DetachPipeline, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
+    DetachPipeline, IndexingPipelineId, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
 };
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
@@ -144,9 +144,13 @@ pub fn build_index_command<'a>() -> Command<'a> {
             )
         .subcommand(
             Command::new("merge")
-                .about("Merges an index.")
+                .about("Merges all the splits of the index pipeline defined by the tuple (index ID, source ID, pipeline ordinal). The pipeline ordinal is 0 by default. If you have a source with `num_pipelines > 0`, you may want to merge splits on ordinals > 0.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--index <INDEX> "ID of the target index."),
+                    arg!(--source <INDEX> "ID of the target source."),
+                    arg!(--"pipeline-ord" <PIPELINE_ORD> "Pipeline ordinal.")
+                        .default_value("0")
+                        .required(false),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
                         .required(false),
@@ -262,6 +266,8 @@ pub struct GarbageCollectIndexArgs {
 pub struct MergeArgs {
     pub config_uri: Uri,
     pub index_id: String,
+    pub source_id: String,
+    pub pipeline_ord: Option<usize>,
     pub data_dir: Option<PathBuf>,
 }
 
@@ -468,6 +474,15 @@ impl IndexCliCommand {
             .value_of("index")
             .context("'index-id' is a required arg.")?
             .to_string();
+        let source_id = matches
+            .value_of("source")
+            .context("'source-id' is a required arg.")?
+            .to_string();
+        let pipeline_ord = matches
+            .value_of("pipeline-ord")
+            .map(|value| value.parse::<usize>())
+            .transpose()
+            .context("`pipeline-ord` must be an integer >= 0.")?;
         let config_uri = matches
             .value_of("config")
             .map(Uri::try_new)
@@ -475,6 +490,8 @@ impl IndexCliCommand {
         let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         Ok(Self::Merge(MergeArgs {
             index_id,
+            source_id,
+            pipeline_ord,
             config_uri,
             data_dir,
         }))
@@ -532,7 +549,7 @@ impl IndexCliCommand {
             Self::GarbageCollect(args) => garbage_collect_index_cli(args).await,
             Self::Ingest(args) => ingest_docs_cli(args).await,
             Self::List(args) => list_index_cli(args).await,
-            Self::Merge(args) => merge_cli(args, true).await,
+            Self::Merge(args) => merge_cli(args).await,
             Self::Search(args) => search_index_cli(args).await,
         }
     }
@@ -991,8 +1008,8 @@ pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn merge_cli(args: MergeArgs, merge_enabled: bool) -> anyhow::Result<()> {
-    debug!(args=?args, merge_enabled = merge_enabled, "run-merge-operations");
+pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
+    debug!(args=?args, "run-merge-operations");
     let config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     run_index_checklist(&config.metastore_uri, &args.index_id, None).await?;
     let indexer_config = IndexerConfig {
@@ -1003,7 +1020,9 @@ pub async fn merge_cli(args: MergeArgs, merge_enabled: bool) -> anyhow::Result<(
         .resolve(&config.metastore_uri)
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
+    start_actor_runtimes(&HashSet::from_iter([QuickwitService::Indexer]))?;
     let enable_ingest_api = false;
+    let node_id = config.node_id.clone();
     let indexing_server = IndexingService::new(
         config.node_id,
         config.data_dir_path,
@@ -1014,17 +1033,24 @@ pub async fn merge_cli(args: MergeArgs, merge_enabled: bool) -> anyhow::Result<(
     )
     .await?;
     let universe = Universe::new();
-    let (indexing_server_mailbox, _) = universe.spawn_builder().spawn(indexing_server);
-    let pipeline_id = indexing_server_mailbox
+    let (indexing_service_mailbox, indexing_service_handle) =
+        universe.spawn_builder().spawn(indexing_server);
+    let pipeline_id = IndexingPipelineId {
+        index_id: args.index_id,
+        source_id: args.source_id,
+        node_id,
+        pipeline_ord: args.pipeline_ord.unwrap_or(0),
+    };
+    indexing_service_mailbox
         .ask_for_res(SpawnMergePipeline {
-            index_id: args.index_id.clone(),
-            merge_enabled,
+            pipeline_id: pipeline_id.clone(),
         })
         .await?;
-    let pipeline_handle = indexing_server_mailbox
+    let pipeline_handle = indexing_service_mailbox
         .ask_for_res(DetachPipeline { pipeline_id })
         .await?;
     let (pipeline_exit_status, _pipeline_statistics) = pipeline_handle.join().await;
+    indexing_service_handle.quit().await;
     if !pipeline_exit_status.is_success() {
         bail!(pipeline_exit_status);
     }
