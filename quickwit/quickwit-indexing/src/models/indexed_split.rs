@@ -27,6 +27,7 @@ use tantivy::IndexBuilder;
 use tracing::{instrument, Span};
 
 use crate::controlled_directory::ControlledDirectory;
+use crate::metrics::INDEXER_METRICS;
 use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory, SplitAttrs};
 use crate::new_split_id;
 
@@ -91,8 +92,16 @@ impl IndexedSplitBuilder {
             scratch_directory.named_temp_child(split_scratch_directory_prefix)?;
         let mmap_directory = MmapDirectory::open(split_scratch_directory.path())?;
         let box_mmap_directory = Box::new(mmap_directory);
-        let controlled_directory =
-            ControlledDirectory::new(box_mmap_directory, progress, kill_switch);
+        let controlled_directory = ControlledDirectory::new(
+            box_mmap_directory,
+            progress,
+            kill_switch,
+            Some(
+                INDEXER_METRICS
+                    .index_write_num_bytes_total
+                    .with_label_values(&[&pipeline_id.index_id]),
+            ),
+        );
         let index_writer =
             index_builder.single_segment_index_writer(controlled_directory.clone(), 10_000_000)?;
         Ok(Self {

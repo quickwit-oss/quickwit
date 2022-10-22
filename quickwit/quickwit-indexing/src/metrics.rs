@@ -27,6 +27,8 @@ pub struct IndexerMetrics {
     pub parsing_errors_num_bytes_total: IntCounterVec,
     pub missing_field_num_bytes_total: IntCounterVec,
     pub valid_num_bytes_total: IntCounterVec,
+    pub merge_write_num_bytes_total: IntCounterVec,
+    pub index_write_num_bytes_total: IntCounterVec,
     pub concurrent_upload_available_permits: IntGauge,
 }
 
@@ -68,6 +70,18 @@ impl Default for IndexerMetrics {
             valid_num_bytes_total: new_counter_vec(
                 "valid_num_bytes_total",
                 "Sum of bytes of valid documents that have been processed (per index).",
+                "quickwit_indexing",
+                &["index"],
+            ),
+            merge_write_num_bytes_total: new_counter_vec(
+                "merge_write_num_bytes_total",
+                "Sum of bytes written by the merge executor.",
+                "quickwit_indexing",
+                &["index"],
+            ),
+            index_write_num_bytes_total: new_counter_vec(
+                "index_write_num_bytes_total",
+                "Sum of bytes written by the indexer.",
                 "quickwit_indexing",
                 &["index"],
             ),

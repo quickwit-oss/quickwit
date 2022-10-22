@@ -24,6 +24,7 @@ use std::{fmt, io};
 
 use arc_swap::ArcSwap;
 use quickwit_actors::{KillSwitch, Progress, ProtectedZoneGuard};
+use quickwit_common::metrics::IntCounter;
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
 use tantivy::directory::{
     AntiCallToken, FileHandle, TerminatingWrite, WatchCallback, WatchHandle, WritePtr,
@@ -51,6 +52,7 @@ impl ControlledDirectory {
         directory: Box<dyn Directory>,
         progress: Progress,
         kill_switch: KillSwitch,
+        written_num_bytes_counter: Option<IntCounter>,
     ) -> ControlledDirectory {
         ControlledDirectory {
             inner: Inner {
@@ -59,6 +61,7 @@ impl ControlledDirectory {
                     kill_switch,
                 }))),
                 underlying: directory.into(),
+                written_num_bytes_counter,
             },
         }
     }
@@ -105,11 +108,13 @@ impl Controls {
 struct Inner {
     controls: Arc<ArcSwap<Controls>>,
     underlying: Arc<dyn Directory>,
+    written_num_bytes_counter: Option<IntCounter>,
 }
 
 struct ControlledWrite {
     controls: Arc<ArcSwap<Controls>>,
     underlying_wrt: Box<dyn TerminatingWrite>,
+    written_num_bytes_counter: Option<IntCounter>,
 }
 
 impl ControlledWrite {
@@ -121,6 +126,9 @@ impl ControlledWrite {
 impl io::Write for ControlledWrite {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let _guard = self.check_if_alive()?;
+        if let Some(written_num_bytes_counter) = self.written_num_bytes_counter.as_ref() {
+            written_num_bytes_counter.inc_by(buf.len() as u64);
+        };
         self.underlying_wrt.write(buf)
     }
 
@@ -130,21 +138,6 @@ impl io::Write for ControlledWrite {
         // is not called before Drop.
         let _guard = self.check_if_alive();
         self.underlying_wrt.flush()
-    }
-
-    fn write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
-        let _guard = self.check_if_alive()?;
-        self.underlying_wrt.write_vectored(bufs)
-    }
-
-    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        let _guard = self.check_if_alive()?;
-        self.underlying_wrt.write_all(buf)
-    }
-
-    fn write_fmt(&mut self, fmt: fmt::Arguments<'_>) -> io::Result<()> {
-        let _guard = self.check_if_alive()?;
-        self.underlying_wrt.write_fmt(fmt)
     }
 }
 
@@ -185,6 +178,7 @@ impl Directory for ControlledDirectory {
         let controlled_wrt = ControlledWrite {
             controls,
             underlying_wrt,
+            written_num_bytes_counter: self.inner.written_num_bytes_counter.clone(),
         };
         Ok(BufWriter::with_capacity(
             BUFFER_NUM_BYTES,
@@ -234,8 +228,12 @@ mod tests {
     fn test_records_progress_on_write() -> anyhow::Result<()> {
         let directory = RamDirectory::default();
         let progress = Progress::default();
-        let controlled_directory =
-            ControlledDirectory::new(Box::new(directory), progress.clone(), KillSwitch::default());
+        let controlled_directory = ControlledDirectory::new(
+            Box::new(directory),
+            progress.clone(),
+            KillSwitch::default(),
+            None,
+        );
         assert!(progress.registered_activity_since_last_call());
         assert!(!progress.registered_activity_since_last_call());
         let mut wrt = controlled_directory.open_write(Path::new("test"))?;
@@ -264,6 +262,7 @@ mod tests {
             Box::new(directory),
             Progress::default(),
             kill_switch.clone(),
+            None,
         );
         let mut wrt = controlled_directory.open_write(Path::new("test"))?;
         // We use a large buffer to force the buf writer to flush at least once.

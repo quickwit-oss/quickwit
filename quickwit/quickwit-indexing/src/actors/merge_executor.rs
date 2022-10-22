@@ -44,6 +44,7 @@ use tracing::{debug, info, instrument, warn};
 use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeOperationType;
+use crate::metrics::INDEXER_METRICS;
 use crate::models::{
     IndexedSplit, IndexedSplitBatch, IndexingPipelineId, MergeScratch, PublishLock,
     ScratchDirectory, SplitAttrs,
@@ -220,6 +221,7 @@ pub fn combine_partition_ids(splits: &[SplitMetadata]) -> u64 {
 }
 
 async fn merge_split_directories(
+    index_id: &str,
     union_index_meta: IndexMeta,
     split_directories: Vec<Box<dyn Directory>>,
     delete_tasks: Vec<DeleteTask>,
@@ -233,6 +235,11 @@ async fn merge_split_directories(
         Box::new(MmapDirectory::open(output_path)?),
         ctx.progress().clone(),
         ctx.kill_switch().clone(),
+        Some(
+            INDEXER_METRICS
+                .merge_write_num_bytes_total
+                .with_label_values(&[index_id]),
+        ),
     );
     let mut directory_stack: Vec<Box<dyn Directory>> = vec![
         output_directory.box_clone(),
@@ -355,6 +362,7 @@ impl MergeExecutor {
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
         fail_point!("before-merge-split");
         let controlled_directory = merge_split_directories(
+            &self.pipeline_id.index_id,
             union_index_meta,
             split_directories,
             Vec::new(),
@@ -418,6 +426,7 @@ impl MergeExecutor {
 
         let (union_index_meta, split_directories) = open_split_directories(&tantivy_dirs)?;
         let controlled_directory = merge_split_directories(
+            &self.pipeline_id.index_id,
             union_index_meta,
             split_directories,
             delete_tasks,
