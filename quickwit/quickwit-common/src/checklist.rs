@@ -94,7 +94,7 @@ pub fn run_checklist(checks: Vec<(&str, anyhow::Result<()>)>) -> Result<(), Chec
         .iter()
         .all(|(_, check_items_res)| check_items_res.is_ok())
     {
-        return Err(ChecklistError::from(checks));
+        return Err(ChecklistError::from_results(checks));
     }
 
     Ok(())
@@ -105,9 +105,9 @@ pub struct ChecklistError {
     pub errors: Vec<(String, anyhow::Result<()>)>,
 }
 
-impl From<Vec<(&str, anyhow::Result<()>)>> for ChecklistError {
-    fn from(check_results: Vec<(&str, anyhow::Result<()>)>) -> Self {
-        let errors = check_results
+impl ChecklistError {
+    pub fn from_results(results: Vec<(&str, anyhow::Result<()>)>) -> Self {
+        let errors = results
             .into_iter()
             .filter(|(_, check_res)| check_res.is_err())
             .map(|(check_elem, check_res)| (check_elem.to_string(), check_res))
@@ -117,7 +117,7 @@ impl From<Vec<(&str, anyhow::Result<()>)>> for ChecklistError {
 }
 
 impl Display for ChecklistError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let err_string = self
             .errors
             .iter()
@@ -125,7 +125,7 @@ impl Display for ChecklistError {
                 format!(
                     "\n{}: {}",
                     check_item,
-                    check_item_err.as_ref().err().unwrap()
+                    check_item_err.as_ref().err().expect("ChecklistError can't contain success results.")
                 )
             })
             .join("");
