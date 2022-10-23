@@ -131,7 +131,7 @@ pub async fn run_index_checklist(
             ));
         }
     }
-    run_checklist(checks);
+    run_checklist(checks)?;
     Ok(())
 }
 

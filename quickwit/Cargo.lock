@@ -3248,6 +3248,7 @@ dependencies = [
  "serde_json",
  "tantivy",
  "tempfile",
+ "thiserror",
  "tokio",
  "tracing",
  "warp",
