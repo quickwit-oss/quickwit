@@ -125,7 +125,9 @@ impl Display for ChecklistError {
                 format!(
                     "\n{}: {}",
                     check_item,
-                    check_item_err.as_ref().err().expect("ChecklistError can't contain success results.")
+                    check_item_err
+                        .as_ref()
+                        .expect_err("ChecklistError can't contain success results.")
                 )
             })
             .join("");
