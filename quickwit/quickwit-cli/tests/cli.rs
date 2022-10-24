@@ -217,21 +217,25 @@ async fn test_cmd_ingest_on_non_existing_file() {
     ));
 }
 
-#[test]
-fn test_cmd_ingest_keep_cache() -> Result<()> {
+#[tokio::test]
+async fn test_cmd_ingest_keep_cache() {
     let index_id = append_random_suffix("test-index-keep-cache");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
 
-    ingest_docs_with_options(
-        test_env.resource_files["logs"].as_path(),
-        &test_env,
-        "--keep-cache",
-    );
+    let args = IngestDocsArgs {
+        config_uri: test_env.config_uri,
+        index_id,
+        input_path_opt: Some(test_env.resource_files["logs"].clone()),
+        data_dir: None,
+        overwrite: false,
+        clear_cache: false,
+    };
+
+    ingest_docs_cli(args).await.unwrap();
     // Ensure cache directory is not empty.
     let cache_directory_path = get_cache_directory_path(&test_env.data_dir_path);
-    assert!(cache_directory_path.read_dir()?.next().is_some());
-    Ok(())
+    assert!(cache_directory_path.read_dir().unwrap().next().is_some());
 }
 
 #[test]
