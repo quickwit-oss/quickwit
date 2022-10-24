@@ -29,7 +29,7 @@ use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_cli::index::{
     create_index_cli, ingest_docs_cli, search_index, CreateIndexArgs, IngestDocsArgs,
-    SearchIndexArgs,
+    SearchIndexArgs, DeleteIndexArgs, delete_index_cli,
 };
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
@@ -467,44 +467,33 @@ fn test_cmd_search() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn test_cmd_delete_index_dry_run() -> Result<()> {
+#[tokio::test]
+async fn test_cmd_delete_index_dry_run() {
     let index_id = append_random_suffix("test-delete-cmd--dry-run");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
 
-    // Empty index.
-    make_command(
-        format!(
-            "index delete --index {} --config {} --dry-run",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains("Only the index will be deleted"));
+    // On empty index.
+    let args = DeleteIndexArgs {
+        config_uri: test_env.index_config_uri.clone(),
+        index_id: index_id.clone(),
+        dry_run: true,
+        data_dir: None,
+    };
+
+    let _ = delete_index_cli(args).await.unwrap();
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
-    // Non-empty index
-    make_command(
-        format!(
-            "index delete --index {} --config {} --dry-run",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "The following files will be removed",
-    ))
-    .stdout(predicate::str::contains(".split"));
+    // On non-empty index
+    let args = DeleteIndexArgs {
+        config_uri: test_env.index_config_uri.clone(),
+        index_id: index_id.clone(),
+        dry_run: true,
+        data_dir: None,
+    };
 
-    Ok(())
+    let _ = delete_index_cli(args).await.unwrap();
 }
 
 #[tokio::test]
