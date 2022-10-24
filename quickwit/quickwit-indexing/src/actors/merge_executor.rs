@@ -25,6 +25,7 @@ use std::time::Instant;
 
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
+use byte_unit::Byte;
 use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
@@ -233,6 +234,7 @@ async fn merge_split_directories(
         Box::new(MmapDirectory::open(output_path)?),
         ctx.progress().clone(),
         ctx.kill_switch().clone(),
+        Some(Byte::from_bytes(20_000_000)),
     );
     let mut directory_stack: Vec<Box<dyn Directory>> = vec![
         output_directory.box_clone(),

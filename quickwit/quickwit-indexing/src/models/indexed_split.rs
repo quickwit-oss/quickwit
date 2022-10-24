@@ -92,7 +92,7 @@ impl IndexedSplitBuilder {
         let mmap_directory = MmapDirectory::open(split_scratch_directory.path())?;
         let box_mmap_directory = Box::new(mmap_directory);
         let controlled_directory =
-            ControlledDirectory::new(box_mmap_directory, progress, kill_switch);
+            ControlledDirectory::new(box_mmap_directory, progress, kill_switch, None);
         let index_writer =
             index_builder.single_segment_index_writer(controlled_directory.clone(), 10_000_000)?;
         Ok(Self {

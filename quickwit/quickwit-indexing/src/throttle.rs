@@ -17,17 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicU64;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
-use std::sync::Weak;
-use std::time::Duration;
-use std::time::Instant;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Weak};
+use std::time::{Duration, Instant};
 pub struct Throttle {
     num_units_consumed: AtomicU64,
     // Should wait is a atomic bool that we read with a relaxed ordering.
-    // On our happy path (no cooldown required), we don't pick any lock nor have any memory barrier.
+    // On our happy path (no cooldown required), we don't pick any lock nor have any memory
+    // barrier.
     should_wait: AtomicBool,
     // We use RwLock as a synchronization primitive.
     sync_rw_lock: parking_lot::RwLock<()>, //< we rely on parking_lot because the guard are `Send`
@@ -146,8 +143,7 @@ pub fn no_throttling() -> Arc<Throttle> {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
     use super::create_throttle;
 
