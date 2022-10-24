@@ -28,8 +28,8 @@ use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_cli::index::{
-    create_index_cli, ingest_docs_cli, search_index, CreateIndexArgs, IngestDocsArgs,
-    SearchIndexArgs,
+    create_index_cli, garbage_collect_index_cli, ingest_docs_cli, search_index, CreateIndexArgs,
+    GarbageCollectIndexArgs, IngestDocsArgs, SearchIndexArgs,
 };
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
@@ -662,28 +662,25 @@ async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<()> {
+async fn test_cmd_garbage_collect_spares_files_within_grace_period() {
     let index_id = append_random_suffix("test-gc-cmd");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
-    let metastore = test_env.metastore().await?;
-    let splits = metastore.list_all_splits(&test_env.index_id).await?;
+    let metastore = test_env.metastore().await.unwrap();
+    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
     assert_eq!(splits.len(), 1);
-    make_command(
-        format!(
-            "index gc --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "No dangling files to garbage collect",
-    ));
+
+    let args = GarbageCollectIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        grace_period: Duration::from_secs(3600),
+        dry_run: false,
+        data_dir: None,
+    };
+
+    garbage_collect_index_cli(args).await.unwrap();
 
     let index_path = test_env.indexes_dir_path.join(&test_env.index_id);
     let split_filename = quickwit_common::split_file(splits[0].split_metadata.split_id.as_str());
@@ -696,66 +693,54 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
     let split_ids = [split.split_metadata.split_id.as_str()];
     metastore
         .mark_splits_for_deletion(&test_env.index_id, &split_ids)
-        .await?;
+        .await
+        .unwrap();
     metastore
         .delete_splits(&test_env.index_id, &split_ids)
-        .await?;
+        .await
+        .unwrap();
     metastore
         .stage_split(&test_env.index_id, split.split_metadata)
-        .await?;
+        .await
+        .unwrap();
     assert_eq!(split_path.exists(), true);
 
-    make_command(
-        format!(
-            "index gc --index {} --config {} --grace-period 2s",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "No dangling files to garbage collect",
-    ));
+    let args = GarbageCollectIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        grace_period: Duration::from_secs(2),
+        dry_run: false,
+        data_dir: None,
+    };
+
+    garbage_collect_index_cli(args).await.unwrap();
     assert_eq!(split_path.exists(), true);
 
     // Wait for grace period.
     // TODO: edit split update timestamps and remove this sleep.
     sleep(Duration::from_secs(3)).await;
-    make_command(
-        format!(
-            "index gc --index {} --config {} --dry-run --grace-period 2s",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "The following files will be garbage collected.",
-    ))
-    .stdout(predicate::str::contains(&split_filename));
+
+    let args = GarbageCollectIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        grace_period: Duration::from_secs(2),
+        dry_run: true,
+        data_dir: None,
+    };
+
+    garbage_collect_index_cli(args).await.unwrap();
     assert_eq!(split_path.exists(), true);
 
-    make_command(
-        format!(
-            "index gc --index {} --config {} --grace-period 2s",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(format!(
-        "Index `{}` successfully garbage collected",
-        test_env.index_id
-    )));
-    assert_eq!(split_path.exists(), false);
+    let args = GarbageCollectIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id,
+        grace_period: Duration::from_secs(2),
+        dry_run: false,
+        data_dir: None,
+    };
 
-    Ok(())
+    garbage_collect_index_cli(args).await.unwrap();
+    assert_eq!(split_path.exists(), false);
 }
 
 #[tokio::test]
