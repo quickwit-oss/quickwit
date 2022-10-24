@@ -178,7 +178,7 @@ async fn mark_splits_as_published_helper(
 #[instrument(skip(tx))]
 /// Updates the given index's `update_timestamp` to the current
 /// timestamp.
-async fn update_index_last_update_ts(
+async fn update_index_update_timestamp(
     tx: &mut Transaction<'_, Postgres>,
     index_id: &str,
 ) -> MetastoreResult<()> {
@@ -551,7 +551,7 @@ impl Metastore for PostgresqlMetastore {
             .await
                 .map_err(|err| convert_sqlx_err(index_id, err))?;
 
-            update_index_last_update_ts(tx, index_id).await?;
+            update_index_update_timestamp(tx, index_id).await?;
 
             debug!(index_id=?index_id, split_id=?split_id, "The split has been staged");
             Ok(())
@@ -585,7 +585,7 @@ impl Metastore for PostgresqlMetastore {
             )
             .await?;
 
-            update_index_last_update_ts(tx, index_id).await?;
+            update_index_update_timestamp(tx, index_id).await?;
 
             if published_split_ids.len() != new_split_ids.len() {
                 let affected_split_ids: Vec<String> = published_split_ids
@@ -663,7 +663,7 @@ impl Metastore for PostgresqlMetastore {
             )
             .await?;
 
-            update_index_last_update_ts(tx, index_id).await?;
+            update_index_update_timestamp(tx, index_id).await?;
 
             if marked_split_ids.len() == split_ids.len() {
                 return Ok(());
@@ -705,7 +705,7 @@ impl Metastore for PostgresqlMetastore {
             .fetch_all(&mut *tx)
             .await?;
 
-            update_index_last_update_ts(tx, index_id).await?;
+            update_index_update_timestamp(tx, index_id).await?;
 
             if deleted_split_ids.len() == split_ids.len() {
                 return Ok(());
@@ -851,7 +851,7 @@ impl Metastore for PostgresqlMetastore {
             .execute(&mut *tx)
             .await?;
 
-            update_index_last_update_ts(tx, index_id).await?;
+            update_index_update_timestamp(tx, index_id).await?;
 
             // If no splits is affected, maybe the index itself does not exist
             // in the first place.
