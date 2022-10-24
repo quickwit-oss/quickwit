@@ -28,8 +28,8 @@ use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_cli::index::{
-    create_index_cli, ingest_docs_cli, search_index, CreateIndexArgs, IngestDocsArgs,
-    SearchIndexArgs,
+    create_index_cli, ingest_docs_cli, search_index, search_index_cli, CreateIndexArgs,
+    IngestDocsArgs, SearchIndexArgs,
 };
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
@@ -404,65 +404,74 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn test_cmd_search() -> Result<()> {
+#[tokio::test]
+async fn test_cmd_search() -> Result<()> {
     let index_id = append_random_suffix("test-search-cmd");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem)?;
     create_logs_index(&test_env);
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
-    make_command(
-        format!(
-            "index search --index {} --config {} --query level:info",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::function(|output: &[u8]| {
-        println!("{}", from_utf8(output).unwrap());
-        let result: Value = serde_json::from_slice(output).unwrap();
-        result["num_hits"] == Value::Number(Number::from(2i64))
-    }));
+    let args = SearchIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        query: "level:info".to_string(),
+        aggregation: None,
+        max_hits: 20,
+        start_offset: 0,
+        search_fields: None,
+        snippet_fields: None,
+        start_timestamp: None,
+        end_timestamp: None,
+        data_dir: None,
+        sort_by_score: false,
+    };
+
+    // search_index_cli calls search_index and prints the SearchResponse
+    let search_res = search_index(args).await.unwrap();
+    assert_eq!(search_res.num_hits, 2);
+
 
     // search with tag pruning
-    crate::helpers::make_command_with_list_of_args(&[
-        "index",
-        "search",
-        "--index",
-        &test_env.index_id,
-        "--config",
-        &test_env.resource_files["config"].display().to_string(),
-        "--query",
-        "+level:info +city:paris",
-    ])
-    .assert()
-    .success()
-    .stdout(predicate::function(|output: &[u8]| {
-        let result: Value = serde_json::from_slice(output).unwrap();
-        result["num_hits"] == Value::Number(Number::from(1i64))
-    }));
+    let args = SearchIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        query: "+level:info +city:paris".to_string(),
+        aggregation: None,
+        max_hits: 20,
+        start_offset: 0,
+        search_fields: None,
+        snippet_fields: None,
+        start_timestamp: None,
+        end_timestamp: None,
+        data_dir: None,
+        sort_by_score: false,
+    };
+
+    // search_index_cli calls search_index and prints the SearchResponse
+    let search_res = search_index(args).await.unwrap();
+    assert_eq!(search_res.num_hits, 1);
+
 
     // search with tag pruning
-    crate::helpers::make_command_with_list_of_args(&[
-        "index",
-        "search",
-        "--index",
-        &test_env.index_id,
-        "--config",
-        &test_env.resource_files["config"].display().to_string(),
-        "--query",
-        "level:info AND city:conakry",
-    ])
-    .assert()
-    .success()
-    .stdout(predicate::function(|output: &[u8]| {
-        let result: Value = serde_json::from_slice(output).unwrap();
-        result["num_hits"] == Value::Number(Number::from(0i64))
-    }));
+    let args = SearchIndexArgs {
+        config_uri: test_env.config_uri,
+        index_id,
+        query: "level:info AND city:conakry".to_string(),
+        aggregation: None,
+        max_hits: 20,
+        start_offset: 0,
+        search_fields: None,
+        snippet_fields: None,
+        start_timestamp: None,
+        end_timestamp: None,
+        data_dir: None,
+        sort_by_score: false,
+    };
+
+    // search_index_cli calls search_index and prints the SearchResponse
+    let search_res = search_index(args).await.unwrap();
+    assert_eq!(search_res.num_hits, 0);
 
     Ok(())
 }
