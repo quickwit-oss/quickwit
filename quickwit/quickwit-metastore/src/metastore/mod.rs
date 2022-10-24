@@ -365,13 +365,13 @@ impl<'a> ListSplitsQuery<'a> {
     /// just a filter by `index_id`.
     pub fn is_default(&self) -> bool {
         self.limit.is_none()
-            | self.offset.is_none()
-            | self.time_range_start.is_none()
-            | self.time_range_end.is_none()
-            | (self.updated_after == Bound::Unbounded)
-            | (self.updated_before == Bound::Unbounded)
-            | self.delete_opstamp.is_none()
-            | self.split_state.is_none()
-            | self.tags.is_none()
+            && self.offset.is_none()
+            && self.time_range_start.is_none()
+            && self.time_range_end.is_none()
+            && (self.updated_after == Bound::Unbounded)
+            && (self.updated_before == Bound::Unbounded)
+            && self.delete_opstamp.is_none()
+            && self.split_state.is_none()
+            && self.tags.is_none()
     }
 }
