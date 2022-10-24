@@ -28,6 +28,7 @@ pub struct IndexerMetrics {
     pub missing_field_num_bytes_total: IntCounter,
     pub valid_num_bytes_total: IntCounter,
     pub concurrent_upload_available_permits: IntGauge,
+    pub merge_write_num_bytes_total: IntCounter,
 }
 
 impl Default for IndexerMetrics {
@@ -66,6 +67,11 @@ impl Default for IndexerMetrics {
             concurrent_upload_available_permits: new_gauge(
                 "concurrent_upload_available_permits",
                 "Number of concurrent upload available permits.",
+                "quickwit_indexing",
+            ),
+            merge_write_num_bytes_total: new_counter(
+                "merge_write_num_bytes_total",
+                "Number of bytes written by the merge executor.",
                 "quickwit_indexing",
             ),
         }

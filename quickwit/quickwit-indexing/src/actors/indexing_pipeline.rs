@@ -276,9 +276,24 @@ impl IndexingPipeline {
             .set_kill_switch(self.kill_switch.clone())
             .spawn(merge_packager);
 
+        let io_throttler = if let Some(max_num_bytes_per_secs) =
+            self.params.indexing_settings.max_merge_write_throughput
+        {
+            crate::throttle::create_throttle(
+                max_num_bytes_per_secs.get_bytes(),
+                Duration::from_millis(500),
+                crate::metrics::INDEXER_METRICS
+                    .merge_write_num_bytes_total
+                    .clone(),
+            )
+        } else {
+            crate::throttle::no_throttling()
+        };
+
         let merge_executor = MergeExecutor::new(
             self.params.pipeline_id.clone(),
             self.params.metastore.clone(),
+            io_throttler,
             merge_packager_mailbox,
         );
         let (merge_executor_mailbox, merge_executor_handler) = ctx

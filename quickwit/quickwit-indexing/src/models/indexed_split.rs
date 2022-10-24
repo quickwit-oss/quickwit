@@ -29,6 +29,7 @@ use tracing::{instrument, Span};
 use crate::controlled_directory::ControlledDirectory;
 use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory, SplitAttrs};
 use crate::new_split_id;
+use crate::throttle::no_throttling;
 
 pub struct IndexedSplitBuilder {
     pub split_attrs: SplitAttrs,
@@ -92,7 +93,7 @@ impl IndexedSplitBuilder {
         let mmap_directory = MmapDirectory::open(split_scratch_directory.path())?;
         let box_mmap_directory = Box::new(mmap_directory);
         let controlled_directory =
-            ControlledDirectory::new(box_mmap_directory, progress, kill_switch);
+            ControlledDirectory::new(box_mmap_directory, progress, kill_switch, no_throttling());
         let index_writer =
             index_builder.single_segment_index_writer(controlled_directory.clone(), 10_000_000)?;
         Ok(Self {

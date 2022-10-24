@@ -156,7 +156,12 @@ pub struct IndexingSettings {
     /// `split_num_docs_target` are considered mature and never merged.
     #[serde(default = "IndexingSettings::default_split_num_docs_target")]
     pub split_num_docs_target: usize,
-
+    /// Sets the maximum write IO throughput, in bytes per secs.
+    /// On hardware where IO is limited, this parameter can help limiting
+    /// the impact of merges on indexing.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_merge_write_throughput: Option<Byte>,
     #[serde(default)]
     pub merge_policy: MergePolicyConfig,
     #[serde(default)]
@@ -218,6 +223,7 @@ impl From<IndexingSettingsLegacy> for IndexingSettings {
             split_num_docs_target: settings.split_num_docs_target,
             merge_policy,
             resources: settings.resources,
+            max_merge_write_throughput: None,
         }
     }
 }
@@ -309,6 +315,7 @@ impl Default for IndexingSettings {
             split_num_docs_target: Self::default_split_num_docs_target(),
             merge_policy: MergePolicyConfig::default(),
             resources: IndexingResources::default(),
+            max_merge_write_throughput: None,
         }
     }
 }

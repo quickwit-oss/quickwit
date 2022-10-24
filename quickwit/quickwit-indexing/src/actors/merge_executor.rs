@@ -48,11 +48,13 @@ use crate::models::{
     IndexedSplit, IndexedSplitBatch, IndexingPipelineId, MergeScratch, PublishLock,
     ScratchDirectory, SplitAttrs,
 };
+use crate::throttle::Throttle;
 
 #[derive(Clone)]
 pub struct MergeExecutor {
     pipeline_id: IndexingPipelineId,
     metastore: Arc<dyn Metastore>,
+    io_throttle: Arc<Throttle>,
     merge_packager_mailbox: Mailbox<Packager>,
 }
 
@@ -219,78 +221,6 @@ pub fn combine_partition_ids(splits: &[SplitMetadata]) -> u64 {
     combine_partition_ids_aux(splits.iter().map(|split| split.partition_id))
 }
 
-async fn merge_split_directories(
-    union_index_meta: IndexMeta,
-    split_directories: Vec<Box<dyn Directory>>,
-    delete_tasks: Vec<DeleteTask>,
-    doc_mapper_opt: Option<Arc<dyn DocMapper>>,
-    output_path: &Path,
-    ctx: &ActorContext<MergeExecutor>,
-) -> anyhow::Result<ControlledDirectory> {
-    let shadowing_meta_json_directory = create_shadowing_meta_json_directory(union_index_meta)?;
-    // This directory is here to receive the merged split, as well as the final meta.json file.
-    let output_directory = ControlledDirectory::new(
-        Box::new(MmapDirectory::open(output_path)?),
-        ctx.progress().clone(),
-        ctx.kill_switch().clone(),
-    );
-    let mut directory_stack: Vec<Box<dyn Directory>> = vec![
-        output_directory.box_clone(),
-        Box::new(shadowing_meta_json_directory),
-    ];
-    directory_stack.extend(split_directories.into_iter());
-    let union_directory = UnionDirectory::union_of(directory_stack);
-    let union_index = open_index(union_directory)?;
-
-    ctx.record_progress();
-    let _protect_guard = ctx.protect_zone();
-
-    let mut index_writer = union_index.writer_with_num_threads(1, 3_000_000)?;
-    let num_delete_tasks = delete_tasks.len();
-    if num_delete_tasks > 0 {
-        let doc_mapper = doc_mapper_opt
-            .ok_or_else(|| anyhow!("Doc mapper must be present if there are delete tasks."))?;
-        for delete_task in delete_tasks {
-            let delete_query = delete_task
-                .delete_query
-                .expect("A delete task must have a delete query.");
-            let search_request = SearchRequest {
-                index_id: delete_query.index_id,
-                query: delete_query.query,
-                start_timestamp: delete_query.start_timestamp,
-                end_timestamp: delete_query.end_timestamp,
-                search_fields: delete_query.search_fields,
-                ..Default::default()
-            };
-            debug!(
-                "Delete all documents matched by query `{:?}`",
-                search_request
-            );
-            let query = doc_mapper.query(union_index.schema(), &search_request)?;
-            index_writer.delete_query(query)?;
-        }
-        debug!("commit-delete-operations");
-        index_writer.commit()?;
-    }
-
-    let segment_ids: Vec<SegmentId> = union_index
-        .searchable_segment_metas()?
-        .into_iter()
-        .map(|segment_meta| segment_meta.id())
-        .collect();
-
-    // A merge is useless if there is no delete and only one segment.
-    if num_delete_tasks == 0 && segment_ids.len() <= 1 {
-        return Ok(output_directory);
-    }
-
-    debug!(segment_ids=?segment_ids,"merging-segments");
-    // TODO it would be nice if tantivy could let us run the merge in the current thread.
-    index_writer.merge(&segment_ids).wait()?;
-
-    Ok(output_directory)
-}
-
 pub fn merge_split_attrs(
     merge_split_id: String,
     pipeline_id: &IndexingPipelineId,
@@ -334,11 +264,13 @@ impl MergeExecutor {
     pub fn new(
         pipeline_id: IndexingPipelineId,
         metastore: Arc<dyn Metastore>,
+        io_throttle: Arc<Throttle>,
         merge_packager_mailbox: Mailbox<Packager>,
     ) -> Self {
         MergeExecutor {
             pipeline_id,
             metastore,
+            io_throttle,
             merge_packager_mailbox,
         }
     }
@@ -354,15 +286,16 @@ impl MergeExecutor {
         let (union_index_meta, split_directories) = open_split_directories(&tantivy_dirs)?;
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
         fail_point!("before-merge-split");
-        let controlled_directory = merge_split_directories(
-            union_index_meta,
-            split_directories,
-            Vec::new(),
-            None,
-            merge_scratch_directory.path(),
-            ctx,
-        )
-        .await?;
+        let controlled_directory = self
+            .merge_split_directories(
+                union_index_meta,
+                split_directories,
+                Vec::new(),
+                None,
+                merge_scratch_directory.path(),
+                ctx,
+            )
+            .await?;
         fail_point!("after-merge-split");
 
         // This will have the side effect of deleting the directory containing the downloaded
@@ -417,15 +350,16 @@ impl MergeExecutor {
         );
 
         let (union_index_meta, split_directories) = open_split_directories(&tantivy_dirs)?;
-        let controlled_directory = merge_split_directories(
-            union_index_meta,
-            split_directories,
-            delete_tasks,
-            Some(doc_mapper.clone()),
-            merge_scratch_directory.path(),
-            ctx,
-        )
-        .await?;
+        let controlled_directory = self
+            .merge_split_directories(
+                union_index_meta,
+                split_directories,
+                delete_tasks,
+                Some(doc_mapper.clone()),
+                merge_scratch_directory.path(),
+                ctx,
+            )
+            .await?;
 
         // This will have the side effect of deleting the directory containing the downloaded split.
         let mut merged_index = Index::open(controlled_directory.clone())?;
@@ -492,6 +426,80 @@ impl MergeExecutor {
         };
         Ok(Some(indexed_split))
     }
+
+    async fn merge_split_directories(
+        &self,
+        union_index_meta: IndexMeta,
+        split_directories: Vec<Box<dyn Directory>>,
+        delete_tasks: Vec<DeleteTask>,
+        doc_mapper_opt: Option<Arc<dyn DocMapper>>,
+        output_path: &Path,
+        ctx: &ActorContext<MergeExecutor>,
+    ) -> anyhow::Result<ControlledDirectory> {
+        let shadowing_meta_json_directory = create_shadowing_meta_json_directory(union_index_meta)?;
+        // This directory is here to receive the merged split, as well as the final meta.json file.
+        let output_directory = ControlledDirectory::new(
+            Box::new(MmapDirectory::open(output_path)?),
+            ctx.progress().clone(),
+            ctx.kill_switch().clone(),
+            self.io_throttle.clone(),
+        );
+        let mut directory_stack: Vec<Box<dyn Directory>> = vec![
+            output_directory.box_clone(),
+            Box::new(shadowing_meta_json_directory),
+        ];
+        directory_stack.extend(split_directories.into_iter());
+        let union_directory = UnionDirectory::union_of(directory_stack);
+        let union_index = open_index(union_directory)?;
+
+        ctx.record_progress();
+        let _protect_guard = ctx.protect_zone();
+
+        let mut index_writer = union_index.writer_with_num_threads(1, 3_000_000)?;
+        let num_delete_tasks = delete_tasks.len();
+        if num_delete_tasks > 0 {
+            let doc_mapper = doc_mapper_opt
+                .ok_or_else(|| anyhow!("Doc mapper must be present if there are delete tasks."))?;
+            for delete_task in delete_tasks {
+                let delete_query = delete_task
+                    .delete_query
+                    .expect("A delete task must have a delete query.");
+                let search_request = SearchRequest {
+                    index_id: delete_query.index_id,
+                    query: delete_query.query,
+                    start_timestamp: delete_query.start_timestamp,
+                    end_timestamp: delete_query.end_timestamp,
+                    search_fields: delete_query.search_fields,
+                    ..Default::default()
+                };
+                debug!(
+                    "Delete all documents matched by query `{:?}`",
+                    search_request
+                );
+                let query = doc_mapper.query(union_index.schema(), &search_request)?;
+                index_writer.delete_query(query)?;
+            }
+            debug!("commit-delete-operations");
+            index_writer.commit()?;
+        }
+
+        let segment_ids: Vec<SegmentId> = union_index
+            .searchable_segment_metas()?
+            .into_iter()
+            .map(|segment_meta| segment_meta.id())
+            .collect();
+
+        // A merge is useless if there is no delete and only one segment.
+        if num_delete_tasks == 0 && segment_ids.len() <= 1 {
+            return Ok(output_directory);
+        }
+
+        debug!(segment_ids=?segment_ids,"merging-segments");
+        // TODO it would be nice if tantivy could let us run the merge in the current thread.
+        index_writer.merge(&segment_ids).wait()?;
+
+        Ok(output_directory)
+    }
 }
 
 fn open_index<T: Into<Box<dyn Directory>>>(directory: T) -> tantivy::Result<Index> {
@@ -510,6 +518,7 @@ mod tests {
     use super::*;
     use crate::merge_policy::MergeOperation;
     use crate::models::{IndexingPipelineId, ScratchDirectory};
+    use crate::throttle::no_throttling;
     use crate::{get_tantivy_directory_from_split_bundle, new_split_id, TestSandbox};
 
     #[tokio::test]
@@ -574,7 +583,12 @@ mod tests {
             downloaded_splits_directory,
         };
         let (merge_packager_mailbox, merge_packager_inbox) = create_test_mailbox();
-        let merge_executor = MergeExecutor::new(pipeline_id, metastore, merge_packager_mailbox);
+        let merge_executor = MergeExecutor::new(
+            pipeline_id,
+            metastore,
+            no_throttling(),
+            merge_packager_mailbox,
+        );
         let universe = Universe::new();
         let (merge_executor_mailbox, merge_executor_handle) =
             universe.spawn_builder().spawn(merge_executor);
@@ -709,8 +723,12 @@ mod tests {
             downloaded_splits_directory,
         };
         let (merge_packager_mailbox, merge_packager_inbox) = create_test_mailbox();
-        let delete_task_executor =
-            MergeExecutor::new(pipeline_id, metastore, merge_packager_mailbox);
+        let delete_task_executor = MergeExecutor::new(
+            pipeline_id,
+            metastore,
+            no_throttling(),
+            merge_packager_mailbox,
+        );
         let universe = Universe::new();
         let (delete_task_executor_mailbox, delete_task_executor_handle) =
             universe.spawn_builder().spawn(delete_task_executor);

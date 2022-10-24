@@ -32,7 +32,7 @@ use quickwit_indexing::actors::{
 };
 use quickwit_indexing::merge_policy::merge_policy_from_settings;
 use quickwit_indexing::models::{IndexingDirectory, IndexingPipelineId};
-use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
+use quickwit_indexing::{throttle, IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
 use quickwit_metastore::Metastore;
 use quickwit_search::SearchClientPool;
 use quickwit_storage::Storage;
@@ -164,8 +164,12 @@ impl DeleteTaskPipeline {
             pipeline_ord: 0,
             source_id: "unknown".to_string(),
         };
-        let delete_executor =
-            MergeExecutor::new(index_pipeline_id, self.metastore.clone(), packager_mailbox);
+        let delete_executor = MergeExecutor::new(
+            index_pipeline_id,
+            self.metastore.clone(),
+            throttle::no_throttling(),
+            packager_mailbox,
+        );
         let (delete_executor_mailbox, task_executor_supervisor_handler) = ctx
             .spawn_actor()
             .set_kill_switch(KillSwitch::default())

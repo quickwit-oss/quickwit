@@ -73,14 +73,21 @@ impl Handler<IndexedSplitBatchBuilder> for IndexSerializer {
         batch_builder: IndexedSplitBatchBuilder,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        let splits: Vec<IndexedSplit> = {
-            let _protect = ctx.protect_zone();
-            batch_builder
-                .splits
-                .into_iter()
-                .map(|split_builder| split_builder.finalize())
-                .collect::<Result<_, _>>()?
-        };
+        let mut splits: Vec<IndexedSplit> = Vec::with_capacity(batch_builder.splits.len());
+        for split_builder in batch_builder.splits {
+            // TODO Consider & test removing this protect guard.
+            //
+            // In theory the controlled directory should be sufficient.
+            let _protect_guard = ctx.protect_zone();
+            if let Some(controlled_directory) = &split_builder.controlled_directory_opt {
+                controlled_directory.set_progress_and_kill_switch(
+                    ctx.progress().clone(),
+                    ctx.kill_switch().clone(),
+                );
+            }
+            let split = split_builder.finalize()?;
+            splits.push(split);
+        }
         let indexed_split_batch = IndexedSplitBatch {
             batch_parent_span: batch_builder.batch_parent_span,
             splits,
