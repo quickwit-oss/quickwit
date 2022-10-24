@@ -28,8 +28,8 @@ use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_cli::index::{
-    create_index_cli, ingest_docs_cli, search_index, CreateIndexArgs, IngestDocsArgs,
-    SearchIndexArgs, DeleteIndexArgs, delete_index_cli,
+    create_index_cli, delete_index_cli, ingest_docs_cli, search_index, CreateIndexArgs,
+    DeleteIndexArgs, IngestDocsArgs, SearchIndexArgs,
 };
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
@@ -481,7 +481,7 @@ async fn test_cmd_delete_index_dry_run() {
         data_dir: None,
     };
 
-    let _ = delete_index_cli(args).await.unwrap();
+    delete_index_cli(args).await.unwrap();
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
@@ -493,7 +493,7 @@ async fn test_cmd_delete_index_dry_run() {
         data_dir: None,
     };
 
-    let _ = delete_index_cli(args).await.unwrap();
+    delete_index_cli(args).await.unwrap();
 }
 
 #[tokio::test]
