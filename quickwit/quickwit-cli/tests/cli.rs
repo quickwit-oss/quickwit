@@ -22,13 +22,13 @@
 mod helpers;
 
 use std::path::Path;
-use std::str::from_utf8;
+
 
 use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_cli::index::{
-    create_index_cli, ingest_docs_cli, search_index, search_index_cli, CreateIndexArgs,
+    create_index_cli, ingest_docs_cli, search_index, CreateIndexArgs,
     IngestDocsArgs, SearchIndexArgs,
 };
 use quickwit_common::fs::get_cache_directory_path;
@@ -405,9 +405,9 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_cmd_search() -> Result<()> {
+async fn test_cmd_search() {
     let index_id = append_random_suffix("test-search-cmd");
-    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
@@ -431,7 +431,6 @@ async fn test_cmd_search() -> Result<()> {
     let search_res = search_index(args).await.unwrap();
     assert_eq!(search_res.num_hits, 2);
 
-
     // search with tag pruning
     let args = SearchIndexArgs {
         config_uri: test_env.config_uri.clone(),
@@ -452,7 +451,6 @@ async fn test_cmd_search() -> Result<()> {
     let search_res = search_index(args).await.unwrap();
     assert_eq!(search_res.num_hits, 1);
 
-
     // search with tag pruning
     let args = SearchIndexArgs {
         config_uri: test_env.config_uri,
@@ -472,8 +470,6 @@ async fn test_cmd_search() -> Result<()> {
     // search_index_cli calls search_index and prints the SearchResponse
     let search_res = search_index(args).await.unwrap();
     assert_eq!(search_res.num_hits, 0);
-
-    Ok(())
 }
 
 #[test]

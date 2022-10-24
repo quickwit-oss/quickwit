@@ -101,16 +101,6 @@ pub fn make_command(arguments: &str) -> Command {
     cmd
 }
 
-pub fn make_command_with_list_of_args(arguments: &[&str]) -> Command {
-    let mut cmd = Command::cargo_bin(PACKAGE_BIN_NAME).unwrap();
-    cmd.env(
-        quickwit_telemetry::DISABLE_TELEMETRY_ENV_KEY,
-        "disable-for-tests",
-    )
-    .args(arguments.iter());
-    cmd
-}
-
 /// Creates a quickwit-cli command running as a child process.
 pub fn spawn_command(arguments: &str) -> io::Result<Child> {
     std::process::Command::new(cargo_bin(PACKAGE_BIN_NAME))
