@@ -21,7 +21,7 @@ use std::fmt::Debug;
 
 use anyhow::Context;
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use tokio::sync::oneshot;
 
 /// The sequencer serves as a proxy to another actor,
@@ -48,6 +48,10 @@ impl<A: Actor> Sequencer<A> {
 #[async_trait]
 impl<A: Actor> Actor for Sequencer<A> {
     type ObservableState = ();
+
+    fn queue_capacity(&self) -> QueueCapacity {
+        QueueCapacity::Bounded(2)
+    }
 
     fn observable_state(&self) {}
 }
@@ -127,22 +131,21 @@ mod tests {
         let (test_mailbox, test_handle) = universe.spawn_builder().spawn(test_actor);
         let sequencer = Sequencer::new(test_mailbox);
         let (sequencer_mailbox, sequencer_handle) = universe.spawn_builder().spawn(sequencer);
+        // The sequencer has a capacity of 2.
+        // This is the maximum we can do without provoking a deadlock.
         let (fut_tx_1, fut_rx_1) = oneshot::channel();
         let (fut_tx_2, fut_rx_2) = oneshot::channel();
         let (fut_tx_3, fut_rx_3) = oneshot::channel();
-        let (fut_tx_4, fut_rx_4) = oneshot::channel();
         sequencer_mailbox.send_message(fut_rx_1).await.unwrap();
         sequencer_mailbox.send_message(fut_rx_2).await.unwrap();
-        fut_tx_4.send(SequencerCommand::Proceed(4)).unwrap();
         fut_tx_3.send(SequencerCommand::<usize>::Discard).unwrap();
         sequencer_mailbox.send_message(fut_rx_3).await.unwrap();
         fut_tx_2.send(SequencerCommand::Proceed(2)).unwrap();
-        sequencer_mailbox.send_message(fut_rx_4).await.unwrap();
         fut_tx_1.send(SequencerCommand::Proceed(1)).unwrap();
         std::mem::drop(sequencer_mailbox);
         let (exit_status, last_state) = test_handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Success));
-        assert_eq!(&last_state, &[1, 2, 4]);
+        assert_eq!(&last_state, &[1, 2]);
         let (sequencer_exit_status, _) = sequencer_handle.join().await;
         assert!(matches!(sequencer_exit_status, ActorExitStatus::Success));
     }
