@@ -18,13 +18,25 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use prometheus::{Encoder, HistogramOpts, Opts, TextEncoder};
-pub use prometheus::{Histogram, HistogramTimer, IntCounter, IntGauge};
+pub use prometheus::{Histogram, HistogramTimer, IntCounter, IntCounterVec, IntGauge};
 
 pub fn new_counter(name: &str, description: &str, namespace: &str) -> IntCounter {
     let counter_opts = Opts::new(name, description).namespace(namespace);
     let counter = IntCounter::with_opts(counter_opts).expect("Failed to create counter");
     prometheus::register(Box::new(counter.clone())).expect("Failed to register counter");
     counter
+}
+
+pub fn new_counter_vec(
+    name: &str,
+    description: &str,
+    namespace: &str,
+    labels: &[&str],
+) -> IntCounterVec {
+    let counter_opts = Opts::new(name, description).namespace(namespace);
+    let counter_vec = IntCounterVec::new(counter_opts, labels).expect("Failed to create counter");
+    prometheus::register(Box::new(counter_vec.clone())).expect("Failed to register counter");
+    counter_vec
 }
 
 pub fn new_histogram(name: &str, description: &str, namespace: &str) -> Histogram {
