@@ -475,7 +475,7 @@ async fn test_cmd_delete_index_dry_run() {
 
     // On empty index.
     let args = DeleteIndexArgs {
-        config_uri: test_env.index_config_uri.clone(),
+        config_uri: test_env.config_uri.clone(),
         index_id: index_id.clone(),
         dry_run: true,
         data_dir: None,
@@ -487,7 +487,7 @@ async fn test_cmd_delete_index_dry_run() {
 
     // On non-empty index
     let args = DeleteIndexArgs {
-        config_uri: test_env.index_config_uri.clone(),
+        config_uri: test_env.config_uri.clone(),
         index_id: index_id.clone(),
         dry_run: true,
         data_dir: None,
