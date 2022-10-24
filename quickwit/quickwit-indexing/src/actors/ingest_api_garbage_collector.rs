@@ -24,6 +24,7 @@ use std::time::Duration;
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
+use quickwit_config::INGEST_API_SOURCE_ID;
 use quickwit_ingest_api::IngestApiService;
 use quickwit_metastore::Metastore;
 use quickwit_proto::ingest_api::{DropQueueRequest, ListQueuesRequest};
@@ -32,7 +33,6 @@ use tracing::{debug, error, info, instrument};
 
 use super::IndexingService;
 use crate::models::ShutdownPipelines;
-use crate::source::INGEST_API_SOURCE_ID;
 
 const RUN_INTERVAL: Duration = if cfg!(test) {
     Duration::from_secs(60) // 1min
@@ -217,14 +217,12 @@ mod tests {
         let data_dir_path = temp_dir.path().to_path_buf();
         let indexer_config = IndexerConfig::for_test().unwrap();
         let storage_resolver = StorageUriResolver::for_test();
-        let enable_ingest_api = true;
         let indexing_server = IndexingService::new(
             "test-node".to_string(),
             data_dir_path,
             indexer_config,
             metastore.clone(),
             storage_resolver.clone(),
-            enable_ingest_api,
         )
         .await?;
         let (indexing_server_mailbox, _indexing_server_handle) =
