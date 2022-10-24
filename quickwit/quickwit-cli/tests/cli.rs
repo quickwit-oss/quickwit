@@ -28,8 +28,8 @@ use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_cli::index::{
-    create_index_cli, ingest_docs_cli, search_index, CreateIndexArgs, IngestDocsArgs,
-    SearchIndexArgs,
+    create_index_cli, delete_index_cli, garbage_collect_index_cli, ingest_docs_cli, search_index,
+    CreateIndexArgs, DeleteIndexArgs, GarbageCollectIndexArgs, IngestDocsArgs, SearchIndexArgs,
 };
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
@@ -508,49 +508,46 @@ fn test_cmd_delete_index_dry_run() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_cmd_delete_simple() -> Result<()> {
+async fn test_cmd_delete_simple() {
     let index_id = append_random_suffix("test-delete-cmd");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
-    make_command(
-        format!(
-            "index gc --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display()
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "No dangling files to garbage collect",
-    ));
 
-    make_command(
-        format!(
-            "index delete --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
+    let args = GarbageCollectIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        grace_period: Duration::from_secs(3600),
+        dry_run: false,
+        data_dir: None,
+    };
+
+    garbage_collect_index_cli(args).await.unwrap();
+
+    let args = DeleteIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        dry_run: false,
+        data_dir: None,
+    };
+
+    delete_index_cli(args).await.unwrap();
+
     assert!(test_env
         .metastore()
-        .await?
+        .await
+        .unwrap()
         .index_metadata(&test_env.index_id)
         .await
-        .is_err(),);
+        .is_err());
+
     assert!(!test_env
         .data_dir_path
         .join(INDEXING_DIR_NAME)
         .join(test_env.index_id)
         .as_path()
         .exists());
-    Ok(())
 }
 
 #[tokio::test]
