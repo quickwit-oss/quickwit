@@ -28,8 +28,8 @@ use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_cli::index::{
-    create_index_cli, ingest_docs_cli, search_index, CreateIndexArgs, IngestDocsArgs,
-    SearchIndexArgs,
+    create_index_cli, delete_index_cli, garbage_collect_index_cli, ingest_docs_cli, search_index,
+    CreateIndexArgs, DeleteIndexArgs, GarbageCollectIndexArgs, IngestDocsArgs, SearchIndexArgs,
 };
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
@@ -760,63 +760,40 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
 
 #[tokio::test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
-async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
+async fn test_cmd_dry_run_delete_on_s3_localstack() {
     let index_id = append_random_suffix("test-delete-cmd--s3-localstack");
-    let test_env = create_test_env(index_id, TestStorageType::S3)?;
-    make_command(
-        format!(
-            "index create --config {} --index-config {}",
-            test_env.resource_files["config"].display(),
-            test_env.resource_files["index_config"].display()
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
+    let test_env = create_test_env(index_id.clone(), TestStorageType::S3).unwrap();
+    create_logs_index(&test_env);
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
-    make_command(
-        format!(
-            "index gc --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "No dangling files to garbage collect",
-    ));
+    let args = GarbageCollectIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        grace_period: Duration::from_secs(3600),
+        dry_run: false,
+        data_dir: None,
+    };
 
-    make_command(
-        format!(
-            "index delete --index {} --config {} --dry-run",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "The following files will be removed",
-    ))
-    .stdout(predicate::str::contains(".split"));
+    garbage_collect_index_cli(args).await.unwrap();
 
-    make_command(
-        format!(
-            "index delete --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
+    let args = DeleteIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        dry_run: true,
+        data_dir: None,
+    };
 
-    Ok(())
+    delete_index_cli(args).await.unwrap();
+
+    let args = DeleteIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        dry_run: false,
+        data_dir: None,
+    };
+
+    delete_index_cli(args).await.unwrap();
 }
 
 /// testing the api via cli commands
