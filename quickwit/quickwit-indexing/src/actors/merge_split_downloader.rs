@@ -21,6 +21,7 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::io::IoControls;
 use quickwit_metastore::SplitMetadata;
 use tantivy::Directory;
 use tracing::{debug, info, instrument};
@@ -35,6 +36,7 @@ pub struct MergeSplitDownloader {
     pub scratch_directory: ScratchDirectory,
     pub split_store: IndexingSplitStore,
     pub executor_mailbox: Mailbox<MergeExecutor>,
+    pub io_controls: IoControls,
 }
 
 impl Actor for MergeSplitDownloader {
@@ -107,10 +109,15 @@ impl MergeSplitDownloader {
                 );
                 return Err(ActorExitStatus::Killed);
             }
+            let io_controls = self
+                .io_controls
+                .clone()
+                .set_progress(ctx.progress().clone())
+                .set_kill_switch(ctx.kill_switch().clone());
             let _protect_guard = ctx.protect_zone();
             let tantivy_dir = self
                 .split_store
-                .fetch_and_open_split(split.split_id(), download_directory)
+                .fetch_and_open_split(split.split_id(), download_directory, &io_controls)
                 .await
                 .map_err(|error| {
                     let split_id = split.split_id();
@@ -165,6 +172,7 @@ mod tests {
             scratch_directory,
             split_store,
             executor_mailbox: merge_executor_mailbox,
+            io_controls: IoControls::default(),
         };
         let (merge_split_downloader_mailbox, merge_split_downloader_handler) =
             universe.spawn_builder().spawn(merge_split_downloader);

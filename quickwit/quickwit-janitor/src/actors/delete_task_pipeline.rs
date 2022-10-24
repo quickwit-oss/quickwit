@@ -23,9 +23,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, KillSwitch, Supervisor,
-    SupervisorState,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Supervisor, SupervisorState,
 };
+use quickwit_common::io::IoControls;
+use quickwit_common::KillSwitch;
 use quickwit_config::{build_doc_mapper, IndexingSettings};
 use quickwit_indexing::actors::{
     MergeExecutor, MergeSplitDownloader, Packager, Publisher, Uploader, UploaderType,
@@ -164,10 +165,24 @@ impl DeleteTaskPipeline {
             pipeline_ord: 0,
             source_id: "unknown".to_string(),
         };
+        let throughput_limit: f64 = index_metadata
+            .indexing_settings
+            .resources
+            .max_janitor_write_throughput
+            .as_ref()
+            .map(|bytes_per_sec| bytes_per_sec.get_bytes() as f64)
+            .unwrap_or(f64::INFINITY);
+        let delete_executor_io_controls = IoControls::default()
+            .set_throughput_limit(throughput_limit)
+            .set_index_and_component(self.index_id.as_str(), "deleter");
+        let split_download_io_controls = delete_executor_io_controls
+            .clone()
+            .set_index_and_component(self.index_id.as_str(), "split_downloader_delete");
         let delete_executor = MergeExecutor::new(
             index_pipeline_id,
             self.metastore.clone(),
             doc_mapper.clone(),
+            delete_executor_io_controls,
             packager_mailbox,
         );
         let (delete_executor_mailbox, task_executor_supervisor_handler) = ctx
@@ -180,6 +195,7 @@ impl DeleteTaskPipeline {
             scratch_directory: indexing_directory.scratch_directory().clone(),
             split_store: split_store.clone(),
             executor_mailbox: delete_executor_mailbox,
+            io_controls: split_download_io_controls,
         };
         let (downloader_mailbox, downloader_supervisor_handler) = ctx
             .spawn_actor()

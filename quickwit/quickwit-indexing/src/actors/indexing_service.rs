@@ -23,14 +23,13 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox,
-    Observation, QueueCapacity, Supervisable,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox, Observation,
+    Supervisable,
 };
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_config::{
     build_doc_mapper, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
 };
-use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest_api::QUEUES_DIR_NAME;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -41,7 +40,6 @@ use tracing::{error, info};
 
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::MergePlanner;
-use crate::merge_policy::MergePolicy;
 use crate::models::{
     DetachPipeline, IndexingDirectory, IndexingPipelineId, Observe, ObservePipeline,
     ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
@@ -287,15 +285,23 @@ impl IndexingService {
             &index_metadata.indexing_settings,
         )
         .map_err(IndexingServiceError::InvalidParams)?;
+
+        let merge_pipeline_params = MergePipelineParams {
+            pipeline_id: pipeline_id.clone(),
+            doc_mapper: doc_mapper.clone(),
+            indexing_directory: indexing_directory.clone(),
+            metastore: self.metastore.clone(),
+            split_store: split_store.clone(),
+            merge_policy,
+            merge_max_io_num_bytes_per_sec: index_metadata
+                .indexing_settings
+                .resources
+                .max_merge_write_throughput,
+            max_concurrent_split_uploads: self.max_concurrent_split_uploads,
+        };
+
         let merge_planner_mailbox = self
-            .get_or_create_merge_pipeline(
-                ctx,
-                &pipeline_id,
-                doc_mapper.clone(),
-                indexing_directory.clone(),
-                split_store.clone(),
-                merge_policy,
-            )
+            .get_or_create_merge_pipeline(merge_pipeline_params, ctx)
             .await?;
 
         let max_concurrent_split_uploads_index = (self.max_concurrent_split_uploads / 2).max(1);
@@ -422,34 +428,17 @@ impl IndexingService {
 
     async fn get_or_create_merge_pipeline(
         &mut self,
+        merge_pipeline_params: MergePipelineParams,
         ctx: &ActorContext<Self>,
-        pipeline_id: &IndexingPipelineId,
-        doc_mapper: Arc<dyn DocMapper>,
-        indexing_directory: IndexingDirectory,
-        split_store: IndexingSplitStore,
-        merge_policy: Arc<dyn MergePolicy>,
     ) -> Result<Mailbox<MergePlanner>, IndexingServiceError> {
-        let merge_pipeline_id = MergePipelineId::from(pipeline_id);
+        let merge_pipeline_id = MergePipelineId::from(&merge_pipeline_params.pipeline_id);
         if let Some(merge_pipeline_mailbox_handle) =
             self.merge_pipeline_handles.get(&merge_pipeline_id)
         {
             return Ok(merge_pipeline_mailbox_handle.mailbox.clone());
         }
-
-        let (merge_planner_mailbox, merge_planner_inbox) =
-            create_mailbox::<MergePlanner>("MergePlanner".to_string(), QueueCapacity::Unbounded);
-        let merge_pipeline_params = MergePipelineParams {
-            pipeline_id: pipeline_id.clone(),
-            doc_mapper,
-            indexing_directory,
-            metastore: self.metastore.clone(),
-            split_store,
-            merge_policy,
-            max_concurrent_split_uploads: self.max_concurrent_split_uploads,
-            merge_planner_mailbox: merge_planner_mailbox.clone(),
-            merge_planner_inbox,
-        };
         let merge_pipeline = MergePipeline::new(merge_pipeline_params);
+        let merge_planner_mailbox = merge_pipeline.merge_planner_mailbox().clone();
         let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(merge_pipeline);
         let merge_pipeline_mailbox_handle = MergePipelineHandle {
             mailbox: merge_planner_mailbox.clone(),

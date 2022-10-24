@@ -21,10 +21,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use byte_unit::Byte;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Inbox, KillSwitch, Mailbox,
-    Supervisable,
+    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Inbox,
+    Mailbox, QueueCapacity, Supervisable,
 };
+use quickwit_common::io::IoControls;
+use quickwit_common::KillSwitch;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{Metastore, MetastoreError, SplitState};
 use tokio::join;
@@ -60,6 +63,8 @@ struct Spawn {
 
 pub struct MergePipeline {
     params: MergePipelineParams,
+    merge_planner_mailbox: Mailbox<MergePlanner>,
+    merge_planner_inbox: Inbox<MergePlanner>,
     previous_generations_statistics: MergeStatistics,
     statistics: MergeStatistics,
     handles: Option<MergePipelineHandles>,
@@ -88,13 +93,21 @@ impl Actor for MergePipeline {
 
 impl MergePipeline {
     pub fn new(params: MergePipelineParams) -> Self {
+        let (merge_planner_mailbox, merge_planner_inbox) =
+            create_mailbox::<MergePlanner>("MergePlanner".to_string(), QueueCapacity::Unbounded);
         Self {
             params,
             previous_generations_statistics: Default::default(),
             handles: None,
             kill_switch: KillSwitch::default(),
             statistics: MergeStatistics::default(),
+            merge_planner_inbox,
+            merge_planner_mailbox,
         }
+    }
+
+    pub fn merge_planner_mailbox(&self) -> &Mailbox<MergePlanner> {
+        &self.merge_planner_mailbox
     }
 
     fn supervisables(&self) -> Vec<&dyn Supervisable> {
@@ -203,7 +216,7 @@ impl MergePipeline {
         let merge_publisher = Publisher::new(
             PublisherType::MergePublisher,
             self.params.metastore.clone(),
-            Some(self.params.merge_planner_mailbox.clone()),
+            Some(self.merge_planner_mailbox.clone()),
             None,
         );
         let (merge_publisher_mailbox, merge_publisher_handler) = ctx
@@ -238,10 +251,31 @@ impl MergePipeline {
             .set_kill_switch(self.kill_switch.clone())
             .spawn(merge_packager);
 
+        let max_merge_write_throughput: f64 = self
+            .params
+            .merge_max_io_num_bytes_per_sec
+            .as_ref()
+            .map(|bytes_per_sec| bytes_per_sec.get_bytes() as f64)
+            .unwrap_or(f64::INFINITY);
+
+        let split_downloader_io_controls = IoControls::default()
+            .set_throughput_limit(max_merge_write_throughput)
+            .set_index_and_component(
+                self.params.pipeline_id.index_id.as_str(),
+                "split_downloader_merge",
+            );
+
+        // The merge and split download share the same throughput limiter.
+        // This is how cloning the `IoControls` works.
+        let merge_executor_io_controls = split_downloader_io_controls
+            .clone()
+            .set_index_and_component(self.params.pipeline_id.index_id.as_str(), "merger");
+
         let merge_executor = MergeExecutor::new(
             self.params.pipeline_id.clone(),
             self.params.metastore.clone(),
             self.params.doc_mapper.clone(),
+            merge_executor_io_controls,
             merge_packager_mailbox,
         );
         let (merge_executor_mailbox, merge_executor_handler) = ctx
@@ -253,6 +287,7 @@ impl MergePipeline {
             scratch_directory: self.params.indexing_directory.scratch_directory().clone(),
             split_store: self.params.split_store.clone(),
             executor_mailbox: merge_executor_mailbox,
+            io_controls: split_downloader_io_controls,
         };
         let (merge_split_downloader_mailbox, merge_split_downloader_handler) = ctx
             .spawn_actor()
@@ -270,8 +305,8 @@ impl MergePipeline {
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
             .set_mailboxes(
-                self.params.merge_planner_mailbox.clone(),
-                self.params.merge_planner_inbox.clone(),
+                self.merge_planner_mailbox.clone(),
+                self.merge_planner_inbox.clone(),
             )
             .spawn(merge_planner);
 
@@ -400,8 +435,7 @@ pub struct MergePipelineParams {
     pub split_store: IndexingSplitStore,
     pub merge_policy: Arc<dyn MergePolicy>,
     pub max_concurrent_split_uploads: usize, //< TODO share with the indexing pipeline.
-    pub merge_planner_mailbox: Mailbox<MergePlanner>,
-    pub merge_planner_inbox: Inbox<MergePlanner>,
+    pub merge_max_io_num_bytes_per_sec: Option<Byte>,
 }
 
 #[cfg(test)]
@@ -409,7 +443,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use quickwit_actors::{create_mailbox, ActorExitStatus, QueueCapacity, Universe};
+    use quickwit_actors::{ActorExitStatus, Universe};
     use quickwit_doc_mapper::default_doc_mapper_for_test;
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::RamStorage;
@@ -435,8 +469,6 @@ mod tests {
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
-        let (merge_planner_mailbox, merge_planner_inbox) =
-            create_mailbox("MergePlanner".to_string(), QueueCapacity::Unbounded);
         let pipeline_params = MergePipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
@@ -445,8 +477,7 @@ mod tests {
             split_store,
             merge_policy: default_merge_policy(),
             max_concurrent_split_uploads: 2,
-            merge_planner_mailbox,
-            merge_planner_inbox,
+            merge_max_io_num_bytes_per_sec: None,
         };
         let pipeline = MergePipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
