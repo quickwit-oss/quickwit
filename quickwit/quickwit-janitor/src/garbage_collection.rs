@@ -102,13 +102,17 @@ pub async fn run_garbage_collect(
         OffsetDateTime::now_utc().unix_timestamp() - staged_grace_period.as_secs() as i64;
 
     let filter = ListSplitsQuery::for_index(index_id)
-        .with_split_state(SplitState::Staged)
-        .updated_after(grace_period_timestamp);
+        .with_split_state(SplitState::Staged);
+        // .updated_after(grace_period_timestamp);
 
     let deletable_staged_splits: Vec<SplitMetadata> =
         protect_future(ctx_opt, metastore.list_splits(filter))
             .await?
             .into_iter()
+            .filter(|meta| {
+                dbg!(meta);
+                meta.update_timestamp < grace_period_timestamp
+            })
             .map(|meta| meta.split_metadata)
             .collect();
 
