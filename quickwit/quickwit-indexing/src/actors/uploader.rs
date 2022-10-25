@@ -72,6 +72,18 @@ pub enum SplitsUpdateMailbox {
     Publisher(Mailbox<Publisher>),
 }
 
+impl From<Mailbox<Publisher>> for SplitsUpdateMailbox {
+    fn from(publisher_mailbox: Mailbox<Publisher>) -> Self {
+        SplitsUpdateMailbox::Publisher(publisher_mailbox)
+    }
+}
+
+impl From<Mailbox<Sequencer<Publisher>>> for SplitsUpdateMailbox {
+    fn from(publisher_sequencer_mailbox: Mailbox<Sequencer<Publisher>>) -> Self {
+        SplitsUpdateMailbox::Sequencer(publisher_sequencer_mailbox)
+    }
+}
+
 impl SplitsUpdateMailbox {
     async fn get_split_update_sender(
         &self,
