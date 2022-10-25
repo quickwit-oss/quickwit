@@ -95,7 +95,11 @@ impl IndexerState {
             ctx.progress().clone(),
             ctx.kill_switch().clone(),
         )?;
-        info!(split_id = indexed_split.split_id(), "new-split");
+        info!(
+            split_id = indexed_split.split_id(),
+            partition_id = partition_id,
+            "new-split"
+        );
         Ok(indexed_split)
     }
 
@@ -488,7 +492,7 @@ impl Indexer {
         let num_splits = splits.len() as u64;
         let split_ids = splits.iter().map(|split| split.split_id()).join(",");
 
-        info!(commit_trigger=?commit_trigger, split_ids=%split_ids, num_docs=self.counters.num_docs_in_workbench, "send-to-packager");
+        info!(commit_trigger=?commit_trigger, split_ids=%split_ids, num_docs=self.counters.num_docs_in_workbench, "send-to-index-serializer");
         let span_id = batch_parent_span.id();
         ctx.send_message(
             &self.index_serializer_mailbox,

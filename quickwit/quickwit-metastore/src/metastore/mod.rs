@@ -194,6 +194,15 @@ pub trait Metastore: Send + Sync + 'static {
     /// If a checkpoint is already registered for the source, it is kept.
     async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()>;
 
+    /// Enables or Disables a source.
+    /// Fails with `SourceDoesNotExist` error if the specified source doesn't exist.
+    async fn toggle_source(
+        &self,
+        index_id: &str,
+        source_id: &str,
+        enable: bool,
+    ) -> MetastoreResult<()>;
+
     /// Deletes a source. Fails with
     /// [`SourceDoesNotExist`](crate::MetastoreError::SourceDoesNotExist) if the specified source
     /// does not exist.

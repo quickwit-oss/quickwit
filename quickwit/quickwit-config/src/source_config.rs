@@ -28,7 +28,10 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::{is_false, validate_identifier};
 
 /// Reserved source ID for the `quickwit index ingest` CLI command.
-pub const CLI_INGEST_SOURCE_ID: &str = ".cli-ingest-source";
+pub const CLI_INGEST_SOURCE_ID: &str = "_cli-ingest-source";
+
+/// Reserved source ID used for Quickwit ingest API.
+pub const INGEST_API_SOURCE_ID: &str = "_ingest-api";
 
 fn default_num_pipelines() -> usize {
     1
@@ -36,6 +39,10 @@ fn default_num_pipelines() -> usize {
 
 fn is_one(num: &usize) -> bool {
     *num == 1
+}
+
+fn default_source_enabled() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -48,6 +55,10 @@ pub struct SourceConfig {
     /// Therefore, if there exists `n` indexers in the cluster, there will be `n` * `num_pipelines`
     /// indexing pipelines running for the source.
     pub num_pipelines: usize,
+
+    // Denotes if this source is enabled.
+    #[serde(default = "default_source_enabled")]
+    pub enabled: bool,
 
     #[serde(flatten)]
     pub source_params: SourceParams,
@@ -124,7 +135,7 @@ impl SourceConfig {
                 // TODO consider any validation opportunity
                 Ok(())
             }
-            SourceParams::Vec(_) | SourceParams::Void(_) | SourceParams::IngestApi(_) => Ok(()),
+            SourceParams::Vec(_) | SourceParams::Void(_) | SourceParams::IngestApi => Ok(()),
         }
     }
 
@@ -135,7 +146,7 @@ impl SourceConfig {
             SourceParams::Kinesis(_) => "kinesis",
             SourceParams::Vec(_) => "vec",
             SourceParams::Void(_) => "void",
-            SourceParams::IngestApi(_) => "ingest-api",
+            SourceParams::IngestApi => "ingest-api",
         }
     }
 
@@ -147,7 +158,7 @@ impl SourceConfig {
             SourceParams::Kinesis(params) => serde_json::to_value(params),
             SourceParams::Vec(params) => serde_json::to_value(params),
             SourceParams::Void(params) => serde_json::to_value(params),
-            SourceParams::IngestApi(params) => serde_json::to_value(params),
+            SourceParams::IngestApi => serde_json::to_value(()),
         }
         .unwrap()
     }
@@ -156,6 +167,16 @@ impl SourceConfig {
         match &self.source_params {
             SourceParams::Kafka(_) | SourceParams::Void(_) => Some(self.num_pipelines),
             _ => None,
+        }
+    }
+
+    /// Creates the default ingest-api source config.
+    pub fn ingest_api_default() -> SourceConfig {
+        SourceConfig {
+            source_id: INGEST_API_SOURCE_ID.to_string(),
+            num_pipelines: 1,
+            enabled: true,
+            source_params: SourceParams::IngestApi,
         }
     }
 }
@@ -174,7 +195,7 @@ pub enum SourceParams {
     #[serde(rename = "void")]
     Void(VoidSourceParams),
     #[serde(rename = "ingest-api")]
-    IngestApi(IngestApiSourceParams),
+    IngestApi,
 }
 
 impl SourceParams {
@@ -305,15 +326,6 @@ pub struct VecSourceParams {
 #[serde(deny_unknown_fields)]
 pub struct VoidSourceParams;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct IngestApiSourceParams {
-    pub index_id: String,
-    pub queues_dir_path: PathBuf,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub batch_num_bytes_limit: Option<u64>,
-}
-
 #[cfg(test)]
 mod tests {
     use quickwit_common::uri::Uri;
@@ -321,7 +333,7 @@ mod tests {
 
     use super::*;
     use crate::source_config::RegionOrEndpoint;
-    use crate::{FileSourceParams, IngestApiSourceParams, KinesisSourceParams};
+    use crate::{FileSourceParams, KinesisSourceParams};
 
     fn get_source_config_filepath(source_config_filename: &str) -> String {
         format!(
@@ -342,6 +354,7 @@ mod tests {
         let expected_source_config = SourceConfig {
             source_id: "hdfs-logs-kafka-source".to_string(),
             num_pipelines: 2,
+            enabled: true,
             source_params: SourceParams::Kafka(KafkaSourceParams {
                 topic: "cloudera-cluster-logs".to_string(),
                 client_log_level: None,
@@ -432,6 +445,7 @@ mod tests {
         let expected_source_config = SourceConfig {
             source_id: "hdfs-logs-kinesis-source".to_string(),
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::Kinesis(KinesisSourceParams {
                 stream_name: "emr-cluster-logs".to_string(),
                 region_or_endpoint: None,
@@ -543,19 +557,21 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_ingest_api_source_params_deserialization() {
-        let yaml = r#"
-            index_id: wikipedia
-            batch_num_bytes_limit: 200000
-            queues_dir_path: ./qwdata/queues
-        "#;
-        let ingest_api_params = serde_yaml::from_str::<IngestApiSourceParams>(yaml).unwrap();
-        assert_eq!(ingest_api_params.index_id, "wikipedia");
-        assert_eq!(ingest_api_params.batch_num_bytes_limit, Some(200000));
-        assert_eq!(
-            ingest_api_params.queues_dir_path,
-            Path::new("./qwdata/queues")
-        )
+    #[tokio::test]
+    async fn test_load_ingest_api_source_config() {
+        let source_config_filepath = get_source_config_filepath("ingest-api-source.json");
+        let file_content = std::fs::read_to_string(&source_config_filepath).unwrap();
+        let source_config_uri = Uri::try_new(&source_config_filepath).unwrap();
+        let source_config = SourceConfig::from_uri(&source_config_uri, file_content.as_bytes())
+            .await
+            .unwrap();
+        let expected_source_config = SourceConfig {
+            source_id: INGEST_API_SOURCE_ID.to_string(),
+            num_pipelines: 1,
+            enabled: true,
+            source_params: SourceParams::IngestApi,
+        };
+        assert_eq!(source_config, expected_source_config);
+        assert!(source_config.num_pipelines().is_none());
     }
 }

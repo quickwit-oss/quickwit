@@ -17,15 +17,18 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::bail;
+use anyhow::{bail, Context};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Confirm;
 use once_cell::sync::Lazy;
 use quickwit_common::run_checklist;
+use quickwit_common::runtimes::RuntimesConfiguration;
 use quickwit_common::uri::Uri;
+use quickwit_config::service::QuickwitService;
 use quickwit_config::{QuickwitConfig, SourceConfig};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
@@ -76,6 +79,16 @@ pub fn parse_duration_with_unit(duration_with_unit_str: &str) -> anyhow::Result<
     }
 }
 
+pub fn start_actor_runtimes(services: &HashSet<QuickwitService>) -> anyhow::Result<()> {
+    if services.contains(&QuickwitService::Indexer) || services.contains(&QuickwitService::Janitor)
+    {
+        let runtime_configuration = RuntimesConfiguration::default();
+        quickwit_common::runtimes::initialize_runtimes(runtime_configuration)
+            .context("Failed to start actor runtimes.")?;
+    }
+    Ok(())
+}
+
 async fn load_quickwit_config(
     config_uri: &Uri,
     data_dir_path_opt: Option<PathBuf>,
@@ -118,7 +131,7 @@ pub async fn run_index_checklist(
             ));
         }
     }
-    run_checklist(checks);
+    run_checklist(checks)?;
     Ok(())
 }
 

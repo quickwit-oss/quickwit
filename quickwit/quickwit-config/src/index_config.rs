@@ -230,11 +230,11 @@ impl Default for IndexingSettingsLegacy {
             timestamp_field: None,
             sort_field: None,
             sort_order: None,
-            commit_timeout_secs: Self::default_commit_timeout_secs(),
-            docstore_blocksize: Self::default_docstore_blocksize(),
-            docstore_compression_level: Self::default_docstore_compression_level(),
-            split_num_docs_target: Self::default_split_num_docs_target(),
-            merge_enabled: Self::default_merge_enabled(),
+            commit_timeout_secs: IndexingSettings::default_commit_timeout_secs(),
+            docstore_blocksize: IndexingSettings::default_docstore_blocksize(),
+            docstore_compression_level: IndexingSettings::default_docstore_compression_level(),
+            split_num_docs_target: IndexingSettings::default_split_num_docs_target(),
+            merge_enabled: IndexingSettings::default_merge_enabled(),
             merge_policy: MergePolicyLegacy::default(),
             resources: IndexingResources::default(),
         }
@@ -244,26 +244,6 @@ impl Default for IndexingSettingsLegacy {
 impl IndexingSettingsLegacy {
     pub fn commit_timeout(&self) -> Duration {
         Duration::from_secs(self.commit_timeout_secs as u64)
-    }
-
-    fn default_commit_timeout_secs() -> usize {
-        60
-    }
-
-    pub fn default_docstore_blocksize() -> usize {
-        1_000_000
-    }
-
-    pub fn default_docstore_compression_level() -> i32 {
-        8
-    }
-
-    fn default_split_num_docs_target() -> usize {
-        10_000_000
-    }
-
-    fn default_merge_enabled() -> bool {
-        true
     }
 
     pub fn sort_by(&self) -> SortBy {
@@ -813,11 +793,13 @@ mod tests {
                 SourceConfig {
                     source_id: "void_1".to_string(),
                     num_pipelines: 1,
+                    enabled: true,
                     source_params: SourceParams::void(),
                 },
                 SourceConfig {
                     source_id: "void_1".to_string(),
                     num_pipelines: 1,
+                    enabled: true,
                     source_params: SourceParams::void(),
                 },
             ];
@@ -834,6 +816,7 @@ mod tests {
             invalid_index_config.sources = vec![SourceConfig {
                 source_id: "file_params_1".to_string(),
                 num_pipelines: 1,
+                enabled: true,
                 source_params: SourceParams::stdin(),
             }];
             assert!(invalid_index_config.validate().is_err());

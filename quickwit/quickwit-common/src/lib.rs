@@ -20,6 +20,7 @@
 mod checklist;
 mod coolid;
 
+pub mod fast_field_reader;
 pub mod fs;
 pub mod metrics;
 pub mod net;
@@ -31,7 +32,9 @@ use std::fmt::Debug;
 use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
-pub use checklist::{print_checklist, run_checklist, BLUE_COLOR, GREEN_COLOR, RED_COLOR};
+pub use checklist::{
+    print_checklist, run_checklist, ChecklistError, BLUE_COLOR, GREEN_COLOR, RED_COLOR,
+};
 pub use coolid::new_coolid;
 use tracing::{error, info};
 

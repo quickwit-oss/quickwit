@@ -13,6 +13,7 @@ documentation = "https://quickwit.io/docs/"
 anyhow = { workspace = true }
 colored = { workspace = true }
 env_logger = { workspace = true }
+fastfield_codecs = { workspace = true }
 home = { workspace = true }
 itertools = { workspace = true }
 num_cpus = { workspace = true }
@@ -22,6 +23,8 @@ prometheus = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
+tantivy = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 warp = { workspace = true }

@@ -17,16 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use itertools::Itertools;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, KillSwitch, Supervisable,
-    HEARTBEAT,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, KillSwitch, Supervisor,
+    SupervisorState,
 };
 use quickwit_config::{build_doc_mapper, IndexingSettings};
 use quickwit_indexing::actors::{
@@ -39,30 +37,29 @@ use quickwit_metastore::Metastore;
 use quickwit_search::SearchClientPool;
 use quickwit_storage::Storage;
 use serde::Serialize;
-use tracing::{debug, error, info};
+use tokio::join;
+use tracing::info;
 
 use super::delete_task_planner::DeleteTaskPlanner;
 
-const SUPERVISE_DELAY: Duration = if cfg!(test) {
-    Duration::from_millis(100)
-} else {
-    HEARTBEAT
-};
-
 struct DeletePipelineHandle {
-    pub delete_task_planner: ActorHandle<DeleteTaskPlanner>,
-    pub downloader: ActorHandle<MergeSplitDownloader>,
-    pub delete_task_executor: ActorHandle<MergeExecutor>,
-    pub packager: ActorHandle<Packager>,
-    pub uploader: ActorHandle<Uploader>,
-    pub publisher: ActorHandle<Publisher>,
+    pub delete_task_planner: ActorHandle<Supervisor<DeleteTaskPlanner>>,
+    pub downloader: ActorHandle<Supervisor<MergeSplitDownloader>>,
+    pub delete_task_executor: ActorHandle<Supervisor<MergeExecutor>>,
+    pub packager: ActorHandle<Supervisor<Packager>>,
+    pub uploader: ActorHandle<Supervisor<Uploader>>,
+    pub publisher: ActorHandle<Supervisor<Publisher>>,
 }
 
 /// A Struct to hold all statistical data about deletes.
 #[derive(Clone, Debug, Default, Serialize)]
-pub struct DeletePipelineState {
-    /// Actors health.
-    pub actors_health: HashMap<String, Health>,
+pub struct DeleteTaskPipelineState {
+    pub delete_task_planner: SupervisorState,
+    pub downloader: SupervisorState,
+    pub delete_task_executor: SupervisorState,
+    pub packager: SupervisorState,
+    pub uploader: SupervisorState,
+    pub publisher: SupervisorState,
 }
 
 pub struct DeleteTaskPipeline {
@@ -73,19 +70,16 @@ pub struct DeleteTaskPipeline {
     index_storage: Arc<dyn Storage>,
     delete_service_dir_path: PathBuf,
     handles: Option<DeletePipelineHandle>,
+    max_concurrent_split_uploads: usize,
+    state: DeleteTaskPipelineState,
 }
 
 #[async_trait]
 impl Actor for DeleteTaskPipeline {
-    type ObservableState = DeletePipelineState;
+    type ObservableState = DeleteTaskPipelineState;
 
     fn observable_state(&self) -> Self::ObservableState {
-        let actors_health: HashMap<String, Health> = self
-            .supervisables()
-            .into_iter()
-            .map(|actor| (actor.name().to_string(), actor.health()))
-            .collect();
-        Self::ObservableState { actors_health }
+        self.state.clone()
     }
 
     fn name(&self) -> String {
@@ -94,7 +88,7 @@ impl Actor for DeleteTaskPipeline {
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         self.spawn_pipeline(ctx).await?;
-        self.handle(DeletePipelineSuperviseLoop, ctx).await?;
+        self.handle(Observe, ctx).await?;
         Ok(())
     }
 }
@@ -107,6 +101,7 @@ impl DeleteTaskPipeline {
         indexing_settings: IndexingSettings,
         index_storage: Arc<dyn Storage>,
         delete_service_dir_path: PathBuf,
+        max_concurrent_split_uploads: usize,
     ) -> Self {
         Self {
             index_id,
@@ -116,6 +111,8 @@ impl DeleteTaskPipeline {
             index_storage,
             delete_service_dir_path,
             handles: Default::default(),
+            max_concurrent_split_uploads,
+            state: DeleteTaskPipelineState::default(),
         }
     }
 
@@ -132,10 +129,10 @@ impl DeleteTaskPipeline {
             None,
             None,
         );
-        let (publisher_mailbox, publisher_handler) = ctx
+        let (publisher_mailbox, publisher_supervisor_handler) = ctx
             .spawn_actor()
             .set_kill_switch(KillSwitch::default())
-            .spawn(publisher);
+            .supervise(publisher);
         let split_store =
             IndexingSplitStore::create_without_local_store(self.index_storage.clone());
         let uploader = Uploader::new(
@@ -143,11 +140,12 @@ impl DeleteTaskPipeline {
             self.metastore.clone(),
             split_store.clone(),
             SplitsUpdateMailbox::Publisher(publisher_mailbox),
+            self.max_concurrent_split_uploads,
         );
-        let (uploader_mailbox, uploader_handler) = ctx
+        let (uploader_mailbox, uploader_supervisor_handler) = ctx
             .spawn_actor()
             .set_kill_switch(KillSwitch::default())
-            .spawn(uploader);
+            .supervise(uploader);
 
         let doc_mapper = build_doc_mapper(
             &index_metadata.doc_mapping,
@@ -156,10 +154,10 @@ impl DeleteTaskPipeline {
         )?;
         let tag_fields = doc_mapper.tag_named_fields()?;
         let packager = Packager::new("MergePackager", tag_fields, uploader_mailbox);
-        let (packager_mailbox, packager_handler) = ctx
+        let (packager_mailbox, packager_supervisor_handler) = ctx
             .spawn_actor()
             .set_kill_switch(KillSwitch::default())
-            .spawn(packager);
+            .supervise(packager);
         let index_pipeline_id = IndexingPipelineId {
             index_id: self.index_id.to_string(),
             node_id: "unknown".to_string(),
@@ -168,10 +166,10 @@ impl DeleteTaskPipeline {
         };
         let delete_executor =
             MergeExecutor::new(index_pipeline_id, self.metastore.clone(), packager_mailbox);
-        let (delete_executor_mailbox, task_executor_handler) = ctx
+        let (delete_executor_mailbox, task_executor_supervisor_handler) = ctx
             .spawn_actor()
             .set_kill_switch(KillSwitch::default())
-            .spawn(delete_executor);
+            .supervise(delete_executor);
         let indexing_directory_path = self.delete_service_dir_path.join(&self.index_id);
         let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path).await?;
         let merge_split_downloader = MergeSplitDownloader {
@@ -179,10 +177,10 @@ impl DeleteTaskPipeline {
             split_store: split_store.clone(),
             executor_mailbox: delete_executor_mailbox,
         };
-        let (downloader_mailbox, downloader_handler) = ctx
+        let (downloader_mailbox, downloader_supervisor_handler) = ctx
             .spawn_actor()
             .set_kill_switch(KillSwitch::default())
-            .spawn(merge_split_downloader);
+            .supervise(merge_split_downloader);
         let merge_policy = merge_policy_from_settings(&self.indexing_settings);
         let doc_mapper_str = serde_json::to_string(&doc_mapper)?;
         let task_planner = DeleteTaskPlanner::new(
@@ -194,79 +192,60 @@ impl DeleteTaskPipeline {
             merge_policy,
             downloader_mailbox,
         );
-        let (_, task_planner_handler) = ctx
+        let (_, task_planner_supervisor_handler) = ctx
             .spawn_actor()
             .set_kill_switch(KillSwitch::default())
-            .spawn(task_planner);
+            .supervise(task_planner);
         self.handles = Some(DeletePipelineHandle {
-            delete_task_planner: task_planner_handler,
-            downloader: downloader_handler,
-            delete_task_executor: task_executor_handler,
-            packager: packager_handler,
-            uploader: uploader_handler,
-            publisher: publisher_handler,
+            delete_task_planner: task_planner_supervisor_handler,
+            downloader: downloader_supervisor_handler,
+            delete_task_executor: task_executor_supervisor_handler,
+            packager: packager_supervisor_handler,
+            uploader: uploader_supervisor_handler,
+            publisher: publisher_supervisor_handler,
         });
         Ok(())
-    }
-
-    fn supervisables(&self) -> Vec<&dyn Supervisable> {
-        if let Some(handles) = &self.handles {
-            let supervisables: Vec<&dyn Supervisable> = vec![
-                &handles.packager,
-                &handles.uploader,
-                &handles.publisher,
-                &handles.delete_task_planner,
-                &handles.downloader,
-                &handles.delete_task_executor,
-            ];
-            supervisables
-        } else {
-            Vec::new()
-        }
     }
 }
 
 #[derive(Debug)]
-struct DeletePipelineSuperviseLoop;
+struct Observe;
 
 #[async_trait]
-impl Handler<DeletePipelineSuperviseLoop> for DeleteTaskPipeline {
+impl Handler<Observe> for DeleteTaskPipeline {
     type Reply = ();
-
     async fn handle(
         &mut self,
-        _: DeletePipelineSuperviseLoop,
+        _: Observe,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if self.handles.is_some() {
-            let actors_by_health: HashMap<Health, Vec<&str>> = self
-                .supervisables()
-                .into_iter()
-                .group_by(|supervisable| supervisable.health())
-                .into_iter()
-                .map(|(health, group)| (health, group.map(|actor| actor.name()).collect()))
-                .collect();
-
-            if actors_by_health.contains_key(&Health::FailureOrUnhealthy) {
-                error!(
-                    index_id=?self.index_id,
-                    healthy_actors=?actors_by_health.get(&Health::Healthy),
-                    failed_or_unhealthy_actors=?actors_by_health.get(&Health::FailureOrUnhealthy),
-                    success_actors=?actors_by_health.get(&Health::Success),
-                    "Delete task pipeline failure."
-                );
-            } else {
-                debug!(
-                    index_id=?self.index_id,
-                    healthy_actors=?actors_by_health.get(&Health::Healthy),
-                    failed_or_unhealthy_actors=?actors_by_health.get(&Health::FailureOrUnhealthy),
-                    success_actors=?actors_by_health.get(&Health::Success),
-                    "Delete task pipeline running."
-                );
+        if let Some(handles) = &self.handles {
+            let (
+                delete_task_planner,
+                downloader,
+                delete_task_executor,
+                packager,
+                uploader,
+                publisher,
+            ) = join!(
+                handles.delete_task_planner.observe(),
+                handles.downloader.observe(),
+                handles.delete_task_executor.observe(),
+                handles.packager.observe(),
+                handles.uploader.observe(),
+                handles.publisher.observe(),
+            );
+            self.state = DeleteTaskPipelineState {
+                delete_task_planner: delete_task_planner.state,
+                downloader: downloader.state,
+                delete_task_executor: delete_task_executor.state,
+                packager: packager.state,
+                uploader: uploader.state,
+                publisher: publisher.state,
             }
         }
-        ctx.schedule_self_msg(SUPERVISE_DELAY, DeletePipelineSuperviseLoop)
-            .await;
+        // Supervisors supervise every `HEARTBEAT`. We can wait a bit more to observe supervisors.
+        ctx.schedule_self_msg(Duration::from_secs(5), Observe).await;
         Ok(())
     }
 }
@@ -274,17 +253,38 @@ impl Handler<DeletePipelineSuperviseLoop> for DeleteTaskPipeline {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::time::Duration;
 
-    use quickwit_actors::{Health, Universe};
+    use async_trait::async_trait;
+    use quickwit_actors::{Handler, Universe, HEARTBEAT};
+    use quickwit_config::merge_policy_config::MergePolicyConfig;
     use quickwit_config::IndexingSettings;
     use quickwit_indexing::TestSandbox;
     use quickwit_metastore::SplitState;
     use quickwit_proto::metastore_api::DeleteQuery;
     use quickwit_proto::{LeafSearchRequest, LeafSearchResponse};
-    use quickwit_search::{MockSearchService, SearchClientPool};
+    use quickwit_search::{MockSearchService, SearchClientPool, SearchError};
 
-    use super::DeleteTaskPipeline;
+    use super::{ActorContext, ActorExitStatus, DeleteTaskPipeline};
+
+    #[derive(Debug)]
+    struct GracefulShutdown;
+
+    #[async_trait]
+    impl Handler<GracefulShutdown> for DeleteTaskPipeline {
+        type Reply = ();
+        async fn handle(
+            &mut self,
+            _: GracefulShutdown,
+            _: &ActorContext<Self>,
+        ) -> Result<(), ActorExitStatus> {
+            if let Some(handles) = self.handles.take() {
+                handles.delete_task_planner.quit().await;
+                handles.publisher.join().await;
+            }
+            // Nothing to do.
+            Err(ActorExitStatus::Success)
+        }
+    }
 
     #[tokio::test]
     async fn test_delete_pipeline_simple() -> anyhow::Result<()> {
@@ -306,7 +306,8 @@ mod tests {
             &["body"],
             Some(metastore_uri),
         )
-        .await?;
+        .await
+        .unwrap();
         let docs = vec![
             serde_json::json!({"body": "info", "ts": 0 }),
             serde_json::json!({"body": "info", "ts": 0 }),
@@ -322,16 +323,22 @@ mod tests {
                 query: "body:delete".to_string(),
                 search_fields: Vec::new(),
             })
-            .await?;
+            .await
+            .unwrap();
         let mut mock_search_service = MockSearchService::new();
+        let mut leaf_search_num_failures = 1;
         mock_search_service
             .expect_leaf_search()
             .withf(|leaf_request| -> bool {
                 leaf_request.search_request.as_ref().unwrap().index_id
                     == "test-delete-pipeline-simple"
             })
-            .times(1)
+            .times(2)
             .returning(move |_: LeafSearchRequest| {
+                if leaf_search_num_failures > 0 {
+                    leaf_search_num_failures -= 1;
+                    return Err(SearchError::InternalError("leaf search error".to_string()));
+                }
                 Ok(LeafSearchResponse {
                     num_hits: 1,
                     ..Default::default()
@@ -342,8 +349,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let data_dir_path = temp_dir.path().to_path_buf();
         let mut indexing_settings = IndexingSettings::for_test();
-        // Ensures that all split will be mature and thus be candidates for deletion.
-        indexing_settings.split_num_docs_target = 1;
+        indexing_settings.merge_policy = MergePolicyConfig::Nop;
         let pipeline = DeleteTaskPipeline::new(
             index_id.to_string(),
             metastore.clone(),
@@ -351,17 +357,27 @@ mod tests {
             indexing_settings,
             test_sandbox.storage(),
             data_dir_path,
+            4,
         );
         let universe = Universe::new();
 
-        let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        let state = pipeline_handler.process_pending_and_observe().await;
-        let all_healthy = state
-            .actors_health
-            .values()
-            .all(|health| health == &Health::Healthy);
-        assert!(all_healthy);
+        let (pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
+        // Insure that the message sent by initialize method is processed.
+        let _ = pipeline_handler.process_pending_and_observe().await.state;
+        // Pipeline will first fail and we need to wait a HEARTBEAT * 2 for the pipeline state to be
+        // updated.
+        universe.simulate_time_shift(HEARTBEAT * 2).await;
+        let pipeline_state = pipeline_handler.process_pending_and_observe().await.state;
+        assert_eq!(pipeline_state.delete_task_planner.num_errors, 1);
+        assert_eq!(pipeline_state.downloader.num_errors, 0);
+        assert_eq!(pipeline_state.delete_task_executor.num_errors, 0);
+        assert_eq!(pipeline_state.packager.num_errors, 0);
+        assert_eq!(pipeline_state.uploader.num_errors, 0);
+        assert_eq!(pipeline_state.publisher.num_errors, 0);
+        let _ = pipeline_mailbox.send_message(GracefulShutdown).await;
+        // Time shifting will speed up the test.
+        universe.simulate_time_shift(HEARTBEAT * 10).await;
+        pipeline_handler.join().await;
         let splits = metastore.list_all_splits(index_id).await?;
         assert_eq!(splits.len(), 2);
         let published_split = splits

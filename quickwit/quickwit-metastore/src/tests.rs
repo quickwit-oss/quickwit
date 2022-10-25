@@ -93,6 +93,7 @@ pub mod test_suite {
             let source = SourceConfig {
                 source_id: source_id.clone(),
                 num_pipelines: 1,
+                enabled: true,
                 source_params: SourceParams::void(),
             };
             metastore
@@ -169,6 +170,7 @@ pub mod test_suite {
         let source = SourceConfig {
             source_id: source_id.to_string(),
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::void(),
         };
 
@@ -189,16 +191,15 @@ pub mod test_suite {
 
         let index_metadata = metastore.index_metadata(index_id).await.unwrap();
 
-        assert_eq!(
-            index_metadata.checkpoint.source_checkpoint(source_id),
-            Some(&SourceCheckpoint::default())
-        );
-
         let sources = index_metadata.sources;
         assert_eq!(sources.len(), 1);
         assert!(sources.contains_key(source_id));
         assert_eq!(sources.get(source_id).unwrap().source_id, source_id);
         assert_eq!(sources.get(source_id).unwrap().source_type(), "void");
+        assert_eq!(
+            index_metadata.checkpoint.source_checkpoint(source_id),
+            Some(&SourceCheckpoint::default())
+        );
 
         assert!(matches!(
             metastore
@@ -217,6 +218,54 @@ pub mod test_suite {
         cleanup_index(&metastore, &index_metadata.index_id).await;
     }
 
+    pub async fn test_metastore_toggle_source<MetastoreToTest: Metastore + DefaultForTest>() {
+        let metastore = MetastoreToTest::default_for_test().await;
+
+        let index_id = "test-metastore-toggle-source";
+        let index_uri = format!("ram://indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
+
+        metastore
+            .create_index(index_metadata.clone())
+            .await
+            .unwrap();
+
+        let source_id = "test-metastore-toggle-source--void-source-id";
+        let source = SourceConfig {
+            source_id: source_id.to_string(),
+            num_pipelines: 1,
+            enabled: true,
+            source_params: SourceParams::void(),
+        };
+        metastore
+            .add_source(index_id, source.clone())
+            .await
+            .unwrap();
+        let index_metadata = metastore.index_metadata(index_id).await.unwrap();
+        let source = index_metadata.sources.get(source_id).unwrap();
+        assert_eq!(source.enabled, true);
+
+        // Disable source.
+        metastore
+            .toggle_source(index_id, &source.source_id, false)
+            .await
+            .unwrap();
+        let index_metadata = metastore.index_metadata(index_id).await.unwrap();
+        let source = index_metadata.sources.get(source_id).unwrap();
+        assert_eq!(source.enabled, false);
+
+        // Enable source.
+        metastore
+            .toggle_source(index_id, &source.source_id, true)
+            .await
+            .unwrap();
+        let index_metadata = metastore.index_metadata(index_id).await.unwrap();
+        let source = index_metadata.sources.get(source_id).unwrap();
+        assert_eq!(source.enabled, true);
+
+        cleanup_index(&metastore, &index_metadata.index_id).await;
+    }
+
     pub async fn test_metastore_delete_source<MetastoreToTest: Metastore + DefaultForTest>() {
         let _ = tracing_subscriber::fmt::try_init();
         let metastore = MetastoreToTest::default_for_test().await;
@@ -228,6 +277,7 @@ pub mod test_suite {
         let source = SourceConfig {
             source_id: source_id.to_string(),
             num_pipelines: 1,
+            enabled: true,
             source_params: SourceParams::void(),
         };
 
@@ -2015,6 +2065,8 @@ pub mod test_suite {
             .stage_split(index_id, split_metadata.clone())
             .await
             .unwrap();
+
+        sleep(Duration::from_secs(1)).await;
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
         assert!(split_meta.publish_timestamp.is_none());
@@ -2393,6 +2445,16 @@ pub mod test_suite {
             delete_opstamp: 0,
             ..Default::default()
         };
+        let split_id_4 = "list-stale-splits-four";
+        let split_metadata_4 = SplitMetadata {
+            footer_offsets: 1000..2000,
+            split_id: split_id_4.to_string(),
+            num_docs: 1,
+            uncompressed_docs_size_in_bytes: 2,
+            create_timestamp: current_timestamp,
+            delete_opstamp: 20,
+            ..Default::default()
+        };
 
         {
             info!("List stale splits on a non-existent index");
@@ -2418,21 +2480,28 @@ pub mod test_suite {
                 .stage_split(index_id, split_metadata_1.clone())
                 .await
                 .unwrap();
-
             metastore
                 .stage_split(index_id, split_metadata_2.clone())
                 .await
                 .unwrap();
-
             metastore
                 .stage_split(index_id, split_metadata_3.clone())
                 .await
                 .unwrap();
             metastore
+                .stage_split(index_id, split_metadata_4.clone())
+                .await
+                .unwrap();
+            metastore
+                .publish_splits(index_id, &[split_id_4], &[], None)
+                .await
+                .unwrap();
+            // Sleep for 1 second to have different publish timestamps.
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            metastore
                 .publish_splits(index_id, &[split_id_1, split_id_2], &[], None)
                 .await
                 .unwrap();
-
             let splits = metastore.list_stale_splits(index_id, 100, 1).await.unwrap();
             assert_eq!(splits.len(), 1);
             assert_eq!(
@@ -2440,10 +2509,13 @@ pub mod test_suite {
                 split_metadata_2.delete_opstamp
             );
 
-            let splits = metastore.list_stale_splits(index_id, 100, 2).await.unwrap();
-            assert_eq!(splits.len(), 2);
+            let splits = metastore.list_stale_splits(index_id, 100, 4).await.unwrap();
+            assert_eq!(splits.len(), 3);
+            assert_eq!(splits[0].split_id(), split_metadata_2.split_id());
+            assert_eq!(splits[1].split_id(), split_metadata_4.split_id());
+            assert_eq!(splits[2].split_id(), split_metadata_1.split_id());
             assert_eq!(
-                splits[1].split_metadata.delete_opstamp,
+                splits[2].split_metadata.delete_opstamp,
                 split_metadata_1.delete_opstamp
             );
 
@@ -2647,6 +2719,12 @@ macro_rules! metastore_test_suite {
             async fn test_metastore_add_source() {
                 let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_add_source::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_toggle_source() {
+                let _ = tracing_subscriber::fmt::try_init();
+                crate::tests::test_suite::test_metastore_toggle_source::<$metastore_type>().await;
             }
 
             #[tokio::test]

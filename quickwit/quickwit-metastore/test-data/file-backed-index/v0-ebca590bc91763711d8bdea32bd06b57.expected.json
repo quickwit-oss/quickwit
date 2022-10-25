@@ -84,6 +84,7 @@
     },
     "sources": [
       {
+        "enabled": true,
         "num_pipelines": 2,
         "params": {
           "client_params": {},

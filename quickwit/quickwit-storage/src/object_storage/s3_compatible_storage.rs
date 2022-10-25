@@ -41,11 +41,12 @@ use rusoto_s3::{
 };
 use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
-use tracing::{instrument, warn};
+use tracing::{info, instrument, warn};
 
 use crate::object_storage::MultiPartPolicy;
 use crate::{
     OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResolverError, StorageResult,
+    STORAGE_METRICS,
 };
 
 /// S3 Compatible object storage implementation.
@@ -222,6 +223,9 @@ impl S3CompatibleObjectStorage {
             ..Default::default()
         };
         crate::STORAGE_METRICS.object_storage_put_parts.inc();
+        crate::STORAGE_METRICS
+            .object_storage_upload_num_bytes
+            .inc_by(len);
         self.s3_client.put_object(request).await?;
         Ok(())
     }
@@ -317,6 +321,9 @@ impl S3CompatibleObjectStorage {
             ..Default::default()
         };
         crate::STORAGE_METRICS.object_storage_put_parts.inc();
+        crate::STORAGE_METRICS
+            .object_storage_upload_num_bytes
+            .inc_by(part.len());
         let upload_part_output = self
             .s3_client
             .upload_part(upload_part_req)
@@ -468,12 +475,12 @@ impl S3CompatibleObjectStorage {
 
 async fn download_all(byte_stream: ByteStream, output: &mut Vec<u8>) -> io::Result<()> {
     output.clear();
-    let object_storage_download_num_bytes = crate::STORAGE_METRICS
-        .object_storage_download_num_bytes
-        .clone();
     let mut body_stream_reader = BufReader::new(byte_stream.into_async_read());
     let num_bytes_copied = tokio::io::copy_buf(&mut body_stream_reader, output).await?;
-    object_storage_download_num_bytes.inc_by(num_bytes_copied);
+    info!(num_bytes = num_bytes_copied, "download bytes");
+    STORAGE_METRICS
+        .object_storage_download_num_bytes
+        .inc_by(num_bytes_copied);
     // When calling `get_all`, the Vec capacity is not properly set.
     output.shrink_to_fit();
     Ok(())
@@ -525,7 +532,10 @@ impl Storage for S3CompatibleObjectStorage {
         })?;
         let mut body_read = BufReader::new(body.into_async_read());
         let mut dest_file = File::create(output_path).await?;
-        tokio::io::copy_buf(&mut body_read, &mut dest_file).await?;
+        let num_bytes_copied = tokio::io::copy_buf(&mut body_read, &mut dest_file).await?;
+        STORAGE_METRICS
+            .object_storage_download_num_bytes
+            .inc_by(num_bytes_copied);
         dest_file.flush().await?;
         Ok(())
     }

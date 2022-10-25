@@ -73,6 +73,7 @@ predicates = { workspace = true }
 reqwest = { workspace = true }
 serial_test = { workspace = true }
 
+quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 
 [features]

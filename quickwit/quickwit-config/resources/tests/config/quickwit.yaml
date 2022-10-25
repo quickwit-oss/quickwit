@@ -11,6 +11,7 @@ data_dir: /opt/quickwit/data
 indexer:
   split_store_max_num_bytes: 1T
   split_store_max_num_splits: 10000
+  max_concurrent_split_uploads: 8
 searcher:
   fast_field_cache_capacity: 10G
   split_footer_cache_capacity: 1G

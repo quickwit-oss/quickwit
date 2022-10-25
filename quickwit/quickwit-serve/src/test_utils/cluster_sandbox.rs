@@ -28,7 +28,7 @@ use quickwit_common::new_coolid;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::QuickwitConfig;
+use quickwit_config::{QuickwitConfig, SourceConfig};
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
 use quickwit_proto::tonic::transport::Endpoint;
 use quickwit_search::{create_search_service_client, SearchServiceClient};
@@ -77,11 +77,7 @@ impl ClusterSandbox {
         let index_for_test = append_random_suffix("test-standalone-node-index");
         create_index_for_test(&index_for_test, &node_config.quickwit_config).await?;
         tokio::spawn(async move {
-            let result = serve_quickwit(
-                node_config_clone.quickwit_config,
-                &node_config_clone.services,
-            )
-            .await;
+            let result = serve_quickwit(node_config_clone.quickwit_config).await;
             println!("Quickwit server terminated: {:?}", result);
             Result::<_, anyhow::Error>::Ok(())
         });
@@ -112,11 +108,7 @@ impl ClusterSandbox {
         for node_config in node_configs.iter() {
             let node_config_clone = node_config.clone();
             tokio::spawn(async move {
-                let result = serve_quickwit(
-                    node_config_clone.quickwit_config,
-                    &node_config_clone.services,
-                )
-                .await;
+                let result = serve_quickwit(node_config_clone.quickwit_config).await;
                 info!("Quickwit server terminated: {:?}", result);
                 Result::<_, anyhow::Error>::Ok(())
             });
@@ -189,6 +181,9 @@ async fn create_index_for_test(
         .resolve(&quickwit_config.metastore_uri)
         .await?;
     metastore.create_index(index_meta.clone()).await?;
+    metastore
+        .add_source(index_id_for_test, SourceConfig::ingest_api_default())
+        .await?;
     Ok(())
 }
 
@@ -212,6 +207,7 @@ pub fn build_node_configs(
     let unique_dir_name = new_coolid("test-dir");
     for node_services in nodes_services.iter() {
         let mut config = QuickwitConfig::for_test();
+        config.enabled_services = node_services.clone();
         config.cluster_id = cluster_id.clone();
         config.data_dir_path = root_data_dir.join(&config.node_id);
         config.metastore_uri =

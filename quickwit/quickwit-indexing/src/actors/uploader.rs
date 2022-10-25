@@ -27,6 +27,7 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
+use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{Metastore, SplitMetadata};
@@ -38,20 +39,19 @@ use tracing::{info, instrument, warn, Instrument, Span};
 
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::Publisher;
+use crate::metrics::INDEXER_METRICS;
 use crate::models::{
     create_split_metadata, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate,
 };
 use crate::split_store::IndexingSplitStore;
 
-pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 4;
-
-/// This semaphore ensures that at most `MAX_CONCURRENT_SPLIT_UPLOAD` uploads can happen
+/// This semaphore ensures that, at most, `MAX_CONCURRENT_SPLIT_UPLOADS` uploads can happen
 /// concurrently.
 ///
 /// This permit applies to all uploader actors. In the future, we might want to have a nicer
 /// granularity, and put that semaphore back into the uploader actor, but have a single uploader
 /// actor for all indexing pipeline.
-static CONCURRENT_UPLOAD_PERMITS: Semaphore = Semaphore::const_new(MAX_CONCURRENT_SPLIT_UPLOAD);
+static CONCURRENT_UPLOAD_PERMITS: OnceCell<Semaphore> = OnceCell::new();
 
 /// [`SplitsUpdateMailbox`] wraps either a [`Mailbox<Sequencer>`] or [`Mailbox<Publisher>`].
 /// It makes it possible to send a [`SplitsUpdate`] either to the [`Sequencer`] or directly
@@ -137,11 +137,13 @@ impl SplitsUpdateSender {
     }
 }
 
+#[derive(Clone)]
 pub struct Uploader {
     actor_name: &'static str,
     metastore: Arc<dyn Metastore>,
     split_store: IndexingSplitStore,
     split_update_mailbox: SplitsUpdateMailbox,
+    max_concurrent_split_uploads: usize,
     counters: UploaderCounters,
 }
 
@@ -151,22 +153,29 @@ impl Uploader {
         metastore: Arc<dyn Metastore>,
         split_store: IndexingSplitStore,
         split_update_mailbox: SplitsUpdateMailbox,
+        max_concurrent_split_uploads: usize,
     ) -> Uploader {
         Uploader {
             actor_name,
             metastore,
             split_store,
             split_update_mailbox,
+            max_concurrent_split_uploads,
             counters: Default::default(),
         }
     }
-
     async fn acquire_semaphore(
         &self,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<SemaphorePermit<'static>> {
         let _guard = ctx.protect_zone();
-        Semaphore::acquire(&CONCURRENT_UPLOAD_PERMITS)
+        let concurrent_upload_permits = CONCURRENT_UPLOAD_PERMITS
+            .get_or_init(|| Semaphore::const_new(self.max_concurrent_split_uploads));
+        INDEXER_METRICS
+            .concurrent_upload_available_permits
+            .set(concurrent_upload_permits.available_permits() as i64);
+        concurrent_upload_permits
+            .acquire()
             .await
             .context("The uploader semaphore is closed. (This should never happen.)")
     }
@@ -387,6 +396,7 @@ mod tests {
             Arc::new(mock_metastore),
             split_store,
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
+            4,
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
         let split_scratch_directory = ScratchDirectory::for_test()?;
@@ -486,6 +496,7 @@ mod tests {
             Arc::new(mock_metastore),
             split_store,
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
+            4,
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
         let split_scratch_directory_1 = ScratchDirectory::for_test()?;
@@ -611,6 +622,7 @@ mod tests {
             Arc::new(mock_metastore),
             split_store,
             SplitsUpdateMailbox::Publisher(publisher_mailbox),
+            4,
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
         let split_scratch_directory = ScratchDirectory::for_test()?;

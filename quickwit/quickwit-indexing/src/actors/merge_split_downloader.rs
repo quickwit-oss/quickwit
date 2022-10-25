@@ -30,6 +30,7 @@ use crate::merge_policy::MergeOperation;
 use crate::models::{MergeScratch, ScratchDirectory};
 use crate::split_store::IndexingSplitStore;
 
+#[derive(Clone)]
 pub struct MergeSplitDownloader {
     pub scratch_directory: ScratchDirectory,
     pub split_store: IndexingSplitStore,
@@ -109,7 +110,7 @@ impl MergeSplitDownloader {
             let _protect_guard = ctx.protect_zone();
             let tantivy_dir = self
                 .split_store
-                .fetch_split(split.split_id(), download_directory)
+                .fetch_and_open_split(split.split_id(), download_directory)
                 .await
                 .map_err(|error| {
                     let split_id = split.split_id();

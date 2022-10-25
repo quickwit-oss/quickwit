@@ -28,6 +28,7 @@ use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::fast_field_reader::timestamp_field_reader;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::build_doc_mapper;
 use quickwit_directories::UnionDirectory;
@@ -48,6 +49,7 @@ use crate::models::{
     ScratchDirectory, SplitAttrs,
 };
 
+#[derive(Clone)]
 pub struct MergeExecutor {
     pipeline_id: IndexingPipelineId,
     metastore: Arc<dyn Metastore>,
@@ -83,6 +85,7 @@ impl Handler<MergeScratch> for MergeExecutor {
         merge_scratch: MergeScratch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        let start = Instant::now();
         let merge_op = merge_scratch.merge_operation;
         let indexed_split_opt: Option<IndexedSplit> = match merge_op.operation_type {
             MergeOperationType::Merge => Some(
@@ -96,9 +99,16 @@ impl Handler<MergeScratch> for MergeExecutor {
                 .await?,
             ),
             MergeOperationType::DeleteAndMerge => {
+                assert_eq!(
+                    merge_op.splits.len(),
+                    1,
+                    "Delete tasks can be applied only on one split."
+                );
+                assert_eq!(merge_scratch.tantivy_dirs.len(), 1);
+                let split_with_docs_to_delete = merge_op.splits.into_iter().next().unwrap();
                 self.process_delete_and_merge(
                     merge_op.merge_split_id.clone(),
-                    merge_op.splits.clone(),
+                    split_with_docs_to_delete,
                     merge_scratch.tantivy_dirs,
                     merge_scratch.merge_scratch_directory,
                     ctx,
@@ -107,6 +117,12 @@ impl Handler<MergeScratch> for MergeExecutor {
             }
         };
         if let Some(indexed_split) = indexed_split_opt {
+            info!(
+                merged_num_docs = %indexed_split.split_attrs.num_docs,
+                elapsed_secs = %start.elapsed().as_secs_f32(),
+                operation_type = %merge_op.operation_type,
+                "merge-operation-success"
+            );
             ctx.send_message(
                 &self.merge_packager_mailbox,
                 IndexedSplitBatch {
@@ -117,6 +133,8 @@ impl Handler<MergeScratch> for MergeExecutor {
                 },
             )
             .await?;
+        } else {
+            info!("no-splits-merged");
         }
         Ok(())
     }
@@ -364,18 +382,11 @@ impl MergeExecutor {
     async fn process_delete_and_merge(
         &mut self,
         merge_split_id: String,
-        mut splits: Vec<SplitMetadata>,
+        split: SplitMetadata,
         tantivy_dirs: Vec<Box<dyn Directory>>,
         merge_scratch_directory: ScratchDirectory,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<Option<IndexedSplit>> {
-        assert_eq!(
-            splits.len(),
-            1,
-            "Delete tasks can be applied only on one split."
-        );
-        assert_eq!(tantivy_dirs.len(), 1);
-        let split = splits.pop().unwrap();
         let index_metadata = self.metastore.index_metadata(&split.index_id).await?;
         let doc_mapper = build_doc_mapper(
             &index_metadata.doc_mapping,
@@ -394,6 +405,7 @@ impl MergeExecutor {
             );
             return Ok(None);
         }
+
         let last_delete_opstamp = delete_tasks
             .iter()
             .map(|delete_task| delete_task.opstamp)
@@ -404,8 +416,6 @@ impl MergeExecutor {
             num_delete_tasks = delete_tasks.len()
         );
 
-        info!("delete-task-start");
-        let start = Instant::now();
         let (union_index_meta, split_directories) = open_split_directories(&tantivy_dirs)?;
         let controlled_directory = merge_split_directories(
             union_index_meta,
@@ -416,10 +426,6 @@ impl MergeExecutor {
             ctx,
         )
         .await?;
-        info!(
-            elapsed_secs = start.elapsed().as_secs_f32(),
-            "delete-task-success"
-        );
 
         // This will have the side effect of deleting the directory containing the downloaded split.
         let mut merged_index = Index::open(controlled_directory.clone())?;
@@ -449,7 +455,14 @@ impl MergeExecutor {
                         timestamp_field_name
                     ))
                 })?;
-            let reader = merged_segment_reader.fast_fields().i64(timestamp_field)?;
+            let timestamp_field_entry = merged_segment_reader
+                .schema()
+                .get_field_entry(timestamp_field);
+            let reader = timestamp_field_reader(
+                timestamp_field,
+                timestamp_field_entry,
+                merged_segment_reader.fast_fields(),
+            )?;
             Some(RangeInclusive::new(reader.min_value(), reader.max_value()))
         } else {
             None
@@ -471,7 +484,7 @@ impl MergeExecutor {
                 num_docs,
                 uncompressed_docs_size_in_bytes,
                 delete_opstamp: last_delete_opstamp,
-                num_merge_ops: max_merge_ops(&splits[..]),
+                num_merge_ops: max_merge_ops(&[split]),
             },
             index: merged_index,
             split_scratch_directory: merge_scratch_directory,
@@ -497,7 +510,7 @@ mod tests {
     use super::*;
     use crate::merge_policy::MergeOperation;
     use crate::models::{IndexingPipelineId, ScratchDirectory};
-    use crate::{get_tantivy_directory_from_split_bundle, TestSandbox};
+    use crate::{get_tantivy_directory_from_split_bundle, new_split_id, TestSandbox};
 
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {
@@ -512,13 +525,16 @@ mod tests {
               - name: body
                 type: text
               - name: ts
-                type: i64
+                type: datetime
+                input_formats:
+                - unix_timestamp
                 fast: true
         "#;
+        let indexing_settings_yaml = "timestamp_field: ts";
         let test_sandbox = TestSandbox::create(
             &pipeline_id.index_id,
             doc_mapping_yaml,
-            "{}",
+            indexing_settings_yaml,
             &["body"],
             None,
         )
@@ -609,20 +625,34 @@ mod tests {
     async fn test_delete_and_merge_executor() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let index_id = "test-delete-and-merge-index";
+        let pipeline_id = IndexingPipelineId {
+            index_id: index_id.to_string(),
+            node_id: "unknown".to_string(),
+            pipeline_ord: 0,
+            source_id: "unknown".to_string(),
+        };
         let doc_mapping_yaml = r#"
             field_mappings:
               - name: body
                 type: text
               - name: ts
-                type: i64
+                type: datetime
+                input_formats:
+                - unix_timestamp
                 fast: true
         "#;
-        let test_sandbox =
-            TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"], None).await?;
+        let indexing_settings_yaml = "timestamp_field: ts";
+        let test_sandbox = TestSandbox::create(
+            index_id,
+            doc_mapping_yaml,
+            indexing_settings_yaml,
+            &["body"],
+            None,
+        )
+        .await?;
         let docs = vec![
-            serde_json::json!({"body": "info", "ts": 0 }),
-            serde_json::json!({"body": "info", "ts": 0 }),
-            serde_json::json!({"body": "delete", "ts": 0 }),
+            serde_json::json!({"body": "info", "ts": 1624928208 }),
+            serde_json::json!({"body": "delete", "ts": 1634928208 }),
         ];
         test_sandbox.add_documents(docs).await?;
         let metastore = test_sandbox.metastore();
@@ -635,40 +665,52 @@ mod tests {
                 search_fields: Vec::new(),
             })
             .await?;
-        let split_meta: SplitMetadata = metastore
-            .list_all_splits(index_id)
+        let split_metadata = metastore
+            .list_all_splits(&pipeline_id.index_id)
             .await?
             .into_iter()
-            .map(|split| split.split_metadata)
             .next()
+            .unwrap()
+            .split_metadata;
+        // We want to test a delete on a split with num_merge_ops > 0.
+        let mut new_split_metadata = split_metadata.clone();
+        new_split_metadata.split_id = new_split_id();
+        new_split_metadata.num_merge_ops = 1;
+        metastore
+            .stage_split(index_id, new_split_metadata.clone())
+            .await
+            .unwrap();
+        metastore
+            .publish_splits(
+                index_id,
+                &[new_split_metadata.split_id()],
+                &[split_metadata.split_id()],
+                None,
+            )
+            .await
             .unwrap();
         let expected_uncompressed_docs_size_in_bytes =
-            (2_f32 * split_meta.uncompressed_docs_size_in_bytes as f32 / 3_f32) as u64;
+            (new_split_metadata.uncompressed_docs_size_in_bytes as f32 / 2_f32) as u64;
         let merge_scratch_directory = ScratchDirectory::for_test()?;
         let downloaded_splits_directory =
             merge_scratch_directory.named_temp_child("downloaded-splits-")?;
-        let split_filename = split_file(split_meta.split_id());
-        let dest_filepath = downloaded_splits_directory.path().join(&split_filename);
+        let split_filename = split_file(split_metadata.split_id());
+        let new_split_filename = split_file(new_split_metadata.split_id());
+        let dest_filepath = downloaded_splits_directory.path().join(&new_split_filename);
         test_sandbox
             .storage()
             .copy_to_file(Path::new(&split_filename), &dest_filepath)
             .await?;
         let tantivy_dir = get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap();
         let merge_scratch = MergeScratch {
-            merge_operation: MergeOperation::new_delete_and_merge_operation(split_meta),
+            merge_operation: MergeOperation::new_delete_and_merge_operation(new_split_metadata),
             tantivy_dirs: vec![tantivy_dir],
             merge_scratch_directory,
             downloaded_splits_directory,
         };
         let (merge_packager_mailbox, merge_packager_inbox) = create_test_mailbox();
-        let index_pipeline_id = IndexingPipelineId {
-            index_id: index_id.to_string(),
-            node_id: "unknown".to_string(),
-            pipeline_ord: 0,
-            source_id: "unknown".to_string(),
-        };
         let delete_task_executor =
-            MergeExecutor::new(index_pipeline_id, metastore, merge_packager_mailbox);
+            MergeExecutor::new(pipeline_id, metastore, merge_packager_mailbox);
         let universe = Universe::new();
         let (delete_task_executor_mailbox, delete_task_executor_handle) =
             universe.spawn_builder().spawn(delete_task_executor);
@@ -678,13 +720,14 @@ mod tests {
         delete_task_executor_handle
             .process_pending_and_observe()
             .await;
+
         let packager_msgs: Vec<IndexedSplitBatch> = merge_packager_inbox.drain_for_test_typed();
         assert_eq!(packager_msgs.len(), 1);
         let split = &packager_msgs[0].splits[0];
-        assert_eq!(split.split_attrs.num_docs, 2);
+        assert_eq!(split.split_attrs.num_docs, 1);
         assert_eq!(split.split_attrs.delete_opstamp, 1);
         // Delete operations do not update the num_merge_ops value.
-        assert_eq!(split.split_attrs.num_merge_ops, 0);
+        assert_eq!(split.split_attrs.num_merge_ops, 1);
         assert_eq!(
             split.split_attrs.uncompressed_docs_size_in_bytes,
             expected_uncompressed_docs_size_in_bytes,
