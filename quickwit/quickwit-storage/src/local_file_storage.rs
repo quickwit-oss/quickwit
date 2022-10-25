@@ -30,6 +30,7 @@ use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tracing::warn;
 
+use crate::storage::SendableAsync;
 use crate::{
     DebouncedStorage, OwnedBytes, Storage, StorageError, StorageErrorKind, StorageFactory,
     StorageResolverError, StorageResult,
@@ -158,9 +159,10 @@ impl Storage for LocalFileStorage {
         Ok(())
     }
 
-    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
+    async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let full_path = self.root.join(path);
-        fs::copy(full_path, output_path).await?;
+        let mut file = tokio::fs::File::open(&full_path).await?;
+        tokio::io::copy(&mut file, output).await?;
         Ok(())
     }
 
