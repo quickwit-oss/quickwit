@@ -103,7 +103,7 @@ pub async fn run_garbage_collect(
 
     let filter = ListSplitsQuery::for_index(index_id)
         .with_split_state(SplitState::Staged)
-        .updated_after(grace_period_timestamp);
+        .updated_before(grace_period_timestamp);
 
     let deletable_staged_splits: Vec<SplitMetadata> =
         protect_future(ctx_opt, metastore.list_splits(filter))
