@@ -23,7 +23,7 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::io::IoControls;
 use quickwit_metastore::SplitMetadata;
-use tantivy::Directory;
+use tantivy::{Directory, TrackedObject};
 use tracing::{debug, info, instrument};
 
 use super::MergeExecutor;
@@ -53,7 +53,7 @@ impl Actor for MergeSplitDownloader {
 }
 
 #[async_trait]
-impl Handler<MergeOperation> for MergeSplitDownloader {
+impl Handler<TrackedObject<MergeOperation>> for MergeSplitDownloader {
     type Reply = ();
 
     #[instrument(
@@ -63,7 +63,7 @@ impl Handler<MergeOperation> for MergeSplitDownloader {
     )]
     async fn handle(
         &mut self,
-        merge_operation: MergeOperation,
+        merge_operation: TrackedObject<MergeOperation>,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         let merge_scratch_directory = self
@@ -137,6 +137,7 @@ mod tests {
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_common::split_file;
     use quickwit_storage::{PutPayload, RamStorageBuilder, SplitPayloadBuilder};
+    use tantivy::Inventory;
 
     use super::*;
     use crate::new_split_id;
@@ -176,7 +177,8 @@ mod tests {
         };
         let (merge_split_downloader_mailbox, merge_split_downloader_handler) =
             universe.spawn_builder().spawn(merge_split_downloader);
-        let merge_operation = MergeOperation::new_merge_operation(splits_to_merge);
+        let inventory = Inventory::new();
+        let merge_operation = inventory.track(MergeOperation::new_merge_operation(splits_to_merge));
         merge_split_downloader_mailbox
             .send_message(merge_operation)
             .await?;

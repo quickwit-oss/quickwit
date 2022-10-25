@@ -21,8 +21,10 @@ use std::collections::{BTreeSet, HashSet};
 use std::fmt;
 
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
+use tantivy::TrackedObject;
 use tracing::Span;
 
+use crate::merge_policy::MergeOperation;
 use crate::models::{PublishLock, ScratchDirectory, SplitAttrs};
 
 pub struct PackagedSplit {
@@ -55,6 +57,7 @@ pub struct PackagedSplitBatch {
     pub parent_span: Span,
     pub splits: Vec<PackagedSplit>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+    pub merge_operation: Option<TrackedObject<MergeOperation>>,
     pub publish_lock: PublishLock,
 }
 
@@ -67,6 +70,7 @@ impl PackagedSplitBatch {
         splits: Vec<PackagedSplit>,
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
         publish_lock: PublishLock,
+        merge_operation: Option<TrackedObject<MergeOperation>>,
         span: Span,
     ) -> Self {
         assert!(!splits.is_empty());
@@ -84,6 +88,7 @@ impl PackagedSplitBatch {
             splits,
             checkpoint_delta_opt,
             publish_lock,
+            merge_operation,
         }
     }
 

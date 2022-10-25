@@ -24,9 +24,13 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::SplitMetadata;
+use serde::Serialize;
+use tantivy::Inventory;
 use tracing::info;
 
 use crate::actors::MergeSplitDownloader;
+use crate::merge_policy::MergeOperation;
+use crate::metrics::INDEXER_METRICS;
 use crate::models::{IndexingPipelineId, NewSplits};
 use crate::MergePolicy;
 
@@ -38,13 +42,24 @@ pub struct MergePlanner {
     partitioned_young_splits: HashMap<u64, Vec<SplitMetadata>>,
     merge_policy: Arc<dyn MergePolicy>,
     merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
+    ongoing_merge_operations_inventory: Inventory<MergeOperation>,
 }
 
 #[async_trait]
 impl Actor for MergePlanner {
-    type ObservableState = ();
+    type ObservableState = MergePlannerState;
 
-    fn observable_state(&self) -> Self::ObservableState {}
+    fn observable_state(&self) -> Self::ObservableState {
+        let ongoing_merge_operations = self
+            .ongoing_merge_operations_inventory
+            .list()
+            .iter()
+            .map(|tracked_operation| tracked_operation.as_ref().clone())
+            .collect_vec();
+        MergePlannerState {
+            ongoing_merge_operations,
+        }
+    }
 
     fn name(&self) -> String {
         "MergePlanner".to_string()
@@ -136,6 +151,7 @@ impl MergePlanner {
             partitioned_young_splits,
             merge_policy,
             merge_split_downloader_mailbox,
+            ongoing_merge_operations_inventory: Inventory::default(),
         }
     }
 
@@ -150,8 +166,18 @@ impl MergePlanner {
 
                 for merge_operation in merge_operations {
                     info!(merge_operation=?merge_operation, "Planned merge operation.");
-                    ctx.send_message(&self.merge_split_downloader_mailbox, merge_operation)
-                        .await?;
+                    let tracked_merge_operations = self
+                        .ongoing_merge_operations_inventory
+                        .track(merge_operation);
+                    ctx.send_message(
+                        &self.merge_split_downloader_mailbox,
+                        tracked_merge_operations,
+                    )
+                    .await?;
+                    INDEXER_METRICS
+                        .ongoing_num_merge_operations_total
+                        .with_label_values(&[&self.pipeline_id.index_id])
+                        .set(self.ongoing_merge_operations_inventory.list().len() as i64);
                 }
             }
         }
@@ -280,4 +306,9 @@ mod tests {
 
         Ok(())
     }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MergePlannerState {
+    ongoing_merge_operations: Vec<MergeOperation>,
 }

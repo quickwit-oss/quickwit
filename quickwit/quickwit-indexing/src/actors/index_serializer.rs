@@ -98,6 +98,7 @@ impl Handler<IndexedSplitBatchBuilder> for IndexSerializer {
             splits,
             checkpoint_delta: batch_builder.checkpoint_delta,
             publish_lock: batch_builder.publish_lock,
+            merge_operation: None,
         };
         ctx.send_message(&self.packager_mailbox, indexed_split_batch)
             .await?;
