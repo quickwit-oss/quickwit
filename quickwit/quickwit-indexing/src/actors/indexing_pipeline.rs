@@ -127,7 +127,9 @@ impl IndexingPipeline {
         if let Some(handles) = &self.handles {
             let supervisables: Vec<&dyn Supervisable> = vec![
                 &handles.source,
+                &handles.doc_processor,
                 &handles.indexer,
+                &handles.index_serializer,
                 &handles.packager,
                 &handles.uploader,
                 &handles.sequencer,
