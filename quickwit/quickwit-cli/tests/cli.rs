@@ -241,8 +241,8 @@ async fn test_cmd_ingest_simple() {
     create_logs_index(&test_env);
 
     let args = IngestDocsArgs {
-        config_uri: test_env.config_uri,
-        index_id,
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
         data_dir: None,
         overwrite: false,
@@ -250,6 +250,21 @@ async fn test_cmd_ingest_simple() {
     };
 
     ingest_docs_cli(args).await.unwrap();
+
+    let splits: Vec<_> = test_env
+        .metastore()
+        .await
+        .unwrap()
+        .get_index(&index_id)
+        .await
+        .unwrap()
+        .splits()
+        .clone()
+        .into_values()
+        .collect();
+
+    assert_eq!(splits.len(), 1);
+    assert_eq!(splits[0].split_metadata.num_docs, 5);
 
     // Ensure cache directory is empty.
     let cache_directory_path = get_cache_directory_path(&test_env.data_dir_path);
