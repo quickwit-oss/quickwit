@@ -56,13 +56,14 @@ Quickwit is a cloud-native search engine for log management & analytics. It is d
 - Search stream API that notably unlocks full-text search in ClickHouse
 
 ### 🔮 Roadmap
-- [Quickwit 0.4 - August 2022](https://github.com/quickwit-oss/quickwit/projects/5)
+- [Quickwit 0.5 - November 2022](https://github.com/quickwit-oss/quickwit/projects/5)
+  - Distributed indexing with Kafka
   - Native support for Kubernetes
+  - Index partitioning
   - Boolean, datetime, and IP address fields
-  - Range queries
-  - Sort
   - Retention policies
-- [Quickwit 0.5 - October 2022](https://github.com/quickwit-oss/quickwit/projects/6)
+  - Support for BM25 scoring, snippeting
+- [Quickwit 0.5 - Q1 2023](https://github.com/quickwit-oss/quickwit/projects/6)
   - Grafana data source
   - Native support for OpenTelemetry
   - REST API for managing indexes
@@ -92,7 +93,7 @@ Quickwit compiles to a single binary and we provide [various ways to install it]
 curl -L https://install.quickwit.io | sh
 ```
 
-You can now move this executable directory wherever sensible for your environment and possibly add it to your `PATH` environment. 
+You can now move this executable directory wherever sensible for your environment and possibly add it to your `PATH` environment.
 
 Take a look at our [Quick Start]([https://quickwit.io/docs/get-started/quickstart) to do amazing things, like [Creating your first index](https://quickwit.io/docs/get-started/quickstart#create-your-first-index) or [Adding some documents](https://quickwit.io/docs/get-started/quickstart#lets-add-some-documents), or take a glance at our full [Installation guide](https://quickwit.io/docs/get-started/installation)!
 
@@ -121,7 +122,7 @@ Quickwit is open-source under the GNU Affero General Public License Version 3 - 
 We also provide a commercial license for enterprises to provide support and a voice on our roadmap.
 
 ### Is it possible to setup Quickwit for a High Availability (HA)?
-Not today, but HA is on our roadmap. 
+Not today, but HA is on our roadmap.
 
 ### What is Quickwit's business model?
 Our business model relies on our commercial license. There is no plan to become SaaS in the near future.
@@ -134,7 +135,7 @@ Our business model relies on our commercial license. There is no plan to become 
 <img align="center" src="docs/assets/images/google-cloud-storage.svg" alt="Google Cloud Storage" height="30" width="auto"/> &nbsp;
 <img align="center" src="docs/assets/images/postgresql-logo.png" alt="Metastore Backed by Postgresql" height="30" width="auto"/> &nbsp;&nbsp;
 <img align="center" src="docs/assets/images/minio-logo.png" alt="Integrate with Minio" height="10" width="auto"/> &nbsp;
-<img align="center" src="docs/assets/images/ceph-light-mode-logo.png#gh-light-mode-only" alt="Integration with Ceph" height="20" width="auto"/> 
+<img align="center" src="docs/assets/images/ceph-light-mode-logo.png#gh-light-mode-only" alt="Integration with Ceph" height="20" width="auto"/>
 <img align="center" src="docs/assets/images/ceph-dark-mode-logo.png#gh-dark-mode-only" alt="Integration with Ceph" height="20" width="auto"/> &nbsp;
 <img align="center" src="docs/assets/images/kubernetes-logo.png" alt="Collect Logs on Kubernetes cluster" height="30" width="auto"/> &nbsp;
 <img align="center" src="docs/assets/images/kafka-logo.png#gh-light-mode-only" alt="Ingest Logs with Kafka" height="30" width="auto"/>
@@ -156,7 +157,7 @@ Chat with us in [Discord](https://discord.gg/rpRRTezWhW) | Follow us on [Twitter
 
 # 🤝 Contribute and spread the word
 
-We are always super happy to have contributions: code, documentation, issues, feedback, or even saying hello on [discord](https://discord.gg/rpRRTezWhW)! Here is how you can help us build the future of log management: 
+We are always super happy to have contributions: code, documentation, issues, feedback, or even saying hello on [discord](https://discord.gg/rpRRTezWhW)! Here is how you can help us build the future of log management:
 - Have a look through GitHub issues labeled "Good first issue".
 - Read our [Contributor Covenant Code of Conduct](https://github.com/quickwit-oss/quickwit/blob/0add0562f08e4edd46f5c5537e8ef457d42a508e/CODE_OF_CONDUCT.md).
 - Create a fork of Quickwit and submit your pull request!
