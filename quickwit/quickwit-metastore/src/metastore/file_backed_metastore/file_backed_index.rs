@@ -324,19 +324,20 @@ impl FileBackedIndex {
                 .map(|state| split.split_state == state)
                 .unwrap_or(true)
         };
-        let time_range_start_filter = |split: &&Split| {
-            filter
-                .time_range_start
-                .and_then(|ts| Some((ts, split.split_metadata.time_range.as_ref()?)))
-                .map(|(ts, range)| range.start() >= &ts)
-                .unwrap_or(true)
-        };
-        let time_range_end_filter = |split: &&Split| {
-            filter
+        let time_range_filter = |split: &&Split| {
+            let start = filter
                 .time_range_end
                 .and_then(|ts| Some((ts, split.split_metadata.time_range.as_ref()?)))
+                .map(|(ts, range)| &ts <= range.start())
+                .unwrap_or(false);
+
+            let end = filter
+                .time_range_start
+                .and_then(|ts| Some((ts, split.split_metadata.time_range.as_ref()?)))
                 .map(|(ts, range)| range.end() < &ts)
-                .unwrap_or(true)
+                .unwrap_or(false);
+
+            !(start || end)
         };
         let update_after_filter = |split: &&Split| match filter.updated_after {
             Bound::Excluded(ts) => split.update_timestamp > ts,
@@ -359,8 +360,7 @@ impl FileBackedIndex {
             .splits
             .values()
             .filter(split_state_filter)
-            .filter(time_range_start_filter)
-            .filter(time_range_end_filter)
+            .filter(time_range_filter)
             .filter(update_after_filter)
             .filter(update_before_filter)
             .filter(|split| split_tag_filter(split, filter.tags.as_ref()))
@@ -369,6 +369,8 @@ impl FileBackedIndex {
             .take(filter.limit.unwrap_or(usize::MAX))
             .cloned()
             .collect();
+
+            dbg!(&splits);
 
         Ok(splits)
     }
