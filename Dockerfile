@@ -58,6 +58,7 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
 RUN apt-get -y update \
     && apt-get -y install ca-certificates \
+                          libsasl2-2 \
                           libssl1.1 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -69,4 +70,6 @@ COPY --from=builder /quickwit/config/quickwit.yaml /quickwit/config/quickwit.yam
 ENV QW_CONFIG=/quickwit/config/quickwit.yaml
 ENV QW_DATA_DIR=/quickwit/qwdata
 
-ENTRYPOINT ["/usr/local/bin/quickwit"]
+RUN quickwit --version
+
+ENTRYPOINT ["quickwit"]
