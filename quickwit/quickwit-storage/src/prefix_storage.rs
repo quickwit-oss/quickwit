@@ -24,6 +24,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 
+use crate::storage::SendableAsync;
 use crate::{OwnedBytes, Storage};
 
 /// This storage acts as a proxy to another storage that simply modifies each API call
@@ -48,10 +49,12 @@ impl Storage for PrefixStorage {
         self.storage.put(&self.prefix.join(path), payload).await
     }
 
-    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> crate::StorageResult<()> {
-        self.storage
-            .copy_to_file(&self.prefix.join(path), output_path)
-            .await
+    async fn copy_to(
+        &self,
+        path: &Path,
+        output: &mut dyn SendableAsync,
+    ) -> crate::StorageResult<()> {
+        self.storage.copy_to(&self.prefix.join(path), output).await
     }
 
     async fn get_slice(
