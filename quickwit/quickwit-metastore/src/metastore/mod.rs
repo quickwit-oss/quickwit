@@ -179,7 +179,6 @@ pub trait Metastore: Send + Sync + 'static {
         let mut splits = self.list_splits(filter).await?;
         splits.sort_by_key(|split| split.split_metadata.delete_opstamp);
         Ok(splits.into_iter().take(num_splits).collect())
-
     }
 
     /// Marks a list of splits for deletion.
