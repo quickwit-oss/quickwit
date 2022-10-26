@@ -495,6 +495,7 @@ impl Metastore for FileBackedMetastore {
     ) -> MetastoreResult<Vec<Split>> {
         self.read(index_id, |index| {
             let filter = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Published)
                 .with_opstamp_older_than(delete_opstamp)
                 .with_limit(num_splits);
 

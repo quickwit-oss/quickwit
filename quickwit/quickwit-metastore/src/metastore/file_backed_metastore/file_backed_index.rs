@@ -370,8 +370,6 @@ impl FileBackedIndex {
             .cloned()
             .collect();
 
-            dbg!(&splits);
-
         Ok(splits)
     }
 

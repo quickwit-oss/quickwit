@@ -175,8 +175,11 @@ pub trait Metastore: Send + Sync + 'static {
     ) -> MetastoreResult<Vec<Split>> {
         let filter = ListSplitsQuery::for_index(index_id)
             .with_opstamp_older_than(delete_opstamp)
-            .with_limit(num_splits);
-        self.list_splits(filter).await
+            .with_split_state(SplitState::Published);
+        let mut splits = self.list_splits(filter).await?;
+        splits.sort_by_key(|split| split.split_metadata.delete_opstamp);
+        Ok(splits.into_iter().take(num_splits).collect())
+
     }
 
     /// Marks a list of splits for deletion.

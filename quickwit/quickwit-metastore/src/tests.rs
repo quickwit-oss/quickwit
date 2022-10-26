@@ -1630,7 +1630,7 @@ pub mod test_suite {
             let filter = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_time_range_from(0)
-                .with_time_range_to(200);
+                .with_time_range_to(100);
             let splits = metastore.list_splits(filter).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
