@@ -23,14 +23,17 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, HEARTBEAT};
-use quickwit_metastore::{IndexMetadata, Metastore, MetastoreResult};
+use quickwit_config::build_doc_mapper;
+use quickwit_metastore::{IndexMetadata, Metastore};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::SearchRequest;
 use quickwit_search::SearchClientPool;
 use quickwit_storage::StorageUriResolver;
 use serde::Serialize;
 use tracing::{error, info, warn};
 
 use super::delete_task_pipeline::DeleteTaskPipeline;
+use crate::error::JanitorError;
 
 pub const DELETE_SERVICE_TASK_DIR_NAME: &str = "delete_task_service";
 
@@ -150,6 +153,30 @@ impl DeleteTaskService {
             .insert(index_metadata.index_id, pipeline_handler);
         Ok(())
     }
+
+    pub async fn validate_and_create_delete_task(
+        &self,
+        delete_query: DeleteQuery,
+    ) -> Result<DeleteTask, JanitorError> {
+        let index_metadata = self
+            .metastore
+            .index_metadata(&delete_query.index_id)
+            .await?;
+        let doc_mapper = build_doc_mapper(
+            &index_metadata.doc_mapping,
+            &index_metadata.search_settings,
+            &index_metadata.indexing_settings,
+        )
+        .map_err(|error| JanitorError::InternalError(error.to_string()))?;
+        let delete_search_request = SearchRequest::from(delete_query.clone());
+        // Validate the delete query.
+        doc_mapper
+            .query(doc_mapper.schema(), &delete_search_request)
+            .map_err(|error| JanitorError::InvalidDeleteQuery(error.to_string()))?;
+        let delete_task = self.metastore.create_delete_task(delete_query).await?;
+
+        Ok(delete_task)
+    }
 }
 
 #[derive(Debug)]
@@ -175,14 +202,14 @@ impl Handler<SuperviseLoop> for DeleteTaskService {
 
 #[async_trait]
 impl Handler<DeleteQuery> for DeleteTaskService {
-    type Reply = MetastoreResult<DeleteTask>;
+    type Reply = Result<DeleteTask, JanitorError>;
 
     async fn handle(
         &mut self,
         message: DeleteQuery,
         _: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        let reply = self.metastore.create_delete_task(message).await;
+        let reply = self.validate_and_create_delete_task(message).await;
         Ok(reply)
     }
 }
