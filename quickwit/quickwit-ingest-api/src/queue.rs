@@ -17,100 +17,59 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
+use std::ops::Bound;
 use std::path::Path;
 
+use mrecordlog::error::CreateQueueError;
+use mrecordlog::MultiRecordLog;
 use quickwit_proto::ingest_api::{DocBatch, FetchResponse, ListQueuesResponse};
-use rocksdb::{Direction, IteratorMode, WriteBatch, WriteOptions, DB};
-use tracing::warn;
 
-use crate::{add_doc, Position};
+use crate::{add_doc, IngestApiError};
 
 const FETCH_PAYLOAD_LIMIT: usize = 2_000_000; // 2MB
 
+// TODO do we need to keep this?
 const QUICKWIT_CF_PREFIX: &str = ".queue_";
 
 pub struct Queues {
-    db: DB,
-    last_position_per_queue: HashMap<String, Option<Position>>,
-}
-
-fn default_rocks_db_options() -> rocksdb::Options {
-    // TODO tweak
-    let mut options = rocksdb::Options::default();
-    options.create_if_missing(true);
-    options.set_max_open_files(512);
-    options.set_max_total_wal_size(100_000_000);
-    options
-}
-
-fn default_rocks_db_write_options() -> rocksdb::WriteOptions {
-    let mut write_options = WriteOptions::default();
-    write_options.set_sync(false);
-    write_options.disable_wal(false);
-    write_options
-}
-
-fn next_position(db: &DB, queue_id: &str) -> crate::Result<Option<Position>> {
-    let cf = db
-        .cf_handle(queue_id)
-        .ok_or_else(|| crate::IngestApiError::Corruption {
-            msg: format!("RocksDB error: Missing column `{queue_id}`"),
-        })?;
-    // That's iterating backward
-    let mut full_it = db.full_iterator_cf(&cf, IteratorMode::End);
-    match full_it.next() {
-        Some(Ok((key, _))) => {
-            let position = Position::try_from(&*key)?;
-            Ok(Some(position))
-        }
-        Some(Err(error)) => Err(error.into()),
-        None => Ok(None),
-    }
+    record_log: MultiRecordLog,
 }
 
 impl Queues {
-    pub fn open(queues_dir_path: &Path) -> crate::Result<Queues> {
-        let options = default_rocks_db_options();
-        let queue_ids = if queues_dir_path.join("CURRENT").exists() {
-            DB::list_cf(&options, queues_dir_path)?
-        } else {
-            Vec::new()
-        };
-        let db = DB::open_cf(&options, queues_dir_path, &queue_ids)?;
-        let mut next_position_per_queue = HashMap::default();
-        for queue_id in queue_ids {
-            let next_position = next_position(&db, &queue_id)?;
-            next_position_per_queue.insert(queue_id, next_position);
-        }
-        Ok(Queues {
-            db,
-            last_position_per_queue: next_position_per_queue,
-        })
+    pub async fn open(queues_dir_path: &Path) -> crate::Result<Queues> {
+        tokio::fs::create_dir_all(queues_dir_path).await.unwrap();
+        let record_log = MultiRecordLog::open(queues_dir_path).await?;
+
+        Ok(Queues { record_log })
     }
 
     pub fn queue_exists(&self, queue_id: &str) -> bool {
         let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        self.db.cf_handle(&real_queue_id).is_some()
+        self.record_log.queue_exists(&real_queue_id)
     }
 
-    pub fn create_queue(&mut self, queue_id: &str) -> crate::Result<()> {
+    pub async fn create_queue(&mut self, queue_id: &str) -> crate::Result<()> {
         if self.queue_exists(queue_id) {
             return Err(crate::IngestApiError::IndexAlreadyExists {
                 index_id: queue_id.to_string(),
             });
         }
         let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        let cf_opts = default_rocks_db_options();
-        self.db.create_cf(&real_queue_id, &cf_opts)?;
-        self.last_position_per_queue.insert(real_queue_id, None);
+        self.record_log
+            .create_queue(&real_queue_id)
+            .await
+            .map_err(|e| match e {
+                CreateQueueError::AlreadyExists => IngestApiError::IndexAlreadyExists {
+                    index_id: queue_id.to_owned(),
+                },
+                CreateQueueError::IoError(ioe) => ioe.into(),
+            })?;
         Ok(())
     }
 
-    pub fn drop_queue(&mut self, queue_id: &str) -> crate::Result<()> {
+    pub async fn drop_queue(&mut self, queue_id: &str) -> crate::Result<()> {
         let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        self.db.drop_cf(&real_queue_id)?;
-        self.last_position_per_queue.remove(&real_queue_id);
+        self.record_log.delete_queue(&real_queue_id).await?;
         Ok(())
     }
 
@@ -127,85 +86,44 @@ impl Queues {
     /// In other words, truncating from a position, and fetching records starting
     /// earlier than this position can yield undefined result:
     /// the truncated records may or may not be returned.
-    pub fn suggest_truncate(
+    pub async fn suggest_truncate(
         &mut self,
         queue_id: &str,
-        up_to_offset_included: Position,
+        up_to_offset_included: u64,
     ) -> crate::Result<()> {
         let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        let cf_ref = self.db.cf_handle(&real_queue_id).unwrap(); // FIXME
-                                                                 // We want to keep the last record.
-        let last_position_opt = *self
-            .last_position_per_queue
-            .get(&real_queue_id)
-            .ok_or_else(|| crate::IngestApiError::IndexDoesNotExist {
-                index_id: queue_id.to_string(),
-            })?;
 
-        let last_position = if let Some(last_position) = last_position_opt {
-            last_position
-        } else {
-            warn!("Attempted to truncate an empty queue.");
-            return Ok(());
-        };
+        // TODO behavior change: this does not accept a position in the future.
+        self.record_log
+            .truncate(&real_queue_id, up_to_offset_included)
+            .await?;
 
-        // We make sure that we keep one record, in order to ensure we do not reset
-        // the position counter.
-        let truncation_end_offset = if last_position > up_to_offset_included.inc() {
-            up_to_offset_included.inc()
-        } else {
-            last_position
-        };
-
-        self.db
-            .delete_file_in_range_cf(&cf_ref, Position::default(), truncation_end_offset)?;
-        self.db
-            .delete_range_cf(&cf_ref, Position::default(), truncation_end_offset)?;
         Ok(())
     }
 
     // Append a single record to a target queue.
     #[cfg(test)]
-    fn append(&mut self, queue_id: &str, record: &[u8]) -> crate::Result<()> {
-        self.append_batch(queue_id, std::iter::once(record))
+    async fn append(&mut self, queue_id: &str, record: &[u8]) -> crate::Result<()> {
+        self.append_batch(queue_id, std::iter::once(record)).await
     }
 
     // Append a batch of records to a target queue.
     //
     // This operation is atomic: the batch of records is either entirely added or not.
-    pub fn append_batch<'a>(
+    pub async fn append_batch<'a>(
         &mut self,
         queue_id: &str,
         records_it: impl Iterator<Item = &'a [u8]>,
     ) -> crate::Result<()> {
         let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        let column_does_not_exist = || crate::IngestApiError::IndexDoesNotExist {
-            index_id: queue_id.to_string(),
-        };
-        let last_position_opt = self
-            .last_position_per_queue
-            .get_mut(&real_queue_id)
-            .ok_or_else(column_does_not_exist)?;
 
-        let mut next_position = last_position_opt
-            .as_ref()
-            .map(Position::inc)
-            .unwrap_or_default();
-
-        let cf_ref = self
-            .db
-            .cf_handle(&real_queue_id)
-            .ok_or_else(column_does_not_exist)?;
-
-        let mut batch = WriteBatch::default();
         for record in records_it {
-            batch.put_cf(&cf_ref, next_position.as_ref(), record);
-            *last_position_opt = Some(next_position);
-            next_position = next_position.inc();
+            // TODO mrecordlog does not provide an atomic append batch operation yet
+            // TODO this fsync on every file, figure a way to sync only on the commit
+            self.record_log
+                .append_record(&real_queue_id, None, record)
+                .await?;
         }
-
-        let write_options = default_rocks_db_write_options();
-        self.db.write_opt(batch, &write_options)?;
 
         Ok(())
     }
@@ -216,38 +134,37 @@ impl Queues {
     pub fn fetch(
         &self,
         queue_id: &str,
-        start_after: Option<Position>,
+        start_after: Option<u64>,
         num_bytes_limit: Option<usize>,
     ) -> crate::Result<FetchResponse> {
         let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        let cf = self.db.cf_handle(&real_queue_id).ok_or_else(|| {
-            crate::IngestApiError::IndexDoesNotExist {
-                index_id: queue_id.to_string(),
-            }
-        })?;
 
-        let start_position = start_after
-            .map(|position| position.inc())
-            .unwrap_or_default();
-        let full_it = self.db.full_iterator_cf(
-            &cf,
-            IteratorMode::From(start_position.as_ref(), Direction::Forward),
-        );
+        let starting_bound = match start_after {
+            Some(pos) => Bound::Excluded(pos),
+            None => Bound::Unbounded,
+        };
+        let records = self
+            .record_log
+            .range(&real_queue_id, (starting_bound, Bound::Unbounded))
+            .ok_or_else(|| crate::IngestApiError::IndexDoesNotExist {
+                index_id: queue_id.to_string(),
+            })?;
+
+        let size_limit = num_bytes_limit.unwrap_or(FETCH_PAYLOAD_LIMIT);
         let mut doc_batch = DocBatch::default();
         let mut num_bytes = 0;
-        let mut first_key_opt: Option<u64> = None;
-        let size_limit = num_bytes_limit.unwrap_or(FETCH_PAYLOAD_LIMIT);
-        for kp_res in full_it {
-            let (key, payload) = kp_res?;
-            let position = Position::try_from(&*key)?;
+        let mut first_key_opt = None;
+
+        for (pos, record) in records {
             if first_key_opt.is_none() {
-                first_key_opt = Some(position.into());
+                first_key_opt = Some(pos);
             }
-            num_bytes += add_doc(&*payload, &mut doc_batch);
+            num_bytes += add_doc(record, &mut doc_batch);
             if num_bytes > size_limit {
                 break;
             }
         }
+
         Ok(FetchResponse {
             first_position: first_key_opt,
             doc_batch: Some(doc_batch),
@@ -256,40 +173,16 @@ impl Queues {
 
     // Streams messages from the start of the Stream.
     pub fn tail(&self, queue_id: &str) -> crate::Result<FetchResponse> {
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        let cf = self.db.cf_handle(&real_queue_id).ok_or_else(|| {
-            crate::IngestApiError::IndexDoesNotExist {
-                index_id: queue_id.to_string(),
-            }
-        })?;
-        let full_it = self.db.full_iterator_cf(&cf, IteratorMode::End);
-        let mut doc_batch = DocBatch::default();
-        let mut num_bytes = 0;
-        let mut first_key_opt: Option<u64> = None;
-        for kp_res in full_it {
-            let (key, payload) = kp_res?;
-            let position = Position::try_from(&*key)?;
-            if first_key_opt.is_none() {
-                first_key_opt = Some(position.into());
-            }
-            num_bytes += add_doc(&*payload, &mut doc_batch);
-            if num_bytes > FETCH_PAYLOAD_LIMIT {
-                break;
-            }
-        }
-        Ok(FetchResponse {
-            first_position: first_key_opt,
-            doc_batch: Some(doc_batch),
-        })
+        self.fetch(queue_id, None, None)
     }
 
     pub fn list_queues(&self) -> crate::Result<ListQueuesResponse> {
         Ok(ListQueuesResponse {
             queues: self
-                .last_position_per_queue
-                .keys()
+                .record_log
+                .list_queues()
                 .filter_map(|real_queue_id| real_queue_id.strip_prefix(QUICKWIT_CF_PREFIX))
-                .map(ToString::to_string)
+                .map(|queue| queue.to_owned())
                 .collect(),
         })
     }
@@ -303,7 +196,6 @@ mod tests {
     use super::Queues;
     use crate::errors::IngestApiError;
     use crate::iter_doc_payloads;
-    use crate::queue::Position;
 
     const TEST_QUEUE_ID: &str = "my-queue";
     const TEST_QUEUE_ID2: &str = "my-queue2";
@@ -313,29 +205,30 @@ mod tests {
         tempdir: tempfile::TempDir,
     }
 
-    impl Default for QueuesForTest {
-        fn default() -> Self {
+    // this isn't the Default trait because we need async
+    impl QueuesForTest {
+        async fn default() -> Self {
             let tempdir = tempfile::tempdir().unwrap();
             let mut queues_for_test = QueuesForTest {
                 tempdir,
                 queues: None,
             };
-            queues_for_test.reload();
+            queues_for_test.reload().await;
             queues_for_test
         }
     }
 
     impl QueuesForTest {
-        fn reload(&mut self) {
+        async fn reload(&mut self) {
             std::mem::drop(self.queues.take());
-            self.queues = Some(Queues::open(self.tempdir.path()).unwrap());
+            self.queues = Some(Queues::open(self.tempdir.path()).await.unwrap());
         }
 
         #[track_caller]
         fn fetch_test(
             &mut self,
             queue_id: &str,
-            start_after: Option<super::Position>,
+            start_after: Option<u64>,
             expected_first_pos_opt: Option<u64>,
             expected: &[&[u8]],
         ) {
@@ -367,49 +260,50 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_access_queue_twice() {
-        let mut queues = QueuesForTest::default();
-        queues.create_queue(TEST_QUEUE_ID).unwrap();
-        let queue_err = queues.create_queue(TEST_QUEUE_ID).err().unwrap();
+    #[tokio::test]
+    async fn test_access_queue_twice() {
+        let mut queues = QueuesForTest::default().await;
+        queues.create_queue(TEST_QUEUE_ID).await.unwrap();
+        let queue_err = queues.create_queue(TEST_QUEUE_ID).await.err().unwrap();
         assert!(matches!(
             queue_err,
             IngestApiError::IndexAlreadyExists { .. }
         ));
     }
 
-    #[test]
-    fn test_list_queues() {
+    #[tokio::test]
+    async fn test_list_queues() {
         let queue_ids = vec!["foo".to_string(), "bar".to_string(), "baz".to_string()];
-        let mut queues = QueuesForTest::default();
+        let mut queues = QueuesForTest::default().await;
         for queue_id in queue_ids.iter() {
-            queues.create_queue(queue_id).unwrap();
+            queues.create_queue(queue_id).await.unwrap();
         }
         assert_eq!(
             HashSet::<String>::from_iter(queue_ids),
             HashSet::from_iter(queues.list_queues().unwrap().queues)
         );
 
-        queues.drop_queue("foo").unwrap();
+        queues.drop_queue("foo").await.unwrap();
         assert_eq!(
             HashSet::<String>::from_iter(vec!["bar".to_string(), "baz".to_string()]),
             HashSet::from_iter(queues.list_queues().unwrap().queues)
         );
     }
 
-    #[test]
-    fn test_simple() {
-        let mut queues = QueuesForTest::default();
+    #[tokio::test]
+    async fn test_simple() {
+        let mut queues = QueuesForTest::default().await;
 
-        queues.create_queue(TEST_QUEUE_ID).unwrap();
+        queues.create_queue(TEST_QUEUE_ID).await.unwrap();
         queues
             .append_batch(
                 TEST_QUEUE_ID,
                 [b"hello", b"happy"].iter().map(|bytes| bytes.as_slice()),
             )
+            .await
             .unwrap();
 
-        queues.reload();
+        queues.reload().await;
         queues.fetch_test(
             TEST_QUEUE_ID,
             None,
@@ -417,7 +311,7 @@ mod tests {
             &[&b"hello"[..], &b"happy"[..]],
         );
 
-        queues.reload();
+        queues.reload().await;
         queues.fetch_test(
             TEST_QUEUE_ID,
             None,
@@ -426,29 +320,29 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_distinct_queues() {
-        let mut queues = QueuesForTest::default();
+    #[tokio::test]
+    async fn test_distinct_queues() {
+        let mut queues = QueuesForTest::default().await;
 
-        queues.create_queue(TEST_QUEUE_ID).unwrap();
-        queues.create_queue(TEST_QUEUE_ID2).unwrap();
-        queues.append(TEST_QUEUE_ID, b"hello").unwrap();
-        queues.append(TEST_QUEUE_ID2, b"hello2").unwrap();
+        queues.create_queue(TEST_QUEUE_ID).await.unwrap();
+        queues.create_queue(TEST_QUEUE_ID2).await.unwrap();
+        queues.append(TEST_QUEUE_ID, b"hello").await.unwrap();
+        queues.append(TEST_QUEUE_ID2, b"hello2").await.unwrap();
 
         queues.fetch_test(TEST_QUEUE_ID, None, Some(0), &[&b"hello"[..]]);
         queues.fetch_test(TEST_QUEUE_ID2, None, Some(0), &[&b"hello2"[..]]);
     }
 
-    #[test]
-    fn test_create_reopen() {
-        let mut queues = QueuesForTest::default();
-        queues.create_queue(TEST_QUEUE_ID).unwrap();
+    #[tokio::test]
+    async fn test_create_reopen() {
+        let mut queues = QueuesForTest::default().await;
+        queues.create_queue(TEST_QUEUE_ID).await.unwrap();
 
-        queues.reload();
-        queues.append(TEST_QUEUE_ID, b"hello").unwrap();
+        queues.reload().await;
+        queues.append(TEST_QUEUE_ID, b"hello").await.unwrap();
 
-        queues.reload();
-        queues.append(TEST_QUEUE_ID, b"happy").unwrap();
+        queues.reload().await;
+        queues.append(TEST_QUEUE_ID, b"happy").await.unwrap();
 
         queues.fetch_test(
             TEST_QUEUE_ID,
@@ -461,47 +355,39 @@ mod tests {
     // Note this test is specific to the current implementation of truncate.
     //
     // The truncate contract is actually not as accurate as what we are testing here.
-    #[test]
-    fn test_truncation() {
-        let mut queues = QueuesForTest::default();
-        queues.create_queue(TEST_QUEUE_ID).unwrap();
-        queues.append(TEST_QUEUE_ID, b"hello").unwrap();
-        queues.append(TEST_QUEUE_ID, b"happy").unwrap();
-        queues
-            .suggest_truncate(TEST_QUEUE_ID, Position::from(0))
-            .unwrap();
+    #[tokio::test]
+    async fn test_truncation() {
+        let mut queues = QueuesForTest::default().await;
+        queues.create_queue(TEST_QUEUE_ID).await.unwrap();
+        queues.append(TEST_QUEUE_ID, b"hello").await.unwrap();
+        queues.append(TEST_QUEUE_ID, b"happy").await.unwrap();
+        queues.suggest_truncate(TEST_QUEUE_ID, 0).await.unwrap();
         queues.fetch_test(TEST_QUEUE_ID, None, Some(1), &[&b"happy"[..]]);
     }
 
-    #[test]
-    fn test_truncation_and_reload() {
+    #[tokio::test]
+    async fn test_truncation_and_reload() {
         // This test makes sure that we don't reset the position counter when we truncate an entire
         // queue.
-        let mut queues = QueuesForTest::default();
-        queues.create_queue(TEST_QUEUE_ID).unwrap();
-        queues.append(TEST_QUEUE_ID, b"hello").unwrap();
-        queues.append(TEST_QUEUE_ID, b"happy").unwrap();
-        queues.reload();
-        queues
-            .suggest_truncate(TEST_QUEUE_ID, Position::from(100))
-            .unwrap();
-        queues.reload();
-        queues.append(TEST_QUEUE_ID, b"tax").unwrap();
-        queues.fetch_test(
-            TEST_QUEUE_ID,
-            Some(Position::from(1)),
-            Some(2),
-            &[&b"tax"[..]],
-        );
+        let mut queues = QueuesForTest::default().await;
+        queues.create_queue(TEST_QUEUE_ID).await.unwrap();
+        queues.append(TEST_QUEUE_ID, b"hello").await.unwrap();
+        queues.append(TEST_QUEUE_ID, b"happy").await.unwrap();
+        queues.reload().await;
+        queues.suggest_truncate(TEST_QUEUE_ID, 1).await.unwrap();
+        queues.reload().await;
+        queues.append(TEST_QUEUE_ID, b"tax").await.unwrap();
+        queues.fetch_test(TEST_QUEUE_ID, Some(1), Some(2), &[&b"tax"[..]]);
     }
 
     struct Record {
         queue_id: String,
         payload: Vec<u8>,
     }
+
     #[ignore]
-    #[test]
-    fn test_create_multiple_queue() {
+    #[tokio::test]
+    async fn test_create_multiple_queue() {
         use std::iter::repeat_with;
 
         use rand::rngs::StdRng;
@@ -536,15 +422,18 @@ mod tests {
             .collect();
 
         let tmpdir = tempfile::tempdir_in(".").unwrap();
-        let mut queues = Queues::open(tmpdir.path()).unwrap();
+        let mut queues = Queues::open(tmpdir.path()).await.unwrap();
         for queue_id in 0..NUM_QUEUES {
             println!("create queue {queue_id}");
-            queues.create_queue(&queue_id.to_string()).unwrap();
+            queues.create_queue(&queue_id.to_string()).await.unwrap();
         }
         let start = std::time::Instant::now();
         let mut num_bytes = 0;
         for record in records.iter() {
-            queues.append(&record.queue_id, &record.payload).unwrap();
+            queues
+                .append(&record.queue_id, &record.payload)
+                .await
+                .unwrap();
             num_bytes += record.payload.len();
         }
         let elapsed = start.elapsed();
