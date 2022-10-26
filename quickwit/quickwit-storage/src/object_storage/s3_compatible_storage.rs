@@ -40,7 +40,7 @@ use rusoto_s3::{
     PutObjectRequest, S3Client, UploadPartRequest, S3,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
-use tracing::{info, instrument, warn};
+use tracing::{instrument, warn};
 
 use crate::object_storage::MultiPartPolicy;
 use crate::storage::SendableAsync;
@@ -477,7 +477,6 @@ async fn download_all(byte_stream: ByteStream, output: &mut Vec<u8>) -> io::Resu
     output.clear();
     let mut body_stream_reader = BufReader::new(byte_stream.into_async_read());
     let num_bytes_copied = tokio::io::copy_buf(&mut body_stream_reader, output).await?;
-    info!(num_bytes = num_bytes_copied, "download bytes");
     STORAGE_METRICS
         .object_storage_download_num_bytes
         .inc_by(num_bytes_copied);
