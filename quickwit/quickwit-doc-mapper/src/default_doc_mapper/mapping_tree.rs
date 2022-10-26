@@ -95,7 +95,7 @@ impl LeafType {
                 if let JsonValue::String(text) = json_val {
                     Ok(Value::Str(text))
                 } else {
-                    Err(format!("Expected JSON string, got '{}'.", json_val))
+                    Err(format!("Expected JSON string, got `{}`.", json_val))
                 }
             }
             LeafType::I64(_) => i64::from_json(json_val),
@@ -105,17 +105,17 @@ impl LeafType {
                 if let JsonValue::Bool(val) = json_val {
                     Ok(Value::Bool(val))
                 } else {
-                    Err(format!("Expected bool value, got '{}'.", json_val))
+                    Err(format!("Expected bool value, got `{}`.", json_val))
                 }
             }
             LeafType::IpAddr(_) => {
                 if let JsonValue::String(ip_address) = json_val {
                     let ipv6_value = IpAddr::from_str(ip_address.as_str())
-                        .map_err(|err| format!("Failed to parse ip address '{ip_address}', {err}"))?
+                        .map_err(|err| format!("Failed to parse IP address `{ip_address}`: {err}"))?
                         .into_ipv6_addr();
                     Ok(Value::IpAddr(ipv6_value))
                 } else {
-                    Err(format!("Expected string value, got '{}'.", json_val))
+                    Err(format!("Expected string value, got `{}`.", json_val))
                 }
             }
             LeafType::DateTime(date_time_options) => date_time_options.parse_json(json_val),
@@ -123,10 +123,10 @@ impl LeafType {
                 let base64_str = if let JsonValue::String(base64_str) = json_val {
                     base64_str
                 } else {
-                    return Err(format!("Expected base64 string, got '{}'.", json_val));
+                    return Err(format!("Expected base64 string, got `{}`.", json_val));
                 };
                 let payload = base64::decode(&base64_str).map_err(|base64_decode_err| {
-                    format!("Expected Base64 string, got '{base64_str}': {base64_decode_err}")
+                    format!("Expected Base64 string, got `{base64_str}`: {base64_decode_err}")
                 })?;
                 Ok(Value::Bytes(payload))
             }
@@ -134,7 +134,7 @@ impl LeafType {
                 if let JsonValue::Object(json_obj) = json_val {
                     Ok(Value::JsonObject(json_obj))
                 } else {
-                    Err(format!("Expected JSON object  got '{}'.", json_val))
+                    Err(format!("Expected JSON object  got `{}`.", json_val))
                 }
             }
         }
@@ -269,14 +269,14 @@ trait NumVal: Sized + Into<Value> {
             Ok(Self::from_json_number(&num_val)
                 .ok_or_else(|| {
                     format!(
-                        "Expected {}, got inconvertible JSON number '{}'.",
+                        "Expected {}, got inconvertible JSON number `{}`.",
                         type_name::<Self>(),
                         num_val
                     )
                 })?
                 .into())
         } else {
-            Err(format!("Expected JSON number, got '{json_val}'.",))
+            Err(format!("Expected JSON number, got `{json_val}`.",))
         }
     }
 }
@@ -817,7 +817,7 @@ mod tests {
         let leaf = LeafType::U64(QuickwitNumericOptions::default());
         assert_eq!(
             leaf.value_from_json(json!(-20i64)).err().unwrap(),
-            "Expected u64, got inconvertible JSON number '-20'."
+            "Expected u64, got inconvertible JSON number `-20`."
         );
     }
 
@@ -835,7 +835,7 @@ mod tests {
         let leaf = LeafType::I64(QuickwitNumericOptions::default());
         assert_eq!(
             leaf.value_from_json(json!(20.2f64)).err().unwrap(),
-            "Expected i64, got inconvertible JSON number '20.2'."
+            "Expected i64, got inconvertible JSON number `20.2`."
         );
     }
 
@@ -845,7 +845,7 @@ mod tests {
         let err = leaf.value_from_json(json!(u64::max_value())).err().unwrap();
         assert_eq!(
             err,
-            "Expected i64, got inconvertible JSON number '18446744073709551615'."
+            "Expected i64, got inconvertible JSON number `18446744073709551615`."
         );
     }
 
@@ -909,10 +909,10 @@ mod tests {
     fn test_parse_ip_addr_should_error() {
         let typ = LeafType::IpAddr(QuickwitIpAddrOptions::default());
         let err = typ.value_from_json(json!("foo")).err().unwrap();
-        assert!(err.contains("Failed to parse ip address 'foo'"));
+        assert!(err.contains("Failed to parse IP address `foo`"));
 
         let err = typ.value_from_json(json!(1200)).err().unwrap();
-        assert!(err.contains("Expected string value, got '1200'"));
+        assert!(err.contains("Expected string value, got `1200`"));
     }
 
     #[test]
@@ -989,7 +989,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             parse_err.to_string(),
-            "The field 'root.my_field' could not be parsed: Expected JSON number, got '[1,2]'."
+            "The field 'root.my_field' could not be parsed: Expected JSON number, got `[1,2]`."
         );
     }
 
@@ -1004,7 +1004,7 @@ mod tests {
     fn test_parse_text_number_should_error() {
         let typ = LeafType::Text(QuickwitTextOptions::default());
         let err = typ.value_from_json(json!(2u64)).err().unwrap();
-        assert_eq!(err, "Expected JSON string, got '2'.");
+        assert_eq!(err, "Expected JSON string, got `2`.");
     }
 
     #[test]
@@ -1054,7 +1054,7 @@ mod tests {
     fn test_parse_bytes_number_should_err() {
         let typ = LeafType::Bytes(QuickwitNumericOptions::default());
         let error = typ.value_from_json(json!(2u64)).err().unwrap();
-        assert_eq!(error, "Expected base64 string, got '2'.");
+        assert_eq!(error, "Expected base64 string, got `2`.");
     }
 
     #[test]
@@ -1063,7 +1063,7 @@ mod tests {
         let error = typ.value_from_json(json!("dEwerwer#!%")).err().unwrap();
         assert_eq!(
             error,
-            "Expected Base64 string, got 'dEwerwer#!%': Invalid byte 35, offset 8."
+            "Expected Base64 string, got `dEwerwer#!%`: Invalid byte 35, offset 8."
         );
     }
 

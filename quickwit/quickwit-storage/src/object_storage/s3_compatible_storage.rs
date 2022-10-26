@@ -39,11 +39,11 @@ use rusoto_s3::{
     GetObjectRequest, HeadObjectError, HeadObjectRequest, ListObjectsV2Request, PutObjectError,
     PutObjectRequest, S3Client, UploadPartRequest, S3,
 };
-use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tracing::{info, instrument, warn};
 
 use crate::object_storage::MultiPartPolicy;
+use crate::storage::SendableAsync;
 use crate::{
     OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResolverError, StorageResult,
     STORAGE_METRICS,
@@ -517,8 +517,7 @@ impl Storage for S3CompatibleObjectStorage {
         Ok(())
     }
 
-    // TODO implement multipart
-    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
+    async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let get_object_req = self.create_get_object_request(path, None);
         let get_object_output = retry(&self.retry_params, || async {
             self.s3_client
@@ -531,12 +530,11 @@ impl Storage for S3CompatibleObjectStorage {
             StorageErrorKind::Service.with_error(anyhow::anyhow!("Returned object body was empty."))
         })?;
         let mut body_read = BufReader::new(body.into_async_read());
-        let mut dest_file = File::create(output_path).await?;
-        let num_bytes_copied = tokio::io::copy_buf(&mut body_read, &mut dest_file).await?;
+        let num_bytes_copied = tokio::io::copy_buf(&mut body_read, output).await?;
         STORAGE_METRICS
             .object_storage_download_num_bytes
             .inc_by(num_bytes_copied);
-        dest_file.flush().await?;
+        output.flush().await?;
         Ok(())
     }
 

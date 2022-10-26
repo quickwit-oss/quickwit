@@ -92,7 +92,7 @@ impl Default for QuickwitNumericOptions {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct QuickwitIpAddrOptions {
     #[serde(default)]
@@ -993,7 +993,7 @@ mod tests {
             r#"
             {
                 "name": "ip_address",
-                "description": "Client ip address",
+                "description": "Client IP address",
                 "type": "ip"
             }
             "#,
@@ -1004,8 +1004,8 @@ mod tests {
             entry_str,
             serde_json::json!({
                 "name": "ip_address",
-                "description": "Client ip address",
-                "type":"ip",
+                "description": "Client IP address",
+                "type": "ip",
                 "stored": true,
                 "fast": false,
                 "indexed": true
