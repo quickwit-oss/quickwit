@@ -34,9 +34,9 @@ use tokio::join;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
 
+use super::MergePlanner;
 use crate::actors::doc_processor::DocProcessor;
 use crate::actors::index_serializer::IndexSerializer;
-use crate::actors::indexing_service::GetOrInitMergePipeline;
 use crate::actors::publisher::PublisherType;
 use crate::actors::sequencer::Sequencer;
 use crate::actors::{Indexer, Packager, Publisher, Uploader};
@@ -224,23 +224,6 @@ impl IndexingPipeline {
             "Spawning indexing pipeline.",
         );
 
-        let merge_policy =
-            crate::merge_policy::merge_policy_from_settings(&self.params.indexing_settings);
-        let merge_planner_mailbox = self
-            .params
-            .indexing_service
-            .ask_for_res(GetOrInitMergePipeline {
-                pipeline_id: self.params.pipeline_id.clone(),
-                doc_mapper: self.params.doc_mapper.clone(),
-                indexing_directory: self.params.indexing_directory.clone(),
-                split_store: self.params.split_store.clone(),
-                merge_policy,
-            })
-            .await
-            .map_err(|err| {
-                anyhow::anyhow!("Failed to get a merge pipeline: {}.", err.to_string())
-            })?;
-
         let (source_mailbox, source_inbox) =
             create_mailbox::<SourceActor>("SourceActor".to_string(), QueueCapacity::Unbounded);
 
@@ -248,7 +231,7 @@ impl IndexingPipeline {
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
             self.params.metastore.clone(),
-            Some(merge_planner_mailbox.clone()),
+            Some(self.params.merge_planner_mailbox.clone()),
             Some(source_mailbox.clone()),
         );
         let (publisher_mailbox, publisher_handler) = ctx
@@ -482,6 +465,7 @@ pub struct IndexingPipelineParams {
     pub split_store: IndexingSplitStore,
     pub indexing_service: Mailbox<IndexingService>,
     pub max_concurrent_split_uploads: usize,
+    pub merge_planner_mailbox: Mailbox<MergePlanner>,
 }
 
 #[cfg(test)]
@@ -588,6 +572,8 @@ mod tests {
         .unwrap();
         let (indexing_service, _indexing_service_handle) =
             universe.spawn_builder().spawn(indexing_service_actor);
+        let (merge_planner_mailbox, _) =
+            create_mailbox("MergePlanner".to_string(), QueueCapacity::Unbounded);
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
@@ -600,6 +586,7 @@ mod tests {
             indexing_service,
             queues_dir_path: PathBuf::from("./queues"),
             max_concurrent_split_uploads: 4,
+            merge_planner_mailbox,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
@@ -693,6 +680,8 @@ mod tests {
         .unwrap();
         let (indexing_service, _indexing_service_handle) =
             universe.spawn_builder().spawn(indexing_service_actor);
+        let (merge_planner_mailbox, _) =
+            create_mailbox("MergePlanner".to_string(), QueueCapacity::Unbounded);
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
@@ -705,6 +694,7 @@ mod tests {
             split_store,
             indexing_service,
             max_concurrent_split_uploads: 4,
+            merge_planner_mailbox,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);

@@ -22,8 +22,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Inbox,
-    KillSwitch, Mailbox, QueueCapacity, Supervisable,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Inbox, KillSwitch, Mailbox,
+    Supervisable,
 };
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{Metastore, MetastoreError, SplitState};
@@ -58,17 +58,12 @@ struct Spawn {
     retry_count: usize,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct GetMergePlannerMailbox;
-
 pub struct MergePipeline {
     params: MergePipelineParams,
     previous_generations_statistics: MergeStatistics,
     statistics: MergeStatistics,
     handles: Option<MergePipelineHandle>,
     kill_switch: KillSwitch,
-    merge_planner_mailbox: Mailbox<MergePlanner>,
-    merge_planner_inbox: Inbox<MergePlanner>,
 }
 
 #[async_trait]
@@ -93,16 +88,12 @@ impl Actor for MergePipeline {
 
 impl MergePipeline {
     pub fn new(params: MergePipelineParams) -> Self {
-        let (merge_planner_mailbox, merge_planner_inbox) =
-            create_mailbox::<MergePlanner>("MergePlanner".to_string(), QueueCapacity::Unbounded);
         Self {
             params,
             previous_generations_statistics: Default::default(),
             handles: None,
             kill_switch: KillSwitch::default(),
             statistics: MergeStatistics::default(),
-            merge_planner_inbox,
-            merge_planner_mailbox,
         }
     }
 
@@ -212,7 +203,7 @@ impl MergePipeline {
         let merge_publisher = Publisher::new(
             PublisherType::MergePublisher,
             self.params.metastore.clone(),
-            Some(self.merge_planner_mailbox.clone()),
+            Some(self.params.merge_planner_mailbox.clone()),
             None,
         );
         let (merge_publisher_mailbox, merge_publisher_handler) = ctx
@@ -278,8 +269,8 @@ impl MergePipeline {
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
             .set_mailboxes(
-                self.merge_planner_mailbox.clone(),
-                self.merge_planner_inbox.clone(),
+                self.params.merge_planner_mailbox.clone(),
+                self.params.merge_planner_inbox.clone(),
             )
             .spawn(merge_planner);
 
@@ -351,11 +342,8 @@ impl Handler<Supervise> for MergePipeline {
                 Health::Healthy => {}
                 Health::FailureOrUnhealthy => {
                     self.terminate().await;
-                    // We don't re-spawn because the indexing pipeline
-                    // will re-spawn it if needed.
-                    return Err(ActorExitStatus::Failure(Arc::new(anyhow::anyhow!(
-                        "MergePipeline failed."
-                    ))));
+                    ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, Spawn { retry_count: 0 })
+                        .await;
                 }
                 Health::Success => {
                     return Err(ActorExitStatus::Success);
@@ -402,19 +390,6 @@ impl Handler<Spawn> for MergePipeline {
     }
 }
 
-#[async_trait]
-impl Handler<GetMergePlannerMailbox> for MergePipeline {
-    type Reply = Mailbox<MergePlanner>;
-
-    async fn handle(
-        &mut self,
-        _: GetMergePlannerMailbox,
-        _: &ActorContext<Self>,
-    ) -> Result<Mailbox<MergePlanner>, ActorExitStatus> {
-        Ok(self.merge_planner_mailbox.clone())
-    }
-}
-
 #[derive(Clone)]
 pub struct MergePipelineParams {
     pub pipeline_id: IndexingPipelineId,
@@ -424,6 +399,8 @@ pub struct MergePipelineParams {
     pub split_store: IndexingSplitStore,
     pub merge_policy: Arc<dyn MergePolicy>,
     pub max_concurrent_split_uploads: usize, //< TODO share with the indexing pipeline.
+    pub merge_planner_mailbox: Mailbox<MergePlanner>,
+    pub merge_planner_inbox: Inbox<MergePlanner>,
 }
 
 #[cfg(test)]
@@ -431,7 +408,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use quickwit_actors::{ActorExitStatus, Universe};
+    use quickwit_actors::{create_mailbox, ActorExitStatus, QueueCapacity, Universe};
     use quickwit_doc_mapper::default_doc_mapper_for_test;
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::RamStorage;
@@ -457,6 +434,8 @@ mod tests {
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
+        let (merge_planner_mailbox, merge_planner_inbox) =
+            create_mailbox("MergePlanner".to_string(), QueueCapacity::Unbounded);
         let pipeline_params = MergePipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
@@ -465,6 +444,8 @@ mod tests {
             split_store,
             merge_policy: default_merge_policy(),
             max_concurrent_split_uploads: 2,
+            merge_planner_mailbox,
+            merge_planner_inbox,
         };
         let pipeline = MergePipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);

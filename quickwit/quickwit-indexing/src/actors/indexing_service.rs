@@ -18,14 +18,13 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{HashMap, HashSet};
-use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox, Observation,
-    Supervisable,
+    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox,
+    Observation, QueueCapacity, Supervisable,
 };
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_config::{
@@ -40,7 +39,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{error, info};
 
-use super::merge_pipeline::{GetMergePlannerMailbox, MergePipeline, MergePipelineParams};
+use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::MergePlanner;
 use crate::merge_policy::MergePolicy;
 use crate::models::{
@@ -278,7 +277,7 @@ impl IndexingService {
             crate::merge_policy::merge_policy_from_settings(&index_metadata.indexing_settings);
         let split_store = IndexingSplitStore::new(
             storage.clone(),
-            merge_policy,
+            merge_policy.clone(),
             self.local_split_store.clone(),
         );
 
@@ -288,6 +287,16 @@ impl IndexingService {
             &index_metadata.indexing_settings,
         )
         .map_err(IndexingServiceError::InvalidParams)?;
+        let merge_planner_mailbox = self
+            .get_or_init_merge_pipeline(
+                ctx,
+                &pipeline_id,
+                doc_mapper.clone(),
+                indexing_directory.clone(),
+                split_store.clone(),
+                merge_policy,
+            )
+            .await?;
 
         let pipeline_params = IndexingPipelineParams {
             pipeline_id: pipeline_id.clone(),
@@ -301,6 +310,7 @@ impl IndexingService {
             indexing_service: ctx.mailbox().clone(),
             max_concurrent_split_uploads: self.max_concurrent_split_uploads,
             queues_dir_path,
+            merge_planner_mailbox,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
@@ -415,7 +425,7 @@ impl IndexingService {
         indexing_directory: IndexingDirectory,
         split_store: IndexingSplitStore,
         merge_policy: Arc<dyn MergePolicy>,
-    ) -> anyhow::Result<Mailbox<MergePlanner>> {
+    ) -> Result<Mailbox<MergePlanner>, IndexingServiceError> {
         let merge_pipeline_id = MergePipelineId::from(pipeline_id);
         if let Some(merge_pipeline_mailbox_handle) =
             self.merge_pipeline_handles.get(&merge_pipeline_id)
@@ -423,6 +433,8 @@ impl IndexingService {
             return Ok(merge_pipeline_mailbox_handle.mailbox.clone());
         }
 
+        let (merge_planner_mailbox, merge_planner_inbox) =
+            create_mailbox::<MergePlanner>("MergePlanner".to_string(), QueueCapacity::Unbounded);
         let merging_pipeline_params = MergePipelineParams {
             pipeline_id: pipeline_id.clone(),
             doc_mapper,
@@ -431,10 +443,11 @@ impl IndexingService {
             split_store,
             merge_policy,
             max_concurrent_split_uploads: self.max_concurrent_split_uploads,
+            merge_planner_mailbox: merge_planner_mailbox.clone(),
+            merge_planner_inbox,
         };
         let merge_pipeline = MergePipeline::new(merging_pipeline_params);
-        let (pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(merge_pipeline);
-        let merge_planner_mailbox = pipeline_mailbox.ask(GetMergePlannerMailbox).await?;
+        let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(merge_pipeline);
         let merge_pipeline_mailbox_handle = MergePipelineMailboxHandle {
             mailbox: merge_planner_mailbox.clone(),
             handle: pipeline_handle,
@@ -605,46 +618,6 @@ impl Handler<ShutdownPipeline> for IndexingService {
             self.state.num_running_pipelines -= 1;
         }
         Ok(Ok(()))
-    }
-}
-
-#[derive(Clone)]
-pub struct GetOrInitMergePipeline {
-    pub pipeline_id: IndexingPipelineId,
-    pub doc_mapper: Arc<dyn DocMapper>,
-    pub indexing_directory: IndexingDirectory,
-    pub split_store: IndexingSplitStore,
-    pub merge_policy: Arc<dyn MergePolicy>,
-}
-
-impl fmt::Debug for GetOrInitMergePipeline {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt.debug_struct("GetOrInitMergePipeline")
-            .field("pipeline_id", &self.pipeline_id)
-            .finish()
-    }
-}
-
-#[async_trait]
-impl Handler<GetOrInitMergePipeline> for IndexingService {
-    type Reply = anyhow::Result<Mailbox<MergePlanner>>;
-
-    async fn handle(
-        &mut self,
-        message: GetOrInitMergePipeline,
-        ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        let result = self
-            .get_or_init_merge_pipeline(
-                ctx,
-                &message.pipeline_id,
-                message.doc_mapper,
-                message.indexing_directory,
-                message.split_store,
-                message.merge_policy,
-            )
-            .await;
-        Ok(result)
     }
 }
 
