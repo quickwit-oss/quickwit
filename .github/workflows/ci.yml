@@ -64,12 +64,12 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: dorny/paths-filter@v2
-        id: changes
+        id: modified-files
         with:
           filters: |
-            src:
+            qw-src:
               - quickwit/**
-            ui:
+            ui-src:
               - quickwit/quickwit-ui/**
       - name: Setup nightly Rust Toolchain
         uses: actions-rs/toolchain@v1
@@ -104,6 +104,6 @@ jobs:
         if: matrix.task.name == 'cargo nextest'
         uses: taiki-e/install-action@nextest
       - name: ${{ matrix.task.name }}
-        if: steps.changes.outputs.src == 'true' && steps.changes.outputs.ui == 'false'
+        if: steps.modified-files.outputs.qw-src == 'true' && steps.modified-files.outputs.ui-src == 'false'
         run: ${{ matrix.task.command }}
         working-directory: ./quickwit
