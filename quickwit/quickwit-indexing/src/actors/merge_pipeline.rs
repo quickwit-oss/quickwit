@@ -175,7 +175,7 @@ impl MergePipeline {
     #[instrument(name="", level="info", skip_all, fields(index=%self.params.pipeline_id.index_id, gen=self.generation()))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         self.statistics.num_spawn_attempts += 1;
-        self.kill_switch = KillSwitch::default();
+        self.kill_switch = ctx.kill_switch().child();
 
         info!(
             index_id=%self.params.pipeline_id.index_id,
