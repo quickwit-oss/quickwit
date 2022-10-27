@@ -15,7 +15,7 @@ on:
       - quickwit/quickwit-*/**
 
 env:
-  # QW_S3_ENDPOINT: "http://localhost:4566" # Services are exposed as localhost because we are not running coverage in a container.
+  QW_S3_ENDPOINT: "http://localhost:4566" # Services are exposed as localhost because we are not running coverage in a container.
   CARGO_INCREMENTAL: 0
   AWS_DEFAULT_REGION: "localhost"
   AWS_ACCESS_KEY_ID: "placeholder"
@@ -27,7 +27,6 @@ jobs:
     name: Coverage
     runs-on: ubuntu-latest
     # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
-    container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
     services:
       localstack:
         image: localstack/localstack:latest
@@ -96,6 +95,12 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v3
+
+      - name: Install lib libsasl2
+        run: |
+          apt update
+          apt install libsasl2-dev
+          apt install libsasl2-2
 
       - uses: actions/cache@v3
         with:
