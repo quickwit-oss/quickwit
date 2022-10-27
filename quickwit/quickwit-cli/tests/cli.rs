@@ -218,7 +218,7 @@ async fn test_cmd_ingest_on_non_existing_file() {
 }
 
 #[tokio::test]
-async fn test_cmd_ingest_keep_cache() {
+async fn test_ingest_docs_cli_keep_cache() {
     let index_id = append_random_suffix("test-index-keep-cache");
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
