@@ -28,8 +28,8 @@ use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_cli::index::{
-    create_index_cli, delete_index_cli, ingest_docs_cli, search_index,
-    CreateIndexArgs, DeleteIndexArgs, IngestDocsArgs, SearchIndexArgs,
+    create_index_cli, delete_index_cli, ingest_docs_cli, search_index, CreateIndexArgs,
+    DeleteIndexArgs, IngestDocsArgs, SearchIndexArgs,
 };
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
