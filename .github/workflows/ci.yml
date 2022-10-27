@@ -66,6 +66,13 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v3
+      - uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            src:
+            - "quickwit/**"
+            - "!quickwit/quickwit-ui/**"
       - name: Setup nightly Rust Toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -99,5 +106,6 @@ jobs:
         if: matrix.task.name == 'cargo nextest'
         uses: taiki-e/install-action@nextest
       - name: ${{ matrix.task.name }}
+        if: steps.changes.outputs.src == 'true'
         run: ${{ matrix.task.command }}
         working-directory: ./quickwit
