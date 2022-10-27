@@ -68,8 +68,8 @@ jobs:
         with:
           filters: |
             src:
-            - 'quickwit/**'
-            - '!quickwit/quickwit-ui/**'
+              - 'quickwit/**'
+              - '!quickwit/quickwit-ui/**'
       - name: Setup nightly Rust Toolchain
         uses: actions-rs/toolchain@v1
         with:
