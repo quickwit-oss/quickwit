@@ -18,50 +18,58 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_counter, new_gauge, IntCounter, IntGauge};
+use quickwit_common::metrics::{new_counter_vec, new_gauge, IntCounterVec, IntGauge};
 
 pub struct IndexerMetrics {
-    pub parsing_errors_num_docs_total: IntCounter,
-    pub missing_field_num_docs_total: IntCounter,
-    pub valid_num_docs_total: IntCounter,
-    pub parsing_errors_num_bytes_total: IntCounter,
-    pub missing_field_num_bytes_total: IntCounter,
-    pub valid_num_bytes_total: IntCounter,
+    pub parsing_errors_num_docs_total: IntCounterVec,
+    pub missing_field_num_docs_total: IntCounterVec,
+    pub valid_num_docs_total: IntCounterVec,
+    pub parsing_errors_num_bytes_total: IntCounterVec,
+    pub missing_field_num_bytes_total: IntCounterVec,
+    pub valid_num_bytes_total: IntCounterVec,
     pub concurrent_upload_available_permits: IntGauge,
 }
 
 impl Default for IndexerMetrics {
     fn default() -> Self {
         IndexerMetrics {
-            parsing_errors_num_docs_total: new_counter(
+            parsing_errors_num_docs_total: new_counter_vec(
                 "parsing_errors_num_docs_total",
-                "Num of docs that were discarded due to a parsing error.",
+                "Num of docs that were discarded due to a parsing error (per index).",
                 "quickwit_indexing",
+                &["index"],
             ),
-            missing_field_num_docs_total: new_counter(
+            missing_field_num_docs_total: new_counter_vec(
                 "missing_field_num_docs_total",
-                "Num of docs that were discard because they were missing a field.",
+                "Num of docs that were discard because they were missing a field (per index).",
                 "quickwit_indexing",
+                &["index"],
             ),
-            valid_num_docs_total: new_counter(
+            valid_num_docs_total: new_counter_vec(
                 "valid_num_docs_total",
-                "Num of processed docs that were valid.",
+                "Num of processed docs that were valid (per index).",
                 "quickwit_indexing",
+                &["index"],
             ),
-            parsing_errors_num_bytes_total: new_counter(
+            parsing_errors_num_bytes_total: new_counter_vec(
                 "parsing_errors_num_bytes_total",
-                "Sum of bytes of the documents that were discarded due to a parsing error.",
+                "Sum of bytes of the documents that were discarded due to a parsing error (per \
+                 index).",
                 "quickwit_indexing",
+                &["index"],
             ),
-            missing_field_num_bytes_total: new_counter(
+            missing_field_num_bytes_total: new_counter_vec(
                 "missing_field_num_bytes_total",
-                "Sum of bytes of the documents that were discarded due to a missing field.",
+                "Sum of bytes of the documents that were discarded due to a missing field (per \
+                 index).",
                 "quickwit_indexing",
+                &["index"],
             ),
-            valid_num_bytes_total: new_counter(
+            valid_num_bytes_total: new_counter_vec(
                 "valid_num_bytes_total",
-                "Sum of bytes of valid documents that have been processed.",
+                "Sum of bytes of valid documents that have been processed (per index).",
                 "quickwit_indexing",
+                &["index"],
             ),
             concurrent_upload_available_permits: new_gauge(
                 "concurrent_upload_available_permits",

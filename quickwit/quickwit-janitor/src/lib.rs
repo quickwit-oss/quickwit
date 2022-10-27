@@ -27,6 +27,7 @@ use quickwit_storage::StorageUriResolver;
 use tracing::info;
 
 pub mod actors;
+pub mod error;
 mod garbage_collection;
 mod janitor_service;
 mod retention_policy_execution;

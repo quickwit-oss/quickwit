@@ -215,9 +215,10 @@ impl IndexingSplitStore {
             tracing::Span::current().record("cache_hit", false);
         }
         let dest_filepath = output_dir_path.join(&path);
+        let mut dest_file = tokio::fs::File::create(&dest_filepath).await?;
         self.inner
             .remote_storage
-            .copy_to_file(&path, &dest_filepath)
+            .copy_to(&path, &mut dest_file)
             .instrument(info_span!("fetch_split_from_remote_storage", path=?path))
             .await?;
         get_tantivy_directory_from_split_bundle(&dest_filepath)
