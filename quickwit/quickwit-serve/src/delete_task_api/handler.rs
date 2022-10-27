@@ -182,6 +182,18 @@ mod tests {
         assert_eq!(created_delete_query.start_timestamp, Some(1));
         assert_eq!(created_delete_query.end_timestamp, Some(10));
 
+        // POST an invalid delete query.
+        let resp = warp::test::request()
+            .path("/test-delete-task-rest/delete-tasks")
+            .method("POST")
+            .json(&true)
+            .body(r#"{"query": "unknown_field:test", "start_timestamp": 1, "end_timestamp": 10}"#)
+            .reply(&delete_query_api_handlers)
+            .await;
+        assert_eq!(resp.status(), 400);
+        assert!(String::from_utf8_lossy(resp.body()).contains("InvalidDeleteQuery"));
+
+        // GET delete tasks.
         let resp = warp::test::request()
             .path("/test-delete-task-rest/delete-tasks")
             .reply(&delete_query_api_handlers)
