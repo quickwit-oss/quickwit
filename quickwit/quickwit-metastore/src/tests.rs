@@ -2450,6 +2450,10 @@ pub mod test_suite {
                 .stage_split(index_id, split_metadata_3.clone())
                 .await
                 .unwrap();
+
+            // Sleep for 1 second to have different publish timestamps.
+            sleep(Duration::from_secs(1)).await;
+
             metastore
                 .publish_splits(index_id, &[split_id_1, split_id_2], &[], None)
                 .await

@@ -486,31 +486,6 @@ impl Metastore for FileBackedMetastore {
         .await
     }
 
-    // TODO: Switch over to trait defined implemenation once order issue is sorted.
-    async fn list_stale_splits(
-        &self,
-        index_id: &str,
-        delete_opstamp: u64,
-        num_splits: usize,
-    ) -> MetastoreResult<Vec<Split>> {
-        self.read(index_id, |index| {
-            let filter = ListSplitsQuery::for_index(index_id)
-                .with_split_state(SplitState::Published)
-                .with_opstamp_older_than(delete_opstamp)
-                .with_limit(num_splits);
-
-            let splits = index
-                .list_splits(filter)?
-                .into_iter()
-                .sorted_by_key(|split| split.split_metadata.delete_opstamp)
-                .take(num_splits)
-                .collect_vec();
-
-            Ok(splits)
-        })
-        .await
-    }
-
     fn uri(&self) -> &Uri {
         self.storage.uri()
     }
