@@ -98,9 +98,9 @@ jobs:
 
       - name: Install lib libsasl2
         run: |
-          apt update
-          apt install libsasl2-dev
-          apt install libsasl2-2
+          sudo apt update
+          sudo apt install libsasl2-dev
+          sudo apt install libsasl2-2
 
       - uses: actions/cache@v3
         with:
