@@ -69,7 +69,8 @@ jobs:
           filters: |
             src:
               - quickwit/**
-              - !quickwit/quickwit-ui/**
+            ui:
+              - quickwit/quickwit-ui/**
       - name: Setup nightly Rust Toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -103,6 +104,6 @@ jobs:
         if: matrix.task.name == 'cargo nextest'
         uses: taiki-e/install-action@nextest
       - name: ${{ matrix.task.name }}
-        if: steps.changes.outputs.src == 'true'
+        if: steps.changes.outputs.src == 'true' && steps.changes.outputs.ui == 'false'
         run: ${{ matrix.task.command }}
         working-directory: ./quickwit
