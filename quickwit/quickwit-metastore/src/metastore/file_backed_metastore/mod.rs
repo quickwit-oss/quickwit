@@ -257,8 +257,8 @@ impl FileBackedMetastore {
     }
 
     /// Helper used for testing to obtain the data associated with the given index.
-    #[cfg(any(test, feature = "testsuite"))]
-    pub async fn get_index(&self, index_id: &str) -> MetastoreResult<FileBackedIndex> {
+    #[cfg(test)]
+    async fn get_index(&self, index_id: &str) -> MetastoreResult<FileBackedIndex> {
         self.read(index_id, |index| Ok(index.clone())).await
     }
 

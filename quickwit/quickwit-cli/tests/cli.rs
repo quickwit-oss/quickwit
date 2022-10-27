@@ -235,7 +235,7 @@ fn test_cmd_ingest_keep_cache() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_cmd_ingest_simple() {
+async fn test_ingest_docs_cli() {
     let index_id = append_random_suffix("test-index-simple");
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
@@ -255,13 +255,9 @@ async fn test_cmd_ingest_simple() {
         .metastore()
         .await
         .unwrap()
-        .get_index(&index_id)
+        .list_all_splits(&index_id)
         .await
-        .unwrap()
-        .splits()
-        .clone()
-        .into_values()
-        .collect();
+        .unwrap();
 
     assert_eq!(splits.len(), 1);
     assert_eq!(splits[0].split_metadata.num_docs, 5);
