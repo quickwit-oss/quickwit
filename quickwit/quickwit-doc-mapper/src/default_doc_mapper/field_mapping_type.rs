@@ -21,7 +21,8 @@ use tantivy::schema::{Cardinality, Type};
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use crate::default_doc_mapper::field_mapping_entry::{
-    QuickwitJsonOptions, QuickwitNumericOptions, QuickwitObjectOptions, QuickwitTextOptions,
+    QuickwitIpAddrOptions, QuickwitJsonOptions, QuickwitNumericOptions, QuickwitObjectOptions,
+    QuickwitTextOptions,
 };
 
 /// A `FieldMappingType` defines the type and indexing options
@@ -40,8 +41,11 @@ pub enum FieldMappingType {
     F64(QuickwitNumericOptions, Cardinality),
     /// Bool mapping type configuration.
     Bool(QuickwitNumericOptions, Cardinality),
+    /// IP Address mapping type configuration.
+    IpAddr(QuickwitIpAddrOptions, Cardinality),
     /// Bytes mapping type configuration.
     Bytes(QuickwitNumericOptions, Cardinality),
+    /// Json mapping type configuration.
     Json(QuickwitJsonOptions, Cardinality),
     /// Object mapping type configuration.
     Object(QuickwitObjectOptions),
@@ -55,6 +59,7 @@ impl FieldMappingType {
             FieldMappingType::U64(_, cardinality) => (Type::U64, *cardinality),
             FieldMappingType::F64(_, cardinality) => (Type::F64, *cardinality),
             FieldMappingType::Bool(_, cardinality) => (Type::Bool, *cardinality),
+            FieldMappingType::IpAddr(_, cardinality) => (Type::IpAddr, *cardinality),
             FieldMappingType::DateTime(_, cardinality) => (Type::Date, *cardinality),
             FieldMappingType::Bytes(_, cardinality) => (Type::Bytes, *cardinality),
             FieldMappingType::Json(_, cardinality) => (Type::Json, *cardinality),
@@ -105,6 +110,7 @@ fn parse_primitive_type(primitive_type_str: &str) -> Option<Type> {
         "i64" => Some(Type::I64),
         "f64" => Some(Type::F64),
         "bool" => Some(Type::Bool),
+        "ip" => Some(Type::IpAddr),
         "datetime" => Some(Type::Date),
         "bytes" => Some(Type::Bytes),
         "json" => Some(Type::Json),
@@ -119,14 +125,12 @@ fn primitive_type_to_str(primitive_type: &Type) -> &'static str {
         Type::I64 => "i64",
         Type::F64 => "f64",
         Type::Bool => "bool",
+        Type::IpAddr => "ip",
         Type::Date => "datetime",
         Type::Bytes => "bytes",
         Type::Json => "json",
         Type::Facet => {
             unimplemented!("Facets are not supported by quickwit at the moment.")
-        }
-        Type::IpAddr => {
-            unimplemented!("IpAddr are not supported by quickwit at the moment.")
         }
     }
 }
@@ -152,5 +156,6 @@ mod tests {
         test_parse_type_aux("object", Some(QuickwitFieldType::Object));
         test_parse_type_aux("object2", None);
         test_parse_type_aux("bool", Some(QuickwitFieldType::Simple(Type::Bool)));
+        test_parse_type_aux("ip", Some(QuickwitFieldType::Simple(Type::IpAddr)));
     }
 }

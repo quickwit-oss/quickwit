@@ -19,20 +19,22 @@
 
 use std::any::type_name;
 use std::collections::BTreeMap;
+use std::net::IpAddr;
+use std::str::FromStr;
 
 use anyhow::bail;
 use itertools::Itertools;
 use serde_json::Value as JsonValue;
 use tantivy::schema::{
-    BytesOptions, Cardinality, Field, JsonObjectOptions, NumericOptions, SchemaBuilder,
-    TextOptions, Value,
+    BytesOptions, Cardinality, Field, IntoIpv6Addr, IpAddrOptions, JsonObjectOptions,
+    NumericOptions, SchemaBuilder, TextOptions, Value,
 };
 use tantivy::{DateOptions, Document};
 
 use super::date_time_parsing::format_timestamp;
 use super::date_time_type::QuickwitDateTimeOptions;
 use crate::default_doc_mapper::field_mapping_entry::{
-    QuickwitNumericOptions, QuickwitObjectOptions, QuickwitTextOptions,
+    QuickwitIpAddrOptions, QuickwitNumericOptions, QuickwitObjectOptions, QuickwitTextOptions,
 };
 use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
 use crate::{DocParsingError, FieldMappingEntry, ModeType};
@@ -54,6 +56,7 @@ pub enum LeafType {
     U64(QuickwitNumericOptions),
     F64(QuickwitNumericOptions),
     Bool(QuickwitNumericOptions),
+    IpAddr(QuickwitIpAddrOptions),
     DateTime(QuickwitDateTimeOptions),
     Bytes(QuickwitNumericOptions),
     Json(QuickwitJsonOptions),
@@ -65,6 +68,7 @@ impl LeafType {
             LeafType::Text(_) => JsonType::String,
             LeafType::I64(_) | LeafType::U64(_) | LeafType::F64(_) => JsonType::Number,
             LeafType::Bool(_) => JsonType::Bool,
+            LeafType::IpAddr(_) => JsonType::String,
             LeafType::DateTime(_) => JsonType::String,
             LeafType::Bytes(_) => JsonType::String,
             LeafType::Json(_) => JsonType::Object,
@@ -79,6 +83,7 @@ impl LeafType {
             | LeafType::F64(opt)
             | LeafType::Bool(opt)
             | LeafType::Bytes(opt) => opt.fast,
+            LeafType::IpAddr(opt) => opt.fast,
             LeafType::DateTime(opt) => opt.fast,
             LeafType::Json(_) => false,
         }
@@ -90,7 +95,7 @@ impl LeafType {
                 if let JsonValue::String(text) = json_val {
                     Ok(Value::Str(text))
                 } else {
-                    Err(format!("Expected JSON string, got '{}'.", json_val))
+                    Err(format!("Expected JSON string, got `{}`.", json_val))
                 }
             }
             LeafType::I64(_) => i64::from_json(json_val),
@@ -100,7 +105,17 @@ impl LeafType {
                 if let JsonValue::Bool(val) = json_val {
                     Ok(Value::Bool(val))
                 } else {
-                    Err(format!("Expected bool value, got '{}'.", json_val))
+                    Err(format!("Expected bool value, got `{}`.", json_val))
+                }
+            }
+            LeafType::IpAddr(_) => {
+                if let JsonValue::String(ip_address) = json_val {
+                    let ipv6_value = IpAddr::from_str(ip_address.as_str())
+                        .map_err(|err| format!("Failed to parse IP address `{ip_address}`: {err}"))?
+                        .into_ipv6_addr();
+                    Ok(Value::IpAddr(ipv6_value))
+                } else {
+                    Err(format!("Expected string value, got `{}`.", json_val))
                 }
             }
             LeafType::DateTime(date_time_options) => date_time_options.parse_json(json_val),
@@ -108,10 +123,10 @@ impl LeafType {
                 let base64_str = if let JsonValue::String(base64_str) = json_val {
                     base64_str
                 } else {
-                    return Err(format!("Expected base64 string, got '{}'.", json_val));
+                    return Err(format!("Expected base64 string, got `{}`.", json_val));
                 };
                 let payload = base64::decode(&base64_str).map_err(|base64_decode_err| {
-                    format!("Expected Base64 string, got '{base64_str}': {base64_decode_err}")
+                    format!("Expected Base64 string, got `{base64_str}`: {base64_decode_err}")
                 })?;
                 Ok(Value::Bytes(payload))
             }
@@ -119,7 +134,7 @@ impl LeafType {
                 if let JsonValue::Object(json_obj) = json_val {
                     Ok(Value::JsonObject(json_obj))
                 } else {
-                    Err(format!("Expected JSON object  got '{}'.", json_val))
+                    Err(format!("Expected JSON object  got `{}`.", json_val))
                 }
             }
         }
@@ -254,14 +269,14 @@ trait NumVal: Sized + Into<Value> {
             Ok(Self::from_json_number(&num_val)
                 .ok_or_else(|| {
                     format!(
-                        "Expected {}, got inconvertible JSON number '{}'.",
+                        "Expected {}, got inconvertible JSON number `{}`.",
                         type_name::<Self>(),
                         num_val
                     )
                 })?
                 .into())
         } else {
-            Err(format!("Expected JSON number, got '{json_val}'.",))
+            Err(format!("Expected JSON number, got `{json_val}`.",))
         }
     }
 }
@@ -409,6 +424,7 @@ impl From<MappingLeaf> for FieldMappingType {
             LeafType::U64(opt) => FieldMappingType::U64(opt, leaf.cardinality),
             LeafType::F64(opt) => FieldMappingType::F64(opt, leaf.cardinality),
             LeafType::Bool(opt) => FieldMappingType::Bool(opt, leaf.cardinality),
+            LeafType::IpAddr(opt) => FieldMappingType::IpAddr(opt, leaf.cardinality),
             LeafType::DateTime(opt) => FieldMappingType::DateTime(opt, leaf.cardinality),
             LeafType::Bytes(opt) => FieldMappingType::Bytes(opt, leaf.cardinality),
             LeafType::Json(opt) => FieldMappingType::Json(opt, leaf.cardinality),
@@ -542,6 +558,23 @@ fn get_bytes_options(quickwit_numeric_options: &QuickwitNumericOptions) -> Bytes
     bytes_options
 }
 
+fn get_ip_address_options(
+    quickwit_ip_address_options: &QuickwitIpAddrOptions,
+    cardinality: Cardinality,
+) -> IpAddrOptions {
+    let mut ip_address_options = IpAddrOptions::default();
+    if quickwit_ip_address_options.stored {
+        ip_address_options = ip_address_options.set_stored();
+    }
+    if quickwit_ip_address_options.indexed {
+        ip_address_options = ip_address_options.set_indexed();
+    }
+    if quickwit_ip_address_options.fast {
+        ip_address_options = ip_address_options.set_fast(cardinality);
+    }
+    ip_address_options
+}
+
 /// Creates a tantivy field name for a given field path.
 ///
 /// By field path, we mean the list of `field_name` that are crossed
@@ -623,6 +656,16 @@ fn build_mapping_from_field_type<'a>(
             };
             Ok(MappingTree::Leaf(mapping_leaf))
         }
+        FieldMappingType::IpAddr(options, cardinality) => {
+            let ip_addr_options = get_ip_address_options(options, *cardinality);
+            let field = schema_builder.add_ip_addr_field(&field_name, ip_addr_options);
+            let mapping_leaf = MappingLeaf {
+                field,
+                typ: LeafType::IpAddr(options.clone()),
+                cardinality: *cardinality,
+            };
+            Ok(MappingTree::Leaf(mapping_leaf))
+        }
         FieldMappingType::DateTime(options, cardinality) => {
             let date_time_options = get_date_time_options(options, *cardinality);
             let field = schema_builder.add_date_field(&field_name, date_time_options);
@@ -665,15 +708,17 @@ fn build_mapping_from_field_type<'a>(
 
 #[cfg(test)]
 mod tests {
+    use std::net::IpAddr;
+
     use serde_json::json;
-    use tantivy::schema::{Cardinality, Field, Value};
+    use tantivy::schema::{Cardinality, Field, IntoIpv6Addr, Value};
     use tantivy::{DateTime, Document};
     use time::macros::datetime;
 
     use super::{LeafType, MappingLeaf};
     use crate::default_doc_mapper::date_time_type::QuickwitDateTimeOptions;
     use crate::default_doc_mapper::field_mapping_entry::{
-        QuickwitNumericOptions, QuickwitTextOptions,
+        QuickwitIpAddrOptions, QuickwitNumericOptions, QuickwitTextOptions,
     };
 
     #[test]
@@ -772,7 +817,7 @@ mod tests {
         let leaf = LeafType::U64(QuickwitNumericOptions::default());
         assert_eq!(
             leaf.value_from_json(json!(-20i64)).err().unwrap(),
-            "Expected u64, got inconvertible JSON number '-20'."
+            "Expected u64, got inconvertible JSON number `-20`."
         );
     }
 
@@ -790,7 +835,7 @@ mod tests {
         let leaf = LeafType::I64(QuickwitNumericOptions::default());
         assert_eq!(
             leaf.value_from_json(json!(20.2f64)).err().unwrap(),
-            "Expected i64, got inconvertible JSON number '20.2'."
+            "Expected i64, got inconvertible JSON number `20.2`."
         );
     }
 
@@ -800,7 +845,7 @@ mod tests {
         let err = leaf.value_from_json(json!(u64::max_value())).err().unwrap();
         assert_eq!(
             err,
-            "Expected i64, got inconvertible JSON number '18446744073709551615'."
+            "Expected i64, got inconvertible JSON number `18446744073709551615`."
         );
     }
 
@@ -839,6 +884,35 @@ mod tests {
         assert_eq!(document.len(), 3);
         let values: Vec<bool> = document.get_all(field).flat_map(Value::as_bool).collect();
         assert_eq!(&values, &[true, false, true])
+    }
+
+    #[test]
+    fn test_parse_ip_addr_from_str() {
+        let leaf = LeafType::IpAddr(QuickwitIpAddrOptions::default());
+        let ips = vec![
+            "127.0.0.0",
+            "2605:2700:0:3::4713:93e3",
+            "::afff:4567:890a",
+            "10.10.12.123",
+            "192.168.0.1",
+            "2001:db8::1:0:0:1",
+        ];
+        for ip_str in ips {
+            let parsed_ip_addr = leaf.value_from_json(json!(ip_str)).unwrap();
+            let expected_ip_addr =
+                tantivy::schema::Value::IpAddr(ip_str.parse::<IpAddr>().unwrap().into_ipv6_addr());
+            assert_eq!(parsed_ip_addr, expected_ip_addr);
+        }
+    }
+
+    #[test]
+    fn test_parse_ip_addr_should_error() {
+        let typ = LeafType::IpAddr(QuickwitIpAddrOptions::default());
+        let err = typ.value_from_json(json!("foo")).err().unwrap();
+        assert!(err.contains("Failed to parse IP address `foo`"));
+
+        let err = typ.value_from_json(json!(1200)).err().unwrap();
+        assert!(err.contains("Expected string value, got `1200`"));
     }
 
     #[test]
@@ -915,7 +989,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             parse_err.to_string(),
-            "The field 'root.my_field' could not be parsed: Expected JSON number, got '[1,2]'."
+            "The field 'root.my_field' could not be parsed: Expected JSON number, got `[1,2]`."
         );
     }
 
@@ -930,7 +1004,7 @@ mod tests {
     fn test_parse_text_number_should_error() {
         let typ = LeafType::Text(QuickwitTextOptions::default());
         let err = typ.value_from_json(json!(2u64)).err().unwrap();
-        assert_eq!(err, "Expected JSON string, got '2'.");
+        assert_eq!(err, "Expected JSON string, got `2`.");
     }
 
     #[test]
@@ -980,7 +1054,7 @@ mod tests {
     fn test_parse_bytes_number_should_err() {
         let typ = LeafType::Bytes(QuickwitNumericOptions::default());
         let error = typ.value_from_json(json!(2u64)).err().unwrap();
-        assert_eq!(error, "Expected base64 string, got '2'.");
+        assert_eq!(error, "Expected base64 string, got `2`.");
     }
 
     #[test]
@@ -989,7 +1063,7 @@ mod tests {
         let error = typ.value_from_json(json!("dEwerwer#!%")).err().unwrap();
         assert_eq!(
             error,
-            "Expected Base64 string, got 'dEwerwer#!%': Invalid byte 35, offset 8."
+            "Expected Base64 string, got `dEwerwer#!%`: Invalid byte 35, offset 8."
         );
     }
 
