@@ -508,22 +508,12 @@ fn test_cmd_delete_index_dry_run() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_cmd_delete_simple() {
+async fn test_delete_index_cli() {
     let index_id = append_random_suffix("test-delete-cmd");
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
-
-    let args = GarbageCollectIndexArgs {
-        config_uri: test_env.config_uri.clone(),
-        index_id: index_id.clone(),
-        grace_period: Duration::from_secs(3600),
-        dry_run: false,
-        data_dir: None,
-    };
-
-    garbage_collect_index_cli(args).await.unwrap();
 
     let args = DeleteIndexArgs {
         config_uri: test_env.config_uri.clone(),
