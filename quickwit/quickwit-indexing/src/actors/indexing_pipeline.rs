@@ -24,28 +24,42 @@ use std::time::Duration;
 use async_trait::async_trait;
 use quickwit_actors::{
     create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, KillSwitch,
-    QueueCapacity, Supervisable,
+    Mailbox, QueueCapacity, Supervisable,
 };
-use quickwit_config::{build_doc_mapper, IndexingSettings, SourceConfig};
+use quickwit_config::{IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError, SplitState};
+use quickwit_metastore::{Metastore, MetastoreError};
 use quickwit_storage::Storage;
 use tokio::join;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
 
-use super::uploader::SplitsUpdateMailbox;
+use super::MergePlanner;
 use crate::actors::doc_processor::DocProcessor;
 use crate::actors::index_serializer::IndexSerializer;
-use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::publisher::PublisherType;
 use crate::actors::sequencer::Sequencer;
-use crate::actors::{Indexer, MergeExecutor, MergePlanner, Packager, Publisher, Uploader};
+use crate::actors::{Indexer, Packager, Publisher, Uploader};
 use crate::models::{IndexingDirectory, IndexingPipelineId, IndexingStatistics, Observe};
 use crate::source::{quickwit_supported_sources, SourceActor, SourceExecutionContext};
 use crate::split_store::IndexingSplitStore;
+use crate::SplitsUpdateMailbox;
 
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(600); // 10 min.
+
+/// Calculates the wait time based on retry count.
+// retry_count, wait_time
+// 0   2s
+// 1   4s
+// 2   8s
+// 3   16s
+// ...
+// >=8   5mn
+pub(crate) fn wait_duration_before_retry(retry_count: usize) -> Duration {
+    // Protect against a `retry_count` that will lead to an overflow.
+    let max_power = (retry_count as u32 + 1).min(31);
+    Duration::from_secs(2u64.pow(max_power) as u64).min(MAX_RETRY_DELAY)
+}
 
 /// Spawning an indexing pipeline puts a lot of pressure on the file system, metastore, etc. so
 /// we rely on this semaphore to limit the number of indexing pipelines that can be spawned
@@ -53,8 +67,7 @@ const MAX_RETRY_DELAY: Duration = Duration::from_secs(600); // 10 min.
 /// See also <https://github.com/quickwit-oss/quickwit/issues/1638>.
 static SPAWN_PIPELINE_SEMAPHORE: Semaphore = Semaphore::const_new(10);
 
-pub struct IndexingPipelineHandle {
-    /// Indexing pipeline
+pub struct IndexingPipelineHandles {
     pub source: ActorHandle<SourceActor>,
     pub doc_processor: ActorHandle<DocProcessor>,
     pub indexer: ActorHandle<Indexer>,
@@ -63,14 +76,6 @@ pub struct IndexingPipelineHandle {
     pub uploader: ActorHandle<Uploader>,
     pub sequencer: ActorHandle<Sequencer<Publisher>>,
     pub publisher: ActorHandle<Publisher>,
-
-    /// Merging pipeline subpipeline
-    pub merge_planner: ActorHandle<MergePlanner>,
-    pub merge_split_downloader: ActorHandle<MergeSplitDownloader>,
-    pub merge_executor: ActorHandle<MergeExecutor>,
-    pub merge_packager: ActorHandle<Packager>,
-    pub merge_uploader: ActorHandle<Uploader>,
-    pub merge_publisher: ActorHandle<Publisher>,
 }
 
 // Messages
@@ -87,7 +92,7 @@ pub struct IndexingPipeline {
     params: IndexingPipelineParams,
     previous_generations_statistics: IndexingStatistics,
     statistics: IndexingStatistics,
-    handles: Option<IndexingPipelineHandle>,
+    handles: Option<IndexingPipelineHandles>,
     // Killswitch used for the actors in the pipeline. This is not the supervisor killswitch.
     kill_switch: KillSwitch,
 }
@@ -134,12 +139,6 @@ impl IndexingPipeline {
                 &handles.uploader,
                 &handles.sequencer,
                 &handles.publisher,
-                &handles.merge_planner,
-                &handles.merge_split_downloader,
-                &handles.merge_executor,
-                &handles.merge_packager,
-                &handles.merge_uploader,
-                &handles.merge_publisher,
             ];
             supervisables
         } else {
@@ -216,11 +215,7 @@ impl IndexingPipeline {
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         let _spawn_pipeline_permit = SPAWN_PIPELINE_SEMAPHORE.acquire().await.expect("Failed to acquire spawn pipeline permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
         self.statistics.num_spawn_attempts += 1;
-        self.kill_switch = KillSwitch::default();
-
-        let split_store = self.params.split_store.clone();
-        let merge_policy =
-            crate::merge_policy::merge_policy_from_settings(&self.params.indexing_settings);
+        self.kill_switch = ctx.kill_switch().child();
         info!(
             index_id=%self.params.pipeline_id.index_id,
             source_id=%self.params.pipeline_id.source_id,
@@ -228,87 +223,6 @@ impl IndexingPipeline {
             root_dir=%self.params.indexing_directory.path().display(),
             "Spawning indexing pipeline.",
         );
-        let published_splits = ctx
-            .protect_future(self.params.metastore.list_splits(
-                &self.params.pipeline_id.index_id,
-                SplitState::Published,
-                None,
-                None,
-            ))
-            .await?
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect::<Vec<_>>();
-
-        let (merge_planner_mailbox, merge_planner_inbox) =
-            create_mailbox::<MergePlanner>("MergePlanner".to_string(), QueueCapacity::Unbounded);
-
-        // Merge publisher
-        let merge_publisher = Publisher::new(
-            PublisherType::MergePublisher,
-            self.params.metastore.clone(),
-            Some(merge_planner_mailbox.clone()),
-            None,
-        );
-        let (merge_publisher_mailbox, merge_publisher_handler) = ctx
-            .spawn_actor()
-            .set_kill_switch(self.kill_switch.clone())
-            .spawn(merge_publisher);
-
-        // Merge uploader
-        let merge_uploader = Uploader::new(
-            "MergeUploader",
-            self.params.metastore.clone(),
-            split_store.clone(),
-            SplitsUpdateMailbox::Publisher(merge_publisher_mailbox),
-            self.params.max_concurrent_split_uploads,
-        );
-        let (merge_uploader_mailbox, merge_uploader_handler) = ctx
-            .spawn_actor()
-            .set_kill_switch(self.kill_switch.clone())
-            .spawn(merge_uploader);
-
-        // Merge Packager
-        let tag_fields = self.params.doc_mapper.tag_named_fields()?;
-        let merge_packager =
-            Packager::new("MergePackager", tag_fields.clone(), merge_uploader_mailbox);
-        let (merge_packager_mailbox, merge_packager_handler) = ctx
-            .spawn_actor()
-            .set_kill_switch(self.kill_switch.clone())
-            .spawn(merge_packager);
-
-        let merge_executor = MergeExecutor::new(
-            self.params.pipeline_id.clone(),
-            self.params.metastore.clone(),
-            merge_packager_mailbox,
-        );
-        let (merge_executor_mailbox, merge_executor_handler) = ctx
-            .spawn_actor()
-            .set_kill_switch(self.kill_switch.clone())
-            .spawn(merge_executor);
-
-        let merge_split_downloader = MergeSplitDownloader {
-            scratch_directory: self.params.merge_directory.scratch_directory().clone(),
-            split_store: split_store.clone(),
-            executor_mailbox: merge_executor_mailbox,
-        };
-        let (merge_split_downloader_mailbox, merge_split_downloader_handler) = ctx
-            .spawn_actor()
-            .set_kill_switch(self.kill_switch.clone())
-            .spawn(merge_split_downloader);
-
-        // Merge planner
-        let merge_planner = MergePlanner::new(
-            self.params.pipeline_id.clone(),
-            published_splits,
-            merge_policy.clone(),
-            merge_split_downloader_mailbox,
-        );
-        let (merge_planner_mailbox, merge_planner_handler) = ctx
-            .spawn_actor()
-            .set_kill_switch(self.kill_switch.clone())
-            .set_mailboxes(merge_planner_mailbox, merge_planner_inbox)
-            .spawn(merge_planner);
 
         let (source_mailbox, source_inbox) =
             create_mailbox::<SourceActor>("SourceActor".to_string(), QueueCapacity::Unbounded);
@@ -317,7 +231,7 @@ impl IndexingPipeline {
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
             self.params.metastore.clone(),
-            Some(merge_planner_mailbox),
+            Some(self.params.merge_planner_mailbox.clone()),
             Some(source_mailbox.clone()),
         );
         let (publisher_mailbox, publisher_handler) = ctx
@@ -335,7 +249,7 @@ impl IndexingPipeline {
         let uploader = Uploader::new(
             "Uploader",
             self.params.metastore.clone(),
-            split_store.clone(),
+            self.params.split_store.clone(),
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
             self.params.max_concurrent_split_uploads,
         );
@@ -345,6 +259,7 @@ impl IndexingPipeline {
             .spawn(uploader);
 
         // Packager
+        let tag_fields = self.params.doc_mapper.tag_named_fields()?;
         let packager = Packager::new("Packager", tag_fields, uploader_mailbox);
         let (packager_mailbox, packager_handler) = ctx
             .spawn_actor()
@@ -417,7 +332,7 @@ impl IndexingPipeline {
         // Increment generation once we are sure there will be no spawning error.
         self.previous_generations_statistics = self.statistics.clone();
         self.statistics.generation += 1;
-        self.handles = Some(IndexingPipelineHandle {
+        self.handles = Some(IndexingPipelineHandles {
             source: source_handler,
             doc_processor: doc_processor_handler,
             indexer: indexer_handler,
@@ -426,28 +341,8 @@ impl IndexingPipeline {
             uploader: uploader_handler,
             sequencer: sequencer_handler,
             publisher: publisher_handler,
-
-            merge_planner: merge_planner_handler,
-            merge_split_downloader: merge_split_downloader_handler,
-            merge_executor: merge_executor_handler,
-            merge_packager: merge_packager_handler,
-            merge_uploader: merge_uploader_handler,
-            merge_publisher: merge_publisher_handler,
         });
         Ok(())
-    }
-
-    // retry_count, wait_time
-    // 0   2s
-    // 1   4s
-    // 2   8s
-    // 3   16s
-    // ...
-    // >=8   5mn
-    fn wait_duration_before_retry(retry_count: usize) -> Duration {
-        // Protect against a `retry_count` that will lead to an overflow.
-        let max_power = (retry_count as u32 + 1).min(31);
-        Duration::from_secs(2u64.pow(max_power) as u64).min(MAX_RETRY_DELAY)
     }
 
     async fn terminate(&mut self) {
@@ -459,12 +354,6 @@ impl IndexingPipeline {
                 handlers.packager.kill(),
                 handlers.uploader.kill(),
                 handlers.publisher.kill(),
-                handlers.merge_planner.kill(),
-                handlers.merge_split_downloader.kill(),
-                handlers.merge_executor.kill(),
-                handlers.merge_packager.kill(),
-                handlers.merge_uploader.kill(),
-                handlers.merge_publisher.kill(),
             );
         }
     }
@@ -550,7 +439,7 @@ impl Handler<Spawn> for IndexingPipeline {
                 info!(error = ?spawn_error, "Could not spawn pipeline, index might have been deleted.");
                 return Err(ActorExitStatus::Success);
             }
-            let retry_delay = Self::wait_duration_before_retry(spawn.retry_count);
+            let retry_delay = wait_duration_before_retry(spawn.retry_count);
             error!(error = ?spawn_error, retry_count = spawn.retry_count, retry_delay = ?retry_delay, "Error while spawning indexing pipeline, retrying after some time.");
             ctx.schedule_self_msg(
                 retry_delay,
@@ -568,7 +457,6 @@ pub struct IndexingPipelineParams {
     pub pipeline_id: IndexingPipelineId,
     pub doc_mapper: Arc<dyn DocMapper>,
     pub indexing_directory: IndexingDirectory,
-    pub merge_directory: IndexingDirectory,
     pub queues_dir_path: PathBuf,
     pub indexing_settings: IndexingSettings,
     pub source_config: SourceConfig,
@@ -576,41 +464,7 @@ pub struct IndexingPipelineParams {
     pub storage: Arc<dyn Storage>,
     pub split_store: IndexingSplitStore,
     pub max_concurrent_split_uploads: usize,
-}
-
-impl IndexingPipelineParams {
-    #[allow(clippy::too_many_arguments)]
-    pub fn try_new(
-        pipeline_id: IndexingPipelineId,
-        index_metadata: IndexMetadata,
-        source_config: SourceConfig,
-        indexing_directory: IndexingDirectory,
-        merge_directory: IndexingDirectory,
-        queues_dir_path: PathBuf,
-        split_store: IndexingSplitStore,
-        metastore: Arc<dyn Metastore>,
-        storage: Arc<dyn Storage>,
-        max_concurrent_split_uploads: usize,
-    ) -> anyhow::Result<Self> {
-        let doc_mapper = build_doc_mapper(
-            &index_metadata.doc_mapping,
-            &index_metadata.search_settings,
-            &index_metadata.indexing_settings,
-        )?;
-        Ok(Self {
-            pipeline_id,
-            doc_mapper,
-            indexing_directory,
-            merge_directory,
-            queues_dir_path,
-            indexing_settings: index_metadata.indexing_settings,
-            source_config,
-            metastore,
-            storage,
-            split_store,
-            max_concurrent_split_uploads,
-        })
-    }
+    pub merge_planner_mailbox: Mailbox<MergePlanner>,
 }
 
 #[cfg(test)]
@@ -629,30 +483,12 @@ mod tests {
 
     #[test]
     fn test_wait_duration() {
-        assert_eq!(
-            IndexingPipeline::wait_duration_before_retry(0),
-            Duration::from_secs(2)
-        );
-        assert_eq!(
-            IndexingPipeline::wait_duration_before_retry(1),
-            Duration::from_secs(4)
-        );
-        assert_eq!(
-            IndexingPipeline::wait_duration_before_retry(2),
-            Duration::from_secs(8)
-        );
-        assert_eq!(
-            IndexingPipeline::wait_duration_before_retry(3),
-            Duration::from_secs(16)
-        );
-        assert_eq!(
-            IndexingPipeline::wait_duration_before_retry(8),
-            Duration::from_secs(512)
-        );
-        assert_eq!(
-            IndexingPipeline::wait_duration_before_retry(9),
-            MAX_RETRY_DELAY
-        );
+        assert_eq!(wait_duration_before_retry(0), Duration::from_secs(2));
+        assert_eq!(wait_duration_before_retry(1), Duration::from_secs(4));
+        assert_eq!(wait_duration_before_retry(2), Duration::from_secs(8));
+        assert_eq!(wait_duration_before_retry(3), Duration::from_secs(16));
+        assert_eq!(wait_duration_before_retry(8), Duration::from_secs(512));
+        assert_eq!(wait_duration_before_retry(9), MAX_RETRY_DELAY);
     }
 
     async fn test_indexing_pipeline_num_fails_before_success(
@@ -680,9 +516,6 @@ mod tests {
                 Ok(10)
             });
         metastore
-            .expect_list_splits()
-            .returning(|_, _, _, _| Ok(Vec::new()));
-        metastore
             .expect_mark_splits_for_deletion()
             .returning(|_, _| Ok(()));
         metastore
@@ -706,10 +539,12 @@ mod tests {
             .times(1)
             .returning(|_, _, _, _| Ok(()));
         let universe = Universe::new();
+        let node_id = "test-node";
+        let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
+            node_id: node_id.to_string(),
             pipeline_ord: 0,
         };
         let source_config = SourceConfig {
@@ -720,18 +555,20 @@ mod tests {
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
+        let (merge_planner_mailbox, _) =
+            create_mailbox("MergePlanner".to_string(), QueueCapacity::Unbounded);
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             indexing_directory: IndexingDirectory::for_test().await,
-            merge_directory: IndexingDirectory::for_test().await,
-            queues_dir_path: PathBuf::from("./queues"),
             indexing_settings: IndexingSettings::for_test(),
-            metastore: Arc::new(metastore),
+            metastore: metastore.clone(),
             storage,
             split_store,
+            queues_dir_path: PathBuf::from("./queues"),
             max_concurrent_split_uploads: 4,
+            merge_planner_mailbox,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
@@ -772,10 +609,6 @@ mod tests {
                 Ok(10)
             });
         metastore
-            .expect_list_splits()
-            .times(1)
-            .returning(|_, _, _, _| Ok(Vec::new()));
-        metastore
             .expect_stage_split()
             .withf(|index_id, _metadata| index_id == "test-index")
             .times(1)
@@ -796,10 +629,12 @@ mod tests {
             .times(1)
             .returning(|_, _, _, _| Ok(()));
         let universe = Universe::new();
+        let node_id = "test-node";
+        let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
-            node_id: "test-node".to_string(),
+            node_id: node_id.to_string(),
             pipeline_ord: 0,
         };
         let source_config = SourceConfig {
@@ -810,18 +645,20 @@ mod tests {
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
+        let (merge_planner_mailbox, _) =
+            create_mailbox("MergePlanner".to_string(), QueueCapacity::Unbounded);
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             indexing_directory: IndexingDirectory::for_test().await,
-            merge_directory: IndexingDirectory::for_test().await,
-            queues_dir_path: PathBuf::from("./queues"),
             indexing_settings: IndexingSettings::for_test(),
-            metastore: Arc::new(metastore),
+            metastore: metastore.clone(),
+            queues_dir_path: PathBuf::from("./queues"),
             storage,
             split_store,
             max_concurrent_split_uploads: 4,
+            merge_planner_mailbox,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);

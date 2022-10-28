@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod indexing_pipeline;
+mod merge_pipeline;
 
 mod doc_processor;
 mod index_serializer;
@@ -29,7 +30,7 @@ mod publisher;
 mod sequencer;
 mod uploader;
 
-pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineHandle, IndexingPipelineParams};
+pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineHandles, IndexingPipelineParams};
 pub use indexing_service::{
     IndexingService, IndexingServiceError, IndexingServiceState, INDEXING_DIR_NAME,
 };
