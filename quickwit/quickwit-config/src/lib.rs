@@ -34,16 +34,16 @@ pub use index_config::{
     IndexingSettingsLegacy, RetentionPolicy, RetentionPolicyCutoffReference, SearchSettings,
 };
 pub use source_config::{
-    FileSourceParams, IngestApiSourceParams, KafkaSourceParams, KinesisSourceParams,
-    RegionOrEndpoint, SourceConfig, SourceParams, VecSourceParams, VoidSourceParams,
-    CLI_INGEST_SOURCE_ID,
+    FileSourceParams, KafkaSourceParams, KinesisSourceParams, RegionOrEndpoint, SourceConfig,
+    SourceParams, VecSourceParams, VoidSourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 
 fn is_false(val: &bool) -> bool {
     !*val
 }
 
-fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
+/// Checks whether an identifier conforms to Quickwit object naming conventions.
+pub fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
     static IDENTIFIER_REGEX: OnceCell<Regex> = OnceCell::new();
 
     if IDENTIFIER_REGEX
@@ -52,7 +52,10 @@ fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
     {
         return Ok(());
     }
-    bail!("{} `{}` is invalid.", label, value);
+    bail!(
+        "{label} identifier `{value}` is invalid. Identifiers must match the following regular \
+         expression: `^[a-zA-Z][a-zA-Z0-9-_]{{2,254}}$`."
+    );
 }
 
 #[cfg(test)]
@@ -71,11 +74,9 @@ mod tests {
         validate_identifier("Cluster ID", "foo").unwrap();
         validate_identifier("Cluster ID", "f-_").unwrap();
 
-        assert_eq!(
-            validate_identifier("Cluster ID", "foo!")
-                .unwrap_err()
-                .to_string(),
-            "Cluster ID `foo!` is invalid."
-        );
+        assert!(validate_identifier("Cluster ID", "foo!")
+            .unwrap_err()
+            .to_string()
+            .contains("Cluster ID identifier `foo!` is invalid."));
     }
 }

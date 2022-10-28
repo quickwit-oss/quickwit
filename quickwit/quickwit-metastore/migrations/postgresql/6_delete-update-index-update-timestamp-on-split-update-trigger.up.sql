@@ -1,0 +1,1 @@
+DROP TRIGGER IF EXISTS quickwit_set_index_update_timestamp_on_split_change ON splits CASCADE;

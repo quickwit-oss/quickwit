@@ -518,12 +518,12 @@ mod tests {
             "body": ["20200415T072306-0700 INFO This is a great log"],
             "response_date": ["2021-12-19T16:39:57Z"],
             "response_time": [2.3],
-            "response_payload": [[97,98,99]],
+            "response_payload": ["YWJj"],
             "owner": ["foo"],
             "isImportant": [false],
             "body_other_tokenizer": ["20200415T072306-0700 INFO This is a great log"],
             "attributes.server": ["ABC"],
-            "attributes.server\\.payload": [[97], [98]],
+            "attributes.server\\.payload": ["YQ==", "Yg=="],
             "attributes.tags": [22, 23],
             "attributes.server\\.status": ["200", "201"]
         }"#;
@@ -654,7 +654,7 @@ mod tests {
             error,
             DocParsingError::ValueError(
                 "body".to_owned(),
-                "Expected JSON string, got '1'.".to_owned()
+                "Expected JSON string, got `1`.".to_owned()
             )
         );
         Ok(())
@@ -748,7 +748,7 @@ mod tests {
             .to_string(),
         );
         let expected_msg = "The field 'image' could not be parsed: Expected Base64 string, got \
-                            'invalid base64 data': Invalid byte 32, offset 7.";
+                            `invalid base64 data`: Invalid byte 32, offset 7.";
         assert_eq!(result.unwrap_err().to_string(), expected_msg);
         Ok(())
     }
@@ -791,7 +791,7 @@ mod tests {
         let expected_json_paths_and_values: HashMap<String, JsonValue> = serde_json::from_str(
             r#"{
                 "city": ["tokio"],
-                "image": [[97,98,99]]
+                "image": ["YWJj"]
             }"#,
         )
         .unwrap();

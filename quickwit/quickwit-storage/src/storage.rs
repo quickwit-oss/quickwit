@@ -22,8 +22,13 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
+use tokio::io::AsyncWrite;
 
 use crate::{OwnedBytes, PutPayload, StorageErrorKind, StorageResult};
+
+/// This trait is only used to make it build trait object with `AsyncWrite + Send + Unpin`.
+pub trait SendableAsync: AsyncWrite + Send + Unpin {}
+impl<W: AsyncWrite + Send + Unpin> SendableAsync for W {}
 
 /// Storage meant to receive and serve quickwit's split.
 ///
@@ -45,10 +50,45 @@ pub trait Storage: Send + Sync + 'static {
     /// Saves a file into the storage.
     async fn put(&self, path: &Path, payload: Box<dyn PutPayload>) -> StorageResult<()>;
 
+    /// Copies the file associated to `Path` into an `AsyncWrite`.
+    /// This function is required to call `.flush()` before it successfully returns.
+    ///
+    /// See also `copy_to_file`.
+    ///
+    /// async_trait Expansion of
+    /// async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()>;
+    ///
+    /// Just putting the async form is breaking mockall.
+    fn copy_to<'life0, 'life1, 'life2, 'async_trait>(
+        &'life0 self,
+        path: &'life1 Path,
+        output: &'life2 mut dyn SendableAsync,
+    ) -> ::core::pin::Pin<
+        Box<
+            dyn ::core::future::Future<Output = StorageResult<()>>
+                + ::core::marker::Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        'life2: 'async_trait,
+        Self: 'async_trait;
+
     /// Downloads an entire file and writes it into a local file.
-    /// `output_path` is expected to be a file path (not a directory path).
-    /// TODO Change the API to support multipart download
-    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()>;
+    /// `output_path` is expected to be a file path (not a directory path)
+    /// without any existing file yet.
+    ///
+    /// If the call is successful, the file will be created.
+    /// If not, the file may or may not have been created.
+    ///
+    /// See also `copy_to`.
+    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
+        let mut file = tokio::fs::File::create(output_path).await?;
+        self.copy_to(path, &mut file).await?;
+        Ok(())
+    }
 
     /// Downloads a slice of a file from the storage, and returns an in memory buffer
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes>;

@@ -17,12 +17,83 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::convert::Infallible;
 use std::fmt::Display;
 use std::str::FromStr;
 
+use ouroboros::self_referencing;
+use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
-use unwrap_infallible::UnwrapInfallible;
+use time::format_description::FormatItem;
+use time::{OffsetDateTime, PrimitiveDateTime};
+use time_fmt::parse::time_format_item::parse_to_format_item;
+
+/// A date time parser that holds the format specification `Vec<FormatItem>`.
+#[self_referencing]
+pub struct StrptimeParser {
+    strptime_format: String,
+    with_timezone: bool,
+    #[borrows(strptime_format)]
+    #[covariant]
+    items: Vec<FormatItem<'this>>,
+}
+
+impl FromStr for StrptimeParser {
+    type Err = String;
+
+    fn from_str(strptime_format_str: &str) -> Result<Self, Self::Err> {
+        StrptimeParser::try_new(
+            strptime_format_str.to_string(),
+            strptime_format_str.to_lowercase().contains("%z"),
+            |strptime_format: &String| {
+                parse_to_format_item(strptime_format).map_err(|err| {
+                    format!("Invalid format specification `{strptime_format}`. Error: {err}.")
+                })
+            },
+        )
+    }
+}
+
+impl StrptimeParser {
+    pub fn parse_date_time(&self, date_time_str: &str) -> Result<OffsetDateTime, String> {
+        if *self.borrow_with_timezone() {
+            OffsetDateTime::parse(date_time_str, self.borrow_items()).map_err(|err| err.to_string())
+        } else {
+            PrimitiveDateTime::parse(date_time_str, self.borrow_items())
+                .map(|date_time| date_time.assume_utc())
+                .map_err(|err| err.to_string())
+        }
+    }
+}
+
+impl Clone for StrptimeParser {
+    fn clone(&self) -> Self {
+        // `self.format` is already known to be a valid format.
+        Self::from_str(self.borrow_strptime_format().as_str()).unwrap()
+    }
+}
+
+impl PartialEq for StrptimeParser {
+    fn eq(&self, other: &Self) -> bool {
+        self.borrow_strptime_format() == other.borrow_strptime_format()
+    }
+}
+
+impl Eq for StrptimeParser {}
+
+impl std::fmt::Debug for StrptimeParser {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("StrptimeParser")
+            .field("format", &self.borrow_strptime_format())
+            .finish()
+    }
+}
+
+impl std::hash::Hash for StrptimeParser {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.borrow_strptime_format().hash(state);
+    }
+}
 
 /// Specifies the datetime and unix timestamp formats to use when parsing date strings.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -30,10 +101,7 @@ pub enum DateTimeFormat {
     ISO8601,
     RFC2822,
     RCF3339,
-    Strftime {
-        strftime_format: String,
-        with_timezone: bool,
-    },
+    Strptime(StrptimeParser),
     Timestamp,
 }
 
@@ -43,22 +111,20 @@ impl DateTimeFormat {
             DateTimeFormat::ISO8601 => "iso8601",
             DateTimeFormat::RFC2822 => "rfc2822",
             DateTimeFormat::RCF3339 => "rfc3339",
-            DateTimeFormat::Strftime {
-                strftime_format, ..
-            } => strftime_format,
+            DateTimeFormat::Strptime(parser) => parser.borrow_strptime_format(),
             DateTimeFormat::Timestamp => "unix_timestamp",
         }
     }
 }
 
 impl Display for DateTimeFormat {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.write_str(self.as_str())
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
     }
 }
 
 impl FromStr for DateTimeFormat {
-    type Err = Infallible;
+    type Err = String;
 
     fn from_str(date_time_format_str: &str) -> Result<Self, Self::Err> {
         let date_time_format = match date_time_format_str.to_lowercase().as_str() {
@@ -66,10 +132,7 @@ impl FromStr for DateTimeFormat {
             "rfc2822" => DateTimeFormat::RFC2822,
             "rfc3339" => DateTimeFormat::RCF3339,
             "unix_timestamp" => DateTimeFormat::Timestamp,
-            _ => DateTimeFormat::Strftime {
-                strftime_format: date_time_format_str.to_string(),
-                with_timezone: date_time_format_str.contains("%z"),
-            },
+            _ => DateTimeFormat::Strptime(StrptimeParser::from_str(date_time_format_str)?),
         };
         Ok(date_time_format)
     }
@@ -86,7 +149,9 @@ impl<'de> Deserialize<'de> for DateTimeFormat {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
         let date_time_format_str = String::deserialize(deserializer)?;
-        Ok(DateTimeFormat::from_str(&date_time_format_str).unwrap_infallible())
+        let date_time_format =
+            DateTimeFormat::from_str(&date_time_format_str).map_err(D::Error::custom)?;
+        Ok(date_time_format)
     }
 }
 

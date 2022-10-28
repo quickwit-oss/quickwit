@@ -60,7 +60,6 @@ pub async fn start_indexing_service(
     config: &QuickwitConfig,
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
-    enable_ingest_api: bool,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
     info!("Starting indexer service.");
     // Spawn indexing service.
@@ -70,7 +69,6 @@ pub async fn start_indexing_service(
         config.indexer_config.clone(),
         metastore.clone(),
         storage_resolver,
-        enable_ingest_api,
     )
     .await?;
     let (indexing_service, _) = universe.spawn_builder().spawn(indexing_service);
@@ -87,12 +85,10 @@ pub async fn start_indexing_service(
             .await?;
     }
     // Spawn Ingest Api garbage collector.
-    if enable_ingest_api {
-        let queues_dir_path = config.data_dir_path.join(QUEUES_DIR_NAME);
-        let ingest_api_service = get_ingest_api_service(&queues_dir_path).await?;
-        let ingest_api_garbage_collector =
-            IngestApiGarbageCollector::new(metastore, ingest_api_service, indexing_service.clone());
-        universe.spawn_builder().spawn(ingest_api_garbage_collector);
-    }
+    let queues_dir_path = config.data_dir_path.join(QUEUES_DIR_NAME);
+    let ingest_api_service = get_ingest_api_service(&queues_dir_path).await?;
+    let ingest_api_garbage_collector =
+        IngestApiGarbageCollector::new(metastore, ingest_api_service, indexing_service.clone());
+    universe.spawn_builder().spawn(ingest_api_garbage_collector);
     Ok(indexing_service)
 }

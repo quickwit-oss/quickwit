@@ -39,16 +39,9 @@ pub(super) fn parse_date_time(
             DateTimeFormat::ISO8601 => parse_iso8601(date_time_str).map(TantivyDateTime::from_utc),
             DateTimeFormat::RFC2822 => parse_rfc2822(date_time_str).map(TantivyDateTime::from_utc),
             DateTimeFormat::RCF3339 => parse_rfc3339(date_time_str).map(TantivyDateTime::from_utc),
-            DateTimeFormat::Strftime {
-                strftime_format,
-                with_timezone: true,
-            } => parse_strftime_with_tz(date_time_str, strftime_format)
-                .map(|dt| TantivyDateTime::from_timestamp_micros(dt.timestamp_micros())),
-            DateTimeFormat::Strftime {
-                strftime_format,
-                with_timezone: false,
-            } => parse_strftime(date_time_str, strftime_format)
-                .map(|dt| TantivyDateTime::from_timestamp_micros(dt.timestamp_micros())),
+            DateTimeFormat::Strptime(parser) => parser
+                .parse_date_time(date_time_str)
+                .map(TantivyDateTime::from_utc),
             _ => continue,
         };
         if date_time_res.is_ok() {
@@ -79,26 +72,7 @@ fn parse_rfc3339(value: &str) -> Result<OffsetDateTime, String> {
     OffsetDateTime::parse(value, &Rfc3339).map_err(|error| error.to_string())
 }
 
-/// Parses a date using the specified strftime format without a timezone.
-fn parse_strftime(
-    date_time_str: &str,
-    strftime_format: &str,
-) -> Result<chrono::NaiveDateTime, String> {
-    chrono::NaiveDateTime::parse_from_str(date_time_str, strftime_format)
-        .map_err(|error| error.to_string())
-}
-
-/// Parses a date using the specified strftime format with a timezone (`%z` or `%Z`).
-fn parse_strftime_with_tz(
-    date_time_str: &str,
-    strftime_format: &str,
-) -> Result<chrono::NaiveDateTime, String> {
-    chrono::DateTime::parse_from_str(date_time_str, strftime_format)
-        .map(|date_time| date_time.naive_utc())
-        .map_err(|error| error.to_string())
-}
-
-/// Returns the appropriate [`TantivyDateTime`] for the specified unix timestamp.
+/// Returns the appropriate [`TantivyDateTime`] for the specified Unix timestamp.
 ///
 /// This function will choose the timestamp precision based on the value range.
 /// The tradeoff is that we can only support dates ranging:
@@ -156,9 +130,12 @@ pub(crate) fn format_timestamp(
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use time::macros::datetime;
 
     use super::*;
+    use crate::default_doc_mapper::date_time_format::StrptimeParser;
 
     #[test]
     fn test_parse_iso8601() {
@@ -179,22 +156,42 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_strftime() {
-        let date_time = parse_strftime("2012-05-21 12:09:14", "%Y-%m-%d %H:%M:%S").unwrap();
-        assert_eq!(
-            date_time.timestamp(),
-            datetime!(2012-05-21 12:09:14 UTC).unix_timestamp()
-        );
-    }
-
-    #[test]
-    fn test_parse_strftime_with_tz() {
-        let date_time =
-            parse_strftime_with_tz("2012-05-21 12:09:14 +00:00", "%Y-%m-%d %H:%M:%S %z").unwrap();
-        assert_eq!(
-            date_time.timestamp(),
-            datetime!(2012-05-21 12:09:14 UTC).unix_timestamp()
-        );
+    fn test_parse_strptime() {
+        let test_data = vec![
+            (
+                "%Y-%m-%d %H:%M:%S",
+                "2012-05-21 12:09:14",
+                datetime!(2012-05-21 12:09:14 UTC),
+            ),
+            (
+                "%Y-%m-%d %H:%M:%S %z",
+                "2012-05-21 12:09:14 +0000",
+                datetime!(2012-05-21 12:09:14 UTC),
+            ),
+            (
+                "%Y-%m-%d %H:%M:%S %z",
+                "2012-05-21 12:09:14 +0200",
+                datetime!(2012-05-21 10:09:14 UTC),
+            ),
+            (
+                "%Y-%m-%d %H:%M:%S %z",
+                "2012-05-21 12:09:14 -0300",
+                datetime!(2012-05-21 15:09:14 UTC),
+            ),
+            (
+                "%Y-%m-%d %H:%M:%S %z",
+                "2012-05-21 12:09:14 -03:00",
+                datetime!(2012-05-21 15:09:14 UTC),
+            ),
+        ];
+        for (fmt, date_time_str, expected) in test_data {
+            let parser = StrptimeParser::from_str(fmt).unwrap();
+            let result = parser.parse_date_time(date_time_str);
+            if let Err(error) = &result {
+                println!("Failed to parse: {} {} {}", date_time_str, fmt, error)
+            }
+            assert_eq!(result.unwrap(), expected);
+        }
     }
 
     #[test]
@@ -213,18 +210,15 @@ mod tests {
                     DateTimeFormat::ISO8601,
                     DateTimeFormat::RFC2822,
                     DateTimeFormat::RCF3339,
-                    DateTimeFormat::Strftime {
-                        strftime_format: "%Y-%m-%d %H:%M:%S".to_string(),
-                        with_timezone: false,
-                    },
-                    DateTimeFormat::Strftime {
-                        strftime_format: "%Y/%m/%d %H:%M:%S".to_string(),
-                        with_timezone: false,
-                    },
-                    DateTimeFormat::Strftime {
-                        strftime_format: "%Y/%m/%d %H:%M:%S %z".to_string(),
-                        with_timezone: true,
-                    },
+                    DateTimeFormat::Strptime(
+                        StrptimeParser::from_str("%Y-%m-%d %H:%M:%S").unwrap(),
+                    ),
+                    DateTimeFormat::Strptime(
+                        StrptimeParser::from_str("%Y/%m/%d %H:%M:%S").unwrap(),
+                    ),
+                    DateTimeFormat::Strptime(
+                        StrptimeParser::from_str("%Y/%m/%d %H:%M:%S %z").unwrap(),
+                    ),
                 ],
             )
             .unwrap();
@@ -253,10 +247,9 @@ mod tests {
                 &[
                     DateTimeFormat::ISO8601,
                     DateTimeFormat::RCF3339,
-                    DateTimeFormat::Strftime {
-                        strftime_format: "%Y-%m-%d %H:%M:%S.%3f".to_string(),
-                        with_timezone: false,
-                    },
+                    DateTimeFormat::Strptime(
+                        StrptimeParser::from_str("%Y-%m-%d %H:%M:%S.%f").unwrap(),
+                    ),
                 ],
             )
             .unwrap();

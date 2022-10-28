@@ -51,10 +51,10 @@
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::{Duration, SystemTime};
-use std::{fs, io};
 
 use anyhow::Context;
 use byte_unit::Byte;
@@ -135,11 +135,7 @@ impl SplitFolder {
 }
 
 fn split_id_from_split_folder(dir_path: &Path) -> Option<&str> {
-    if !dir_path.is_dir() {
-        return None;
-    }
-    let split_id: &str = dir_path.file_name()?.to_str()?.strip_suffix(".split")?;
-    Some(split_id)
+    dir_path.file_name()?.to_str()?.strip_suffix(".split")
 }
 
 pub struct LocalSplitStore {
@@ -304,19 +300,28 @@ impl LocalSplitStore {
 
         let mut split_folders: Vec<SplitFolder> = Vec::new();
 
-        for dir_entry_result in fs::read_dir(&split_store_folder)? {
-            let dir_entry = dir_entry_result?;
+        let mut read_dir = tokio::fs::read_dir(&split_store_folder).await?;
+        while let Some(dir_entry) = read_dir.next_entry().await? {
+            let metadata = dir_entry.metadata().await?;
             let dir_path: PathBuf = dir_entry.path();
-            let split_id = split_id_from_split_folder(&dir_path)
-                .ok_or_else(|| {
-                    let error_msg = format!(
-                        "Split folder name should match the format `<split_id>.split`. Got \
-                         `{dir_path:?}`."
-                    );
-                    io::Error::new(io::ErrorKind::InvalidInput, error_msg)
-                })?
-                .to_string();
-            let split_folder = SplitFolder::create(&split_id, &dir_entry.path()).await?;
+
+            if metadata.is_file() {
+                warn!(
+                    "Unexpected file found in split cache directory: `{}`.",
+                    dir_path.display()
+                );
+                continue;
+            }
+
+            let split_id = split_id_from_split_folder(&dir_path).ok_or_else(|| {
+                let error_msg = format!(
+                    "Split folder name should match the format `<split_id>.split`. Got \
+                     `{dir_path:?}`."
+                );
+                io::Error::new(io::ErrorKind::InvalidInput, error_msg)
+            })?;
+
+            let split_folder = SplitFolder::create(split_id, &dir_entry.path()).await?;
             split_folders.push(split_folder);
         }
 

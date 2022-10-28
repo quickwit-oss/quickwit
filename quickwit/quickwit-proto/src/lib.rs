@@ -101,6 +101,7 @@ use std::convert::Infallible;
 use std::fmt;
 
 pub use quickwit::*;
+use quickwit_metastore_api::DeleteQuery;
 pub use tonic;
 use tonic::codegen::http;
 
@@ -175,6 +176,19 @@ impl From<SearchStreamRequest> for SearchRequest {
             sort_by_field: None,
             sort_order: None,
             aggregation_request: None,
+        }
+    }
+}
+
+impl From<DeleteQuery> for SearchRequest {
+    fn from(delete_query: DeleteQuery) -> Self {
+        Self {
+            index_id: delete_query.index_id,
+            query: delete_query.query,
+            start_timestamp: delete_query.start_timestamp,
+            end_timestamp: delete_query.end_timestamp,
+            search_fields: delete_query.search_fields,
+            ..Default::default()
         }
     }
 }

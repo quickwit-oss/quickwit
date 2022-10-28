@@ -3,6 +3,12 @@
 version = 3
 
 [[package]]
+name = "Inflector"
+version = "0.11.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe438c63458706e03479442743baae6c88256498e6431708f6dfc520a26515d3"
+
+[[package]]
 name = "RustyXML"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -43,6 +49,12 @@ checksum = "b4f55bd91a0978cbfd91c457a164bab8b4001c833b7f323132c0a4e1922dd44e"
 dependencies = [
  "memchr",
 ]
+
+[[package]]
+name = "aliasable"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "250f629c0161ad8107cf89319e990051fae62832fd343083bea452d93e2205fd"
 
 [[package]]
 name = "android_system_properties"
@@ -1090,6 +1102,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 
 [[package]]
+name = "duct"
+version = "0.13.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fc6a0a59ed0888e0041cf708e66357b7ae1a82f1c67247e1f93b5e0818f7d8d"
+dependencies = [
+ "libc",
+ "once_cell",
+ "os_pipe",
+ "shared_child",
+]
+
+[[package]]
 name = "dyn-clone"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1200,7 +1224,7 @@ checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 [[package]]
 name = "fastfield_codecs"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=97ccd6d#97ccd6d71200288a8ebb54d2acf596465a8aba3c"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c24157f#c24157f28b26c8e686ec1e38a22540769099e4d3"
 dependencies = [
  "fastdivide",
  "itertools",
@@ -2564,15 +2588,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "os_pipe"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb233f06c2307e1f5ce2ecad9f8121cffbbee2c95428f44ea85222e460d0d213"
+dependencies = [
+ "libc",
+ "winapi 0.3.9",
+]
+
+[[package]]
 name = "os_str_bytes"
 version = "6.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ff7415e9ae3fff1225851df9e0d9e4e5479f947619774677a63572e55e80eff"
 
 [[package]]
+name = "ouroboros"
+version = "0.15.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dfbb50b356159620db6ac971c6d5c9ab788c9cc38a6f49619fca2a27acb062ca"
+dependencies = [
+ "aliasable",
+ "ouroboros_macro",
+]
+
+[[package]]
+name = "ouroboros_macro"
+version = "0.15.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a0d9d1a6191c4f391f87219d1ea42b23f09ee84d64763cd05ee6ea88d9f384d"
+dependencies = [
+ "Inflector",
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "ownedbytes"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=97ccd6d#97ccd6d71200288a8ebb54d2acf596465a8aba3c"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c24157f#c24157f28b26c8e686ec1e38a22540769099e4d3"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -2984,7 +3041,7 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rand_xorshift",
- "regex-syntax 0.6.27",
+ "regex-syntax",
  "rusty-fork",
  "tempfile",
 ]
@@ -3213,6 +3270,7 @@ dependencies = [
  "serde_json",
  "tantivy",
  "tempfile",
+ "thiserror",
  "tokio",
  "tracing",
  "warp",
@@ -3304,7 +3362,6 @@ version = "0.3.1"
 dependencies = [
  "anyhow",
  "base64",
- "chrono",
  "criterion",
  "dyn-clone",
  "fnv",
@@ -3313,6 +3370,7 @@ dependencies = [
  "matches",
  "mockall",
  "once_cell",
+ "ouroboros",
  "proptest",
  "quickwit-proto",
  "regex",
@@ -3323,9 +3381,9 @@ dependencies = [
  "tantivy-query-grammar",
  "thiserror",
  "time 0.3.15",
+ "time-fmt",
  "tracing",
  "typetag",
- "unwrap-infallible",
 ]
 
 [[package]]
@@ -3624,7 +3682,6 @@ dependencies = [
  "once_cell",
  "quickwit-aws",
  "quickwit-common",
- "quickwit-config",
  "rand 0.8.5",
  "regex",
  "rusoto_core",
@@ -3810,6 +3867,7 @@ dependencies = [
  "num_enum",
  "openssl-sys",
  "pkg-config",
+ "sasl2-sys",
 ]
 
 [[package]]
@@ -3840,7 +3898,7 @@ checksum = "4c4eb3267174b8c6c2f654116623910a0fef09c4753f8dd83db29c48a0df988b"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-syntax 0.6.27",
+ "regex-syntax",
 ]
 
 [[package]]
@@ -3849,14 +3907,8 @@ version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c230d73fb8d8c1b9c0b3135c5142a8acee3a0558fb8db5cf1cb65f8d7862132"
 dependencies = [
- "regex-syntax 0.6.27",
+ "regex-syntax",
 ]
-
-[[package]]
-name = "regex-syntax"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e931c58b93d86f080c734bfd2bce7dd0079ae2331235818133c8be7f422e20e"
 
 [[package]]
 name = "regex-syntax"
@@ -4215,6 +4267,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sasl2-sys"
+version = "0.1.20+2.1.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e645bd98535fc8fd251c43ba7c7c1f9be1e0369c99b6a5ea719052a773e655c"
+dependencies = [
+ "cc",
+ "duct",
+ "libc",
+ "pkg-config",
+]
+
+[[package]]
 name = "schannel"
 version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4497,6 +4561,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "900fba806f70c630b0a382d0d825e17a0f19fcd059a2ade1ff237bcddf446b31"
 dependencies = [
  "lazy_static",
+]
+
+[[package]]
+name = "shared_child"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6be9f7d5565b1483af3e72975e2dee33879b3b86bd48c0929fccf6585d79e65a"
+dependencies = [
+ "libc",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -4804,8 +4878,8 @@ dependencies = [
 
 [[package]]
 name = "tantivy"
-version = "0.18.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=97ccd6d#97ccd6d71200288a8ebb54d2acf596465a8aba3c"
+version = "0.19.0-dev"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c24157f#c24157f28b26c8e686ec1e38a22540769099e4d3"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -4813,6 +4887,7 @@ dependencies = [
  "bitpacking",
  "byteorder",
  "census",
+ "ciborium",
  "crc32fast",
  "crossbeam-channel",
  "downcast-rs",
@@ -4838,7 +4913,6 @@ dependencies = [
  "regex",
  "rust-stemmers",
  "serde",
- "serde_cbor",
  "serde_json",
  "smallvec",
  "stable_deref_trait",
@@ -4857,12 +4931,12 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=97ccd6d#97ccd6d71200288a8ebb54d2acf596465a8aba3c"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c24157f#c24157f28b26c8e686ec1e38a22540769099e4d3"
 
 [[package]]
 name = "tantivy-common"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=97ccd6d#97ccd6d71200288a8ebb54d2acf596465a8aba3c"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c24157f#c24157f28b26c8e686ec1e38a22540769099e4d3"
 dependencies = [
  "byteorder",
  "ownedbytes",
@@ -4870,19 +4944,19 @@ dependencies = [
 
 [[package]]
 name = "tantivy-fst"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb20cdc0d83e9184560bdde9cd60142dbb4af2e0f770e88fce45770495224205"
+checksum = "fc3c506b1a8443a3a65352df6382a1fb6a7afe1a02e871cee0d25e2c3d5f3944"
 dependencies = [
  "byteorder",
- "regex-syntax 0.4.2",
+ "regex-syntax",
  "utf8-ranges",
 ]
 
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.18.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=97ccd6d#97ccd6d71200288a8ebb54d2acf596465a8aba3c"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c24157f#c24157f28b26c8e686ec1e38a22540769099e4d3"
 dependencies = [
  "combine",
  "once_cell",
@@ -5071,6 +5145,16 @@ dependencies = [
  "num_threads",
  "serde",
  "time-macros 0.2.4",
+]
+
+[[package]]
+name = "time-fmt"
+version = "0.3.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78bfd61bca99323ce96911bd2c443259115460615e44f1d449cee8cb3831a1dd"
+dependencies = [
+ "thiserror",
+ "time 0.3.15",
 ]
 
 [[package]]
@@ -5557,12 +5641,6 @@ name = "untrusted"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
-
-[[package]]
-name = "unwrap-infallible"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "151ac09978d3c2862c4e39b557f4eceee2cc72150bc4cb4f16abf061b6e381fb"
 
 [[package]]
 name = "ureq"

@@ -19,7 +19,6 @@
 
 use byte_unit::Byte;
 use quickwit_config::IndexerConfig;
-use tracing::warn;
 
 /// A struct for keeping in check multiple SplitStore.
 #[derive(Debug)]
@@ -61,13 +60,11 @@ impl SplitStoreQuota {
 
     pub fn can_fit_split(&self, split_size_in_bytes: Byte) -> bool {
         if self.num_splits_in_cache >= self.max_num_splits {
-            warn!("Failed to cache file: maximum number of files exceeded.");
             return false;
         }
         if self.size_in_bytes_in_cache.get_bytes() + split_size_in_bytes.get_bytes()
             > self.max_num_bytes.get_bytes()
         {
-            warn!("Failed to cache file: maximum size in bytes of cache exceeded.");
             return false;
         }
         true

@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use quickwit_common::fs::{empty_dir, get_cache_directory_path};
 use quickwit_common::uri::Uri;
-use quickwit_config::{IndexConfig, QuickwitConfig};
+use quickwit_config::{IndexConfig, QuickwitConfig, SourceConfig};
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_janitor::{
     delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
@@ -147,11 +147,18 @@ impl IndexService {
             );
             index_uri
         };
+        // Add default ingest-api source config.
+        let ingest_api_source_config = SourceConfig::ingest_api_default();
+        let mut sources = index_config.sources();
+        sources.insert(
+            ingest_api_source_config.source_id.clone(),
+            ingest_api_source_config,
+        );
         let index_metadata = IndexMetadata {
             index_id,
             index_uri,
             checkpoint: Default::default(),
-            sources: index_config.sources(),
+            sources,
             doc_mapping: index_config.doc_mapping,
             indexing_settings: index_config.indexing_settings,
             search_settings: index_config.search_settings,
@@ -159,6 +166,7 @@ impl IndexService {
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
             update_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
         };
+
         self.metastore.create_index(index_metadata).await?;
         let index_metadata = self
             .metastore

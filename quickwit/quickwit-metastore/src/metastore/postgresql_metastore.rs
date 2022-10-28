@@ -175,7 +175,28 @@ async fn mark_splits_as_published_helper(
     Ok(published_split_ids)
 }
 
-/// Marks mutiple splits for deletion.
+#[instrument(skip(tx))]
+/// Updates the given index's `update_timestamp` to the current
+/// timestamp.
+async fn update_index_update_timestamp(
+    tx: &mut Transaction<'_, Postgres>,
+    index_id: &str,
+) -> MetastoreResult<()> {
+    sqlx::query(
+        r#"
+        UPDATE indexes
+        SET update_timestamp = current_timestamp
+        WHERE index_id = $1;
+    "#,
+    )
+    .bind(index_id)
+    .execute(tx)
+    .await?;
+
+    Ok(())
+}
+
+/// Marks multiple splits for deletion.
 /// Returns the IDs of the splits successfully marked for deletion.
 #[instrument(skip(tx))]
 async fn mark_splits_for_deletion(
@@ -205,6 +226,7 @@ async fn mark_splits_for_deletion(
     .map(|row| row.get(0))
     .fetch_all(tx)
     .await?;
+
     Ok(marked_split_ids)
 }
 
@@ -434,14 +456,14 @@ async fn mutate_index_metadata<E, M: FnOnce(&mut IndexMetadata) -> Result<bool, 
     tx: &mut Transaction<'_, Postgres>,
     index_id: &str,
     mutate_fn: M,
-) -> MetastoreResult<()>
+) -> MetastoreResult<bool>
 where
     MetastoreError: From<E>,
 {
     let mut index_metadata = index_metadata(tx, index_id).await?;
     let mutation_occurred = mutate_fn(&mut index_metadata)?;
     if !mutation_occurred {
-        return Ok(());
+        return Ok(mutation_occurred);
     }
     let index_metadata_json =
         serde_json::to_string(&index_metadata).map_err(|err| MetastoreError::InternalError {
@@ -464,7 +486,7 @@ where
             index_id: index_id.to_string(),
         });
     }
-    Ok(())
+    Ok(mutation_occurred)
 }
 
 #[async_trait]
@@ -557,9 +579,11 @@ impl Metastore for PostgresqlMetastore {
             .bind(split_metadata_json)
             .bind(index_id)
             .bind(metadata.delete_opstamp as i64)
-            .execute(tx)
+            .execute(&mut *tx)
             .await
                 .map_err(|err| convert_sqlx_err(index_id, err))?;
+
+            update_index_update_timestamp(tx, index_id).await?;
 
             debug!(index_id=?index_id, split_id=?split_id, "The split has been staged");
             Ok(())
@@ -592,6 +616,8 @@ impl Metastore for PostgresqlMetastore {
                 &[SplitState::Published.as_str()],
             )
             .await?;
+
+            update_index_update_timestamp(tx, index_id).await?;
 
             if published_split_ids.len() != new_split_ids.len() {
                 let affected_split_ids: Vec<String> = published_split_ids
@@ -656,6 +682,8 @@ impl Metastore for PostgresqlMetastore {
             )
             .await?;
 
+            update_index_update_timestamp(tx, index_id).await?;
+
             if marked_split_ids.len() == split_ids.len() {
                 return Ok(());
             }
@@ -696,6 +724,8 @@ impl Metastore for PostgresqlMetastore {
             .fetch_all(&mut *tx)
             .await?;
 
+            update_index_update_timestamp(tx, index_id).await?;
+
             if deleted_split_ids.len() == split_ids.len() {
                 return Ok(());
             }
@@ -724,7 +754,24 @@ impl Metastore for PostgresqlMetastore {
             mutate_index_metadata(tx, index_id, |index_metadata| {
                 index_metadata.add_source(source)
             })
-            .await
+            .await?;
+            Ok(())
+        })
+    }
+
+    #[instrument(skip(self))]
+    async fn toggle_source(
+        &self,
+        index_id: &str,
+        source_id: &str,
+        enable: bool,
+    ) -> MetastoreResult<()> {
+        run_with_tx!(self.connection_pool, tx, {
+            mutate_index_metadata(tx, index_id, |index_metadata| {
+                index_metadata.toggle_source(source_id, enable)
+            })
+            .await?;
+            Ok(())
         })
     }
 
@@ -734,7 +781,8 @@ impl Metastore for PostgresqlMetastore {
             mutate_index_metadata(tx, index_id, |index_metadata| {
                 index_metadata.delete_source(source_id)
             })
-            .await
+            .await?;
+            Ok(())
         })
     }
 
@@ -748,7 +796,8 @@ impl Metastore for PostgresqlMetastore {
             mutate_index_metadata(tx, index_id, |index_metadata| {
                 Ok::<_, MetastoreError>(index_metadata.checkpoint.reset_source(source_id))
             })
-            .await
+            .await?;
+            Ok(())
         })
     }
 
@@ -839,6 +888,9 @@ impl Metastore for PostgresqlMetastore {
             .bind(split_ids)
             .execute(&mut *tx)
             .await?;
+
+            update_index_update_timestamp(tx, index_id).await?;
+
             // If no splits is affected, maybe the index itself does not exist
             // in the first place.
             if sqlx_result.rows_affected() == 0 && index_opt(tx, index_id).await?.is_none() {
@@ -899,7 +951,7 @@ impl Metastore for PostgresqlMetastore {
                     index_id = $1
                     AND delete_opstamp < $2
                     AND split_state = $3
-                ORDER BY delete_opstamp ASC
+                ORDER BY delete_opstamp ASC, publish_timestamp ASC
                 LIMIT $4
                 "#,
                 )

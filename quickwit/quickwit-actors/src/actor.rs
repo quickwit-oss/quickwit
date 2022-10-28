@@ -348,6 +348,7 @@ impl<A: Actor> ActorContext<A> {
         &self.kill_switch
     }
 
+    #[must_use]
     pub fn progress(&self) -> &Progress {
         &self.progress
     }
