@@ -23,7 +23,7 @@ use serde::Serialize;
 
 use crate::actors::{PublisherCounters, UploaderCounters};
 
-/// A Struct to hold all merging statistical data.
+/// A Struct to hold all merge statistical data.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct MergeStatistics {
     /// Number of uploaded splits

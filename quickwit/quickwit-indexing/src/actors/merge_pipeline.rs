@@ -39,7 +39,7 @@ use crate::merge_policy::MergePolicy;
 use crate::models::{IndexingDirectory, IndexingPipelineId, MergeStatistics, Observe};
 use crate::split_store::IndexingSplitStore;
 
-pub struct MergePipelineHandle {
+pub struct MergePipelineHandles {
     pub merge_planner: ActorHandle<MergePlanner>,
     pub merge_split_downloader: ActorHandle<MergeSplitDownloader>,
     pub merge_executor: ActorHandle<MergeExecutor>,
@@ -62,7 +62,7 @@ pub struct MergePipeline {
     params: MergePipelineParams,
     previous_generations_statistics: MergeStatistics,
     statistics: MergeStatistics,
-    handles: Option<MergePipelineHandle>,
+    handles: Option<MergePipelineHandles>,
     kill_switch: KillSwitch,
 }
 
@@ -142,7 +142,7 @@ impl MergePipeline {
                 healthy_actors=?healthy_actors,
                 failed_or_unhealthy_actors=?failure_or_unhealthy_actors,
                 success_actors=?success_actors,
-                "Merging pipeline failure."
+                "Merge pipeline failure."
             );
             return Health::FailureOrUnhealthy;
         }
@@ -151,7 +151,7 @@ impl MergePipeline {
             info!(
                 pipeline_id=?self.params.pipeline_id,
                 generation=self.generation(),
-                "Merging pipeline success."
+                "Merge pipeline success."
             );
             return Health::Success;
         }
@@ -162,7 +162,7 @@ impl MergePipeline {
             healthy_actors=?healthy_actors,
             failed_or_unhealthy_actors=?failure_or_unhealthy_actors,
             success_actors=?success_actors,
-            "Merging pipeline running."
+            "Merge pipeline running."
         );
         Health::Healthy
     }
@@ -183,7 +183,7 @@ impl MergePipeline {
             pipeline_ord=%self.params.pipeline_id.pipeline_ord,
             root_dir=%self.params.indexing_directory.path().display(),
             merge_policy=?self.params.merge_policy,
-            "Spawning merging pipeline.",
+            "Spawning merge pipeline.",
         );
         let published_splits = self
             .params
@@ -276,7 +276,7 @@ impl MergePipeline {
 
         self.previous_generations_statistics = self.statistics.clone();
         self.statistics.generation += 1;
-        self.handles = Some(MergePipelineHandle {
+        self.handles = Some(MergePipelineHandles {
             merge_planner: merge_planner_handler,
             merge_split_downloader: merge_split_downloader_handler,
             merge_executor: merge_executor_handler,
@@ -419,7 +419,7 @@ mod tests {
     use crate::IndexingSplitStore;
 
     #[tokio::test]
-    async fn test_merging_pipeline_simple() -> anyhow::Result<()> {
+    async fn test_merge_pipeline_simple() -> anyhow::Result<()> {
         let mut metastore = MockMetastore::default();
         metastore
             .expect_list_splits()

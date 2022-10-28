@@ -43,7 +43,7 @@ use crate::actors::{Indexer, Packager, Publisher, Uploader};
 use crate::models::{IndexingDirectory, IndexingPipelineId, IndexingStatistics, Observe};
 use crate::source::{quickwit_supported_sources, SourceActor, SourceExecutionContext};
 use crate::split_store::IndexingSplitStore;
-use crate::{IndexingService, SplitsUpdateMailbox};
+use crate::SplitsUpdateMailbox;
 
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(600); // 10 min.
 
@@ -67,7 +67,7 @@ pub(crate) fn wait_duration_before_retry(retry_count: usize) -> Duration {
 /// See also <https://github.com/quickwit-oss/quickwit/issues/1638>.
 static SPAWN_PIPELINE_SEMAPHORE: Semaphore = Semaphore::const_new(10);
 
-pub struct IndexingPipelineHandle {
+pub struct IndexingPipelineHandles {
     pub source: ActorHandle<SourceActor>,
     pub doc_processor: ActorHandle<DocProcessor>,
     pub indexer: ActorHandle<Indexer>,
@@ -92,7 +92,7 @@ pub struct IndexingPipeline {
     params: IndexingPipelineParams,
     previous_generations_statistics: IndexingStatistics,
     statistics: IndexingStatistics,
-    handles: Option<IndexingPipelineHandle>,
+    handles: Option<IndexingPipelineHandles>,
     // Killswitch used for the actors in the pipeline. This is not the supervisor killswitch.
     kill_switch: KillSwitch,
 }
@@ -332,7 +332,7 @@ impl IndexingPipeline {
         // Increment generation once we are sure there will be no spawning error.
         self.previous_generations_statistics = self.statistics.clone();
         self.statistics.generation += 1;
-        self.handles = Some(IndexingPipelineHandle {
+        self.handles = Some(IndexingPipelineHandles {
             source: source_handler,
             doc_processor: doc_processor_handler,
             indexer: indexer_handler,
@@ -463,7 +463,6 @@ pub struct IndexingPipelineParams {
     pub metastore: Arc<dyn Metastore>,
     pub storage: Arc<dyn Storage>,
     pub split_store: IndexingSplitStore,
-    pub indexing_service: Mailbox<IndexingService>,
     pub max_concurrent_split_uploads: usize,
     pub merge_planner_mailbox: Mailbox<MergePlanner>,
 }
@@ -481,6 +480,7 @@ mod tests {
 
     use super::{IndexingPipeline, *};
     use crate::models::IndexingDirectory;
+    use crate::IndexingService;
 
     #[test]
     fn test_wait_duration() {
@@ -570,8 +570,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let (indexing_service, _indexing_service_handle) =
-            universe.spawn_builder().spawn(indexing_service_actor);
+        universe.spawn_builder().spawn(indexing_service_actor);
         let (merge_planner_mailbox, _) =
             create_mailbox("MergePlanner".to_string(), QueueCapacity::Unbounded);
         let pipeline_params = IndexingPipelineParams {
@@ -583,7 +582,6 @@ mod tests {
             metastore: metastore.clone(),
             storage,
             split_store,
-            indexing_service,
             queues_dir_path: PathBuf::from("./queues"),
             max_concurrent_split_uploads: 4,
             merge_planner_mailbox,
@@ -678,8 +676,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let (indexing_service, _indexing_service_handle) =
-            universe.spawn_builder().spawn(indexing_service_actor);
+        universe.spawn_builder().spawn(indexing_service_actor);
         let (merge_planner_mailbox, _) =
             create_mailbox("MergePlanner".to_string(), QueueCapacity::Unbounded);
         let pipeline_params = IndexingPipelineParams {
@@ -692,7 +689,6 @@ mod tests {
             queues_dir_path: PathBuf::from("./queues"),
             storage,
             split_store,
-            indexing_service,
             max_concurrent_split_uploads: 4,
             merge_planner_mailbox,
         };

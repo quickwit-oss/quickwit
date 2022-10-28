@@ -112,7 +112,7 @@ impl<'a> From<&'a IndexingPipelineId> for MergePipelineId {
     }
 }
 
-struct MergePipelineMailboxHandle {
+struct MergePipelineHandle {
     mailbox: Mailbox<MergePlanner>,
     handle: ActorHandle<MergePipeline>,
 }
@@ -127,7 +127,7 @@ pub struct IndexingService {
     indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
     local_split_store: Arc<LocalSplitStore>,
     max_concurrent_split_uploads: usize,
-    merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineMailboxHandle>,
+    merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineHandle>,
 }
 
 impl IndexingService {
@@ -288,7 +288,7 @@ impl IndexingService {
         )
         .map_err(IndexingServiceError::InvalidParams)?;
         let merge_planner_mailbox = self
-            .get_or_init_merge_pipeline(
+            .get_or_create_merge_pipeline(
                 ctx,
                 &pipeline_id,
                 doc_mapper.clone(),
@@ -307,7 +307,6 @@ impl IndexingService {
             metastore: self.metastore.clone(),
             storage,
             split_store,
-            indexing_service: ctx.mailbox().clone(),
             max_concurrent_split_uploads: self.max_concurrent_split_uploads,
             queues_dir_path,
             merge_planner_mailbox,
@@ -417,7 +416,7 @@ impl IndexingService {
         Ok(indexing_directory)
     }
 
-    async fn get_or_init_merge_pipeline(
+    async fn get_or_create_merge_pipeline(
         &mut self,
         ctx: &ActorContext<Self>,
         pipeline_id: &IndexingPipelineId,
@@ -435,7 +434,7 @@ impl IndexingService {
 
         let (merge_planner_mailbox, merge_planner_inbox) =
             create_mailbox::<MergePlanner>("MergePlanner".to_string(), QueueCapacity::Unbounded);
-        let merging_pipeline_params = MergePipelineParams {
+        let merge_pipeline_params = MergePipelineParams {
             pipeline_id: pipeline_id.clone(),
             doc_mapper,
             indexing_directory,
@@ -446,9 +445,9 @@ impl IndexingService {
             merge_planner_mailbox: merge_planner_mailbox.clone(),
             merge_planner_inbox,
         };
-        let merge_pipeline = MergePipeline::new(merging_pipeline_params);
+        let merge_pipeline = MergePipeline::new(merge_pipeline_params);
         let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(merge_pipeline);
-        let merge_pipeline_mailbox_handle = MergePipelineMailboxHandle {
+        let merge_pipeline_mailbox_handle = MergePipelineHandle {
             mailbox: merge_planner_mailbox.clone(),
             handle: pipeline_handle,
         };
