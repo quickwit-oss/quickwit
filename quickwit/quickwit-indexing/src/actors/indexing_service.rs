@@ -19,6 +19,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -242,6 +243,10 @@ impl IndexingService {
         let indexing_directory = self
             .get_or_create_indexing_directory(&pipeline_id, indexing_dir_path)
             .await?;
+        let merge_path = PathBuf::from_str("/ephemeral1/quickwit-indexing/").unwrap();
+        let merge_directory = self
+            .get_or_create_indexing_directory(&pipeline_id, merge_path)
+            .await?;
         let queues_dir_path = self.data_dir_path.join(QUEUES_DIR_NAME);
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let merge_policy =
@@ -257,6 +262,7 @@ impl IndexingService {
             index_metadata,
             source_config,
             indexing_directory,
+            merge_directory,
             queues_dir_path,
             split_store,
             self.metastore.clone(),

@@ -42,12 +42,12 @@ use quickwit_common::{chunk_range, into_u64_range};
 use regex::Regex;
 use tantivy::directory::OwnedBytes;
 use thiserror::Error;
-use tokio::fs::File;
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tracing::instrument;
 
 use crate::debouncer::DebouncedStorage;
+use crate::storage::SendableAsync;
 use crate::{
     MultiPartPolicy, PutPayload, Storage, StorageError, StorageErrorKind, StorageFactory,
     StorageResolverError, StorageResult, STORAGE_METRICS,
@@ -309,11 +309,10 @@ impl Storage for AzureBlobStorage {
         Ok(())
     }
 
-    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
+    async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let name = self.blob_name(path);
         let mut output_stream = self.container_client.blob_client(name).get().into_stream();
 
-        let mut dest_file = File::create(output_path).await?;
         while let Some(chunk_result) = output_stream.next().await {
             let chunk_response = chunk_result.map_err(AzureErrorWrapper::from)?;
             let chunk_response_body_stream = chunk_response
@@ -322,13 +321,12 @@ impl Storage for AzureBlobStorage {
                 .into_async_read()
                 .compat();
             let mut body_stream_reader = BufReader::new(chunk_response_body_stream);
-            let num_bytes_copied =
-                tokio::io::copy_buf(&mut body_stream_reader, &mut dest_file).await?;
+            let num_bytes_copied = tokio::io::copy_buf(&mut body_stream_reader, output).await?;
             STORAGE_METRICS
                 .object_storage_download_num_bytes
                 .inc_by(num_bytes_copied);
         }
-        dest_file.flush().await?;
+        output.flush().await?;
         Ok(())
     }
 
