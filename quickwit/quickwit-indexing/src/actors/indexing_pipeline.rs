@@ -473,14 +473,13 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::Universe;
-    use quickwit_config::{IndexingSettings, QuickwitConfig, SourceParams};
+    use quickwit_config::{IndexingSettings, SourceParams};
     use quickwit_doc_mapper::default_doc_mapper_for_test;
     use quickwit_metastore::{IndexMetadata, MetastoreError, MockMetastore};
-    use quickwit_storage::{RamStorage, StorageUriResolver};
+    use quickwit_storage::RamStorage;
 
     use super::{IndexingPipeline, *};
     use crate::models::IndexingDirectory;
-    use crate::IndexingService;
 
     #[test]
     fn test_wait_duration() {
@@ -517,9 +516,6 @@ mod tests {
                 Ok(10)
             });
         metastore
-            .expect_list_splits()
-            .returning(|_, _, _, _| Ok(Vec::new()));
-        metastore
             .expect_mark_splits_for_deletion()
             .returning(|_, _| Ok(()));
         metastore
@@ -543,9 +539,7 @@ mod tests {
             .times(1)
             .returning(|_, _, _, _| Ok(()));
         let universe = Universe::new();
-        let temp_dir = tempfile::tempdir()?;
         let node_id = "test-node";
-        let config = QuickwitConfig::for_test();
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
@@ -561,16 +555,6 @@ mod tests {
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
-        let indexing_service_actor = IndexingService::new(
-            node_id.to_string(),
-            temp_dir.path().to_path_buf(),
-            config.indexer_config,
-            metastore.clone(),
-            StorageUriResolver::for_test(),
-        )
-        .await
-        .unwrap();
-        universe.spawn_builder().spawn(indexing_service_actor);
         let (merge_planner_mailbox, _) =
             create_mailbox("MergePlanner".to_string(), QueueCapacity::Unbounded);
         let pipeline_params = IndexingPipelineParams {
@@ -625,10 +609,6 @@ mod tests {
                 Ok(10)
             });
         metastore
-            .expect_list_splits()
-            .times(2)
-            .returning(|_, _, _, _| Ok(Vec::new()));
-        metastore
             .expect_stage_split()
             .withf(|index_id, _metadata| index_id == "test-index")
             .times(1)
@@ -649,9 +629,7 @@ mod tests {
             .times(1)
             .returning(|_, _, _, _| Ok(()));
         let universe = Universe::new();
-        let temp_dir = tempfile::tempdir()?;
         let node_id = "test-node";
-        let config = QuickwitConfig::for_test();
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
             index_id: "test-index".to_string(),
@@ -667,16 +645,6 @@ mod tests {
         };
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
-        let indexing_service_actor = IndexingService::new(
-            node_id.to_string(),
-            temp_dir.path().to_path_buf(),
-            config.indexer_config,
-            metastore.clone(),
-            StorageUriResolver::for_test(),
-        )
-        .await
-        .unwrap();
-        universe.spawn_builder().spawn(indexing_service_actor);
         let (merge_planner_mailbox, _) =
             create_mailbox("MergePlanner".to_string(), QueueCapacity::Unbounded);
         let pipeline_params = IndexingPipelineParams {
