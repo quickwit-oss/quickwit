@@ -37,7 +37,7 @@ use quickwit_common::uri::Uri;
 use quickwit_common::ChecklistError;
 use quickwit_config::CLI_INGEST_SOURCE_ID;
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
-use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreError};
+use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreError, SplitState};
 use serde_json::{json, Number, Value};
 use serial_test::serial;
 use tokio::time::{sleep, Duration};
@@ -665,9 +665,28 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() {
     create_logs_index(&test_env);
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
-    let metastore = test_env.metastore().await.unwrap();
+    let refresh_metastore = |metastore| {
+        // In this test we rely on the file backed metastore and
+        // modify it but the file backed metastore caches results.
+        // Therefore we need to force reading the disk to update split info.
+        //
+        // We do that by dropping and recreating our metastore.
+        drop(metastore);
+        quickwit_metastore_uri_resolver().resolve(&test_env.metastore_uri)
+    };
+
+    let metastore = quickwit_metastore_uri_resolver()
+        .resolve(&test_env.metastore_uri)
+        .await
+        .unwrap();
+
     let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
     assert_eq!(splits.len(), 1);
+
+    let index_path = test_env.indexes_dir_path.join(&test_env.index_id);
+    let split_filename = quickwit_common::split_file(splits[0].split_metadata.split_id.as_str());
+    let split_path = index_path.join(&split_filename);
+    assert_eq!(split_path.exists(), true);
 
     let args = GarbageCollectIndexArgs {
         config_uri: test_env.config_uri.clone(),
@@ -679,10 +698,10 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() {
 
     garbage_collect_index_cli(args).await.unwrap();
 
-    let index_path = test_env.indexes_dir_path.join(&test_env.index_id);
-    let split_filename = quickwit_common::split_file(splits[0].split_metadata.split_id.as_str());
-    let split_path = index_path.join(&split_filename);
-    assert_eq!(split_path.exists(), true);
+    // Split should still exists within grace period.
+    let metastore = refresh_metastore(metastore).await.unwrap();
+    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    assert_eq!(splits.len(), 1);
 
     // The following steps help turn an existing published split into a staged one
     // without deleting the files.
@@ -702,6 +721,10 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() {
         .unwrap();
     assert_eq!(split_path.exists(), true);
 
+    let metastore = refresh_metastore(metastore).await.unwrap();
+    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    assert_eq!(splits[0].split_state, SplitState::Staged);
+
     let args = GarbageCollectIndexArgs {
         config_uri: test_env.config_uri.clone(),
         index_id: index_id.clone(),
@@ -711,7 +734,13 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() {
     };
 
     garbage_collect_index_cli(args).await.unwrap();
+
     assert_eq!(split_path.exists(), true);
+    // Staged splits should still exist within grace period.
+    let metastore = refresh_metastore(metastore).await.unwrap();
+    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    assert_eq!(splits.len(), 1);
+    assert_eq!(splits[0].split_state, SplitState::Staged);
 
     // Wait for grace period.
     // TODO: edit split update timestamps and remove this sleep.
@@ -721,22 +750,16 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() {
         config_uri: test_env.config_uri.clone(),
         index_id: index_id.clone(),
         grace_period: Duration::from_secs(2),
-        dry_run: true,
-        data_dir: None,
-    };
-
-    garbage_collect_index_cli(args).await.unwrap();
-    assert_eq!(split_path.exists(), true);
-
-    let args = GarbageCollectIndexArgs {
-        config_uri: test_env.config_uri.clone(),
-        index_id,
-        grace_period: Duration::from_secs(2),
         dry_run: false,
         data_dir: None,
     };
 
     garbage_collect_index_cli(args).await.unwrap();
+
+    let metastore = refresh_metastore(metastore).await.unwrap();
+    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    // Splits should be deleted from both metastore and file system.
+    assert_eq!(splits.len(), 0);
     assert_eq!(split_path.exists(), false);
 }
 
