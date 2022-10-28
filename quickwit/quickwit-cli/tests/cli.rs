@@ -404,17 +404,15 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_cmd_search() {
+async fn test_search_index_cli() {
     let index_id = append_random_suffix("test-search-cmd");
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
 
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
-
-    let args = SearchIndexArgs {
+    let create_search_args = |query: &str| SearchIndexArgs {
         config_uri: test_env.config_uri.clone(),
         index_id: index_id.clone(),
-        query: "level:info".to_string(),
+        query: query.to_string(),
         aggregation: None,
         max_hits: 20,
         start_offset: 0,
@@ -425,46 +423,24 @@ async fn test_cmd_search() {
         data_dir: None,
         sort_by_score: false,
     };
+
+    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
+
+    let args = create_search_args("level:info");
 
     // search_index_cli calls search_index and prints the SearchResponse
     let search_res = search_index(args).await.unwrap();
     assert_eq!(search_res.num_hits, 2);
 
     // search with tag pruning
-    let args = SearchIndexArgs {
-        config_uri: test_env.config_uri.clone(),
-        index_id: index_id.clone(),
-        query: "+level:info +city:paris".to_string(),
-        aggregation: None,
-        max_hits: 20,
-        start_offset: 0,
-        search_fields: None,
-        snippet_fields: None,
-        start_timestamp: None,
-        end_timestamp: None,
-        data_dir: None,
-        sort_by_score: false,
-    };
+    let args = create_search_args("+level:info +city:paris");
 
     // search_index_cli calls search_index and prints the SearchResponse
     let search_res = search_index(args).await.unwrap();
     assert_eq!(search_res.num_hits, 1);
 
     // search with tag pruning
-    let args = SearchIndexArgs {
-        config_uri: test_env.config_uri,
-        index_id,
-        query: "level:info AND city:conakry".to_string(),
-        aggregation: None,
-        max_hits: 20,
-        start_offset: 0,
-        search_fields: None,
-        snippet_fields: None,
-        start_timestamp: None,
-        end_timestamp: None,
-        data_dir: None,
-        sort_by_score: false,
-    };
+    let args = create_search_args("level:info AND city:conakry");
 
     // search_index_cli calls search_index and prints the SearchResponse
     let search_res = search_index(args).await.unwrap();
