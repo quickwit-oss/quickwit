@@ -659,7 +659,7 @@ async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_cmd_garbage_collect_spares_files_within_grace_period() {
+async fn test_garbage_collect_cli_spares_files_within_grace_period() {
     let index_id = append_random_suffix("test-gc-cmd");
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
@@ -675,6 +675,14 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() {
         quickwit_metastore_uri_resolver().resolve(&test_env.metastore_uri)
     };
 
+    let create_gc_args = |grace_period_secs| GarbageCollectIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        grace_period: Duration::from_secs(grace_period_secs),
+        dry_run: false,
+        data_dir: None,
+    };
+
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&test_env.metastore_uri)
         .await
@@ -688,13 +696,7 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() {
     let split_path = index_path.join(&split_filename);
     assert_eq!(split_path.exists(), true);
 
-    let args = GarbageCollectIndexArgs {
-        config_uri: test_env.config_uri.clone(),
-        index_id: index_id.clone(),
-        grace_period: Duration::from_secs(3600),
-        dry_run: false,
-        data_dir: None,
-    };
+    let args = create_gc_args(3600);
 
     garbage_collect_index_cli(args).await.unwrap();
 
@@ -725,13 +727,7 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() {
     let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
     assert_eq!(splits[0].split_state, SplitState::Staged);
 
-    let args = GarbageCollectIndexArgs {
-        config_uri: test_env.config_uri.clone(),
-        index_id: index_id.clone(),
-        grace_period: Duration::from_secs(2),
-        dry_run: false,
-        data_dir: None,
-    };
+    let args = create_gc_args(2);
 
     garbage_collect_index_cli(args).await.unwrap();
 
@@ -746,13 +742,7 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() {
     // TODO: edit split update timestamps and remove this sleep.
     sleep(Duration::from_secs(3)).await;
 
-    let args = GarbageCollectIndexArgs {
-        config_uri: test_env.config_uri.clone(),
-        index_id: index_id.clone(),
-        grace_period: Duration::from_secs(2),
-        dry_run: false,
-        data_dir: None,
-    };
+    let args = create_gc_args(2);
 
     garbage_collect_index_cli(args).await.unwrap();
 
