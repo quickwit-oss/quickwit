@@ -25,11 +25,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_common::uri::{Protocol, Uri};
-use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 
 use crate::prefix_storage::add_prefix_to_storage;
+use crate::storage::SendableAsync;
 use crate::{
     OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
 };
@@ -97,14 +97,13 @@ impl Storage for RamStorage {
         Ok(())
     }
 
-    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
+    async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let payload_bytes = self.get_data(path).await.ok_or_else(|| {
             StorageErrorKind::DoesNotExist
                 .with_error(anyhow::anyhow!("Failed to find dest_path {:?}", path))
         })?;
-        let mut file = File::create(output_path).await?;
-        file.write_all(&payload_bytes).await?;
-        file.flush().await?;
+        output.write_all(&payload_bytes).await?;
+        output.flush().await?;
         Ok(())
     }
 

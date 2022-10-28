@@ -246,6 +246,29 @@ fast: true
 | `indexed`   | Whether value is indexed | `true` |
 | `fast`      | Whether value is stored in a fast field | `false` |
 
+#### `ip` type
+
+The `ip` type accepts IP address values, both IpV4 and IpV6 are supported.
+
+Example of a mapping for an IP field:
+
+```yaml
+name: host_ip
+description: Host IP address
+type: ip
+fast: true
+```
+
+**Parameters for IP field**
+
+| Variable      | Description   | Default value |
+| ------------- | ------------- | ------------- |
+| `description` | Optional description for the field. | `None` |
+| `stored`    | Whether value is stored in the document store | `true` |
+| `indexed`   | Whether value is indexed | `true` |
+| `fast`      | Whether value is stored in a fast field | `false` |
+
+
 #### `bytes` type
 The `bytes` type accepts a binary value as a `Base64` encoded string.
 

@@ -90,7 +90,8 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("ingest")
                 .about("Indexes JSON documents read from a file or streamed from stdin.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
                         .required(false),
@@ -106,7 +107,8 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("ingest-api")
                 .about("Enables/disables the ingest API of an index.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1),
                     arg!(--enable "Enables the ingest API.")
                         .required(true)
                         .conflicts_with("disable")
@@ -120,7 +122,8 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("describe")
                 .about("Displays descriptive statistics of an index: number of published splits, number of documents, splits min/max timestamps, size of splits.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
                         .required(false),
@@ -130,7 +133,8 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("search")
                 .about("Searches an index.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
                         .required(false),
@@ -161,7 +165,8 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("merge")
                 .about("Merges all the splits of the index pipeline defined by the tuple (index ID, source ID, pipeline ordinal). The pipeline ordinal is 0 by default. If you have a source with `num_pipelines > 0`, you may want to merge splits on ordinals > 0.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index."),
+                    arg!(--index <INDEX> "ID of the target index.")
+                        .display_order(1),
                     arg!(--source <INDEX> "ID of the target source."),
                     arg!(--"pipeline-ord" <PIPELINE_ORD> "Pipeline ordinal.")
                         .default_value("0")
@@ -175,7 +180,8 @@ pub fn build_index_command<'a>() -> Command<'a> {
             Command::new("gc")
                 .about("Garbage collects stale staged splits and splits marked for deletion.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
                         .required(false),
@@ -191,7 +197,8 @@ pub fn build_index_command<'a>() -> Command<'a> {
                 .alias("clr")
                 .about("Clears and index. Deletes all its splits and resets its checkpoint. This operation is destructive and cannot be undone, proceed with caution.")
                 .args(&[
-                    arg!(--index <INDEX> "Index ID"),
+                    arg!(--index <INDEX> "Index ID")
+                        .display_order(1),
                     arg!(--yes),
                 ])
             )
@@ -200,7 +207,8 @@ pub fn build_index_command<'a>() -> Command<'a> {
             .alias("del")
                 .about("Deletes an index. This operation is destructive and cannot be undone, proceed with caution.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
                         .required(false),

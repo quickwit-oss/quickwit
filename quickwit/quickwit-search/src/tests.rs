@@ -973,3 +973,71 @@ async fn test_single_node_aggregation_missing_fast_field() -> anyhow::Result<()>
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_single_node_with_ip_field() -> anyhow::Result<()> {
+    let index_id = "single-node-with-ip-field";
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: log
+                type: text
+              - name: host
+                type: ip
+        "#;
+    let test_sandbox =
+        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["log"], None).await?;
+    let docs = vec![
+        json!({"log": "User not found", "host": "192.168.0.1"}),
+        json!({"log": "Request failed", "host": "10.10.12.123"}),
+        json!({"log": "Request successful", "host": "10.10.11.125"}),
+        json!({"log": "Auth service error", "host": "2001:db8::1:0:0:1"}),
+        json!({"log": "Settings saved", "host": "::afff:4567:890a"}),
+        json!({"log": "Request failed", "host": "10.10.12.123"}),
+    ];
+    test_sandbox.add_documents(docs.clone()).await?;
+    {
+        let search_request = SearchRequest {
+            index_id: index_id.to_string(),
+            query: "*".to_string(),
+            search_fields: vec!["host".to_string()],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 10,
+            start_offset: 0,
+            ..Default::default()
+        };
+        let single_node_result = single_node_search(
+            &search_request,
+            &*test_sandbox.metastore(),
+            test_sandbox.storage_uri_resolver(),
+        )
+        .await?;
+        assert_eq!(single_node_result.num_hits, 6);
+        assert_eq!(single_node_result.hits.len(), 6);
+    }
+    {
+        let search_request = SearchRequest {
+            index_id: index_id.to_string(),
+            query: "10.10.11.125".to_string(),
+            search_fields: vec!["host".to_string()],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 10,
+            start_offset: 0,
+            ..Default::default()
+        };
+        let single_node_result = single_node_search(
+            &search_request,
+            &*test_sandbox.metastore(),
+            test_sandbox.storage_uri_resolver(),
+        )
+        .await?;
+        assert_eq!(single_node_result.num_hits, 1);
+        assert_eq!(single_node_result.hits.len(), 1);
+        let hit_json: serde_json::Value = serde_json::from_str(&single_node_result.hits[0].json)?;
+        let expected_json: serde_json::Value =
+            json!({"log": "Request successful", "host": "10.10.11.125"});
+        assert_json_include!(actual: hit_json, expected: expected_json);
+        Ok(())
+    }
+}
