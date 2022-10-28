@@ -24,7 +24,6 @@ jobs:
     name: Coverage
     runs-on: ubuntu-latest
     # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
-    # container: ---
     services:
       localstack:
         image: localstack/localstack:latest
@@ -93,6 +92,12 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v3
+
+      - name: Install lib libsasl2
+        run: |
+          sudo apt update
+          sudo apt install libsasl2-dev
+          sudo apt install libsasl2-2
 
       - uses: actions/cache@v3
         with:
