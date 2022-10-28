@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
 use std::fmt::Display;
 use std::str::FromStr;
 
@@ -42,7 +43,8 @@ impl QuickwitService {
             QuickwitService::Metastore => "metastore",
         }
     }
-    pub fn supported_services() -> Vec<QuickwitService> {
+
+    pub fn supported_services() -> HashSet<QuickwitService> {
         all::<QuickwitService>().into_iter().collect()
     }
 }
@@ -64,8 +66,8 @@ impl FromStr for QuickwitService {
             "metastore" => Ok(QuickwitService::Metastore),
             _ => {
                 bail!(
-                    "Failed to parse service `{service_str}`. Supported services are: {}",
-                    QuickwitService::supported_services().iter().join(", ")
+                    "Failed to parse service `{service_str}`. Supported services are: `{}`.",
+                    QuickwitService::supported_services().iter().join("`, `")
                 )
             }
         }
