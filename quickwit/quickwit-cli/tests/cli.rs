@@ -471,7 +471,7 @@ async fn test_delete_index_cli_dry_run() {
     create_logs_index(&test_env);
 
     let refresh_metastore = |metastore| {
-        // In this test we rely on the file backed metastore 
+        // In this test we rely on the file backed metastore
         // and the file backed metastore caches results.
         // Therefore we need to force reading the disk to fetch updates.
         //
@@ -480,13 +480,11 @@ async fn test_delete_index_cli_dry_run() {
         quickwit_metastore_uri_resolver().resolve(&test_env.metastore_uri)
     };
 
-    let create_delete_args = |dry_run| {
-        DeleteIndexArgs {
-            config_uri: test_env.config_uri.clone(),
-            index_id: index_id.clone(),
-            dry_run,
-            data_dir: None,
-        }
+    let create_delete_args = |dry_run| DeleteIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        dry_run,
+        data_dir: None,
     };
 
     let metastore = quickwit_metastore_uri_resolver()
