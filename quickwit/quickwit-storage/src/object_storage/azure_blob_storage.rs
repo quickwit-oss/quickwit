@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -32,22 +33,21 @@ use azure_storage_blobs::blob::operations::GetBlobResponse;
 use azure_storage_blobs::prelude::*;
 use bytes::Bytes;
 use futures::io::{Error as FutureError, ErrorKind as FutureErrorKind};
-use futures::stream::StreamExt;
-use futures::TryStreamExt;
+use futures::stream::{StreamExt, TryStreamExt};
 use md5::Digest;
 use once_cell::sync::OnceCell;
 use quickwit_aws::retry::{retry, RetryParams, Retryable};
 use quickwit_common::uri::{Protocol, Uri};
-use quickwit_common::{chunk_range, into_u64_range};
+use quickwit_common::{chunk_range, ignore_error_kind, into_u64_range};
 use regex::Regex;
 use tantivy::directory::OwnedBytes;
 use thiserror::Error;
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
-use tracing::instrument;
+use tracing::{instrument, warn};
 
 use crate::debouncer::DebouncedStorage;
-use crate::storage::SendableAsync;
+use crate::storage::{BulkDeleteError, DeleteFailure, SendableAsync};
 use crate::{
     MultiPartPolicy, PutPayload, Storage, StorageError, StorageErrorKind, StorageFactory,
     StorageResolverError, StorageResult, STORAGE_METRICS,
@@ -331,21 +331,58 @@ impl Storage for AzureBlobStorage {
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
-        let name = self.blob_name(path);
-        let delete_result: Result<_, StorageError> = self
+        let blob_name = self.blob_name(path);
+        let delete_res: Result<_, StorageError> = self
             .container_client
-            .blob_client(name.clone())
+            .blob_client(blob_name)
             .delete()
             .into_future()
             .await
             .map_err(|err| AzureErrorWrapper::from(err).into());
-        if let Err(error) = delete_result {
-            return match error.kind() {
-                StorageErrorKind::DoesNotExist => Ok(()),
-                _ => Err(error),
+        ignore_error_kind!(StorageErrorKind::DoesNotExist, delete_res)?;
+        Ok(())
+    }
+
+    async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+        // See https://github.com/Azure/azure-sdk-for-rust/issues/1068
+        warn!(
+            num_files = paths.len(),
+            "`AzureBlobStorage` does not support batch delete. Falling back to sequential delete, \
+             which might be slow and issue many requests."
+        );
+        let mut successes = Vec::with_capacity(paths.len());
+        let mut failures = HashMap::new();
+
+        let futures = paths
+            .iter()
+            .map(|path| async move {
+                let delete_res = self.delete(path).await;
+                (path, delete_res)
+            })
+            .collect::<Vec<_>>();
+        let mut stream = futures::stream::iter(futures).buffer_unordered(100);
+
+        while let Some((path, delete_res)) = stream.next().await {
+            match delete_res {
+                Ok(_) => successes.push(path.to_path_buf()),
+                Err(error) => {
+                    let failure = DeleteFailure {
+                        error: Some(error),
+                        ..Default::default()
+                    };
+                    failures.insert(path.to_path_buf(), failure);
+                }
             };
         }
-        Ok(())
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(BulkDeleteError {
+                successes,
+                failures,
+                ..Default::default()
+            })
+        }
     }
 
     #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
@@ -524,7 +561,7 @@ impl From<AzureErrorWrapper> for StorageError {
 mod tests {
     use quickwit_common::uri::Uri;
 
-    use crate::object_storage::azure_compatible_storage::parse_azure_uri;
+    use crate::object_storage::azure_blob_storage::parse_azure_uri;
 
     #[test]
     fn test_parse_azure_uri() {
