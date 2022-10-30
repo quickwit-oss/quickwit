@@ -157,6 +157,9 @@ pub struct IndexingSettings {
     #[serde(default = "IndexingSettings::default_split_num_docs_target")]
     pub split_num_docs_target: usize,
 
+    #[serde(default = "IndexingSettings::default_maturity_period")]
+    pub maturity_period: Option<Duration>,
+
     #[serde(default)]
     pub merge_policy: MergePolicyConfig,
     #[serde(default)]
@@ -216,6 +219,7 @@ impl From<IndexingSettingsLegacy> for IndexingSettings {
             docstore_compression_level: settings.docstore_compression_level,
             docstore_blocksize: settings.docstore_blocksize,
             split_num_docs_target: settings.split_num_docs_target,
+            maturity_period: None,
             merge_policy,
             resources: settings.resources,
         }
@@ -276,6 +280,11 @@ impl IndexingSettings {
         10_000_000
     }
 
+    pub fn default_maturity_period() -> Option<Duration> {
+        // 7 days.
+        Some(Duration::from_secs(3600 * 24 * 7))
+    }
+
     fn default_merge_enabled() -> bool {
         true
     }
@@ -307,6 +316,7 @@ impl Default for IndexingSettings {
             docstore_blocksize: Self::default_docstore_blocksize(),
             docstore_compression_level: Self::default_docstore_compression_level(),
             split_num_docs_target: Self::default_split_num_docs_target(),
+            maturity_period: Self::default_maturity_period(),
             merge_policy: MergePolicyConfig::default(),
             resources: IndexingResources::default(),
         }

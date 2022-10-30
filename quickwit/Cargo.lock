@@ -3396,6 +3396,7 @@ dependencies = [
  "backoff",
  "byte-unit",
  "bytes",
+ "chrono",
  "fail",
  "flume",
  "fnv",

@@ -87,6 +87,7 @@ impl From<SplitMetadataAndFooterV0> for SplitMetadata {
             tags: v0.split_metadata.tags,
             index_id: "".to_string(),
             num_merge_ops: 0,
+            last_indexed_doc_timestamp: v0.split_metadata.create_timestamp,
         }
     }
 }
@@ -147,6 +148,9 @@ pub(crate) struct SplitMetadataV1 {
 
     #[serde(default)]
     num_merge_ops: usize,
+
+    #[serde(default = "utc_now_timestamp")]
+    pub last_indexed_doc_timestamp: i64,
 }
 
 impl From<SplitMetadataV1> for SplitMetadata {
@@ -181,6 +185,7 @@ impl From<SplitMetadataV1> for SplitMetadata {
             tags: v1.tags,
             footer_offsets: v1.footer_offsets,
             num_merge_ops: v1.num_merge_ops,
+            last_indexed_doc_timestamp: v1.last_indexed_doc_timestamp,
         }
     }
 }
@@ -201,6 +206,7 @@ impl From<SplitMetadata> for SplitMetadataV1 {
             tags: split.tags,
             footer_offsets: split.footer_offsets,
             num_merge_ops: split.num_merge_ops,
+            last_indexed_doc_timestamp: split.last_indexed_doc_timestamp,
         }
     }
 }

@@ -665,10 +665,6 @@ impl Metastore for PostgresqlMetastore {
 
             update_index_update_timestamp(tx, index_id).await?;
 
-            if marked_split_ids.len() == split_ids.len() {
-                return Ok(());
-            }
-
             get_splits_with_invalid_state(tx, index_id, split_ids, &marked_split_ids).await?;
 
             let err_msg = format!("Failed to mark splits for deletion for index {index_id}.");

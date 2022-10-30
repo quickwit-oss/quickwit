@@ -214,6 +214,7 @@ mod tests {
                 max_merge_factor: 5,
             },
             50_000,
+            None,
         ));
         let merge_planner = MergePlanner::new(
             pipeline_id,

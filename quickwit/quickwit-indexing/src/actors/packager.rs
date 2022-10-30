@@ -320,6 +320,7 @@ fn u64_from_term_data(data: &[u8]) -> anyhow::Result<u64> {
 mod tests {
     use std::ops::RangeInclusive;
 
+    use chrono::Utc;
     use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
     use quickwit_doc_mapper::QUICKWIT_TOKENIZER_MANAGER;
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
@@ -397,6 +398,7 @@ mod tests {
                 replaced_split_ids: Vec::new(),
                 delete_opstamp: 0,
                 num_merge_ops: 0,
+                last_indexed_doc_timestamp: Utc::now().timestamp(),
             },
             index,
             split_scratch_directory,

@@ -23,7 +23,9 @@ mod stable_log_merge_policy;
 
 use std::fmt;
 use std::sync::Arc;
+use std::time::Duration;
 
+use chrono::Utc;
 use itertools::Itertools;
 pub use nop_merge_policy::NopMergePolicy;
 use quickwit_config::merge_policy_config::MergePolicyConfig;
@@ -117,17 +119,38 @@ pub trait MergePolicy: Send + Sync + fmt::Debug {
     fn check_is_valid(&self, _merge_op: &MergeOperation, _remaining_splits: &[SplitMetadata]) {}
 }
 
+fn is_split_beyond_maturity_period(
+    split_metadata: &SplitMetadata,
+    maturity_period: &Option<Duration>,
+) -> bool {
+    if let Some(maturity_period) = maturity_period.as_ref() {
+        if Utc::now().timestamp() - split_metadata.last_indexed_doc_timestamp
+            >= maturity_period.as_secs() as i64
+        {
+            return true;
+        }
+    }
+    false
+}
+
 pub fn merge_policy_from_settings(settings: &IndexingSettings) -> Arc<dyn MergePolicy> {
     let merge_policy_config = settings.merge_policy.clone();
     match merge_policy_config {
         MergePolicyConfig::Nop => Arc::new(NopMergePolicy),
         MergePolicyConfig::ConstWriteAmplification(config) => {
-            let merge_policy =
-                ConstWriteAmplificationMergePolicy::new(config, settings.split_num_docs_target);
+            let merge_policy = ConstWriteAmplificationMergePolicy::new(
+                config,
+                settings.split_num_docs_target,
+                settings.maturity_period,
+            );
             Arc::new(merge_policy)
         }
         MergePolicyConfig::StableLog(config) => {
-            let merge_policy = StableLogMergePolicy::new(config, settings.split_num_docs_target);
+            let merge_policy = StableLogMergePolicy::new(
+                config,
+                settings.split_num_docs_target,
+                settings.maturity_period,
+            );
             Arc::new(merge_policy)
         }
     }
@@ -160,6 +183,7 @@ pub mod tests {
     use std::hash::Hasher;
     use std::ops::RangeInclusive;
 
+    use chrono::Utc;
     use proptest::prelude::*;
     use quickwit_actors::{create_test_mailbox, Universe};
     use rand::seq::SliceRandom;
@@ -222,6 +246,7 @@ pub mod tests {
                 split_id: format!("split_{:02}", split_ord),
                 num_docs,
                 time_range: Some(time_range),
+                last_indexed_doc_timestamp: Utc::now().timestamp(),
                 ..Default::default()
             })
             .collect()
@@ -398,6 +423,7 @@ pub mod tests {
             create_timestamp: 0,
             tags: BTreeSet::from_iter(vec!["tenant_id:1".to_string(), "tenant_id:2".to_string()]),
             footer_offsets: 0..100,
+            last_indexed_doc_timestamp: Utc::now().timestamp(),
             ..Default::default()
         }
     }

@@ -20,6 +20,7 @@
 use std::fmt;
 use std::path::Path;
 
+use chrono::Utc;
 use quickwit_actors::{KillSwitch, Progress};
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use tantivy::directory::MmapDirectory;
@@ -106,6 +107,8 @@ impl IndexedSplitBuilder {
                 time_range: None,
                 delete_opstamp: last_delete_opstamp,
                 num_merge_ops: 0,
+                // Value will be initialized on finalize.
+                last_indexed_doc_timestamp: 0,
             },
             index_writer,
             split_scratch_directory,
@@ -128,8 +131,11 @@ impl IndexedSplitBuilder {
             num_merge_ops=%self.split_attrs.num_merge_ops,
         )
     )]
-    pub fn finalize(self) -> anyhow::Result<IndexedSplit> {
+    pub fn finalize(mut self) -> anyhow::Result<IndexedSplit> {
         let index = self.index_writer.finalize()?;
+        // `last_indexed_doc_timestamp` is initialized now as we have just
+        // stopped indexing documetns.
+        self.split_attrs.last_indexed_doc_timestamp = Utc::now().timestamp();
         Ok(IndexedSplit {
             split_attrs: self.split_attrs,
             index,

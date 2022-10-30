@@ -60,6 +60,9 @@ pub struct SplitAttrs {
 
     // Number of merge operation the split has been through so far.
     pub num_merge_ops: usize,
+
+    // TODO: add docs
+    pub last_indexed_doc_timestamp: i64,
 }
 
 impl fmt::Debug for SplitAttrs {
@@ -75,6 +78,10 @@ impl fmt::Debug for SplitAttrs {
             )
             .field("num_docs", &self.num_docs)
             .field("num_merge_ops", &self.num_merge_ops)
+            .field(
+                "last_indexed_doc_timestamp",
+                &self.last_indexed_doc_timestamp,
+            )
             .finish()
     }
 }
@@ -99,5 +106,6 @@ pub fn create_split_metadata(
         footer_offsets,
         delete_opstamp: split_attrs.delete_opstamp,
         num_merge_ops: split_attrs.num_merge_ops,
+        last_indexed_doc_timestamp: split_attrs.last_indexed_doc_timestamp,
     }
 }

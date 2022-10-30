@@ -37,6 +37,7 @@ pub(crate) fn sample_split_metadata_for_regression() -> SplitMetadata {
         tags: ["234".to_string(), "aaa".to_string()].into_iter().collect(),
         footer_offsets: 1000..2000,
         num_merge_ops: 3,
+        last_indexed_doc_timestamp: 4,
     }
 }
 

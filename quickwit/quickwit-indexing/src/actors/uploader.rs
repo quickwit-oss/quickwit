@@ -371,6 +371,7 @@ mod tests {
     use std::path::PathBuf;
     use std::time::Duration;
 
+    use chrono::Utc;
     use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_metastore::MockMetastore;
@@ -429,6 +430,7 @@ mod tests {
                         split_id: "test-split".to_string(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
+                        last_indexed_doc_timestamp: 0,
                     },
                     split_scratch_directory,
                     tags: Default::default(),
@@ -527,6 +529,7 @@ mod tests {
                 ],
                 delete_opstamp: 0,
                 num_merge_ops: 0,
+                last_indexed_doc_timestamp: Utc::now().timestamp(),
             },
             split_scratch_directory: split_scratch_directory_1,
             tags: Default::default(),
@@ -547,6 +550,7 @@ mod tests {
                 ],
                 delete_opstamp: 0,
                 num_merge_ops: 0,
+                last_indexed_doc_timestamp: Utc::now().timestamp(),
             },
             split_scratch_directory: split_scratch_directory_2,
             tags: Default::default(),
@@ -655,6 +659,7 @@ mod tests {
                         split_id: "test-split".to_string(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
+                        last_indexed_doc_timestamp: Utc::now().timestamp(),
                     },
                     split_scratch_directory,
                     tags: Default::default(),

@@ -519,6 +519,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use chrono::Utc;
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper, SortOrder};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
@@ -765,6 +766,7 @@ mod tests {
             pipeline_ord: 0,
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let test_start_timestamp = Utc::now().timestamp();
         let last_delete_opstamp = 10;
         let schema = doc_mapper.schema();
         let body_field = schema.get_field("body").unwrap();
@@ -829,7 +831,7 @@ mod tests {
                 num_docs_in_workbench: 0,
             }
         );
-        let indexed_split_batches: Vec<IndexedSplitBatchBuilder> =
+        let mut indexed_split_batches: Vec<IndexedSplitBatchBuilder> =
             index_serializer_inbox.drain_for_test_typed();
         assert_eq!(indexed_split_batches.len(), 1);
         assert_eq!(
@@ -843,6 +845,18 @@ mod tests {
                 .delete_opstamp,
             last_delete_opstamp
         );
+        // Just check that `last_indexed_doc_timestamp` has been set between
+        // `test_start_timestamp` and now.
+        let indexed_split = indexed_split_batches
+            .pop()
+            .unwrap()
+            .splits
+            .pop()
+            .unwrap()
+            .finalize()
+            .unwrap();
+        assert!(indexed_split.split_attrs.last_indexed_doc_timestamp >= test_start_timestamp);
+        assert!(indexed_split.split_attrs.last_indexed_doc_timestamp <= Utc::now().timestamp());
         Ok(())
     }
 

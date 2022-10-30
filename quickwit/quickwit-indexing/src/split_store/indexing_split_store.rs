@@ -242,6 +242,7 @@ mod tests {
     use std::sync::Arc;
 
     use byte_unit::Byte;
+    use chrono::Utc;
     use quickwit_metastore::SplitMetadata;
     use quickwit_storage::{RamStorage, SplitPayloadBuilder};
     use tempfile::tempdir;
@@ -255,6 +256,7 @@ mod tests {
     fn create_test_split_metadata(split_id: &str) -> SplitMetadata {
         SplitMetadata {
             split_id: split_id.to_string(),
+            last_indexed_doc_timestamp: Utc::now().timestamp(),
             ..Default::default()
         }
     }

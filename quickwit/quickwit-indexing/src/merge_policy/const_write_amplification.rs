@@ -18,7 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
+use chrono::Utc;
 use quickwit_config::merge_policy_config::ConstWriteAmplificationMergePolicyConfig;
 use quickwit_config::IndexingSettings;
 use quickwit_metastore::SplitMetadata;
@@ -50,6 +52,7 @@ use crate::merge_policy::MergePolicy;
 pub struct ConstWriteAmplificationMergePolicy {
     config: ConstWriteAmplificationMergePolicyConfig,
     split_num_docs_target: usize,
+    maturity_period: Option<Duration>,
 }
 
 impl Default for ConstWriteAmplificationMergePolicy {
@@ -57,6 +60,7 @@ impl Default for ConstWriteAmplificationMergePolicy {
         ConstWriteAmplificationMergePolicy {
             config: Default::default(),
             split_num_docs_target: IndexingSettings::default_split_num_docs_target(),
+            maturity_period: IndexingSettings::default_maturity_period(),
         }
     }
 }
@@ -65,10 +69,12 @@ impl ConstWriteAmplificationMergePolicy {
     pub fn new(
         config: ConstWriteAmplificationMergePolicyConfig,
         split_num_docs_target: usize,
+        maturity_period: Option<Duration>,
     ) -> Self {
         ConstWriteAmplificationMergePolicy {
             config,
             split_num_docs_target,
+            maturity_period,
         }
     }
 
@@ -79,7 +85,7 @@ impl ConstWriteAmplificationMergePolicy {
             merge_factor: 3,
             max_merge_factor: 5,
         };
-        Self::new(config, 10_000_000)
+        Self::new(config, 10_000_000, None)
     }
 
     /// Returns a merge operation within one `num_merge_ops` level if one can be built from the
@@ -156,6 +162,13 @@ impl MergePolicy for ConstWriteAmplificationMergePolicy {
         }
         if split.num_docs >= self.split_num_docs_target {
             return true;
+        }
+        if let Some(maturity_period) = self.maturity_period.as_ref() {
+            if Utc::now().timestamp() - split.last_indexed_doc_timestamp
+                >= maturity_period.as_secs() as i64
+            {
+                return true;
+            }
         }
         false
     }

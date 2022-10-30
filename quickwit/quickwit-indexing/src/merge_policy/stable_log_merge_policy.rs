@@ -19,12 +19,14 @@
 
 use std::cmp::Ordering;
 use std::ops::Range;
+use std::time::Duration;
 
 use quickwit_config::merge_policy_config::StableLogMergePolicyConfig;
 use quickwit_config::IndexingSettings;
 use quickwit_metastore::SplitMetadata;
 use tracing::debug;
 
+use super::is_split_beyond_maturity_period;
 use crate::merge_policy::{splits_short_debug, MergeOperation, MergePolicy};
 
 /// `StableLogMergePolicy` is a rather naive implementation optimized
@@ -63,6 +65,7 @@ use crate::merge_policy::{splits_short_debug, MergeOperation, MergePolicy};
 pub struct StableLogMergePolicy {
     config: StableLogMergePolicyConfig,
     split_num_docs_target: usize,
+    maturity_period: Option<Duration>,
 }
 
 impl Default for StableLogMergePolicy {
@@ -70,6 +73,7 @@ impl Default for StableLogMergePolicy {
         StableLogMergePolicy {
             config: Default::default(),
             split_num_docs_target: IndexingSettings::default_split_num_docs_target(),
+            maturity_period: IndexingSettings::default_maturity_period(),
         }
     }
 }
@@ -92,10 +96,12 @@ impl StableLogMergePolicy {
     pub fn new(
         config: StableLogMergePolicyConfig,
         split_num_docs_target: usize,
+        maturity_period: Option<Duration>,
     ) -> StableLogMergePolicy {
         StableLogMergePolicy {
             config,
             split_num_docs_target,
+            maturity_period,
         }
     }
 }
@@ -117,7 +123,10 @@ impl MergePolicy for StableLogMergePolicy {
     }
 
     fn is_mature(&self, split: &SplitMetadata) -> bool {
-        self.is_mature_for_merge(split)
+        if split.num_docs >= self.split_num_docs_target {
+            return true;
+        }
+        is_split_beyond_maturity_period(split, &self.maturity_period)
     }
 
     #[cfg(test)]
@@ -176,18 +185,12 @@ fn cmp_splits_by_reverse_time_end(left: &SplitMetadata, right: &SplitMetadata) -
 }
 
 impl StableLogMergePolicy {
-    /// A mature split for merge is a split that won't undergo merge operation in the future.
-    fn is_mature_for_merge(&self, split: &SplitMetadata) -> bool {
-        split.num_docs >= self.split_num_docs_target
-    }
-
     fn merge_operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
         if splits.len() < 2 {
             return Vec::new();
         }
         // First we isolate splits that are mature.
-        let splits_not_for_merge =
-            remove_matching_items(splits, |split| self.is_mature_for_merge(split));
+        let splits_not_for_merge = remove_matching_items(splits, |split| self.is_mature(split));
 
         let mut merge_operations: Vec<MergeOperation> = Vec::new();
         splits.sort_unstable_by(cmp_splits_by_reverse_time_end);
@@ -378,6 +381,11 @@ mod tests {
         assert!(!merge_policy.is_mature(&split));
         // Split with docs > max_merge_docs is mature.
         split.num_docs = merge_policy.split_num_docs_target + 1;
+        assert!(merge_policy.is_mature(&split));
+        // Split with Utc::now() - last_indexed_doc > maturity_period is mature.
+        split.num_docs = merge_policy.split_num_docs_target - 1;
+        assert!(!merge_policy.is_mature(&split));
+        split.last_indexed_doc_timestamp = 0;
         assert!(merge_policy.is_mature(&split));
     }
 
@@ -612,7 +620,7 @@ mod tests {
             merge_factor: 4,
             max_merge_factor: 6,
         };
-        let merge_policy = StableLogMergePolicy::new(config, 10_000_000);
+        let merge_policy = StableLogMergePolicy::new(config, 10_000_000, None);
         crate::merge_policy::tests::proptest_merge_policy(&merge_policy);
     }
 

@@ -136,11 +136,12 @@ impl TryInto<QuickwitSplit> for Split {
 
     fn try_into(self) -> Result<QuickwitSplit, Self::Error> {
         let mut split_metadata = self.split_metadata()?;
-        // `create_timestamp` and `delete_opstamp` are duplicated in `SplitMetadata` and needs to be
+        // Those variables are duplicated in `SplitMetadata` and needs to be
         // overridden with the "true" value stored in a column.
         split_metadata.create_timestamp = self.create_timestamp.assume_utc().unix_timestamp();
         split_metadata.index_id = self.index_id.clone();
         split_metadata.delete_opstamp = self.delete_opstamp as u64;
+
         let split_state = self.split_state()?;
         let update_timestamp = self.update_timestamp.assume_utc().unix_timestamp();
         let publish_timestamp = self

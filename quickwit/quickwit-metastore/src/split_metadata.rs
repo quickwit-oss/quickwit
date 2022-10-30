@@ -125,6 +125,11 @@ pub struct SplitMetadata {
     /// Number of merge operations that was involved to create
     /// this split.
     pub num_merge_ops: usize,
+
+    /// Timestamp of the last document indexed in the split.
+    /// On the first split generation (before merges/delete), it corresponds to the created
+    /// timestamp. TODO: check when we set the created timestamp and udpate docs accordingly.
+    pub last_indexed_doc_timestamp: i64,
 }
 
 impl SplitMetadata {

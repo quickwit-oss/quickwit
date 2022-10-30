@@ -15,6 +15,7 @@ arc-swap = { workspace = true }
 async-trait = { workspace = true }
 backoff = { workspace = true, optional = true }
 byte-unit = { workspace = true }
+chrono = { workspace = true }
 fail = { workspace = true }
 flume = { workspace = true }
 fnv = { workspace = true }

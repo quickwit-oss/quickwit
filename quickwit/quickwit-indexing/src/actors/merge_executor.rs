@@ -304,11 +304,17 @@ pub fn merge_split_attrs(
         .iter()
         .map(|split| split.split_id().to_string())
         .collect();
+    // TODO: add docs to explain why we take the min.
     let delete_opstamp = splits
         .iter()
         .map(|split| split.delete_opstamp)
         .min()
-        .unwrap_or(0);
+        .expect("`splits` must contain at least one split.");
+    let last_indexed_doc_timestamp = splits
+        .iter()
+        .map(|split| split.last_indexed_doc_timestamp)
+        .max()
+        .expect("`splits` must contain at least one split.");
     SplitAttrs {
         split_id: merge_split_id,
         partition_id,
@@ -319,6 +325,7 @@ pub fn merge_split_attrs(
         uncompressed_docs_size_in_bytes,
         delete_opstamp,
         num_merge_ops: max_merge_ops(splits) + 1,
+        last_indexed_doc_timestamp,
     }
 }
 
@@ -484,6 +491,7 @@ impl MergeExecutor {
                 num_docs,
                 uncompressed_docs_size_in_bytes,
                 delete_opstamp: last_delete_opstamp,
+                last_indexed_doc_timestamp: split.last_indexed_doc_timestamp,
                 num_merge_ops: max_merge_ops(&[split]),
             },
             index: merged_index,
@@ -552,6 +560,11 @@ mod tests {
             .into_iter()
             .map(|split| split.split_metadata)
             .collect();
+        let expected_last_indexed_doc_timestamp = split_metas
+            .iter()
+            .map(|split_meta| split_meta.last_indexed_doc_timestamp)
+            .max()
+            .unwrap();
         assert_eq!(split_metas.len(), 4);
         let merge_scratch_directory = ScratchDirectory::for_test()?;
         let downloaded_splits_directory =
@@ -586,6 +599,11 @@ mod tests {
         assert_eq!(split_attrs_after_merge.num_docs, 4);
         assert_eq!(split_attrs_after_merge.uncompressed_docs_size_in_bytes, 136);
         assert_eq!(split_attrs_after_merge.num_merge_ops, 1);
+        assert_eq!(split_attrs_after_merge.delete_opstamp, 0);
+        assert_eq!(
+            split_attrs_after_merge.last_indexed_doc_timestamp,
+            expected_last_indexed_doc_timestamp
+        );
         let reader = packager_msgs[0].splits[0].index.reader()?;
         let searcher = reader.searcher();
         assert_eq!(searcher.segment_readers().len(), 1);
@@ -691,6 +709,7 @@ mod tests {
             .unwrap();
         let expected_uncompressed_docs_size_in_bytes =
             (new_split_metadata.uncompressed_docs_size_in_bytes as f32 / 2_f32) as u64;
+        let expected_last_indexed_doc_timestamp = new_split_metadata.last_indexed_doc_timestamp;
         let merge_scratch_directory = ScratchDirectory::for_test()?;
         let downloaded_splits_directory =
             merge_scratch_directory.named_temp_child("downloaded-splits-")?;
@@ -726,6 +745,10 @@ mod tests {
         let split = &packager_msgs[0].splits[0];
         assert_eq!(split.split_attrs.num_docs, 1);
         assert_eq!(split.split_attrs.delete_opstamp, 1);
+        assert_eq!(
+            split.split_attrs.last_indexed_doc_timestamp,
+            expected_last_indexed_doc_timestamp
+        );
         // Delete operations do not update the num_merge_ops value.
         assert_eq!(split.split_attrs.num_merge_ops, 1);
         assert_eq!(
