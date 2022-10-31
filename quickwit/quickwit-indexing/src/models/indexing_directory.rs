@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 
 use anyhow::Context;
-use quickwit_common::ignore_io_error;
+use quickwit_common::ignore_error_kind;
 use tokio::fs;
 
 use super::ScratchDirectory;
@@ -77,7 +77,7 @@ impl IndexingDirectory {
         let scratch_directory_path = root_dir.join(SCRATCH);
         fs::create_dir_all(&scratch_directory_path).await?;
 
-        ignore_io_error!(
+        ignore_error_kind!(
             io::ErrorKind::NotFound,
             fs::remove_dir_all(&scratch_directory_path).await
         )

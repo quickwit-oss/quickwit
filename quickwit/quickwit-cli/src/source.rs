@@ -422,6 +422,7 @@ where
     let source_rows = vec![SourceRow {
         source_id: source.source_id.clone(),
         source_type: source.source_type().to_string(),
+        enabled: source.enabled.to_string(),
     }];
     let source_table = make_table("Source", source_rows, true);
 
@@ -457,6 +458,7 @@ where I: IntoIterator<Item = SourceConfig> {
         .map(|source| SourceRow {
             source_type: source.source_type().to_string(),
             source_id: source.source_id,
+            enabled: source.enabled.to_string(),
         })
         .sorted_by(|left, right| left.source_id.cmp(&right.source_id));
     make_table("Sources", rows, false)
@@ -464,10 +466,12 @@ where I: IntoIterator<Item = SourceConfig> {
 
 #[derive(Tabled)]
 struct SourceRow {
-    #[tabled(rename = "Type")]
-    source_type: String,
     #[tabled(rename = "ID")]
     source_id: String,
+    #[tabled(rename = "Type")]
+    source_type: String,
+    #[tabled(rename = "Enabled")]
+    enabled: String,
 }
 
 #[derive(Tabled)]
@@ -742,6 +746,7 @@ mod tests {
         let expected_source = vec![SourceRow {
             source_id: "foo-source".to_string(),
             source_type: "file".to_string(),
+            enabled: "true".to_string(),
         }];
         let expected_params = vec![ParamsRow {
             key: "filepath".to_string(),
@@ -814,10 +819,12 @@ mod tests {
             SourceRow {
                 source_id: "bar-source".to_string(),
                 source_type: "file".to_string(),
+                enabled: "true".to_string(),
             },
             SourceRow {
                 source_id: "foo-source".to_string(),
                 source_type: "file".to_string(),
+                enabled: "true".to_string(),
             },
         ];
         assert_eq!(
