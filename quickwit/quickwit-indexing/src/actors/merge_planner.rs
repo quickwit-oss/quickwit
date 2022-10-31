@@ -97,7 +97,17 @@ impl Handler<NewSplits> for MergePlanner {
                 .partitioned_young_splits
                 .entry(partition_id)
                 .or_default();
-            young_splits.extend(new_young_splits);
+            for new_young_split in new_young_splits {
+                // Due to the recycling of the mailbox of the merge planner, it is possible for
+                // a split already in store to be received.
+                let split_already_known = young_splits
+                    .iter()
+                    .any(|split| split.split_id() == new_young_split.split_id());
+                if split_already_known {
+                    continue;
+                }
+                young_splits.push(new_young_split);
+            }
             target_partition_ids.push(partition_id);
         }
         self.send_merge_ops(ctx, &target_partition_ids).await?;
@@ -150,8 +160,126 @@ impl MergePlanner {
     }
 }
 
+/// We can merge splits from the same (index_id, source_id, node_id).
 fn belongs_to_pipeline(pipeline_id: &IndexingPipelineId, split: &SplitMetadata) -> bool {
-    pipeline_id.source_id == split.source_id
+    pipeline_id.index_id == split.index_id
+        && pipeline_id.source_id == split.source_id
         && pipeline_id.node_id == split.node_id
-        && pipeline_id.pipeline_ord == split.pipeline_ord
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use itertools::Itertools;
+    use quickwit_actors::{create_mailbox, QueueCapacity, Universe};
+    use quickwit_config::merge_policy_config::StableLogMergePolicyConfig;
+    use quickwit_metastore::SplitMetadata;
+
+    use crate::actors::MergePlanner;
+    use crate::merge_policy::{MergeOperation, StableLogMergePolicy};
+    use crate::models::{IndexingPipelineId, NewSplits};
+
+    fn split_metadata_for_test(
+        split_id: &str,
+        partition_id: u64,
+        num_docs: usize,
+    ) -> SplitMetadata {
+        SplitMetadata {
+            split_id: split_id.to_string(),
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+            num_docs,
+            partition_id,
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_merge_planner_with_stable_custom_merge_policy() -> anyhow::Result<()> {
+        let (merge_split_downloader_mailbox, merge_split_downloader_inbox) =
+            create_mailbox("MergeSplitDownloader".to_string(), QueueCapacity::Unbounded);
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
+        let merge_policy = Arc::new(StableLogMergePolicy::new(
+            StableLogMergePolicyConfig {
+                min_level_num_docs: 10_000,
+                merge_factor: 3,
+                max_merge_factor: 5,
+            },
+            50_000,
+        ));
+        let merge_planner = MergePlanner::new(
+            pipeline_id,
+            vec![],
+            merge_policy,
+            merge_split_downloader_mailbox,
+        );
+        let universe = Universe::new();
+
+        let (merge_planner_mailbox, _) = universe.spawn_builder().spawn(merge_planner);
+
+        {
+            // send one split
+            let message = NewSplits {
+                new_splits: vec![
+                    split_metadata_for_test("1_1", 1, 2500),
+                    split_metadata_for_test("1_2", 2, 3000),
+                ],
+            };
+            merge_planner_mailbox.send_message(message).await?;
+            let merge_ops = merge_split_downloader_inbox.drain_for_test();
+            assert_eq!(merge_ops.len(), 0);
+        }
+
+        {
+            // send two splits with a duplicate
+            let message = NewSplits {
+                new_splits: vec![
+                    split_metadata_for_test("2_1", 1, 2000),
+                    split_metadata_for_test("1_2", 2, 3000),
+                ],
+            };
+            merge_planner_mailbox.send_message(message).await?;
+            let merge_ops = merge_split_downloader_inbox.drain_for_test();
+            assert_eq!(merge_ops.len(), 0);
+        }
+
+        {
+            // send four more splits to generate merge
+            let message = NewSplits {
+                new_splits: vec![
+                    split_metadata_for_test("3_1", 1, 1500),
+                    split_metadata_for_test("4_1", 1, 1000),
+                    split_metadata_for_test("2_2", 2, 2000),
+                    split_metadata_for_test("3_2", 2, 4000),
+                ],
+            };
+            merge_planner_mailbox.send_message(message).await?;
+            let operations = merge_split_downloader_inbox.drain_for_test();
+            assert_eq!(operations.len(), 2);
+            let mut merge_operations = operations
+                .into_iter()
+                .map(|operation| operation.downcast::<MergeOperation>().unwrap())
+                .sorted_by(|left_op, right_op| {
+                    left_op.splits[0]
+                        .partition_id
+                        .cmp(&right_op.splits[0].partition_id)
+                });
+
+            let first_merge_operation = merge_operations.next().unwrap();
+            assert_eq!(first_merge_operation.splits.len(), 4);
+
+            let second_merge_operation = merge_operations.next().unwrap();
+            assert_eq!(second_merge_operation.splits.len(), 3);
+        }
+
+        Ok(())
+    }
 }

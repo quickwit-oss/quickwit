@@ -27,7 +27,8 @@ pub struct IndexerMetrics {
     pub parsing_errors_num_bytes_total: IntCounterVec,
     pub missing_field_num_bytes_total: IntCounterVec,
     pub valid_num_bytes_total: IntCounterVec,
-    pub concurrent_upload_available_permits: IntGauge,
+    pub concurrent_upload_available_permits_index: IntGauge,
+    pub concurrent_upload_available_permits_merge: IntGauge,
 }
 
 impl Default for IndexerMetrics {
@@ -71,9 +72,14 @@ impl Default for IndexerMetrics {
                 "quickwit_indexing",
                 &["index"],
             ),
-            concurrent_upload_available_permits: new_gauge(
-                "concurrent_upload_available_permits",
-                "Number of concurrent upload available permits.",
+            concurrent_upload_available_permits_index: new_gauge(
+                "concurrent_upload_available_index",
+                "Number of concurrent uploader available permits for indexing.",
+                "quickwit_indexing",
+            ),
+            concurrent_upload_available_permits_merge: new_gauge(
+                "concurrent_upload_available_merge",
+                "Number of concurrent uploader available permits for merging.",
                 "quickwit_indexing",
             ),
         }

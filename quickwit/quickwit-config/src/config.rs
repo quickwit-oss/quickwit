@@ -106,7 +106,7 @@ impl IndexerConfig {
     }
 
     fn default_max_concurrent_split_uploads() -> usize {
-        4
+        12
     }
 
     pub fn default_split_store_max_num_bytes() -> Byte {
