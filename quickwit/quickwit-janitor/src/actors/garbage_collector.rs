@@ -244,9 +244,7 @@ mod tests {
             .times(2)
             .returning(|filter| {
                 assert_eq!(filter.index, "test-index");
-                let splits = match filter
-                    .split_state
-                    .expect("Filter should be constructed with split state set.")
+                let splits = match get_first_split_state(filter.split_states)
                 {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -304,9 +302,7 @@ mod tests {
             .times(2)
             .returning(|filter| {
                 assert_eq!(filter.index, "test-index");
-                let splits = match filter
-                    .split_state
-                    .expect("Filter should be constructed with split state set.")
+                let splits = match get_first_split_state(filter.split_states)
                 {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -362,9 +358,7 @@ mod tests {
             .times(4)
             .returning(|filter| {
                 assert_eq!(filter.index, "test-index");
-                let splits = match filter
-                    .split_state
-                    .expect("Filter should be constructed with split state set.")
+                let splits = match get_first_split_state(filter.split_states)
                 {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -501,9 +495,7 @@ mod tests {
             .times(4)
             .returning(|filter| {
                 assert!(["test-index-1", "test-index-2"].contains(&filter.index));
-                let splits = match filter
-                    .split_state
-                    .expect("Filter should be constructed with split state set.")
+                let splits = match get_first_split_state(filter.split_states)
                 {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -547,5 +539,13 @@ mod tests {
         assert_eq!(counters.num_successful_gc_run_on_index, 1);
         assert_eq!(counters.num_failed_storage_resolution, 0);
         assert_eq!(counters.num_failed_gc_run_on_index, 1);
+    }
+
+    #[inline]
+    fn get_first_split_state(states: Vec<SplitState>) -> SplitState {
+        states
+            .get(0)
+            .cloned()
+            .expect("Filter should be constructed with split state set.")
     }
 }

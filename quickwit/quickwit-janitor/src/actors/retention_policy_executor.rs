@@ -431,7 +431,7 @@ mod tests {
             .expect_list_splits()
             .times(2)
             .returning(|filter| {
-                assert_eq!(filter.split_state, Some(SplitState::Published));
+                assert_eq!(filter.split_states, vec![SplitState::Published]);
                 let now = OffsetDateTime::now_utc().unix_timestamp();
                 let two_hours_ago = now - (60 * 60 * 2);
                 let three_hours_ago = now - (60 * 60 * 3);

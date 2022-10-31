@@ -229,8 +229,9 @@ impl IndexingPipeline {
             "Spawning indexing pipeline.",
         );
 
-        let filter = ListSplitsQuery::for_index(&self.params.pipeline_id.index_id)
-            .with_split_state(SplitState::Published);
+        let mut filter = ListSplitsQuery::for_index(&self.params.pipeline_id.index_id);
+        filter.with_split_state(SplitState::Published);
+
         let published_splits = ctx
             .protect_future(self.params.metastore.list_splits(filter))
             .await?

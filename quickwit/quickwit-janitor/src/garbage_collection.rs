@@ -101,9 +101,9 @@ pub async fn run_garbage_collect(
     let grace_period_timestamp =
         OffsetDateTime::now_utc().unix_timestamp() - staged_grace_period.as_secs() as i64;
 
-    let filter = ListSplitsQuery::for_index(index_id)
-        .with_split_state(SplitState::Staged)
-        .updated_before(grace_period_timestamp);
+    let mut filter = ListSplitsQuery::for_index(index_id);
+    filter.with_split_state(SplitState::Staged);
+    filter.with_update_timestamp_lt(grace_period_timestamp);
 
     let deletable_staged_splits: Vec<SplitMetadata> =
         protect_future(ctx_opt, metastore.list_splits(filter))
@@ -113,8 +113,8 @@ pub async fn run_garbage_collect(
             .collect();
 
     if dry_run {
-        let filter =
-            ListSplitsQuery::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
+        let mut filter = ListSplitsQuery::for_index(index_id);
+        filter.with_split_state(SplitState::MarkedForDeletion);
 
         let mut splits_marked_for_deletion = protect_future(ctx_opt, metastore.list_splits(filter))
             .await?
@@ -145,9 +145,9 @@ pub async fn run_garbage_collect(
     let grace_period_deletion =
         OffsetDateTime::now_utc().unix_timestamp() - deletion_grace_period.as_secs() as i64;
 
-    let filter = ListSplitsQuery::for_index(index_id)
-        .with_split_state(SplitState::MarkedForDeletion)
-        .updated_after_or_at(grace_period_deletion);
+    let mut filter = ListSplitsQuery::for_index(index_id);
+    filter.with_split_state(SplitState::MarkedForDeletion);
+    filter.with_update_timestamp_le(grace_period_deletion);
 
     let splits_to_delete = protect_future(ctx_opt, metastore.list_splits(filter))
         .await?

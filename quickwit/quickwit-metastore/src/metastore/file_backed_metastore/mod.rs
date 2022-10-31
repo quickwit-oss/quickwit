@@ -728,12 +728,14 @@ mod tests {
         assert!(err.is_err());
 
         // empty
-        let filter = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Published);
+        let mut filter = ListSplitsQuery::for_index(index_id);
+        filter.with_split_state(SplitState::Published);
         let split = metastore.list_splits(filter).await.unwrap();
         assert!(split.is_empty());
 
         // not empty
-        let filter = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
+        let mut filter = ListSplitsQuery::for_index(index_id);
+        filter.with_split_state(SplitState::Staged);
         let split = metastore.list_splits(filter).await.unwrap();
         assert!(!split.is_empty());
     }
@@ -893,7 +895,8 @@ mod tests {
 
         futures::future::try_join_all(handles).await.unwrap();
 
-        let filter = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Published);
+        let mut filter = ListSplitsQuery::for_index(index_id);
+        filter.with_split_state(SplitState::Published);
         let splits = metastore.list_splits(filter).await.unwrap();
 
         // Make sure that all 20 splits are in `Published` state.
