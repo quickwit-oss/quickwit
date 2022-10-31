@@ -27,8 +27,8 @@ use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_cli::index::{
-    create_index_cli, ingest_docs_cli, search_index, CreateIndexArgs, IngestDocsArgs,
-    SearchIndexArgs,
+    create_index_cli, delete_index_cli, ingest_docs_cli, search_index, CreateIndexArgs,
+    DeleteIndexArgs, IngestDocsArgs, SearchIndexArgs,
 };
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
@@ -216,62 +216,59 @@ async fn test_cmd_ingest_on_non_existing_file() {
     ));
 }
 
-#[test]
-fn test_cmd_ingest_keep_cache() -> Result<()> {
+#[tokio::test]
+async fn test_ingest_docs_cli_keep_cache() {
     let index_id = append_random_suffix("test-index-keep-cache");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
 
-    ingest_docs_with_options(
-        test_env.resource_files["logs"].as_path(),
-        &test_env,
-        "--keep-cache",
-    );
+    let args = IngestDocsArgs {
+        config_uri: test_env.config_uri,
+        index_id,
+        input_path_opt: Some(test_env.resource_files["logs"].clone()),
+        data_dir: None,
+        overwrite: false,
+        clear_cache: false,
+    };
+
+    ingest_docs_cli(args).await.unwrap();
     // Ensure cache directory is not empty.
     let cache_directory_path = get_cache_directory_path(&test_env.data_dir_path);
-    assert!(cache_directory_path.read_dir()?.next().is_some());
-    Ok(())
+    assert!(cache_directory_path.read_dir().unwrap().next().is_some());
 }
 
-#[test]
-fn test_cmd_ingest_simple() -> Result<()> {
+#[tokio::test]
+async fn test_ingest_docs_cli() {
     let index_id = append_random_suffix("test-index-simple");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
-    // Using piped input
-    let log_path = test_env.resource_files["logs"].clone();
-    make_command(
-        format!(
-            "index ingest --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .pipe_stdin(log_path)?
-    .assert()
-    // Outputting process STDOUT.
-    .stdout(predicate::function(|process_stdout: &str| {
-        println!("\n\n-------\nProcess stdout:\n{process_stdout}\n\n-------------\n\n");
-        true
-    }))
-    .stderr(predicate::function(|process_stderr: &str| {
-        println!("\n\n-------\nProcess stderr:\n{process_stderr}\n\n-------------\n\n");
-        true
-    }))
-    .success()
-    .stdout(predicate::str::contains("Indexed"))
-    .stdout(predicate::str::contains("documents in"))
-    .stdout(predicate::str::contains("Now, you can query the index"));
+    let args = IngestDocsArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        input_path_opt: Some(test_env.resource_files["logs"].clone()),
+        data_dir: None,
+        overwrite: false,
+        clear_cache: true,
+    };
+
+    ingest_docs_cli(args).await.unwrap();
+
+    let splits: Vec<_> = test_env
+        .metastore()
+        .await
+        .unwrap()
+        .list_all_splits(&index_id)
+        .await
+        .unwrap();
+
+    assert_eq!(splits.len(), 1);
+    assert_eq!(splits[0].split_metadata.num_docs, 5);
 
     // Ensure cache directory is empty.
     let cache_directory_path = get_cache_directory_path(&test_env.data_dir_path);
 
-    assert!(cache_directory_path.read_dir()?.next().is_none());
-
-    Ok(())
+    assert!(cache_directory_path.read_dir().unwrap().next().is_none());
 }
 
 #[tokio::test]
@@ -488,49 +485,36 @@ fn test_cmd_delete_index_dry_run() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_cmd_delete_simple() -> Result<()> {
+async fn test_delete_index_cli() {
     let index_id = append_random_suffix("test-delete-cmd");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
-    make_command(
-        format!(
-            "index gc --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display()
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "No dangling files to garbage collect",
-    ));
 
-    make_command(
-        format!(
-            "index delete --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
+    let args = DeleteIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        dry_run: false,
+        data_dir: None,
+    };
+
+    delete_index_cli(args).await.unwrap();
+
     assert!(test_env
         .metastore()
-        .await?
+        .await
+        .unwrap()
         .index_metadata(&test_env.index_id)
         .await
-        .is_err(),);
+        .is_err());
+
     assert!(!test_env
         .data_dir_path
         .join(INDEXING_DIR_NAME)
         .join(test_env.index_id)
         .as_path()
         .exists());
-    Ok(())
 }
 
 #[tokio::test]

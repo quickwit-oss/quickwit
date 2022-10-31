@@ -654,7 +654,7 @@ mod tests {
             error,
             DocParsingError::ValueError(
                 "body".to_owned(),
-                "Expected JSON string, got '1'.".to_owned()
+                "Expected JSON string, got `1`.".to_owned()
             )
         );
         Ok(())
@@ -748,7 +748,7 @@ mod tests {
             .to_string(),
         );
         let expected_msg = "The field 'image' could not be parsed: Expected Base64 string, got \
-                            'invalid base64 data': Invalid byte 32, offset 7.";
+                            `invalid base64 data`: Invalid byte 32, offset 7.";
         assert_eq!(result.unwrap_err().to_string(), expected_msg);
         Ok(())
     }
