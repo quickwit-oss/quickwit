@@ -118,9 +118,7 @@ fn start_runtimes(config: RuntimesConfiguration) -> HashMap<RuntimeType, Runtime
 }
 
 pub fn initialize_runtimes(runtime_config: RuntimesConfiguration) -> anyhow::Result<()> {
-    RUNTIMES.get_or_init(|| {
-        start_runtimes(runtime_config)
-    });
+    RUNTIMES.get_or_init(|| start_runtimes(runtime_config));
     Ok(())
 }
 
