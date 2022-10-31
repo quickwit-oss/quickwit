@@ -444,44 +444,58 @@ async fn test_search_index_cli() {
     assert_eq!(search_res.num_hits, 0);
 }
 
-#[test]
-fn test_cmd_delete_index_dry_run() -> Result<()> {
+#[tokio::test]
+async fn test_delete_index_cli_dry_run() {
     let index_id = append_random_suffix("test-delete-cmd--dry-run");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
 
-    // Empty index.
-    make_command(
-        format!(
-            "index delete --index {} --config {} --dry-run",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains("Only the index will be deleted"));
+    let refresh_metastore = |metastore| {
+        // In this test we rely on the file backed metastore
+        // and the file backed metastore caches results.
+        // Therefore we need to force reading the disk to fetch updates.
+        //
+        // We do that by dropping and recreating our metastore.
+        drop(metastore);
+        quickwit_metastore_uri_resolver().resolve(&test_env.metastore_uri)
+    };
+
+    let create_delete_args = |dry_run| DeleteIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        dry_run,
+        data_dir: None,
+    };
+
+    let metastore = quickwit_metastore_uri_resolver()
+        .resolve(&test_env.metastore_uri)
+        .await
+        .unwrap();
+
+    assert!(metastore.index_exists(&index_id).await.unwrap());
+    // On empty index.
+    let args = create_delete_args(true);
+
+    delete_index_cli(args).await.unwrap();
+    // On dry run index should still exist
+    let metastore = refresh_metastore(metastore).await.unwrap();
+    assert!(metastore.index_exists(&index_id).await.unwrap());
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
-    // Non-empty index
-    make_command(
-        format!(
-            "index delete --index {} --config {} --dry-run",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "The following files will be removed",
-    ))
-    .stdout(predicate::str::contains(".split"));
+    // On non-empty index
+    let args = create_delete_args(true);
 
-    Ok(())
+    delete_index_cli(args).await.unwrap();
+    // On dry run index should still exist
+    let metastore = refresh_metastore(metastore).await.unwrap();
+    assert!(metastore.index_exists(&index_id).await.unwrap());
+
+    let args = create_delete_args(false);
+
+    delete_index_cli(args).await.unwrap();
+    let metastore = refresh_metastore(metastore).await.unwrap();
+    assert!(!metastore.index_exists(&index_id).await.unwrap());
 }
 
 #[tokio::test]
