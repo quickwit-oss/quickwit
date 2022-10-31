@@ -29,7 +29,7 @@ use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_cli::index::{
     create_index_cli, delete_index_cli, ingest_docs_cli, search_index, CreateIndexArgs,
-    DeleteIndexArgs, IngestDocsArgs, SearchIndexArgs,
+    DeleteIndexArgs, IngestDocsArgs, SearchIndexArgs, GarbageCollectIndexArgs, garbage_collect_index_cli,
 };
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
@@ -646,7 +646,7 @@ async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_garbage_collect_cli_spares_files_within_grace_period() {
+async fn test_garbage_collect_index_cli() {
     let index_id = append_random_suffix("test-gc-cmd");
     let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
@@ -714,7 +714,7 @@ async fn test_garbage_collect_cli_spares_files_within_grace_period() {
     let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
     assert_eq!(splits[0].split_state, SplitState::Staged);
 
-    let args = create_gc_args(2);
+    let args = create_gc_args(1);
 
     garbage_collect_index_cli(args).await.unwrap();
 
@@ -727,9 +727,9 @@ async fn test_garbage_collect_cli_spares_files_within_grace_period() {
 
     // Wait for grace period.
     // TODO: edit split update timestamps and remove this sleep.
-    sleep(Duration::from_secs(3)).await;
+    sleep(Duration::from_secs(2)).await;
 
-    let args = create_gc_args(2);
+    let args = create_gc_args(1);
 
     garbage_collect_index_cli(args).await.unwrap();
 
