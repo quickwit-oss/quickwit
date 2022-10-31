@@ -3521,6 +3521,7 @@ dependencies = [
  "md5",
  "mockall",
  "once_cell",
+ "paste",
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",

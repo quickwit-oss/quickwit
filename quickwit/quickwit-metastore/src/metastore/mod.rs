@@ -25,7 +25,7 @@ pub mod postgresql_metastore;
 #[cfg(feature = "postgres")]
 mod postgresql_model;
 
-use std::ops::Bound;
+use std::ops::{Bound, Deref, DerefMut};
 
 use async_trait::async_trait;
 pub use index_metadata::IndexMetadata;
@@ -173,9 +173,9 @@ pub trait Metastore: Send + Sync + 'static {
         delete_opstamp: u64,
         num_splits: usize,
     ) -> MetastoreResult<Vec<Split>> {
-        let filter = ListSplitsQuery::for_index(index_id)
-            .with_opstamp_older_than(delete_opstamp)
-            .with_split_state(SplitState::Published);
+        let mut filter = ListSplitsQuery::for_index(index_id);
+        filter.with_delete_opstamp_lt(delete_opstamp);
+        filter.with_split_state(SplitState::Published);
 
         let mut splits = self.list_splits(filter).await?;
         splits.sort_by(|split_left, split_right| {
@@ -278,26 +278,28 @@ pub struct ListSplitsQuery<'a> {
     /// The number of splits to skip.
     pub offset: Option<usize>,
 
-    /// The timestamp which splits must be newer than.
-    pub time_range_start: Option<i64>,
-
-    /// The timestamp which splits must be older than.
-    pub time_range_end: Option<i64>,
-
-    /// The timestamp which splits must be updated after.
-    pub updated_after: Bound<i64>,
-
-    /// The timestamp which splits must be updated before.
-    pub updated_before: Bound<i64>,
-
-    /// Filter splits with `split.delete_opstamp` < `delete_opstamp`.
-    pub delete_opstamp: Option<u64>,
-
-    /// A specific split state to filter by.
-    pub split_state: Option<SplitState>,
+    /// A specific split state(s) to filter by.
+    pub split_states: Vec<SplitState>,
 
     /// A specific set of tag(s) to filter by.
     pub tags: Option<TagFilterAst>,
+
+    /// A set filters which can have the common set of equality operators. (`le`, `lt`, `ge`, `gt`)
+    pub equality_filters: EqualityFieldFilters,
+}
+
+impl<'a> Deref for ListSplitsQuery<'a> {
+    type Target = EqualityFieldFilters;
+
+    fn deref(&self) -> &Self::Target {
+        &self.equality_filters
+    }
+}
+
+impl<'a> DerefMut for ListSplitsQuery<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.equality_filters
+    }
 }
 
 #[allow(unused_attributes)]
@@ -308,80 +310,35 @@ impl<'a> ListSplitsQuery<'a> {
             index,
             limit: None,
             offset: None,
-            time_range_start: None,
-            time_range_end: None,
-            updated_after: Bound::Unbounded,
-            updated_before: Bound::Unbounded,
-            delete_opstamp: None,
-            split_state: None,
+            split_states: vec![],
             tags: None,
+            equality_filters: EqualityFieldFilters::default(),
         }
     }
 
     /// Set the maximum number of splits to retrieve.
-    pub fn with_limit(mut self, n: usize) -> Self {
+    pub fn with_limit(&mut self, n: usize) {
         self.limit = Some(n);
-        self
     }
 
     /// Set the number of splits to skip.
-    pub fn with_offset(mut self, n: usize) -> Self {
+    pub fn with_offset(&mut self, n: usize) {
         self.offset = Some(n);
-        self
-    }
-
-    /// Select splits which are newer than or equal to this timestamp.
-    pub fn with_time_range_from(mut self, ts: i64) -> Self {
-        self.time_range_start = Some(ts);
-        self
-    }
-
-    /// Select splits which are older than this timestamp.
-    pub fn with_time_range_to(mut self, ts: i64) -> Self {
-        self.time_range_end = Some(ts);
-        self
-    }
-
-    /// Select splits which are newer than or equal to this timestamp.
-    pub fn updated_after(mut self, ts: i64) -> Self {
-        self.updated_after = Bound::Excluded(ts);
-        self
-    }
-
-    /// Select splits which are newer than or equal to this timestamp.
-    pub fn updated_after_or_at(mut self, ts: i64) -> Self {
-        self.updated_after = Bound::Included(ts);
-        self
-    }
-
-    /// Select splits which are older than this timestamp.
-    pub fn updated_before(mut self, ts: i64) -> Self {
-        self.updated_before = Bound::Excluded(ts);
-        self
-    }
-
-    /// Select splits which are older than this timestamp.
-    pub fn updated_before_or_at(mut self, ts: i64) -> Self {
-        self.updated_before = Bound::Included(ts);
-        self
-    }
-
-    /// Filter splits with `split.delete_opstamp` < `delete_opstamp`.
-    pub fn with_opstamp_older_than(mut self, opstamp: u64) -> Self {
-        self.delete_opstamp = Some(opstamp);
-        self
     }
 
     /// Select splits which have the are in the given split state.
-    pub fn with_split_state(mut self, state: SplitState) -> Self {
-        self.split_state = Some(state);
-        self
+    pub fn with_split_state(&mut self, state: SplitState) {
+        self.split_states.push(state);
+    }
+
+    /// Select splits which have the are in any of the following split state.
+    pub fn with_split_states(&mut self, states: impl AsRef<[SplitState]>) {
+        self.split_states.extend_from_slice(states.as_ref());
     }
 
     /// Select splits which match the given tag filter.
-    pub fn with_tags_filter(mut self, tags: TagFilterAst) -> Self {
+    pub fn with_tags_filter(&mut self, tags: TagFilterAst) {
         self.tags = Some(tags);
-        self
     }
 
     /// Returns if the filter has no additional constraints set and is
@@ -389,12 +346,115 @@ impl<'a> ListSplitsQuery<'a> {
     pub fn is_default(&self) -> bool {
         self.limit.is_none()
             && self.offset.is_none()
-            && self.time_range_start.is_none()
-            && self.time_range_end.is_none()
-            && (self.updated_after == Bound::Unbounded)
-            && (self.updated_before == Bound::Unbounded)
-            && self.delete_opstamp.is_none()
-            && self.split_state.is_none()
+            && self.equality_filters.is_unbounded()
+            && self.split_states.is_empty()
             && self.tags.is_none()
     }
 }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// A range containing the upper and lower bounds to filter documents by.
+pub struct FilterRange<T> {
+    /// The lower bound of the filter.
+    pub lower: Bound<T>,
+    /// The upper bound of the filter.
+    pub upper: Bound<T>,
+}
+
+impl<T: PartialEq + PartialOrd> FilterRange<T> {
+    /// Checks if both the upper and lower bound are `Bound::Unbounded`.
+    pub fn is_unbounded(&self) -> bool {
+        self.lower == Bound::Unbounded
+            && self.upper == Bound::Unbounded
+    }
+
+    pub fn is_in_range(&self, right: &T) -> bool {
+        if !self.is_unbounded() {
+            return true;
+        }
+
+        let lower_check = match &self.lower {
+            Bound::Unbounded => true,
+            Bound::Included(left) => left <= right,
+            Bound::Excluded(left) => left < right,
+        };
+
+        let upper_check = match &self.upper {
+            Bound::Unbounded => true,
+            Bound::Included(left) => left >= right,
+            Bound::Excluded(left) => left > right,
+        };
+
+        lower_check && upper_check
+    }
+}
+
+// The `Default` derive implementation imposes a restriction
+// for `T` to also implement Default when this is not required.
+impl<T> Default for FilterRange<T> {
+    fn default() -> Self {
+        Self {
+            lower: Bound::Unbounded,
+            upper: Bound::Unbounded,
+        }
+    }
+}
+
+macro_rules! define_equality_filters {
+    ($name:ident { $($field:ident : $tp:ty),* $(,)?}) => {
+        #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+        /// A collection of filter ranges which has individual setters for each range bound.
+        pub struct $name {
+            $(
+                pub $field: FilterRange<$tp>,
+            )*
+        }
+
+        paste::paste! {
+            #[allow(unused)]
+            impl $name {
+                fn is_unbounded(&self) -> bool {
+                    true
+                    $(
+                        && self.$field.is_unbounded()
+                    )*
+                }
+
+                $(
+                    /// Set the field's lower bound to match values that are
+                    /// *less than or equal to* the provided value.
+                    pub fn [<with_ $field _le>](&mut self, v: $tp) {
+                        self.$field.upper = std::ops::Bound::Included(v);
+                    }
+
+                    /// Set the field's lower bound to match values that are
+                    /// *less than* the provided value.
+                    pub fn [<with_ $field _lt>](&mut self, v: $tp) {
+                        self.$field.upper = std::ops::Bound::Excluded(v);
+                    }
+
+                    /// Set the field's upper bound to match values that are
+                    /// *greater than or equal to* the provided value.
+                    pub fn [<with_ $field _ge>](&mut self, v: $tp) {
+                        self.$field.lower = std::ops::Bound::Included(v);
+                    }
+
+                    /// Set the field's upper bound to match values that are
+                    /// *greater than* the provided value.
+                    pub fn [<with_ $field _gt>](&mut self, v: $tp) {
+                        self.$field.lower = std::ops::Bound::Excluded(v);
+                    }
+                )*
+            }
+        }
+    }
+}
+
+define_equality_filters!(
+    EqualityFieldFilters {
+        time_range_start: i64,
+        time_range_end: i64,
+        delete_opstamp: u64,
+        update_timestamp: i64,
+    }
+);
