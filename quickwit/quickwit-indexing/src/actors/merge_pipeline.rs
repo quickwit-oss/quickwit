@@ -34,7 +34,7 @@ use crate::actors::indexing_pipeline::wait_duration_before_retry;
 use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::publisher::PublisherType;
 use crate::actors::sequencer::Sequencer;
-use crate::actors::{MergeExecutor, MergePlanner, Packager, Publisher, Uploader};
+use crate::actors::{MergeExecutor, MergePlanner, Packager, Publisher, Uploader, UploaderType};
 use crate::merge_policy::MergePolicy;
 use crate::models::{IndexingDirectory, IndexingPipelineId, MergeStatistics, Observe};
 use crate::split_store::IndexingSplitStore;
@@ -219,7 +219,7 @@ impl MergePipeline {
 
         // Merge uploader
         let merge_uploader = Uploader::new(
-            "MergeUploader",
+            UploaderType::MergeUploader,
             self.params.metastore.clone(),
             self.params.split_store.clone(),
             merge_sequencer_mailbox.into(),

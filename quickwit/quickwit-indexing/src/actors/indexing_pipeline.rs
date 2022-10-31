@@ -39,6 +39,7 @@ use crate::actors::doc_processor::DocProcessor;
 use crate::actors::index_serializer::IndexSerializer;
 use crate::actors::publisher::PublisherType;
 use crate::actors::sequencer::Sequencer;
+use crate::actors::uploader::UploaderType;
 use crate::actors::{Indexer, Packager, Publisher, Uploader};
 use crate::models::{IndexingDirectory, IndexingPipelineId, IndexingStatistics, Observe};
 use crate::source::{quickwit_supported_sources, SourceActor, SourceExecutionContext};
@@ -223,7 +224,6 @@ impl IndexingPipeline {
             root_dir=%self.params.indexing_directory.path().display(),
             "Spawning indexing pipeline.",
         );
-
         let (source_mailbox, source_inbox) =
             create_mailbox::<SourceActor>("SourceActor".to_string(), QueueCapacity::Unbounded);
 
@@ -247,11 +247,11 @@ impl IndexingPipeline {
 
         // Uploader
         let uploader = Uploader::new(
-            "Uploader",
+            UploaderType::IndexUploader,
             self.params.metastore.clone(),
             self.params.split_store.clone(),
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
-            self.params.max_concurrent_split_uploads,
+            self.params.max_concurrent_split_uploads_index,
         );
         let (uploader_mailbox, uploader_handler) = ctx
             .spawn_actor()
@@ -463,7 +463,8 @@ pub struct IndexingPipelineParams {
     pub metastore: Arc<dyn Metastore>,
     pub storage: Arc<dyn Storage>,
     pub split_store: IndexingSplitStore,
-    pub max_concurrent_split_uploads: usize,
+    pub max_concurrent_split_uploads_index: usize,
+    pub max_concurrent_split_uploads_merge: usize,
     pub merge_planner_mailbox: Mailbox<MergePlanner>,
 }
 
@@ -567,7 +568,8 @@ mod tests {
             storage,
             split_store,
             queues_dir_path: PathBuf::from("./queues"),
-            max_concurrent_split_uploads: 4,
+            max_concurrent_split_uploads_index: 4,
+            max_concurrent_split_uploads_merge: 5,
             merge_planner_mailbox,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
@@ -657,7 +659,8 @@ mod tests {
             queues_dir_path: PathBuf::from("./queues"),
             storage,
             split_store,
-            max_concurrent_split_uploads: 4,
+            max_concurrent_split_uploads_index: 4,
+            max_concurrent_split_uploads_merge: 5,
             merge_planner_mailbox,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
