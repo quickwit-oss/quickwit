@@ -164,8 +164,12 @@ impl DeleteTaskPipeline {
             pipeline_ord: 0,
             source_id: "unknown".to_string(),
         };
-        let delete_executor =
-            MergeExecutor::new(index_pipeline_id, self.metastore.clone(), packager_mailbox);
+        let delete_executor = MergeExecutor::new(
+            index_pipeline_id,
+            self.metastore.clone(),
+            doc_mapper.clone(),
+            packager_mailbox,
+        );
         let (delete_executor_mailbox, task_executor_supervisor_handler) = ctx
             .spawn_actor()
             .set_kill_switch(KillSwitch::default())
