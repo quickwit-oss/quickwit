@@ -241,6 +241,7 @@ impl MergePipeline {
         let merge_executor = MergeExecutor::new(
             self.params.pipeline_id.clone(),
             self.params.metastore.clone(),
+            self.params.doc_mapper.clone(),
             merge_packager_mailbox,
         );
         let (merge_executor_mailbox, merge_executor_handler) = ctx

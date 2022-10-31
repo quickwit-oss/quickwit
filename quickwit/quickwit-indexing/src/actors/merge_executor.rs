@@ -30,7 +30,6 @@ use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::fast_field_reader::timestamp_field_reader;
 use quickwit_common::runtimes::RuntimeType;
-use quickwit_config::build_doc_mapper;
 use quickwit_directories::UnionDirectory;
 use quickwit_doc_mapper::{DocMapper, QUICKWIT_TOKENIZER_MANAGER};
 use quickwit_metastore::{Metastore, SplitMetadata};
@@ -53,6 +52,7 @@ use crate::models::{
 pub struct MergeExecutor {
     pipeline_id: IndexingPipelineId,
     metastore: Arc<dyn Metastore>,
+    doc_mapper: Arc<dyn DocMapper>,
     merge_packager_mailbox: Mailbox<Packager>,
 }
 
@@ -334,11 +334,13 @@ impl MergeExecutor {
     pub fn new(
         pipeline_id: IndexingPipelineId,
         metastore: Arc<dyn Metastore>,
+        doc_mapper: Arc<dyn DocMapper>,
         merge_packager_mailbox: Mailbox<Packager>,
     ) -> Self {
         MergeExecutor {
             pipeline_id,
             metastore,
+            doc_mapper,
             merge_packager_mailbox,
         }
     }
@@ -387,12 +389,6 @@ impl MergeExecutor {
         merge_scratch_directory: ScratchDirectory,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<Option<IndexedSplit>> {
-        let index_metadata = self.metastore.index_metadata(&split.index_id).await?;
-        let doc_mapper = build_doc_mapper(
-            &index_metadata.doc_mapping,
-            &index_metadata.search_settings,
-            &index_metadata.indexing_settings,
-        )?;
         let delete_tasks = self
             .metastore
             .list_delete_tasks(&split.index_id, split.delete_opstamp)
@@ -421,7 +417,7 @@ impl MergeExecutor {
             union_index_meta,
             split_directories,
             delete_tasks,
-            Some(doc_mapper.clone()),
+            Some(self.doc_mapper.clone()),
             merge_scratch_directory.path(),
             ctx,
         )
@@ -445,28 +441,29 @@ impl MergeExecutor {
         let uncompressed_docs_size_in_bytes = (num_docs as f32
             * split.uncompressed_docs_size_in_bytes as f32
             / split.num_docs as f32) as u64;
-        let time_range = if let Some(ref timestamp_field_name) = doc_mapper.timestamp_field_name() {
-            let timestamp_field = merged_segment_reader
-                .schema()
-                .get_field(timestamp_field_name)
-                .ok_or_else(|| {
-                    TantivyError::SchemaError(format!(
-                        "Timestamp field `{}` does not exist",
-                        timestamp_field_name
-                    ))
-                })?;
-            let timestamp_field_entry = merged_segment_reader
-                .schema()
-                .get_field_entry(timestamp_field);
-            let reader = timestamp_field_reader(
-                timestamp_field,
-                timestamp_field_entry,
-                merged_segment_reader.fast_fields(),
-            )?;
-            Some(RangeInclusive::new(reader.min_value(), reader.max_value()))
-        } else {
-            None
-        };
+        let time_range =
+            if let Some(ref timestamp_field_name) = self.doc_mapper.timestamp_field_name() {
+                let timestamp_field = merged_segment_reader
+                    .schema()
+                    .get_field(timestamp_field_name)
+                    .ok_or_else(|| {
+                        TantivyError::SchemaError(format!(
+                            "Timestamp field `{}` does not exist",
+                            timestamp_field_name
+                        ))
+                    })?;
+                let timestamp_field_entry = merged_segment_reader
+                    .schema()
+                    .get_field_entry(timestamp_field);
+                let reader = timestamp_field_reader(
+                    timestamp_field,
+                    timestamp_field_entry,
+                    merged_segment_reader.fast_fields(),
+                )?;
+                Some(RangeInclusive::new(reader.min_value(), reader.max_value()))
+            } else {
+                None
+            };
 
         let index_pipeline_id = IndexingPipelineId {
             index_id: split.index_id.clone(),
@@ -574,7 +571,12 @@ mod tests {
             downloaded_splits_directory,
         };
         let (merge_packager_mailbox, merge_packager_inbox) = create_test_mailbox();
-        let merge_executor = MergeExecutor::new(pipeline_id, metastore, merge_packager_mailbox);
+        let merge_executor = MergeExecutor::new(
+            pipeline_id,
+            metastore,
+            test_sandbox.doc_mapper(),
+            merge_packager_mailbox,
+        );
         let universe = Universe::new();
         let (merge_executor_mailbox, merge_executor_handle) =
             universe.spawn_builder().spawn(merge_executor);
@@ -709,8 +711,12 @@ mod tests {
             downloaded_splits_directory,
         };
         let (merge_packager_mailbox, merge_packager_inbox) = create_test_mailbox();
-        let delete_task_executor =
-            MergeExecutor::new(pipeline_id, metastore, merge_packager_mailbox);
+        let delete_task_executor = MergeExecutor::new(
+            pipeline_id,
+            metastore,
+            test_sandbox.doc_mapper(),
+            merge_packager_mailbox,
+        );
         let universe = Universe::new();
         let (delete_task_executor_mailbox, delete_task_executor_handle) =
             universe.spawn_builder().spawn(delete_task_executor);
