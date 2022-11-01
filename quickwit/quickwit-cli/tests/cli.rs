@@ -27,8 +27,8 @@ use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_cli::index::{
-    create_index_cli, delete_index_cli, ingest_docs_cli, search_index, CreateIndexArgs,
-    DeleteIndexArgs, IngestDocsArgs, SearchIndexArgs,
+    create_index_cli, delete_index_cli, garbage_collect_index_cli, ingest_docs_cli, search_index,
+    CreateIndexArgs, DeleteIndexArgs, GarbageCollectIndexArgs, IngestDocsArgs, SearchIndexArgs,
 };
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
@@ -532,15 +532,16 @@ async fn test_delete_index_cli() {
 }
 
 #[tokio::test]
-async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
+async fn test_garbage_collect_cli_no_grace() {
     let index_id = append_random_suffix("test-gc-cmd--no-grace-period");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&test_env.metastore_uri)
-        .await?;
+        .await
+        .unwrap();
 
     let refresh_metastore = |metastore| {
         // In this test we rely on the file backed metastore and write on
@@ -552,91 +553,74 @@ async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
         quickwit_metastore_uri_resolver().resolve(&test_env.metastore_uri)
     };
 
-    let splits = metastore.list_all_splits(&test_env.index_id).await?;
-    assert_eq!(splits.len(), 1);
-    make_command(
-        format!(
-            "index gc --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "No dangling files to garbage collect",
-    ));
+    let create_gc_args = |dry_run| GarbageCollectIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        grace_period: Duration::from_secs(3600),
+        dry_run,
+        data_dir: None,
+    };
 
+    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    assert_eq!(splits.len(), 1);
+
+    let args = create_gc_args(false);
+
+    garbage_collect_index_cli(args).await.unwrap();
+
+    // On gc splits within grace period should still exist.
     let index_path = test_env.indexes_dir_path.join(&test_env.index_id);
     assert_eq!(index_path.exists(), true);
 
     let split_ids = [splits[0].split_id()];
-    let metastore = refresh_metastore(metastore).await?;
+    let metastore = refresh_metastore(metastore).await.unwrap();
     metastore
         .mark_splits_for_deletion(&test_env.index_id, &split_ids)
-        .await?;
+        .await
+        .unwrap();
 
-    make_command(
-        format!(
-            "index gc --index {} --config {} --dry-run --grace-period 10m",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "The following files will be garbage collected.",
-    ))
-    .stdout(predicate::str::contains(".split"));
+    let args = create_gc_args(true);
 
+    garbage_collect_index_cli(args).await.unwrap();
+
+    // On `dry_run = true` splits `MarkedForDeletion` should still exist.
     for split_id in split_ids {
         let split_file = quickwit_common::split_file(split_id);
         let split_filepath = index_path.join(&split_file);
         assert_eq!(split_filepath.exists(), true);
     }
 
-    make_command(
-        format!(
-            "index gc --index {} --config {} --grace-period 10m",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(format!(
-        "Index `{}` successfully garbage collected",
-        test_env.index_id
-    )));
+    let args = create_gc_args(false);
 
+    garbage_collect_index_cli(args).await.unwrap();
+
+    // If split is `MarkedForDeletion` it should be deleted after gc run
     for split_id in split_ids {
         let split_file = quickwit_common::split_file(split_id);
         let split_filepath = index_path.join(&split_file);
         assert_eq!(split_filepath.exists(), false);
     }
 
-    let metastore = refresh_metastore(metastore).await?;
+    let metastore = refresh_metastore(metastore).await.unwrap();
     assert_eq!(
-        metastore.list_all_splits(&test_env.index_id).await?.len(),
+        metastore
+            .list_all_splits(&test_env.index_id)
+            .await
+            .unwrap()
+            .len(),
         0
     );
 
-    make_command(
-        format!(
-            "index delete --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
+    let args = DeleteIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id,
+        dry_run: false,
+        data_dir: None,
+    };
+
+    delete_index_cli(args).await.unwrap();
+
     assert_eq!(index_path.exists(), false);
-    Ok(())
 }
 
 #[tokio::test]
