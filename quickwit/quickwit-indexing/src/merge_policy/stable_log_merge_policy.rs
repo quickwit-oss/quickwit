@@ -617,6 +617,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(not(feature = "ci-test"), ignore)]
     async fn test_simulate_stable_log_merge_policy_constant_case() -> anyhow::Result<()> {
         let merge_policy = StableLogMergePolicy::default();
         aux_test_simulate_merge_planner_num_docs(

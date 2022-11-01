@@ -17,20 +17,23 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::{BTreeSet, HashMap};
+use std::fmt;
 use std::io::{ErrorKind, SeekFrom};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{fmt, io};
 
 use async_trait::async_trait;
 use futures::future::{BoxFuture, FutureExt};
+use futures::StreamExt;
+use quickwit_common::ignore_error_kind;
 use quickwit_common::uri::{Protocol, Uri};
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tracing::warn;
 
-use crate::storage::SendableAsync;
+use crate::storage::{BulkDeleteError, DeleteFailure, SendableAsync};
 use crate::{
     DebouncedStorage, OwnedBytes, Storage, StorageError, StorageErrorKind, StorageFactory,
     StorageResolverError, StorageResult,
@@ -84,7 +87,7 @@ impl LocalFileStorage {
 
 /// Delete empty directories starting from `{root}/{path}` directory and stopping at `{root}`
 /// directory. Note that the `{root}` directory is not deleted.
-fn delete_all_dirs(root: PathBuf, path: &Path) -> BoxFuture<'_, std::io::Result<()>> {
+fn delete_all_dirs<'a>(root: &'a Path, path: &'a Path) -> BoxFuture<'_, std::io::Result<()>> {
     async move {
         let full_path = root.join(path);
         let path_entries_result = full_path.read_dir();
@@ -124,20 +127,12 @@ fn delete_all_dirs(root: PathBuf, path: &Path) -> BoxFuture<'_, std::io::Result<
     .boxed()
 }
 
-fn missing_file_is_ok(io_result: io::Result<()>) -> io::Result<()> {
-    match io_result {
-        Ok(()) => Ok(()),
-        Err(io_err) if io_err.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(io_err) => Err(io_err),
-    }
-}
-
 #[async_trait]
 impl Storage for LocalFileStorage {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
         if !self.root.exists() {
             // By creating directories, we check if we have the right permissions.
-            fs::create_dir_all(self.root.as_path()).await?
+            fs::create_dir_all(&self.root).await?
         }
         Ok(())
     }
@@ -177,15 +172,68 @@ impl Storage for LocalFileStorage {
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         let full_path = self.root.join(path);
-        missing_file_is_ok(fs::remove_file(full_path).await)?;
-        let parent = path.parent();
-        if parent.is_none() {
-            return Ok(());
-        }
-        if let Err(error) = delete_all_dirs(self.root.to_path_buf(), parent.unwrap()).await {
-            warn!(error = ?error, path = %path.display(), "Failed to clean up parent directories.");
+        ignore_error_kind!(ErrorKind::NotFound, fs::remove_file(full_path).await)?;
+        if let Some(parent) = path.parent() {
+            if let Err(error) = delete_all_dirs(&self.root, parent).await {
+                warn!(error=?error, path=%path.display(), "Failed to delete directory.");
+            }
         }
         Ok(())
+    }
+
+    /// Deletes the files identified by `paths` concurrently, with a maximum of `10` syscalls at a
+    /// time. Additionally, deletes the parent directories of `paths` if they are empty after the
+    /// first round of deletions.
+    async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+        let mut successes = Vec::with_capacity(paths.len());
+        let mut failures = HashMap::new();
+        let mut parent_paths = BTreeSet::new();
+
+        let futures = paths
+            .iter()
+            .map(|path| async move {
+                let full_path = self.root.join(path);
+                let delete_res =
+                    ignore_error_kind!(ErrorKind::NotFound, fs::remove_file(full_path).await);
+                (path, delete_res)
+            })
+            .collect::<Vec<_>>();
+        let mut stream = futures::stream::iter(futures).buffer_unordered(10);
+
+        while let Some((path, delete_res)) = stream.next().await {
+            match delete_res {
+                Ok(_) => {
+                    successes.push(path.to_path_buf());
+
+                    if let Some(parent) = path.parent() {
+                        parent_paths.insert(parent);
+                    }
+                }
+                Err(error) => {
+                    let failure = DeleteFailure {
+                        error: Some(error.into()),
+                        ..Default::default()
+                    };
+                    failures.insert(path.to_path_buf(), failure);
+                }
+            }
+        }
+        // Delete parent directories of `paths` if they are empty.
+        // Traverse the parent directories in reverse order, so that we delete the deepest ones
+        // first.
+        for parent_path in parent_paths.into_iter().rev() {
+            if let Err(error) = delete_all_dirs(&self.root, parent_path).await {
+                warn!(error=?error, path=%parent_path.display(), "Failed to delete directory.");
+            }
+        }
+        if failures.is_empty() {
+            return Ok(());
+        }
+        Err(BulkDeleteError {
+            successes,
+            failures,
+            ..Default::default()
+        })
     }
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
@@ -245,34 +293,34 @@ impl StorageFactory for LocalFileStorageFactory {
 
 #[cfg(test)]
 mod tests {
-    use tempfile::tempdir;
 
     use super::*;
     use crate::test_suite::storage_test_suite;
 
     #[tokio::test]
-    async fn test_storage() -> anyhow::Result<()> {
-        let uri = Uri::try_new(&format!("{}", tempdir()?.path().display())).unwrap();
-        let mut file_storage = LocalFileStorage::from_uri(&uri)?;
-        storage_test_suite(&mut file_storage).await?;
+    async fn test_local_file_storage() -> anyhow::Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let uri = Uri::try_new(&format!("{}", tempdir.path().display())).unwrap();
+        let mut local_file_storage = LocalFileStorage::from_uri(&uri)?;
+        storage_test_suite(&mut local_file_storage).await?;
         Ok(())
     }
 
     #[test]
-    fn test_file_storage_factory() -> anyhow::Result<()> {
+    fn test_local_file_storage_factory() -> anyhow::Result<()> {
         let tempdir = tempfile::tempdir()?;
         let index_uri = Uri::new(format!("file://{}/foo/bar", tempdir.path().display()));
-        let file_storage_factory = LocalFileStorageFactory::default();
-        let storage = file_storage_factory.resolve(&index_uri)?;
-        assert_eq!(storage.uri(), &index_uri);
+        let local_file_storage_factory = LocalFileStorageFactory::default();
+        let local_file_storage = local_file_storage_factory.resolve(&index_uri)?;
+        assert_eq!(local_file_storage.uri(), &index_uri);
 
-        let err = file_storage_factory
+        let err = local_file_storage_factory
             .resolve(&Uri::new("s3://foo/bar".to_string()))
             .err()
             .unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
-        let err = file_storage_factory
+        let err = local_file_storage_factory
             .resolve(&Uri::new("s3://".to_string()))
             .err()
             .unwrap();
@@ -281,14 +329,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_local_file_storage_bulk_delete() {
+        let tempdir = tempfile::tempdir().unwrap();
+        tokio::fs::create_dir(tempdir.path().join("foo-dir"))
+            .await
+            .unwrap();
+        tokio::fs::create_dir(tempdir.path().join("bar-dir"))
+            .await
+            .unwrap();
+        tokio::fs::File::create(tempdir.path().join("foo-dir/foo"))
+            .await
+            .unwrap();
+
+        let uri = Uri::try_new(&format!("{}", tempdir.path().display())).unwrap();
+        let local_file_storage = LocalFileStorage::from_uri(&uri).unwrap();
+        let error = local_file_storage
+            .bulk_delete(&[Path::new("foo-dir/foo"), Path::new("bar-dir")])
+            .await
+            .unwrap_err();
+        assert_eq!(error.successes, [PathBuf::from("foo-dir/foo")]);
+
+        let failure = error.failures.get(Path::new("bar-dir")).unwrap();
+        assert_eq!(failure.error.as_ref().unwrap().kind(), StorageErrorKind::Io);
+
+        assert!(!tempdir.path().join("foo-dir").exists());
+    }
+
+    #[tokio::test]
     async fn test_try_delete_dir_all() -> anyhow::Result<()> {
-        let path_root = tempdir()?.into_path();
+        let path_root = tempfile::tempdir()?.into_path();
         let dir_path = path_root.clone().join("foo/bar/baz");
         tokio::fs::create_dir_all(dir_path.clone()).await?;
 
         // check all empty directory
         assert_eq!(dir_path.exists(), true);
-        delete_all_dirs(path_root.clone(), dir_path.as_path()).await?;
+        delete_all_dirs(&path_root, dir_path.as_path()).await?;
         assert_eq!(dir_path.exists(), false);
         assert_eq!(dir_path.parent().unwrap().exists(), false);
 
@@ -298,13 +373,13 @@ mod tests {
         tokio::fs::File::create(intermediate_file.clone()).await?;
         assert_eq!(dir_path.exists(), true);
         assert_eq!(intermediate_file.exists(), true);
-        delete_all_dirs(path_root.clone(), dir_path.as_path()).await?;
+        delete_all_dirs(&path_root, dir_path.as_path()).await?;
         assert_eq!(dir_path.exists(), false);
         assert_eq!(dir_path.parent().unwrap().exists(), true);
 
         // make sure it does not go beyond the path
         tokio::fs::create_dir_all(path_root.join("home/foo/bar")).await?;
-        delete_all_dirs(path_root.join("home/foo"), Path::new("bar")).await?;
+        delete_all_dirs(&path_root.join("home/foo"), Path::new("bar")).await?;
         assert_eq!(path_root.join("home/foo").exists(), true);
 
         Ok(())

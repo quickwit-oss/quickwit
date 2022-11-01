@@ -38,7 +38,8 @@ pub fn build_source_command<'a>() -> Command<'a> {
             Command::new("create")
                 .about("Adds a new source to an index.")
                 .args(&[
-                    arg!(--index <INDEX_ID> "ID of the target index"),
+                    arg!(--index <INDEX_ID> "ID of the target index")
+                        .display_order(1),
                     arg!(--"source-config" <SOURCE_CONFIG> "Path to source config file. Please, refer to the documentation for more details."),
                 ])
             )
@@ -61,32 +62,43 @@ pub fn build_source_command<'a>() -> Command<'a> {
         .subcommand(
             Command::new("delete")
                 .about("Deletes a source from an index.")
+                .alias("del")
                 .args(&[
-                    arg!(--index <INDEX_ID> "ID of the target index"),
-                    arg!(--source <SOURCE_ID> "ID of the source."),
+                    arg!(--index <INDEX_ID> "ID of the target index")
+                        .display_order(1),
+                    arg!(--source <SOURCE_ID> "ID of the source.")
+                        .display_order(2),
                 ])
             )
         .subcommand(
             Command::new("describe")
                 .about("Describes a source.")
+                .alias("desc")
                 .args(&[
-                    arg!(--index <INDEX_ID> "ID of the target index"),
-                    arg!(--source <SOURCE_ID> "ID of the source."),
+                    arg!(--index <INDEX_ID> "ID of the target index")
+                        .display_order(1),
+                    arg!(--source <SOURCE_ID> "ID of the source.")
+                        .display_order(2),
                 ])
             )
         .subcommand(
             Command::new("list")
                 .about("Lists the sources of an index.")
+                .alias("ls")
                 .args(&[
-                    arg!(--index <INDEX_ID> "ID of the target index"),
+                    arg!(--index <INDEX_ID> "ID of the target index")
+                        .display_order(1),
                 ])
             )
         .subcommand(
             Command::new("reset-checkpoint")
                 .about("Resets a source checkpoint. This operation is destructive and cannot be undone. Proceed with caution.")
+                .alias("reset")
                 .args(&[
-                    arg!(--index <INDEX_ID> "Index ID"),
-                    arg!(--source <SOURCE_ID> "Source ID"),
+                    arg!(--index <INDEX_ID> "Index ID")
+                        .display_order(1),
+                    arg!(--source <SOURCE_ID> "Source ID")
+                        .display_order(2),
                 ])
             )
         .arg_required_else_help(true)
@@ -410,6 +422,7 @@ where
     let source_rows = vec![SourceRow {
         source_id: source.source_id.clone(),
         source_type: source.source_type().to_string(),
+        enabled: source.enabled.to_string(),
     }];
     let source_table = make_table("Source", source_rows, true);
 
@@ -445,6 +458,7 @@ where I: IntoIterator<Item = SourceConfig> {
         .map(|source| SourceRow {
             source_type: source.source_type().to_string(),
             source_id: source.source_id,
+            enabled: source.enabled.to_string(),
         })
         .sorted_by(|left, right| left.source_id.cmp(&right.source_id));
     make_table("Sources", rows, false)
@@ -452,10 +466,12 @@ where I: IntoIterator<Item = SourceConfig> {
 
 #[derive(Tabled)]
 struct SourceRow {
-    #[tabled(rename = "Type")]
-    source_type: String,
     #[tabled(rename = "ID")]
     source_id: String,
+    #[tabled(rename = "Type")]
+    source_type: String,
+    #[tabled(rename = "Enabled")]
+    enabled: String,
 }
 
 #[derive(Tabled)]
@@ -730,6 +746,7 @@ mod tests {
         let expected_source = vec![SourceRow {
             source_id: "foo-source".to_string(),
             source_type: "file".to_string(),
+            enabled: "true".to_string(),
         }];
         let expected_params = vec![ParamsRow {
             key: "filepath".to_string(),
@@ -802,10 +819,12 @@ mod tests {
             SourceRow {
                 source_id: "bar-source".to_string(),
                 source_type: "file".to_string(),
+                enabled: "true".to_string(),
             },
             SourceRow {
                 source_id: "foo-source".to_string(),
                 source_type: "file".to_string(),
+                enabled: "true".to_string(),
             },
         ];
         assert_eq!(

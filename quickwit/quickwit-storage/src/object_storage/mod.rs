@@ -29,6 +29,6 @@ pub use crate::object_storage::policy::MultiPartPolicy;
 mod s3_compatible_storage_uri_resolver;
 
 #[cfg(feature = "azure")]
-mod azure_compatible_storage;
+mod azure_blob_storage;
 #[cfg(feature = "azure")]
-pub use self::azure_compatible_storage::{AzureBlobStorage, AzureBlobStorageFactory};
+pub use self::azure_blob_storage::{AzureBlobStorage, AzureBlobStorageFactory};
