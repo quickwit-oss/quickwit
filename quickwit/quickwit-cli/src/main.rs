@@ -502,8 +502,6 @@ mod tests {
             "wikipedia",
             "--source",
             "ingest-source",
-            "--pipeline-ord",
-            "1",
             "--config",
             "/config.yaml",
         ])?;
@@ -513,9 +511,8 @@ mod tests {
             CliCommand::Index(IndexCliCommand::Merge(MergeArgs {
                 index_id,
                 source_id,
-                pipeline_ord,
                 ..
-            })) if &index_id == "wikipedia" && source_id == "ingest-source" && pipeline_ord.unwrap() == 1
+            })) if &index_id == "wikipedia" && source_id == "ingest-source"
         ));
         Ok(())
     }

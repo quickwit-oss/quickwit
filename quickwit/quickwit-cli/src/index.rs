@@ -168,9 +168,6 @@ pub fn build_index_command<'a>() -> Command<'a> {
                     arg!(--index <INDEX> "ID of the target index.")
                         .display_order(1),
                     arg!(--source <INDEX> "ID of the target source."),
-                    arg!(--"pipeline-ord" <PIPELINE_ORD> "Pipeline ordinal.")
-                        .default_value("0")
-                        .required(false),
                     arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
                         .env("QW_DATA_DIR")
                         .required(false),
@@ -297,7 +294,6 @@ pub struct MergeArgs {
     pub config_uri: Uri,
     pub index_id: String,
     pub source_id: String,
-    pub pipeline_ord: Option<usize>,
     pub data_dir: Option<PathBuf>,
 }
 
@@ -526,11 +522,6 @@ impl IndexCliCommand {
             .value_of("source")
             .context("'source-id' is a required arg.")?
             .to_string();
-        let pipeline_ord = matches
-            .value_of("pipeline-ord")
-            .map(|value| value.parse::<usize>())
-            .transpose()
-            .context("`pipeline-ord` must be an integer >= 0.")?;
         let config_uri = matches
             .value_of("config")
             .map(Uri::try_new)
@@ -539,7 +530,6 @@ impl IndexCliCommand {
         Ok(Self::Merge(MergeArgs {
             index_id,
             source_id,
-            pipeline_ord,
             config_uri,
             data_dir,
         }))
@@ -1101,7 +1091,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         index_id: args.index_id,
         source_id: args.source_id,
         node_id,
-        pipeline_ord: args.pipeline_ord.unwrap_or(0),
+        pipeline_ord: 0,
     };
     indexing_service_mailbox
         .ask_for_res(SpawnMergePipeline {

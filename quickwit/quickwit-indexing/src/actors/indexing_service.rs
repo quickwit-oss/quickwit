@@ -97,21 +97,6 @@ pub struct IndexingServiceState {
 type IndexId = String;
 type SourceId = String;
 
-#[derive(Hash, Eq, PartialEq)]
-struct MergePipelineId {
-    index_id: String,
-    source_id: String,
-}
-
-impl<'a> From<&'a IndexingPipelineId> for MergePipelineId {
-    fn from(pipeline_id: &'a IndexingPipelineId) -> Self {
-        MergePipelineId {
-            index_id: pipeline_id.index_id.clone(),
-            source_id: pipeline_id.source_id.clone(),
-        }
-    }
-}
-
 struct MergePipelineHandle {
     mailbox: Mailbox<MergePlanner>,
     handle: ActorHandle<MergePipeline>,
@@ -127,7 +112,7 @@ pub struct IndexingService {
     indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
     local_split_store: Arc<LocalSplitStore>,
     max_concurrent_split_uploads: usize,
-    merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineHandle>,
+    merge_pipeline_handles: HashMap<(IndexId, SourceId), MergePipelineHandle>,
 }
 
 impl IndexingService {
@@ -380,15 +365,15 @@ impl IndexingService {
                 },
             );
         // Evict merge pipelines that are not needed or failing.
-        let needed_merge_pipeline_ids: HashSet<MergePipelineId> = self
+        let needed_merge_pipeline_keys: HashSet<(IndexId, SourceId)> = self
             .indexing_pipeline_handles
             .keys()
-            .map(MergePipelineId::from)
+            .map(|pipeline_id| (pipeline_id.index_id.clone(), pipeline_id.source_id.clone()))
             .collect();
         self.merge_pipeline_handles
-            .retain(|merge_pipeline_id, merge_pipeline_mailbox_handle| {
+            .retain(|merge_pipeline_key, merge_pipeline_mailbox_handle| {
                 match merge_pipeline_mailbox_handle.handle.health() {
-                    Health::Healthy => needed_merge_pipeline_ids.contains(merge_pipeline_id),
+                    Health::Healthy => needed_merge_pipeline_keys.contains(merge_pipeline_key),
                     Health::FailureOrUnhealthy | Health::Success => false,
                 }
             });
@@ -429,10 +414,8 @@ impl IndexingService {
         split_store: IndexingSplitStore,
         merge_policy: Arc<dyn MergePolicy>,
     ) -> Result<Mailbox<MergePlanner>, IndexingServiceError> {
-        let merge_pipeline_id = MergePipelineId::from(pipeline_id);
-        if let Some(merge_pipeline_mailbox_handle) =
-            self.merge_pipeline_handles.get(&merge_pipeline_id)
-        {
+        let key = (pipeline_id.index_id.clone(), pipeline_id.source_id.clone());
+        if let Some(merge_pipeline_mailbox_handle) = self.merge_pipeline_handles.get(&key) {
             return Ok(merge_pipeline_mailbox_handle.mailbox.clone());
         }
 
@@ -456,7 +439,7 @@ impl IndexingService {
             handle: pipeline_handle,
         };
         self.merge_pipeline_handles
-            .insert(merge_pipeline_id, merge_pipeline_mailbox_handle);
+            .insert(key, merge_pipeline_mailbox_handle);
         Ok(merge_planner_mailbox)
     }
 }
