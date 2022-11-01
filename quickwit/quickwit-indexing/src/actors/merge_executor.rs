@@ -537,10 +537,10 @@ mod tests {
         )
         .await?;
         for split_id in 0..4 {
-            let docs = vec![
+            let single_doc = std::iter::once(
                 serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713u64 + split_id }),
-            ];
-            test_sandbox.add_documents(docs).await?;
+            );
+            test_sandbox.add_documents(single_doc).await?;
         }
         let metastore = test_sandbox.metastore();
         let split_metas: Vec<SplitMetadata> = metastore
@@ -561,7 +561,6 @@ mod tests {
                 .storage()
                 .copy_to_file(Path::new(&split_filename), &dest_filepath)
                 .await?;
-
             tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap())
         }
         let merge_scratch = MergeScratch {

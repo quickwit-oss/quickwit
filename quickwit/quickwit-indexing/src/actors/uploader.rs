@@ -390,7 +390,7 @@ async fn stage_and_upload_split(
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
@@ -692,9 +692,19 @@ mod tests {
             ObservationType::Alive
         );
         // We have to wait a bit to make sure uploader has sent the message.
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        let mut splits_updates: Vec<SplitsUpdate> = publisher_inbox.drain_for_test_typed();
-        assert_eq!(splits_updates.len(), 1);
+
+        let start = Instant::now();
+        let mut splits_updates = loop {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            let split_updated: Vec<SplitsUpdate> = publisher_inbox.drain_for_test_typed();
+            if split_updated.len() > 0 {
+                break split_updated;
+            }
+            assert!(
+                start.elapsed() < Duration::from_secs(1),
+                "Failed to receive publisher message in time"
+            );
+        };
 
         let SplitsUpdate {
             index_id,

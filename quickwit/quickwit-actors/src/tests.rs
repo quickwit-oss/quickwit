@@ -595,7 +595,7 @@ async fn test_actor_sleep_and_resume() -> anyhow::Result<()> {
     mailbox.send_message(Sleep(Duration::from_secs(3))).await?;
     handle.process_pending_and_observe().await;
     mailbox.send_message(AddOperand(3)).await?;
-    mailbox.send_message(Command::Resume).await?;
+    handle.resume();
     let total = *handle.process_pending_and_observe().await;
     assert_eq!(total, 5);
     Ok(())
