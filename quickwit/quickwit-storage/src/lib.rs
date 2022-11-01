@@ -171,11 +171,27 @@ pub(crate) mod test_suite {
             .put(test_path, Box::new(payload_bytes.to_vec()))
             .await?;
         storage.delete(test_path).await?;
-        let slice_err = storage
-            .get_slice(test_path, 0..3)
-            .await
-            .map_err(|e| e.kind());
-        assert!(matches!(slice_err, Err(StorageErrorKind::DoesNotExist)));
+        assert!(!storage.exists(test_path).await?);
+        Ok(())
+    }
+
+    async fn test_write_and_bulk_delete(storage: &mut dyn Storage) -> anyhow::Result<()> {
+        let test_paths = [
+            Path::new("foo"),
+            Path::new("bar"),
+            Path::new("file-does-not-exist"),
+        ];
+        for test_path in &test_paths[0..2] {
+            storage
+                .put(Path::new(test_path), Box::new(b"123".to_vec()))
+                .await?;
+            assert!(storage.exists(test_path).await?);
+        }
+        storage.bulk_delete(&test_paths).await?;
+
+        for test_path in test_paths {
+            assert!(!storage.exists(test_path).await?);
+        }
         Ok(())
     }
 
@@ -192,16 +208,16 @@ pub(crate) mod test_suite {
 
     async fn test_exists(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_path = Path::new("exists");
-        assert!(matches!(storage.exists(test_path).await, Ok(false)));
+        assert!(!storage.exists(test_path).await.unwrap());
         storage.put(test_path, Box::new(vec![])).await?;
-        assert!(matches!(storage.exists(test_path).await, Ok(true)));
-        assert!(matches!(storage.delete(test_path).await, Ok(())));
+        assert!(storage.exists(test_path).await.unwrap());
+        storage.delete(test_path).await.unwrap();
         Ok(())
     }
 
     async fn test_delete_missing_file(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_path = Path::new("missing_file");
-        assert!(matches!(storage.exists(test_path).await, Ok(false)));
+        assert!(!storage.exists(test_path).await.unwrap());
         assert!(storage.delete(test_path).await.is_ok());
         Ok(())
     }
@@ -232,27 +248,28 @@ pub(crate) mod test_suite {
     pub async fn storage_test_suite(storage: &mut dyn Storage) -> anyhow::Result<()> {
         test_get_inexistent_file(storage)
             .await
-            .with_context(|| "get_inexistent_file")?;
+            .context("get_inexistent_file")?;
         test_write_and_get_slice(storage)
             .await
-            .with_context(|| "write_and_get_slice")?;
+            .context("write_and_get_slice")?;
         test_write_get_all(storage)
             .await
-            .with_context(|| "write_and_get_all")?;
-        test_write_and_cp(storage)
-            .await
-            .with_context(|| "write_and_cp")?;
+            .context("write_and_get_all")?;
+        test_write_and_cp(storage).await.context("write_and_cp")?;
         test_write_and_delete(storage)
             .await
-            .with_context(|| "write_and_delete")?;
-        test_exists(storage).await.with_context(|| "exists")?;
+            .context("write_and_delete")?;
+        test_write_and_bulk_delete(storage)
+            .await
+            .context("write_and_bulk_delete")?;
+        test_exists(storage).await.context("exists")?;
         test_write_and_delete_with_dir_separator(storage)
             .await
-            .with_context(|| "write_and_delete_with_separator")?;
-        test_file_size(storage).await.with_context(|| "file_size")?;
+            .context("write_and_delete_with_separator")?;
+        test_file_size(storage).await.context("file_size")?;
         test_delete_missing_file(storage)
             .await
-            .with_context(|| "delete_missing_file")?;
+            .context("delete_missing_file")?;
         Ok(())
     }
 

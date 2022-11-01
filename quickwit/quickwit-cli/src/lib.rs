@@ -35,7 +35,7 @@ use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
 use regex::Regex;
 use tabled::object::Rows;
-use tabled::{Alignment, Header, Modify, Rotate, Style, Table, Tabled};
+use tabled::{Alignment, Header, Modify, Style, Table, Tabled};
 use tracing::info;
 
 pub mod cli;
@@ -139,15 +139,20 @@ pub async fn run_index_checklist(
 pub fn make_table<T: Tabled>(
     header: &str,
     rows: impl IntoIterator<Item = T>,
-    rotate: bool,
+    transpose: bool,
 ) -> Table {
-    let mut table = Table::new(rows)
-        .with(Modify::new(Rows::new(1..)).with(Alignment::left()))
-        .with(Style::ascii());
-    if rotate {
-        table = table.with(Rotate::Left)
-    }
+    let table = if transpose {
+        let mut index_builder = Table::builder(rows).index();
+        index_builder.set_index(0);
+        index_builder.transpose();
+        index_builder.build()
+    } else {
+        Table::builder(rows).build()
+    };
+
     table
+        .with(Modify::new(Rows::new(1..)).with(Alignment::left()))
+        .with(Style::ascii())
         .with(Header(header))
         .with(Modify::new(Rows::single(0)).with(Alignment::center()))
 }

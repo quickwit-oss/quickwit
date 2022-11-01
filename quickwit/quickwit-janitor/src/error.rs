@@ -17,18 +17,29 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod error;
+use quickwit_metastore::MetastoreError;
+use quickwit_proto::{ServiceError, ServiceErrorCode};
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-mod s3_compatible_storage;
-pub use self::s3_compatible_storage::S3CompatibleObjectStorage;
-pub use self::s3_compatible_storage_uri_resolver::S3CompatibleObjectStorageFactory;
+/// Janitor errors.
+#[allow(missing_docs)]
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum JanitorError {
+    #[error("Invalid delete query: `{0}`.")]
+    InvalidDeleteQuery(String),
+    #[error("Internal error: {0}")]
+    InternalError(String),
+    #[error("Metastore error `{0}`.")]
+    MetastoreError(#[from] MetastoreError),
+}
 
-mod policy;
-pub use crate::object_storage::policy::MultiPartPolicy;
-
-mod s3_compatible_storage_uri_resolver;
-
-#[cfg(feature = "azure")]
-mod azure_blob_storage;
-#[cfg(feature = "azure")]
-pub use self::azure_blob_storage::{AzureBlobStorage, AzureBlobStorageFactory};
+impl ServiceError for JanitorError {
+    fn status_code(&self) -> ServiceErrorCode {
+        match self {
+            JanitorError::InvalidDeleteQuery(_) => ServiceErrorCode::BadRequest,
+            JanitorError::InternalError(_) => ServiceErrorCode::Internal,
+            JanitorError::MetastoreError(error) => error.status_code(),
+        }
+    }
+}
