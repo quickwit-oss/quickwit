@@ -697,7 +697,7 @@ mod tests {
         let mut splits_updates = loop {
             tokio::time::sleep(Duration::from_millis(10)).await;
             let split_updated: Vec<SplitsUpdate> = publisher_inbox.drain_for_test_typed();
-            if split_updated.len() > 0 {
+            if !split_updated.is_empty() {
                 break split_updated;
             }
             assert!(
