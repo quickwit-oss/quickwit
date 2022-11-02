@@ -14,7 +14,6 @@ anyhow = { workspace = true }
 byte-unit = { workspace = true }
 chrono = { workspace = true }
 cron = { workspace = true }
-derivative = { workspace = true }
 enum-iterator = { workspace = true }
 humantime = { workspace = true }
 itertools = { workspace = true }

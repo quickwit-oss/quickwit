@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{bail, Context};
@@ -89,13 +88,9 @@ pub fn start_actor_runtimes(services: &HashSet<QuickwitService>) -> anyhow::Resu
     Ok(())
 }
 
-async fn load_quickwit_config(
-    config_uri: &Uri,
-    data_dir_path_opt: Option<PathBuf>,
-) -> anyhow::Result<QuickwitConfig> {
+async fn load_quickwit_config(config_uri: &Uri) -> anyhow::Result<QuickwitConfig> {
     let config_content = load_file(config_uri).await?;
-    let config =
-        QuickwitConfig::load(config_uri, config_content.as_slice(), data_dir_path_opt).await?;
+    let config = QuickwitConfig::load(config_uri, config_content.as_slice()).await?;
     info!(config_uri=%config_uri, config=?config, "Loaded Quickwit config.");
     Ok(config)
 }
