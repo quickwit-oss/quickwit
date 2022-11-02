@@ -316,7 +316,7 @@ impl<'a> ListSplitsQuery<'a> {
         }
     }
 
-    /// Set the maximum number of splits to retrieve.
+    /// Sets the maximum number of splits to retrieve.
     pub fn with_limit(&mut self, n: usize) {
         self.limit = Some(n);
     }
