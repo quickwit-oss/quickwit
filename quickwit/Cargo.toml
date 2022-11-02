@@ -47,7 +47,6 @@ colored = "2.0.0"
 console-subscriber = "0.1.0"
 criterion = { version = "0.4", features = ["async_tokio"] }
 cron = "0.11.0"
-derivative = "2.2.0"
 dialoguer = "0.10.2"
 dotenv = "0.15"
 dyn-clone = "1.0.4"

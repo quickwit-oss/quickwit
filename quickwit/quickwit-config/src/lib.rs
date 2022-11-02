@@ -22,8 +22,10 @@ use once_cell::sync::OnceCell;
 use regex::Regex;
 
 mod config;
+mod config_value;
 mod index_config;
 pub mod merge_policy_config;
+mod qw_env_vars;
 pub mod service;
 mod source_config;
 mod templating;
