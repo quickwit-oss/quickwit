@@ -786,7 +786,6 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
 
 /// testing the api via cli commands
 #[tokio::test]
-#[serial]
 async fn test_all_local_index() -> Result<()> {
     quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-all");
@@ -867,7 +866,6 @@ async fn test_all_local_index() -> Result<()> {
 
 /// testing the api via cli commands
 #[tokio::test]
-#[serial]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_all_with_s3_localstack_cli() {
     let index_id = append_random_suffix("test-all--cli-s3-localstack");

@@ -20,6 +20,7 @@
 use std::fmt::Display;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener};
 use std::str::FromStr;
+use std::sync::Mutex;
 
 use anyhow::{bail, Context};
 use itertools::Itertools;
@@ -81,7 +82,9 @@ impl Display for Host {
 
 impl Serialize for Host {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer {
+    where
+        S: Serializer,
+    {
         match self {
             Host::Hostname(hostname) => hostname.serialize(serializer),
             Host::IpAddr(ip_addr) => ip_addr.serialize(serializer),
@@ -91,7 +94,9 @@ impl Serialize for Host {
 
 impl<'de> Deserialize<'de> for Host {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: serde::Deserializer<'de> {
+    where
+        D: serde::Deserializer<'de>,
+    {
         let host_str: String = Deserialize::deserialize(deserializer)?;
         host_str.parse().map_err(serde::de::Error::custom)
     }
@@ -210,11 +215,26 @@ impl Display for HostAddr {
 /// Finds a random available TCP port.
 ///
 /// This function induces a race condition, use it only in unit tests.
+#[cfg(feature = "testsuite")]
 pub fn find_available_tcp_port() -> anyhow::Result<u16> {
-    let socket: SocketAddr = ([127, 0, 0, 1], 0u16).into();
-    let listener = TcpListener::bind(socket)?;
-    let port = listener.local_addr()?.port();
-    Ok(port)
+    static ASSIGNED_PORTS: Mutex<Vec<u16>> = Mutex::new(vec![]);
+
+    let mut listeners = vec![];
+
+    for _ in 0..15 {
+        let socket: SocketAddr = ([127, 0, 0, 1], 0u16).into();
+        let listener = TcpListener::bind(socket)?;
+        let port = listener.local_addr()?.port();
+
+        if ASSIGNED_PORTS.lock().unwrap().contains(&port) {
+            listeners.push(listener);
+        } else {
+            ASSIGNED_PORTS.lock().unwrap().push(port);
+            return Ok(port)
+        }
+    }
+
+    bail!("Too many retries to find an available port.")
 }
 
 /// Attempts to find the private IP of the host. Returns the matching interface name along with it.
