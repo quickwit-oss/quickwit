@@ -44,7 +44,7 @@ use serde_json::{json, Number, Value};
 use serial_test::serial;
 use tokio::time::{sleep, Duration};
 
-use crate::helpers::{create_test_env, make_command, spawn_command, wait_port_ready};
+use crate::helpers::{create_test_env, make_command, wait_port_ready};
 
 fn create_logs_index(test_env: &TestEnv) {
     make_command(
