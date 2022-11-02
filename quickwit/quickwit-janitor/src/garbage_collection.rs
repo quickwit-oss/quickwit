@@ -147,7 +147,7 @@ pub async fn run_garbage_collect(
 
     let mut filter = ListSplitsQuery::for_index(index_id);
     filter.with_split_state(SplitState::MarkedForDeletion);
-    filter.with_update_timestamp_le(grace_period_deletion);
+    filter.with_update_timestamp_ge(grace_period_deletion);
 
     let splits_to_delete = protect_future(ctx_opt, metastore.list_splits(filter))
         .await?
