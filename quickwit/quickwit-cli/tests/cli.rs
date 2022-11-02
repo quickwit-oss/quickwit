@@ -44,7 +44,7 @@ use serde_json::{json, Number, Value};
 use serial_test::serial;
 use tokio::time::{sleep, Duration};
 
-use crate::helpers::{create_test_env, make_command, spawn_command};
+use crate::helpers::{create_test_env, make_command, spawn_command, wait_port_ready};
 
 fn create_logs_index(test_env: &TestEnv) {
     make_command(
@@ -912,8 +912,7 @@ async fn test_all_with_s3_localstack_cli() {
 
     let service_task = tokio::spawn(async move { run_cli_command.execute().await.unwrap() });
 
-    // TODO: ditto.
-    sleep(Duration::from_secs(2)).await;
+    wait_port_ready(test_env.rest_listen_port).await.unwrap();
 
     let query_response = reqwest::get(format!(
         "http://127.0.0.1:{}/api/v1/{}/search?query=level:info",
