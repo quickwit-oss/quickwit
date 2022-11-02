@@ -21,6 +21,7 @@
 
 mod helpers;
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::Result;
@@ -30,10 +31,12 @@ use quickwit_cli::index::{
     create_index_cli, delete_index_cli, garbage_collect_index_cli, ingest_docs_cli, search_index,
     CreateIndexArgs, DeleteIndexArgs, GarbageCollectIndexArgs, IngestDocsArgs, SearchIndexArgs,
 };
+use quickwit_cli::service::RunCliCommand;
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_common::ChecklistError;
+use quickwit_config::service::QuickwitService;
 use quickwit_config::CLI_INGEST_SOURCE_ID;
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreError};
@@ -41,7 +44,7 @@ use serde_json::{json, Number, Value};
 use serial_test::serial;
 use tokio::time::{sleep, Duration};
 
-use crate::helpers::{create_test_env, make_command, spawn_command};
+use crate::helpers::{create_test_env, make_command, spawn_command, wait_port_ready};
 
 fn create_logs_index(test_env: &TestEnv) {
     make_command(
@@ -866,87 +869,82 @@ async fn test_all_local_index() -> Result<()> {
 #[tokio::test]
 #[serial]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
-async fn test_cmd_all_with_s3_localstack_cli() -> Result<()> {
+async fn test_all_with_s3_localstack_cli() {
     let index_id = append_random_suffix("test-all--cli-s3-localstack");
-    let test_env = create_test_env(index_id, TestStorageType::S3)?;
-    make_command(
-        format!(
-            "index create --index-config {} --config {}",
-            test_env.resource_files["index_config"].display(),
-            test_env.resource_files["config"].display()
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
-
-    test_env
-        .metastore()
-        .await?
-        .index_metadata(&test_env.index_id)
-        .await
-        .unwrap();
+    let test_env = create_test_env(index_id.clone(), TestStorageType::S3).unwrap();
+    create_logs_index(&test_env);
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
-    // cli search
-    make_command(
-        format!(
-            "index search --index {} --query level:info --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::function(|output: &[u8]| {
-        let result: Value = serde_json::from_slice(output).unwrap();
-        result["num_hits"] == Value::Number(Number::from(2i64))
-    }));
+    // Cli search
+    let args = SearchIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        query: "level:info".to_string(),
+        aggregation: None,
+        max_hits: 20,
+        start_offset: 0,
+        search_fields: None,
+        snippet_fields: None,
+        start_timestamp: None,
+        end_timestamp: None,
+        data_dir: None,
+        sort_by_score: false,
+    };
+
+    let search_res = search_index(args).await.unwrap();
+    assert_eq!(search_res.num_hits, 2);
 
     // serve & api-search
     // TODO: ditto.
-    let mut server_process = spawn_command(
-        format!(
-            "run --service searcher --service metastore --config {}",
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .unwrap();
-    // TODO: ditto.
-    sleep(Duration::from_secs(2)).await;
+    let run_cli_command = RunCliCommand {
+        config_uri: test_env.config_uri.clone(),
+        data_dir_path: None,
+        services: Some(HashSet::from([
+            QuickwitService::Searcher,
+            QuickwitService::Metastore,
+        ])),
+        metastore_uri: None,
+        cluster_id: None,
+        node_id: None,
+        peer_seeds: None,
+    };
+
+    let service_task = tokio::spawn(async move { run_cli_command.execute().await.unwrap() });
+
+    wait_port_ready(test_env.rest_listen_port).await.unwrap();
+
     let query_response = reqwest::get(format!(
         "http://127.0.0.1:{}/api/v1/{}/search?query=level:info",
         test_env.rest_listen_port, test_env.index_id,
     ))
-    .await?
+    .await
+    .unwrap()
     .text()
-    .await?;
+    .await
+    .unwrap();
+
     let result: Value =
         serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
     assert_eq!(result["num_hits"], Value::Number(Number::from(2i64)));
 
-    server_process.kill().unwrap();
+    service_task.abort();
 
-    make_command(
-        format!(
-            "index delete --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display()
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
+    let args = DeleteIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        dry_run: false,
+        data_dir: None,
+    };
+
+    delete_index_cli(args).await.unwrap();
+
     assert_eq!(
         test_env
             .storage
             .exists(Path::new(&test_env.index_id))
-            .await?,
+            .await
+            .unwrap(),
         false
     );
-
-    Ok(())
 }
