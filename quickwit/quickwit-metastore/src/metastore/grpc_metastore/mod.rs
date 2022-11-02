@@ -269,7 +269,7 @@ impl Metastore for MetastoreGrpcClient {
     async fn list_splits<'a>(&self, filter: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>> {
         let filter_json =
             serde_json::to_string(&filter).map_err(|error| MetastoreError::JsonSerializeError {
-                name: "SplitFilter".to_string(),
+                name: "ListSplitsQuery".to_string(),
                 message: error.to_string(),
             })?;
 

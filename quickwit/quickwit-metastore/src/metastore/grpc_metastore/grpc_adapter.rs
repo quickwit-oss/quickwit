@@ -147,7 +147,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
         let list_splits_request = request.into_inner();
         let filter: ListSplitsQuery<'_> = serde_json::from_str(&list_splits_request.filter_json)
             .map_err(|error| MetastoreError::JsonDeserializeError {
-                name: "SplitFilter".to_string(),
+                name: "ListSplitsQuery".to_string(),
                 message: error.to_string(),
             })?;
 
