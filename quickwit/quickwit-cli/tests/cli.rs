@@ -41,7 +41,6 @@ use quickwit_config::CLI_INGEST_SOURCE_ID;
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreError};
 use serde_json::{json, Number, Value};
-use serial_test::serial;
 use tokio::time::{sleep, Duration};
 
 use crate::helpers::{create_test_env, make_command, spawn_command, wait_port_ready};
