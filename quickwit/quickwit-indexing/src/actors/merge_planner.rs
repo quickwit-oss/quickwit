@@ -222,6 +222,7 @@ mod tests {
     use quickwit_actors::{create_mailbox, QueueCapacity, Universe};
     use quickwit_config::merge_policy_config::StableLogMergePolicyConfig;
     use quickwit_metastore::SplitMetadata;
+    use tantivy::TrackedObject;
 
     use crate::actors::MergePlanner;
     use crate::merge_policy::{MergeOperation, StableLogMergePolicy};
@@ -308,11 +309,10 @@ mod tests {
                 ],
             };
             merge_planner_mailbox.send_message(message).await?;
-            let operations = merge_split_downloader_inbox.drain_for_test();
+            let operations = merge_split_downloader_inbox.drain_for_test_typed::<TrackedObject<MergeOperation>>();
             assert_eq!(operations.len(), 2);
             let mut merge_operations = operations
                 .into_iter()
-                .map(|operation| operation.downcast::<MergeOperation>().unwrap())
                 .sorted_by(|left_op, right_op| {
                     left_op.splits[0]
                         .partition_id
