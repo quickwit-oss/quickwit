@@ -356,6 +356,7 @@ mod tests {
         let search_response = SearchResponseRest {
             num_hits: 55,
             hits: Vec::new(),
+            snippets: None,
             elapsed_time_micros: 0u64,
             errors: Vec::new(),
             aggregations: None,
@@ -824,10 +825,8 @@ mod tests {
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let expected_response_json = serde_json::json!({
             "num_hits": 1,
-            "hits": [{
-                "document": {"title": "foo", "body": "foo bar baz"},
-                "snippet": {"title": [], "body": ["foo <em>bar</em> baz"]}
-            }],
+            "hits": [{"title": "foo", "body": "foo bar baz"}],
+            "snippets": [{"title": [], "body": ["foo <em>bar</em> baz"]}],
             "elapsed_time_micros": 16,
             "errors": [],
         });
