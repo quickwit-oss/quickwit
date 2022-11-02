@@ -19,9 +19,9 @@
 
 use std::sync::Arc;
 
-use tantivy::fastfield::{Column, FastFieldReaders};
-use tantivy::schema::{Field, FieldEntry, Type};
-use tantivy::{DateTime, DocId, TantivyError};
+use tantivy::fastfield::Column;
+use tantivy::schema::{Field, Type};
+use tantivy::{DateTime, DocId, SegmentReader, TantivyError};
 
 #[derive(Clone)]
 pub enum GenericFastFieldReader {
@@ -60,9 +60,11 @@ impl GenericFastFieldReader {
 
 pub fn timestamp_field_reader(
     timestamp_field: Field,
-    timestamp_field_entry: &FieldEntry,
-    fast_field_readers: &FastFieldReaders,
+    segment_reader: &SegmentReader,
 ) -> tantivy::Result<GenericFastFieldReader> {
+    let schema = segment_reader.schema();
+    let timestamp_field_entry = schema.get_field_entry(timestamp_field);
+    let fast_field_readers = segment_reader.fast_fields();
     let field_schema_type = timestamp_field_entry.field_type().value_type();
     let timestamp_field_reader = match field_schema_type {
         Type::I64 => GenericFastFieldReader::I64(fast_field_readers.i64(timestamp_field)?),
