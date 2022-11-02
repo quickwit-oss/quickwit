@@ -267,7 +267,7 @@ pub trait Metastore: Send + Sync + 'static {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-/// A filter builder for filtering splits within the metastore.
+/// A query builder for filtering splits within the metastore.
 pub struct ListSplitsQuery<'a> {
     /// The index to get splits from.
     pub index: &'a str,
@@ -304,7 +304,7 @@ impl<'a> DerefMut for ListSplitsQuery<'a> {
 
 #[allow(unused_attributes)]
 impl<'a> ListSplitsQuery<'a> {
-    /// Create a new index for a specific index.
+    /// Create a new [ListSplitsQuery] for a specific index.
     pub fn for_index(index: &'a str) -> Self {
         Self {
             index,
@@ -321,17 +321,17 @@ impl<'a> ListSplitsQuery<'a> {
         self.limit = Some(n);
     }
 
-    /// Set the number of splits to skip.
+    /// Sets the number of splits to skip.
     pub fn with_offset(&mut self, n: usize) {
         self.offset = Some(n);
     }
 
-    /// Select splits which have the are in the given split state.
+    /// Select splits which have the given split state.
     pub fn with_split_state(&mut self, state: SplitState) {
         self.split_states.push(state);
     }
 
-    /// Select splits which have the are in any of the following split state.
+    /// Select splits which have the any of the following split state.
     pub fn with_split_states(&mut self, states: impl AsRef<[SplitState]>) {
         self.split_states.extend_from_slice(states.as_ref());
     }
@@ -367,6 +367,8 @@ impl<T: PartialEq + PartialOrd> FilterRange<T> {
         self.lower == Bound::Unbounded && self.upper == Bound::Unbounded
     }
 
+    /// Checks if the provided value lied within the upper and lower bounds
+    /// of the range.
     pub fn is_in_range(&self, right: &T) -> bool {
         if self.is_unbounded() {
             return true;
