@@ -488,7 +488,8 @@ macro_rules! define_filter_predicate {
 }
 
 fn build_filter_pipeline(query: ListSplitsQuery<'_>) -> impl FnMut(&&Split) -> bool {
-    let mut filters: Vec<Box<dyn Fn(&&Split) -> bool>> = vec![];
+    type Predicate = Box<dyn Fn(&&Split) -> bool>;
+    let mut filters: Vec<Predicate> = vec![];
 
     if let Some(tags) = query.tags {
         let filter = move |split: &&Split| split_tag_filter(split, Some(&tags));
