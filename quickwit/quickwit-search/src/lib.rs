@@ -121,11 +121,11 @@ async fn list_relevant_splits(
     filter.with_split_state(SplitState::Published);
 
     if let Some(start_ts) = search_request.start_timestamp {
-        filter.with_time_range_start_ge(start_ts);
+        filter.with_time_range_ge(start_ts);
     }
 
     if let Some(end_ts) = search_request.end_timestamp {
-        filter.with_time_range_end_lt(end_ts);
+        filter.with_time_range_lt(end_ts);
     }
 
     if let Some(tags_filter) = extract_tags_from_query(&search_request.query)? {
