@@ -369,7 +369,7 @@ impl<T: PartialEq + PartialOrd> FilterRange<T> {
     }
 
     pub fn is_in_range(&self, right: &T) -> bool {
-        if !self.is_unbounded() {
+        if self.is_unbounded() {
             return true;
         }
 
