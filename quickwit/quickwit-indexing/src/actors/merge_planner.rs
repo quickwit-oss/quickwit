@@ -42,6 +42,9 @@ pub struct MergePlanner {
     partitioned_young_splits: HashMap<u64, Vec<SplitMetadata>>,
     merge_policy: Arc<dyn MergePolicy>,
     merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
+    /// Inventory of ongoing merge operations. If everything goes well,
+    /// a merge operation is dropped after the publish of the merged split.
+    /// Used for observability.
     ongoing_merge_operations_inventory: Inventory<MergeOperation>,
 }
 
@@ -71,6 +74,7 @@ impl Actor for MergePlanner {
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         let target_partition_ids = self.partitioned_young_splits.keys().cloned().collect_vec();
+        self.handle(RefreshMetric, ctx).await?;
         self.send_merge_ops(ctx, &target_partition_ids).await?;
         Ok(())
     }
@@ -174,10 +178,6 @@ impl MergePlanner {
                         tracked_merge_operations,
                     )
                     .await?;
-                    INDEXER_METRICS
-                        .ongoing_num_merge_operations_total
-                        .with_label_values(&[&self.pipeline_id.index_id])
-                        .set(self.ongoing_merge_operations_inventory.list().len() as i64);
                 }
             }
         }
@@ -190,6 +190,28 @@ fn belongs_to_pipeline(pipeline_id: &IndexingPipelineId, split: &SplitMetadata) 
     pipeline_id.index_id == split.index_id
         && pipeline_id.source_id == split.source_id
         && pipeline_id.node_id == split.node_id
+}
+
+#[derive(Debug)]
+struct RefreshMetric;
+
+#[async_trait]
+impl Handler<RefreshMetric> for MergePlanner {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _: RefreshMetric,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        INDEXER_METRICS
+            .ongoing_num_merge_operations_total
+            .with_label_values(&[&self.pipeline_id.index_id])
+            .set(self.ongoing_merge_operations_inventory.list().len() as i64);
+        ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, RefreshMetric)
+            .await;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

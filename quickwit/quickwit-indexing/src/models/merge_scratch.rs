@@ -24,6 +24,8 @@ use crate::models::ScratchDirectory;
 
 #[derive(Debug)]
 pub struct MergeScratch {
+    /// A [`MergeOperation`] tracked by either the `MergePlannner` or the `DeleteTaksPlanner`
+    /// See planners docs to understand the usage.
     pub merge_operation: TrackedObject<MergeOperation>,
     /// Scratch directory for computing the merge.
     pub merge_scratch_directory: ScratchDirectory,

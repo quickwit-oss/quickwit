@@ -37,6 +37,6 @@ impl Default for JanitorMetrics {
     }
 }
 
-/// `JANTIOR_METRICS` exposes a bunch of related metrics through a prometheus
+/// `JANITOR_METRICS` exposes a bunch of related metrics through a prometheus
 /// endpoint.
 pub static JANITOR_METRICS: Lazy<JanitorMetrics> = Lazy::new(JanitorMetrics::default);

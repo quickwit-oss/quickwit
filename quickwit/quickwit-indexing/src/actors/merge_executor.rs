@@ -107,7 +107,7 @@ impl Handler<MergeScratch> for MergeExecutor {
                     "Delete tasks can be applied only on one split."
                 );
                 assert_eq!(merge_scratch.tantivy_dirs.len(), 1);
-                let split_with_docs_to_delete = merge_op.splits.first().unwrap().clone();
+                let split_with_docs_to_delete = merge_op.splits[0].clone();
                 self.process_delete_and_merge(
                     merge_op.merge_split_id.clone(),
                     split_with_docs_to_delete,

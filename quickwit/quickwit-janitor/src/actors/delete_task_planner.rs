@@ -61,6 +61,7 @@ const NUM_STALE_SPLITS_TO_FETCH: usize = 1000;
 ///      there are more than `N` immature stale splits, the planner will plan no operations.
 ///      However, this is mitigated by the fact that a merge policy should consider "old split" as
 ///      mature and an index should not have many immature splits.
+///      See tracked issue https://github.com/quickwit-oss/quickwit/issues/2147
 /// 3. If there is no stale splits, stop.
 /// 4. If there are stale splits, for each split, do:
 ///    - Get the list of delete queries to apply to this split.
@@ -80,7 +81,10 @@ pub struct DeleteTaskPlanner {
     search_client_pool: SearchClientPool,
     merge_policy: Arc<dyn MergePolicy>,
     merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
-    // Keeps merge operations until publication.
+    /// Inventory of ongoing delete operations. If everything goes well,
+    /// a merge operation is dropped after the publish of the split that underwent
+    /// the delete operation.
+    /// The inventory is used to avoid sending twice the same delete operation.
     ongoing_delete_operations_inventory: Inventory<MergeOperation>,
 }
 
@@ -109,7 +113,7 @@ impl Actor for DeleteTaskPlanner {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        self.handle(Supervise, ctx).await
+        self.handle(PlanDeleteLoop, ctx).await
     }
 }
 
@@ -374,19 +378,19 @@ impl Handler<PlanDeleteOperations> for DeleteTaskPlanner {
 }
 
 #[derive(Debug)]
-struct Supervise;
+struct PlanDeleteLoop;
 
 #[async_trait]
-impl Handler<Supervise> for DeleteTaskPlanner {
+impl Handler<PlanDeleteLoop> for DeleteTaskPlanner {
     type Reply = ();
 
     async fn handle(
         &mut self,
-        _: Supervise,
+        _: PlanDeleteLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.handle(PlanDeleteOperations, ctx).await?;
-        ctx.schedule_self_msg(PLANNER_REFRESH_INTERVAL, Supervise)
+        ctx.schedule_self_msg(PLANNER_REFRESH_INTERVAL, PlanDeleteLoop)
             .await;
         Ok(())
     }

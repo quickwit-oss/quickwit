@@ -34,6 +34,10 @@ pub struct SplitsUpdate {
     pub replaced_split_ids: Vec<String>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
+    /// A [`MergeOperation`] tracked by either the `MergePlannner` or the `DeleteTaksPlanner`
+    /// in the [`MergePipeline`] or [`DeleteTaskPipeilne`].
+    /// See planners docs to understand the usage.
+    /// If `None`, the split batch was built in the [`IndexingPipeline`].
     pub merge_operation: Option<TrackedObject<MergeOperation>>,
     pub parent_span: Span,
 }

@@ -154,6 +154,10 @@ pub struct IndexedSplitBatch {
     pub splits: Vec<IndexedSplit>,
     pub checkpoint_delta: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
+    /// A [`MergeOperation`] tracked by either the [`MergePlannner`] or the [`DeleteTaksPlanner`]
+    /// in the [`MergePipeline`] or [`DeleteTaskPipeilne`].
+    /// See planners docs to understand the usage.
+    /// If `None`, the split batch was built in the [`IndexingPipeline`].
     pub merge_operation: Option<TrackedObject<MergeOperation>>,
 }
 

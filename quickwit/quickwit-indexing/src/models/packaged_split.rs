@@ -57,6 +57,10 @@ pub struct PackagedSplitBatch {
     pub parent_span: Span,
     pub splits: Vec<PackagedSplit>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+    /// A [`MergeOperation`] tracked by either the `MergePlannner` or the `DeleteTaksPlanner`
+    /// in the [`MergePipeline`] or [`DeleteTaskPipeilne`].
+    /// See planners docs to understand the usage.
+    /// If `None`, the split batch was built in the [`IndexingPipeline`].
     pub merge_operation: Option<TrackedObject<MergeOperation>>,
     pub publish_lock: PublishLock,
 }
