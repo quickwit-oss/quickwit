@@ -258,21 +258,21 @@ macro_rules! define_sql_filter {
         match $cmp.lower {
             Bound::Included(v) => {
                 let _ = write!($sql, " AND {} >= {}", $field, v);
-            },
+            }
             Bound::Excluded(v) => {
                 let _ = write!($sql, " AND {} > {}", $field, v);
-            },
-            Bound::Unbounded => {},
+            }
+            Bound::Unbounded => {}
         };
 
         match $cmp.upper {
             Bound::Included(v) => {
                 let _ = write!($sql, " AND {} <= {}", $field, v);
-            },
+            }
             Bound::Excluded(v) => {
                 let _ = write!($sql, " AND {} < {}", $field, v);
-            },
-            Bound::Unbounded => {},
+            }
+            Bound::Unbounded => {}
         };
     }};
 }
@@ -281,7 +281,9 @@ fn build_query_filter(mut sql: String, filter: &ListSplitsQuery<'_>) -> String {
     sql.push_str(" WHERE index_id = $1");
 
     if !filter.split_states.is_empty() {
-        let params = filter.split_states.iter()
+        let params = filter
+            .split_states
+            .iter()
             .map(|v| format!("'{}'", v.as_str()))
             .join(", ");
         let _ = write!(sql, " AND split_state IN ({})", params);
@@ -300,15 +302,15 @@ fn build_query_filter(mut sql: String, filter: &ListSplitsQuery<'_>) -> String {
                 " AND (time_range_end >= {} OR time_range_end IS NULL) ",
                 v
             );
-        },
+        }
         Bound::Excluded(v) => {
             let _ = write!(
                 sql,
                 " AND (time_range_end > {} OR time_range_end IS NULL) ",
                 v
             );
-        },
-        Bound::Unbounded => {},
+        }
+        Bound::Unbounded => {}
     };
 
     match filter.equality_filters.time_range.upper {
@@ -318,20 +320,28 @@ fn build_query_filter(mut sql: String, filter: &ListSplitsQuery<'_>) -> String {
                 " AND (time_range_start <= {} OR time_range_start IS NULL) ",
                 v
             );
-        },
+        }
         Bound::Excluded(v) => {
             let _ = write!(
                 sql,
                 " AND (time_range_start < {} OR time_range_start IS NULL) ",
                 v
             );
-        },
-        Bound::Unbounded => {},
+        }
+        Bound::Unbounded => {}
     };
 
     // WARNING: Not SQL inject proof
-    define_sql_filter!(&mut sql, "update_timestamp", filter.equality_filters.update_timestamp);
-    define_sql_filter!(&mut sql, "delete_opstamp", filter.equality_filters.delete_opstamp);
+    define_sql_filter!(
+        &mut sql,
+        "update_timestamp",
+        filter.equality_filters.update_timestamp
+    );
+    define_sql_filter!(
+        &mut sql,
+        "delete_opstamp",
+        filter.equality_filters.delete_opstamp
+    );
 
     if let Some(limit) = filter.limit {
         let _ = write!(sql, " LIMIT {}", limit);

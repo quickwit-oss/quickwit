@@ -474,10 +474,8 @@ impl Metastore for FileBackedMetastore {
     /// Read-only accessors
 
     async fn list_splits<'a>(&self, filter: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>> {
-        self.read(filter.index, |index| {
-            index.list_splits(filter)
-        })
-        .await
+        self.read(filter.index, |index| index.list_splits(filter))
+            .await
     }
 
     async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata> {

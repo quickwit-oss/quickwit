@@ -244,8 +244,7 @@ mod tests {
             .times(2)
             .returning(|filter| {
                 assert_eq!(filter.index, "test-index");
-                let splits = match get_first_split_state(filter.split_states)
-                {
+                let splits = match get_first_split_state(filter.split_states) {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         make_splits(&["a", "b", "c"], SplitState::MarkedForDeletion)
@@ -302,8 +301,7 @@ mod tests {
             .times(2)
             .returning(|filter| {
                 assert_eq!(filter.index, "test-index");
-                let splits = match get_first_split_state(filter.split_states)
-                {
+                let splits = match get_first_split_state(filter.split_states) {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         make_splits(&["a", "b", "c"], SplitState::MarkedForDeletion)
@@ -358,8 +356,7 @@ mod tests {
             .times(4)
             .returning(|filter| {
                 assert_eq!(filter.index, "test-index");
-                let splits = match get_first_split_state(filter.split_states)
-                {
+                let splits = match get_first_split_state(filter.split_states) {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         make_splits(&["a", "b"], SplitState::MarkedForDeletion)
@@ -495,8 +492,7 @@ mod tests {
             .times(4)
             .returning(|filter| {
                 assert!(["test-index-1", "test-index-2"].contains(&filter.index));
-                let splits = match get_first_split_state(filter.split_states)
-                {
+                let splits = match get_first_split_state(filter.split_states) {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         make_splits(&["a", "b"], SplitState::MarkedForDeletion)

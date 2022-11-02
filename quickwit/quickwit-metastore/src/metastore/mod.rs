@@ -364,8 +364,7 @@ pub struct FilterRange<T> {
 impl<T: PartialEq + PartialOrd> FilterRange<T> {
     /// Checks if both the upper and lower bound are `Bound::Unbounded`.
     pub fn is_unbounded(&self) -> bool {
-        self.lower == Bound::Unbounded
-            && self.upper == Bound::Unbounded
+        self.lower == Bound::Unbounded && self.upper == Bound::Unbounded
     }
 
     pub fn is_in_range(&self, right: &T) -> bool {
@@ -450,10 +449,8 @@ macro_rules! define_equality_filters {
     }
 }
 
-define_equality_filters!(
-    EqualityFieldFilters {
-        time_range: i64,
-        delete_opstamp: u64,
-        update_timestamp: i64,
-    }
-);
+define_equality_filters!(EqualityFieldFilters {
+    time_range: i64,
+    delete_opstamp: u64,
+    update_timestamp: i64,
+});

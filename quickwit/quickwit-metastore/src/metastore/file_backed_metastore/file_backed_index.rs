@@ -31,7 +31,10 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{split_tag_filter, IndexMetadata, ListSplitsQuery, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
+use crate::{
+    split_tag_filter, IndexMetadata, ListSplitsQuery, MetastoreError, MetastoreResult, Split,
+    SplitMetadata, SplitState,
+};
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
 // This struct is meant to be used only within the [`FileBackedMetastore`]. The public visibility is
@@ -474,7 +477,6 @@ impl Debug for Stamper {
     }
 }
 
-
 macro_rules! define_filter_predicate {
     ($cmp:expr, $($attr:ident).+) => {{
         let filter = move |split: &&Split| {
@@ -485,34 +487,35 @@ macro_rules! define_filter_predicate {
     }};
 }
 
-
-fn build_filter_pipeline(query: ListSplitsQuery<'_>) -> impl FnMut(&&Split) -> bool
-{
+fn build_filter_pipeline(query: ListSplitsQuery<'_>) -> impl FnMut(&&Split) -> bool {
     let mut filters: Vec<Box<dyn Fn(&&Split) -> bool>> = vec![];
 
     if let Some(tags) = query.tags {
-        let filter = move |split: &&Split| {
-            split_tag_filter(split, Some(&tags))
-        };
+        let filter = move |split: &&Split| split_tag_filter(split, Some(&tags));
         filters.push(Box::new(filter));
     }
 
     if !query.split_states.is_empty() {
-        let filter = move |split: &&Split| {
-            query.split_states.contains(&split.split_state)
-        };
+        let filter = move |split: &&Split| query.split_states.contains(&split.split_state);
         filters.push(Box::new(filter));
     }
 
     let equality_filters = query.equality_filters;
 
-    filters.push(define_filter_predicate!(equality_filters.delete_opstamp, split_metadata.delete_opstamp));
-    filters.push(define_filter_predicate!(equality_filters.update_timestamp, update_timestamp));
+    filters.push(define_filter_predicate!(
+        equality_filters.delete_opstamp,
+        split_metadata.delete_opstamp
+    ));
+    filters.push(define_filter_predicate!(
+        equality_filters.update_timestamp,
+        update_timestamp
+    ));
 
-    if !equality_filters.time_range.is_unbounded(){
+    if !equality_filters.time_range.is_unbounded() {
         println!("{:?}", equality_filters.time_range);
         let filter = move |split: &&Split| {
-            split.split_metadata
+            split
+                .split_metadata
                 .time_range
                 .as_ref()
                 .map(|range| {
