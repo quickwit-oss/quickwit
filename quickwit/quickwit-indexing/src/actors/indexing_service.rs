@@ -386,7 +386,7 @@ impl IndexingService {
             .map(MergePipelineId::from)
             .collect();
         self.merge_pipeline_handles
-        .retain(|merge_pipeline_id, merge_pipeline_mailbox_handle| {
+            .retain(|merge_pipeline_id, merge_pipeline_mailbox_handle| {
                 match merge_pipeline_mailbox_handle.handle.health() {
                     Health::Healthy => needed_merge_pipeline_ids.contains(merge_pipeline_id),
                     Health::FailureOrUnhealthy | Health::Success => false,
