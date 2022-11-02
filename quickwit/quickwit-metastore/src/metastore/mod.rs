@@ -452,8 +452,7 @@ macro_rules! define_equality_filters {
 
 define_equality_filters!(
     EqualityFieldFilters {
-        time_range_start: i64,
-        time_range_end: i64,
+        time_range: i64,
         delete_opstamp: u64,
         update_timestamp: i64,
     }
