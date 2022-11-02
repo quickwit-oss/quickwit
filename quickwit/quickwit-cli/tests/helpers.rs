@@ -21,8 +21,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::{Child, Stdio};
 use std::sync::Arc;
+use std::time::Duration;
 use std::{fs, io};
 
+use anyhow::bail;
 use assert_cmd::cargo::cargo_bin;
 use assert_cmd::Command;
 use predicates::str;
@@ -111,6 +113,27 @@ pub fn spawn_command(arguments: &str) -> io::Result<Child> {
         )
         .stdout(Stdio::piped())
         .spawn()
+}
+
+/// Waits until localhost:port is ready. Returns an error if it takes too long.
+pub async fn wait_port_ready(port: u16) -> anyhow::Result<()> {
+    let timer_task = tokio::time::sleep(Duration::from_secs(10));
+    let port_check_task = async {
+        while tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port))
+            .await
+            .is_err()
+        {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    };
+    tokio::select! {
+        _ = timer_task => {
+            bail!("Port took too much time to be ready.")
+        }
+        _ = port_check_task => {
+            Ok(())
+        }
+    }
 }
 
 /// A struct to hold few info about the test environement.

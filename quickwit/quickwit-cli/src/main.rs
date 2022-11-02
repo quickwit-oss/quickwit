@@ -239,7 +239,6 @@ mod tests {
             config_uri: Uri::try_new("file:///config.yaml").unwrap(),
             index_config_uri: expected_index_config_uri.clone(),
             overwrite: false,
-            data_dir: None,
             assume_yes: false,
         }));
         assert_eq!(command, expected_cmd);
@@ -259,7 +258,6 @@ mod tests {
             config_uri: Uri::try_new("file:///config.yaml").unwrap(),
             index_config_uri: expected_index_config_uri,
             overwrite: true,
-            data_dir: None,
             assume_yes: false,
         }));
         assert_eq!(command, expected_cmd);
@@ -287,7 +285,6 @@ mod tests {
                     index_id,
                     input_path_opt: None,
                     overwrite: false,
-                    data_dir: None,
                     clear_cache: true,
                 })) if &index_id == "wikipedia"
                        && config_uri == Uri::try_new("file:///config.yaml").unwrap()
@@ -313,7 +310,6 @@ mod tests {
                     index_id,
                     input_path_opt: None,
                     overwrite: true,
-                    data_dir: None,
                     clear_cache: false
                 })) if &index_id == "wikipedia"
                         && config_uri == Uri::try_new("file:///config.yaml").unwrap()
@@ -390,7 +386,6 @@ mod tests {
                 start_timestamp: Some(0),
                 end_timestamp: Some(1),
                 config_uri: _config_uri,
-                data_dir: None,
                 sort_by_score: false,
             })) if &index_id == "wikipedia"
                   && query == "Barack Obama"
@@ -486,7 +481,6 @@ mod tests {
                 grace_period,
                 config_uri,
                 dry_run: true,
-                data_dir: None,
             })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(5 * 60) && config_uri == expected_config_uri
         ));
         Ok(())

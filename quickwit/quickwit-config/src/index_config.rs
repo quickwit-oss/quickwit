@@ -34,8 +34,8 @@ use quickwit_doc_mapper::{
     DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, ModeType,
     QuickwitJsonOptions, SortBy, SortByConfig, SortOrder,
 };
-use serde::de::{Error, IgnoredAny};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::de::IgnoredAny;
+use serde::{Deserialize, Serialize};
 
 use crate::merge_policy_config::{MergePolicyConfig, StableLogMergePolicyConfig};
 use crate::source_config::SourceConfig;
@@ -433,7 +433,6 @@ pub struct IndexConfig {
     pub version: usize,
     pub index_id: String,
     #[serde(default)]
-    #[serde(deserialize_with = "deser_and_validate_uri")]
     pub index_uri: Option<Uri>,
     pub doc_mapping: DocMapping,
     #[serde(default)]
@@ -559,16 +558,6 @@ pub fn build_doc_mapper(
         max_num_partitions: doc_mapping.max_num_partitions,
     };
     Ok(Arc::new(builder.try_build()?))
-}
-
-/// Deserializes and validates a [`Uri`].
-fn deser_and_validate_uri<'de, D>(deserializer: D) -> Result<Option<Uri>, D::Error>
-where D: Deserializer<'de> {
-    let uri_opt: Option<String> = Deserialize::deserialize(deserializer)?;
-    uri_opt
-        .map(|uri| Uri::try_new(&uri))
-        .transpose()
-        .map_err(D::Error::custom)
 }
 
 #[cfg(test)]
@@ -829,7 +818,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "URI is empty.")]
+    #[should_panic(expected = "empty URI")]
     fn test_config_validates_uris() {
         let config_yaml = r#"
             version: 0

@@ -148,9 +148,8 @@ impl Serialize for DateTimeFormat {
 impl<'de> Deserialize<'de> for DateTimeFormat {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
-        let date_time_format_str = String::deserialize(deserializer)?;
-        let date_time_format =
-            DateTimeFormat::from_str(&date_time_format_str).map_err(D::Error::custom)?;
+        let date_time_format_str: String = Deserialize::deserialize(deserializer)?;
+        let date_time_format = date_time_format_str.parse().map_err(D::Error::custom)?;
         Ok(date_time_format)
     }
 }
