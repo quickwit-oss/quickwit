@@ -456,3 +456,106 @@ define_equality_filters!(EqualityFieldFilters {
     delete_opstamp: u64,
     update_timestamp: i64,
 });
+
+#[cfg(test)]
+mod list_splits_query_tests {
+    use super::*;
+
+    define_equality_filters!(TestFilter { age: u64 });
+
+    #[test]
+    fn test_derived_setters() {
+        let filter = TestFilter::default();
+        assert!(filter.is_unbounded(), "Default filter should be unbounded.");
+        assert_eq!(
+            filter.age.lower,
+            Bound::Unbounded,
+            "Lower bound should be unbounded."
+        );
+        assert_eq!(
+            filter.age.upper,
+            Bound::Unbounded,
+            "Upper bound should be unbounded."
+        );
+
+        let mut filter = TestFilter::default();
+        filter.with_age_lt(18);
+        assert_eq!(
+            filter.age.lower,
+            Bound::Unbounded,
+            "Lower bound should be unbounded."
+        );
+        assert_eq!(
+            filter.age.upper,
+            Bound::Excluded(18),
+            "Upper bound should match."
+        );
+
+        let mut filter = TestFilter::default();
+        filter.with_age_le(18);
+        assert_eq!(
+            filter.age.lower,
+            Bound::Unbounded,
+            "Lower bound should be unbounded."
+        );
+        assert_eq!(
+            filter.age.upper,
+            Bound::Included(18),
+            "Upper bound should match."
+        );
+
+        let mut filter = TestFilter::default();
+        filter.with_age_gt(18);
+        assert_eq!(
+            filter.age.lower,
+            Bound::Excluded(18),
+            "Lower bound should be unbounded."
+        );
+        assert_eq!(
+            filter.age.upper,
+            Bound::Unbounded,
+            "Upper bound should match."
+        );
+
+        let mut filter = TestFilter::default();
+        filter.with_age_ge(18);
+        assert_eq!(
+            filter.age.lower,
+            Bound::Included(18),
+            "Lower bound should match."
+        );
+        assert_eq!(
+            filter.age.upper,
+            Bound::Unbounded,
+            "Upper bound should be unbounded."
+        );
+    }
+
+    #[test]
+    fn test_is_in_range() {
+        let mut filter = TestFilter::default();
+        filter.with_age_lt(18);
+
+        assert!(
+            filter.age.is_in_range(&15),
+            "Value (15) should be within range."
+        );
+        assert!(
+            filter.age.is_in_range(&17),
+            "Value (17) should be within range."
+        );
+        assert!(
+            filter.age.is_in_range(&0),
+            "Value (0) should be within range."
+        );
+
+        assert!(
+            !filter.age.is_in_range(&18),
+            "Value (18) should not be within range."
+        );
+        assert!(
+            !filter.age.is_in_range(&900),
+            "Value (900) should not be within range."
+        );
+    }
+}
