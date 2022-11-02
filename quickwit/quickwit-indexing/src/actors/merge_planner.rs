@@ -82,7 +82,6 @@ impl Handler<NewSplits> for MergePlanner {
                         split_id=%split.split_id(),
                         index_id=%self.pipeline_id.index_id,
                         source_id=%split.source_id,
-                        pipeline_ord=%split.pipeline_ord,
                         num_docs=split.num_docs,
                         num_bytes=split.uncompressed_docs_size_in_bytes,
                         "Split is mature."
@@ -190,7 +189,6 @@ mod tests {
             index_id: "test-index".to_string(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
             num_docs,
             partition_id,
             ..Default::default()

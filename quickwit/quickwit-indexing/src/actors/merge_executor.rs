@@ -461,7 +461,7 @@ impl MergeExecutor {
         let index_pipeline_id = IndexingPipelineId {
             index_id: split.index_id.clone(),
             node_id: split.node_id.clone(),
-            pipeline_ord: split.pipeline_ord,
+            pipeline_ord: 0,
             source_id: split.source_id.clone(),
         };
         let indexed_split = IndexedSplit {
