@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
-use quickwit_doc_mapper::tag_pruning::{tag, TagFilterAst};
+use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgDatabaseError, PgPoolOptions};
