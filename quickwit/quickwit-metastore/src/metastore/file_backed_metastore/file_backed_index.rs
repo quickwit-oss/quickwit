@@ -21,9 +21,8 @@
 //! import [`FileBackedIndex`] and run backward-compatibility tests. You should not have to import
 //! anything from here directly.
 
-use std::collections::HashMap;
+use std::collections::{Bound, HashMap};
 use std::fmt::Debug;
-use std::ops::Bound;
 
 use itertools::Itertools;
 use quickwit_config::SourceConfig;
@@ -32,10 +31,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{
-    split_tag_filter, IndexMetadata, ListSplitsQuery, MetastoreError, MetastoreResult, Split,
-    SplitMetadata, SplitState,
-};
+use crate::{split_tag_filter, IndexMetadata, ListSplitsQuery, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
 // This struct is meant to be used only within the [`FileBackedMetastore`]. The public visibility is
@@ -318,64 +314,23 @@ impl FileBackedIndex {
 
     /// Lists splits.
     pub(crate) fn list_splits(&self, filter: ListSplitsQuery<'_>) -> MetastoreResult<Vec<Split>> {
-        let split_state_filter = |split: &&Split| {
-            filter
-                .split_state
-                .map(|state| split.split_state == state)
-                .unwrap_or(true)
-        };
-        let time_range_filter = |split: &&Split| {
-            let start = filter
-                .time_range_end
-                .and_then(|ts| Some((ts, split.split_metadata.time_range.as_ref()?)))
-                .map(|(ts, range)| &ts <= range.start())
-                .unwrap_or(false);
+        println!("{:?}", &filter);
+        let limit = filter.limit.unwrap_or(usize::MAX);
+        let offset = filter.offset.unwrap_or_default();
+        let filter_predicate = build_filter_pipeline(filter);
 
-            let end = filter
-                .time_range_start
-                .and_then(|ts| Some((ts, split.split_metadata.time_range.as_ref()?)))
-                .map(|(ts, range)| range.end() < &ts)
-                .unwrap_or(false);
-
-            !(start || end)
-        };
-        let update_after_filter = |split: &&Split| match filter.updated_after {
-            Bound::Excluded(ts) => split.update_timestamp > ts,
-            Bound::Included(ts) => split.update_timestamp >= ts,
-            Bound::Unbounded => true,
-        };
-        let update_before_filter = |split: &&Split| match filter.updated_before {
-            Bound::Excluded(ts) => split.update_timestamp < ts,
-            Bound::Included(ts) => split.update_timestamp <= ts,
-            Bound::Unbounded => true,
-        };
-        let delete_opstamp_filter = |split: &&Split| {
-            filter
-                .delete_opstamp
-                .map(|delete_opstamp| split.split_metadata.delete_opstamp < delete_opstamp)
-                .unwrap_or(true)
-        };
-
-        let splits = self
+        println!("Splits in: {}", self.splits.len());
+        let splits: Vec<Split> = self
             .splits
             .values()
-            .filter(split_state_filter)
-            .filter(time_range_filter)
-            .filter(update_after_filter)
-            .filter(update_before_filter)
-            .filter(|split| split_tag_filter(split, filter.tags.as_ref()))
-            .filter(delete_opstamp_filter)
-            .skip(filter.offset.unwrap_or_default())
-            .take(filter.limit.unwrap_or(usize::MAX))
+            .filter(filter_predicate)
+            .skip(offset)
+            .take(limit)
             .cloned()
             .collect();
 
-        Ok(splits)
-    }
+        println!("Splits out: {}", splits.len());
 
-    /// Lists all splits.
-    pub(crate) fn list_all_splits(&self) -> MetastoreResult<Vec<Split>> {
-        let splits = self.splits.values().cloned().collect();
         Ok(splits)
     }
 
@@ -516,5 +471,77 @@ impl Stamper {
 impl Debug for Stamper {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         fmt.debug_struct("Stamper").field("stamp", &self.0).finish()
+    }
+}
+
+
+macro_rules! define_filter_predicate {
+    ($cmp:expr, $($attr:ident).+) => {{
+        let filter = move |split: &&Split| {
+            $cmp.is_in_range(&split.$($attr).+)
+        };
+
+        Box::new(filter)
+    }};
+}
+
+
+fn build_filter_pipeline(query: ListSplitsQuery<'_>) -> impl FnMut(&&Split) -> bool
+{
+    let mut filters: Vec<Box<dyn Fn(&&Split) -> bool>> = vec![];
+
+    if let Some(tags) = query.tags {
+        let filter = move |split: &&Split| {
+            split_tag_filter(split, Some(&tags))
+        };
+        filters.push(Box::new(filter));
+    }
+
+    if !query.split_states.is_empty() {
+        let filter = move |split: &&Split| {
+            query.split_states.contains(&split.split_state)
+        };
+        filters.push(Box::new(filter));
+    }
+
+    let equality_filters = query.equality_filters;
+
+    filters.push(define_filter_predicate!(equality_filters.delete_opstamp, split_metadata.delete_opstamp));
+    filters.push(define_filter_predicate!(equality_filters.update_timestamp, update_timestamp));
+
+    if !equality_filters.time_range.is_unbounded(){
+        println!("{:?}", equality_filters.time_range);
+        let filter = move |split: &&Split| {
+            split.split_metadata
+                .time_range
+                .as_ref()
+                .map(|range| {
+                    let start_check = match &equality_filters.time_range.lower {
+                        Bound::Included(v) => range.end() >= v,
+                        Bound::Excluded(v) => range.end() > v,
+                        Bound::Unbounded => true,
+                    };
+
+                    let end_check = match &equality_filters.time_range.upper {
+                        Bound::Included(v) => range.start() <= v,
+                        Bound::Excluded(v) => range.start() < v,
+                        Bound::Unbounded => true,
+                    };
+
+                    start_check && end_check
+                })
+                .unwrap_or(true)
+        };
+        filters.push(Box::new(filter));
+    }
+
+    move |split: &&Split| {
+        for predicate in filters.iter() {
+            if !(predicate)(split) {
+                return false;
+            }
+        }
+
+        true
     }
 }
