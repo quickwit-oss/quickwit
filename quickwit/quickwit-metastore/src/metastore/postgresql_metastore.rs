@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
-use quickwit_doc_mapper::tag_pruning::TagFilterAst;
+use quickwit_doc_mapper::tag_pruning::{tag, TagFilterAst};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgDatabaseError, PgPoolOptions};
@@ -253,47 +253,38 @@ async fn list_splits_helper(
     splits.into_iter().map(|split| split.try_into()).collect()
 }
 
+macro_rules! define_sql_filter {
+    ($sql:expr, $field:expr, $cmp:expr) => {{
+        match $cmp.lower {
+            Bound::Included(v) => {
+                let _ = write!($sql, " AND {} >= {}", $field, v);
+            },
+            Bound::Excluded(v) => {
+                let _ = write!($sql, " AND {} > {}", $field, v);
+            },
+            Bound::Unbounded => {},
+        };
+
+        match $cmp.upper {
+            Bound::Included(v) => {
+                let _ = write!($sql, " AND {} <= {}", $field, v);
+            },
+            Bound::Excluded(v) => {
+                let _ = write!($sql, " AND {} < {}", $field, v);
+            },
+            Bound::Unbounded => {},
+        };
+    }};
+}
+
 fn build_query_filter(mut sql: String, filter: &ListSplitsQuery<'_>) -> String {
     sql.push_str(" WHERE index_id = $1");
 
-    if let Some(state) = filter.split_state {
-        let _ = write!(sql, " AND split_state = '{}'", state.as_str());
-    }
-    if let Some(start) = filter.time_range_start {
-        let _ = write!(
-            sql,
-            " AND (time_range_end >= {} OR time_range_end IS NULL) ",
-            start
-        );
-    }
-    if let Some(end) = filter.time_range_end {
-        let _ = write!(
-            sql,
-            " AND (time_range_start < {} OR time_range_start IS NULL) ",
-            end
-        );
-    }
-    if let Some(opstamp) = filter.delete_opstamp {
-        let _ = write!(sql, " AND delete_opstamp < {}", opstamp);
-    }
-
-    match filter.updated_after {
-        Bound::Unbounded => {}
-        Bound::Excluded(ts) => {
-            let _ = write!(sql, " AND update_timestamp > {}", ts);
-        }
-        Bound::Included(ts) => {
-            let _ = write!(sql, " AND update_timestamp >= {}", ts);
-        }
-    }
-    match filter.updated_before {
-        Bound::Unbounded => {}
-        Bound::Excluded(ts) => {
-            let _ = write!(sql, " AND update_timestamp < {}", ts);
-        }
-        Bound::Included(ts) => {
-            let _ = write!(sql, " AND update_timestamp <= {}", ts);
-        }
+    if !filter.split_states.is_empty() {
+        let params = filter.split_states.iter()
+            .map(|v| format!("'{}'", v.as_str()))
+            .join(", ");
+        let _ = write!(sql, " AND split_state IN ({})", params);
     }
 
     if let Some(tags) = filter.tags.as_ref() {
@@ -301,6 +292,46 @@ fn build_query_filter(mut sql: String, filter: &ListSplitsQuery<'_>) -> String {
         sql.push_str(&tags_filter_expression_helper(tags));
         sql.push(')');
     }
+
+    match filter.equality_filters.time_range.lower {
+        Bound::Included(v) => {
+            let _ = write!(
+                sql,
+                " AND (time_range_end >= {} OR time_range_end IS NULL) ",
+                v
+            );
+        },
+        Bound::Excluded(v) => {
+            let _ = write!(
+                sql,
+                " AND (time_range_end > {} OR time_range_end IS NULL) ",
+                v
+            );
+        },
+        Bound::Unbounded => {},
+    };
+
+    match filter.equality_filters.time_range.upper {
+        Bound::Included(v) => {
+            let _ = write!(
+                sql,
+                " AND (time_range_start <= {} OR time_range_start IS NULL) ",
+                v
+            );
+        },
+        Bound::Excluded(v) => {
+            let _ = write!(
+                sql,
+                " AND (time_range_start < {} OR time_range_start IS NULL) ",
+                v
+            );
+        },
+        Bound::Unbounded => {},
+    };
+
+    // WARNING: Not SQL inject proof
+    define_sql_filter!(&mut sql, "update_timestamp", filter.equality_filters.update_timestamp);
+    define_sql_filter!(&mut sql, "delete_opstamp", filter.equality_filters.delete_opstamp);
 
     if let Some(limit) = filter.limit {
         let _ = write!(sql, " LIMIT {}", limit);
