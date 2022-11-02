@@ -28,9 +28,9 @@ use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
-use quickwit_common::fast_field_reader::timestamp_field_reader;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_directories::UnionDirectory;
+use quickwit_doc_mapper::fast_field_reader::timestamp_field_reader;
 use quickwit_doc_mapper::{DocMapper, QUICKWIT_TOKENIZER_MANAGER};
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::metastore_api::DeleteTask;
@@ -452,15 +452,8 @@ impl MergeExecutor {
                             timestamp_field_name
                         ))
                     })?;
-                let timestamp_field_entry = merged_segment_reader
-                    .schema()
-                    .get_field_entry(timestamp_field);
-                let reader = timestamp_field_reader(
-                    timestamp_field,
-                    timestamp_field_entry,
-                    merged_segment_reader.fast_fields(),
-                )?;
-                Some(RangeInclusive::new(reader.min_value(), reader.max_value()))
+                let reader = timestamp_field_reader(timestamp_field, &merged_segment_reader)?;
+                Some(reader.min_value()..=reader.max_value())
             } else {
                 None
             };

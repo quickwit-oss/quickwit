@@ -20,7 +20,6 @@
 mod checklist;
 mod coolid;
 
-pub mod fast_field_reader;
 pub mod fs;
 pub mod metrics;
 pub mod net;
