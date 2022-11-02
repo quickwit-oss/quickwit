@@ -71,8 +71,6 @@ where
         self,
         env_vars: &HashMap<String, String>,
     ) -> anyhow::Result<Option<T>> {
-        assert_eq!(QW_NONE, 0);
-
         // QW env vars take precedence over the config file values.
         if E > QW_NONE {
             if let Some(env_var_key) = QW_ENV_VARS.get(&E) {

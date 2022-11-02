@@ -34,7 +34,7 @@ macro_rules! qw_env_vars {
     };
 
     ($($ident:ident),*) => {
-        qw_env_vars!(@step 1usize, $($ident,)*);
+        qw_env_vars!(@step 0usize, $($ident,)*);
 
         pub(crate) static QW_ENV_VARS: Lazy<HashMap<usize, &'static str>> = Lazy::new(|| {
             let mut env_vars = HashMap::new();
@@ -44,9 +44,10 @@ macro_rules! qw_env_vars {
     }
 }
 
-pub(crate) const QW_NONE: usize = 0;
-
+// These environment variable keys can be declared in any order with the exception of `QW_NONE`,
+// which must be declared first.
 qw_env_vars!(
+    QW_NONE,
     QW_CLUSTER_ID,
     QW_NODE_ID,
     QW_ENABLED_SERVICES,
@@ -68,6 +69,8 @@ mod tests {
 
     #[test]
     fn test_qw_env_vars_expansion() {
+        assert_eq!(QW_NONE, 0);
+
         assert_eq!(QW_CLUSTER_ID, 1);
         assert_eq!(QW_ENV_VARS.get(&QW_CLUSTER_ID).unwrap(), &"QW_CLUSTER_ID");
 
