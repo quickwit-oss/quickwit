@@ -22,7 +22,7 @@ use std::convert::TryFrom;
 use quickwit_common::truncate_str;
 use quickwit_proto::SearchResponse;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::Value as JsonValue;
 
 use crate::error::SearchError;
 
@@ -33,17 +33,17 @@ pub struct SearchResponseRest {
     /// Overall number of documents matching the query.
     pub num_hits: u64,
     /// List of hits returned.
-    pub hits: Vec<Value>,
+    pub hits: Vec<JsonValue>,
     /// List of snippets
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub snippets: Option<Vec<Value>>,
+    pub snippets: Option<Vec<JsonValue>>,
     /// Elapsed time.
     pub elapsed_time_micros: u64,
     /// Search errors.
     pub errors: Vec<String>,
     /// Aggregations.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub aggregations: Option<Value>,
+    pub aggregations: Option<JsonValue>,
 }
 
 impl TryFrom<SearchResponse> for SearchResponseRest {
@@ -51,7 +51,7 @@ impl TryFrom<SearchResponse> for SearchResponseRest {
 
     fn try_from(search_response: SearchResponse) -> Result<Self, Self::Error> {
         let hits_with_snippet_iter = search_response.hits.into_iter().map(|hit| {
-            let document: Value = serde_json::from_str(&hit.json).map_err(|err| {
+            let document: JsonValue = serde_json::from_str(&hit.json).map_err(|err| {
                 SearchError::InternalError(format!(
                     "Failed to serialize document `{}` to JSON: `{}`.",
                     truncate_str(&hit.json, 100),
@@ -61,7 +61,7 @@ impl TryFrom<SearchResponse> for SearchResponseRest {
             let snippet_opt = hit
                 .snippet
                 .map(|snippet_json| {
-                    serde_json::from_str::<Value>(&snippet_json).map_err(|err| {
+                    serde_json::from_str::<JsonValue>(&snippet_json).map_err(|err| {
                         SearchError::InternalError(format!(
                             "Failed to serialize snippet `{}` to JSON: `{}`.",
                             snippet_json, err
