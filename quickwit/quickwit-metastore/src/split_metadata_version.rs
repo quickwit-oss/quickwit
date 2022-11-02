@@ -160,7 +160,7 @@ impl From<SplitMetadataV1> for SplitMetadata {
             if let Some((node_id, _)) = node_id.rsplit_once('/') {
                 node_id.to_string()
             } else {
-                node_id.to_string()
+                node_id
             }
         } else {
             "unknown".to_string()
