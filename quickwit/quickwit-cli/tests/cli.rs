@@ -817,8 +817,9 @@ async fn test_all_local_index() {
     };
 
     let service_task = tokio::spawn(async move { run_cli_command.execute().await.unwrap() });
-    // TODO: wait until port server accepts incoming connections and remove sleep.
-    sleep(Duration::from_secs(2)).await;
+
+    wait_port_ready(test_env.rest_listen_port).await.unwrap();
+
     let query_response = reqwest::get(format!(
         "http://127.0.0.1:{}/api/v1/{}/search?query=level:info",
         test_env.rest_listen_port, test_env.index_id
