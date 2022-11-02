@@ -92,6 +92,31 @@ impl Default for QuickwitNumericOptions {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuickwitIpAddrOptions {
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default = "default_as_true")]
+    pub stored: bool,
+    #[serde(default = "default_as_true")]
+    pub indexed: bool,
+    #[serde(default)]
+    pub fast: bool,
+}
+
+impl Default for QuickwitIpAddrOptions {
+    fn default() -> Self {
+        Self {
+            description: None,
+            indexed: true,
+            stored: true,
+            fast: false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum QuickwitTextTokenizer {
     #[serde(rename = "raw")]
@@ -291,6 +316,10 @@ fn deserialize_mapping_type(
             let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
             Ok(FieldMappingType::Bool(numeric_options, cardinality))
         }
+        Type::IpAddr => {
+            let ip_addr_options: QuickwitIpAddrOptions = serde_json::from_value(json)?;
+            Ok(FieldMappingType::IpAddr(ip_addr_options, cardinality))
+        }
         Type::Date => {
             let date_time_options = serde_json::from_value::<QuickwitDateTimeOptions>(json)?;
             Ok(FieldMappingType::DateTime(date_time_options, cardinality))
@@ -315,7 +344,6 @@ fn deserialize_mapping_type(
             }
             Ok(FieldMappingType::Json(json_options, cardinality))
         }
-        Type::IpAddr => unimplemented!("IpAddr are not supported in quickwit yet."),
     }
 }
 
@@ -363,6 +391,7 @@ fn typed_mapping_to_json_params(
         | FieldMappingType::Bytes(options, _)
         | FieldMappingType::F64(options, _)
         | FieldMappingType::Bool(options, _) => serialize_to_map(&options),
+        FieldMappingType::IpAddr(options, _) => serialize_to_map(&options),
         FieldMappingType::DateTime(date_time_options, _) => serialize_to_map(&date_time_options),
         FieldMappingType::Json(json_options, _) => serialize_to_map(&json_options),
         FieldMappingType::Object(object_options) => serialize_to_map(&object_options),
@@ -951,6 +980,32 @@ mod tests {
             json!({
                 "name": "my_field_name",
                 "type": "bool",
+                "stored": true,
+                "fast": false,
+                "indexed": true
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_ip_addr_mapping() {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "ip_address",
+                "description": "Client IP address",
+                "type": "ip"
+            }
+            "#,
+        )
+        .unwrap();
+        let entry_str = serde_json::to_value(&entry).unwrap();
+        assert_eq!(
+            entry_str,
+            serde_json::json!({
+                "name": "ip_address",
+                "description": "Client IP address",
+                "type": "ip",
                 "stored": true,
                 "fast": false,
                 "indexed": true

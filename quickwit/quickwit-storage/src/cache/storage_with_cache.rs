@@ -25,6 +25,7 @@ use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 
 use crate::cache::Cache;
+use crate::storage::{BulkDeleteError, SendableAsync};
 use crate::{OwnedBytes, Storage, StorageResult};
 
 /// Use with care, StorageWithCache is read-only.
@@ -47,8 +48,8 @@ impl Storage for StorageWithCache {
         unimplemented!("StorageWithCache is readonly. Failed to put {:?}", path)
     }
 
-    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
-        self.storage.copy_to_file(path, output_path).await
+    async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
+        self.storage.copy_to(path, output).await
     }
 
     async fn get_slice(&self, path: &Path, byte_range: Range<usize>) -> StorageResult<OwnedBytes> {
@@ -74,7 +75,11 @@ impl Storage for StorageWithCache {
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
-        unimplemented!("StorageWithCache is readonly. Failed to delete {:?}", path)
+        unimplemented!("Failed to delete file `{path:?}`. `StorageWithCache` is read-only.")
+    }
+
+    async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+        unimplemented!("Failed to delete files `{paths:?}`. `StorageWithCache` is read-only.")
     }
 
     async fn exists(&self, path: &Path) -> StorageResult<bool> {

@@ -247,6 +247,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     )
     .await?;
 
+    let doc_mapper = test_index_builder.doc_mapper();
     let batch: Vec<serde_json::Value> =
         std::iter::repeat_with(|| serde_json::json!({"body ": TEST_TEXT, "ts": 1631072713 }))
             .take(500)
@@ -290,7 +291,8 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         pipeline_ord: 0,
     };
     let (merge_packager_mailbox, _merge_packager_inbox) = create_test_mailbox();
-    let merge_executor = MergeExecutor::new(pipeline_id, metastore, merge_packager_mailbox);
+    let merge_executor =
+        MergeExecutor::new(pipeline_id, metastore, doc_mapper, merge_packager_mailbox);
     let universe = Universe::new();
     let (merge_executor_mailbox, merge_executor_handle) =
         universe.spawn_builder().spawn(merge_executor);

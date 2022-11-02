@@ -219,6 +219,9 @@ impl<T> Receiver<T> {
             return Ok(pending_msg);
         }
         tokio::select! {
+            // We don't really care about fairness here.
+            // We will double check if there is a command or not anyway.
+            biased;
             high_priority_msg_res = self.high_priority_rx.recv_async() => {
                 match high_priority_msg_res {
                     Ok(high_priority_msg) => {
