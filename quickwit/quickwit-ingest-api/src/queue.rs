@@ -93,7 +93,6 @@ impl Queues {
     ) -> crate::Result<()> {
         let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
 
-        // TODO behavior change: this does not accept a position in the future.
         self.record_log
             .truncate(&real_queue_id, up_to_offset_included)
             .await?;
@@ -117,13 +116,9 @@ impl Queues {
     ) -> crate::Result<()> {
         let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
 
-        for record in records_it {
-            // TODO mrecordlog does not provide an atomic append batch operation yet
-            // TODO this fsync on every file, figure a way to sync only on the commit
-            self.record_log
-                .append_record(&real_queue_id, None, record)
-                .await?;
-        }
+        self.record_log
+            .append_records(&real_queue_id, None, records_it)
+            .await?;
 
         Ok(())
     }

@@ -36,6 +36,8 @@ pub enum IngestApiError {
     IngestAPIServiceDown,
     #[error("Io Error")]
     IoError(String),
+    #[error("Invalid position: {0}.")]
+    InvalidPosition(String),
 }
 
 impl ServiceError for IngestApiError {
@@ -46,6 +48,7 @@ impl ServiceError for IngestApiError {
             IngestApiError::IndexAlreadyExists { .. } => ServiceErrorCode::BadRequest,
             IngestApiError::IngestAPIServiceDown => ServiceErrorCode::Internal,
             IngestApiError::IoError(_) => ServiceErrorCode::Internal,
+            IngestApiError::InvalidPosition(_) => ServiceErrorCode::BadRequest,
         }
     }
 }
@@ -70,6 +73,7 @@ impl From<IngestApiError> for tonic::Status {
             IngestApiError::IndexAlreadyExists { .. } => tonic::Code::AlreadyExists,
             IngestApiError::IngestAPIServiceDown => tonic::Code::Internal,
             IngestApiError::IoError(_) => tonic::Code::Internal,
+            IngestApiError::InvalidPosition(_) => tonic::Code::InvalidArgument,
         };
         let message = error.to_string();
         tonic::Status::new(code, message)
@@ -99,8 +103,12 @@ impl From<AppendError> for IngestApiError {
             AppendError::IoError(ioe) => ioe.into(),
             AppendError::MissingQueue(index_id) => IngestApiError::IndexDoesNotExist { index_id },
             // these errors can't be reached right now
-            AppendError::Past => todo!(),
-            AppendError::Future => todo!(),
+            AppendError::Past => {
+                IngestApiError::InvalidPosition("appending record in the past".to_owned())
+            }
+            AppendError::Future => {
+                IngestApiError::InvalidPosition("appending record in the future".to_owned())
+            }
         }
     }
 }
@@ -124,7 +132,9 @@ impl From<TruncateError> for IngestApiError {
             // this error shouldn't happen (except due to a bug in MRecordLog?)
             TruncateError::TouchError(_) => todo!(),
             // this error can happen now, it used to happily trunk everything
-            TruncateError::Future => todo!(),
+            TruncateError::Future => IngestApiError::InvalidPosition(
+                "trying to truncate past last ingested record".to_owned(),
+            ),
         }
     }
 }
