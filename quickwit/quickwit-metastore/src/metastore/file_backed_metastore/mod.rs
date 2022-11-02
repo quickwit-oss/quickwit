@@ -475,11 +475,7 @@ impl Metastore for FileBackedMetastore {
 
     async fn list_splits<'a>(&self, filter: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>> {
         self.read(filter.index, |index| {
-            if filter.is_default() {
-                index.list_all_splits()
-            } else {
-                index.list_splits(filter)
-            }
+            index.list_splits(filter)
         })
         .await
     }
