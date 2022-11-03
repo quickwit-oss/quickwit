@@ -309,15 +309,14 @@ mod tests {
                 ],
             };
             merge_planner_mailbox.send_message(message).await?;
-            let operations = merge_split_downloader_inbox.drain_for_test_typed::<TrackedObject<MergeOperation>>();
+            let operations = merge_split_downloader_inbox
+                .drain_for_test_typed::<TrackedObject<MergeOperation>>();
             assert_eq!(operations.len(), 2);
-            let mut merge_operations = operations
-                .into_iter()
-                .sorted_by(|left_op, right_op| {
-                    left_op.splits[0]
-                        .partition_id
-                        .cmp(&right_op.splits[0].partition_id)
-                });
+            let mut merge_operations = operations.into_iter().sorted_by(|left_op, right_op| {
+                left_op.splits[0]
+                    .partition_id
+                    .cmp(&right_op.splits[0].partition_id)
+            });
 
             let first_merge_operation = merge_operations.next().unwrap();
             assert_eq!(first_merge_operation.splits.len(), 4);
