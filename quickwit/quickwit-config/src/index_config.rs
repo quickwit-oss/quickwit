@@ -601,7 +601,7 @@ mod tests {
                 ));
                 let file = std::fs::read_to_string(&index_config_filepath).unwrap();
                 let index_config = IndexConfig::load(
-                    &Uri::try_new(&index_config_filepath).unwrap(),
+                    &Uri::from_str(&index_config_filepath).unwrap(),
                     file.as_bytes(),
                 )
                 .await?;
@@ -700,7 +700,7 @@ mod tests {
             let file_content = std::fs::read_to_string(&index_config_filepath).unwrap();
 
             let index_config_uri =
-                Uri::try_new(&get_index_config_filepath("minimal-hdfs-logs.yaml")).unwrap();
+                Uri::from_str(&get_index_config_filepath("minimal-hdfs-logs.yaml")).unwrap();
             let index_config = IndexConfig::from_uri(&index_config_uri, file_content.as_bytes())
                 .await
                 .unwrap();
@@ -727,7 +727,7 @@ mod tests {
             let file_content = std::fs::read_to_string(&index_config_filepath).unwrap();
 
             let index_config_uri =
-                Uri::try_new(&get_index_config_filepath("partial-hdfs-logs.yaml")).unwrap();
+                Uri::from_str(&get_index_config_filepath("partial-hdfs-logs.yaml")).unwrap();
             let index_config = IndexConfig::from_uri(&index_config_uri, file_content.as_bytes())
                 .await
                 .unwrap();
@@ -769,7 +769,7 @@ mod tests {
     async fn test_validate() {
         let index_config_filepath = get_index_config_filepath("minimal-hdfs-logs.yaml");
         let file_content = std::fs::read_to_string(&index_config_filepath).unwrap();
-        let index_config_uri = Uri::try_new(&index_config_filepath).unwrap();
+        let index_config_uri = Uri::from_str(&index_config_filepath).unwrap();
         let index_config = IndexConfig::from_uri(&index_config_uri, file_content.as_bytes())
             .await
             .unwrap();

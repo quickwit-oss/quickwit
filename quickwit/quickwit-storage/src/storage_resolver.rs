@@ -179,7 +179,7 @@ mod tests {
             .register(file_storage_factory)
             .register(ram_storage_factory)
             .build();
-        let storage = storage_resolver.resolve(&Uri::new("ram:///".to_string()))?;
+        let storage = storage_resolver.resolve(&Uri::from_well_formed("ram:///".to_string()))?;
         let data = storage.get_all(Path::new("hello")).await?;
         assert_eq!(&data[..], b"hello_content_second");
         Ok(())
@@ -210,7 +210,8 @@ mod tests {
             .register(first_ram_storage_factory)
             .register(second_ram_storage_factory)
             .build();
-        let storage = storage_resolver.resolve(&Uri::new("ram:///home".to_string()))?;
+        let storage =
+            storage_resolver.resolve(&Uri::from_well_formed("ram:///home".to_string()))?;
         let data = storage.get_all(Path::new("hello")).await?;
         assert_eq!(&data[..], b"hello_content_second");
         Ok(())
@@ -219,7 +220,8 @@ mod tests {
     #[test]
     fn test_storage_resolver_unsupported_protocol() {
         let storage_resolver = StorageUriResolver::for_test();
-        let storage_uri = Uri::new("postgresql://localhost:5432/metastore".to_string());
+        let storage_uri =
+            Uri::from_well_formed("postgresql://localhost:5432/metastore".to_string());
         assert!(matches!(
             storage_resolver.resolve(&storage_uri),
             Err(crate::StorageResolverError::ProtocolUnsupported { protocol }) if protocol == "postgresql"

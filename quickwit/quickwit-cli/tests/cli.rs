@@ -23,6 +23,7 @@ mod helpers;
 
 use std::collections::HashSet;
 use std::path::Path;
+use std::str::FromStr;
 
 use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
@@ -303,7 +304,8 @@ async fn test_cmd_search_aggregation() -> Result<()> {
         snippet_fields: None,
         start_timestamp: None,
         end_timestamp: None,
-        config_uri: Uri::try_new(&test_env.resource_files["config"].display().to_string()).unwrap(),
+        config_uri: Uri::from_str(&test_env.resource_files["config"].display().to_string())
+            .unwrap(),
         sort_by_score: false,
     };
     let search_response = search_index(args).await?;
@@ -377,7 +379,8 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
         snippet_fields: Some(vec!["event".to_string()]),
         start_timestamp: None,
         end_timestamp: None,
-        config_uri: Uri::try_new(&test_env.resource_files["config"].display().to_string()).unwrap(),
+        config_uri: Uri::from_str(&test_env.resource_files["config"].display().to_string())
+            .unwrap(),
         sort_by_score: false,
     };
     let search_response = search_index(args).await?;

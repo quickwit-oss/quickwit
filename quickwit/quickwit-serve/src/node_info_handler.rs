@@ -57,7 +57,7 @@ fn node_config_handler(
 async fn get_config(config: Arc<QuickwitConfig>) -> Result<impl warp::Reply, Rejection> {
     // We need to hide sensitive information from metastore URI.
     let mut config_to_serialize = (*config).clone();
-    let redacted_uri = Uri::new(
+    let redacted_uri = Uri::from_well_formed(
         config_to_serialize
             .metastore_uri
             .as_redacted_str()

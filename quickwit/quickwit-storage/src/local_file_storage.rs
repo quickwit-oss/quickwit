@@ -294,13 +294,15 @@ impl StorageFactory for LocalFileStorageFactory {
 #[cfg(test)]
 mod tests {
 
+    use std::str::FromStr;
+
     use super::*;
     use crate::test_suite::storage_test_suite;
 
     #[tokio::test]
     async fn test_local_file_storage() -> anyhow::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let uri = Uri::try_new(&format!("{}", tempdir.path().display())).unwrap();
+        let uri = Uri::from_str(&format!("{}", tempdir.path().display())).unwrap();
         let mut local_file_storage = LocalFileStorage::from_uri(&uri)?;
         storage_test_suite(&mut local_file_storage).await?;
         Ok(())
@@ -309,19 +311,20 @@ mod tests {
     #[test]
     fn test_local_file_storage_factory() -> anyhow::Result<()> {
         let tempdir = tempfile::tempdir()?;
-        let index_uri = Uri::new(format!("file://{}/foo/bar", tempdir.path().display()));
+        let index_uri =
+            Uri::from_well_formed(format!("file://{}/foo/bar", tempdir.path().display()));
         let local_file_storage_factory = LocalFileStorageFactory::default();
         let local_file_storage = local_file_storage_factory.resolve(&index_uri)?;
         assert_eq!(local_file_storage.uri(), &index_uri);
 
         let err = local_file_storage_factory
-            .resolve(&Uri::new("s3://foo/bar".to_string()))
+            .resolve(&Uri::from_well_formed("s3://foo/bar".to_string()))
             .err()
             .unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
         let err = local_file_storage_factory
-            .resolve(&Uri::new("s3://".to_string()))
+            .resolve(&Uri::from_well_formed("s3://".to_string()))
             .err()
             .unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
@@ -341,7 +344,7 @@ mod tests {
             .await
             .unwrap();
 
-        let uri = Uri::try_new(&format!("{}", tempdir.path().display())).unwrap();
+        let uri = Uri::from_str(&format!("{}", tempdir.path().display())).unwrap();
         let local_file_storage = LocalFileStorage::from_uri(&uri).unwrap();
         let error = local_file_storage
             .bulk_delete(&[Path::new("foo-dir/foo"), Path::new("bar-dir")])

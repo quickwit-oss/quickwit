@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::str::FromStr;
+
 use anyhow::{bail, Context};
 use clap::{arg, ArgMatches, Command};
 use itertools::Itertools;
@@ -193,7 +195,7 @@ impl SourceCliCommand {
     fn parse_create_args(matches: &ArgMatches) -> anyhow::Result<CreateSourceArgs> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -201,7 +203,7 @@ impl SourceCliCommand {
             .expect("`index` is a required arg.");
         let source_config_uri = matches
             .value_of("source-config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`source-config` is a required arg.")?;
         Ok(CreateSourceArgs {
             config_uri,
@@ -216,7 +218,7 @@ impl SourceCliCommand {
     ) -> anyhow::Result<ToggleSourceArgs> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -238,7 +240,7 @@ impl SourceCliCommand {
     fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<DeleteSourceArgs> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -258,7 +260,7 @@ impl SourceCliCommand {
     fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<DescribeSourceArgs> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -278,7 +280,7 @@ impl SourceCliCommand {
     fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<ListSourcesArgs> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -293,7 +295,7 @@ impl SourceCliCommand {
     fn parse_reset_checkpoint_args(matches: &ArgMatches) -> anyhow::Result<ResetCheckpointArgs> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -548,6 +550,8 @@ async fn resolve_index(metastore_uri: &Uri, index_id: &str) -> anyhow::Result<In
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use quickwit_config::SourceParams;
     use quickwit_metastore::checkpoint::{PartitionId, Position};
     use serde_json::json;
@@ -590,9 +594,9 @@ mod tests {
         let command = CliCommand::parse_cli_args(&matches).unwrap();
         let expected_command =
             CliCommand::Source(SourceCliCommand::CreateSource(CreateSourceArgs {
-                config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+                config_uri: Uri::from_str("file:///conf.yaml").unwrap(),
                 index_id: "hdfs-logs".to_string(),
-                source_config_uri: Uri::try_new("file:///source-conf.yaml").unwrap(),
+                source_config_uri: Uri::from_str("file:///source-conf.yaml").unwrap(),
             }));
         assert_eq!(command, expected_command);
     }
@@ -616,7 +620,7 @@ mod tests {
             let command = CliCommand::parse_cli_args(&matches).unwrap();
             let expected_command =
                 CliCommand::Source(SourceCliCommand::ToggleSource(ToggleSourceArgs {
-                    config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+                    config_uri: Uri::from_str("file:///conf.yaml").unwrap(),
                     index_id: "hdfs-logs".to_string(),
                     source_id: "kafka-foo".to_string(),
                     enable: true,
@@ -640,7 +644,7 @@ mod tests {
             let command = CliCommand::parse_cli_args(&matches).unwrap();
             let expected_command =
                 CliCommand::Source(SourceCliCommand::ToggleSource(ToggleSourceArgs {
-                    config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+                    config_uri: Uri::from_str("file:///conf.yaml").unwrap(),
                     index_id: "hdfs-logs".to_string(),
                     source_id: "kafka-foo".to_string(),
                     enable: false,
@@ -667,7 +671,7 @@ mod tests {
         let command = CliCommand::parse_cli_args(&matches).unwrap();
         let expected_command =
             CliCommand::Source(SourceCliCommand::DeleteSource(DeleteSourceArgs {
-                config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+                config_uri: Uri::from_str("file:///conf.yaml").unwrap(),
                 index_id: "hdfs-logs".to_string(),
                 source_id: "hdfs-logs-source".to_string(),
             }));
@@ -692,7 +696,7 @@ mod tests {
         let command = CliCommand::parse_cli_args(&matches).unwrap();
         let expected_command =
             CliCommand::Source(SourceCliCommand::DescribeSource(DescribeSourceArgs {
-                config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+                config_uri: Uri::from_str("file:///conf.yaml").unwrap(),
                 index_id: "hdfs-logs".to_string(),
                 source_id: "hdfs-logs-source".to_string(),
             }));
@@ -717,7 +721,7 @@ mod tests {
         let command = CliCommand::parse_cli_args(&matches).unwrap();
         let expected_command =
             CliCommand::Source(SourceCliCommand::ResetCheckpoint(ResetCheckpointArgs {
-                config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+                config_uri: Uri::from_str("file:///conf.yaml").unwrap(),
                 index_id: "hdfs-logs".to_string(),
                 source_id: "hdfs-logs-source".to_string(),
             }));
@@ -793,7 +797,7 @@ mod tests {
             .unwrap();
         let command = CliCommand::parse_cli_args(&matches).unwrap();
         let expected_command = CliCommand::Source(SourceCliCommand::ListSources(ListSourcesArgs {
-            config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+            config_uri: Uri::from_str("file:///conf.yaml").unwrap(),
             index_id: "hdfs-logs".to_string(),
         }));
         assert_eq!(command, expected_command);

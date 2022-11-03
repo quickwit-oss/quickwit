@@ -93,13 +93,15 @@ pub async fn load_file(uri: &Uri) -> anyhow::Result<OwnedBytes> {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
 
     #[tokio::test]
     async fn test_load_file() {
         let expected_bytes = tokio::fs::read_to_string("Cargo.toml").await.unwrap();
         assert_eq!(
-            load_file(&Uri::try_new("Cargo.toml").unwrap())
+            load_file(&Uri::from_str("Cargo.toml").unwrap())
                 .await
                 .unwrap()
                 .as_slice(),
