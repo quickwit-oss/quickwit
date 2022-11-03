@@ -226,9 +226,9 @@ async fn spawn_bulk_delete_tasks(
     splits: Vec<SplitMetadata>,
     storage: Arc<dyn Storage>,
     ctx_opt: Option<&ActorContext<GarbageCollector>>,
-) -> mpsc::Receiver<(Vec<String>, Vec<FileEntry>, Result<(), BulkDeleteError>)> {
+) -> mpsc::UnboundedReceiver<(Vec<String>, Vec<FileEntry>, Result<(), BulkDeleteError>)> {
     let limiter = Arc::new(Semaphore::new(max_concurrency));
-    let (tx, rx) = mpsc::channel(max_concurrency);
+    let (tx, rx) = mpsc::unbounded_channel();
 
     for splits in splits.chunks(BULK_DELETE_CHUNK_SIZE) {
         let mut paths = vec![];
@@ -250,7 +250,7 @@ async fn spawn_bulk_delete_tasks(
         let owned_limiter = limiter.clone();
         let owned_ctx_ops = ctx_opt.cloned();
         tokio::spawn(async move {
-            let _permit = owned_limiter.acquire();
+            let _permit = owned_limiter.acquire().await;
 
             let path_refs = paths.iter().map(|v| v.as_path()).collect::<Vec<_>>();
             let delete_result = owned_storage.bulk_delete(&path_refs).await;
