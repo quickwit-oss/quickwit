@@ -21,25 +21,32 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::{Future, StreamExt};
+use futures::Future;
 use quickwit_actors::ActorContext;
 use quickwit_metastore::{Metastore, MetastoreError, SplitMetadata, SplitState};
-use quickwit_storage::{Storage, StorageError};
+use quickwit_storage::{BulkDeleteError, Storage};
 use serde::Serialize;
 use thiserror::Error;
 use time::OffsetDateTime;
+use tokio::sync::{mpsc, Semaphore};
 use tracing::error;
 
 use crate::actors::GarbageCollector;
 
 const MAX_CONCURRENT_STORAGE_REQUESTS: usize = if cfg!(test) { 2 } else { 10 };
 
+/// The number of split delete requests to combine and issue as a single bulk request.
+///
+/// TODO: 10 is quite an arbitrary number and probably wants some tuning or
+///       to be made configurable by the user.
+const BULK_DELETE_CHUNK_SIZE: usize = 10;
+
 /// SplitDeletionError denotes error that can happen when deleting split
 /// during garbage collection.
 #[derive(Error, Debug)]
 pub enum SplitDeletionError {
-    #[error("Failed to delete splits from storage: '{0:?}'.")]
-    StorageFailure(Vec<(String, StorageError)>),
+    #[error("Failed to bulk delete splits from storage: '{0:?}'.")]
+    StorageFailure(Vec<(Vec<String>, BulkDeleteError)>),
 
     #[error("Failed to delete splits from metastore: '{0:?}'.")]
     MetastoreFailure(MetastoreError),
@@ -186,31 +193,14 @@ pub async fn delete_splits_with_files(
     let mut deleted_split_ids = Vec::new();
     let mut failed_split_ids_to_error = Vec::new();
 
-    let mut delete_splits_results_stream = tokio_stream::iter(splits.into_iter())
-        .map(|split| {
-            let moved_storage = storage.clone();
-            async move {
-                let file_entry = FileEntry::from(&split);
-                let split_filename = quickwit_common::split_file(split.split_id());
-                let split_path = Path::new(&split_filename);
-                let delete_result = moved_storage.delete(split_path).await;
-                if let Some(ctx) = ctx_opt {
-                    ctx.record_progress();
-                }
-                (split.split_id().to_string(), file_entry, delete_result)
-            }
-        })
-        .buffer_unordered(MAX_CONCURRENT_STORAGE_REQUESTS);
-
-    while let Some((split_id, file_entry, delete_split_res)) =
-        delete_splits_results_stream.next().await
-    {
-        if let Err(error) = delete_split_res {
-            error!(error = ?error, index_id = ?index_id, split_id = ?split_id, "Failed to delete split.");
-            failed_split_ids_to_error.push((split_id, error));
+    let mut task_results_stream = spawn_bulk_delete_tasks(MAX_CONCURRENT_STORAGE_REQUESTS, splits, storage, ctx_opt).await;
+    while let Some((split_ids, split_entries, delete_splits_res)) = task_results_stream.recv().await {
+        if let Err(error) = delete_splits_res {
+            error!(error = ?error, index_id = ?index_id, split_ids = ?split_ids, "Failed to delete split.");
+            failed_split_ids_to_error.push((split_ids, error));
         } else {
-            deleted_split_ids.push(split_id);
-            deleted_file_entries.push(file_entry);
+            deleted_split_ids.extend(split_ids);
+            deleted_file_entries.extend(split_entries);
         };
     }
 
@@ -230,3 +220,48 @@ pub async fn delete_splits_with_files(
 
     Ok(deleted_file_entries)
 }
+
+async fn spawn_bulk_delete_tasks(
+    max_concurrency: usize,
+    splits: Vec<SplitMetadata>,
+    storage: Arc<dyn Storage>,
+    ctx_opt: Option<&ActorContext<GarbageCollector>>,
+) -> mpsc::Receiver<(Vec<String>, Vec<FileEntry>, Result<(), BulkDeleteError>)> {
+    let limiter = Arc::new(Semaphore::new(max_concurrency));
+    let (tx, rx) = mpsc::channel(max_concurrency);
+
+    for splits in splits.chunks(BULK_DELETE_CHUNK_SIZE) {
+        let mut paths = vec![];
+        let mut split_ids = vec![];
+        let mut split_entries = vec![];
+
+        for split in splits {
+            let file_entry = FileEntry::from(split);
+            let split_filename = quickwit_common::split_file(split.split_id());
+            let split_path = Path::new(&split_filename);
+
+            paths.push(split_path.to_path_buf());
+            split_ids.push(split.split_id().to_string());
+            split_entries.push(file_entry);
+        }
+
+        let owned_tx = tx.clone();
+        let owned_storage = storage.clone();
+        let owned_limiter = limiter.clone();
+        let owned_ctx_ops = ctx_opt.cloned();
+        tokio::spawn(async move {
+            let _permit = owned_limiter.acquire();
+
+            let path_refs = paths.iter().map(|v| v.as_path()).collect::<Vec<_>>();
+            let delete_result = owned_storage.bulk_delete(&path_refs).await;
+            if let Some(ctx) = owned_ctx_ops {
+                ctx.record_progress();
+            }
+
+            let _ = owned_tx.send((split_ids, split_entries, delete_result));
+        });
+    }
+
+    rx
+}
+
