@@ -18,83 +18,48 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{
-    new_counter_vec, new_gauge, new_gauge_vec, IntCounterVec, IntGauge, IntGaugeVec,
-};
+use quickwit_common::metrics::{new_counter_vec, new_gauge_vec, IntCounterVec, IntGaugeVec};
 
 pub struct IndexerMetrics {
-    pub parsing_errors_num_docs_total: IntCounterVec,
-    pub missing_field_num_docs_total: IntCounterVec,
-    pub valid_num_docs_total: IntCounterVec,
-    pub parsing_errors_num_bytes_total: IntCounterVec,
-    pub missing_field_num_bytes_total: IntCounterVec,
-    pub valid_num_bytes_total: IntCounterVec,
-    pub concurrent_upload_available_permits_index: IntGauge,
-    pub concurrent_upload_available_permits_merge: IntGauge,
-    pub ongoing_num_merge_operations_total: IntGaugeVec,
+    pub processed_docs_total: IntCounterVec,
+    pub processed_bytes: IntCounterVec,
+    pub available_concurrent_upload_permits: IntGaugeVec,
+    pub ongoing_merge_operations: IntGaugeVec,
 }
 
 impl Default for IndexerMetrics {
     fn default() -> Self {
         IndexerMetrics {
-            parsing_errors_num_docs_total: new_counter_vec(
-                "parsing_errors_num_docs_total",
-                "Num of docs that were discarded due to a parsing error (per index).",
+            processed_docs_total: new_counter_vec(
+                "processed_docs_total",
+                "Number of processed docs by index, source and processed status in [valid, \
+                 missing_field, parsing_error]",
                 "quickwit_indexing",
-                &["index"],
+                &["index", "source", "docs_processed_status"],
             ),
-            missing_field_num_docs_total: new_counter_vec(
-                "missing_field_num_docs_total",
-                "Num of docs that were discard because they were missing a field (per index).",
+            processed_bytes: new_counter_vec(
+                "processed_bytes",
+                "Number of bytes of processed documents by index, source and processed status in \
+                 [valid, missing_field, parsing_error]",
                 "quickwit_indexing",
-                &["index"],
+                &["index", "source", "docs_processed_status"],
             ),
-            valid_num_docs_total: new_counter_vec(
-                "valid_num_docs_total",
-                "Num of processed docs that were valid (per index).",
+            available_concurrent_upload_permits: new_gauge_vec(
+                "concurrent_upload_available_permits_num",
+                "Number of available concurrent upload permits by component in [merger, indexer]",
                 "quickwit_indexing",
-                &["index"],
+                &["component"],
             ),
-            parsing_errors_num_bytes_total: new_counter_vec(
-                "parsing_errors_num_bytes_total",
-                "Sum of bytes of the documents that were discarded due to a parsing error (per \
-                 index).",
+            ongoing_merge_operations: new_gauge_vec(
+                "ongoing_merge_operations",
+                "Number of ongoing merge operations",
                 "quickwit_indexing",
-                &["index"],
-            ),
-            missing_field_num_bytes_total: new_counter_vec(
-                "missing_field_num_bytes_total",
-                "Sum of bytes of the documents that were discarded due to a missing field (per \
-                 index).",
-                "quickwit_indexing",
-                &["index"],
-            ),
-            valid_num_bytes_total: new_counter_vec(
-                "valid_num_bytes_total",
-                "Sum of bytes of valid documents that have been processed (per index).",
-                "quickwit_indexing",
-                &["index"],
-            ),
-            concurrent_upload_available_permits_index: new_gauge(
-                "concurrent_upload_available_index",
-                "Number of concurrent uploader available permits for indexing.",
-                "quickwit_indexing",
-            ),
-            concurrent_upload_available_permits_merge: new_gauge(
-                "concurrent_upload_available_merge",
-                "Number of concurrent uploader available permits for merging.",
-                "quickwit_indexing",
-            ),
-            ongoing_num_merge_operations_total: new_gauge_vec(
-                "ongoing_num_merge_operations_total",
-                "Num of ongoing merge operations (per index).",
-                "quickwit_indexing",
-                &["index"],
+                &["index", "source"],
             ),
         }
     }
 }
 
-/// `INDEXER_METRICS` exposes a bunch a set of storage/cache related metrics through a prometheus
+/// `INDEXER_METRICS` exposes indexing related metrics through a prometheus
 /// endpoint.
 pub static INDEXER_METRICS: Lazy<IndexerMetrics> = Lazy::new(IndexerMetrics::default);
