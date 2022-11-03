@@ -154,6 +154,7 @@ impl Handler<IndexedSplitBatch> for Packager {
                 packaged_splits,
                 batch.checkpoint_delta,
                 batch.publish_lock,
+                batch.merge_operation,
                 batch.batch_parent_span,
             ),
         )
@@ -432,6 +433,7 @@ mod tests {
                 checkpoint_delta: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
                 publish_lock: PublishLock::default(),
                 batch_parent_span: Span::none(),
+                merge_operation: None,
             })
             .await?;
         assert_eq!(

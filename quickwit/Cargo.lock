@@ -3491,6 +3491,7 @@ dependencies = [
  "futures",
  "itertools",
  "mockall",
+ "once_cell",
  "quickwit-actors",
  "quickwit-cluster",
  "quickwit-common",

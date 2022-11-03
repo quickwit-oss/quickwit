@@ -17,18 +17,26 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use tantivy::{Directory, TrackedObject};
+use once_cell::sync::Lazy;
+use quickwit_common::metrics::{new_gauge_vec, IntGaugeVec};
 
-use crate::merge_policy::MergeOperation;
-use crate::models::ScratchDirectory;
-
-#[derive(Debug)]
-pub struct MergeScratch {
-    /// A [`MergeOperation`] tracked by either the `MergePlannner` or the `DeleteTaksPlanner`
-    /// See planners docs to understand the usage.
-    pub merge_operation: TrackedObject<MergeOperation>,
-    /// Scratch directory for computing the merge.
-    pub merge_scratch_directory: ScratchDirectory,
-    pub downloaded_splits_directory: ScratchDirectory,
-    pub tantivy_dirs: Vec<Box<dyn Directory>>,
+pub struct JanitorMetrics {
+    pub ongoing_num_delete_operations_total: IntGaugeVec,
 }
+
+impl Default for JanitorMetrics {
+    fn default() -> Self {
+        JanitorMetrics {
+            ongoing_num_delete_operations_total: new_gauge_vec(
+                "ongoing_num_delete_operations_total",
+                "Num of ongoing delete operations (per index).",
+                "quickwit_janitor",
+                &["index"],
+            ),
+        }
+    }
+}
+
+/// `JANITOR_METRICS` exposes a bunch of related metrics through a prometheus
+/// endpoint.
+pub static JANITOR_METRICS: Lazy<JanitorMetrics> = Lazy::new(JanitorMetrics::default);
