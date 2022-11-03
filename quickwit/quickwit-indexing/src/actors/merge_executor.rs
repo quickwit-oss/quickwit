@@ -107,7 +107,7 @@ impl Handler<MergeScratch> for MergeExecutor {
                     "Delete tasks can be applied only on one split."
                 );
                 assert_eq!(merge_scratch.tantivy_dirs.len(), 1);
-                let split_with_docs_to_delete = merge_op.splits.into_iter().next().unwrap();
+                let split_with_docs_to_delete = merge_op.splits[0].clone();
                 self.process_delete_and_merge(
                     merge_op.merge_split_id.clone(),
                     split_with_docs_to_delete,
@@ -128,10 +128,11 @@ impl Handler<MergeScratch> for MergeExecutor {
             ctx.send_message(
                 &self.merge_packager_mailbox,
                 IndexedSplitBatch {
-                    batch_parent_span: merge_op.merge_parent_span,
+                    batch_parent_span: merge_op.merge_parent_span.clone(),
                     splits: vec![indexed_split],
                     checkpoint_delta: Default::default(),
                     publish_lock: PublishLock::default(),
+                    merge_operation: Some(merge_op),
                 },
             )
             .await?;
@@ -506,6 +507,7 @@ mod tests {
     use quickwit_common::split_file;
     use quickwit_metastore::SplitMetadata;
     use quickwit_proto::metastore_api::DeleteQuery;
+    use tantivy::Inventory;
 
     use super::*;
     use crate::merge_policy::MergeOperation;
@@ -566,8 +568,11 @@ mod tests {
                 .await?;
             tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap())
         }
+        let merge_ops_inventory = Inventory::new();
+        let merge_operation =
+            merge_ops_inventory.track(MergeOperation::new_merge_operation(split_metas));
         let merge_scratch = MergeScratch {
-            merge_operation: MergeOperation::new_merge_operation(split_metas),
+            merge_operation,
             tantivy_dirs,
             merge_scratch_directory,
             downloaded_splits_directory,
@@ -707,8 +712,12 @@ mod tests {
             .copy_to_file(Path::new(&split_filename), &dest_filepath)
             .await?;
         let tantivy_dir = get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap();
+        let merge_ops_inventory = Inventory::new();
+        let merge_operation = merge_ops_inventory.track(
+            MergeOperation::new_delete_and_merge_operation(new_split_metadata),
+        );
         let merge_scratch = MergeScratch {
-            merge_operation: MergeOperation::new_delete_and_merge_operation(new_split_metadata),
+            merge_operation,
             tantivy_dirs: vec![tantivy_dir],
             merge_scratch_directory,
             downloaded_splits_directory,

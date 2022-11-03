@@ -33,12 +33,14 @@ use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_storage::SplitPayloadBuilder;
 use serde::Serialize;
+use tantivy::TrackedObject;
 use tokio::sync::oneshot::Sender;
 use tokio::sync::{oneshot, Semaphore, SemaphorePermit};
 use tracing::{info, instrument, warn, Instrument, Span};
 
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::Publisher;
+use crate::merge_policy::MergeOperation;
 use crate::metrics::INDEXER_METRICS;
 use crate::models::{
     create_split_metadata, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate,
@@ -309,7 +311,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     }
                     packaged_splits_and_metadatas.push((split, upload_result.unwrap()));
                 }
-                let splits_update = make_publish_operation(index_id, batch.publish_lock, packaged_splits_and_metadatas, batch.checkpoint_delta_opt, batch.parent_span);
+                let splits_update = make_publish_operation(index_id, batch.publish_lock, packaged_splits_and_metadatas, batch.checkpoint_delta_opt, batch.merge_operation, batch.parent_span);
                 split_udpate_sender.send(splits_update, &ctx_clone).await?;
                 // We explicitely drop it in order to force move the permit guard into the async
                 // task.
@@ -328,6 +330,7 @@ fn make_publish_operation(
     publish_lock: PublishLock,
     packaged_splits_and_metadatas: Vec<(PackagedSplit, SplitMetadata)>,
     checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+    merge_operation: Option<TrackedObject<MergeOperation>>,
     parent_span: Span,
 ) -> SplitsUpdate {
     assert!(!packaged_splits_and_metadatas.is_empty());
@@ -344,6 +347,7 @@ fn make_publish_operation(
             .collect_vec(),
         replaced_split_ids: Vec::from_iter(replaced_split_ids),
         checkpoint_delta_opt,
+        merge_operation,
         parent_span,
     }
 }
@@ -458,6 +462,7 @@ mod tests {
                 }],
                 checkpoint_delta_opt,
                 PublishLock::default(),
+                None,
                 Span::none(),
             ))
             .await?;
@@ -579,6 +584,7 @@ mod tests {
                 vec![packaged_split_1, package_split_2],
                 None,
                 PublishLock::default(),
+                None,
                 Span::none(),
             ))
             .await?;
@@ -684,6 +690,7 @@ mod tests {
                 }],
                 checkpoint_delta_opt,
                 PublishLock::default(),
+                None,
                 Span::none(),
             ))
             .await?;

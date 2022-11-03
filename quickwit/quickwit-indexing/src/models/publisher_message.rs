@@ -22,8 +22,10 @@ use std::fmt;
 use itertools::Itertools;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::SplitMetadata;
+use tantivy::TrackedObject;
 use tracing::Span;
 
+use crate::merge_policy::MergeOperation;
 use crate::models::PublishLock;
 
 pub struct SplitsUpdate {
@@ -32,6 +34,11 @@ pub struct SplitsUpdate {
     pub replaced_split_ids: Vec<String>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
+    /// A [`MergeOperation`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
+    /// in the `MergePipeline` or `DeleteTaskPipeline`.
+    /// See planners docs to understand the usage.
+    /// If `None`, the split batch was built in the `IndexingPipeline`.
+    pub merge_operation: Option<TrackedObject<MergeOperation>>,
     pub parent_span: Span,
 }
 

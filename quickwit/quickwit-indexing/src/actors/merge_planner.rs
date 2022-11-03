@@ -24,9 +24,13 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::SplitMetadata;
+use serde::Serialize;
+use tantivy::Inventory;
 use tracing::info;
 
 use crate::actors::MergeSplitDownloader;
+use crate::merge_policy::MergeOperation;
+use crate::metrics::INDEXER_METRICS;
 use crate::models::{IndexingPipelineId, NewSplits};
 use crate::MergePolicy;
 
@@ -38,13 +42,27 @@ pub struct MergePlanner {
     partitioned_young_splits: HashMap<u64, Vec<SplitMetadata>>,
     merge_policy: Arc<dyn MergePolicy>,
     merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
+    /// Inventory of ongoing merge operations. If everything goes well,
+    /// a merge operation is dropped after the publish of the merged split.
+    /// Used for observability.
+    ongoing_merge_operations_inventory: Inventory<MergeOperation>,
 }
 
 #[async_trait]
 impl Actor for MergePlanner {
-    type ObservableState = ();
+    type ObservableState = MergePlannerState;
 
-    fn observable_state(&self) -> Self::ObservableState {}
+    fn observable_state(&self) -> Self::ObservableState {
+        let ongoing_merge_operations = self
+            .ongoing_merge_operations_inventory
+            .list()
+            .iter()
+            .map(|tracked_operation| tracked_operation.as_ref().clone())
+            .collect_vec();
+        MergePlannerState {
+            ongoing_merge_operations,
+        }
+    }
 
     fn name(&self) -> String {
         "MergePlanner".to_string()
@@ -56,6 +74,7 @@ impl Actor for MergePlanner {
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         let target_partition_ids = self.partitioned_young_splits.keys().cloned().collect_vec();
+        self.handle(RefreshMetric, ctx).await?;
         self.send_merge_ops(ctx, &target_partition_ids).await?;
         Ok(())
     }
@@ -136,6 +155,7 @@ impl MergePlanner {
             partitioned_young_splits,
             merge_policy,
             merge_split_downloader_mailbox,
+            ongoing_merge_operations_inventory: Inventory::default(),
         }
     }
 
@@ -150,8 +170,14 @@ impl MergePlanner {
 
                 for merge_operation in merge_operations {
                     info!(merge_operation=?merge_operation, "Planned merge operation.");
-                    ctx.send_message(&self.merge_split_downloader_mailbox, merge_operation)
-                        .await?;
+                    let tracked_merge_operations = self
+                        .ongoing_merge_operations_inventory
+                        .track(merge_operation);
+                    ctx.send_message(
+                        &self.merge_split_downloader_mailbox,
+                        tracked_merge_operations,
+                    )
+                    .await?;
                 }
             }
         }
@@ -166,6 +192,28 @@ fn belongs_to_pipeline(pipeline_id: &IndexingPipelineId, split: &SplitMetadata) 
         && pipeline_id.node_id == split.node_id
 }
 
+#[derive(Debug)]
+struct RefreshMetric;
+
+#[async_trait]
+impl Handler<RefreshMetric> for MergePlanner {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _: RefreshMetric,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        INDEXER_METRICS
+            .ongoing_num_merge_operations_total
+            .with_label_values(&[&self.pipeline_id.index_id])
+            .set(self.ongoing_merge_operations_inventory.list().len() as i64);
+        ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, RefreshMetric)
+            .await;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -174,6 +222,7 @@ mod tests {
     use quickwit_actors::{create_mailbox, QueueCapacity, Universe};
     use quickwit_config::merge_policy_config::StableLogMergePolicyConfig;
     use quickwit_metastore::SplitMetadata;
+    use tantivy::TrackedObject;
 
     use crate::actors::MergePlanner;
     use crate::merge_policy::{MergeOperation, StableLogMergePolicy};
@@ -260,16 +309,14 @@ mod tests {
                 ],
             };
             merge_planner_mailbox.send_message(message).await?;
-            let operations = merge_split_downloader_inbox.drain_for_test();
+            let operations = merge_split_downloader_inbox
+                .drain_for_test_typed::<TrackedObject<MergeOperation>>();
             assert_eq!(operations.len(), 2);
-            let mut merge_operations = operations
-                .into_iter()
-                .map(|operation| operation.downcast::<MergeOperation>().unwrap())
-                .sorted_by(|left_op, right_op| {
-                    left_op.splits[0]
-                        .partition_id
-                        .cmp(&right_op.splits[0].partition_id)
-                });
+            let mut merge_operations = operations.into_iter().sorted_by(|left_op, right_op| {
+                left_op.splits[0]
+                    .partition_id
+                    .cmp(&right_op.splits[0].partition_id)
+            });
 
             let first_merge_operation = merge_operations.next().unwrap();
             assert_eq!(first_merge_operation.splits.len(), 4);
@@ -280,4 +327,9 @@ mod tests {
 
         Ok(())
     }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MergePlannerState {
+    ongoing_merge_operations: Vec<MergeOperation>,
 }

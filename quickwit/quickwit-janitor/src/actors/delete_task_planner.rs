@@ -35,9 +35,13 @@ use quickwit_metastore::{
 use quickwit_proto::metastore_api::DeleteTask;
 use quickwit_proto::SearchRequest;
 use quickwit_search::{jobs_to_leaf_request, SearchClientPool, SearchJob};
+use serde::Serialize;
+use tantivy::Inventory;
 use tracing::{debug, info};
 
-const PLANNER_REFRESH_INTERVAL: Duration = Duration::from_secs(60 * 60);
+use crate::metrics::JANITOR_METRICS;
+
+const PLANNER_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 const NUM_STALE_SPLITS_TO_FETCH: usize = 1000;
 
 /// The `DeleteTaskPlanner` plans delete operations on splits for a given index.
@@ -51,17 +55,13 @@ const NUM_STALE_SPLITS_TO_FETCH: usize = 1000;
 /// 1. Fetches the delete tasks and deduce the last `opstamp`.
 /// 2. Fetches the last `N` stale splits ordered by their `delete_opstamp`.
 ///    A stale split is a split a `delete_opstamp` inferior to the last `opstamp`
-///    In theory, this works but... there is two difficulties:
-///    - The planner can send the [`MergeOperation`] operation several times. Indeed, while the
-///      `MergeExecutor` is processing a merge operation on a split, the planner can still fetch
-///      this same stale split and resend it. This is partly avoided by keeping a local list of
-///      ongoing delete operations in the `send_operations` method and by setting the queue capacity
-///      of the downloader to 0.
-///    - Delete operation do not run on immature splits and they are excluded after fetching stale
+///    In theory, this works but... there is one difficulty:
+///    - Delete operations do not run on immature splits and they are excluded after fetching stale
 ///      splits from the metastore as the metastore has no knowledge about the merge policy. If
 ///      there are more than `N` immature stale splits, the planner will plan no operations.
 ///      However, this is mitigated by the fact that a merge policy should consider "old split" as
 ///      mature and an index should not have many immature splits.
+///      See tracked issue <https://github.com/quickwit-oss/quickwit/issues/2147>.
 /// 3. If there is no stale splits, stop.
 /// 4. If there are stale splits, for each split, do:
 ///    - Get the list of delete queries to apply to this split.
@@ -81,13 +81,28 @@ pub struct DeleteTaskPlanner {
     search_client_pool: SearchClientPool,
     merge_policy: Arc<dyn MergePolicy>,
     merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
+    /// Inventory of ongoing delete operations. If everything goes well,
+    /// a merge operation is dropped after the publish of the split that underwent
+    /// the delete operation.
+    /// The inventory is used to avoid sending twice the same delete operation.
+    ongoing_delete_operations_inventory: Inventory<MergeOperation>,
 }
 
 #[async_trait]
 impl Actor for DeleteTaskPlanner {
-    type ObservableState = ();
+    type ObservableState = DeleteTaskPlannerState;
 
-    fn observable_state(&self) -> Self::ObservableState {}
+    fn observable_state(&self) -> Self::ObservableState {
+        let ongoing_delete_operations = self
+            .ongoing_delete_operations_inventory
+            .list()
+            .iter()
+            .map(|tracked_operation| tracked_operation.as_ref().clone())
+            .collect_vec();
+        DeleteTaskPlannerState {
+            ongoing_delete_operations,
+        }
+    }
 
     fn name(&self) -> String {
         "DeleteTaskPlanner".to_string()
@@ -98,7 +113,7 @@ impl Actor for DeleteTaskPlanner {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        self.handle(PlanDeleteOperationsLoop, ctx).await
+        self.handle(PlanDeleteLoop, ctx).await
     }
 }
 
@@ -120,28 +135,17 @@ impl DeleteTaskPlanner {
             search_client_pool,
             merge_policy,
             merge_split_downloader_mailbox,
+            ongoing_delete_operations_inventory: Inventory::new(),
         }
     }
 
     /// Send delete operations for a given `index_id`.
     async fn send_delete_operations(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
-        // Keep already send operations to avoid several times the same ones.
-        // This solves only locally this issues as the next time `send_delete_operations` is called,
-        // we may send the same operations. Keeping the `ongoing_delete_operations` at the
-        // planner level would be better but requires more work to udpate the list.
-        // TODO: Make sure that
-        let mut ongoing_delete_operations = Vec::new();
-
         // Loop until there is no more stale splits.
         loop {
             let last_delete_opstamp = self.metastore.last_delete_opstamp(&self.index_id).await?;
             let stale_splits = self
-                .get_relevant_stale_splits(
-                    &self.index_id,
-                    last_delete_opstamp,
-                    &ongoing_delete_operations,
-                    ctx,
-                )
+                .get_relevant_stale_splits(&self.index_id, last_delete_opstamp, ctx)
                 .await?;
             ctx.record_progress();
             info!(
@@ -181,12 +185,18 @@ impl DeleteTaskPlanner {
                     split_with_deletes.split_metadata,
                 );
                 info!(delete_operation=?delete_operation, "Planned delete operation.");
+                let tracked_delete_operation = self
+                    .ongoing_delete_operations_inventory
+                    .track(delete_operation);
                 ctx.send_message(
                     &self.merge_split_downloader_mailbox,
-                    delete_operation.clone(),
+                    tracked_delete_operation,
                 )
                 .await?;
-                ongoing_delete_operations.push(delete_operation);
+                JANITOR_METRICS
+                    .ongoing_num_delete_operations_total
+                    .with_label_values(&[&self.index_id])
+                    .set(self.ongoing_delete_operations_inventory.list().len() as i64);
             }
         }
 
@@ -310,7 +320,6 @@ impl DeleteTaskPlanner {
         &self,
         index_id: &str,
         last_delete_opstamp: u64,
-        ongoing_delete_operations: &[MergeOperation],
         ctx: &ActorContext<Self>,
     ) -> MetastoreResult<Vec<Split>> {
         let stale_splits = ctx
@@ -327,6 +336,7 @@ impl DeleteTaskPlanner {
         );
         // Keep only mature splits and splits that are not already part of ongoing delete
         // operations.
+        let ongoing_delete_operations = self.ongoing_delete_operations_inventory.list();
         let filtered_splits = stale_splits
             .into_iter()
             .filter(|stale_split| self.merge_policy.is_mature(&stale_split.split_metadata))
@@ -345,20 +355,42 @@ impl DeleteTaskPlanner {
     }
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct DeleteTaskPlannerState {
+    ongoing_delete_operations: Vec<MergeOperation>,
+}
+
 #[derive(Debug)]
-struct PlanDeleteOperationsLoop;
+struct PlanDeleteOperations;
 
 #[async_trait]
-impl Handler<PlanDeleteOperationsLoop> for DeleteTaskPlanner {
+impl Handler<PlanDeleteOperations> for DeleteTaskPlanner {
     type Reply = ();
 
     async fn handle(
         &mut self,
-        _: PlanDeleteOperationsLoop,
+        _: PlanDeleteOperations,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.send_delete_operations(ctx).await?;
-        ctx.schedule_self_msg(PLANNER_REFRESH_INTERVAL, PlanDeleteOperationsLoop)
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct PlanDeleteLoop;
+
+#[async_trait]
+impl Handler<PlanDeleteLoop> for DeleteTaskPlanner {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _: PlanDeleteLoop,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        self.handle(PlanDeleteOperations, ctx).await?;
+        ctx.schedule_self_msg(PLANNER_REFRESH_INTERVAL, PlanDeleteLoop)
             .await;
         Ok(())
     }
@@ -374,6 +406,7 @@ mod tests {
     use quickwit_proto::metastore_api::DeleteQuery;
     use quickwit_proto::{LeafSearchRequest, LeafSearchResponse};
     use quickwit_search::MockSearchService;
+    use tantivy::TrackedObject;
 
     use super::*;
 
@@ -471,21 +504,49 @@ mod tests {
             downloader_mailbox,
         );
         let universe = Universe::new();
-        let (_, delete_planner_executor_handle) =
+        let (delete_planner_mailbox, delete_planner_handle) =
             universe.spawn_builder().spawn(delete_planner_executor);
-        delete_planner_executor_handle
-            .process_pending_and_observe()
-            .await;
-        let mut downloader_msgs = downloader_inbox.drain_for_test();
+        delete_planner_handle.process_pending_and_observe().await;
+        let downloader_msgs =
+            downloader_inbox.drain_for_test_typed::<TrackedObject<MergeOperation>>();
         assert_eq!(downloader_msgs.len(), 1);
-        let downloader_msg = downloader_msgs
-            .pop()
-            .unwrap()
-            .downcast::<MergeOperation>()
-            .unwrap();
         // The last split will undergo a delete operation.
         assert_eq!(
-            downloader_msg.splits[0].split_id(),
+            downloader_msgs[0].splits[0].split_id(),
+            split_metas[2].split_id()
+        );
+        // Check planner state is inline.
+        let delete_planner_state = delete_planner_handle.observe().await;
+        assert_eq!(
+            delete_planner_state.ongoing_delete_operations[0].splits[0].split_id(),
+            split_metas[2].split_id()
+        );
+        // Trigger new plan evaluation and check that we don't have new merge operation.
+        delete_planner_mailbox
+            .send_message(PlanDeleteOperations)
+            .await
+            .unwrap();
+        assert!(downloader_inbox.drain_for_test().is_empty());
+        // Now drop the current merge operation and check that the planner will plan a new
+        // operation.
+        drop(downloader_msgs.into_iter().next().unwrap());
+        // Check planner state is inline.
+        assert!(delete_planner_handle
+            .observe()
+            .await
+            .ongoing_delete_operations
+            .is_empty());
+
+        // Trigger operations planning.
+        delete_planner_mailbox
+            .send_message(PlanDeleteOperations)
+            .await
+            .unwrap();
+        let downloader_last_msgs =
+            downloader_inbox.drain_for_test_typed::<TrackedObject<MergeOperation>>();
+        assert_eq!(downloader_last_msgs.len(), 1);
+        assert_eq!(
+            downloader_last_msgs[0].splits[0].split_id(),
             split_metas[2].split_id()
         );
         // The other splits has just their delete opstamps updated to the last opstamps which is 2
@@ -497,7 +558,7 @@ mod tests {
         assert_eq!(all_splits[2].split_metadata.delete_opstamp, 0);
 
         // Check actor state.
-        assert_eq!(delete_planner_executor_handle.state(), ActorState::Idle);
+        assert_eq!(delete_planner_handle.state(), ActorState::Idle);
 
         Ok(())
     }
