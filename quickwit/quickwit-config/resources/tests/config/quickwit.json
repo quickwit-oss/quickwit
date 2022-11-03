@@ -3,14 +3,22 @@
     "version": 0,
     "cluster_id": "quickwit-cluster",
     "node_id": "my-unique-node-id",
-    "metastore_uri": "postgres://username:password@host:port/db",
-    "data_dir": "/opt/quickwit/data",
+    "enabled_services": [
+        "janitor",
+        "metastore"
+    ],
     "listen_address": "0.0.0.0",
+    "advertise_address": "172.0.0.12",
     "rest_listen_port": 1111,
+    "gossip_listen_port": 2222,
+    "grpc_listen_port": 3333,
     "peer_seeds": [
         "quickwit-searcher-0.local",
         "quickwit-searcher-1.local"
     ],
+    "data_dir": "/opt/quickwit/data",
+    "metastore_uri": "postgres://username:password@host:port/db",
+    "default_index_root_uri": "s3://quickwit-indexes",
     "indexer": {
         "split_store_max_num_bytes": "1T",
         "split_store_max_num_splits": 10000,

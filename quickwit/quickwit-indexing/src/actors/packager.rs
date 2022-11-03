@@ -134,14 +134,6 @@ impl Handler<IndexedSplitBatch> for Packager {
             split_ids=?split_ids,
             "start-packaging-splits"
         );
-        for split in &batch.splits {
-            if let Some(controlled_directory) = &split.controlled_directory_opt {
-                controlled_directory.set_progress_and_kill_switch(
-                    ctx.progress().clone(),
-                    ctx.kill_switch().clone(),
-                );
-            }
-        }
         fail_point!("packager:before");
         let mut packaged_splits = Vec::new();
         for split in batch.splits {
@@ -162,6 +154,7 @@ impl Handler<IndexedSplitBatch> for Packager {
                 packaged_splits,
                 batch.checkpoint_delta,
                 batch.publish_lock,
+                batch.merge_operation,
                 batch.batch_parent_span,
             ),
         )
@@ -440,6 +433,7 @@ mod tests {
                 checkpoint_delta: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
                 publish_lock: PublishLock::default(),
                 batch_parent_span: Span::none(),
+                merge_operation: None,
             })
             .await?;
         assert_eq!(

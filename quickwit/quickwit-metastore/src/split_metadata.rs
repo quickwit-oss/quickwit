@@ -80,9 +80,6 @@ pub struct SplitMetadata {
     /// Node ID.
     pub node_id: String,
 
-    /// Pipeline ordinal.
-    pub pipeline_ord: usize,
-
     /// Number of records (or documents) in the split.
     /// TODO make u64
     pub num_docs: usize,
@@ -135,7 +132,6 @@ impl SplitMetadata {
         partition_id: u64,
         source_id: String,
         node_id: String,
-        pipeline_ord: usize,
     ) -> Self {
         Self {
             split_id,
@@ -143,7 +139,6 @@ impl SplitMetadata {
             partition_id,
             source_id,
             node_id,
-            pipeline_ord,
             create_timestamp: utc_now_timestamp(),
             ..Default::default()
         }

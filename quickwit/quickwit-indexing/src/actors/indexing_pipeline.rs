@@ -23,9 +23,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, KillSwitch,
-    Mailbox, QueueCapacity, Supervisable,
+    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox,
+    QueueCapacity, Supervisable,
 };
+use quickwit_common::KillSwitch;
 use quickwit_config::{IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{Metastore, MetastoreError};

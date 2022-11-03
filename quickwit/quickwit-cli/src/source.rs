@@ -312,7 +312,7 @@ impl SourceCliCommand {
 }
 
 async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
-    let qw_config = load_quickwit_config(&args.config_uri, None).await?;
+    let qw_config = load_quickwit_config(&args.config_uri).await?;
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&qw_config.metastore_uri)
         .await?;
@@ -341,7 +341,7 @@ async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
 }
 
 async fn toggle_source_cli(args: ToggleSourceArgs) -> anyhow::Result<()> {
-    let config = load_quickwit_config(&args.config_uri, None).await?;
+    let config = load_quickwit_config(&args.config_uri).await?;
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri)
         .await?;
@@ -366,7 +366,7 @@ async fn toggle_source_cli(args: ToggleSourceArgs) -> anyhow::Result<()> {
 }
 
 async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
-    let config = load_quickwit_config(&args.config_uri, None).await?;
+    let config = load_quickwit_config(&args.config_uri).await?;
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri)
         .await?;
@@ -390,7 +390,7 @@ async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
 }
 
 async fn describe_source_cli(args: DescribeSourceArgs) -> anyhow::Result<()> {
-    let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let index_metadata = resolve_index(&quickwit_config.metastore_uri, &args.index_id).await?;
     let source_checkpoint = index_metadata
         .checkpoint
@@ -444,7 +444,7 @@ where
 }
 
 async fn list_sources_cli(args: ListSourcesArgs) -> anyhow::Result<()> {
-    let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let index_metadata = resolve_index(&quickwit_config.metastore_uri, &args.index_id).await?;
     let table = make_list_sources_table(index_metadata.sources.into_values());
     display_tables(&[table]);
@@ -525,7 +525,7 @@ fn flatten_json(value: Value) -> Vec<(String, Value)> {
 }
 
 async fn reset_checkpoint_cli(args: ResetCheckpointArgs) -> anyhow::Result<()> {
-    let config = load_quickwit_config(&args.config_uri, None).await?;
+    let config = load_quickwit_config(&args.config_uri).await?;
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri)
         .await?;

@@ -28,7 +28,8 @@ use std::str::FromStr;
 use anyhow::{bail, Context};
 use once_cell::sync::OnceCell;
 use regex::Regex;
-use serde::{Serialize, Serializer};
+use serde::de::Error;
+use serde::{Deserialize, Serialize, Serializer};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum Protocol {
@@ -94,11 +95,11 @@ impl FromStr for Protocol {
 
     fn from_str(protocol: &str) -> anyhow::Result<Self> {
         match protocol {
+            "azure" => Ok(Protocol::Azure),
             "file" => Ok(Protocol::File),
             "postgres" | "postgresql" => Ok(Protocol::PostgreSQL),
             "ram" => Ok(Protocol::Ram),
             "s3" => Ok(Protocol::S3),
-            "azure" => Ok(Protocol::Azure),
             _ => bail!("Unknown URI protocol `{}`.", protocol),
         }
     }
@@ -134,29 +135,30 @@ pub struct Uri {
 }
 
 impl Uri {
-    /// Attempts to construct a [`Uri`] from a raw string slice.
+    /// Attempts to construct a [`Uri`] from a string.
     /// A `file://` protocol is assumed if not specified.
     /// File URIs are resolved (normalized) relative to the current working directory
     /// unless an absolute path is specified.
-    /// Handles special characters like `~`, `.`, `..`.
-    pub fn try_new(uri: &str) -> anyhow::Result<Self> {
-        if uri.is_empty() {
-            bail!("URI is empty.");
+    /// Handles special characters such as `~`, `.`, `..`.
+    pub fn try_new(uri_str: &str) -> anyhow::Result<Self> {
+        // CAUTION: Do not display the URI in error messages to avoid leaking credentials.
+        if uri_str.is_empty() {
+            bail!("Failed to parse empty URI.");
         }
-        let (protocol, mut path) = match uri.split_once(PROTOCOL_SEPARATOR) {
-            None => (Protocol::File.as_str(), uri.to_string()),
+        let (protocol, mut path) = match uri_str.split_once(PROTOCOL_SEPARATOR) {
+            None => (Protocol::File.as_str(), uri_str.to_string()),
             Some((protocol, path)) => (protocol, path.to_string()),
         };
         if protocol == Protocol::File.as_str() {
             if path.starts_with('~') {
                 // We only accept `~` (alias to the home directory) and `~/path/to/something`.
-                // If there is something following the `~` that is not `/`, we bail out.
+                // If there is something following the `~` that is not `/`, we bail.
                 if path.len() > 1 && !path.starts_with("~/") {
-                    bail!("Path syntax `{}` is not supported.", uri);
+                    bail!("Failed to normalize URI: tilde expansion is only partially supported.");
                 }
 
                 let home_dir_path = home::home_dir()
-                    .context("Failed to resolve home directory.")?
+                    .context("Failed normalize URI: could not resolve home directory.")?
                     .to_string_lossy()
                     .to_string();
 
@@ -164,8 +166,8 @@ impl Uri {
             }
             if Path::new(&path).is_relative() {
                 let current_dir = env::current_dir().context(
-                    "Failed to resolve current working directory: dir does not exist or \
-                     insufficient permissions.",
+                    "Failed to normalize URI: could not resolve current working directory. The \
+                     directory does not exist or insufficient permissions.",
                 )?;
                 path = current_dir.join(path).to_string_lossy().to_string();
             }
@@ -339,6 +341,14 @@ impl Display for Uri {
     }
 }
 
+impl FromStr for Uri {
+    type Err = anyhow::Error;
+
+    fn from_str(uri_str: &str) -> anyhow::Result<Self> {
+        Uri::try_new(uri_str)
+    }
+}
+
 impl PartialEq<&str> for Uri {
     fn eq(&self, other: &&str) -> bool {
         &self.uri == other
@@ -348,6 +358,15 @@ impl PartialEq<&str> for Uri {
 impl PartialEq<String> for Uri {
     fn eq(&self, other: &String) -> bool {
         &self.uri == other
+    }
+}
+
+impl<'de> Deserialize<'de> for Uri {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: serde::Deserializer<'de> {
+        let uri_str: String = Deserialize::deserialize(deserializer)?;
+        let uri = Uri::try_new(&uri_str).map_err(D::Error::custom)?;
+        Ok(uri)
     }
 }
 
@@ -437,7 +456,7 @@ mod tests {
         );
         assert_eq!(
             Uri::try_new("~anything/bar").unwrap_err().to_string(),
-            "Path syntax `~anything/bar` is not supported."
+            "Failed to normalize URI: tilde expansion is only partially supported."
         );
         assert_eq!(
             Uri::try_new("~/.").unwrap(),

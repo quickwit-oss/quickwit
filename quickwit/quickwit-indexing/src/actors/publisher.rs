@@ -134,6 +134,7 @@ impl Handler<SplitsUpdate> for Publisher {
             replaced_split_ids,
             checkpoint_delta_opt,
             publish_lock,
+            merge_operation: _,
             parent_span: _,
         } = split_update;
 
@@ -252,6 +253,7 @@ mod tests {
                     source_delta: SourceCheckpointDelta::from(1..3),
                 }),
                 publish_lock: PublishLock::default(),
+                merge_operation: None,
                 parent_span: tracing::Span::none(),
             })
             .await
@@ -312,6 +314,7 @@ mod tests {
             replaced_split_ids: vec!["split1".to_string(), "split2".to_string()],
             checkpoint_delta_opt: None,
             publish_lock: PublishLock::default(),
+            merge_operation: None,
             parent_span: Span::none(),
         };
         assert!(publisher_mailbox
@@ -351,6 +354,7 @@ mod tests {
                 replaced_split_ids: Vec::new(),
                 checkpoint_delta_opt: None,
                 publish_lock,
+                merge_operation: None,
                 parent_span: Span::none(),
             })
             .await

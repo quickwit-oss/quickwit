@@ -32,13 +32,14 @@ use tokio::sync::{oneshot, watch};
 use tracing::{debug, error};
 
 use crate::actor_state::{ActorState, AtomicState};
-use crate::progress::{Progress, ProtectedZoneGuard};
 use crate::registry::ActorRegistry;
 use crate::scheduler::{Callback, ScheduleEvent, Scheduler};
 use crate::spawn_builder::SpawnBuilder;
 #[cfg(any(test, feature = "testsuite"))]
 use crate::Universe;
-use crate::{AskError, Command, KillSwitch, Mailbox, QueueCapacity, SendError};
+use crate::{
+    AskError, Command, KillSwitch, Mailbox, Progress, ProtectedZoneGuard, QueueCapacity, SendError,
+};
 
 /// The actor exit status represents the outcome of the execution of an actor,
 /// after the end of the execution.
