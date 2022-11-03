@@ -61,7 +61,7 @@ const NUM_STALE_SPLITS_TO_FETCH: usize = 1000;
 ///      there are more than `N` immature stale splits, the planner will plan no operations.
 ///      However, this is mitigated by the fact that a merge policy should consider "old split" as
 ///      mature and an index should not have many immature splits.
-///      See tracked issue https://github.com/quickwit-oss/quickwit/issues/2147
+///      See tracked issue <https://github.com/quickwit-oss/quickwit/issues/2147>.
 /// 3. If there is no stale splits, stop.
 /// 4. If there are stale splits, for each split, do:
 ///    - Get the list of delete queries to apply to this split.
