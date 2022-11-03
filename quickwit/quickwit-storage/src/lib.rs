@@ -91,6 +91,21 @@ pub async fn load_file(uri: &Uri) -> anyhow::Result<OwnedBytes> {
     Ok(bytes)
 }
 
+#[cfg(any(test, feature = "testsuite"))]
+mod for_test {
+    use std::sync::Arc;
+
+    use crate::{RamStorage, Storage};
+
+    /// Returns a storage backed by an "in-memory file" for testing.
+    pub fn storage_for_test() -> Arc<dyn Storage> {
+        Arc::new(RamStorage::default())
+    }
+}
+
+#[cfg(any(test, feature = "testsuite"))]
+pub use for_test::storage_for_test;
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
