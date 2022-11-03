@@ -340,16 +340,6 @@ impl<'a> ListSplitsQuery<'a> {
     pub fn with_tags_filter(&mut self, tags: TagFilterAst) {
         self.tags = Some(tags);
     }
-
-    /// Returns if the filter has no additional constraints set and is
-    /// just a filter by `index_id`.
-    pub fn is_default(&self) -> bool {
-        self.limit.is_none()
-            && self.offset.is_none()
-            && self.equality_filters.is_unbounded()
-            && self.split_states.is_empty()
-            && self.tags.is_none()
-    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -414,13 +404,6 @@ macro_rules! define_equality_filters {
         paste::paste! {
             #[allow(unused)]
             impl $name {
-                fn is_unbounded(&self) -> bool {
-                    true
-                    $(
-                        && self.$field.is_unbounded()
-                    )*
-                }
-
                 $(
                     /// Set the field's lower bound to match values that are
                     /// *less than or equal to* the provided value.
