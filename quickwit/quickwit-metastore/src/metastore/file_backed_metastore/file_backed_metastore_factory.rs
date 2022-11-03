@@ -104,7 +104,7 @@ impl FileBackedMetastoreFactory {
 impl MetastoreFactory for FileBackedMetastoreFactory {
     async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
         let (uri_stripped, polling_interval_opt) = extract_polling_interval_from_uri(uri.as_str());
-        let uri = Uri::new(uri_stripped);
+        let uri = Uri::from_well_formed(uri_stripped);
         if let Some(metastore) = self.get_from_cache(&uri).await {
             debug!("using metastore from cache");
             return Ok(metastore);

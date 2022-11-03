@@ -20,6 +20,8 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::ops::Range;
+#[cfg(test)]
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -1076,7 +1078,7 @@ impl crate::tests::test_suite::DefaultForTest for PostgresqlMetastore {
         // too catastrophic, as it is limited by the number of concurrent
         // unit tests running (= number of test-threads).
         dotenv::dotenv().ok();
-        let uri = Uri::try_new(&std::env::var("TEST_DATABASE_URL").unwrap())
+        let uri = Uri::from_str(&std::env::var("TEST_DATABASE_URL").unwrap())
             .expect("Failed to parse test database URL.");
         PostgresqlMetastore::new(uri)
             .await

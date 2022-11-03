@@ -191,7 +191,7 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
 
     IndexMetadata {
         index_id: "my-index".to_string(),
-        index_uri: Uri::new("s3://quickwit-indexes/my-index".to_string()),
+        index_uri: Uri::from_well_formed("s3://quickwit-indexes/my-index".to_string()),
         checkpoint,
         doc_mapping,
         indexing_settings,

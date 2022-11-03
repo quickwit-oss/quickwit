@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use anyhow::{bail, Context};
 use clap::{arg, Arg, ArgMatches, Command};
@@ -171,7 +172,7 @@ impl SplitCliCommand {
     fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -226,7 +227,7 @@ impl SplitCliCommand {
     fn parse_mark_for_deletion_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -257,7 +258,7 @@ impl SplitCliCommand {
             .expect("`split` is a required arg.");
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let verbose = matches.is_present("verbose");
 
@@ -280,7 +281,7 @@ impl SplitCliCommand {
             .expect("`split` is a required arg.");
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let target_dir = matches
             .value_of("target-dir")
@@ -604,6 +605,7 @@ mod tests {
     use std::collections::BTreeSet;
     use std::ops::RangeInclusive;
     use std::path::PathBuf;
+    use std::str::FromStr;
 
     use quickwit_metastore::SplitMetadata;
     use time::macros::datetime;
@@ -691,7 +693,7 @@ mod tests {
                 config_uri,
                 index_id,
                 split_ids,
-            })) if config_uri == Uri::try_new("file:///config.yaml").unwrap()
+            })) if config_uri == Uri::from_str("file:///config.yaml").unwrap()
                 && index_id == "wikipedia"
                 && split_ids == vec!["split1".to_string(), "split2".to_string()]
         ));
