@@ -185,10 +185,16 @@ pub async fn delete_splits_with_files(
         let split_filename = quickwit_common::split_file(split.split_id());
         let split_path = Path::new(&split_filename);
 
-        paths_to_splits.insert(split_path.to_path_buf(), (split.split_id().to_string(), file_entry));
+        paths_to_splits.insert(
+            split_path.to_path_buf(),
+            (split.split_id().to_string(), file_entry),
+        );
     }
 
-    let paths = paths_to_splits.keys().map(|key| key.as_path()).collect::<Vec<&Path>>();
+    let paths = paths_to_splits
+        .keys()
+        .map(|key| key.as_path())
+        .collect::<Vec<&Path>>();
     let result = storage.bulk_delete(&paths).await;
 
     if let Some(ctx) = ctx_opt {
@@ -204,16 +210,18 @@ pub async fn delete_splits_with_files(
                 deleted_split_ids.push(split_id);
                 deleted_file_entries.push(entry);
             }
-        },
+        }
         Err(state) => {
-            let split_ids = state.failures
+            let split_ids = state
+                .failures
                 .keys()
                 .chain(state.unattempted.iter())
                 .collect::<Vec<_>>();
 
             error!(error = ?state.error, index_id = ?index_id, split_ids = ?split_ids, "Failed to delete splits.");
 
-            let successful_deletes = state.successes
+            let successful_deletes = state
+                .successes
                 .iter()
                 .filter_map(|key| paths_to_splits.remove(key));
 
