@@ -20,6 +20,7 @@
 pub mod file_backed_metastore;
 pub mod grpc_metastore;
 mod index_metadata;
+mod instrumented_metastore;
 #[cfg(feature = "postgres")]
 pub mod postgresql_metastore;
 #[cfg(feature = "postgres")]
@@ -86,10 +87,21 @@ use crate::{MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait Metastore: Send + Sync + 'static {
+    /// Returns the metastore's uri.
+    fn uri(&self) -> &Uri;
+
     /// Checks whether the metastore is available.
     async fn check_connectivity(&self) -> anyhow::Result<()>;
 
-    /// Returns whether an index exists in the metastore.
+    // Index API
+
+    /// Creates an index.
+    ///
+    /// This API creates a new index in the metastore.
+    /// An error will occur if an index that already exists in the storage is specified.
+    async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()>;
+
+    /// Returns whether the index `index_id` exists in the metastore.
     async fn index_exists(&self, index_id: &str) -> MetastoreResult<bool> {
         match self.index_metadata(index_id).await {
             Ok(_) => Ok(true),
@@ -98,21 +110,15 @@ pub trait Metastore: Send + Sync + 'static {
         }
     }
 
-    /// Creates an index.
-    ///
-    /// This API creates a new index in the metastore.
-    /// An error will occur if an index that already exists in the storage is specified.
-    async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()>;
+    /// Returns the [`IndexMetadata`] for a given index.
+    /// TODO consider merging with list_splits to remove one round-trip
+    async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata>;
 
-    /// List indexes.
+    /// Lists the indexes.
     ///
     /// This API lists the indexes stored in the metastore and returns a collection of
     /// [`IndexMetadata`].
     async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>>;
-
-    /// Returns the [`IndexMetadata`] for a given index.
-    /// TODO consider merging with list_splits to remove one round-trip
-    async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata>;
 
     /// Deletes an index.
     ///
@@ -120,6 +126,8 @@ pub trait Metastore: Send + Sync + 'static {
     /// storage. An error will occur if an index that does not exist in the storage is
     /// specified.
     async fn delete_index(&self, index_id: &str) -> MetastoreResult<()>;
+
+    // Split API
 
     /// Stages a split.
     ///
@@ -187,6 +195,8 @@ pub trait Metastore: Send + Sync + 'static {
     async fn delete_splits<'a>(&self, index_id: &str, split_ids: &[&'a str])
         -> MetastoreResult<()>;
 
+    // Source API
+
     /// Adds a new source. Fails with
     /// [`SourceAlreadyExists`](crate::MetastoreError::SourceAlreadyExists) if a source with the
     /// same ID is already defined for the index.
@@ -203,6 +213,10 @@ pub trait Metastore: Send + Sync + 'static {
         enable: bool,
     ) -> MetastoreResult<()>;
 
+    /// Resets the checkpoint of a source identified by `index_id` and `source_id`.
+    async fn reset_source_checkpoint(&self, index_id: &str, source_id: &str)
+        -> MetastoreResult<()>;
+
     /// Deletes a source. Fails with
     /// [`SourceDoesNotExist`](crate::MetastoreError::SourceDoesNotExist) if the specified source
     /// does not exist.
@@ -211,18 +225,21 @@ pub trait Metastore: Send + Sync + 'static {
     /// If the checkpoint is missing, this does not trigger an error.
     async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()>;
 
-    /// Resets the checkpoint of a source identified by `index_id` and `source_id`.
-    async fn reset_source_checkpoint(&self, index_id: &str, source_id: &str)
-        -> MetastoreResult<()>;
+    // Delete tasks API
 
-    /// Returns the metastore uri.
-    fn uri(&self) -> &Uri;
-
-    /// Gets the last delete opstamp for a given `index_id`.
-    async fn last_delete_opstamp(&self, index_id: &str) -> MetastoreResult<u64>;
-
-    /// Creates a [`DeleteTask`] from a [`DeleteQuery`].
+    /// Creates a new [`DeleteTask`] from a [`DeleteQuery`].
     async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask>;
+
+    /// Lists the [`DeleteTask`] with `delete_task.opstamp` > `opstamp_start` for a given
+    /// `index_id`.
+    async fn list_delete_tasks(
+        &self,
+        index_id: &str,
+        opstamp_start: u64,
+    ) -> MetastoreResult<Vec<DeleteTask>>;
+
+    /// Retrieves the last delete opstamp for a given `index_id`.
+    async fn last_delete_opstamp(&self, index_id: &str) -> MetastoreResult<u64>;
 
     /// Updates splits `split_metadata.delete_opstamp` to the value `delete_opstamp`.
     async fn update_splits_delete_opstamp<'a>(
@@ -231,13 +248,6 @@ pub trait Metastore: Send + Sync + 'static {
         split_ids: &[&'a str],
         delete_opstamp: u64,
     ) -> MetastoreResult<()>;
-
-    /// Lists [`DeleteTask`] with `delete_task.opstamp` > `opstamp_start` for a given `index_id`.
-    async fn list_delete_tasks(
-        &self,
-        index_id: &str,
-        opstamp_start: u64,
-    ) -> MetastoreResult<Vec<DeleteTask>>;
 
     /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
     /// These splits are called "stale" as they have an `delete_opstamp` strictly inferior

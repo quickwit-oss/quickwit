@@ -18,7 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use prometheus::{Encoder, HistogramOpts, Opts, TextEncoder};
-pub use prometheus::{Histogram, HistogramTimer, IntCounter, IntCounterVec, IntGauge, IntGaugeVec};
+pub use prometheus::{
+    Histogram, HistogramTimer, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec,
+};
 
 pub fn new_counter(name: &str, description: &str, namespace: &str) -> IntCounter {
     let counter_opts = Opts::new(name, description).namespace(namespace);
@@ -34,16 +36,30 @@ pub fn new_counter_vec(
     labels: &[&str],
 ) -> IntCounterVec {
     let counter_opts = Opts::new(name, description).namespace(namespace);
-    let counter_vec = IntCounterVec::new(counter_opts, labels).expect("Failed to create counter");
+    let counter_vec =
+        IntCounterVec::new(counter_opts, labels).expect("Failed to create counter vec");
     prometheus::register(Box::new(counter_vec.clone())).expect("Failed to register counter");
     counter_vec
 }
 
 pub fn new_histogram(name: &str, description: &str, namespace: &str) -> Histogram {
     let histogram_opts = HistogramOpts::new(name, description).namespace(namespace);
-    let histogram = Histogram::with_opts(histogram_opts).expect("Failed to create counter");
+    let histogram = Histogram::with_opts(histogram_opts).expect("Failed to create histogram");
     prometheus::register(Box::new(histogram.clone())).expect("Failed to register counter");
     histogram
+}
+
+pub fn new_histogram_vec(
+    name: &str,
+    description: &str,
+    namespace: &str,
+    labels: &[&str],
+) -> HistogramVec {
+    let histogram_opts = HistogramOpts::new(name, description).namespace(namespace);
+    let histogram_vec =
+        HistogramVec::new(histogram_opts, labels).expect("Failed to create histogram vec");
+    prometheus::register(Box::new(histogram_vec.clone())).expect("Failed to register counter");
+    histogram_vec
 }
 
 pub fn new_gauge(name: &str, description: &str, namespace: &str) -> IntGauge {
