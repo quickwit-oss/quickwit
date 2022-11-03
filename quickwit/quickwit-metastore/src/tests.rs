@@ -1637,6 +1637,24 @@ pub mod test_suite {
                 .unwrap();
 
             let mut filter = ListSplitsQuery::for_index(index_id);
+            filter.with_limit(3);
+            let splits = metastore.list_splits(filter).await.unwrap();
+            assert_eq!(
+                splits.len(),
+                3,
+                "Expected number of splits returned to match limit.",
+            );
+
+            let mut filter = ListSplitsQuery::for_index(index_id);
+            filter.with_offset(3);
+            let splits = metastore.list_splits(filter).await.unwrap();
+            assert_eq!(
+                splits.len(),
+                2,
+                "Expected 3 splits to be skipped out of the 5 provided splits.",
+            );
+
+            let mut filter = ListSplitsQuery::for_index(index_id);
             filter.with_split_state(SplitState::Staged);
             filter.with_time_range_ge(0);
             filter.with_time_range_lt(99);
