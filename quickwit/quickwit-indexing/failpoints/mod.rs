@@ -41,6 +41,7 @@ use std::time::{Duration, Instant};
 
 use fail::FailScenario;
 use quickwit_actors::{create_test_mailbox, ActorExitStatus, Universe};
+use quickwit_common::io::IoControls;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::split_file;
 use quickwit_indexing::actors::MergeExecutor;
@@ -291,8 +292,14 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         pipeline_ord: 0,
     };
     let (merge_packager_mailbox, _merge_packager_inbox) = create_test_mailbox();
-    let merge_executor =
-        MergeExecutor::new(pipeline_id, metastore, doc_mapper, merge_packager_mailbox);
+    let io_controls = IoControls::default();
+    let merge_executor = MergeExecutor::new(
+        pipeline_id,
+        metastore,
+        doc_mapper,
+        io_controls,
+        merge_packager_mailbox,
+    );
     let universe = Universe::new();
     let (merge_executor_mailbox, merge_executor_handle) =
         universe.spawn_builder().spawn(merge_executor);
