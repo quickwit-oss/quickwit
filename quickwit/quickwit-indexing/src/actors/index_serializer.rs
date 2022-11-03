@@ -19,6 +19,7 @@
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::io::IoControls;
 use quickwit_common::runtimes::RuntimeType;
 use tokio::runtime::Handle;
 use tracing::instrument;
@@ -73,14 +74,25 @@ impl Handler<IndexedSplitBatchBuilder> for IndexSerializer {
         batch_builder: IndexedSplitBatchBuilder,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        let splits: Vec<IndexedSplit> = {
-            let _protect = ctx.protect_zone();
-            batch_builder
-                .splits
-                .into_iter()
-                .map(|split_builder| split_builder.finalize())
-                .collect::<Result<_, _>>()?
-        };
+        let mut splits: Vec<IndexedSplit> = Vec::with_capacity(batch_builder.splits.len());
+        for split_builder in batch_builder.splits {
+            // TODO Consider & test removing this protect guard.
+            //
+            // In theory the controlled directory should be sufficient.
+            let _protect_guard = ctx.protect_zone();
+            if let Some(controlled_directory) = &split_builder.controlled_directory_opt {
+                let io_controls = IoControls::default()
+                    .set_progress(ctx.progress().clone())
+                    .set_kill_switch(ctx.kill_switch().clone())
+                    .set_index_and_component(
+                        &split_builder.split_attrs.pipeline_id.index_id,
+                        "index_serializer",
+                    );
+                controlled_directory.set_io_controls(io_controls);
+            }
+            let split = split_builder.finalize()?;
+            splits.push(split);
+        }
         let indexed_split_batch = IndexedSplitBatch {
             batch_parent_span: batch_builder.batch_parent_span,
             splits,

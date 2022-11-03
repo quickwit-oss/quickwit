@@ -20,7 +20,7 @@
 use std::fmt;
 use std::path::Path;
 
-use quickwit_actors::{KillSwitch, Progress};
+use quickwit_common::io::IoControls;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use tantivy::directory::MmapDirectory;
 use tantivy::IndexBuilder;
@@ -79,8 +79,7 @@ impl IndexedSplitBuilder {
         last_delete_opstamp: u64,
         scratch_directory: ScratchDirectory,
         index_builder: IndexBuilder,
-        progress: Progress,
-        kill_switch: KillSwitch,
+        io_controls: IoControls,
     ) -> anyhow::Result<Self> {
         // We avoid intermediary merge, and instead merge all segments in the packager.
         // The benefit is that we don't have to wait for potentially existing merges,
@@ -91,8 +90,9 @@ impl IndexedSplitBuilder {
             scratch_directory.named_temp_child(split_scratch_directory_prefix)?;
         let mmap_directory = MmapDirectory::open(split_scratch_directory.path())?;
         let box_mmap_directory = Box::new(mmap_directory);
-        let controlled_directory =
-            ControlledDirectory::new(box_mmap_directory, progress, kill_switch);
+
+        let controlled_directory = ControlledDirectory::new(box_mmap_directory, io_controls);
+
         let index_writer =
             index_builder.single_segment_index_writer(controlled_directory.clone(), 10_000_000)?;
         Ok(Self {

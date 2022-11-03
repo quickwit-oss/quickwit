@@ -72,6 +72,18 @@ pub struct IndexingResources {
     pub __num_threads_deprecated: IgnoredAny, // DEPRECATED
     #[serde(default = "IndexingResources::default_heap_size")]
     pub heap_size: Byte,
+    /// Sets the maximum write IO throughput for the merge pipeline,
+    /// in bytes per secs. On hardware where IO is limited, this parameter can help limiting
+    /// the impact of merges on indexing.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_merge_write_throughput: Option<Byte>,
+    /// Sets the maximum write IO throughput for the janitor, in bytes per secs.
+    /// On hardware where IO is limited, this parameter can help limiting
+    /// the impact on indexing.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_janitor_write_throughput: Option<Byte>,
 }
 
 impl PartialEq for IndexingResources {
@@ -88,8 +100,8 @@ impl IndexingResources {
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
         Self {
-            __num_threads_deprecated: IgnoredAny,
             heap_size: Byte::from_bytes(20_000_000), // 20MB
+            ..Default::default()
         }
     }
 }
@@ -97,8 +109,10 @@ impl IndexingResources {
 impl Default for IndexingResources {
     fn default() -> Self {
         Self {
-            __num_threads_deprecated: IgnoredAny,
             heap_size: Self::default_heap_size(),
+            max_merge_write_throughput: None,
+            max_janitor_write_throughput: None,
+            __num_threads_deprecated: IgnoredAny,
         }
     }
 }
@@ -646,8 +660,8 @@ mod tests {
                 assert_eq!(
                     index_config.indexing_settings.resources,
                     IndexingResources {
-                        __num_threads_deprecated: serde::de::IgnoredAny,
-                        heap_size: Byte::from_bytes(3_000_000_000)
+                        heap_size: Byte::from_bytes(3_000_000_000),
+                        ..Default::default()
                     }
                 );
                 assert_eq!(
