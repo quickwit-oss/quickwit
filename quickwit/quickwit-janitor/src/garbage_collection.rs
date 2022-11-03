@@ -193,8 +193,10 @@ pub async fn delete_splits_with_files(
     let mut deleted_split_ids = Vec::new();
     let mut failed_split_ids_to_error = Vec::new();
 
-    let mut task_results_stream = spawn_bulk_delete_tasks(MAX_CONCURRENT_STORAGE_REQUESTS, splits, storage, ctx_opt).await;
-    while let Some((split_ids, split_entries, delete_splits_res)) = task_results_stream.recv().await {
+    let mut task_results_stream =
+        spawn_bulk_delete_tasks(MAX_CONCURRENT_STORAGE_REQUESTS, splits, storage, ctx_opt).await;
+    while let Some((split_ids, split_entries, delete_splits_res)) = task_results_stream.recv().await
+    {
         if let Err(error) = delete_splits_res {
             error!(error = ?error, index_id = ?index_id, split_ids = ?split_ids, "Failed to delete split.");
             failed_split_ids_to_error.push((split_ids, error));
@@ -264,4 +266,3 @@ async fn spawn_bulk_delete_tasks(
 
     rx
 }
-

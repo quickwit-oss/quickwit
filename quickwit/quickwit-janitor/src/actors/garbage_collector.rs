@@ -229,14 +229,21 @@ mod tests {
     #[tokio::test]
     async fn test_run_garbage_collect_calls_dependencies_appropriately() {
         let mut mock_storage = MockStorage::default();
-        mock_storage.expect_bulk_delete().times(1).returning(|paths: &[&Path]| {
-            let actual: HashSet<&Path> = HashSet::from_iter(paths.iter().copied());
-            let expected: HashSet<&Path> = HashSet::from_iter([Path::new("a.split"), Path::new("b.split"), Path::new("c.split")]);
+        mock_storage
+            .expect_bulk_delete()
+            .times(1)
+            .returning(|paths: &[&Path]| {
+                let actual: HashSet<&Path> = HashSet::from_iter(paths.iter().copied());
+                let expected: HashSet<&Path> = HashSet::from_iter([
+                    Path::new("a.split"),
+                    Path::new("b.split"),
+                    Path::new("c.split"),
+                ]);
 
-            assert_eq!(actual, expected);
+                assert_eq!(actual, expected);
 
-            Ok(())
-        });
+                Ok(())
+            });
 
         let mut mock_metastore = MockMetastore::default();
         mock_metastore.expect_list_splits().times(2).returning(
