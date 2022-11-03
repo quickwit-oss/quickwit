@@ -53,20 +53,18 @@ fn truncate_bytes(bytes: &[u8]) -> &[u8] {
 }
 
 struct IoMetrics {
-    write_num_bytes_total: IntCounterVec,
+    write_bytes: IntCounterVec,
 }
 
 impl Default for IoMetrics {
     fn default() -> Self {
-        let write_num_bytes_total = new_counter_vec(
-            "write_num_bytes_total",
+        let write_bytes = new_counter_vec(
+            "write_bytes",
             "Number of bytes written by a given component.",
             "quickwit",
             &["index", "component"],
         );
-        Self {
-            write_num_bytes_total,
-        }
+        Self { write_bytes }
     }
 }
 
@@ -134,7 +132,7 @@ impl IoControls {
 
     pub fn set_index_and_component(mut self, index: &str, component: &str) -> Self {
         self.bytes_counter = IO_METRICS
-            .write_num_bytes_total
+            .write_bytes
             .with_label_values(&[index, component]);
         self
     }
@@ -225,12 +223,16 @@ impl<A: IoControlsAccess, W: AsyncWrite> ControlledWrite<A, W> {
     }
 }
 
-fn truncate_slices<'a, 'b>(bufs: &'b [IoSlice<'a>], max_len: usize) -> &'b [IoSlice<'a>] {
+/// Quirky spec: truncates the list of bufs, and keep as many leftmost elements
+/// as possible, within the constraint of not exceeding `max_len` bytes.
+///
+/// Please keep this function private
+fn quirky_truncate_slices<'a, 'b>(bufs: &'b [IoSlice<'a>], max_len: usize) -> &'b [IoSlice<'a>] {
     if bufs.is_empty() {
         return bufs;
     }
     let mut cumulated_len = bufs[0].len();
-    for (i, buf) in bufs.iter().enumerate() {
+    for (i, buf) in bufs.iter().enumerate().skip(1) {
         cumulated_len += buf.len();
         if cumulated_len > max_len {
             return &bufs[..i];
@@ -255,8 +257,11 @@ impl<A: IoControlsAccess, W: AsyncWrite> AsyncWrite for ControlledWrite<A, W> {
         cx: &mut Context<'_>,
         bufs: &[IoSlice<'_>],
     ) -> Poll<io::Result<usize>> {
+        if bufs.is_empty() {
+            return Poll::Ready(Ok(0));
+        }
         // The shadowing is on purpose.
-        let bufs = truncate_slices(bufs, MAX_NUM_BYTES_WRITTEN_AT_ONCE);
+        let bufs = quirky_truncate_slices(bufs, MAX_NUM_BYTES_WRITTEN_AT_ONCE);
         self.poll_limited(cx, |r, cx| r.poll_write_vectored(cx, bufs))
     }
 
@@ -324,7 +329,7 @@ where A: IoControlsAccess
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
+    use std::io::{IoSlice, Write};
     use std::time::Duration;
 
     use tokio::io::{sink, AsyncWriteExt};
@@ -396,5 +401,30 @@ mod tests {
         let elapsed = start.elapsed();
         assert!(elapsed <= Duration::from_millis(5));
         assert_eq!(io_controls.num_bytes(), 2_000_000u64);
+    }
+
+    #[test]
+    fn test_truncate_io_slices_one_slice_too_long_corner_case() {
+        let one_slice = IoSlice::new(&b"abcdef"[..]);
+        assert_eq!(super::quirky_truncate_slices(&[one_slice], 2).len(), 1);
+    }
+
+    #[test]
+    fn test_truncate_io_empty() {
+        assert_eq!(super::quirky_truncate_slices(&[], 2).len(), 0);
+    }
+
+    #[test]
+    fn test_truncate_io_slices() {
+        let slices = &[
+            IoSlice::new(&b"abc"[..]),
+            IoSlice::new(&b"defg"[..]),
+            IoSlice::new(&b"hi"[..]),
+        ];
+        assert_eq!(super::quirky_truncate_slices(slices, 0).len(), 1);
+        assert_eq!(super::quirky_truncate_slices(slices, 6).len(), 1);
+        assert_eq!(super::quirky_truncate_slices(slices, 7).len(), 2);
+        assert_eq!(super::quirky_truncate_slices(slices, 9).len(), 3);
+        assert_eq!(super::quirky_truncate_slices(slices, 10).len(), 3);
     }
 }
