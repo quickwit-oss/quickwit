@@ -205,8 +205,11 @@ impl Handler<RefreshMetric> for MergePlanner {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         INDEXER_METRICS
-            .ongoing_num_merge_operations_total
-            .with_label_values(&[&self.pipeline_id.index_id])
+            .ongoing_merge_operations
+            .with_label_values(&[
+                self.pipeline_id.index_id.as_str(),
+                self.pipeline_id.source_id.as_str(),
+            ])
             .set(self.ongoing_merge_operations_inventory.list().len() as i64);
         ctx.schedule_self_msg(quickwit_actors::HEARTBEAT, RefreshMetric)
             .await;
