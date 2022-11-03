@@ -39,6 +39,7 @@ use tracing::log::LevelFilter;
 use tracing::{debug, error, instrument, warn};
 
 use crate::checkpoint::IndexCheckpointDelta;
+use crate::metastore::instrumented_metastore::InstrumentedMetastore;
 use crate::metastore::postgresql_model::{self, Index, IndexIdSplitIdRow};
 use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
@@ -1053,11 +1054,14 @@ impl MetastoreFactory for PostgresqlMetastoreFactory {
             return Ok(metastore);
         }
         debug!("metastore not found in cache");
-        let metastore = PostgresqlMetastore::new(uri.clone())
+        let postgresql_metastore = PostgresqlMetastore::new(uri.clone())
             .await
             .map_err(MetastoreResolverError::FailedToOpenMetastore)?;
-        let metastore = self.cache_metastore(uri.clone(), Arc::new(metastore)).await;
-        Ok(metastore)
+        let instrumented_metastore = InstrumentedMetastore::new(Box::new(postgresql_metastore));
+        let unique_metastore_for_uri = self
+            .cache_metastore(uri.clone(), Arc::new(instrumented_metastore))
+            .await;
+        Ok(unique_metastore_for_uri)
     }
 }
 
