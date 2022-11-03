@@ -36,9 +36,6 @@ use crate::actors::GarbageCollector;
 const MAX_CONCURRENT_STORAGE_REQUESTS: usize = if cfg!(test) { 2 } else { 10 };
 
 /// The number of split delete requests to combine and issue as a single bulk request.
-///
-/// TODO: 10 is quite an arbitrary number and probably wants some tuning or
-///       to be made configurable by the user.
 const BULK_DELETE_CHUNK_SIZE: usize = 10;
 
 /// SplitDeletionError denotes error that can happen when deleting split
