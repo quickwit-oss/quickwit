@@ -65,7 +65,6 @@ pub use self::object_storage::{
 };
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};
 pub use self::split::{SplitPayload, SplitPayloadBuilder};
-pub use self::storage::BulkDeleteError;
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::storage::MockStorage;
 #[cfg(any(test, feature = "testsuite"))]
