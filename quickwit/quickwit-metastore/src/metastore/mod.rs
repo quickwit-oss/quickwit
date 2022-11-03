@@ -515,7 +515,7 @@ mod list_splits_query_tests {
     }
 
     #[test]
-    fn test_is_in_range() {
+    fn test_is_in_range_lt() {
         let mut filter = TestFilter::default();
         filter.with_age_lt(18);
 
@@ -539,6 +539,153 @@ mod list_splits_query_tests {
         assert!(
             !filter.age.is_in_range(&900),
             "Value (900) should not be within range."
+        );
+    }
+
+    #[test]
+    fn test_is_in_range_le() {
+        let mut filter = TestFilter::default();
+        filter.with_age_le(18);
+
+        assert!(
+            filter.age.is_in_range(&15),
+            "Value (15) should be within range."
+        );
+        assert!(
+            filter.age.is_in_range(&17),
+            "Value (17) should be within range."
+        );
+        assert!(
+            filter.age.is_in_range(&0),
+            "Value (0) should be within range."
+        );
+        assert!(
+            filter.age.is_in_range(&18),
+            "Value (18) should be within range."
+        );
+
+        assert!(
+            !filter.age.is_in_range(&19),
+            "Value (19) should not be within range."
+        );
+        assert!(
+            !filter.age.is_in_range(&900),
+            "Value (900) should not be within range."
+        );
+    }
+
+    #[test]
+    fn test_is_in_range_gt() {
+        let mut filter = TestFilter::default();
+        filter.with_age_gt(18);
+
+        assert!(
+            !filter.age.is_in_range(&15),
+            "Value (15) should not be within range."
+        );
+        assert!(
+            !filter.age.is_in_range(&17),
+            "Value (17) should not be within range."
+        );
+        assert!(
+            !filter.age.is_in_range(&0),
+            "Value (0) should not be within range."
+        );
+        assert!(
+            !filter.age.is_in_range(&18),
+            "Value (18) should not be within range."
+        );
+
+        assert!(
+            filter.age.is_in_range(&19),
+            "Value (19) should be within range."
+        );
+        assert!(
+            filter.age.is_in_range(&900),
+            "Value (900) should be within range."
+        );
+    }
+
+    #[test]
+    fn test_is_in_range_ge() {
+        let mut filter = TestFilter::default();
+        filter.with_age_ge(18);
+
+        assert!(
+            !filter.age.is_in_range(&15),
+            "Value (15) should not be within range."
+        );
+        assert!(
+            !filter.age.is_in_range(&17),
+            "Value (17) should not be within range."
+        );
+        assert!(
+            !filter.age.is_in_range(&0),
+            "Value (0) should not be within range."
+        );
+
+        assert!(
+            filter.age.is_in_range(&18),
+            "Value (18) should be within range."
+        );
+        assert!(
+            filter.age.is_in_range(&19),
+            "Value (19) should be within range."
+        );
+        assert!(
+            filter.age.is_in_range(&900),
+            "Value (900) should be within range."
+        );
+    }
+
+    #[test]
+    fn test_is_in_range_upper_and_lower_bounds() {
+        let mut filter = TestFilter::default();
+        filter.with_age_ge(18);
+        filter.with_age_lt(30);
+
+        assert!(
+            !filter.age.is_in_range(&17),
+            "Value (17) should not be within range."
+        );
+        assert!(
+            !filter.age.is_in_range(&30),
+            "Value (30) should not be within range."
+        );
+        assert!(
+            !filter.age.is_in_range(&31),
+            "Value (31) should not be within range."
+        );
+        assert!(
+            !filter.age.is_in_range(&900),
+            "Value (900) should not be within range."
+        );
+        
+        assert!(
+            filter.age.is_in_range(&18),
+            "Value (18) should be within range."
+        );
+        assert!(
+            filter.age.is_in_range(&29),
+            "Value (29) should be within range."
+        );
+    }
+
+    #[test]
+    fn test_is_in_range_unbounded() {
+        let mut filter = TestFilter::default();
+
+        assert!(
+            filter.age.is_in_range(&0),
+            "Value (0) should be within range."
+        );
+        assert!(
+            filter.age.is_in_range(&31),
+            "Value (31) should be within range."
+        );
+        assert!(
+            filter.age.is_in_range(&900),
+            "Value (900) should be within range."
         );
     }
 }
