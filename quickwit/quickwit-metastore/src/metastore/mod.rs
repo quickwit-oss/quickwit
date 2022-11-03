@@ -449,7 +449,6 @@ mod list_splits_query_tests {
     #[test]
     fn test_derived_setters() {
         let filter = TestFilter::default();
-        assert!(filter.is_unbounded(), "Default filter should be unbounded.");
         assert_eq!(
             filter.age.lower,
             Bound::Unbounded,
@@ -660,7 +659,7 @@ mod list_splits_query_tests {
             !filter.age.is_in_range(&900),
             "Value (900) should not be within range."
         );
-        
+
         assert!(
             filter.age.is_in_range(&18),
             "Value (18) should be within range."
@@ -673,7 +672,7 @@ mod list_splits_query_tests {
 
     #[test]
     fn test_is_in_range_unbounded() {
-        let mut filter = TestFilter::default();
+        let filter = TestFilter::default();
 
         assert!(
             filter.age.is_in_range(&0),
