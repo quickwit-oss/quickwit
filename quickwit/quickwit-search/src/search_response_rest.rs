@@ -50,7 +50,9 @@ impl TryFrom<SearchResponse> for SearchResponseRest {
     type Error = SearchError;
 
     fn try_from(search_response: SearchResponse) -> Result<Self, Self::Error> {
-        let hits_with_snippet_iter = search_response.hits.into_iter().map(|hit| {
+        let mut documents = Vec::new();
+        let mut snippet_opts = Vec::new();
+        for hit in search_response.hits.into_iter() {
             let document: JsonValue = serde_json::from_str(&hit.json).map_err(|err| {
                 SearchError::InternalError(format!(
                     "Failed to serialize document `{}` to JSON: `{}`.",
@@ -58,6 +60,8 @@ impl TryFrom<SearchResponse> for SearchResponseRest {
                     err
                 ))
             })?;
+            documents.push(document);
+
             let snippet_opt = hit
                 .snippet
                 .map(|snippet_json| {
@@ -69,16 +73,13 @@ impl TryFrom<SearchResponse> for SearchResponseRest {
                     })
                 })
                 .transpose()?;
-            Result::<_, SearchError>::Ok((document, snippet_opt))
-        });
-        let (hits, snippets) = itertools::process_results(hits_with_snippet_iter, |iter| {
-            iter.unzip::<_, _, Vec<_>, Vec<_>>()
-        })?;
+            snippet_opts.push(snippet_opt);
+        }
 
         Ok(SearchResponseRest {
             num_hits: search_response.num_hits,
-            hits,
-            snippets: snippets.into_iter().collect(),
+            hits: documents,
+            snippets: snippet_opts.into_iter().collect(),
             elapsed_time_micros: search_response.elapsed_time_micros,
             errors: search_response.errors,
             aggregations: search_response
