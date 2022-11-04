@@ -342,7 +342,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
-                query: "body:delete".to_string(),
+                query: Some("body:delete".to_string().into()),
                 search_fields: Vec::new(),
             })
             .await

@@ -1191,7 +1191,7 @@ mod tests {
         query: &str,
     ) -> Result<String, String> {
         let search_request = SearchRequest {
-            query: query.to_string(),
+            query: Some(query.to_string().into()),
             ..Default::default()
         };
         let query = doc_mapper

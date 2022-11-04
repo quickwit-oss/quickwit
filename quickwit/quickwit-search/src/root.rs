@@ -418,7 +418,7 @@ mod tests {
     async fn test_root_search_offset_out_of_bounds_1085() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
+            query: Some("test".to_string().into()),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
             end_timestamp: None,
@@ -500,7 +500,7 @@ mod tests {
     async fn test_root_search_single_split() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
+            query: Some("test".to_string().into()),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
             end_timestamp: None,
@@ -556,7 +556,7 @@ mod tests {
     async fn test_root_search_multiple_splits() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
+            query: Some("test".to_string().into()),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
             end_timestamp: None,
@@ -634,7 +634,7 @@ mod tests {
     async fn test_root_search_multiple_splits_retry_on_other_node() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
+            query: Some("test".to_string().into()),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
             end_timestamp: None,
@@ -739,7 +739,7 @@ mod tests {
     async fn test_root_search_multiple_splits_retry_on_all_nodes() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
+            query: Some("test".to_string().into()),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
             end_timestamp: None,
@@ -861,7 +861,7 @@ mod tests {
     async fn test_root_search_single_split_retry_single_node() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
+            query: Some("test".to_string().into()),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
             end_timestamp: None,
@@ -932,7 +932,7 @@ mod tests {
     async fn test_root_search_single_split_retry_single_node_fails() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
+            query: Some("test".to_string().into()),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
             end_timestamp: None,
@@ -989,7 +989,7 @@ mod tests {
     ) -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
+            query: Some("test".to_string().into()),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
             end_timestamp: None,
@@ -1070,7 +1070,7 @@ mod tests {
     ) -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
+            query: Some("test".to_string().into()),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
             end_timestamp: None,
@@ -1158,7 +1158,7 @@ mod tests {
         assert!(root_search(
             &quickwit_proto::SearchRequest {
                 index_id: "test-index".to_string(),
-                query: r#"invalid_field:"test""#.to_string(),
+                query: Some(r#"invalid_field:"test""#.to_string().into()),
                 search_fields: vec!["body".to_string()],
                 start_timestamp: None,
                 end_timestamp: None,
@@ -1176,7 +1176,7 @@ mod tests {
         assert!(root_search(
             &quickwit_proto::SearchRequest {
                 index_id: "test-index".to_string(),
-                query: "test".to_string(),
+                query: Some("test".to_string().into()),
                 search_fields: vec!["invalid_field".to_string()],
                 start_timestamp: None,
                 end_timestamp: None,
@@ -1217,7 +1217,7 @@ mod tests {
 
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
+            query: Some("test".to_string().into()),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
             end_timestamp: None,
@@ -1256,7 +1256,7 @@ mod tests {
     async fn test_root_search_invalid_request() -> anyhow::Result<()> {
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
+            query: Some("test".to_string().into()),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
             end_timestamp: None,
@@ -1289,7 +1289,7 @@ mod tests {
 
         let search_request = quickwit_proto::SearchRequest {
             index_id: "test-index".to_string(),
-            query: "test".to_string(),
+            query: Some("test".to_string().into()),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
             end_timestamp: None,

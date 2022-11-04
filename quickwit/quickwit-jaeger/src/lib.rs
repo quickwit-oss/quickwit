@@ -145,7 +145,7 @@ impl IntoSearchRequest for GetServicesRequest {
     fn into_search_req(self) -> SearchRequest {
         SearchRequest {
             index_id: TRACE_INDEX_ID.to_string(),
-            query: build_query("", "", "", HashMap::new()),
+            query: Some(build_query("", "", "", HashMap::new()).into()),
             search_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
@@ -188,7 +188,7 @@ impl IntoSearchRequest for GetOperationsRequest {
     fn into_search_req(self) -> SearchRequest {
         SearchRequest {
             index_id: TRACE_INDEX_ID.to_string(),
-            query: build_query(&self.service, &self.span_kind, "", HashMap::new()),
+            query: Some(build_query(&self.service, &self.span_kind, "", HashMap::new()).into()),
             search_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
@@ -241,7 +241,9 @@ impl IntoSearchRequest for FindTraceIDsRequest {
         let max_hits = query.num_traces as u64;
         SearchRequest {
             index_id: TRACE_INDEX_ID.to_string(),
-            query: build_query(&query.service_name, "", &query.operation_name, query.tags),
+            query: Some(
+                build_query(&query.service_name, "", &query.operation_name, query.tags).into(),
+            ),
             search_fields: Vec::new(),
             start_timestamp,
             end_timestamp,
@@ -292,7 +294,9 @@ impl IntoSearchRequest for FindTracesRequest {
         let max_hits = query.num_traces as u64;
         SearchRequest {
             index_id: TRACE_INDEX_ID.to_string(),
-            query: build_query(&query.service_name, "", &query.operation_name, query.tags),
+            query: Some(
+                build_query(&query.service_name, "", &query.operation_name, query.tags).into(),
+            ),
             search_fields: Vec::new(),
             start_timestamp,
             end_timestamp,

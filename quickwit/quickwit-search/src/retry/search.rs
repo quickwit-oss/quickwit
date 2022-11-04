@@ -67,7 +67,7 @@ mod tests {
         LeafSearchRequest {
             search_request: Some(SearchRequest {
                 index_id: "test-idx".to_string(),
-                query: "test".to_string(),
+                query: Some("test".to_string().into()),
                 search_fields: vec!["body".to_string()],
                 start_timestamp: None,
                 end_timestamp: None,

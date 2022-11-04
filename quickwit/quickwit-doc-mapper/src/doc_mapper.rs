@@ -225,7 +225,7 @@ mod tests {
         let schema = doc_mapper.schema();
         let search_request = SearchRequest {
             index_id: "quickwit-index".to_string(),
-            query: "json_field.toto.titi:hello".to_string(),
+            query: Some("json_field.toto.titi:hello".to_string().into()),
             search_fields: vec![],
             snippet_fields: vec![],
             start_timestamp: None,
@@ -262,7 +262,7 @@ mod tests {
         let schema = doc_mapper.schema();
         let search_request = SearchRequest {
             index_id: "quickwit-index".to_string(),
-            query: "text_field:hello".to_string(),
+            query: Some("text_field:hello".to_string().into()),
             search_fields: vec![],
             snippet_fields: vec![],
             start_timestamp: None,
@@ -297,7 +297,7 @@ mod tests {
         let schema = doc_mapper.schema();
         let search_request = SearchRequest {
             index_id: "quickwit-index".to_string(),
-            query: "toto.titi:hello".to_string(),
+            query: Some("toto.titi:hello".to_string().into()),
             search_fields: vec![],
             snippet_fields: vec![],
             start_timestamp: None,
@@ -332,7 +332,7 @@ mod tests {
         let schema = doc_mapper.schema();
         let search_request = SearchRequest {
             index_id: "quickwit-index".to_string(),
-            query: "toto:5".to_string(),
+            query: Some("toto:5".to_string().into()),
             search_fields: vec![],
             snippet_fields: vec![],
             start_timestamp: None,

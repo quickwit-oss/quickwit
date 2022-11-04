@@ -39,6 +39,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "DeleteQuery.end_timestamp",
             "#[serde(skip_serializing_if = \"Option::is_none\")]",
         )
+        .field_attribute("DeleteQuery.query", "#[serde(flatten)]")
+        .type_attribute(
+            "DeleteQuery.query",
+            "#[serde(into = \"crate::serde_helpers::SerializedQuery\")]",
+        )
+        .type_attribute(
+            "DeleteQuery.query",
+            "#[serde(from = \"crate::serde_helpers::SerializedQuery\")]",
+        )
+        .field_attribute(
+            "DeleteQuery.query",
+            "#[serde(deserialize_with = \"crate::serde_helpers::required_option\")]",
+        )
+        .field_attribute("SearchRequest.query", "#[serde(flatten)]")
+        .field_attribute(
+            "SearchRequest.query",
+            "#[serde(deserialize_with = \"crate::serde_helpers::required_option\")]",
+        )
         .type_attribute("OutputFormat", "#[serde(rename_all = \"snake_case\")]")
         .out_dir("src/")
         .compile_with_config(prost_config, &protos, &["protos/quickwit"])?;

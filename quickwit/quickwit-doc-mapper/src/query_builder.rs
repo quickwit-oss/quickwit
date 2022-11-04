@@ -19,6 +19,7 @@
 
 use std::collections::HashSet;
 
+use quickwit_proto::search_request::Query as SearchQuery;
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
 use tantivy::schema::{Field, FieldType, Schema};
@@ -33,38 +34,59 @@ pub(crate) fn build_query(
     request: &SearchRequest,
     default_field_names: &[String],
 ) -> Result<Box<dyn Query>, QueryParserError> {
-    let user_input_ast = tantivy_query_grammar::parse_query(&request.query)
-        .map_err(|_| TantivyQueryParserError::SyntaxError(request.query.to_string()))?;
+    let query = match &request.query {
+        Some(SearchQuery::Text(query)) => {
+            let user_input_ast = tantivy_query_grammar::parse_query(query)
+                .map_err(|_| TantivyQueryParserError::SyntaxError(query.clone()))?;
 
-    if has_range_clause(&user_input_ast) {
-        return Err(anyhow::anyhow!("Range queries are not currently allowed.").into());
-    }
+            if has_range_clause(&user_input_ast) {
+                return Err(anyhow::anyhow!("Range queries are not currently allowed.").into());
+            }
 
-    if needs_default_search_field(&user_input_ast)
-        && request.search_fields.is_empty()
-        && (default_field_names.is_empty() || default_field_names == [DYNAMIC_FIELD_NAME])
-    {
-        return Err(
-            anyhow::anyhow!("No default field declared and no field specified in query.").into(),
-        );
-    }
+            if needs_default_search_field(&user_input_ast)
+                && request.search_fields.is_empty()
+                && (default_field_names.is_empty() || default_field_names == [DYNAMIC_FIELD_NAME])
+            {
+                return Err(anyhow::anyhow!(
+                    "No default field declared and no field specified in query."
+                )
+                .into());
+            }
 
-    validate_requested_snippet_fields(&schema, request, &user_input_ast, default_field_names)?;
+            validate_requested_snippet_fields(
+                &schema,
+                request,
+                &user_input_ast,
+                default_field_names,
+            )?;
 
-    let search_fields = if request.search_fields.is_empty() {
-        resolve_fields(&schema, default_field_names)?
-    } else {
-        resolve_fields(&schema, &request.search_fields)?
+            let search_fields = if request.search_fields.is_empty() {
+                resolve_fields(&schema, default_field_names)?
+            } else {
+                resolve_fields(&schema, &request.search_fields)?
+            };
+
+            if let Some(sort_by_field) = request.sort_by_field.as_ref() {
+                validate_sort_by_field_name(sort_by_field, &schema, Some(&search_fields))?;
+            }
+
+            let mut query_parser =
+                QueryParser::new(schema, search_fields, QUICKWIT_TOKENIZER_MANAGER.clone());
+            query_parser.set_conjunction_by_default();
+            query_parser.parse_query(query)?
+        }
+        Some(SearchQuery::SetQuery(set_query)) => {
+            let _ = (&set_query.terms, &set_query.field_name);
+            todo!()
+        }
+        None => {
+            return Err(anyhow::anyhow!(
+                "Invalid request state: neither a text query nor a set query"
+            )
+            .into())
+        }
     };
 
-    if let Some(sort_by_field) = request.sort_by_field.as_ref() {
-        validate_sort_by_field_name(sort_by_field, &schema, Some(&search_fields))?;
-    }
-
-    let mut query_parser =
-        QueryParser::new(schema, search_fields, QUICKWIT_TOKENIZER_MANAGER.clone());
-    query_parser.set_conjunction_by_default();
-    let query = query_parser.parse_query(&request.query)?;
     Ok(query)
 }
 
@@ -205,7 +227,7 @@ mod test {
         let request = SearchRequest {
             aggregation_request: None,
             index_id: "test_index".to_string(),
-            query: query_str.to_string(),
+            query: Some(query_str.to_string().into()),
             search_fields,
             snippet_fields: vec![],
             start_timestamp: None,
@@ -358,7 +380,7 @@ mod test {
         let request = SearchRequest {
             aggregation_request: None,
             index_id: "test_index".to_string(),
-            query: query_str.to_string(),
+            query: Some(query_str.to_string().into()),
             search_fields,
             snippet_fields,
             start_timestamp: None,
@@ -368,8 +390,8 @@ mod test {
             sort_order: None,
             sort_by_field: None,
         };
-        let user_input_ast = tantivy_query_grammar::parse_query(&request.query)
-            .map_err(|_| QueryParserError::SyntaxError(request.query.clone()))
+        let user_input_ast = tantivy_query_grammar::parse_query(query_str)
+            .map_err(|_| QueryParserError::SyntaxError(query_str.to_owned()))
             .unwrap();
         let default_field_names =
             default_search_fields.unwrap_or_else(|| vec!["title".to_string(), "desc".to_string()]);

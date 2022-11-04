@@ -169,12 +169,26 @@ pub struct DeleteQuery {
     #[prost(int64, optional, tag="3")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_timestamp: ::core::option::Option<i64>,
-    /// / Query text. The query language is that of tantivy.
-    #[prost(string, tag="4")]
-    pub query: ::prost::alloc::string::String,
     /// / Search fields.
     #[prost(string, repeated, tag="5")]
     pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(oneof="delete_query::Query", tags="4, 6")]
+    #[serde(flatten)]
+    #[serde(deserialize_with = "crate::serde_helpers::required_option")]
+    pub query: ::core::option::Option<delete_query::Query>,
+}
+/// Nested message and enum types in `DeleteQuery`.
+pub mod delete_query {
+    #[derive(Serialize, Deserialize)]
+    #[serde(into = "crate::serde_helpers::SerializedQuery")]
+    #[serde(from = "crate::serde_helpers::SerializedQuery")]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Query {
+        #[prost(string, tag="4")]
+        Text(::prost::alloc::string::String),
+        #[prost(message, tag="6")]
+        SetQuery(super::super::quickwit_common::SetQuery),
+    }
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]

@@ -2340,7 +2340,7 @@ pub mod test_suite {
         let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
         let delete_query = DeleteQuery {
             index_id: index_id.to_string(),
-            query: "my_field:my_value".to_string(),
+            query: Some("my_field:my_value".to_string().into()),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
             search_fields: Vec::new(),
@@ -2376,7 +2376,7 @@ pub mod test_suite {
         let index_metadata_1 = IndexMetadata::for_test(index_id_1, &index_uri_1);
         let delete_query_index_1 = DeleteQuery {
             index_id: index_id_1.to_string(),
-            query: "my_field:my_value".to_string(),
+            query: Some("my_field:my_value".to_string().into()),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
             search_fields: Vec::new(),
@@ -2386,7 +2386,7 @@ pub mod test_suite {
         let index_metadata_2 = IndexMetadata::for_test(index_id_2, &index_uri_2);
         let delete_query_index_2 = DeleteQuery {
             index_id: index_id_2.to_string(),
-            query: "my_field:my_value".to_string(),
+            query: Some("my_field:my_value".to_string().into()),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
             search_fields: Vec::new(),
@@ -2435,7 +2435,7 @@ pub mod test_suite {
         let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
         let delete_query = DeleteQuery {
             index_id: index_id.to_string(),
-            query: "my_field:my_value".to_string(),
+            query: Some("my_field:my_value".to_string().into()),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
             search_fields: Vec::new(),
@@ -2463,7 +2463,7 @@ pub mod test_suite {
         let index_metadata_1 = IndexMetadata::for_test(index_id_1, &index_uri_1);
         let delete_query_index_1 = DeleteQuery {
             index_id: index_id_1.to_string(),
-            query: "my_field:my_value".to_string(),
+            query: Some("my_field:my_value".to_string().into()),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
             search_fields: Vec::new(),
@@ -2473,7 +2473,7 @@ pub mod test_suite {
         let index_metadata_2 = IndexMetadata::for_test(index_id_2, &index_uri_2);
         let delete_query_index_2 = DeleteQuery {
             index_id: index_id_2.to_string(),
-            query: "my_field:my_value".to_string(),
+            query: Some("my_field:my_value".to_string().into()),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
             search_fields: Vec::new(),

@@ -61,7 +61,7 @@ async fn test_standalone_server_no_indexer() -> anyhow::Result<()> {
     let search_result = search_client
         .root_search(SearchRequest {
             index_id: sandbox.index_id_for_test.clone(),
-            query: "*".to_string(),
+            query: Some("*".to_string().into()),
             search_fields: Vec::new(),
             snippet_fields: Vec::new(),
             start_timestamp: None,
@@ -99,7 +99,7 @@ async fn test_multi_nodes_cluster() -> anyhow::Result<()> {
     let search_result = search_client
         .root_search(SearchRequest {
             index_id: sandbox.index_id_for_test.clone(),
-            query: "*".to_string(),
+            query: Some("*".to_string().into()),
             search_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,

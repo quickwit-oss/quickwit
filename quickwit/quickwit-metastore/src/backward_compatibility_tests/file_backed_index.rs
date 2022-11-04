@@ -41,7 +41,7 @@ fn sample_file_backed_index_for_regression() -> FileBackedIndex {
             index_id: "index".to_string(),
             start_timestamp: None,
             end_timestamp: None,
-            query: "Harry Potter".to_string(),
+            query: Some("Harry Potter".to_string().into()),
             search_fields: Vec::new(),
         }),
     };
