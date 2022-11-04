@@ -45,7 +45,6 @@ chitchat = { git = "https://github.com/quickwit-oss/chitchat", rev = "cd568ba" }
 chrono = "0.4.19"
 clap = { version = "= 3.1", features = ["env"] }
 colored = "2.0.0"
-concat-idents = "1.1.4"
 console-subscriber = "0.1.0"
 criterion = { version = "0.4", features = ["async_tokio"] }
 cron = "0.11.0"
