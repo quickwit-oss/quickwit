@@ -60,7 +60,8 @@ impl Default for IoMetrics {
     fn default() -> Self {
         let write_bytes = new_counter_vec(
             "write_bytes",
-            "Number of bytes written by a given component.",
+            "Number of bytes written by a given component in [indexer, merger, deleter, \
+             split_downloader_{merge,delete}]",
             "quickwit",
             &["index", "component"],
         );
