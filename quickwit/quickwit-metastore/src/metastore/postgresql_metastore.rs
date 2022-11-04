@@ -295,7 +295,7 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
         sql.push(')');
     }
 
-    match query.equality_filters.time_range.lower {
+    match query.equality_filters.time_range.start {
         Bound::Included(v) => {
             let _ = write!(
                 sql,
@@ -313,7 +313,7 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
         Bound::Unbounded => {}
     };
 
-    match query.equality_filters.time_range.upper {
+    match query.equality_filters.time_range.end {
         Bound::Included(v) => {
             let _ = write!(
                 sql,

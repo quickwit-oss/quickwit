@@ -483,10 +483,10 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery<'_>) -> bool {
 
     let equality_filters = &query.equality_filters;
 
-    if !equality_filters.delete_opstamp.is_in_range(&split.split_metadata.delete_opstamp) {
+    if !equality_filters.delete_opstamp.contains(&split.split_metadata.delete_opstamp) {
         return false;
     }
-    if !equality_filters.update_timestamp.is_in_range(&split.update_timestamp) {
+    if !equality_filters.update_timestamp.contains(&split.update_timestamp) {
         return false;
     }
 
@@ -496,13 +496,13 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery<'_>) -> bool {
                 .time_range
                 .as_ref()
                 .map(|range| {
-                    let start_check = match &equality_filters.time_range.lower {
+                    let start_check = match &equality_filters.time_range.start {
                         Bound::Included(v) => range.end() >= v,
                         Bound::Excluded(v) => range.end() > v,
                         Bound::Unbounded => true,
                     };
 
-                    let end_check = match &equality_filters.time_range.upper {
+                    let end_check = match &equality_filters.time_range.end {
                         Bound::Included(v) => range.start() <= v,
                         Bound::Excluded(v) => range.start() < v,
                         Bound::Unbounded => true,

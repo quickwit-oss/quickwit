@@ -346,34 +346,34 @@ impl<'a> ListSplitsQuery<'a> {
 /// A range containing the upper and lower bounds to filter documents by.
 pub struct FilterRange<T> {
     /// The lower bound of the filter.
-    pub lower: Bound<T>,
+    pub start: Bound<T>,
     /// The upper bound of the filter.
-    pub upper: Bound<T>,
+    pub end: Bound<T>,
 }
 
 impl<T: PartialEq + PartialOrd> FilterRange<T> {
     /// Checks if both the upper and lower bound are `Bound::Unbounded`.
     pub fn is_unbounded(&self) -> bool {
-        self.lower == Bound::Unbounded && self.upper == Bound::Unbounded
+        self.start == Bound::Unbounded && self.end == Bound::Unbounded
     }
 
     /// Checks if the provided value lied within the upper and lower bounds
     /// of the range.
-    pub fn is_in_range(&self, right: &T) -> bool {
+    pub fn contains(&self, value: &T) -> bool {
         if self.is_unbounded() {
             return true;
         }
 
-        let lower_check = match &self.lower {
+        let lower_check = match &self.start {
             Bound::Unbounded => true,
-            Bound::Included(left) => left <= right,
-            Bound::Excluded(left) => left < right,
+            Bound::Included(left) => left <= value,
+            Bound::Excluded(left) => left < value,
         };
 
-        let upper_check = match &self.upper {
+        let upper_check = match &self.end {
             Bound::Unbounded => true,
-            Bound::Included(left) => left >= right,
-            Bound::Excluded(left) => left > right,
+            Bound::Included(left) => left >= value,
+            Bound::Excluded(left) => left > value,
         };
 
         lower_check && upper_check
@@ -385,8 +385,8 @@ impl<T: PartialEq + PartialOrd> FilterRange<T> {
 impl<T> Default for FilterRange<T> {
     fn default() -> Self {
         Self {
-            lower: Bound::Unbounded,
-            upper: Bound::Unbounded,
+            start: Bound::Unbounded,
+            end: Bound::Unbounded,
         }
     }
 }
@@ -408,25 +408,25 @@ macro_rules! define_equality_filters {
                     /// Set the field's lower bound to match values that are
                     /// *less than or equal to* the provided value.
                     pub fn [<with_ $field _le>](&mut self, v: $tp) {
-                        self.$field.upper = std::ops::Bound::Included(v);
+                        self.$field.end = std::ops::Bound::Included(v);
                     }
 
                     /// Set the field's lower bound to match values that are
                     /// *less than* the provided value.
                     pub fn [<with_ $field _lt>](&mut self, v: $tp) {
-                        self.$field.upper = std::ops::Bound::Excluded(v);
+                        self.$field.end = std::ops::Bound::Excluded(v);
                     }
 
                     /// Set the field's upper bound to match values that are
                     /// *greater than or equal to* the provided value.
                     pub fn [<with_ $field _ge>](&mut self, v: $tp) {
-                        self.$field.lower = std::ops::Bound::Included(v);
+                        self.$field.start = std::ops::Bound::Included(v);
                     }
 
                     /// Set the field's upper bound to match values that are
                     /// *greater than* the provided value.
                     pub fn [<with_ $field _gt>](&mut self, v: $tp) {
-                        self.$field.lower = std::ops::Bound::Excluded(v);
+                        self.$field.start = std::ops::Bound::Excluded(v);
                     }
                 )*
             }
@@ -450,12 +450,12 @@ mod list_splits_query_tests {
     fn test_derived_setters() {
         let filter = TestFilter::default();
         assert_eq!(
-            filter.age.lower,
+            filter.age.start,
             Bound::Unbounded,
             "Lower bound should be unbounded."
         );
         assert_eq!(
-            filter.age.upper,
+            filter.age.end,
             Bound::Unbounded,
             "Upper bound should be unbounded."
         );
@@ -463,12 +463,12 @@ mod list_splits_query_tests {
         let mut filter = TestFilter::default();
         filter.with_age_lt(18);
         assert_eq!(
-            filter.age.lower,
+            filter.age.start,
             Bound::Unbounded,
             "Lower bound should be unbounded."
         );
         assert_eq!(
-            filter.age.upper,
+            filter.age.end,
             Bound::Excluded(18),
             "Upper bound should match."
         );
@@ -476,12 +476,12 @@ mod list_splits_query_tests {
         let mut filter = TestFilter::default();
         filter.with_age_le(18);
         assert_eq!(
-            filter.age.lower,
+            filter.age.start,
             Bound::Unbounded,
             "Lower bound should be unbounded."
         );
         assert_eq!(
-            filter.age.upper,
+            filter.age.end,
             Bound::Included(18),
             "Upper bound should match."
         );
@@ -489,12 +489,12 @@ mod list_splits_query_tests {
         let mut filter = TestFilter::default();
         filter.with_age_gt(18);
         assert_eq!(
-            filter.age.lower,
+            filter.age.start,
             Bound::Excluded(18),
             "Lower bound should be unbounded."
         );
         assert_eq!(
-            filter.age.upper,
+            filter.age.end,
             Bound::Unbounded,
             "Upper bound should match."
         );
@@ -502,12 +502,12 @@ mod list_splits_query_tests {
         let mut filter = TestFilter::default();
         filter.with_age_ge(18);
         assert_eq!(
-            filter.age.lower,
+            filter.age.start,
             Bound::Included(18),
             "Lower bound should match."
         );
         assert_eq!(
-            filter.age.upper,
+            filter.age.end,
             Bound::Unbounded,
             "Upper bound should be unbounded."
         );
@@ -519,24 +519,24 @@ mod list_splits_query_tests {
         filter.with_age_lt(18);
 
         assert!(
-            filter.age.is_in_range(&15),
+            filter.age.contains(&15),
             "Value (15) should be within range."
         );
         assert!(
-            filter.age.is_in_range(&17),
+            filter.age.contains(&17),
             "Value (17) should be within range."
         );
         assert!(
-            filter.age.is_in_range(&0),
+            filter.age.contains(&0),
             "Value (0) should be within range."
         );
 
         assert!(
-            !filter.age.is_in_range(&18),
+            !filter.age.contains(&18),
             "Value (18) should not be within range."
         );
         assert!(
-            !filter.age.is_in_range(&900),
+            !filter.age.contains(&900),
             "Value (900) should not be within range."
         );
     }
@@ -547,28 +547,28 @@ mod list_splits_query_tests {
         filter.with_age_le(18);
 
         assert!(
-            filter.age.is_in_range(&15),
+            filter.age.contains(&15),
             "Value (15) should be within range."
         );
         assert!(
-            filter.age.is_in_range(&17),
+            filter.age.contains(&17),
             "Value (17) should be within range."
         );
         assert!(
-            filter.age.is_in_range(&0),
+            filter.age.contains(&0),
             "Value (0) should be within range."
         );
         assert!(
-            filter.age.is_in_range(&18),
+            filter.age.contains(&18),
             "Value (18) should be within range."
         );
 
         assert!(
-            !filter.age.is_in_range(&19),
+            !filter.age.contains(&19),
             "Value (19) should not be within range."
         );
         assert!(
-            !filter.age.is_in_range(&900),
+            !filter.age.contains(&900),
             "Value (900) should not be within range."
         );
     }
@@ -579,28 +579,28 @@ mod list_splits_query_tests {
         filter.with_age_gt(18);
 
         assert!(
-            !filter.age.is_in_range(&15),
+            !filter.age.contains(&15),
             "Value (15) should not be within range."
         );
         assert!(
-            !filter.age.is_in_range(&17),
+            !filter.age.contains(&17),
             "Value (17) should not be within range."
         );
         assert!(
-            !filter.age.is_in_range(&0),
+            !filter.age.contains(&0),
             "Value (0) should not be within range."
         );
         assert!(
-            !filter.age.is_in_range(&18),
+            !filter.age.contains(&18),
             "Value (18) should not be within range."
         );
 
         assert!(
-            filter.age.is_in_range(&19),
+            filter.age.contains(&19),
             "Value (19) should be within range."
         );
         assert!(
-            filter.age.is_in_range(&900),
+            filter.age.contains(&900),
             "Value (900) should be within range."
         );
     }
@@ -611,28 +611,28 @@ mod list_splits_query_tests {
         filter.with_age_ge(18);
 
         assert!(
-            !filter.age.is_in_range(&15),
+            !filter.age.contains(&15),
             "Value (15) should not be within range."
         );
         assert!(
-            !filter.age.is_in_range(&17),
+            !filter.age.contains(&17),
             "Value (17) should not be within range."
         );
         assert!(
-            !filter.age.is_in_range(&0),
+            !filter.age.contains(&0),
             "Value (0) should not be within range."
         );
 
         assert!(
-            filter.age.is_in_range(&18),
+            filter.age.contains(&18),
             "Value (18) should be within range."
         );
         assert!(
-            filter.age.is_in_range(&19),
+            filter.age.contains(&19),
             "Value (19) should be within range."
         );
         assert!(
-            filter.age.is_in_range(&900),
+            filter.age.contains(&900),
             "Value (900) should be within range."
         );
     }
@@ -644,28 +644,28 @@ mod list_splits_query_tests {
         filter.with_age_lt(30);
 
         assert!(
-            !filter.age.is_in_range(&17),
+            !filter.age.contains(&17),
             "Value (17) should not be within range."
         );
         assert!(
-            !filter.age.is_in_range(&30),
+            !filter.age.contains(&30),
             "Value (30) should not be within range."
         );
         assert!(
-            !filter.age.is_in_range(&31),
+            !filter.age.contains(&31),
             "Value (31) should not be within range."
         );
         assert!(
-            !filter.age.is_in_range(&900),
+            !filter.age.contains(&900),
             "Value (900) should not be within range."
         );
 
         assert!(
-            filter.age.is_in_range(&18),
+            filter.age.contains(&18),
             "Value (18) should be within range."
         );
         assert!(
-            filter.age.is_in_range(&29),
+            filter.age.contains(&29),
             "Value (29) should be within range."
         );
     }
@@ -675,15 +675,15 @@ mod list_splits_query_tests {
         let filter = TestFilter::default();
 
         assert!(
-            filter.age.is_in_range(&0),
+            filter.age.contains(&0),
             "Value (0) should be within range."
         );
         assert!(
-            filter.age.is_in_range(&31),
+            filter.age.contains(&31),
             "Value (31) should be within range."
         );
         assert!(
-            filter.age.is_in_range(&900),
+            filter.age.contains(&900),
             "Value (900) should be within range."
         );
     }

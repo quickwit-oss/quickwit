@@ -251,13 +251,13 @@ mod tests {
                         let expected_deletion_timestamp = OffsetDateTime::now_utc().unix_timestamp()
                             - DELETION_GRACE_PERIOD.as_secs() as i64;
                         assert_eq!(
-                            query.update_timestamp.upper,
+                            query.update_timestamp.end,
                             Bound::Included(expected_deletion_timestamp),
                             "Expected splits query to only select splits which have not been updated \
                             since the expected deletion timestamp.",
                         );
                         assert_eq!(
-                            query.update_timestamp.lower,
+                            query.update_timestamp.start,
                             Bound::Unbounded,
                             "Expected the lower bound to be unbounded when filtering splits.",
                         );
