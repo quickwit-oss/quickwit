@@ -430,12 +430,12 @@ mod tests {
         mock_metastore
             .expect_list_splits()
             .times(2)
-            .returning(|filter| {
-                assert_eq!(filter.split_states, vec![SplitState::Published]);
+            .returning(|query| {
+                assert_eq!(query.split_states, &[SplitState::Published]);
                 let now = OffsetDateTime::now_utc().unix_timestamp();
                 let two_hours_ago = now - (60 * 60 * 2);
                 let three_hours_ago = now - (60 * 60 * 3);
-                let splits = match filter.index {
+                let splits = match query.index {
                     "a" => vec![
                         make_split("split-1", Some(two_hours_ago), None),
                         make_split("split-2", Some(three_hours_ago), None),

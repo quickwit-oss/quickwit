@@ -242,9 +242,9 @@ mod tests {
         mock_metastore
             .expect_list_splits()
             .times(2)
-            .returning(|filter| {
-                assert_eq!(filter.index, "test-index");
-                let splits = match get_first_split_state(filter.split_states) {
+            .returning(|query| {
+                assert_eq!(query.index, "test-index");
+                let splits = match get_first_split_state(query.split_states) {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         make_splits(&["a", "b", "c"], SplitState::MarkedForDeletion)
@@ -299,9 +299,9 @@ mod tests {
         mock_metastore
             .expect_list_splits()
             .times(2)
-            .returning(|filter| {
-                assert_eq!(filter.index, "test-index");
-                let splits = match get_first_split_state(filter.split_states) {
+            .returning(|query| {
+                assert_eq!(query.index, "test-index");
+                let splits = match get_first_split_state(query.split_states) {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         make_splits(&["a", "b", "c"], SplitState::MarkedForDeletion)
@@ -490,9 +490,9 @@ mod tests {
         mock_metastore
             .expect_list_splits()
             .times(4)
-            .returning(|filter| {
-                assert!(["test-index-1", "test-index-2"].contains(&filter.index));
-                let splits = match get_first_split_state(filter.split_states) {
+            .returning(|query| {
+                assert!(["test-index-1", "test-index-2"].contains(&query.index));
+                let splits = match get_first_split_state(query.split_states) {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         make_splits(&["a", "b"], SplitState::MarkedForDeletion)
