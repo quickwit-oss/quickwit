@@ -537,7 +537,6 @@ mod tests {
         assert_eq!(counters.num_failed_gc_run_on_index, 1);
     }
 
-    #[inline]
     fn get_first_split_state(states: Vec<SplitState>) -> SplitState {
         states
             .get(0)
