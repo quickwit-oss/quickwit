@@ -473,8 +473,8 @@ impl Metastore for FileBackedMetastore {
     /// -------------------------------------------------------------------------------
     /// Read-only accessors
 
-    async fn list_splits<'a>(&self, filter: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>> {
-        self.read(filter.index, |index| index.list_splits(filter))
+    async fn list_splits<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>> {
+        self.read(filter.index, |index| index.list_splits(query))
             .await
     }
 
@@ -722,15 +722,15 @@ mod tests {
         assert!(err.is_err());
 
         // empty
-        let mut filter = ListSplitsQuery::for_index(index_id);
-        filter.with_split_state(SplitState::Published);
-        let split = metastore.list_splits(filter).await.unwrap();
+        let mut query = ListSplitsQuery::for_index(index_id);
+        query.with_split_state(SplitState::Published);
+        let split = metastore.list_splits(query).await.unwrap();
         assert!(split.is_empty());
 
         // not empty
-        let mut filter = ListSplitsQuery::for_index(index_id);
-        filter.with_split_state(SplitState::Staged);
-        let split = metastore.list_splits(filter).await.unwrap();
+        let mut query = ListSplitsQuery::for_index(index_id);
+        query.with_split_state(SplitState::Staged);
+        let split = metastore.list_splits(query).await.unwrap();
         assert!(!split.is_empty());
     }
 
@@ -889,9 +889,9 @@ mod tests {
 
         futures::future::try_join_all(handles).await.unwrap();
 
-        let mut filter = ListSplitsQuery::for_index(index_id);
-        filter.with_split_state(SplitState::Published);
-        let splits = metastore.list_splits(filter).await.unwrap();
+        let mut query = ListSplitsQuery::for_index(index_id);
+        query.with_split_state(SplitState::Published);
+        let splits = metastore.list_splits(query).await.unwrap();
 
         // Make sure that all 20 splits are in `Published` state.
         assert_eq!(splits.len(), 20);

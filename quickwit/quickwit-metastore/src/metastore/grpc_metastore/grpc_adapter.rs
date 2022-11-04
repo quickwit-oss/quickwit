@@ -145,13 +145,13 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
         request: tonic::Request<ListSplitsRequest>,
     ) -> Result<tonic::Response<ListSplitsResponse>, tonic::Status> {
         let list_splits_request = request.into_inner();
-        let filter: ListSplitsQuery<'_> = serde_json::from_str(&list_splits_request.filter_json)
+        let query: ListSplitsQuery<'_> = serde_json::from_str(&list_splits_request.filter_json)
             .map_err(|error| MetastoreError::JsonDeserializeError {
                 name: "ListSplitsQuery".to_string(),
                 message: error.to_string(),
             })?;
 
-        let splits = self.0.list_splits(filter).await?;
+        let splits = self.0.list_splits(query).await?;
         let list_splits_reply = serde_json::to_string(&splits)
             .map(|splits_serialized_json| ListSplitsResponse {
                 splits_serialized_json,

@@ -232,21 +232,21 @@ async fn mark_splits_for_deletion(
 
 async fn list_splits_helper(
     tx: &mut Transaction<'_, Postgres>,
-    filter: ListSplitsQuery<'_>,
+    query: ListSplitsQuery<'_>,
 ) -> MetastoreResult<Vec<Split>> {
     let sql_base = "SELECT * FROM splits".to_string();
-    let sql = build_query_filter(sql_base, &filter);
+    let sql = build_query_filter(sql_base, &query);
 
     let splits = sqlx::query_as::<_, postgresql_model::Split>(&sql)
-        .bind(filter.index)
+        .bind(query.index)
         .fetch_all(&mut *tx)
         .await?;
 
     // If no splits was returned, maybe the index itself does not exist
     // in the first place?
-    if splits.is_empty() && index_opt(&mut *tx, filter.index).await?.is_none() {
+    if splits.is_empty() && index_opt(&mut *tx, query.index).await?.is_none() {
         return Err(MetastoreError::IndexDoesNotExist {
-            index_id: filter.index.to_string(),
+            index_id: query.index.to_string(),
         });
     }
 
@@ -277,11 +277,11 @@ macro_rules! define_sql_filter {
     }};
 }
 
-fn build_query_filter(mut sql: String, filter: &ListSplitsQuery<'_>) -> String {
+fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
     sql.push_str(" WHERE index_id = $1");
 
-    if !filter.split_states.is_empty() {
-        let params = filter
+    if !query.split_states.is_empty() {
+        let params = query
             .split_states
             .iter()
             .map(|v| format!("'{}'", v.as_str()))
@@ -289,13 +289,13 @@ fn build_query_filter(mut sql: String, filter: &ListSplitsQuery<'_>) -> String {
         let _ = write!(sql, " AND split_state IN ({})", params);
     }
 
-    if let Some(tags) = filter.tags.as_ref() {
+    if let Some(tags) = query.tags.as_ref() {
         sql.push_str(" AND (");
         sql.push_str(&tags_filter_expression_helper(tags));
         sql.push(')');
     }
 
-    match filter.equality_filters.time_range.lower {
+    match query.equality_filters.time_range.lower {
         Bound::Included(v) => {
             let _ = write!(
                 sql,
@@ -313,7 +313,7 @@ fn build_query_filter(mut sql: String, filter: &ListSplitsQuery<'_>) -> String {
         Bound::Unbounded => {}
     };
 
-    match filter.equality_filters.time_range.upper {
+    match query.equality_filters.time_range.upper {
         Bound::Included(v) => {
             let _ = write!(
                 sql,
@@ -335,19 +335,19 @@ fn build_query_filter(mut sql: String, filter: &ListSplitsQuery<'_>) -> String {
     define_sql_filter!(
         &mut sql,
         "update_timestamp",
-        filter.equality_filters.update_timestamp
+        query.equality_filters.update_timestamp
     );
     define_sql_filter!(
         &mut sql,
         "delete_opstamp",
-        filter.equality_filters.delete_opstamp
+        query.equality_filters.delete_opstamp
     );
 
-    if let Some(limit) = filter.limit {
+    if let Some(limit) = query.limit {
         let _ = write!(sql, " LIMIT {}", limit);
     }
 
-    if let Some(offset) = filter.offset {
+    if let Some(offset) = query.offset {
         let _ = write!(sql, " OFFSET {}", offset);
     }
 
@@ -698,9 +698,9 @@ impl Metastore for PostgresqlMetastore {
     }
 
     #[instrument(skip(self))]
-    async fn list_splits<'a>(&self, filter: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>> {
+    async fn list_splits<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>> {
         run_with_tx!(self.connection_pool, tx, {
-            list_splits_helper(tx, filter).await
+            list_splits_helper(tx, query).await
         })
     }
 

@@ -316,10 +316,10 @@ impl FileBackedIndex {
     }
 
     /// Lists splits.
-    pub(crate) fn list_splits(&self, filter: ListSplitsQuery<'_>) -> MetastoreResult<Vec<Split>> {
-        let limit = filter.limit.unwrap_or(usize::MAX);
-        let offset = filter.offset.unwrap_or_default();
-        let filter_predicate = build_filter_pipeline(filter);
+    pub(crate) fn list_splits(&self, query: ListSplitsQuery<'_>) -> MetastoreResult<Vec<Split>> {
+        let limit = query.limit.unwrap_or(usize::MAX);
+        let offset = query.offset.unwrap_or_default();
+        let filter_predicate = build_filter_pipeline(query);
 
         let splits: Vec<Split> = self
             .splits

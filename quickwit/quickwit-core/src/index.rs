@@ -204,13 +204,13 @@ impl IndexService {
         }
 
         // Schedule staged and published splits for deletion.
-        let mut filter = ListSplitsQuery::for_index(index_id);
-        filter.with_split_state(SplitState::Staged);
-        let staged_splits = self.metastore.list_splits(filter).await?;
+        let mut query = ListSplitsQuery::for_index(index_id);
+        query.with_split_state(SplitState::Staged);
+        let staged_splits = self.metastore.list_splits(query).await?;
 
-        let mut filter = ListSplitsQuery::for_index(index_id);
-        filter.with_split_state(SplitState::Published);
-        let published_splits = self.metastore.list_splits(filter).await?;
+        let mut query = ListSplitsQuery::for_index(index_id);
+        query.with_split_state(SplitState::Published);
+        let published_splits = self.metastore.list_splits(query).await?;
         let split_ids = staged_splits
             .iter()
             .chain(published_splits.iter())
@@ -221,11 +221,11 @@ impl IndexService {
             .await?;
 
         // Select splits to delete
-        let mut filter = ListSplitsQuery::for_index(index_id);
-        filter.with_split_state(SplitState::MarkedForDeletion);
+        let mut query = ListSplitsQuery::for_index(index_id);
+        query.with_split_state(SplitState::MarkedForDeletion);
         let splits_to_delete = self
             .metastore
-            .list_splits(filter)
+            .list_splits(query)
             .await?
             .into_iter()
             .map(|metadata| metadata.split_metadata)

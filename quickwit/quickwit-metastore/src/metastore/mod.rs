@@ -154,14 +154,14 @@ pub trait Metastore: Send + Sync + 'static {
     /// Returns a list of splits that intersects the given `time_range`, `split_state`, and `tag`.
     /// Regardless of the time range filter, if a split has no timestamp it is always returned.
     /// An error will occur if an index that does not exist in the storage is specified.
-    async fn list_splits<'a>(&self, filter: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>>;
+    async fn list_splits<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>>;
 
     /// Lists all the splits without filtering.
     ///
     /// Returns a list of all splits currently known to the metastore regardless of their state.
     async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
-        let filter = ListSplitsQuery::for_index(index_id);
-        self.list_splits(filter).await
+        let query = ListSplitsQuery::for_index(index_id);
+        self.list_splits(query).await
     }
 
     /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
@@ -173,11 +173,11 @@ pub trait Metastore: Send + Sync + 'static {
         delete_opstamp: u64,
         num_splits: usize,
     ) -> MetastoreResult<Vec<Split>> {
-        let mut filter = ListSplitsQuery::for_index(index_id);
-        filter.with_delete_opstamp_lt(delete_opstamp);
-        filter.with_split_state(SplitState::Published);
+        let mut query = ListSplitsQuery::for_index(index_id);
+        query.with_delete_opstamp_lt(delete_opstamp);
+        query.with_split_state(SplitState::Published);
 
-        let mut splits = self.list_splits(filter).await?;
+        let mut splits = self.list_splits(query).await?;
         splits.sort_by(|split_left, split_right| {
             split_left
                 .split_metadata

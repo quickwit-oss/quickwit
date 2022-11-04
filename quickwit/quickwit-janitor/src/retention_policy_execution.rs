@@ -44,11 +44,11 @@ pub async fn run_execute_retention_policy(
     // Select published splits and filter for expiration.
     let current_date_time = OffsetDateTime::now_utc();
 
-    let mut filter = ListSplitsQuery::for_index(index_id);
-    filter.with_split_state(SplitState::Published);
+    let mut query = ListSplitsQuery::for_index(index_id);
+    query.with_split_state(SplitState::Published);
 
     let expired_splits: Vec<SplitMetadata> = ctx
-        .protect_future(metastore.list_splits(filter))
+        .protect_future(metastore.list_splits(query))
         .await?
         .into_iter()
         // TODO: possibly move this in DB query
