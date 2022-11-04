@@ -319,12 +319,11 @@ impl FileBackedIndex {
     pub(crate) fn list_splits(&self, query: ListSplitsQuery<'_>) -> MetastoreResult<Vec<Split>> {
         let limit = query.limit.unwrap_or(usize::MAX);
         let offset = query.offset.unwrap_or_default();
-        let filter_predicate = build_filter_pipeline(query);
 
         let splits: Vec<Split> = self
             .splits
             .values()
-            .filter(filter_predicate)
+            .filter(|split| split_query_predicate(split, &query))
             .skip(offset)
             .take(limit)
             .cloned()
@@ -473,44 +472,26 @@ impl Debug for Stamper {
     }
 }
 
-macro_rules! define_filter_predicate {
-    ($cmp:expr, $($attr:ident).+) => {{
-        let filter = move |split: &&Split| {
-            $cmp.is_in_range(&split.$($attr).+)
-        };
-
-        Box::new(filter)
-    }};
-}
-
-fn build_filter_pipeline(query: ListSplitsQuery<'_>) -> impl FnMut(&&Split) -> bool {
-    type Predicate = Box<dyn Fn(&&Split) -> bool>;
-    let mut filters: Vec<Predicate> = vec![];
-
-    if let Some(tags) = query.tags {
-        let filter = move |split: &&Split| split_tag_filter(split, Some(&tags));
-        filters.push(Box::new(filter));
+fn split_query_predicate(split: &&Split, query: &ListSplitsQuery<'_>) -> bool {
+    if !split_tag_filter(split, query.tags.as_ref()) {
+        return false;
     }
 
-    if !query.split_states.is_empty() {
-        let filter = move |split: &&Split| query.split_states.contains(&split.split_state);
-        filters.push(Box::new(filter));
+    if !query.split_states.is_empty() && !query.split_states.contains(&split.split_state) {
+        return false;
     }
 
-    let equality_filters = query.equality_filters;
+    let equality_filters = &query.equality_filters;
 
-    filters.push(define_filter_predicate!(
-        equality_filters.delete_opstamp,
-        split_metadata.delete_opstamp
-    ));
-    filters.push(define_filter_predicate!(
-        equality_filters.update_timestamp,
-        update_timestamp
-    ));
+    if !equality_filters.delete_opstamp.is_in_range(&split.split_metadata.delete_opstamp) {
+        return false;
+    }
+    if !equality_filters.update_timestamp.is_in_range(&split.update_timestamp) {
+        return false;
+    }
 
     if !equality_filters.time_range.is_unbounded() {
-        let filter = move |split: &&Split| {
-            split
+        let is_in_range = split
                 .split_metadata
                 .time_range
                 .as_ref()
@@ -529,18 +510,12 @@ fn build_filter_pipeline(query: ListSplitsQuery<'_>) -> impl FnMut(&&Split) -> b
 
                     start_check && end_check
                 })
-                .unwrap_or(true)
-        };
-        filters.push(Box::new(filter));
-    }
+                .unwrap_or(true);
 
-    move |split: &&Split| {
-        for predicate in filters.iter() {
-            if !(predicate)(split) {
-                return false;
-            }
+        if !is_in_range {
+            return false;
         }
-
-        true
     }
+
+    true
 }
