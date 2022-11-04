@@ -50,9 +50,9 @@ impl TryFrom<SearchResponse> for SearchResponseRest {
     type Error = SearchError;
 
     fn try_from(search_response: SearchResponse) -> Result<Self, Self::Error> {
-        let mut documents = Vec::new();
-        let mut snippet_opts = Vec::new();
-        for hit in search_response.hits.into_iter() {
+        let mut documents = Vec::with_capacity(search_response.hits.len());
+        let mut snippets = Vec::new();
+        for hit in search_response.hits {
             let document: JsonValue = serde_json::from_str(&hit.json).map_err(|err| {
                 SearchError::InternalError(format!(
                     "Failed to serialize document `{}` to JSON: `{}`.",
@@ -62,31 +62,39 @@ impl TryFrom<SearchResponse> for SearchResponseRest {
             })?;
             documents.push(document);
 
-            let snippet_opt = hit
-                .snippet
-                .map(|snippet_json| {
-                    serde_json::from_str::<JsonValue>(&snippet_json).map_err(|err| {
+            if let Some(snippet_json) = hit.snippet {
+                let snippet_opt: JsonValue =
+                    serde_json::from_str(&snippet_json).map_err(|err| {
                         SearchError::InternalError(format!(
                             "Failed to serialize snippet `{}` to JSON: `{}`.",
                             snippet_json, err
                         ))
-                    })
-                })
-                .transpose()?;
-            snippet_opts.push(snippet_opt);
+                    })?;
+                snippets.push(snippet_opt);
+            }
         }
+
+        let snippet_opt = if !snippets.is_empty() {
+            Some(snippets)
+        } else {
+            None
+        };
+
+        let aggregations_opt = if let Some(aggregation_json) = search_response.aggregation {
+            let aggregation: JsonValue = serde_json::from_str(&aggregation_json)
+                .map_err(|err| SearchError::InternalError(err.to_string()))?;
+            Some(aggregation)
+        } else {
+            None
+        };
 
         Ok(SearchResponseRest {
             num_hits: search_response.num_hits,
             hits: documents,
-            snippets: snippet_opts.into_iter().collect(),
+            snippets: snippet_opt,
             elapsed_time_micros: search_response.elapsed_time_micros,
             errors: search_response.errors,
-            aggregations: search_response
-                .aggregation
-                .map(|agg| serde_json::from_str(&agg))
-                .transpose()
-                .map_err(|err| SearchError::InternalError(err.to_string()))?,
+            aggregations: aggregations_opt,
         })
     }
 }
