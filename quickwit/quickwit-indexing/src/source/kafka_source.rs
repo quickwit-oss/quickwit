@@ -257,10 +257,7 @@ impl KafkaSource {
             params,
             events_tx.clone(),
         )?;
-        consumer
-            .subscribe(&[&topic])
-            .with_context(|| format!("Failed to subscribe to topic `{topic}`."))?;
-        let poll_loop_jh = spawn_consumer_poll_loop(consumer.clone(), events_tx);
+        let poll_loop_jh = spawn_consumer_poll_loop(consumer.clone(), topic.clone(), events_tx);
         let publish_lock = PublishLock::default();
 
         let rebalance_protocol_str = match consumer.rebalance_protocol() {
@@ -276,13 +273,10 @@ impl KafkaSource {
             rebalance_protocol=%rebalance_protocol_str,
             "Starting Kafka source."
         );
-        let state = KafkaSourceState {
-            ..Default::default()
-        };
         Ok(KafkaSource {
             ctx,
             topic,
-            state,
+            state: KafkaSourceState::default(),
             backfill_mode_enabled,
             events_rx,
             consumer,
@@ -575,9 +569,21 @@ impl Source for KafkaSource {
 // callback and the source.
 fn spawn_consumer_poll_loop(
     consumer: Arc<RdKafkaConsumer>,
+    topic: String,
     events_tx: mpsc::Sender<KafkaEvent>,
 ) -> JoinHandle<()> {
     spawn_blocking(move || {
+        // `subscribe()` returns immediately but triggers the execution of synchronous code (e.g.
+        // rebalance callback) so it must be called in a blocking task.
+        //
+        // From the librdkafka docs:
+        // `subscribe()` is an asynchronous method which returns immediately: background threads
+        // will (re)join the group, wait for group rebalance, issue any registered rebalance_cb,
+        // assign() the assigned partitions, and then start fetching messages.
+        if let Err(error) = consumer.subscribe(&[&topic]) {
+            let _ = events_tx.send(KafkaEvent::Error(anyhow!(error)));
+            return;
+        }
         while !events_tx.is_closed() {
             if let Some(message_res) = consumer.poll(Some(Duration::from_secs(1))) {
                 let event = match message_res {
@@ -585,6 +591,12 @@ fn spawn_consumer_poll_loop(
                     Err(KafkaError::PartitionEOF(partition)) => KafkaEvent::PartitionEOF(partition),
                     Err(error) => KafkaEvent::Error(anyhow!(error)),
                 };
+                // When the source experiences backpressure, this channel becomes full and the
+                // consumer might not call `poll()` for a duration that exceeds
+                // `max.poll.interval.ms`. When that happens the consumer is kicked out of the group
+                // and the source fails. This should not happen in practice with a
+                // sufficiently large value for `max.poll.interval.ms`. The defaut value is 5
+                // minutes.
                 if events_tx.blocking_send(event).is_err() {
                     break;
                 }
@@ -1448,5 +1460,17 @@ mod kafka_broker_tests {
         })
         .await
         .unwrap_err();
+    }
+
+    #[test]
+    fn test_client_config_default_max_poll_interval() {
+        // If the client config does not specify `max.poll.interval.ms`, then the default value
+        // provided by the native config will be used.
+        //
+        // This unit test will warn us if the current default value of 5 minutes changes.
+        let config = ClientConfig::new();
+        let native_config = config.create_native_config().unwrap();
+        let default_max_poll_interval_ms = native_config.get("max.poll.interval.ms").unwrap();
+        assert_eq!(default_max_poll_interval_ms, "300000");
     }
 }
