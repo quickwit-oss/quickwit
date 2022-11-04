@@ -200,12 +200,12 @@ impl Handler<Loop> for GarbageCollector {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Bound;
     use std::path::Path;
+    use time::OffsetDateTime;
 
     use quickwit_actors::Universe;
-    use quickwit_metastore::{
-        IndexMetadata, MetastoreError, MockMetastore, Split, SplitMetadata, SplitState,
-    };
+    use quickwit_metastore::{IndexMetadata, ListSplitsQuery, MetastoreError, MockMetastore, Split, SplitMetadata, SplitState};
     use quickwit_storage::MockStorage;
 
     use super::*;
@@ -242,11 +242,26 @@ mod tests {
         mock_metastore
             .expect_list_splits()
             .times(2)
-            .returning(|query| {
+            .returning(|query: ListSplitsQuery<'_>| {
                 assert_eq!(query.index, "test-index");
-                let splits = match get_first_split_state(query.split_states) {
+
+                let splits = match get_first_split_state(query.split_states.clone()) {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
+                        let expected_deletion_timestamp = OffsetDateTime::now_utc().unix_timestamp()
+                            - DELETION_GRACE_PERIOD.as_secs() as i64;
+                        assert_eq!(
+                            query.update_timestamp.upper,
+                            Bound::Included(expected_deletion_timestamp),
+                            "Expected splits query to only select splits which have not been updated \
+                            since the expected deletion timestamp.",
+                        );
+                        assert_eq!(
+                            query.update_timestamp.lower,
+                            Bound::Unbounded,
+                            "Expected the lower bound to be unbounded when filtering splits.",
+                        );
+
                         make_splits(&["a", "b", "c"], SplitState::MarkedForDeletion)
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
