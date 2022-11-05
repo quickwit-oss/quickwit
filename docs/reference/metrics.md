@@ -52,13 +52,11 @@ All metastore methods are monitored by the 3 metrics:
 
 | Namespace | Metric Name | Description | Labels | Type |
 | --------- | ----------- | ----------- | ------ | ---- |
-| `quickwit_metastore` | `{method_name}_requests_total` | Number of {method_name} requests | [`index`, `source`*] | `counter` |
-| `quickwit_metastore` | `{method_name}_errors_total` | Number of failed {method_name} requests | [`index`, `source`*] | `counter` |
-| `quickwit_metastore` | `{method_name}_duration_seconds` | Duration of {method_name} requests | [`index`, `source`*, `error`] | `histogram` |
+| `quickwit_metastore` | `requests_total` | Number of requests | [`operation`, `index`] | `counter` |
+| `quickwit_metastore` | `request_errors_total` | Number of failed requests | [`operation`, `index`] | `counter` |
+| `quickwit_metastore` | `request_duration_seconds` | Duration of requests | [`operation`, `index`, `error`] | `histogram` |
 
-*The label `source` is only present for `source` related methods.
-
-Examples of methods names: `create_index`, `delete_index`, `index_metadata`, `list_indexes_metadatas`, `delete_index`, `stage_split`, `publish_splits`, `list_splits`, `list_all_splits`... 
+Examples of operation names: `create_index`, `index_metadata`, `delete_index`, `stage_split`, `publish_splits`, `list_splits`, `add_source`, ...
 
 ## Rest API Metrics
 
