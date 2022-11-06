@@ -91,15 +91,32 @@ pub async fn load_file(uri: &Uri) -> anyhow::Result<OwnedBytes> {
     Ok(bytes)
 }
 
+#[cfg(any(test, feature = "testsuite"))]
+mod for_test {
+    use std::sync::Arc;
+
+    use crate::{RamStorage, Storage};
+
+    /// Returns a storage backed by an "in-memory file" for testing.
+    pub fn storage_for_test() -> Arc<dyn Storage> {
+        Arc::new(RamStorage::default())
+    }
+}
+
+#[cfg(any(test, feature = "testsuite"))]
+pub use for_test::storage_for_test;
+
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
 
     #[tokio::test]
     async fn test_load_file() {
         let expected_bytes = tokio::fs::read_to_string("Cargo.toml").await.unwrap();
         assert_eq!(
-            load_file(&Uri::try_new("Cargo.toml").unwrap())
+            load_file(&Uri::from_str("Cargo.toml").unwrap())
                 .await
                 .unwrap()
                 .as_slice(),

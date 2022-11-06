@@ -21,8 +21,11 @@ mod checklist;
 mod coolid;
 
 pub mod fs;
+pub mod io;
+mod kill_switch;
 pub mod metrics;
 pub mod net;
+mod progress;
 pub mod rand;
 pub mod runtimes;
 pub mod uri;
@@ -35,6 +38,8 @@ pub use checklist::{
     print_checklist, run_checklist, ChecklistError, BLUE_COLOR, GREEN_COLOR, RED_COLOR,
 };
 pub use coolid::new_coolid;
+pub use kill_switch::KillSwitch;
+pub use progress::{Progress, ProtectedZoneGuard};
 use tracing::{error, info};
 
 pub fn chunk_range(range: Range<usize>, chunk_size: usize) -> impl Iterator<Item = Range<usize>> {

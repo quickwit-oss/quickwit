@@ -161,6 +161,7 @@ fn about_text() -> String {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::str::FromStr;
     use std::time::Duration;
 
     use quickwit_cli::cli::{build_cli, CliCommand};
@@ -186,7 +187,7 @@ mod tests {
             .unwrap();
         let command = CliCommand::parse_cli_args(&matches).unwrap();
         let expected_cmd = CliCommand::Index(IndexCliCommand::Clear(ClearIndexArgs {
-            config_uri: Uri::try_new("file:///config.yaml").unwrap(),
+            config_uri: Uri::from_str("file:///config.yaml").unwrap(),
             index_id: "wikipedia".to_string(),
             yes: false,
         }));
@@ -206,7 +207,7 @@ mod tests {
             .unwrap();
         let command = CliCommand::parse_cli_args(&matches).unwrap();
         let expected_cmd = CliCommand::Index(IndexCliCommand::Clear(ClearIndexArgs {
-            config_uri: Uri::try_new("file:///config.yaml").unwrap(),
+            config_uri: Uri::from_str("file:///config.yaml").unwrap(),
             index_id: "wikipedia".to_string(),
             yes: true,
         }));
@@ -230,16 +231,15 @@ mod tests {
             "/config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
-        let expected_index_config_uri = Uri::try_new(&format!(
+        let expected_index_config_uri = Uri::from_str(&format!(
             "file://{}/index-conf.yaml",
             std::env::current_dir().unwrap().display()
         ))
         .unwrap();
         let expected_cmd = CliCommand::Index(IndexCliCommand::Create(CreateIndexArgs {
-            config_uri: Uri::try_new("file:///config.yaml").unwrap(),
+            config_uri: Uri::from_str("file:///config.yaml").unwrap(),
             index_config_uri: expected_index_config_uri.clone(),
             overwrite: false,
-            data_dir: None,
             assume_yes: false,
         }));
         assert_eq!(command, expected_cmd);
@@ -256,10 +256,9 @@ mod tests {
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         let expected_cmd = CliCommand::Index(IndexCliCommand::Create(CreateIndexArgs {
-            config_uri: Uri::try_new("file:///config.yaml").unwrap(),
+            config_uri: Uri::from_str("file:///config.yaml").unwrap(),
             index_config_uri: expected_index_config_uri,
             overwrite: true,
-            data_dir: None,
             assume_yes: false,
         }));
         assert_eq!(command, expected_cmd);
@@ -287,10 +286,9 @@ mod tests {
                     index_id,
                     input_path_opt: None,
                     overwrite: false,
-                    data_dir: None,
                     clear_cache: true,
                 })) if &index_id == "wikipedia"
-                       && config_uri == Uri::try_new("file:///config.yaml").unwrap()
+                       && config_uri == Uri::from_str("file:///config.yaml").unwrap()
         ));
 
         let app = build_cli().no_binary_name(true);
@@ -313,10 +311,9 @@ mod tests {
                     index_id,
                     input_path_opt: None,
                     overwrite: true,
-                    data_dir: None,
                     clear_cache: false
                 })) if &index_id == "wikipedia"
-                        && config_uri == Uri::try_new("file:///config.yaml").unwrap()
+                        && config_uri == Uri::from_str("file:///config.yaml").unwrap()
         ));
         Ok(())
     }
@@ -376,7 +373,7 @@ mod tests {
             "/config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
-        let _config_uri = Uri::try_new("file:///config.yaml").unwrap();
+        let _config_uri = Uri::from_str("file:///config.yaml").unwrap();
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Search(SearchIndexArgs {
@@ -390,7 +387,6 @@ mod tests {
                 start_timestamp: Some(0),
                 end_timestamp: Some(1),
                 config_uri: _config_uri,
-                data_dir: None,
                 sort_by_score: false,
             })) if &index_id == "wikipedia"
                   && query == "Barack Obama"
@@ -478,7 +474,7 @@ mod tests {
             "--dry-run",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
-        let expected_config_uri = Uri::try_new("file:///config.yaml").unwrap();
+        let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::GarbageCollect(GarbageCollectIndexArgs {
@@ -486,7 +482,6 @@ mod tests {
                 grace_period,
                 config_uri,
                 dry_run: true,
-                data_dir: None,
             })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(5 * 60) && config_uri == expected_config_uri
         ));
         Ok(())
@@ -502,8 +497,6 @@ mod tests {
             "wikipedia",
             "--source",
             "ingest-source",
-            "--pipeline-ord",
-            "1",
             "--config",
             "/config.yaml",
         ])?;
@@ -513,9 +506,8 @@ mod tests {
             CliCommand::Index(IndexCliCommand::Merge(MergeArgs {
                 index_id,
                 source_id,
-                pipeline_ord,
                 ..
-            })) if &index_id == "wikipedia" && source_id == "ingest-source" && pipeline_ord.unwrap() == 1
+            })) if &index_id == "wikipedia" && source_id == "ingest-source"
         ));
         Ok(())
     }

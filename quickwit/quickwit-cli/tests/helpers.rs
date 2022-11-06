@@ -183,12 +183,14 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
     // TODO: refactor when we have a singleton storage resolver.
     let (metastore_uri, storage) = match storage_type {
         TestStorageType::LocalFileSystem => {
-            let metastore_uri = Uri::new(format!("file://{}", indexes_dir_path.display()));
+            let metastore_uri =
+                Uri::from_well_formed(format!("file://{}", indexes_dir_path.display()));
             let storage: Arc<dyn Storage> = Arc::new(LocalFileStorage::from_uri(&metastore_uri)?);
             (metastore_uri, storage)
         }
         TestStorageType::S3 => {
-            let metastore_uri = Uri::new("s3://quickwit-integration-tests/indexes".to_string());
+            let metastore_uri =
+                Uri::from_well_formed("s3://quickwit-integration-tests/indexes".to_string());
             let storage: Arc<dyn Storage> =
                 Arc::new(S3CompatibleObjectStorage::from_uri(&metastore_uri)?);
             (metastore_uri, storage)
@@ -231,8 +233,9 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
     resource_files.insert("logs", log_docs_path);
     resource_files.insert("wiki", wikipedia_docs_path);
 
-    let config_uri = Uri::new(format!("file://{}", resource_files["config"].display()));
-    let index_config_uri = Uri::new(format!(
+    let config_uri =
+        Uri::from_well_formed(format!("file://{}", resource_files["config"].display()));
+    let index_config_uri = Uri::from_well_formed(format!(
         "file://{}",
         resource_files["index_config"].display()
     ));

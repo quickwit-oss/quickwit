@@ -23,6 +23,7 @@ mod helpers;
 
 use std::collections::HashSet;
 use std::path::Path;
+use std::str::FromStr;
 
 use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
@@ -157,7 +158,6 @@ async fn test_cmd_create_on_existing_index() {
     let args = CreateIndexArgs {
         config_uri: test_env.config_uri,
         index_config_uri: test_env.index_config_uri,
-        data_dir: None,
         overwrite: false,
         assume_yes: false,
     };
@@ -178,7 +178,6 @@ async fn test_cmd_ingest_on_non_existing_index() {
         config_uri: test_env.config_uri,
         index_id: "index-does-not-exist".to_string(),
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
-        data_dir: None,
         overwrite: false,
         clear_cache: true,
     };
@@ -203,7 +202,6 @@ async fn test_cmd_ingest_on_non_existing_file() {
         config_uri: test_env.config_uri,
         index_id: test_env.index_id,
         input_path_opt: Some(test_env.data_dir_path.join("file-does-not-exist.json")),
-        data_dir: None,
         overwrite: false,
         clear_cache: true,
     };
@@ -228,7 +226,6 @@ async fn test_ingest_docs_cli_keep_cache() {
         config_uri: test_env.config_uri,
         index_id,
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
-        data_dir: None,
         overwrite: false,
         clear_cache: false,
     };
@@ -249,7 +246,6 @@ async fn test_ingest_docs_cli() {
         config_uri: test_env.config_uri.clone(),
         index_id: index_id.clone(),
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
-        data_dir: None,
         overwrite: false,
         clear_cache: true,
     };
@@ -307,8 +303,8 @@ async fn test_cmd_search_aggregation() -> Result<()> {
         snippet_fields: None,
         start_timestamp: None,
         end_timestamp: None,
-        config_uri: Uri::try_new(&test_env.resource_files["config"].display().to_string()).unwrap(),
-        data_dir: None,
+        config_uri: Uri::from_str(&test_env.resource_files["config"].display().to_string())
+            .unwrap(),
         sort_by_score: false,
     };
     let search_response = search_index(args).await?;
@@ -382,8 +378,8 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
         snippet_fields: Some(vec!["event".to_string()]),
         start_timestamp: None,
         end_timestamp: None,
-        config_uri: Uri::try_new(&test_env.resource_files["config"].display().to_string()).unwrap(),
-        data_dir: None,
+        config_uri: Uri::from_str(&test_env.resource_files["config"].display().to_string())
+            .unwrap(),
         sort_by_score: false,
     };
     let search_response = search_index(args).await?;
@@ -419,7 +415,6 @@ async fn test_search_index_cli() {
         snippet_fields: None,
         start_timestamp: None,
         end_timestamp: None,
-        data_dir: None,
         sort_by_score: false,
     };
 
@@ -466,7 +461,6 @@ async fn test_delete_index_cli_dry_run() {
         config_uri: test_env.config_uri.clone(),
         index_id: index_id.clone(),
         dry_run,
-        data_dir: None,
     };
 
     let metastore = quickwit_metastore_uri_resolver()
@@ -512,7 +506,6 @@ async fn test_delete_index_cli() {
         config_uri: test_env.config_uri.clone(),
         index_id: index_id.clone(),
         dry_run: false,
-        data_dir: None,
     };
 
     delete_index_cli(args).await.unwrap();
@@ -560,7 +553,6 @@ async fn test_garbage_collect_cli_no_grace() {
         index_id: index_id.clone(),
         grace_period: Duration::from_secs(3600),
         dry_run,
-        data_dir: None,
     };
 
     let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
@@ -617,7 +609,6 @@ async fn test_garbage_collect_cli_no_grace() {
         config_uri: test_env.config_uri.clone(),
         index_id,
         dry_run: false,
-        data_dir: None,
     };
 
     delete_index_cli(args).await.unwrap();
@@ -885,7 +876,6 @@ async fn test_all_with_s3_localstack_cli() {
         snippet_fields: None,
         start_timestamp: None,
         end_timestamp: None,
-        data_dir: None,
         sort_by_score: false,
     };
 
@@ -896,17 +886,11 @@ async fn test_all_with_s3_localstack_cli() {
     // TODO: ditto.
     let run_cli_command = RunCliCommand {
         config_uri: test_env.config_uri.clone(),
-        data_dir_path: None,
         services: Some(HashSet::from([
             QuickwitService::Searcher,
             QuickwitService::Metastore,
         ])),
-        metastore_uri: None,
-        cluster_id: None,
-        node_id: None,
-        peer_seeds: None,
     };
-
     let service_task = tokio::spawn(async move { run_cli_command.execute().await.unwrap() });
 
     wait_port_ready(test_env.rest_listen_port).await.unwrap();
@@ -931,7 +915,6 @@ async fn test_all_with_s3_localstack_cli() {
         config_uri: test_env.config_uri.clone(),
         index_id: index_id.clone(),
         dry_run: false,
-        data_dir: None,
     };
 
     delete_index_cli(args).await.unwrap();

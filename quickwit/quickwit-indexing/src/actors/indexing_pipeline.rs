@@ -23,9 +23,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, KillSwitch,
-    Mailbox, QueueCapacity, Supervisable,
+    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox,
+    QueueCapacity, Supervisable,
 };
+use quickwit_common::KillSwitch;
 use quickwit_config::{IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{Metastore, MetastoreError};
@@ -289,6 +290,7 @@ impl IndexingPipeline {
 
         let doc_processor = DocProcessor::new(
             self.params.pipeline_id.index_id.clone(),
+            self.params.pipeline_id.source_id.clone(),
             self.params.doc_mapper.clone(),
             indexer_mailbox,
         );

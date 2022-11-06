@@ -34,8 +34,8 @@ use quickwit_doc_mapper::{
     DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, ModeType,
     QuickwitJsonOptions, SortBy, SortByConfig, SortOrder,
 };
-use serde::de::{Error, IgnoredAny};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::de::IgnoredAny;
+use serde::{Deserialize, Serialize};
 
 use crate::merge_policy_config::{MergePolicyConfig, StableLogMergePolicyConfig};
 use crate::source_config::SourceConfig;
@@ -72,6 +72,18 @@ pub struct IndexingResources {
     pub __num_threads_deprecated: IgnoredAny, // DEPRECATED
     #[serde(default = "IndexingResources::default_heap_size")]
     pub heap_size: Byte,
+    /// Sets the maximum write IO throughput for the merge pipeline,
+    /// in bytes per secs. On hardware where IO is limited, this parameter can help limiting
+    /// the impact of merges on indexing.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_merge_write_throughput: Option<Byte>,
+    /// Sets the maximum write IO throughput for the janitor, in bytes per secs.
+    /// On hardware where IO is limited, this parameter can help limiting
+    /// the impact on indexing.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_janitor_write_throughput: Option<Byte>,
 }
 
 impl PartialEq for IndexingResources {
@@ -88,8 +100,8 @@ impl IndexingResources {
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
         Self {
-            __num_threads_deprecated: IgnoredAny,
             heap_size: Byte::from_bytes(20_000_000), // 20MB
+            ..Default::default()
         }
     }
 }
@@ -97,8 +109,10 @@ impl IndexingResources {
 impl Default for IndexingResources {
     fn default() -> Self {
         Self {
-            __num_threads_deprecated: IgnoredAny,
             heap_size: Self::default_heap_size(),
+            max_merge_write_throughput: None,
+            max_janitor_write_throughput: None,
+            __num_threads_deprecated: IgnoredAny,
         }
     }
 }
@@ -433,7 +447,6 @@ pub struct IndexConfig {
     pub version: usize,
     pub index_id: String,
     #[serde(default)]
-    #[serde(deserialize_with = "deser_and_validate_uri")]
     pub index_uri: Option<Uri>,
     pub doc_mapping: DocMapping,
     #[serde(default)]
@@ -561,16 +574,6 @@ pub fn build_doc_mapper(
     Ok(Arc::new(builder.try_build()?))
 }
 
-/// Deserializes and validates a [`Uri`].
-fn deser_and_validate_uri<'de, D>(deserializer: D) -> Result<Option<Uri>, D::Error>
-where D: Deserializer<'de> {
-    let uri_opt: Option<String> = Deserialize::deserialize(deserializer)?;
-    uri_opt
-        .map(|uri| Uri::try_new(&uri))
-        .transpose()
-        .map_err(D::Error::custom)
-}
-
 #[cfg(test)]
 mod tests {
 
@@ -598,7 +601,7 @@ mod tests {
                 ));
                 let file = std::fs::read_to_string(&index_config_filepath).unwrap();
                 let index_config = IndexConfig::load(
-                    &Uri::try_new(&index_config_filepath).unwrap(),
+                    &Uri::from_str(&index_config_filepath).unwrap(),
                     file.as_bytes(),
                 )
                 .await?;
@@ -657,8 +660,8 @@ mod tests {
                 assert_eq!(
                     index_config.indexing_settings.resources,
                     IndexingResources {
-                        __num_threads_deprecated: serde::de::IgnoredAny,
-                        heap_size: Byte::from_bytes(3_000_000_000)
+                        heap_size: Byte::from_bytes(3_000_000_000),
+                        ..Default::default()
                     }
                 );
                 assert_eq!(
@@ -697,7 +700,7 @@ mod tests {
             let file_content = std::fs::read_to_string(&index_config_filepath).unwrap();
 
             let index_config_uri =
-                Uri::try_new(&get_index_config_filepath("minimal-hdfs-logs.yaml")).unwrap();
+                Uri::from_str(&get_index_config_filepath("minimal-hdfs-logs.yaml")).unwrap();
             let index_config = IndexConfig::from_uri(&index_config_uri, file_content.as_bytes())
                 .await
                 .unwrap();
@@ -724,7 +727,7 @@ mod tests {
             let file_content = std::fs::read_to_string(&index_config_filepath).unwrap();
 
             let index_config_uri =
-                Uri::try_new(&get_index_config_filepath("partial-hdfs-logs.yaml")).unwrap();
+                Uri::from_str(&get_index_config_filepath("partial-hdfs-logs.yaml")).unwrap();
             let index_config = IndexConfig::from_uri(&index_config_uri, file_content.as_bytes())
                 .await
                 .unwrap();
@@ -766,7 +769,7 @@ mod tests {
     async fn test_validate() {
         let index_config_filepath = get_index_config_filepath("minimal-hdfs-logs.yaml");
         let file_content = std::fs::read_to_string(&index_config_filepath).unwrap();
-        let index_config_uri = Uri::try_new(&index_config_filepath).unwrap();
+        let index_config_uri = Uri::from_str(&index_config_filepath).unwrap();
         let index_config = IndexConfig::from_uri(&index_config_uri, file_content.as_bytes())
             .await
             .unwrap();
@@ -829,7 +832,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "URI is empty.")]
+    #[should_panic(expected = "empty URI")]
     fn test_config_validates_uris() {
         let config_yaml = r#"
             version: 0

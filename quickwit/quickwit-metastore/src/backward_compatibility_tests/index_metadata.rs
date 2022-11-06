@@ -159,8 +159,8 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
     };
     let merge_policy = MergePolicyConfig::StableLog(stable_log_config);
     let indexing_resources = IndexingResources {
-        __num_threads_deprecated: serde::de::IgnoredAny,
         heap_size: Byte::from_bytes(3),
+        ..Default::default()
     };
     let indexing_settings = IndexingSettings {
         timestamp_field: Some("timestamp".to_string()),
@@ -191,7 +191,7 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
 
     IndexMetadata {
         index_id: "my-index".to_string(),
-        index_uri: Uri::new("s3://quickwit-indexes/my-index".to_string()),
+        index_uri: Uri::from_well_formed("s3://quickwit-indexes/my-index".to_string()),
         checkpoint,
         doc_mapping,
         indexing_settings,
