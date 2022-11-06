@@ -28,10 +28,10 @@ use anyhow::bail;
 use assert_cmd::cargo::cargo_bin;
 use assert_cmd::Command;
 use predicates::str;
-use quickwit_common::net::find_available_tcp_port;
 use quickwit_common::uri::Uri;
 use quickwit_metastore::{FileBackedMetastore, MetastoreResult};
 use quickwit_storage::{LocalFileStorage, S3CompatibleObjectStorage, Storage};
+use rand::{thread_rng, Rng};
 use tempfile::{tempdir, TempDir};
 
 const PACKAGE_BIN_NAME: &str = "quickwit";
@@ -77,6 +77,7 @@ const DEFAULT_QUICKWIT_CONFIG: &str = r#"
     metastore_uri: #metastore_uri
     data_dir: #data_dir
     rest_listen_port: #rest_listen_port
+    grpc_listen_port: #grpc_listen_port
 "#;
 
 const LOGS_JSON_DOCS: &str = r#"{"event": "foo", "level": "info", "ts": 2, "device": "rpi", "city": "tokio"}
@@ -134,6 +135,12 @@ pub async fn wait_port_ready(port: u16) -> anyhow::Result<()> {
             Ok(())
         }
     }
+}
+
+/// Generate a random port number from dynamic port range.
+pub(crate) fn get_random_port() -> u16 {
+    let mut rng = thread_rng();
+    rng.gen_range(49152..65535)
 }
 
 /// A struct to hold few info about the test environement.
@@ -212,14 +219,16 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
             .replace("index_uri: #index_uri\n", ""),
     )?;
     let quickwit_config_path = resources_dir_path.join("config.yaml");
-    let rest_listen_port = find_available_tcp_port()?;
+    let rest_listen_port = get_random_port();
+    let grpc_listen_port = get_random_port();
     fs::write(
         &quickwit_config_path,
         // A poor's man templating engine reloaded...
         DEFAULT_QUICKWIT_CONFIG
             .replace("#metastore_uri", metastore_uri.as_str())
             .replace("#data_dir", data_dir_path.to_str().unwrap())
-            .replace("#rest_listen_port", &rest_listen_port.to_string()),
+            .replace("#rest_listen_port", &rest_listen_port.to_string())
+            .replace("#grpc_listen_port", &grpc_listen_port.to_string()),
     )?;
     let log_docs_path = resources_dir_path.join("logs.json");
     fs::write(&log_docs_path, LOGS_JSON_DOCS)?;
