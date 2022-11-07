@@ -113,8 +113,8 @@ pub async fn run_garbage_collect(
             .collect();
 
     if dry_run {
-        let query = ListSplitsQuery::for_index(index_id)
-            .with_split_state(SplitState::MarkedForDeletion);
+        let query =
+            ListSplitsQuery::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
 
         let mut splits_marked_for_deletion = protect_future(ctx_opt, metastore.list_splits(query))
             .await?

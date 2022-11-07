@@ -487,10 +487,7 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery<'_>) -> bool {
     {
         return false;
     }
-    if !query
-        .update_timestamp
-        .contains(&split.update_timestamp)
-    {
+    if !query.update_timestamp.contains(&split.update_timestamp) {
         return false;
     }
 
@@ -578,12 +575,11 @@ mod tests {
     fn test_single_filter_behaviour() {
         let [split_1, split_2, split_3] = make_splits();
 
-        let query = ListSplitsQuery::for_index("test-index")
-            .with_split_state(SplitState::Staged);
+        let query = ListSplitsQuery::for_index("test-index").with_split_state(SplitState::Staged);
         assert!(split_query_predicate(&&split_1, &query));
 
-        let query = ListSplitsQuery::for_index("test-index")
-            .with_split_state(SplitState::Published);
+        let query =
+            ListSplitsQuery::for_index("test-index").with_split_state(SplitState::Published);
         assert!(!split_query_predicate(&&split_2, &query));
 
         let query = ListSplitsQuery::for_index("test-index")
@@ -591,35 +587,30 @@ mod tests {
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index("test-index")
-            .with_update_timestamp_lt(51);
+        let query = ListSplitsQuery::for_index("test-index").with_update_timestamp_lt(51);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index("test-index")
-            .with_delete_opstamp_ge(4);
+        let query = ListSplitsQuery::for_index("test-index").with_delete_opstamp_ge(4);
         assert!(split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index("test-index")
-            .with_time_range_gt(45);
+        let query = ListSplitsQuery::for_index("test-index").with_time_range_gt(45);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index("test-index")
-            .with_time_range_lt(45);
+        let query = ListSplitsQuery::for_index("test-index").with_time_range_lt(45);
         assert!(split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index("test-index")
-            .with_tags_filter(TagFilterAst::Tag {
-                is_present: false,
-                tag: "tag-2".to_string(),
-            });
+        let query = ListSplitsQuery::for_index("test-index").with_tags_filter(TagFilterAst::Tag {
+            is_present: false,
+            tag: "tag-2".to_string(),
+        });
         assert!(split_query_predicate(&&split_1, &query));
         assert!(!split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));

@@ -306,7 +306,7 @@ impl<'a> ListSplitsQuery<'a> {
             tags: None,
             time_range: Default::default(),
             delete_opstamp: Default::default(),
-            update_timestamp: Default::default()
+            update_timestamp: Default::default(),
         }
     }
 
@@ -474,7 +474,6 @@ impl<T> Default for FilterRange<T> {
     }
 }
 
-
 #[cfg(test)]
 mod list_splits_query_tests {
     use super::*;
@@ -492,7 +491,6 @@ mod list_splits_query_tests {
         assert!(filter.contains(&50));
         assert!(filter.contains(&51));
         assert!(!filter.contains(&0));
-
 
         let mut filter = FilterRange::default();
         filter.start = Bound::Included(50);

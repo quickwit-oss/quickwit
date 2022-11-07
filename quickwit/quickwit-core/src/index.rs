@@ -216,8 +216,8 @@ impl IndexService {
             .await?;
 
         // Select splits to delete
-        let query = ListSplitsQuery::for_index(index_id)
-            .with_split_state(SplitState::MarkedForDeletion);
+        let query =
+            ListSplitsQuery::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
         let splits_to_delete = self
             .metastore
             .list_splits(query)
