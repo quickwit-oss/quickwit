@@ -198,8 +198,8 @@ impl MergePipeline {
             merge_policy=?self.params.merge_policy,
             "Spawning merge pipeline.",
         );
-        let mut query = ListSplitsQuery::for_index(&self.params.pipeline_id.index_id);
-        query.with_split_state(SplitState::Published);
+        let query = ListSplitsQuery::for_index(&self.params.pipeline_id.index_id)
+            .with_split_state(SplitState::Published);
         let published_splits = self
             .params
             .metastore

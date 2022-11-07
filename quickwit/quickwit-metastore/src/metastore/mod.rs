@@ -25,7 +25,7 @@ pub mod postgresql_metastore;
 #[cfg(feature = "postgres")]
 mod postgresql_model;
 
-use std::ops::{Bound, Deref, DerefMut};
+use std::ops::Bound;
 
 use async_trait::async_trait;
 pub use index_metadata::IndexMetadata;
@@ -173,9 +173,9 @@ pub trait Metastore: Send + Sync + 'static {
         delete_opstamp: u64,
         num_splits: usize,
     ) -> MetastoreResult<Vec<Split>> {
-        let mut query = ListSplitsQuery::for_index(index_id);
-        query.with_delete_opstamp_lt(delete_opstamp);
-        query.with_split_state(SplitState::Published);
+        let query = ListSplitsQuery::for_index(index_id)
+            .with_delete_opstamp_lt(delete_opstamp)
+            .with_split_state(SplitState::Published);
 
         let mut splits = self.list_splits(query).await?;
         splits.sort_by(|split_left, split_right| {
@@ -284,22 +284,14 @@ pub struct ListSplitsQuery<'a> {
     /// A specific set of tag(s) to filter by.
     pub tags: Option<TagFilterAst>,
 
-    /// A set filters which can have the common set of equality operators. (`le`, `lt`, `ge`, `gt`)
-    pub equality_filters: EqualityFieldFilters,
-}
+    /// The time range to filter by.
+    pub time_range: FilterRange<i64>,
 
-impl<'a> Deref for ListSplitsQuery<'a> {
-    type Target = EqualityFieldFilters;
+    /// The delete opstamp range to filter by.
+    pub delete_opstamp: FilterRange<u64>,
 
-    fn deref(&self) -> &Self::Target {
-        &self.equality_filters
-    }
-}
-
-impl<'a> DerefMut for ListSplitsQuery<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.equality_filters
-    }
+    /// The update timestamp range to filter by.
+    pub update_timestamp: FilterRange<i64>,
 }
 
 #[allow(unused_attributes)]
@@ -312,33 +304,124 @@ impl<'a> ListSplitsQuery<'a> {
             offset: None,
             split_states: vec![],
             tags: None,
-            equality_filters: EqualityFieldFilters::default(),
+            time_range: Default::default(),
+            delete_opstamp: Default::default(),
+            update_timestamp: Default::default()
         }
     }
 
     /// Sets the maximum number of splits to retrieve.
-    pub fn with_limit(&mut self, n: usize) {
+    pub fn with_limit(mut self, n: usize) -> Self {
         self.limit = Some(n);
+        self
     }
 
     /// Sets the number of splits to skip.
-    pub fn with_offset(&mut self, n: usize) {
+    pub fn with_offset(mut self, n: usize) -> Self {
         self.offset = Some(n);
+        self
     }
 
     /// Select splits which have the given split state.
-    pub fn with_split_state(&mut self, state: SplitState) {
+    pub fn with_split_state(mut self, state: SplitState) -> Self {
         self.split_states.push(state);
+        self
     }
 
     /// Select splits which have the any of the following split state.
-    pub fn with_split_states(&mut self, states: impl AsRef<[SplitState]>) {
+    pub fn with_split_states(mut self, states: impl AsRef<[SplitState]>) -> Self {
         self.split_states.extend_from_slice(states.as_ref());
+        self
     }
 
     /// Select splits which match the given tag filter.
-    pub fn with_tags_filter(&mut self, tags: TagFilterAst) {
+    pub fn with_tags_filter(mut self, tags: TagFilterAst) -> Self {
         self.tags = Some(tags);
+        self
+    }
+
+    /// Set the field's lower bound to match values that are
+    /// *less than or equal to* the provided value.
+    pub fn with_time_range_le(mut self, v: i64) -> Self {
+        self.time_range.end = Bound::Included(v);
+        self
+    }
+
+    /// Set the field's lower bound to match values that are
+    /// *less than* the provided value.
+    pub fn with_time_range_lt(mut self, v: i64) -> Self {
+        self.time_range.end = Bound::Excluded(v);
+        self
+    }
+
+    /// Set the field's upper bound to match values that are
+    /// *greater than or equal to* the provided value.
+    pub fn with_time_range_ge(mut self, v: i64) -> Self {
+        self.time_range.start = Bound::Included(v);
+        self
+    }
+
+    /// Set the field's upper bound to match values that are
+    /// *greater than* the provided value.
+    pub fn with_time_range_gt(mut self, v: i64) -> Self {
+        self.time_range.start = Bound::Excluded(v);
+        self
+    }
+
+    /// Set the field's lower bound to match values that are
+    /// *less than or equal to* the provided value.
+    pub fn with_delete_opstamp_le(mut self, v: u64) -> Self {
+        self.delete_opstamp.end = Bound::Included(v);
+        self
+    }
+
+    /// Set the field's lower bound to match values that are
+    /// *less than* the provided value.
+    pub fn with_delete_opstamp_lt(mut self, v: u64) -> Self {
+        self.delete_opstamp.end = Bound::Excluded(v);
+        self
+    }
+
+    /// Set the field's upper bound to match values that are
+    /// *greater than or equal to* the provided value.
+    pub fn with_delete_opstamp_ge(mut self, v: u64) -> Self {
+        self.delete_opstamp.start = Bound::Included(v);
+        self
+    }
+
+    /// Set the field's upper bound to match values that are
+    /// *greater than* the provided value.
+    pub fn with_delete_opstamp_gt(mut self, v: u64) -> Self {
+        self.delete_opstamp.start = Bound::Excluded(v);
+        self
+    }
+
+    /// Set the field's lower bound to match values that are
+    /// *less than or equal to* the provided value.
+    pub fn with_update_timestamp_le(mut self, v: i64) -> Self {
+        self.update_timestamp.end = Bound::Included(v);
+        self
+    }
+
+    /// Set the field's lower bound to match values that are
+    /// *less than* the provided value.
+    pub fn with_update_timestamp_lt(mut self, v: i64) -> Self {
+        self.update_timestamp.end = Bound::Excluded(v);
+        self
+    }
+
+    /// Set the field's upper bound to match values that are
+    /// *greater than or equal to* the provided value.
+    pub fn with_update_timestamp_ge(mut self, v: i64) -> Self {
+        self.update_timestamp.start = Bound::Included(v);
+        self
+    }
+
+    /// Set the field's upper bound to match values that are
+    /// *greater than* the provided value.
+    pub fn with_update_timestamp_gt(mut self, v: i64) -> Self {
+        self.update_timestamp.start = Bound::Excluded(v);
+        self
     }
 }
 
@@ -391,291 +474,33 @@ impl<T> Default for FilterRange<T> {
     }
 }
 
-macro_rules! define_equality_filters {
-    ($name:ident { $($field:ident : $tp:ty),* $(,)?}) => {
-        #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-        /// A collection of filter ranges which has individual setters for each range bound.
-        pub struct $name {
-            $(
-                pub $field: FilterRange<$tp>,
-            )*
-        }
-
-        paste::paste! {
-            #[allow(unused)]
-            impl $name {
-                $(
-                    /// Set the field's lower bound to match values that are
-                    /// *less than or equal to* the provided value.
-                    pub fn [<with_ $field _le>](&mut self, v: $tp) {
-                        self.$field.end = std::ops::Bound::Included(v);
-                    }
-
-                    /// Set the field's lower bound to match values that are
-                    /// *less than* the provided value.
-                    pub fn [<with_ $field _lt>](&mut self, v: $tp) {
-                        self.$field.end = std::ops::Bound::Excluded(v);
-                    }
-
-                    /// Set the field's upper bound to match values that are
-                    /// *greater than or equal to* the provided value.
-                    pub fn [<with_ $field _ge>](&mut self, v: $tp) {
-                        self.$field.start = std::ops::Bound::Included(v);
-                    }
-
-                    /// Set the field's upper bound to match values that are
-                    /// *greater than* the provided value.
-                    pub fn [<with_ $field _gt>](&mut self, v: $tp) {
-                        self.$field.start = std::ops::Bound::Excluded(v);
-                    }
-                )*
-            }
-        }
-    }
-}
-
-define_equality_filters!(EqualityFieldFilters {
-    time_range: i64,
-    delete_opstamp: u64,
-    update_timestamp: i64,
-});
 
 #[cfg(test)]
 mod list_splits_query_tests {
     use super::*;
 
-    define_equality_filters!(TestFilter { age: u64 });
-
     #[test]
-    fn test_derived_setters() {
-        let filter = TestFilter::default();
-        assert_eq!(
-            filter.age.start,
-            Bound::Unbounded,
-            "Lower bound should be unbounded."
-        );
-        assert_eq!(
-            filter.age.end,
-            Bound::Unbounded,
-            "Upper bound should be unbounded."
-        );
+    fn test_filter_contains() {
+        let mut filter = FilterRange::default();
+        filter.end = Bound::Excluded(50);
+        assert!(!filter.contains(&50));
+        assert!(filter.contains(&0));
+        assert!(filter.contains(&49));
 
-        let mut filter = TestFilter::default();
-        filter.with_age_lt(18);
-        assert_eq!(
-            filter.age.start,
-            Bound::Unbounded,
-            "Lower bound should be unbounded."
-        );
-        assert_eq!(
-            filter.age.end,
-            Bound::Excluded(18),
-            "Upper bound should match."
-        );
+        let mut filter = FilterRange::default();
+        filter.start = Bound::Included(50);
+        assert!(filter.contains(&50));
+        assert!(filter.contains(&51));
+        assert!(!filter.contains(&0));
 
-        let mut filter = TestFilter::default();
-        filter.with_age_le(18);
-        assert_eq!(
-            filter.age.start,
-            Bound::Unbounded,
-            "Lower bound should be unbounded."
-        );
-        assert_eq!(
-            filter.age.end,
-            Bound::Included(18),
-            "Upper bound should match."
-        );
 
-        let mut filter = TestFilter::default();
-        filter.with_age_gt(18);
-        assert_eq!(
-            filter.age.start,
-            Bound::Excluded(18),
-            "Lower bound should be unbounded."
-        );
-        assert_eq!(
-            filter.age.end,
-            Bound::Unbounded,
-            "Upper bound should match."
-        );
-
-        let mut filter = TestFilter::default();
-        filter.with_age_ge(18);
-        assert_eq!(
-            filter.age.start,
-            Bound::Included(18),
-            "Lower bound should match."
-        );
-        assert_eq!(
-            filter.age.end,
-            Bound::Unbounded,
-            "Upper bound should be unbounded."
-        );
-    }
-
-    #[test]
-    fn test_is_in_range_lt() {
-        let mut filter = TestFilter::default();
-        filter.with_age_lt(18);
-
-        assert!(
-            filter.age.contains(&15),
-            "Value (15) should be within range."
-        );
-        assert!(
-            filter.age.contains(&17),
-            "Value (17) should be within range."
-        );
-        assert!(filter.age.contains(&0), "Value (0) should be within range.");
-
-        assert!(
-            !filter.age.contains(&18),
-            "Value (18) should not be within range."
-        );
-        assert!(
-            !filter.age.contains(&900),
-            "Value (900) should not be within range."
-        );
-    }
-
-    #[test]
-    fn test_is_in_range_le() {
-        let mut filter = TestFilter::default();
-        filter.with_age_le(18);
-
-        assert!(
-            filter.age.contains(&15),
-            "Value (15) should be within range."
-        );
-        assert!(
-            filter.age.contains(&17),
-            "Value (17) should be within range."
-        );
-        assert!(filter.age.contains(&0), "Value (0) should be within range.");
-        assert!(
-            filter.age.contains(&18),
-            "Value (18) should be within range."
-        );
-
-        assert!(
-            !filter.age.contains(&19),
-            "Value (19) should not be within range."
-        );
-        assert!(
-            !filter.age.contains(&900),
-            "Value (900) should not be within range."
-        );
-    }
-
-    #[test]
-    fn test_is_in_range_gt() {
-        let mut filter = TestFilter::default();
-        filter.with_age_gt(18);
-
-        assert!(
-            !filter.age.contains(&15),
-            "Value (15) should not be within range."
-        );
-        assert!(
-            !filter.age.contains(&17),
-            "Value (17) should not be within range."
-        );
-        assert!(
-            !filter.age.contains(&0),
-            "Value (0) should not be within range."
-        );
-        assert!(
-            !filter.age.contains(&18),
-            "Value (18) should not be within range."
-        );
-
-        assert!(
-            filter.age.contains(&19),
-            "Value (19) should be within range."
-        );
-        assert!(
-            filter.age.contains(&900),
-            "Value (900) should be within range."
-        );
-    }
-
-    #[test]
-    fn test_is_in_range_ge() {
-        let mut filter = TestFilter::default();
-        filter.with_age_ge(18);
-
-        assert!(
-            !filter.age.contains(&15),
-            "Value (15) should not be within range."
-        );
-        assert!(
-            !filter.age.contains(&17),
-            "Value (17) should not be within range."
-        );
-        assert!(
-            !filter.age.contains(&0),
-            "Value (0) should not be within range."
-        );
-
-        assert!(
-            filter.age.contains(&18),
-            "Value (18) should be within range."
-        );
-        assert!(
-            filter.age.contains(&19),
-            "Value (19) should be within range."
-        );
-        assert!(
-            filter.age.contains(&900),
-            "Value (900) should be within range."
-        );
-    }
-
-    #[test]
-    fn test_is_in_range_upper_and_lower_bounds() {
-        let mut filter = TestFilter::default();
-        filter.with_age_ge(18);
-        filter.with_age_lt(30);
-
-        assert!(
-            !filter.age.contains(&17),
-            "Value (17) should not be within range."
-        );
-        assert!(
-            !filter.age.contains(&30),
-            "Value (30) should not be within range."
-        );
-        assert!(
-            !filter.age.contains(&31),
-            "Value (31) should not be within range."
-        );
-        assert!(
-            !filter.age.contains(&900),
-            "Value (900) should not be within range."
-        );
-
-        assert!(
-            filter.age.contains(&18),
-            "Value (18) should be within range."
-        );
-        assert!(
-            filter.age.contains(&29),
-            "Value (29) should be within range."
-        );
-    }
-
-    #[test]
-    fn test_is_in_range_unbounded() {
-        let filter = TestFilter::default();
-
-        assert!(filter.age.contains(&0), "Value (0) should be within range.");
-        assert!(
-            filter.age.contains(&31),
-            "Value (31) should be within range."
-        );
-        assert!(
-            filter.age.contains(&900),
-            "Value (900) should be within range."
-        );
+        let mut filter = FilterRange::default();
+        filter.start = Bound::Included(50);
+        filter.end = Bound::Excluded(75);
+        assert!(filter.contains(&50));
+        assert!(filter.contains(&51));
+        assert!(!filter.contains(&0));
+        assert!(!filter.contains(&75));
+        assert!(filter.contains(&74));
     }
 }

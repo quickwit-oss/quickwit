@@ -653,8 +653,8 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
         .resolve(&quickwit_config.metastore_uri)
         .await?;
 
-    let mut query = ListSplitsQuery::for_index(&args.index_id);
-    query.with_split_state(SplitState::Published);
+    let query = ListSplitsQuery::for_index(&args.index_id)
+        .with_split_state(SplitState::Published);
     let splits = metastore.list_splits(query).await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let index_stats = IndexStats::from_metadata(index_metadata, splits)?;

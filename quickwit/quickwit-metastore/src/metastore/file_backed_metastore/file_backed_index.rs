@@ -481,34 +481,32 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery<'_>) -> bool {
         return false;
     }
 
-    let equality_filters = &query.equality_filters;
-
-    if !equality_filters
+    if !query
         .delete_opstamp
         .contains(&split.split_metadata.delete_opstamp)
     {
         return false;
     }
-    if !equality_filters
+    if !query
         .update_timestamp
         .contains(&split.update_timestamp)
     {
         return false;
     }
 
-    if !equality_filters.time_range.is_unbounded() {
+    if !query.time_range.is_unbounded() {
         let is_in_range = split
             .split_metadata
             .time_range
             .as_ref()
             .map(|range| {
-                let start_check = match &equality_filters.time_range.start {
+                let start_check = match &query.time_range.start {
                     Bound::Included(v) => range.end() >= v,
                     Bound::Excluded(v) => range.end() > v,
                     Bound::Unbounded => true,
                 };
 
-                let end_check = match &equality_filters.time_range.end {
+                let end_check = match &query.time_range.end {
                     Bound::Included(v) => range.start() <= v,
                     Bound::Excluded(v) => range.start() < v,
                     Bound::Unbounded => true,
@@ -580,48 +578,48 @@ mod tests {
     fn test_single_filter_behaviour() {
         let [split_1, split_2, split_3] = make_splits();
 
-        let mut query = ListSplitsQuery::for_index("test-index");
-        query.with_split_state(SplitState::Staged);
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_split_state(SplitState::Staged);
         assert!(split_query_predicate(&&split_1, &query));
 
-        let mut query = ListSplitsQuery::for_index("test-index");
-        query.with_split_state(SplitState::Published);
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_split_state(SplitState::Published);
         assert!(!split_query_predicate(&&split_2, &query));
 
-        let mut query = ListSplitsQuery::for_index("test-index");
-        query.with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let mut query = ListSplitsQuery::for_index("test-index");
-        query.with_update_timestamp_lt(51);
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_update_timestamp_lt(51);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let mut query = ListSplitsQuery::for_index("test-index");
-        query.with_delete_opstamp_ge(4);
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_delete_opstamp_ge(4);
         assert!(split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
 
-        let mut query = ListSplitsQuery::for_index("test-index");
-        query.with_time_range_gt(45);
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_time_range_gt(45);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let mut query = ListSplitsQuery::for_index("test-index");
-        query.with_time_range_lt(45);
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_time_range_lt(45);
         assert!(split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let mut query = ListSplitsQuery::for_index("test-index");
-        query.with_tags_filter(TagFilterAst::Tag {
-            is_present: false,
-            tag: "tag-2".to_string(),
-        });
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_tags_filter(TagFilterAst::Tag {
+                is_present: false,
+                tag: "tag-2".to_string(),
+            });
         assert!(split_query_predicate(&&split_1, &query));
         assert!(!split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
@@ -631,33 +629,33 @@ mod tests {
     fn test_combination_filter() {
         let [split_1, split_2, split_3] = make_splits();
 
-        let mut query = ListSplitsQuery::for_index("test-index");
-        query.with_time_range_gt(0);
-        query.with_time_range_lt(40);
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_time_range_gt(0)
+            .with_time_range_lt(40);
         assert!(split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let mut query = ListSplitsQuery::for_index("test-index");
-        query.with_time_range_gt(45);
-        query.with_delete_opstamp_gt(0);
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_time_range_gt(45)
+            .with_delete_opstamp_gt(0);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
 
-        let mut query = ListSplitsQuery::for_index("test-index");
-        query.with_update_timestamp_lt(51);
-        query.with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_update_timestamp_lt(51)
+            .with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let mut query = ListSplitsQuery::for_index("test-index");
-        query.with_time_range_gt(90);
-        query.with_tags_filter(TagFilterAst::Tag {
-            is_present: true,
-            tag: "tag-1".to_string(),
-        });
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_time_range_gt(90)
+            .with_tags_filter(TagFilterAst::Tag {
+                is_present: true,
+                tag: "tag-1".to_string(),
+            });
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(!split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));

@@ -117,19 +117,19 @@ async fn list_relevant_splits(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
 ) -> crate::Result<Vec<SplitMetadata>> {
-    let mut query = ListSplitsQuery::for_index(&search_request.index_id);
-    query.with_split_state(SplitState::Published);
+    let mut query = ListSplitsQuery::for_index(&search_request.index_id)
+        .with_split_state(SplitState::Published);
 
     if let Some(start_ts) = search_request.start_timestamp {
-        query.with_time_range_ge(start_ts);
+        query = query.with_time_range_ge(start_ts);
     }
 
     if let Some(end_ts) = search_request.end_timestamp {
-        query.with_time_range_lt(end_ts);
+        query = query.with_time_range_lt(end_ts);
     }
 
     if let Some(tags_filter) = extract_tags_from_query(&search_request.query)? {
-        query.with_tags_filter(tags_filter);
+        query = query.with_tags_filter(tags_filter);
     }
 
     let split_metas = metastore.list_splits(query).await?;
