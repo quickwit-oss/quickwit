@@ -36,10 +36,8 @@ mod actor_state;
 pub mod channel_with_priority;
 mod command;
 mod envelope;
-mod kill_switch;
 mod mailbox;
 mod observation;
-mod progress;
 mod registry;
 mod scheduler;
 mod spawn_builder;
@@ -52,9 +50,8 @@ mod universe;
 pub use actor::{Actor, ActorExitStatus, Handler};
 pub use actor_handle::{ActorHandle, Health, Supervisable};
 pub use command::Command;
-pub use kill_switch::KillSwitch;
 pub use observation::{Observation, ObservationType};
-pub use progress::{Progress, ProtectedZoneGuard};
+use quickwit_common::{KillSwitch, Progress, ProtectedZoneGuard};
 pub(crate) use scheduler::Scheduler;
 use thiserror::Error;
 pub use universe::Universe;
@@ -71,7 +68,16 @@ pub use self::supervisor::{Supervisor, SupervisorState};
 /// If an actor does not advertise a progress within an interval of duration `HEARTBEAT`,
 /// its supervisor will consider it as blocked and will proceed to kill it, as well
 /// as all of the actors all the actors that share the killswitch.
-pub const HEARTBEAT: Duration = Duration::from_secs(3);
+pub const HEARTBEAT: Duration = if cfg!(test) {
+    // Right now some unit test end when we detect that a
+    // pipeline has terminated, which can require waiting
+    // for a heartbeat.
+    //
+    // We use a shorter heartbeat to reduce the time running unit tests.
+    Duration::from_millis(500)
+} else {
+    Duration::from_secs(3)
+};
 
 /// Error that occured while calling `ActorContext::ask(..)` or `Universe::ask`
 #[derive(Error, Debug)]

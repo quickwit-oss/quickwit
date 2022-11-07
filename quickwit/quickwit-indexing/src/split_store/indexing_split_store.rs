@@ -26,6 +26,7 @@ use std::time::Instant;
 use anyhow::Context;
 #[cfg(any(test, feature = "testsuite"))]
 use byte_unit::Byte;
+use quickwit_common::io::{IoControls, IoControlsAccess};
 use quickwit_metastore::SplitMetadata;
 use quickwit_storage::{PutPayload, Storage, StorageResult};
 use tantivy::directory::MmapDirectory;
@@ -195,11 +196,12 @@ impl IndexingSplitStore {
     ///
     /// As we fetch the split, we optimistically assume that this is for a merge
     /// operation that will be successful and we remove the split from the cache.
-    #[instrument(skip(self, output_dir_path), fields(cache_hit))]
+    #[instrument(skip(self, output_dir_path, io_controls), fields(cache_hit))]
     pub async fn fetch_and_open_split(
         &self,
         split_id: &str,
         output_dir_path: &Path,
+        io_controls: &IoControls,
     ) -> StorageResult<Box<dyn Directory>> {
         let path = PathBuf::from(quickwit_common::split_file(split_id));
         if let Some(split_path) = self
@@ -215,10 +217,11 @@ impl IndexingSplitStore {
             tracing::Span::current().record("cache_hit", false);
         }
         let dest_filepath = output_dir_path.join(&path);
-        let mut dest_file = tokio::fs::File::create(&dest_filepath).await?;
+        let dest_file = tokio::fs::File::create(&dest_filepath).await?;
+        let mut dest_file_with_write_limit = io_controls.clone().wrap_write(dest_file);
         self.inner
             .remote_storage
-            .copy_to(&path, &mut dest_file)
+            .copy_to(&path, &mut dest_file_with_write_limit)
             .instrument(info_span!("fetch_split_from_remote_storage", path=?path))
             .await?;
         get_tantivy_directory_from_split_bundle(&dest_filepath)
@@ -242,6 +245,7 @@ mod tests {
     use std::sync::Arc;
 
     use byte_unit::Byte;
+    use quickwit_common::io::IoControls;
     use quickwit_metastore::SplitMetadata;
     use quickwit_storage::{RamStorage, SplitPayloadBuilder};
     use tempfile::tempdir;
@@ -400,13 +404,14 @@ mod tests {
         }
         {
             let output = tempfile::tempdir()?;
+            let io_controls = IoControls::default();
             // get from cache
             let _split1 = split_store
-                .fetch_and_open_split(&split_id1, output.path())
+                .fetch_and_open_split(&split_id1, output.path(), &io_controls)
                 .await?;
             // get from remote storage
             let _split2 = split_store
-                .fetch_and_open_split(&split_id2, output.path())
+                .fetch_and_open_split(&split_id2, output.path(), &io_controls)
                 .await?;
         }
         Ok(())

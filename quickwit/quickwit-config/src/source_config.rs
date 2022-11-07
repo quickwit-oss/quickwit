@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use anyhow::{bail, Context};
 use json_comments::StripComments;
@@ -227,7 +228,7 @@ fn absolute_filepath_from_str<'de, D>(deserializer: D) -> Result<Option<PathBuf>
 where D: Deserializer<'de> {
     let filepath_opt: Option<String> = Deserialize::deserialize(deserializer)?;
     if let Some(filepath) = filepath_opt {
-        let uri = Uri::try_new(&filepath).map_err(D::Error::custom)?;
+        let uri = Uri::from_str(&filepath).map_err(D::Error::custom)?;
         Ok(uri.filepath().map(|path| path.to_path_buf()))
     } else {
         Ok(None)
@@ -328,6 +329,8 @@ pub struct VoidSourceParams;
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use quickwit_common::uri::Uri;
     use serde_json::json;
 
@@ -347,7 +350,7 @@ mod tests {
     async fn test_load_kafka_source_config() {
         let source_config_filepath = get_source_config_filepath("kafka-source.json");
         let file_content = std::fs::read_to_string(&source_config_filepath).unwrap();
-        let source_config_uri = Uri::try_new(&source_config_filepath).unwrap();
+        let source_config_uri = Uri::from_str(&source_config_filepath).unwrap();
         let source_config = SourceConfig::from_uri(&source_config_uri, file_content.as_bytes())
             .await
             .unwrap();
@@ -438,7 +441,7 @@ mod tests {
     async fn test_load_kinesis_source_config() {
         let source_config_filepath = get_source_config_filepath("kinesis-source.yaml");
         let file_content = std::fs::read_to_string(&source_config_filepath).unwrap();
-        let source_config_uri = Uri::try_new(&source_config_filepath).unwrap();
+        let source_config_uri = Uri::from_str(&source_config_filepath).unwrap();
         let source_config = SourceConfig::from_uri(&source_config_uri, file_content.as_bytes())
             .await
             .unwrap();
@@ -463,7 +466,7 @@ mod tests {
                 filepath: source-path.json
             "#;
             let file_params = serde_yaml::from_str::<FileSourceParams>(yaml).unwrap();
-            let uri = Uri::try_new("source-path.json").unwrap();
+            let uri = Uri::from_str("source-path.json").unwrap();
             assert_eq!(
                 file_params.filepath.unwrap().as_path(),
                 uri.filepath().unwrap()
@@ -561,7 +564,7 @@ mod tests {
     async fn test_load_ingest_api_source_config() {
         let source_config_filepath = get_source_config_filepath("ingest-api-source.json");
         let file_content = std::fs::read_to_string(&source_config_filepath).unwrap();
-        let source_config_uri = Uri::try_new(&source_config_filepath).unwrap();
+        let source_config_uri = Uri::from_str(&source_config_filepath).unwrap();
         let source_config = SourceConfig::from_uri(&source_config_uri, file_content.as_bytes())
             .await
             .unwrap();

@@ -20,8 +20,9 @@
 use std::convert::TryFrom;
 
 use quickwit_common::truncate_str;
+use quickwit_proto::SearchResponse;
 use serde::Serialize;
-use serde_json::{Map, Value};
+use serde_json::Value as JsonValue;
 
 use crate::error::SearchError;
 
@@ -32,57 +33,68 @@ pub struct SearchResponseRest {
     /// Overall number of documents matching the query.
     pub num_hits: u64,
     /// List of hits returned.
-    pub hits: Vec<serde_json::Value>,
+    pub hits: Vec<JsonValue>,
+    /// List of snippets
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snippets: Option<Vec<JsonValue>>,
     /// Elapsed time.
     pub elapsed_time_micros: u64,
     /// Search errors.
     pub errors: Vec<String>,
     /// Aggregations.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub aggregations: Option<serde_json::Value>,
+    pub aggregations: Option<JsonValue>,
 }
 
-impl TryFrom<quickwit_proto::SearchResponse> for SearchResponseRest {
+impl TryFrom<SearchResponse> for SearchResponseRest {
     type Error = SearchError;
 
-    fn try_from(search_response: quickwit_proto::SearchResponse) -> Result<Self, Self::Error> {
-        let hits = search_response
-            .hits
-            .into_iter()
-            .map(|hit| {
-                let mut hit_value = Map::with_capacity(2);
-                let document: serde_json::Value =
-                    serde_json::from_str(&hit.json).map_err(|err| {
-                        SearchError::InternalError(format!(
-                            "Failed to serialize document `{}` to JSON: `{}`.",
-                            truncate_str(&hit.json, 100),
-                            err
-                        ))
-                    })?;
-                hit_value.insert("document".to_string(), document);
+    fn try_from(search_response: SearchResponse) -> Result<Self, Self::Error> {
+        let mut documents = Vec::with_capacity(search_response.hits.len());
+        let mut snippets = Vec::new();
+        for hit in search_response.hits {
+            let document: JsonValue = serde_json::from_str(&hit.json).map_err(|err| {
+                SearchError::InternalError(format!(
+                    "Failed to serialize document `{}` to JSON: `{}`.",
+                    truncate_str(&hit.json, 100),
+                    err
+                ))
+            })?;
+            documents.push(document);
 
-                if let Some(snippet_json) = &hit.snippet {
-                    let snippet: Value = serde_json::from_str(snippet_json).map_err(|err| {
+            if let Some(snippet_json) = hit.snippet {
+                let snippet_opt: JsonValue =
+                    serde_json::from_str(&snippet_json).map_err(|err| {
                         SearchError::InternalError(format!(
                             "Failed to serialize snippet `{}` to JSON: `{}`.",
                             snippet_json, err
                         ))
                     })?;
-                    hit_value.insert("snippet".to_string(), snippet);
-                }
-                Ok(Value::Object(hit_value))
-            })
-            .collect::<crate::Result<Vec<serde_json::Value>>>()?;
+                snippets.push(snippet_opt);
+            }
+        }
+
+        let snippet_opt = if !snippets.is_empty() {
+            Some(snippets)
+        } else {
+            None
+        };
+
+        let aggregations_opt = if let Some(aggregation_json) = search_response.aggregation {
+            let aggregation: JsonValue = serde_json::from_str(&aggregation_json)
+                .map_err(|err| SearchError::InternalError(err.to_string()))?;
+            Some(aggregation)
+        } else {
+            None
+        };
+
         Ok(SearchResponseRest {
             num_hits: search_response.num_hits,
-            hits,
+            hits: documents,
+            snippets: snippet_opt,
             elapsed_time_micros: search_response.elapsed_time_micros,
             errors: search_response.errors,
-            aggregations: search_response
-                .aggregation
-                .map(|agg| serde_json::from_str(&agg))
-                .transpose()
-                .map_err(|err| SearchError::InternalError(err.to_string()))?,
+            aggregations: aggregations_opt,
         })
     }
 }

@@ -193,7 +193,7 @@ mod tests {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
 
-        let metastore_uri = Uri::new("ram:///metastore".to_string());
+        let metastore_uri = Uri::from_well_formed("ram:///metastore".to_string());
         let metastore = quickwit_metastore_uri_resolver()
             .resolve(&metastore_uri)
             .await

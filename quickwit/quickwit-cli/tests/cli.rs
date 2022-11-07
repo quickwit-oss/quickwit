@@ -21,8 +21,9 @@
 
 mod helpers;
 
+use std::collections::HashSet;
 use std::path::Path;
-use std::str::from_utf8;
+use std::str::FromStr;
 
 use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
@@ -31,18 +32,19 @@ use quickwit_cli::index::{
     create_index_cli, delete_index_cli, garbage_collect_index_cli, ingest_docs_cli, search_index,
     CreateIndexArgs, DeleteIndexArgs, GarbageCollectIndexArgs, IngestDocsArgs, SearchIndexArgs,
 };
+use quickwit_cli::service::RunCliCommand;
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_common::ChecklistError;
+use quickwit_config::service::QuickwitService;
 use quickwit_config::CLI_INGEST_SOURCE_ID;
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreError, SplitState};
 use serde_json::{json, Number, Value};
-use serial_test::serial;
 use tokio::time::{sleep, Duration};
 
-use crate::helpers::{create_test_env, make_command, spawn_command};
+use crate::helpers::{create_test_env, make_command, spawn_command, wait_port_ready};
 
 fn create_logs_index(test_env: &TestEnv) {
     make_command(
@@ -156,7 +158,6 @@ async fn test_cmd_create_on_existing_index() {
     let args = CreateIndexArgs {
         config_uri: test_env.config_uri,
         index_config_uri: test_env.index_config_uri,
-        data_dir: None,
         overwrite: false,
         assume_yes: false,
     };
@@ -177,7 +178,6 @@ async fn test_cmd_ingest_on_non_existing_index() {
         config_uri: test_env.config_uri,
         index_id: "index-does-not-exist".to_string(),
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
-        data_dir: None,
         overwrite: false,
         clear_cache: true,
     };
@@ -202,7 +202,6 @@ async fn test_cmd_ingest_on_non_existing_file() {
         config_uri: test_env.config_uri,
         index_id: test_env.index_id,
         input_path_opt: Some(test_env.data_dir_path.join("file-does-not-exist.json")),
-        data_dir: None,
         overwrite: false,
         clear_cache: true,
     };
@@ -227,7 +226,6 @@ async fn test_ingest_docs_cli_keep_cache() {
         config_uri: test_env.config_uri,
         index_id,
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
-        data_dir: None,
         overwrite: false,
         clear_cache: false,
     };
@@ -248,7 +246,6 @@ async fn test_ingest_docs_cli() {
         config_uri: test_env.config_uri.clone(),
         index_id: index_id.clone(),
         input_path_opt: Some(test_env.resource_files["logs"].clone()),
-        data_dir: None,
         overwrite: false,
         clear_cache: true,
     };
@@ -306,8 +303,8 @@ async fn test_cmd_search_aggregation() -> Result<()> {
         snippet_fields: None,
         start_timestamp: None,
         end_timestamp: None,
-        config_uri: Uri::try_new(&test_env.resource_files["config"].display().to_string()).unwrap(),
-        data_dir: None,
+        config_uri: Uri::from_str(&test_env.resource_files["config"].display().to_string())
+            .unwrap(),
         sort_by_score: false,
     };
     let search_response = search_index(args).await?;
@@ -381,8 +378,8 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
         snippet_fields: Some(vec!["event".to_string()]),
         start_timestamp: None,
         end_timestamp: None,
-        config_uri: Uri::try_new(&test_env.resource_files["config"].display().to_string()).unwrap(),
-        data_dir: None,
+        config_uri: Uri::from_str(&test_env.resource_files["config"].display().to_string())
+            .unwrap(),
         sort_by_score: false,
     };
     let search_response = search_index(args).await?;
@@ -401,107 +398,100 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn test_cmd_search() -> Result<()> {
+#[tokio::test]
+async fn test_search_index_cli() {
     let index_id = append_random_suffix("test-search-cmd");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
+
+    let create_search_args = |query: &str| SearchIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        query: query.to_string(),
+        aggregation: None,
+        max_hits: 20,
+        start_offset: 0,
+        search_fields: None,
+        snippet_fields: None,
+        start_timestamp: None,
+        end_timestamp: None,
+        sort_by_score: false,
+    };
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
-    make_command(
-        format!(
-            "index search --index {} --config {} --query level:info",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::function(|output: &[u8]| {
-        println!("{}", from_utf8(output).unwrap());
-        let result: Value = serde_json::from_slice(output).unwrap();
-        result["num_hits"] == Value::Number(Number::from(2i64))
-    }));
+    let args = create_search_args("level:info");
+
+    // search_index_cli calls search_index and prints the SearchResponse
+    let search_res = search_index(args).await.unwrap();
+    assert_eq!(search_res.num_hits, 2);
 
     // search with tag pruning
-    crate::helpers::make_command_with_list_of_args(&[
-        "index",
-        "search",
-        "--index",
-        &test_env.index_id,
-        "--config",
-        &test_env.resource_files["config"].display().to_string(),
-        "--query",
-        "+level:info +city:paris",
-    ])
-    .assert()
-    .success()
-    .stdout(predicate::function(|output: &[u8]| {
-        let result: Value = serde_json::from_slice(output).unwrap();
-        result["num_hits"] == Value::Number(Number::from(1i64))
-    }));
+    let args = create_search_args("+level:info +city:paris");
+
+    // search_index_cli calls search_index and prints the SearchResponse
+    let search_res = search_index(args).await.unwrap();
+    assert_eq!(search_res.num_hits, 1);
 
     // search with tag pruning
-    crate::helpers::make_command_with_list_of_args(&[
-        "index",
-        "search",
-        "--index",
-        &test_env.index_id,
-        "--config",
-        &test_env.resource_files["config"].display().to_string(),
-        "--query",
-        "level:info AND city:conakry",
-    ])
-    .assert()
-    .success()
-    .stdout(predicate::function(|output: &[u8]| {
-        let result: Value = serde_json::from_slice(output).unwrap();
-        result["num_hits"] == Value::Number(Number::from(0i64))
-    }));
+    let args = create_search_args("level:info AND city:conakry");
 
-    Ok(())
+    // search_index_cli calls search_index and prints the SearchResponse
+    let search_res = search_index(args).await.unwrap();
+    assert_eq!(search_res.num_hits, 0);
 }
 
-#[test]
-fn test_cmd_delete_index_dry_run() -> Result<()> {
+#[tokio::test]
+async fn test_delete_index_cli_dry_run() {
     let index_id = append_random_suffix("test-delete-cmd--dry-run");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
 
-    // Empty index.
-    make_command(
-        format!(
-            "index delete --index {} --config {} --dry-run",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains("Only the index will be deleted"));
+    let refresh_metastore = |metastore| {
+        // In this test we rely on the file backed metastore
+        // and the file backed metastore caches results.
+        // Therefore we need to force reading the disk to fetch updates.
+        //
+        // We do that by dropping and recreating our metastore.
+        drop(metastore);
+        quickwit_metastore_uri_resolver().resolve(&test_env.metastore_uri)
+    };
+
+    let create_delete_args = |dry_run| DeleteIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        dry_run,
+    };
+
+    let metastore = quickwit_metastore_uri_resolver()
+        .resolve(&test_env.metastore_uri)
+        .await
+        .unwrap();
+
+    assert!(metastore.index_exists(&index_id).await.unwrap());
+    // On empty index.
+    let args = create_delete_args(true);
+
+    delete_index_cli(args).await.unwrap();
+    // On dry run index should still exist
+    let metastore = refresh_metastore(metastore).await.unwrap();
+    assert!(metastore.index_exists(&index_id).await.unwrap());
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
-    // Non-empty index
-    make_command(
-        format!(
-            "index delete --index {} --config {} --dry-run",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "The following files will be removed",
-    ))
-    .stdout(predicate::str::contains(".split"));
+    // On non-empty index
+    let args = create_delete_args(true);
 
-    Ok(())
+    delete_index_cli(args).await.unwrap();
+    // On dry run index should still exist
+    let metastore = refresh_metastore(metastore).await.unwrap();
+    assert!(metastore.index_exists(&index_id).await.unwrap());
+
+    let args = create_delete_args(false);
+
+    delete_index_cli(args).await.unwrap();
+    let metastore = refresh_metastore(metastore).await.unwrap();
+    assert!(!metastore.index_exists(&index_id).await.unwrap());
 }
 
 #[tokio::test]
@@ -516,7 +506,6 @@ async fn test_delete_index_cli() {
         config_uri: test_env.config_uri.clone(),
         index_id: index_id.clone(),
         dry_run: false,
-        data_dir: None,
     };
 
     delete_index_cli(args).await.unwrap();
@@ -538,15 +527,16 @@ async fn test_delete_index_cli() {
 }
 
 #[tokio::test]
-async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
+async fn test_garbage_collect_cli_no_grace() {
     let index_id = append_random_suffix("test-gc-cmd--no-grace-period");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&test_env.metastore_uri)
-        .await?;
+        .await
+        .unwrap();
 
     let refresh_metastore = |metastore| {
         // In this test we rely on the file backed metastore and write on
@@ -558,91 +548,72 @@ async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
         quickwit_metastore_uri_resolver().resolve(&test_env.metastore_uri)
     };
 
-    let splits = metastore.list_all_splits(&test_env.index_id).await?;
-    assert_eq!(splits.len(), 1);
-    make_command(
-        format!(
-            "index gc --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "No dangling files to garbage collect",
-    ));
+    let create_gc_args = |dry_run| GarbageCollectIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        grace_period: Duration::from_secs(3600),
+        dry_run,
+    };
 
+    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    assert_eq!(splits.len(), 1);
+
+    let args = create_gc_args(false);
+
+    garbage_collect_index_cli(args).await.unwrap();
+
+    // On gc splits within grace period should still exist.
     let index_path = test_env.indexes_dir_path.join(&test_env.index_id);
     assert_eq!(index_path.exists(), true);
 
     let split_ids = [splits[0].split_id()];
-    let metastore = refresh_metastore(metastore).await?;
+    let metastore = refresh_metastore(metastore).await.unwrap();
     metastore
         .mark_splits_for_deletion(&test_env.index_id, &split_ids)
-        .await?;
+        .await
+        .unwrap();
 
-    make_command(
-        format!(
-            "index gc --index {} --config {} --dry-run --grace-period 10m",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "The following files will be garbage collected.",
-    ))
-    .stdout(predicate::str::contains(".split"));
+    let args = create_gc_args(true);
 
+    garbage_collect_index_cli(args).await.unwrap();
+
+    // On `dry_run = true` splits `MarkedForDeletion` should still exist.
     for split_id in split_ids {
         let split_file = quickwit_common::split_file(split_id);
         let split_filepath = index_path.join(&split_file);
         assert_eq!(split_filepath.exists(), true);
     }
 
-    make_command(
-        format!(
-            "index gc --index {} --config {} --grace-period 10m",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(format!(
-        "Index `{}` successfully garbage collected",
-        test_env.index_id
-    )));
+    let args = create_gc_args(false);
 
+    garbage_collect_index_cli(args).await.unwrap();
+
+    // If split is `MarkedForDeletion` it should be deleted after gc run
     for split_id in split_ids {
         let split_file = quickwit_common::split_file(split_id);
         let split_filepath = index_path.join(&split_file);
         assert_eq!(split_filepath.exists(), false);
     }
 
-    let metastore = refresh_metastore(metastore).await?;
+    let metastore = refresh_metastore(metastore).await.unwrap();
     assert_eq!(
-        metastore.list_all_splits(&test_env.index_id).await?.len(),
+        metastore
+            .list_all_splits(&test_env.index_id)
+            .await
+            .unwrap()
+            .len(),
         0
     );
 
-    make_command(
-        format!(
-            "index delete --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
+    let args = DeleteIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id,
+        dry_run: false,
+    };
+
+    delete_index_cli(args).await.unwrap();
+
     assert_eq!(index_path.exists(), false);
-    Ok(())
 }
 
 #[tokio::test]
@@ -803,7 +774,6 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
 
 /// testing the api via cli commands
 #[tokio::test]
-#[serial]
 async fn test_all_local_index() -> Result<()> {
     quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-all");
@@ -884,175 +854,75 @@ async fn test_all_local_index() -> Result<()> {
 
 /// testing the api via cli commands
 #[tokio::test]
-#[serial]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
-async fn test_cmd_all_with_s3_localstack_cli() -> Result<()> {
+async fn test_all_with_s3_localstack_cli() {
     let index_id = append_random_suffix("test-all--cli-s3-localstack");
-    let test_env = create_test_env(index_id, TestStorageType::S3)?;
-    make_command(
-        format!(
-            "index create --index-config {} --config {}",
-            test_env.resource_files["index_config"].display(),
-            test_env.resource_files["config"].display()
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
-
-    test_env
-        .metastore()
-        .await?
-        .index_metadata(&test_env.index_id)
-        .await
-        .unwrap();
+    let test_env = create_test_env(index_id.clone(), TestStorageType::S3).unwrap();
+    create_logs_index(&test_env);
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
-    // cli search
-    make_command(
-        format!(
-            "index search --index {} --query level:info --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::function(|output: &[u8]| {
-        let result: Value = serde_json::from_slice(output).unwrap();
-        result["num_hits"] == Value::Number(Number::from(2i64))
-    }));
-
-    // serve & api-search
-    // TODO: ditto.
-    let mut server_process = spawn_command(
-        format!(
-            "run --service searcher --service metastore --config {}",
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .unwrap();
-    // TODO: ditto.
-    sleep(Duration::from_secs(2)).await;
-    let query_response = reqwest::get(format!(
-        "http://127.0.0.1:{}/api/v1/{}/search?query=level:info",
-        test_env.rest_listen_port, test_env.index_id,
-    ))
-    .await?
-    .text()
-    .await?;
-    let result: Value =
-        serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
-    assert_eq!(result["num_hits"], Value::Number(Number::from(2i64)));
-
-    server_process.kill().unwrap();
-
-    make_command(
-        format!(
-            "index delete --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display()
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
-    assert_eq!(
-        test_env
-            .storage
-            .exists(Path::new(&test_env.index_id))
-            .await?,
-        false
-    );
-
-    Ok(())
-}
-
-/// testing the api via structs of the lib (if available)
-#[tokio::test]
-#[serial]
-#[cfg_attr(not(feature = "ci-test"), ignore)]
-async fn test_cmd_all_with_s3_localstack_internal_api() -> Result<()> {
-    let index_id = append_random_suffix("test-all--cli-API");
-    let test_env = create_test_env(index_id, TestStorageType::S3)?;
-    let args = CreateIndexArgs {
-        index_config_uri: Uri::try_new(test_env.resource_files["index_config"].to_str().unwrap())
-            .unwrap(),
-        config_uri: Uri::try_new(&test_env.resource_files["config"].display().to_string()).unwrap(),
-        overwrite: false,
-        data_dir: None,
-        assume_yes: true,
+    // Cli search
+    let args = SearchIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        query: "level:info".to_string(),
+        aggregation: None,
+        max_hits: 20,
+        start_offset: 0,
+        search_fields: None,
+        snippet_fields: None,
+        start_timestamp: None,
+        end_timestamp: None,
+        sort_by_score: false,
     };
-    create_index_cli(args).await?;
-    let index_metadata = test_env
-        .metastore()
-        .await?
-        .index_metadata(&test_env.index_id)
-        .await;
-    assert_eq!(index_metadata.is_ok(), true);
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
-    // cli search
-    make_command(
-        format!(
-            "index search --index {} --query level:info --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::function(|output: &[u8]| {
-        let result: Value = serde_json::from_slice(output).unwrap();
-        result["num_hits"] == Value::Number(Number::from(2i64))
-    }));
+    let search_res = search_index(args).await.unwrap();
+    assert_eq!(search_res.num_hits, 2);
 
     // serve & api-search
     // TODO: ditto.
-    let mut server_process = spawn_command(
-        format!(
-            "run --service searcher --service metastore --config {}",
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .unwrap();
-    // TODO: ditto.
-    sleep(Duration::from_secs(2)).await;
+    let run_cli_command = RunCliCommand {
+        config_uri: test_env.config_uri.clone(),
+        services: Some(HashSet::from([
+            QuickwitService::Searcher,
+            QuickwitService::Metastore,
+        ])),
+    };
+    let service_task = tokio::spawn(async move { run_cli_command.execute().await.unwrap() });
+
+    wait_port_ready(test_env.rest_listen_port).await.unwrap();
+
     let query_response = reqwest::get(format!(
         "http://127.0.0.1:{}/api/v1/{}/search?query=level:info",
         test_env.rest_listen_port, test_env.index_id,
     ))
-    .await?
+    .await
+    .unwrap()
     .text()
-    .await?;
+    .await
+    .unwrap();
+
     let result: Value =
         serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
     assert_eq!(result["num_hits"], Value::Number(Number::from(2i64)));
 
-    server_process.kill().unwrap();
+    service_task.abort();
 
-    make_command(
-        format!(
-            "index delete --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
+    let args = DeleteIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        dry_run: false,
+    };
+
+    delete_index_cli(args).await.unwrap();
+
     assert_eq!(
         test_env
             .storage
             .exists(Path::new(&test_env.index_id))
-            .await?,
+            .await
+            .unwrap(),
         false
     );
-
-    Ok(())
 }

@@ -90,7 +90,6 @@ pub fn create_split_metadata(
         partition_id: split_attrs.partition_id,
         source_id: split_attrs.pipeline_id.source_id.clone(),
         node_id: split_attrs.pipeline_id.node_id.clone(),
-        pipeline_ord: split_attrs.pipeline_id.pipeline_ord,
         num_docs: split_attrs.num_docs as usize,
         time_range: split_attrs.time_range.clone(),
         uncompressed_docs_size_in_bytes: split_attrs.uncompressed_docs_size_in_bytes,

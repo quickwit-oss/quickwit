@@ -19,7 +19,7 @@
 
 use std::ops::{Bound, RangeBounds};
 
-use quickwit_common::fast_field_reader::{timestamp_field_reader, GenericFastFieldReader};
+use quickwit_doc_mapper::fast_field_reader::{timestamp_field_reader, GenericFastFieldReader};
 use tantivy::schema::Field;
 use tantivy::{DocId, SegmentReader};
 
@@ -71,14 +71,7 @@ impl TimestampFilterBuilder {
         &self,
         segment_reader: &SegmentReader,
     ) -> tantivy::Result<Option<TimestampFilter>> {
-        let timestamp_field_entry = segment_reader
-            .schema()
-            .get_field_entry(self.timestamp_field);
-        let timestamp_field_reader = timestamp_field_reader(
-            self.timestamp_field,
-            timestamp_field_entry,
-            segment_reader.fast_fields(),
-        )?;
+        let timestamp_field_reader = timestamp_field_reader(self.timestamp_field, segment_reader)?;
         let segment_range = (
             timestamp_field_reader.min_value(),
             timestamp_field_reader.max_value(),

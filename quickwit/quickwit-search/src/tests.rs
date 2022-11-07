@@ -220,6 +220,7 @@ where E: Ord {
 }
 
 #[tokio::test]
+#[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_single_node_several_splits() -> anyhow::Result<()> {
     let index_id = "single-node-several-splits";
     let doc_mapping_yaml = r#"
