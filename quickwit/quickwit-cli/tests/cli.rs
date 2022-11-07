@@ -727,7 +727,6 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() {
         index_id: index_id.clone(),
         grace_period: Duration::from_secs(3600),
         dry_run: false,
-        data_dir: None,
     };
 
     garbage_collect_index_cli(args).await.unwrap();
@@ -736,7 +735,6 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() {
         config_uri: test_env.config_uri.clone(),
         index_id: index_id.clone(),
         dry_run: true,
-        data_dir: None,
     };
 
     delete_index_cli(args).await.unwrap();
@@ -745,7 +743,6 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() {
         config_uri: test_env.config_uri.clone(),
         index_id: index_id.clone(),
         dry_run: false,
-        data_dir: None,
     };
 
     delete_index_cli(args).await.unwrap();
