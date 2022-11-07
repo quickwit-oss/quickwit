@@ -121,7 +121,7 @@ async fn list_relevant_splits(
         .with_split_state(SplitState::Published);
 
     if let Some(start_ts) = search_request.start_timestamp {
-        query = query.with_time_range_ge(start_ts);
+        query = query.with_time_range_gte(start_ts);
     }
 
     if let Some(end_ts) = search_request.end_timestamp {

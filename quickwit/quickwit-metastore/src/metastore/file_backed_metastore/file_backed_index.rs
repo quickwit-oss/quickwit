@@ -592,7 +592,7 @@ mod tests {
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index("test-index").with_delete_opstamp_ge(4);
+        let query = ListSplitsQuery::for_index("test-index").with_delete_opstamp_gte(4);
         assert!(split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));

@@ -342,7 +342,7 @@ impl<'a> ListSplitsQuery<'a> {
 
     /// Set the field's lower bound to match values that are
     /// *less than or equal to* the provided value.
-    pub fn with_time_range_le(mut self, v: i64) -> Self {
+    pub fn with_time_range_lte(mut self, v: i64) -> Self {
         self.time_range.end = Bound::Included(v);
         self
     }
@@ -356,7 +356,7 @@ impl<'a> ListSplitsQuery<'a> {
 
     /// Set the field's upper bound to match values that are
     /// *greater than or equal to* the provided value.
-    pub fn with_time_range_ge(mut self, v: i64) -> Self {
+    pub fn with_time_range_gte(mut self, v: i64) -> Self {
         self.time_range.start = Bound::Included(v);
         self
     }
@@ -370,7 +370,7 @@ impl<'a> ListSplitsQuery<'a> {
 
     /// Set the field's lower bound to match values that are
     /// *less than or equal to* the provided value.
-    pub fn with_delete_opstamp_le(mut self, v: u64) -> Self {
+    pub fn with_delete_opstamp_lte(mut self, v: u64) -> Self {
         self.delete_opstamp.end = Bound::Included(v);
         self
     }
@@ -384,7 +384,7 @@ impl<'a> ListSplitsQuery<'a> {
 
     /// Set the field's upper bound to match values that are
     /// *greater than or equal to* the provided value.
-    pub fn with_delete_opstamp_ge(mut self, v: u64) -> Self {
+    pub fn with_delete_opstamp_gte(mut self, v: u64) -> Self {
         self.delete_opstamp.start = Bound::Included(v);
         self
     }
@@ -398,7 +398,7 @@ impl<'a> ListSplitsQuery<'a> {
 
     /// Set the field's lower bound to match values that are
     /// *less than or equal to* the provided value.
-    pub fn with_update_timestamp_le(mut self, v: i64) -> Self {
+    pub fn with_update_timestamp_lte(mut self, v: i64) -> Self {
         self.update_timestamp.end = Bound::Included(v);
         self
     }
@@ -412,7 +412,7 @@ impl<'a> ListSplitsQuery<'a> {
 
     /// Set the field's upper bound to match values that are
     /// *greater than or equal to* the provided value.
-    pub fn with_update_timestamp_ge(mut self, v: i64) -> Self {
+    pub fn with_update_timestamp_gte(mut self, v: i64) -> Self {
         self.update_timestamp.start = Bound::Included(v);
         self
     }

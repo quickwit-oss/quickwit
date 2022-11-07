@@ -1653,7 +1653,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(0)
+                .with_time_range_gte(0)
                 .with_time_range_lt(99);
 
             let splits = metastore.list_splits(query).await.unwrap();
@@ -1668,7 +1668,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(200);
+                .with_time_range_gte(200);
 
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -1695,7 +1695,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(0)
+                .with_time_range_gte(0)
                 .with_time_range_lt(100);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -1709,7 +1709,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(0)
+                .with_time_range_gte(0)
                 .with_time_range_lt(101);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -1723,7 +1723,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(0)
+                .with_time_range_gte(0)
                 .with_time_range_lt(199);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -1737,7 +1737,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(0)
+                .with_time_range_gte(0)
                 .with_time_range_lt(200);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -1751,7 +1751,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(0)
+                .with_time_range_gte(0)
                 .with_time_range_lt(201);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -1770,7 +1770,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(0)
+                .with_time_range_gte(0)
                 .with_time_range_lt(299);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -1789,7 +1789,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(0)
+                .with_time_range_gte(0)
                 .with_time_range_lt(300);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -1808,7 +1808,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(0)
+                .with_time_range_gte(0)
                 .with_time_range_lt(301);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -1828,7 +1828,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(301)
+                .with_time_range_gte(301)
                 .with_time_range_lt(400);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -1843,7 +1843,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(300)
+                .with_time_range_gte(300)
                 .with_time_range_lt(400);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -1857,7 +1857,7 @@ pub mod test_suite {
             );
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(299)
+                .with_time_range_gte(299)
                 .with_time_range_lt(400);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -1871,7 +1871,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(201)
+                .with_time_range_gte(201)
                 .with_time_range_lt(400);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -1885,7 +1885,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(200)
+                .with_time_range_gte(200)
                 .with_time_range_lt(400);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -1900,7 +1900,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(199)
+                .with_time_range_gte(199)
                 .with_time_range_lt(400);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -1919,7 +1919,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(101)
+                .with_time_range_gte(101)
                 .with_time_range_lt(400);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -1938,7 +1938,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(101)
+                .with_time_range_gte(101)
                 .with_time_range_lt(400);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -1957,7 +1957,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(100)
+                .with_time_range_gte(100)
                 .with_time_range_lt(400);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -1977,7 +1977,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(99)
+                .with_time_range_gte(99)
                 .with_time_range_lt(400);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
@@ -1997,7 +1997,7 @@ pub mod test_suite {
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
-                .with_time_range_ge(1000)
+                .with_time_range_gte(1000)
                 .with_time_range_lt(1100);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits

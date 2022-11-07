@@ -1237,7 +1237,7 @@ mod tests {
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(sql, " WHERE index_id = $1 AND update_timestamp < 51");
 
-        let query = ListSplitsQuery::for_index("test-index").with_delete_opstamp_ge(4);
+        let query = ListSplitsQuery::for_index("test-index").with_delete_opstamp_gte(4);
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(sql, " WHERE index_id = $1 AND delete_opstamp >= 4");
 
