@@ -255,7 +255,7 @@ async fn list_splits_helper(
 
 macro_rules! define_sql_filter {
     ($sql:expr, $field:expr, $cmp:expr) => {{
-        match $cmp.lower {
+        match $cmp.start {
             Bound::Included(v) => {
                 let _ = write!($sql, " AND {} >= {}", $field, v);
             }
@@ -265,7 +265,7 @@ macro_rules! define_sql_filter {
             Bound::Unbounded => {}
         };
 
-        match $cmp.upper {
+        match $cmp.end {
             Bound::Included(v) => {
                 let _ = write!($sql, " AND {} <= {}", $field, v);
             }
@@ -299,14 +299,14 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
         Bound::Included(v) => {
             let _ = write!(
                 sql,
-                " AND (time_range_end >= {} OR time_range_end IS NULL) ",
+                " AND (time_range_end >= {} OR time_range_end IS NULL)",
                 v
             );
         }
         Bound::Excluded(v) => {
             let _ = write!(
                 sql,
-                " AND (time_range_end > {} OR time_range_end IS NULL) ",
+                " AND (time_range_end > {} OR time_range_end IS NULL)",
                 v
             );
         }
@@ -317,14 +317,14 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
         Bound::Included(v) => {
             let _ = write!(
                 sql,
-                " AND (time_range_start <= {} OR time_range_start IS NULL) ",
+                " AND (time_range_start <= {} OR time_range_start IS NULL)",
                 v
             );
         }
         Bound::Excluded(v) => {
             let _ = write!(
                 sql,
-                " AND (time_range_start < {} OR time_range_start IS NULL) ",
+                " AND (time_range_start < {} OR time_range_start IS NULL)",
                 v
             );
         }
@@ -1155,6 +1155,7 @@ mod tests {
     use crate::{ListSplitsQuery, SplitState};
 
     use super::tags_filter_expression_helper;
+    use super::build_query_filter;
 
     fn test_tags_filter_expression_helper(tags_ast: TagFilterAst, expected: &str) {
         assert_eq!(tags_filter_expression_helper(&tags_ast), expected);
@@ -1216,79 +1217,72 @@ mod tests {
         );
     }
     #[test]
-    fn test_single_filter_behaviour() {
+    fn test_single_sql_query_builder() {
         let mut query = ListSplitsQuery::for_index("test-index");
         query.with_split_state(SplitState::Staged);
-        assert!(split_query_predicate(&&split_1, &query));
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(sql, " WHERE index_id = $1 AND split_state IN ('Staged')");
 
         let mut query = ListSplitsQuery::for_index("test-index");
         query.with_split_state(SplitState::Published);
-        assert!(!split_query_predicate(&&split_2, &query));
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(sql, " WHERE index_id = $1 AND split_state IN ('Published')");
 
         let mut query = ListSplitsQuery::for_index("test-index");
         query.with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
-        assert!(!split_query_predicate(&&split_1, &query));
-        assert!(split_query_predicate(&&split_3, &query));
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(sql, " WHERE index_id = $1 AND split_state IN ('Published', 'MarkedForDeletion')");
 
         let mut query = ListSplitsQuery::for_index("test-index");
         query.with_update_timestamp_lt(51);
-        assert!(!split_query_predicate(&&split_1, &query));
-        assert!(split_query_predicate(&&split_2, &query));
-        assert!(split_query_predicate(&&split_3, &query));
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(sql, " WHERE index_id = $1 AND update_timestamp < 51");
 
         let mut query = ListSplitsQuery::for_index("test-index");
         query.with_delete_opstamp_ge(4);
-        assert!(split_query_predicate(&&split_1, &query));
-        assert!(split_query_predicate(&&split_2, &query));
-        assert!(!split_query_predicate(&&split_3, &query));
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(sql, " WHERE index_id = $1 AND delete_opstamp >= 4");
 
         let mut query = ListSplitsQuery::for_index("test-index");
         query.with_time_range_gt(45);
-        assert!(!split_query_predicate(&&split_1, &query));
-        assert!(split_query_predicate(&&split_2, &query));
-        assert!(split_query_predicate(&&split_3, &query));
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(sql, " WHERE index_id = $1 AND (time_range_end > 45 OR time_range_end IS NULL)");
 
         let mut query = ListSplitsQuery::for_index("test-index");
         query.with_time_range_lt(45);
-        assert!(split_query_predicate(&&split_1, &query));
-        assert!(split_query_predicate(&&split_2, &query));
-        assert!(split_query_predicate(&&split_3, &query));
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(sql, " WHERE index_id = $1 AND (time_range_start < 45 OR time_range_start IS NULL)");
 
         let mut query = ListSplitsQuery::for_index("test-index");
         query.with_tags_filter(TagFilterAst::Tag { is_present: false, tag: "tag-2".to_string() });
-        assert!(split_query_predicate(&&split_1, &query));
-        assert!(!split_query_predicate(&&split_2, &query));
-        assert!(!split_query_predicate(&&split_3, &query));
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(sql, " WHERE index_id = $1 AND (NOT ($$tag-2$$ = ANY(tags)))");
     }
 
     #[test]
-    fn test_combination_filter() {
+    fn test_combination_sql_query_builder() {
         let mut query = ListSplitsQuery::for_index("test-index");
         query.with_time_range_gt(0);
         query.with_time_range_lt(40);
-        assert!(split_query_predicate(&&split_1, &query));
-        assert!(split_query_predicate(&&split_2, &query));
-        assert!(split_query_predicate(&&split_3, &query));
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(sql, " WHERE index_id = $1 AND (time_range_end > 0 OR time_range_end IS NULL) AND (time_range_start < 40 OR time_range_start IS NULL)");
 
         let mut query = ListSplitsQuery::for_index("test-index");
         query.with_time_range_gt(45);
         query.with_delete_opstamp_gt(0);
-        assert!(!split_query_predicate(&&split_1, &query));
-        assert!(split_query_predicate(&&split_2, &query));
-        assert!(!split_query_predicate(&&split_3, &query));
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(sql, " WHERE index_id = $1 AND (time_range_end > 45 OR time_range_end IS NULL) AND delete_opstamp > 0");
 
         let mut query = ListSplitsQuery::for_index("test-index");
         query.with_update_timestamp_lt(51);
         query.with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
-        assert!(!split_query_predicate(&&split_1, &query));
-        assert!(split_query_predicate(&&split_2, &query));
-        assert!(split_query_predicate(&&split_3, &query));
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(sql, " WHERE index_id = $1 AND split_state IN ('Published', 'MarkedForDeletion') AND update_timestamp < 51");
 
         let mut query = ListSplitsQuery::for_index("test-index");
         query.with_time_range_gt(90);
         query.with_tags_filter(TagFilterAst::Tag { is_present: true, tag: "tag-1".to_string() });
-        assert!(!split_query_predicate(&&split_1, &query));
-        assert!(!split_query_predicate(&&split_2, &query));
-        assert!(!split_query_predicate(&&split_3, &query));
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(sql, " WHERE index_id = $1 AND ($$tag-1$$ = ANY(tags)) AND (time_range_end > 90 OR time_range_end IS NULL)");
     }
 }
