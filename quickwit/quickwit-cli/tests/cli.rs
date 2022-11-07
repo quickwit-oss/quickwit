@@ -713,41 +713,6 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
     Ok(())
 }
 
-#[tokio::test]
-#[cfg_attr(not(feature = "ci-test"), ignore)]
-async fn test_cmd_dry_run_delete_on_s3_localstack() {
-    let index_id = append_random_suffix("test-delete-cmd--s3-localstack");
-    let test_env = create_test_env(index_id.clone(), TestStorageType::S3).unwrap();
-    create_logs_index(&test_env);
-
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
-
-    let args = GarbageCollectIndexArgs {
-        config_uri: test_env.config_uri.clone(),
-        index_id: index_id.clone(),
-        grace_period: Duration::from_secs(3600),
-        dry_run: false,
-    };
-
-    garbage_collect_index_cli(args).await.unwrap();
-
-    let args = DeleteIndexArgs {
-        config_uri: test_env.config_uri.clone(),
-        index_id: index_id.clone(),
-        dry_run: true,
-    };
-
-    delete_index_cli(args).await.unwrap();
-
-    let args = DeleteIndexArgs {
-        config_uri: test_env.config_uri.clone(),
-        index_id: index_id.clone(),
-        dry_run: false,
-    };
-
-    delete_index_cli(args).await.unwrap();
-}
-
 /// testing the api via cli commands
 #[tokio::test]
 async fn test_all_local_index() -> Result<()> {
