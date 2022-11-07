@@ -519,3 +519,134 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery<'_>) -> bool {
 
     true
 }
+
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+    use quickwit_doc_mapper::tag_pruning::TagFilterAst;
+    use crate::{ListSplitsQuery, Split, SplitMetadata, SplitState};
+    use crate::file_backed_metastore::file_backed_index::split_query_predicate;
+
+    fn make_splits() -> [Split; 3] {
+        [
+            Split {
+                split_metadata: SplitMetadata {
+                    split_id: "split-1".to_string(),
+                    delete_opstamp: 9,
+                    time_range: Some(32..=40),
+                    tags: BTreeSet::from(["tag-1".to_string()]),
+                    ..Default::default()
+                },
+                split_state: SplitState::Staged,
+                update_timestamp: 70i64,
+                publish_timestamp: None,
+            },
+            Split {
+                split_metadata: SplitMetadata {
+                    split_id: "split-2".to_string(),
+                    delete_opstamp: 4,
+                    time_range: None,
+                    tags: BTreeSet::from(["tag-2".to_string(), "tag-3".to_string()]),
+                    ..Default::default()
+                },
+                split_state: SplitState::MarkedForDeletion,
+                update_timestamp: 50i64,
+                publish_timestamp: None,
+            },
+            Split {
+                split_metadata: SplitMetadata {
+                    split_id: "split-3".to_string(),
+                    delete_opstamp: 0,
+                    time_range: Some(0..=90),
+                    tags: BTreeSet::from(["tag-2".to_string(), "tag-4".to_string()]),
+                    ..Default::default()
+                },
+                split_state: SplitState::Published,
+                update_timestamp: 0i64,
+                publish_timestamp: None,
+            }
+        ]
+    }
+
+    #[test]
+    fn test_single_filter_behaviour() {
+        let [split_1, split_2, split_3] = make_splits();
+
+        let mut query = ListSplitsQuery::for_index("test-index");
+        query.with_split_state(SplitState::Staged);
+        assert!(split_query_predicate(&&split_1, &query));
+
+        let mut query = ListSplitsQuery::for_index("test-index");
+        query.with_split_state(SplitState::Published);
+        assert!(!split_query_predicate(&&split_2, &query));
+
+        let mut query = ListSplitsQuery::for_index("test-index");
+        query.with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
+        assert!(!split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_3, &query));
+
+        let mut query = ListSplitsQuery::for_index("test-index");
+        query.with_update_timestamp_lt(51);
+        assert!(!split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_2, &query));
+        assert!(split_query_predicate(&&split_3, &query));
+
+        let mut query = ListSplitsQuery::for_index("test-index");
+        query.with_delete_opstamp_ge(4);
+        assert!(split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_2, &query));
+        assert!(!split_query_predicate(&&split_3, &query));
+
+        let mut query = ListSplitsQuery::for_index("test-index");
+        query.with_time_range_gt(45);
+        assert!(!split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_2, &query));
+        assert!(split_query_predicate(&&split_3, &query));
+
+        let mut query = ListSplitsQuery::for_index("test-index");
+        query.with_time_range_lt(45);
+        assert!(split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_2, &query));
+        assert!(split_query_predicate(&&split_3, &query));
+
+        let mut query = ListSplitsQuery::for_index("test-index");
+        query.with_tags_filter(TagFilterAst::Tag { is_present: false, tag: "tag-2".to_string() });
+        assert!(split_query_predicate(&&split_1, &query));
+        assert!(!split_query_predicate(&&split_2, &query));
+        assert!(!split_query_predicate(&&split_3, &query));
+    }
+
+    #[test]
+    fn test_combination_filter() {
+        let [split_1, split_2, split_3] = make_splits();
+
+        let mut query = ListSplitsQuery::for_index("test-index");
+        query.with_time_range_gt(0);
+        query.with_time_range_lt(40);
+        assert!(split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_2, &query));
+        assert!(split_query_predicate(&&split_3, &query));
+
+        let mut query = ListSplitsQuery::for_index("test-index");
+        query.with_time_range_gt(45);
+        query.with_delete_opstamp_gt(0);
+        assert!(!split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_2, &query));
+        assert!(!split_query_predicate(&&split_3, &query));
+
+        let mut query = ListSplitsQuery::for_index("test-index");
+        query.with_update_timestamp_lt(51);
+        query.with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
+        assert!(!split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_2, &query));
+        assert!(split_query_predicate(&&split_3, &query));
+
+        let mut query = ListSplitsQuery::for_index("test-index");
+        query.with_time_range_gt(90);
+        query.with_tags_filter(TagFilterAst::Tag { is_present: true, tag: "tag-1".to_string() });
+        assert!(!split_query_predicate(&&split_1, &query));
+        assert!(!split_query_predicate(&&split_2, &query));
+        assert!(!split_query_predicate(&&split_3, &query));
+    }
+}
