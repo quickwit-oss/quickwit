@@ -38,10 +38,10 @@ use async_speed_limit::limiter::Consume;
 use async_speed_limit::Limiter;
 use once_cell::sync::Lazy;
 use pin_project_lite::pin_project;
-use prometheus::{IntCounter, IntCounterVec};
+use prometheus::IntCounter;
 use tokio::io::AsyncWrite;
 
-use crate::metrics::new_counter_vec;
+use crate::metrics::{new_counter_vec, IntCounterVec};
 use crate::{KillSwitch, Progress, ProtectedZoneGuard};
 
 // Max 1MB at a time.
@@ -53,7 +53,7 @@ fn truncate_bytes(bytes: &[u8]) -> &[u8] {
 }
 
 struct IoMetrics {
-    write_bytes: IntCounterVec,
+    write_bytes: IntCounterVec<2>,
 }
 
 impl Default for IoMetrics {
@@ -63,7 +63,7 @@ impl Default for IoMetrics {
             "Number of bytes written by a given component in [indexer, merger, deleter, \
              split_downloader_{merge,delete}]",
             "quickwit",
-            &["index", "component"],
+            ["index", "component"],
         );
         Self { write_bytes }
     }
@@ -132,9 +132,7 @@ impl IoControls {
     }
 
     pub fn set_index_and_component(mut self, index: &str, component: &str) -> Self {
-        self.bytes_counter = IO_METRICS
-            .write_bytes
-            .with_label_values(&[index, component]);
+        self.bytes_counter = IO_METRICS.write_bytes.with_label_values([index, component]);
         self
     }
 
