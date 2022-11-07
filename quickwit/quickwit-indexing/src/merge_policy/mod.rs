@@ -29,13 +29,14 @@ pub use nop_merge_policy::NopMergePolicy;
 use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_config::IndexingSettings;
 use quickwit_metastore::SplitMetadata;
+use serde::Serialize;
 pub(crate) use stable_log_merge_policy::StableLogMergePolicy;
 use tracing::{info_span, Span};
 
 use crate::merge_policy::const_write_amplification::ConstWriteAmplificationMergePolicy;
 use crate::new_split_id;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum MergeOperationType {
     Merge,
     DeleteAndMerge,
@@ -47,8 +48,9 @@ impl fmt::Display for MergeOperationType {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct MergeOperation {
+    #[serde(skip_serializing)]
     pub merge_parent_span: Span,
     pub merge_split_id: String,
     pub splits: Vec<SplitMetadata>,
@@ -163,6 +165,7 @@ pub mod tests {
     use proptest::prelude::*;
     use quickwit_actors::{create_test_mailbox, Universe};
     use rand::seq::SliceRandom;
+    use tantivy::TrackedObject;
 
     use super::*;
     use crate::actors::{merge_split_attrs, MergePlanner, MergeSplitDownloader};
@@ -361,12 +364,8 @@ pub mod tests {
             loop {
                 let obs = merge_planner_handler.process_pending_and_observe().await;
                 assert_eq!(obs.obs_type, quickwit_actors::ObservationType::Alive);
-                let merge_ops: Vec<MergeOperation> = merge_op_inbox
-                    .drain_for_test()
-                    .into_iter()
-                    .flat_map(|op| op.downcast::<MergeOperation>())
-                    .map(|op| *op)
-                    .collect();
+                let merge_ops =
+                    merge_op_inbox.drain_for_test_typed::<TrackedObject<MergeOperation>>();
                 if merge_ops.is_empty() {
                     break;
                 }

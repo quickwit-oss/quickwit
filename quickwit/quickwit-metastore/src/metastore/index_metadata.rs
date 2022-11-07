@@ -68,7 +68,7 @@ impl IndexMetadata {
         use quickwit_config::IndexingResources;
         use quickwit_doc_mapper::SortOrder;
 
-        let index_uri = Uri::new(index_uri.to_string());
+        let index_uri = Uri::from_well_formed(index_uri.to_string());
         let doc_mapping_json = r#"{
             "field_mappings": [
                 {
@@ -293,7 +293,7 @@ impl From<IndexMetadataV1> for IndexMetadata {
             .collect();
         Self {
             index_id: v1.index_id,
-            index_uri: Uri::new(v1.index_uri),
+            index_uri: Uri::from_well_formed(v1.index_uri),
             checkpoint: v1.checkpoint,
             doc_mapping: v1.doc_mapping,
             indexing_settings: v1.indexing_settings.into(),
@@ -315,7 +315,7 @@ impl From<IndexMetadataV2> for IndexMetadata {
             .collect();
         Self {
             index_id: v2.index_id,
-            index_uri: Uri::new(v2.index_uri),
+            index_uri: Uri::from_well_formed(v2.index_uri),
             checkpoint: v2.checkpoint,
             doc_mapping: v2.doc_mapping,
             indexing_settings: v2.indexing_settings,

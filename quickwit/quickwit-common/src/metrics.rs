@@ -18,7 +18,40 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use prometheus::{Encoder, HistogramOpts, Opts, TextEncoder};
-pub use prometheus::{Histogram, HistogramTimer, IntCounter, IntCounterVec, IntGauge};
+pub use prometheus::{
+    Histogram, HistogramTimer, HistogramVec as PrometheusHistogramVec, IntCounter,
+    IntCounterVec as PrometheusIntCounterVec, IntGauge, IntGaugeVec as PrometheusIntGaugeVec,
+};
+
+pub struct HistogramVec<const N: usize> {
+    underlying: PrometheusHistogramVec,
+}
+
+impl<const N: usize> HistogramVec<N> {
+    pub fn with_label_values(&self, label_values: [&str; N]) -> Histogram {
+        self.underlying.with_label_values(&label_values)
+    }
+}
+
+pub struct IntCounterVec<const N: usize> {
+    underlying: PrometheusIntCounterVec,
+}
+
+impl<const N: usize> IntCounterVec<N> {
+    pub fn with_label_values(&self, label_values: [&str; N]) -> IntCounter {
+        self.underlying.with_label_values(&label_values)
+    }
+}
+
+pub struct IntGaugeVec<const N: usize> {
+    underlying: PrometheusIntGaugeVec,
+}
+
+impl<const N: usize> IntGaugeVec<N> {
+    pub fn with_label_values(&self, label_values: [&str; N]) -> IntGauge {
+        self.underlying.with_label_values(&label_values)
+    }
+}
 
 pub fn new_counter(name: &str, description: &str, namespace: &str) -> IntCounter {
     let counter_opts = Opts::new(name, description).namespace(namespace);
@@ -27,23 +60,17 @@ pub fn new_counter(name: &str, description: &str, namespace: &str) -> IntCounter
     counter
 }
 
-pub fn new_counter_vec(
+pub fn new_counter_vec<const N: usize>(
     name: &str,
     description: &str,
     namespace: &str,
-    labels: &[&str],
-) -> IntCounterVec {
+    label_names: [&str; N],
+) -> IntCounterVec<N> {
     let counter_opts = Opts::new(name, description).namespace(namespace);
-    let counter_vec = IntCounterVec::new(counter_opts, labels).expect("Failed to create counter");
-    prometheus::register(Box::new(counter_vec.clone())).expect("Failed to register counter");
-    counter_vec
-}
-
-pub fn new_histogram(name: &str, description: &str, namespace: &str) -> Histogram {
-    let histogram_opts = HistogramOpts::new(name, description).namespace(namespace);
-    let histogram = Histogram::with_opts(histogram_opts).expect("Failed to create counter");
-    prometheus::register(Box::new(histogram.clone())).expect("Failed to register counter");
-    histogram
+    let underlying = PrometheusIntCounterVec::new(counter_opts, &label_names)
+        .expect("Failed to create counter vec");
+    prometheus::register(Box::new(underlying.clone())).expect("Failed to register counter vec");
+    IntCounterVec { underlying }
 }
 
 pub fn new_gauge(name: &str, description: &str, namespace: &str) -> IntGauge {
@@ -51,6 +78,39 @@ pub fn new_gauge(name: &str, description: &str, namespace: &str) -> IntGauge {
     let gauge = IntGauge::with_opts(gauge_opts).expect("Failed to create gauge");
     prometheus::register(Box::new(gauge.clone())).expect("Failed to register gauge");
     gauge
+}
+
+pub fn new_gauge_vec<const N: usize>(
+    name: &str,
+    description: &str,
+    namespace: &str,
+    label_names: [&str; N],
+) -> IntGaugeVec<N> {
+    let gauge_opts = Opts::new(name, description).namespace(namespace);
+    let underlying =
+        PrometheusIntGaugeVec::new(gauge_opts, &label_names).expect("Failed to create gauge vec");
+    prometheus::register(Box::new(underlying.clone())).expect("Failed to register gauge vec");
+    IntGaugeVec { underlying }
+}
+
+pub fn new_histogram(name: &str, description: &str, namespace: &str) -> Histogram {
+    let histogram_opts = HistogramOpts::new(name, description).namespace(namespace);
+    let histogram = Histogram::with_opts(histogram_opts).expect("Failed to create histogram");
+    prometheus::register(Box::new(histogram.clone())).expect("Failed to register counter");
+    histogram
+}
+
+pub fn new_histogram_vec<const N: usize>(
+    name: &str,
+    description: &str,
+    namespace: &str,
+    label_names: [&str; N],
+) -> HistogramVec<N> {
+    let histogram_opts = HistogramOpts::new(name, description).namespace(namespace);
+    let underlying = PrometheusHistogramVec::new(histogram_opts, &label_names)
+        .expect("Failed to create histogram vec");
+    prometheus::register(Box::new(underlying.clone())).expect("Failed to register histogram vec");
+    HistogramVec { underlying }
 }
 
 pub fn metrics_handler() -> impl warp::Reply {

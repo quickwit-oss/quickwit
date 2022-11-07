@@ -11,12 +11,14 @@ documentation = "https://quickwit.io/docs/"
 
 [dependencies]
 anyhow = { workspace = true }
+async-speed-limit = {workspace=true}
 colored = { workspace = true }
 env_logger = { workspace = true }
 home = { workspace = true }
 itertools = { workspace = true }
 num_cpus = { workspace = true }
 once_cell = { workspace = true }
+pin-project-lite = { workspace = true }
 pnet = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }

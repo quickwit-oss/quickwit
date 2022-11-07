@@ -78,7 +78,6 @@ impl From<SplitMetadataAndFooterV0> for SplitMetadata {
             partition_id: 0,
             source_id: "unknown".to_string(),
             node_id: "unknown".to_string(),
-            pipeline_ord: 0,
             delete_opstamp: 0,
             num_docs: v0.split_metadata.num_docs,
             uncompressed_docs_size_in_bytes: v0.split_metadata.size_in_bytes,
@@ -153,17 +152,18 @@ impl From<SplitMetadataV1> for SplitMetadata {
     fn from(v1: SplitMetadataV1) -> Self {
         let source_id = v1.source_id.unwrap_or_else(|| "unknown".to_string());
 
-        let (node_id, pipeline_ord) = if let Some(node_id) = v1.node_id {
-            if let Some((node_id, pipeline_ord)) = node_id.rsplit_once('/') {
-                (
-                    node_id.to_string(),
-                    pipeline_ord.parse::<usize>().unwrap_or(0),
-                )
+        let node_id = if let Some(node_id) = v1.node_id {
+            // The previous version encoded `v1.node_id` as `{node_id}/{pipeline_ord}`.
+            // Since pipeline_ord is no longer needed, we only extract the `node_id` portion
+            // to keep backward compatibility.  This has the advantage of avoiding a
+            // brand new version.
+            if let Some((node_id, _)) = node_id.rsplit_once('/') {
+                node_id.to_string()
             } else {
-                (node_id.to_string(), 0)
+                node_id
             }
         } else {
-            ("unknown".to_string(), 0)
+            "unknown".to_string()
         };
 
         SplitMetadata {
@@ -172,7 +172,6 @@ impl From<SplitMetadataV1> for SplitMetadata {
             partition_id: v1.partition_id,
             source_id,
             node_id,
-            pipeline_ord,
             delete_opstamp: v1.delete_opstamp,
             num_docs: v1.num_docs,
             uncompressed_docs_size_in_bytes: v1.uncompressed_docs_size_in_bytes,
@@ -192,7 +191,7 @@ impl From<SplitMetadata> for SplitMetadataV1 {
             index_id: split.index_id,
             partition_id: split.partition_id,
             source_id: Some(split.source_id),
-            node_id: Some(format!("{}/{}", split.node_id, split.pipeline_ord)),
+            node_id: Some(split.node_id),
             delete_opstamp: split.delete_opstamp,
             num_docs: split.num_docs,
             uncompressed_docs_size_in_bytes: split.uncompressed_docs_size_in_bytes,

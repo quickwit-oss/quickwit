@@ -165,7 +165,7 @@ mod tests {
         let index_service = IndexService::new(
             Arc::new(metastore),
             StorageUriResolver::for_test(),
-            Uri::new("ram:///indexes".to_string()),
+            Uri::from_well_formed("ram:///indexes".to_string()),
         );
         let index_management_handler =
             super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
@@ -195,7 +195,7 @@ mod tests {
         let index_service = IndexService::new(
             Arc::new(metastore),
             StorageUriResolver::for_test(),
-            Uri::new("ram:///indexes".to_string()),
+            Uri::from_well_formed("ram:///indexes".to_string()),
         );
         let index_management_handler =
             super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
@@ -228,7 +228,7 @@ mod tests {
         let index_service = IndexService::new(
             Arc::new(metastore),
             StorageUriResolver::for_test(),
-            Uri::new("ram:///indexes".to_string()),
+            Uri::from_well_formed("ram:///indexes".to_string()),
         );
         let index_management_handler =
             super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
