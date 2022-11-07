@@ -68,7 +68,7 @@ pub use self::supervisor::{Supervisor, SupervisorState};
 /// If an actor does not advertise a progress within an interval of duration `HEARTBEAT`,
 /// its supervisor will consider it as blocked and will proceed to kill it, as well
 /// as all of the actors all the actors that share the killswitch.
-pub const HEARTBEAT: Duration = if cfg!(test) {
+pub const HEARTBEAT: Duration = if cfg!(any(test, feature = "testsuite")) {
     // Right now some unit test end when we detect that a
     // pipeline has terminated, which can require waiting
     // for a heartbeat.
