@@ -20,7 +20,7 @@
 use std::fmt::Display;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener};
 use std::str::FromStr;
-use std::sync::Mutex;
+
 
 use anyhow::{bail, Context};
 use itertools::Itertools;
@@ -211,26 +211,12 @@ impl Display for HostAddr {
 /// Finds a random available TCP port.
 ///
 /// This function induces a race condition, use it only in unit tests.
-#[cfg(feature = "testsuite")]
+#[cfg(any(test, feature = "testsuite"))]
 pub fn find_available_tcp_port() -> anyhow::Result<u16> {
-    static ASSIGNED_PORTS: Mutex<Vec<u16>> = Mutex::new(vec![]);
-
-    let mut listeners = vec![];
-
-    for _ in 0..15 {
-        let socket: SocketAddr = ([127, 0, 0, 1], 0u16).into();
-        let listener = TcpListener::bind(socket)?;
-        let port = listener.local_addr()?.port();
-
-        if ASSIGNED_PORTS.lock().unwrap().contains(&port) {
-            listeners.push(listener);
-        } else {
-            ASSIGNED_PORTS.lock().unwrap().push(port);
-            return Ok(port);
-        }
-    }
-
-    bail!("Too many retries to find an available port.")
+    let socket: SocketAddr = ([127, 0, 0, 1], 0u16).into();
+    let listener = TcpListener::bind(socket)?;
+    let port = listener.local_addr()?.port();
+    Ok(port)
 }
 
 /// Attempts to find the private IP of the host. Returns the matching interface name along with it.

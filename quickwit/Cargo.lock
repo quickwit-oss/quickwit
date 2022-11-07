@@ -3218,7 +3218,6 @@ dependencies = [
  "quickwit-serve",
  "quickwit-storage",
  "quickwit-telemetry",
- "rand 0.8.5",
  "regex",
  "reqwest",
  "serde_json",
