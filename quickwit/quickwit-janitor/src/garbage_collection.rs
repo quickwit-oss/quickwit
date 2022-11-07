@@ -195,32 +195,32 @@ pub async fn delete_splits_with_files(
         .keys()
         .map(|key| key.as_path())
         .collect::<Vec<&Path>>();
-    let result = storage.bulk_delete(&paths).await;
+    let delete_result  = storage.bulk_delete(&paths).await;
 
     if let Some(ctx) = ctx_opt {
         ctx.record_progress();
     }
 
-    let mut deleted_split_ids = vec![];
-    let mut deleted_file_entries = vec![];
+    let mut deleted_split_ids = Vec::new();
+    let mut deleted_file_entries = Vec::new();
 
-    match result {
+    match delete_result {
         Ok(()) => {
             for (split_id, entry) in paths_to_splits.into_values() {
                 deleted_split_ids.push(split_id);
                 deleted_file_entries.push(entry);
             }
         }
-        Err(state) => {
-            let split_ids = state
+        Err(bulk_delete_error) => {
+            let split_ids = bulk_delete_error
                 .failures
                 .keys()
-                .chain(state.unattempted.iter())
+                .chain(bulk_delete_error.unattempted.iter())
                 .collect::<Vec<_>>();
 
-            error!(error = ?state.error, index_id = ?index_id, split_ids = ?split_ids, "Failed to delete splits.");
+            error!(error = ?bulk_delete_error.error, index_id = ?index_id, split_ids = ?split_ids, "Failed to delete splits.");
 
-            let successful_deletes = state
+            let successful_deletes = bulk_delete_error
                 .successes
                 .iter()
                 .filter_map(|key| paths_to_splits.remove(key));
