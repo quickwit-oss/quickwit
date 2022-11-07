@@ -43,10 +43,7 @@ RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CAR
     && mkdir -p /quickwit/bin \
     && find target/$CARGO_PROFILE -maxdepth 1 -perm /a+x -type f -exec mv {} /quickwit/bin \;
 
-# Change the default configuration file in order to make the REST,
-# gRPC, and gossip services accessible outside of Docker container.
 COPY config/quickwit.yaml /quickwit/config/quickwit.yaml
-RUN sed -i 's/#[ ]*listen_address: 127.0.0.1/listen_address: 0.0.0.0/g' config/quickwit.yaml
 
 
 FROM debian:bullseye-slim AS quickwit
@@ -69,6 +66,7 @@ COPY --from=builder /quickwit/config/quickwit.yaml /quickwit/config/quickwit.yam
 
 ENV QW_CONFIG=/quickwit/config/quickwit.yaml
 ENV QW_DATA_DIR=/quickwit/qwdata
+ENV QW_LISTEN_ADDRESS=0.0.0.0
 
 RUN quickwit --version
 
