@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use itertools::Itertools;
-use tantivy::{DatePrecision as DateTimePrecision, DateTime as TantivyDateTime};
+use tantivy::DateTime as TantivyDateTime;
 use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
 use time::OffsetDateTime;
 
@@ -68,7 +68,7 @@ fn parse_rfc2822(value: &str) -> Result<OffsetDateTime, String> {
 }
 
 /// Parses a RFC3339 date.
-fn parse_rfc3339(value: &str) -> Result<OffsetDateTime, String> {
+pub(super) fn parse_rfc3339(value: &str) -> Result<OffsetDateTime, String> {
     OffsetDateTime::parse(value, &Rfc3339).map_err(|error| error.to_string())
 }
 
@@ -106,26 +106,6 @@ pub(super) fn parse_timestamp(timestamp: i64) -> Result<TantivyDateTime, String>
              ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`."
         )),
     }
-}
-
-/// Formats the specified timestamp as a RFC3339 date string.
-pub(crate) fn format_timestamp(
-    timestamp: i64,
-    precision: &DateTimePrecision,
-) -> Result<String, String> {
-    let date_time = match precision {
-        DateTimePrecision::Seconds => OffsetDateTime::from_unix_timestamp(timestamp),
-        DateTimePrecision::Milliseconds => {
-            OffsetDateTime::from_unix_timestamp_nanos((timestamp * 1_000_000) as i128)
-        }
-        DateTimePrecision::Microseconds => {
-            OffsetDateTime::from_unix_timestamp_nanos((timestamp * 1_000) as i128)
-        }
-    };
-    date_time
-        .expect("The datetime should be valid.")
-        .format(&Rfc3339)
-        .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
@@ -363,15 +343,5 @@ mod tests {
             let date_time = parse_timestamp(max_ts_micros).unwrap();
             assert_eq!(date_time.into_timestamp_micros(), max_ts_micros);
         }
-    }
-
-    #[test]
-    fn test_format_timestamp() {
-        let date_time_str = format_timestamp(
-            datetime!(2012-05-21 12:09:14 UTC).unix_timestamp(),
-            &DateTimePrecision::Seconds,
-        )
-        .unwrap();
-        assert_eq!(date_time_str, "2012-05-21T12:09:14Z");
     }
 }

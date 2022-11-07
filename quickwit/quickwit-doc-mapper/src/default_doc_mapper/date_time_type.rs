@@ -22,9 +22,10 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
 use tantivy::schema::Value as TantivyValue;
 use tantivy::DatePrecision as DateTimePrecision;
+use time::format_description::well_known::{Iso8601, Rfc2822};
 
 use super::date_time_format::DateTimeFormat;
-use super::date_time_parsing::{parse_date_time, parse_timestamp};
+use super::date_time_parsing::{parse_date_time, parse_rfc3339, parse_timestamp};
 use super::default_as_true;
 
 /// A struct holding DateTime field options.
@@ -38,6 +39,10 @@ pub struct QuickwitDateTimeOptions {
     /// Accepted input formats.
     #[serde(default)]
     pub input_formats: InputFormats,
+
+    /// Accepted input formats.
+    #[serde(default)]
+    pub output_format: DateTimeFormat,
 
     /// Internal storage precision.
     #[serde(default)]
@@ -58,6 +63,7 @@ impl Default for QuickwitDateTimeOptions {
         Self {
             description: None,
             input_formats: InputFormats::default(),
+            output_format: DateTimeFormat::default(),
             precision: DateTimePrecision::default(),
             indexed: true,
             stored: true,
@@ -86,6 +92,27 @@ impl QuickwitDateTimeOptions {
             }
         };
         Ok(TantivyValue::Date(date_time))
+    }
+
+    pub(crate) fn format_to_json(&self, date_time_str: &str) -> Result<JsonValue, String> {
+        if self.output_format == DateTimeFormat::RCF3339 {
+            return Ok(JsonValue::String(date_time_str.to_string()));
+        }
+
+        let date = parse_rfc3339(date_time_str)?;
+        let format_result = match &self.output_format {
+            DateTimeFormat::ISO8601 => date.format(&Iso8601::DEFAULT).map(JsonValue::String),
+            DateTimeFormat::RFC2822 => date.format(&Rfc2822).map(JsonValue::String),
+            DateTimeFormat::Strptime(strftime_parser) => strftime_parser
+                .format_date_time(&date)
+                .map(JsonValue::String),
+            // TODO Ask if we should take into account precision
+            DateTimeFormat::Timestamp => Ok(JsonValue::Number(date.unix_timestamp().into())),
+            DateTimeFormat::RCF3339 => {
+                unreachable!("`DateTimeFormat::RCF3339` should have been handled already")
+            }
+        };
+        format_result.map_err(|error| error.to_string())
     }
 }
 
@@ -152,6 +179,7 @@ mod tests {
         let expected_date_time_options = QuickwitDateTimeOptions {
             description: Some("When the record was last updated.".to_string()),
             input_formats: expected_input_formats,
+            output_format: DateTimeFormat::RCF3339,
             precision: DateTimePrecision::Milliseconds,
             indexed: true,
             fast: true,
@@ -171,6 +199,7 @@ mod tests {
                 "input_formats": [
                     "rfc3339"
                 ],
+                "output_format": "unix_timestamp",
                 "precision": "milliseconds",
                 "indexed": true,
                 "fast": true,
@@ -192,6 +221,7 @@ mod tests {
         let expected_date_time_options = QuickwitDateTimeOptions {
             description: Some("When the record was last updated.".to_string()),
             input_formats: expected_input_formats,
+            output_format: DateTimeFormat::Timestamp,
             precision: DateTimePrecision::Milliseconds,
             indexed: true,
             fast: true,
@@ -208,6 +238,7 @@ mod tests {
             date_time_options.input_formats.0,
             &[DateTimeFormat::RCF3339, DateTimeFormat::Timestamp]
         );
+        assert_eq!(date_time_options.output_format, DateTimeFormat::RCF3339);
         assert_eq!(date_time_options.precision, DateTimePrecision::Seconds);
         assert!(date_time_options.indexed);
         assert!(date_time_options.stored);
@@ -260,6 +291,7 @@ mod tests {
                 "type": "datetime",
                 "description": "When the record was last updated.",
                 "input_formats": ["iso8601"],
+                "output_format": "rfc3339",
                 "precision": "seconds",
                 "indexed": true,
                 "fast": false,

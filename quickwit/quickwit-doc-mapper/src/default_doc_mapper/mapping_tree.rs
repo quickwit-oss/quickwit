@@ -31,7 +31,6 @@ use tantivy::schema::{
 };
 use tantivy::{DateOptions, Document};
 
-use super::date_time_parsing::format_timestamp;
 use super::date_time_type::QuickwitDateTimeOptions;
 use crate::default_doc_mapper::field_mapping_entry::{
     QuickwitIpAddrOptions, QuickwitNumericOptions, QuickwitObjectOptions, QuickwitTextOptions,
@@ -193,14 +192,23 @@ impl MappingLeaf {
         let json_type = self.typ.json_type();
         if let Some(json_val) = extract_json_val(json_type, named_doc, field_path, self.cardinality)
         {
-            if let (LeafType::DateTime(options), Some(timestamp)) =
-                (self.get_type(), json_val.as_i64())
-            {
-                let date_time_str = format_timestamp(timestamp, &options.precision)
-                    .expect("Invalid timestamp is not allowed.");
-                return insert_json_val(field_path, JsonValue::String(date_time_str), doc_json);
-            }
+            if let LeafType::DateTime(date_time_options) = self.get_type() {
+                if let Some(date_time_str) = json_val.as_str() {
+                    let date_time_json = date_time_options
+                        .format_to_json(date_time_str)
+                        .expect("Invalid datetime is not allowed.");
+                    return insert_json_val(field_path, date_time_json, doc_json);
+                }
 
+                // TODO: remove after discussion
+                if let Some(timestamp) = json_val.as_i64() {
+                    return insert_json_val(
+                        field_path,
+                        JsonValue::Number(timestamp.into()),
+                        doc_json,
+                    );
+                }
+            }
             insert_json_val(field_path, json_val, doc_json);
         }
     }

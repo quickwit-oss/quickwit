@@ -132,7 +132,10 @@ impl IndexMetadata {
             timestamp_field: Some("timestamp".to_string()),
             sort_field: Some("timestamp".to_string()),
             sort_order: Some(SortOrder::Desc),
-            resources: IndexingResources::for_test(),
+            resources: IndexingResources {
+                heap_size: byte_unit::Byte::from_bytes(20_000_000), // 20MB
+                ..Default::default()
+            },
             ..Default::default()
         };
         let search_settings = SearchSettings {

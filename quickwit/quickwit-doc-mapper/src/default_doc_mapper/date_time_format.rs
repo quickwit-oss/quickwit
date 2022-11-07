@@ -23,6 +23,7 @@ use std::str::FromStr;
 use ouroboros::self_referencing;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
+use time::error::Format;
 use time::format_description::FormatItem;
 use time::{OffsetDateTime, PrimitiveDateTime};
 use time_fmt::parse::time_format_item::parse_to_format_item;
@@ -62,6 +63,10 @@ impl StrptimeParser {
                 .map(|date_time| date_time.assume_utc())
                 .map_err(|err| err.to_string())
         }
+    }
+
+    pub fn format_date_time(&self, date_time: &OffsetDateTime) -> Result<String, Format> {
+        date_time.format(self.borrow_items())
     }
 }
 
@@ -103,6 +108,12 @@ pub enum DateTimeFormat {
     RCF3339,
     Strptime(StrptimeParser),
     Timestamp,
+}
+
+impl Default for DateTimeFormat {
+    fn default() -> Self {
+        DateTimeFormat::RCF3339
+    }
 }
 
 impl DateTimeFormat {
