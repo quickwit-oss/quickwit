@@ -229,16 +229,8 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         validate_tag_fields(&builder.tag_fields, &schema)?;
 
         // Resolve default search fields
-        let mut default_search_field_names = Vec::new();
-        for field_name in &builder.default_search_fields {
-            if default_search_field_names.contains(field_name) {
-                bail!("Duplicated default search field: `{}`", field_name)
-            }
-            schema
-                .get_field(field_name)
-                .with_context(|| format!("Unknown default search field: `{field_name}`"))?;
-            default_search_field_names.push(field_name.clone());
-        }
+        let default_search_field_names =
+            resolve_default_search_fields(&builder.default_search_fields, &schema)?;
 
         resolve_timestamp_field(builder.timestamp_field.as_ref(), &schema)?;
 
@@ -271,6 +263,52 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             mode,
         })
     }
+}
+
+fn resolve_default_search_fields(
+    default_search_fields: &[String],
+    schema: &Schema,
+) -> Result<Vec<String>, anyhow::Error> {
+    let mut default_search_field_names = Vec::new();
+    for field_name in default_search_fields {
+        if default_search_field_names.contains(field_name) {
+            bail!("Duplicated default search field: `{}`", field_name)
+        }
+        if field_name.contains('.') {
+            let potential_json_field_name = field_name
+                .split('.')
+                .next()
+                .expect("Field name should contain `.`");
+
+            if !potential_json_field_name.ends_with('\\')
+                && schema.get_field(potential_json_field_name).is_ok()
+            {
+                let field = schema
+                    .get_field(potential_json_field_name)
+                    .expect("Field should exist.");
+
+                let field_entry = schema.get_field_entry(field);
+                match field_entry.field_type() {
+                    FieldType::JsonObject(_) => {
+                        default_search_field_names.push(field_name.clone());
+                        continue;
+                    }
+                    _ => bail!(
+                        "Field {} is not a JSON field. To search the non-json field `.` needs to \
+                         be escaped. ( {} )",
+                        potential_json_field_name,
+                        field_name.replace('.', r"\.")
+                    ),
+                }
+            }
+        }
+
+        schema
+            .get_field(field_name)
+            .with_context(|| format!("Unknown default search field: `{field_name}`"))?;
+        default_search_field_names.push(field_name.clone());
+    }
+    Ok(default_search_field_names)
 }
 
 impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
@@ -1177,5 +1215,91 @@ mod tests {
             default_doc_mapper_query_aux(&doc_mapper, r#"identity\.username:toto"#).unwrap(),
             r#"TermQuery(Term(type=Str, field=1, "toto"))"#
         );
+    }
+
+    #[test]
+    fn test_doc_mapper_default_search_field_json_field_attribute() {
+        let doc_mapper = r#"{
+            "default_search_fields": ["foo.bar"],
+            "field_mappings": [
+                {
+                    "name": "foo",
+                    "type": "json",
+                    "tokenizer": "default"
+                }
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let doc_mapper = builder.try_build().unwrap();
+        assert_eq!(doc_mapper.default_search_field_names.len(), 1);
+        assert_eq!(doc_mapper.default_search_field_names[0], "foo.bar");
+    }
+    #[test]
+    fn test_doc_mapper_default_search_field_json_attribute_with_same_name() {
+        let doc_mapper = r#"{
+            "default_search_fields": ["foo.bar"],
+            "field_mappings": [
+                {
+                    "name": "foo",
+                    "type": "json",
+                    "tokenizer": "default"
+                },
+                {
+                    "name": "foo.bar",
+                    "type": "text",
+                    "tokenizer": "default"
+                }
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let doc_mapper = builder.try_build().unwrap();
+        assert_eq!(doc_mapper.default_search_field_names.len(), 1);
+        // `foo.bar` refers to json field "foo"
+        assert_eq!(doc_mapper.default_search_field_names[0], "foo.bar");
+    }
+    #[test]
+    fn test_doc_mapper_default_search_field_text_with_same_name_json_attribute() {
+        let doc_mapper = r#"{
+            "default_search_fields": ["foo\\.bar"],
+            "field_mappings": [
+                {
+                    "name": "foo",
+                    "type": "json",
+                    "tokenizer": "default"
+                },
+                {
+                    "name": "foo.bar",
+                    "type": "text",
+                    "tokenizer": "default"
+                }
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let doc_mapper = builder.try_build().unwrap();
+        assert_eq!(doc_mapper.default_search_field_names.len(), 1);
+        // While referencing the field name with `.` user should escape the `.`
+        assert_eq!(doc_mapper.default_search_field_names[0], "foo\\.bar");
+    }
+
+    #[test]
+    fn test_doc_mapper_default_search_field_json_with_same_name_field_should_error() {
+        let doc_mapper = r#"{
+            "default_search_fields": ["foo.bar"],
+            "field_mappings": [
+                {
+                    "name": "foo",
+                    "type": "text",
+                    "tokenizer": "default"
+                },
+                {
+                    "name": "foo.bar",
+                    "type": "text",
+                    "tokenizer": "default"
+                }
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        // Not escaping the `.` when referring the field should panic.
+        builder.try_build().unwrap_err();
     }
 }
