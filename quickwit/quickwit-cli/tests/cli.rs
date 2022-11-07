@@ -638,7 +638,6 @@ async fn test_garbage_collect_index_cli() {
         index_id: index_id.clone(),
         grace_period: Duration::from_secs(grace_period_secs),
         dry_run: false,
-        data_dir: None,
     };
 
     let metastore = quickwit_metastore_uri_resolver()
