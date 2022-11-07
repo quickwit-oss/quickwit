@@ -202,11 +202,14 @@ impl Handler<Loop> for GarbageCollector {
 mod tests {
     use std::ops::Bound;
     use std::path::Path;
-    use time::OffsetDateTime;
 
     use quickwit_actors::Universe;
-    use quickwit_metastore::{IndexMetadata, ListSplitsQuery, MetastoreError, MockMetastore, Split, SplitMetadata, SplitState};
+    use quickwit_metastore::{
+        IndexMetadata, ListSplitsQuery, MetastoreError, MockMetastore, Split, SplitMetadata,
+        SplitState,
+    };
     use quickwit_storage::MockStorage;
+    use time::OffsetDateTime;
 
     use super::*;
 
@@ -248,13 +251,14 @@ mod tests {
                 let splits = match get_first_split_state(query.split_states.clone()) {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
-                        let expected_deletion_timestamp = OffsetDateTime::now_utc().unix_timestamp()
+                        let expected_deletion_timestamp = OffsetDateTime::now_utc()
+                            .unix_timestamp()
                             - DELETION_GRACE_PERIOD.as_secs() as i64;
                         assert_eq!(
                             query.update_timestamp.end,
                             Bound::Included(expected_deletion_timestamp),
-                            "Expected splits query to only select splits which have not been updated \
-                            since the expected deletion timestamp.",
+                            "Expected splits query to only select splits which have not been \
+                             updated since the expected deletion timestamp.",
                         );
                         assert_eq!(
                             query.update_timestamp.start,

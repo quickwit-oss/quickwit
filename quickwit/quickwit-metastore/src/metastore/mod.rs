@@ -526,10 +526,7 @@ mod list_splits_query_tests {
             filter.age.contains(&17),
             "Value (17) should be within range."
         );
-        assert!(
-            filter.age.contains(&0),
-            "Value (0) should be within range."
-        );
+        assert!(filter.age.contains(&0), "Value (0) should be within range.");
 
         assert!(
             !filter.age.contains(&18),
@@ -554,10 +551,7 @@ mod list_splits_query_tests {
             filter.age.contains(&17),
             "Value (17) should be within range."
         );
-        assert!(
-            filter.age.contains(&0),
-            "Value (0) should be within range."
-        );
+        assert!(filter.age.contains(&0), "Value (0) should be within range.");
         assert!(
             filter.age.contains(&18),
             "Value (18) should be within range."
@@ -674,10 +668,7 @@ mod list_splits_query_tests {
     fn test_is_in_range_unbounded() {
         let filter = TestFilter::default();
 
-        assert!(
-            filter.age.contains(&0),
-            "Value (0) should be within range."
-        );
+        assert!(filter.age.contains(&0), "Value (0) should be within range.");
         assert!(
             filter.age.contains(&31),
             "Value (31) should be within range."

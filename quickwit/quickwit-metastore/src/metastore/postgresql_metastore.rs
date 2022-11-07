@@ -1148,14 +1148,12 @@ impl crate::tests::test_suite::DefaultForTest for PostgresqlMetastore {
 
 metastore_test_suite!(crate::PostgresqlMetastore);
 
-
 #[cfg(test)]
 mod tests {
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
-    use crate::{ListSplitsQuery, SplitState};
 
-    use super::tags_filter_expression_helper;
-    use super::build_query_filter;
+    use super::{build_query_filter, tags_filter_expression_helper};
+    use crate::{ListSplitsQuery, SplitState};
 
     fn test_tags_filter_expression_helper(tags_ast: TagFilterAst, expected: &str) {
         assert_eq!(tags_filter_expression_helper(&tags_ast), expected);
@@ -1231,7 +1229,10 @@ mod tests {
         let mut query = ListSplitsQuery::for_index("test-index");
         query.with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
         let sql = build_query_filter(String::new(), &query);
-        assert_eq!(sql, " WHERE index_id = $1 AND split_state IN ('Published', 'MarkedForDeletion')");
+        assert_eq!(
+            sql,
+            " WHERE index_id = $1 AND split_state IN ('Published', 'MarkedForDeletion')"
+        );
 
         let mut query = ListSplitsQuery::for_index("test-index");
         query.with_update_timestamp_lt(51);
@@ -1246,17 +1247,29 @@ mod tests {
         let mut query = ListSplitsQuery::for_index("test-index");
         query.with_time_range_gt(45);
         let sql = build_query_filter(String::new(), &query);
-        assert_eq!(sql, " WHERE index_id = $1 AND (time_range_end > 45 OR time_range_end IS NULL)");
+        assert_eq!(
+            sql,
+            " WHERE index_id = $1 AND (time_range_end > 45 OR time_range_end IS NULL)"
+        );
 
         let mut query = ListSplitsQuery::for_index("test-index");
         query.with_time_range_lt(45);
         let sql = build_query_filter(String::new(), &query);
-        assert_eq!(sql, " WHERE index_id = $1 AND (time_range_start < 45 OR time_range_start IS NULL)");
+        assert_eq!(
+            sql,
+            " WHERE index_id = $1 AND (time_range_start < 45 OR time_range_start IS NULL)"
+        );
 
         let mut query = ListSplitsQuery::for_index("test-index");
-        query.with_tags_filter(TagFilterAst::Tag { is_present: false, tag: "tag-2".to_string() });
+        query.with_tags_filter(TagFilterAst::Tag {
+            is_present: false,
+            tag: "tag-2".to_string(),
+        });
         let sql = build_query_filter(String::new(), &query);
-        assert_eq!(sql, " WHERE index_id = $1 AND (NOT ($$tag-2$$ = ANY(tags)))");
+        assert_eq!(
+            sql,
+            " WHERE index_id = $1 AND (NOT ($$tag-2$$ = ANY(tags)))"
+        );
     }
 
     #[test]
@@ -1265,24 +1278,43 @@ mod tests {
         query.with_time_range_gt(0);
         query.with_time_range_lt(40);
         let sql = build_query_filter(String::new(), &query);
-        assert_eq!(sql, " WHERE index_id = $1 AND (time_range_end > 0 OR time_range_end IS NULL) AND (time_range_start < 40 OR time_range_start IS NULL)");
+        assert_eq!(
+            sql,
+            " WHERE index_id = $1 AND (time_range_end > 0 OR time_range_end IS NULL) AND \
+             (time_range_start < 40 OR time_range_start IS NULL)"
+        );
 
         let mut query = ListSplitsQuery::for_index("test-index");
         query.with_time_range_gt(45);
         query.with_delete_opstamp_gt(0);
         let sql = build_query_filter(String::new(), &query);
-        assert_eq!(sql, " WHERE index_id = $1 AND (time_range_end > 45 OR time_range_end IS NULL) AND delete_opstamp > 0");
+        assert_eq!(
+            sql,
+            " WHERE index_id = $1 AND (time_range_end > 45 OR time_range_end IS NULL) AND \
+             delete_opstamp > 0"
+        );
 
         let mut query = ListSplitsQuery::for_index("test-index");
         query.with_update_timestamp_lt(51);
         query.with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
         let sql = build_query_filter(String::new(), &query);
-        assert_eq!(sql, " WHERE index_id = $1 AND split_state IN ('Published', 'MarkedForDeletion') AND update_timestamp < 51");
+        assert_eq!(
+            sql,
+            " WHERE index_id = $1 AND split_state IN ('Published', 'MarkedForDeletion') AND \
+             update_timestamp < 51"
+        );
 
         let mut query = ListSplitsQuery::for_index("test-index");
         query.with_time_range_gt(90);
-        query.with_tags_filter(TagFilterAst::Tag { is_present: true, tag: "tag-1".to_string() });
+        query.with_tags_filter(TagFilterAst::Tag {
+            is_present: true,
+            tag: "tag-1".to_string(),
+        });
         let sql = build_query_filter(String::new(), &query);
-        assert_eq!(sql, " WHERE index_id = $1 AND ($$tag-1$$ = ANY(tags)) AND (time_range_end > 90 OR time_range_end IS NULL)");
+        assert_eq!(
+            sql,
+            " WHERE index_id = $1 AND ($$tag-1$$ = ANY(tags)) AND (time_range_end > 90 OR \
+             time_range_end IS NULL)"
+        );
     }
 }
