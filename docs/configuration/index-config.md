@@ -206,6 +206,7 @@ input_formats:
   - rfc3339
   - unix_timestamp
   - "%Y %m %d %H:%M:%S.%f %z"
+output: unix_timestamp
 stored: true
 indexed: true
 fast: true
@@ -217,10 +218,11 @@ precision: milliseconds
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | `input_formats` | Formats used to parse input dates | [`rfc3339`, `unix_timestamp`] |
+| `output_format` | Formats used to display dates in search results | `rfc3339` |
 | `stored`        | Whether the field values are stored in the document store | `true` |
 | `indexed`       | Whether the field values are indexed | `true` |
 | `fast`          | Whether the field values are stored in a fast field | `false` |
-| `precision`     | The precision (`seconds`, `milliseconds`, or `microseconds`) used to store the fast values | `seconds` |
+| `precision`     | The precision (`seconds`, `milliseconds`, or `microseconds`) used to store the fast values.It's also used to display date when output_format is set to `unix_timestamp`  | `seconds` |
 
 #### `bool` type
 

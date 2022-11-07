@@ -23,6 +23,7 @@ use serde_json::Value as JsonValue;
 use tantivy::schema::Value as TantivyValue;
 use tantivy::DatePrecision as DateTimePrecision;
 use time::format_description::well_known::{Iso8601, Rfc2822};
+use time::OffsetDateTime;
 
 use super::date_time_format::DateTimeFormat;
 use super::date_time_parsing::{parse_date_time, parse_rfc3339, parse_timestamp};
@@ -106,13 +107,24 @@ impl QuickwitDateTimeOptions {
             DateTimeFormat::Strptime(strftime_parser) => strftime_parser
                 .format_date_time(&date)
                 .map(JsonValue::String),
-            // TODO Ask if we should take into account precision
-            DateTimeFormat::Timestamp => Ok(JsonValue::Number(date.unix_timestamp().into())),
+            DateTimeFormat::Timestamp => {
+                Ok(JsonValue::Number(self.extract_timestamp(&date).into()))
+            }
             DateTimeFormat::RCF3339 => {
-                unreachable!("`DateTimeFormat::RCF3339` should have been handled already")
+                unreachable!("The format `rcf3339` should have been handled already.")
             }
         };
         format_result.map_err(|error| error.to_string())
+    }
+
+    fn extract_timestamp(&self, date_time: &OffsetDateTime) -> i64 {
+        match self.precision {
+            DateTimePrecision::Seconds => date_time.unix_timestamp(),
+            DateTimePrecision::Milliseconds => {
+                (date_time.unix_timestamp_nanos() / 1_000_000) as i64
+            }
+            DateTimePrecision::Microseconds => (date_time.unix_timestamp_nanos() / 1_000) as i64,
+        }
     }
 }
 
