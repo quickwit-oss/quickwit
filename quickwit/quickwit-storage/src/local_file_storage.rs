@@ -87,7 +87,7 @@ impl LocalFileStorage {
 
 /// Delete empty directories starting from `{root}/{path}` directory and stopping at `{root}`
 /// directory. Note that the `{root}` directory is not deleted.
-fn delete_all_dirs<'a>(root: &'a Path, path: &'a Path) -> BoxFuture<'_, std::io::Result<()>> {
+fn delete_all_dirs<'a>(root: &'a Path, path: &'a Path) -> BoxFuture<'a, std::io::Result<()>> {
     async move {
         let full_path = root.join(path);
         let path_entries_result = full_path.read_dir();
