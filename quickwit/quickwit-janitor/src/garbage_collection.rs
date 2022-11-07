@@ -220,12 +220,10 @@ pub async fn delete_splits_with_files(
 
             error!(error = ?bulk_delete_error.error, index_id = ?index_id, split_ids = ?split_ids, "Failed to delete splits.");
 
-            let successful_deletes = bulk_delete_error
-                .successes
-                .iter()
-                .filter_map(|key| paths_to_splits.remove(key));
+            for split_path in bulk_delete_error.successes {
+                let (split_id, entry) = paths_to_splits.remove(&split_path)
+                        .expect("The successful split path should be present within the lookup table.");
 
-            for (split_id, entry) in successful_deletes {
                 deleted_split_ids.push(split_id);
                 deleted_file_entries.push(entry);
             }
