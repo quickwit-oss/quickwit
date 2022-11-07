@@ -22,7 +22,7 @@ use std::collections::HashSet;
 use quickwit_proto::search_request::Query as SearchQuery;
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
-use tantivy::schema::{Field, FieldType, Schema};
+use tantivy::schema::{Field, FieldType, Schema, Term, Type, Value};
 use tantivy_query_grammar::{UserInputAst, UserInputLeaf, UserInputLiteral};
 
 use crate::sort_by::validate_sort_by_field_name;
@@ -76,8 +76,49 @@ pub(crate) fn build_query(
             query_parser.parse_query(query)?
         }
         Some(SearchQuery::SetQuery(set_query)) => {
-            let _ = (&set_query.terms, &set_query.field_name);
-            todo!()
+            let _ = (&set_query.terms, &set_query.field_name, &set_query.tags);
+            let field_name = &set_query.field_name;
+            let field = schema
+                .get_field(field_name)
+                .ok_or_else(|| TantivyQueryParserError::FieldDoesNotExist(field_name.clone()))?;
+
+            let field_type = schema.get_field_entry(field).field_type();
+            if !field_type.is_indexed() {
+                todo!("return error")
+            }
+
+            // TODO maybe Face could be allowed?
+            if matches!(field_type.value_type(), Type::Json | Type::Facet) {
+                todo!("return error")
+            }
+
+            // TODO error on any parse error instead??
+            let terms: Vec<_> = set_query
+                .terms
+                .iter()
+                // TODO not correct
+                .flat_map(|term| field_type.value_from_json(term.clone().into()).ok())
+                .map(|term| match term {
+                    Value::Str(text) => Term::from_field_text(field, &text),
+                    Value::PreTokStr(pre_tokenized_string) => {
+                        Term::from_field_text(field, &pre_tokenized_string.text)
+                    }
+                    Value::U64(int) => Term::from_field_u64(field, int),
+                    Value::I64(int) => Term::from_field_i64(field, int),
+                    Value::F64(int) => Term::from_field_f64(field, int),
+                    Value::Bool(b) => Term::from_field_bool(field, b),
+                    Value::Date(date) => Term::from_field_date(field, date),
+                    Value::Bytes(buf) => Term::from_field_bytes(field, &buf),
+                    Value::IpAddr(ip) => Term::from_field_ip_addr(field, ip),
+                    Value::JsonObject(_) | Value::Facet(_) => unreachable!(),
+                })
+                .collect();
+
+            if terms.is_empty() {
+                todo!("return error")
+            }
+
+            Box::new(tantivy::query::TermSetQuery::new(terms))
         }
         None => {
             return Err(anyhow::anyhow!(
