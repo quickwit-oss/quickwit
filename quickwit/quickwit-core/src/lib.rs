@@ -74,7 +74,7 @@ mod tests {
         let index_service = IndexService::new(
             test_sandbox.metastore(),
             StorageUriResolver::for_test(),
-            Uri::new("ram:///indexes".to_string()),
+            Uri::from_well_formed("ram:///indexes".to_string()),
         );
         let deleted_file_entries = index_service.delete_index(index_id, false).await?;
         assert_eq!(deleted_file_entries.len(), 1);
@@ -99,7 +99,7 @@ mod tests {
             search_settings: SearchSettings::default(),
             sources: Vec::new(),
         };
-        let metastore_uri = Uri::new("ram:///metastore".to_string());
+        let metastore_uri = Uri::from_well_formed("ram:///metastore".to_string());
         let metastore = quickwit_metastore_uri_resolver()
             .resolve(&metastore_uri)
             .await
@@ -108,7 +108,7 @@ mod tests {
         let index_service = IndexService::new(
             metastore,
             storage_resolver,
-            Uri::new("ram:///indexes".to_string()),
+            Uri::from_well_formed("ram:///indexes".to_string()),
         );
         let index_metadata = index_service.create_index(index_config, false).await?;
         assert_eq!(index_metadata.index_id, index_id);

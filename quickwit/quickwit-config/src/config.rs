@@ -71,7 +71,7 @@ fn default_rest_listen_port() -> ConfigValue<u16, QW_REST_LISTEN_PORT> {
 }
 
 fn default_data_dir_uri() -> ConfigValue<Uri, QW_DATA_DIR> {
-    ConfigValue::with_default(Uri::try_new(DEFAULT_DATA_DIR_PATH).unwrap())
+    ConfigValue::with_default(Uri::from_str(DEFAULT_DATA_DIR_PATH).unwrap())
 }
 
 /// Returns the default advertise host.
@@ -552,7 +552,7 @@ mod tests {
             async fn $test_function_name() -> anyhow::Result<()> {
                 let config_filepath =
                     get_config_filepath(&format!("quickwit.{}", stringify!($file_extension)));
-                let config_uri = Uri::try_new(&config_filepath)?;
+                let config_uri = Uri::from_str(&config_filepath)?;
                 let file = std::fs::read_to_string(&config_filepath).unwrap();
                 let config = QuickwitConfigBuilder::from_uri(&config_uri, file.as_bytes())
                     .await?
@@ -632,7 +632,7 @@ mod tests {
     #[tokio::test]
     async fn test_config_contains_wrong_values() {
         let config_filepath = get_config_filepath("quickwit.wrongkey.yaml");
-        let config_uri = Uri::try_new(&config_filepath).unwrap();
+        let config_uri = Uri::from_str(&config_filepath).unwrap();
         let config_str = std::fs::read_to_string(&config_filepath).unwrap();
         let parsing_error = QuickwitConfigBuilder::from_uri(&config_uri, config_str.as_bytes())
             .await
@@ -815,7 +815,7 @@ mod tests {
     #[tokio::test]
     async fn test_quickwit_config_validate() {
         let config_filepath = get_config_filepath("quickwit.toml");
-        let config_uri = Uri::try_new(&config_filepath).unwrap();
+        let config_uri = Uri::from_str(&config_filepath).unwrap();
         let file_content = std::fs::read_to_string(&config_filepath).unwrap();
 
         let data_dir_path = env::current_dir().unwrap();
@@ -954,7 +954,7 @@ mod tests {
     #[tokio::test]
     async fn test_load_config_with_validation_error() {
         let config_filepath = get_config_filepath("quickwit.yaml");
-        let config_uri = Uri::try_new(&config_filepath).unwrap();
+        let config_uri = Uri::from_str(&config_filepath).unwrap();
         let file = std::fs::read_to_string(&config_filepath).unwrap();
         let config = QuickwitConfig::load(&config_uri, file.as_bytes())
             .await

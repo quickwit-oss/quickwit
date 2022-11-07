@@ -19,6 +19,9 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
+use std::ops::Range;
+#[cfg(test)]
+use std::str::FromStr;
 use std::ops::Bound;
 use std::sync::Arc;
 use std::time::Duration;
@@ -37,6 +40,7 @@ use tracing::log::LevelFilter;
 use tracing::{debug, error, instrument, warn};
 
 use crate::checkpoint::IndexCheckpointDelta;
+use crate::metastore::instrumented_metastore::InstrumentedMetastore;
 use crate::metastore::postgresql_model::{self, Index, IndexIdSplitIdRow};
 use crate::{
     IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreFactory,
@@ -1113,11 +1117,14 @@ impl MetastoreFactory for PostgresqlMetastoreFactory {
             return Ok(metastore);
         }
         debug!("metastore not found in cache");
-        let metastore = PostgresqlMetastore::new(uri.clone())
+        let postgresql_metastore = PostgresqlMetastore::new(uri.clone())
             .await
             .map_err(MetastoreResolverError::FailedToOpenMetastore)?;
-        let metastore = self.cache_metastore(uri.clone(), Arc::new(metastore)).await;
-        Ok(metastore)
+        let instrumented_metastore = InstrumentedMetastore::new(Box::new(postgresql_metastore));
+        let unique_metastore_for_uri = self
+            .cache_metastore(uri.clone(), Arc::new(instrumented_metastore))
+            .await;
+        Ok(unique_metastore_for_uri)
     }
 }
 
@@ -1138,7 +1145,7 @@ impl crate::tests::test_suite::DefaultForTest for PostgresqlMetastore {
         // too catastrophic, as it is limited by the number of concurrent
         // unit tests running (= number of test-threads).
         dotenv::dotenv().ok();
-        let uri = Uri::try_new(&std::env::var("TEST_DATABASE_URL").unwrap())
+        let uri = Uri::from_str(&std::env::var("TEST_DATABASE_URL").unwrap())
             .expect("Failed to parse test database URL.");
         PostgresqlMetastore::new(uri)
             .await

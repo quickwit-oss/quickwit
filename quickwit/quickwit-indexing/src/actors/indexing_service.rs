@@ -628,7 +628,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexing_service() {
-        let metastore_uri = Uri::new("ram:///metastore".to_string());
+        let metastore_uri = Uri::from_well_formed("ram:///metastore".to_string());
         let metastore = quickwit_metastore_uri_resolver()
             .resolve(&metastore_uri)
             .await

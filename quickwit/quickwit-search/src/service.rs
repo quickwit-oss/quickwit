@@ -142,7 +142,7 @@ impl SearchService for SearchServiceImpl {
         info!(index=?search_request.index_id, splits=?leaf_search_request.split_offsets, "leaf_search");
         let storage = self
             .storage_uri_resolver
-            .resolve(&Uri::new(leaf_search_request.index_uri))?;
+            .resolve(&Uri::from_well_formed(leaf_search_request.index_uri))?;
         let split_ids = leaf_search_request.split_offsets;
         let doc_mapper = deserialize_doc_mapper(&leaf_search_request.doc_mapper)?;
 
@@ -164,7 +164,7 @@ impl SearchService for SearchServiceImpl {
     ) -> crate::Result<FetchDocsResponse> {
         let storage = self
             .storage_uri_resolver
-            .resolve(&Uri::new(fetch_docs_request.index_uri))?;
+            .resolve(&Uri::from_well_formed(fetch_docs_request.index_uri))?;
         let search_request_opt = fetch_docs_request.search_request.as_ref();
         let doc_mapper_opt = if let Some(doc_mapper_str) = &fetch_docs_request.doc_mapper {
             Some(deserialize_doc_mapper(doc_mapper_str)?)
@@ -208,7 +208,7 @@ impl SearchService for SearchServiceImpl {
         info!(index=?stream_request.index_id, splits=?leaf_stream_request.split_offsets, "leaf_search");
         let storage = self
             .storage_uri_resolver
-            .resolve(&Uri::new(leaf_stream_request.index_uri))?;
+            .resolve(&Uri::from_well_formed(leaf_stream_request.index_uri))?;
         let doc_mapper = deserialize_doc_mapper(&leaf_stream_request.doc_mapper)?;
         let leaf_receiver = leaf_search_stream(
             self.searcher_context.clone(),

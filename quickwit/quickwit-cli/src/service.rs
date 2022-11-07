@@ -50,7 +50,7 @@ impl RunCliCommand {
     pub fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let services = matches
             .values_of("service")
@@ -94,7 +94,7 @@ mod tests {
         let command = build_cli().no_binary_name(true);
         let matches = command.try_get_matches_from(vec!["run", "--config", "/config.yaml"])?;
         let command = CliCommand::parse_cli_args(&matches)?;
-        let expected_config_uri = Uri::try_new("file:///config.yaml").unwrap();
+        let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
         assert!(matches!(
             command,
             CliCommand::Run(RunCliCommand {
@@ -118,7 +118,7 @@ mod tests {
             "indexer",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
-        let expected_config_uri = Uri::try_new("file:///config.yaml").unwrap();
+        let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
         assert!(matches!(
             command,
             CliCommand::Run(RunCliCommand {
@@ -144,7 +144,7 @@ mod tests {
             "metastore",
         ])?;
         let command = CliCommand::parse_cli_args(&matches).unwrap();
-        let expected_config_uri = Uri::try_new("file:///config.yaml").unwrap();
+        let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
         let expected_services =
             HashSet::from_iter([QuickwitService::Metastore, QuickwitService::Searcher]);
         assert!(matches!(
@@ -170,7 +170,7 @@ mod tests {
             "indexer",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
-        let expected_config_uri = Uri::try_new("file:///config.yaml").unwrap();
+        let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
         assert!(matches!(
             command,
             CliCommand::Run(RunCliCommand {

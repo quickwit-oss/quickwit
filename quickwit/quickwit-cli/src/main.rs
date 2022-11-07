@@ -161,6 +161,7 @@ fn about_text() -> String {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::str::FromStr;
     use std::time::Duration;
 
     use quickwit_cli::cli::{build_cli, CliCommand};
@@ -186,7 +187,7 @@ mod tests {
             .unwrap();
         let command = CliCommand::parse_cli_args(&matches).unwrap();
         let expected_cmd = CliCommand::Index(IndexCliCommand::Clear(ClearIndexArgs {
-            config_uri: Uri::try_new("file:///config.yaml").unwrap(),
+            config_uri: Uri::from_str("file:///config.yaml").unwrap(),
             index_id: "wikipedia".to_string(),
             yes: false,
         }));
@@ -206,7 +207,7 @@ mod tests {
             .unwrap();
         let command = CliCommand::parse_cli_args(&matches).unwrap();
         let expected_cmd = CliCommand::Index(IndexCliCommand::Clear(ClearIndexArgs {
-            config_uri: Uri::try_new("file:///config.yaml").unwrap(),
+            config_uri: Uri::from_str("file:///config.yaml").unwrap(),
             index_id: "wikipedia".to_string(),
             yes: true,
         }));
@@ -230,13 +231,13 @@ mod tests {
             "/config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
-        let expected_index_config_uri = Uri::try_new(&format!(
+        let expected_index_config_uri = Uri::from_str(&format!(
             "file://{}/index-conf.yaml",
             std::env::current_dir().unwrap().display()
         ))
         .unwrap();
         let expected_cmd = CliCommand::Index(IndexCliCommand::Create(CreateIndexArgs {
-            config_uri: Uri::try_new("file:///config.yaml").unwrap(),
+            config_uri: Uri::from_str("file:///config.yaml").unwrap(),
             index_config_uri: expected_index_config_uri.clone(),
             overwrite: false,
             assume_yes: false,
@@ -255,7 +256,7 @@ mod tests {
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         let expected_cmd = CliCommand::Index(IndexCliCommand::Create(CreateIndexArgs {
-            config_uri: Uri::try_new("file:///config.yaml").unwrap(),
+            config_uri: Uri::from_str("file:///config.yaml").unwrap(),
             index_config_uri: expected_index_config_uri,
             overwrite: true,
             assume_yes: false,
@@ -287,7 +288,7 @@ mod tests {
                     overwrite: false,
                     clear_cache: true,
                 })) if &index_id == "wikipedia"
-                       && config_uri == Uri::try_new("file:///config.yaml").unwrap()
+                       && config_uri == Uri::from_str("file:///config.yaml").unwrap()
         ));
 
         let app = build_cli().no_binary_name(true);
@@ -312,7 +313,7 @@ mod tests {
                     overwrite: true,
                     clear_cache: false
                 })) if &index_id == "wikipedia"
-                        && config_uri == Uri::try_new("file:///config.yaml").unwrap()
+                        && config_uri == Uri::from_str("file:///config.yaml").unwrap()
         ));
         Ok(())
     }
@@ -372,7 +373,7 @@ mod tests {
             "/config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
-        let _config_uri = Uri::try_new("file:///config.yaml").unwrap();
+        let _config_uri = Uri::from_str("file:///config.yaml").unwrap();
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Search(SearchIndexArgs {
@@ -473,7 +474,7 @@ mod tests {
             "--dry-run",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
-        let expected_config_uri = Uri::try_new("file:///config.yaml").unwrap();
+        let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::GarbageCollect(GarbageCollectIndexArgs {

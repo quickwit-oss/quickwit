@@ -27,14 +27,14 @@
 
 #[macro_use]
 mod tests;
-mod split_metadata;
-mod split_metadata_version;
-
 #[allow(missing_docs)]
 pub mod checkpoint;
 mod error;
 mod metastore;
 mod metastore_resolver;
+mod metrics;
+mod split_metadata;
+mod split_metadata_version;
 
 use std::ops::Range;
 

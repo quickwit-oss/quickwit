@@ -49,7 +49,7 @@ use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_indexing::models::{IndexingPipelineId, MergeScratch, ScratchDirectory};
 use quickwit_indexing::{get_tantivy_directory_from_split_bundle, TestSandbox};
 use quickwit_metastore::{Split, SplitMetadata, SplitState};
-use tantivy::Directory;
+use tantivy::{Directory, Inventory};
 
 #[tokio::test]
 async fn test_failpoint_no_failure() -> anyhow::Result<()> {
@@ -278,9 +278,11 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
 
         tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap());
     }
-
+    let merge_ops_inventory = Inventory::new();
+    let merge_operation =
+        merge_ops_inventory.track(MergeOperation::new_merge_operation(split_metadatas));
     let merge_scratch = MergeScratch {
-        merge_operation: MergeOperation::new_merge_operation(split_metadatas),
+        merge_operation,
         merge_scratch_directory,
         downloaded_splits_directory,
         tantivy_dirs,
