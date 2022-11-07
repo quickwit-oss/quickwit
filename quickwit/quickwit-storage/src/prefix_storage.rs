@@ -24,6 +24,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 
+use crate::storage::{BulkDeleteError, SendableAsync};
 use crate::{OwnedBytes, Storage};
 
 /// This storage acts as a proxy to another storage that simply modifies each API call
@@ -48,10 +49,12 @@ impl Storage for PrefixStorage {
         self.storage.put(&self.prefix.join(path), payload).await
     }
 
-    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> crate::StorageResult<()> {
-        self.storage
-            .copy_to_file(&self.prefix.join(path), output_path)
-            .await
+    async fn copy_to(
+        &self,
+        path: &Path,
+        output: &mut dyn SendableAsync,
+    ) -> crate::StorageResult<()> {
+        self.storage.copy_to(&self.prefix.join(path), output).await
     }
 
     async fn get_slice(
@@ -68,6 +71,20 @@ impl Storage for PrefixStorage {
 
     async fn delete(&self, path: &Path) -> crate::StorageResult<()> {
         self.storage.delete(&self.prefix.join(path)).await
+    }
+
+    async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+        let prefixed_pathbufs: Vec<PathBuf> =
+            paths.iter().map(|path| self.prefix.join(path)).collect();
+        let prefixed_paths: Vec<&Path> = prefixed_pathbufs
+            .iter()
+            .map(|pathbuf| pathbuf.as_path())
+            .collect();
+        self.storage
+            .bulk_delete(&prefixed_paths)
+            .await
+            .map_err(|error| strip_prefix_from_error(error, &self.prefix))?;
+        Ok(())
     }
 
     async fn exists(&self, path: &Path) -> crate::StorageResult<bool> {
@@ -94,4 +111,131 @@ pub(crate) fn add_prefix_to_storage(
         prefix,
         uri,
     })
+}
+
+fn strip_prefix_from_error(error: BulkDeleteError, prefix: &Path) -> BulkDeleteError {
+    if prefix == Path::new("") {
+        return error;
+    }
+    let successes = error
+        .successes
+        .into_iter()
+        .map(|path| {
+            path.strip_prefix(prefix)
+                .expect(
+                    "The prefix should have been prepended to the path before the bulk delete \
+                     call.",
+                )
+                .to_path_buf()
+        })
+        .collect();
+    let failures = error
+        .failures
+        .into_iter()
+        .map(|(path, failure)| {
+            (
+                path.strip_prefix(prefix)
+                    .expect(
+                        "The prefix should have been prepended to the path before the bulk delete \
+                         call.",
+                    )
+                    .to_path_buf(),
+                failure,
+            )
+        })
+        .collect();
+    let unattempted = error
+        .unattempted
+        .into_iter()
+        .map(|path| {
+            path.strip_prefix(prefix)
+                .expect(
+                    "The prefix should have been prepended to the path before the bulk delete \
+                     call.",
+                )
+                .to_path_buf()
+        })
+        .collect();
+    BulkDeleteError {
+        error: error.error,
+        successes,
+        failures,
+        unattempted,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use std::collections::HashMap;
+
+    use super::*;
+    use crate::storage::DeleteFailure;
+
+    #[test]
+    fn test_strip_prefix_from_error() {
+        {
+            let error = BulkDeleteError {
+                error: None,
+                successes: vec![PathBuf::from("ram:///indexes/foo")],
+                unattempted: vec![PathBuf::from("ram:///indexes/bar")],
+                failures: HashMap::from_iter([(
+                    PathBuf::from("ram:///indexes/baz"),
+                    DeleteFailure::default(),
+                )]),
+            };
+            let stripped_error = strip_prefix_from_error(error, Path::new(""));
+
+            assert_eq!(
+                stripped_error.successes,
+                vec![PathBuf::from("ram:///indexes/foo")],
+            );
+            assert_eq!(
+                stripped_error.unattempted,
+                vec![PathBuf::from("ram:///indexes/bar")],
+            );
+            assert_eq!(
+                stripped_error.failures.keys().next().unwrap(),
+                &PathBuf::from("ram:///indexes/baz"),
+            );
+        }
+        {
+            let error = BulkDeleteError {
+                error: None,
+                successes: vec![PathBuf::from("ram:///indexes/foo")],
+                unattempted: vec![PathBuf::from("ram:///indexes/bar")],
+                failures: HashMap::from_iter([(
+                    PathBuf::from("ram:///indexes/baz"),
+                    DeleteFailure::default(),
+                )]),
+            };
+            let stripped_error = strip_prefix_from_error(error, Path::new("ram:///indexes"));
+
+            assert_eq!(stripped_error.successes, vec![PathBuf::from("foo")],);
+            assert_eq!(stripped_error.unattempted, vec![PathBuf::from("bar")],);
+            assert_eq!(
+                stripped_error.failures.keys().next().unwrap(),
+                &PathBuf::from("baz"),
+            );
+        }
+        {
+            let error = BulkDeleteError {
+                error: None,
+                successes: vec![PathBuf::from("ram:///indexes/foo")],
+                unattempted: vec![PathBuf::from("ram:///indexes/bar")],
+                failures: HashMap::from_iter([(
+                    PathBuf::from("ram:///indexes/baz"),
+                    DeleteFailure::default(),
+                )]),
+            };
+            let stripped_error = strip_prefix_from_error(error, Path::new("ram:///indexes/"));
+
+            assert_eq!(stripped_error.successes, vec![PathBuf::from("foo")],);
+            assert_eq!(stripped_error.unattempted, vec![PathBuf::from("bar")],);
+            assert_eq!(
+                stripped_error.failures.keys().next().unwrap(),
+                &PathBuf::from("baz"),
+            );
+        }
+    }
 }

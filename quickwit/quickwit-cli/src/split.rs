@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use anyhow::{bail, Context};
 use clap::{arg, Arg, ArgMatches, Command};
@@ -42,6 +43,7 @@ pub fn build_split_command<'a>() -> Command<'a> {
         .subcommand(
             Command::new("list")
                 .about("Lists the splits of an index.")
+                .alias("ls")
                 .args(&[
                     arg!(--index <INDEX> "Target index ID")
                         .display_order(1)
@@ -74,24 +76,23 @@ pub fn build_split_command<'a>() -> Command<'a> {
             Command::new("extract")
                 .about("Downloads and extracts a split to a directory.")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
-                    arg!(--split <SPLIT> "ID of the target split"),
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1),
+                    arg!(--split <SPLIT> "ID of the target split")
+                        .display_order(2),
                     arg!(--"target-dir" <TARGET_DIR> "Directory to extract the split to."),
-                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
-                        .env("QW_DATA_DIR")
-                        .required(false),
                 ])
             )
         .subcommand(
             Command::new("describe")
                 .about("Displays metadata about a split.")
+                .alias("desc")
                 .args(&[
-                    arg!(--index <INDEX> "ID of the target index"),
-                    arg!(--split <SPLIT> "ID of the target split"),
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1),
+                    arg!(--split <SPLIT> "ID of the target split")
+                        .display_order(2),
                     arg!(--verbose "Displays additional metadata about the hotcache."),
-                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
-                        .env("QW_DATA_DIR")
-                        .required(false),
                 ])
             )
         .subcommand(
@@ -100,10 +101,10 @@ pub fn build_split_command<'a>() -> Command<'a> {
                 .alias("mark")
                 .args(&[
                     arg!(--index <INDEX_ID> "Target index ID")
-                        .display_order(2)
+                        .display_order(1)
                         .required(true),
                     arg!(--splits <SPLIT_IDS> "Comma-separated list of split IDs")
-                        .display_order(3)
+                        .display_order(2)
                         .required(true)
                         .use_value_delimiter(true),
                 ])
@@ -133,7 +134,6 @@ pub struct MarkForDeletionArgs {
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeSplitArgs {
     pub config_uri: Uri,
-    pub data_dir: Option<PathBuf>,
     pub index_id: String,
     pub split_id: String,
     pub verbose: bool,
@@ -142,7 +142,6 @@ pub struct DescribeSplitArgs {
 #[derive(Debug, Eq, PartialEq)]
 pub struct ExtractSplitArgs {
     pub config_uri: Uri,
-    pub data_dir: Option<PathBuf>,
     pub index_id: String,
     pub split_id: String,
     pub target_dir: PathBuf,
@@ -173,7 +172,7 @@ impl SplitCliCommand {
     fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -228,7 +227,7 @@ impl SplitCliCommand {
     fn parse_mark_for_deletion_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -259,9 +258,8 @@ impl SplitCliCommand {
             .expect("`split` is a required arg.");
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         let verbose = matches.is_present("verbose");
 
         Ok(Self::Describe(DescribeSplitArgs {
@@ -269,7 +267,6 @@ impl SplitCliCommand {
             index_id,
             split_id,
             verbose,
-            data_dir,
         }))
     }
 
@@ -284,19 +281,17 @@ impl SplitCliCommand {
             .expect("`split` is a required arg.");
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let target_dir = matches
             .value_of("target-dir")
             .map(PathBuf::from)
             .expect("`target-dir` is a required arg.");
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         Ok(Self::Extract(ExtractSplitArgs {
             config_uri,
             index_id,
             split_id,
             target_dir,
-            data_dir,
         }))
     }
 
@@ -313,7 +308,7 @@ impl SplitCliCommand {
 async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "list-split");
 
-    let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri)
@@ -350,7 +345,7 @@ async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
 async fn mark_splits_for_deletion_cli(args: MarkForDeletionArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "mark-splits-for-deletion");
 
-    let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri)
@@ -377,7 +372,7 @@ struct FileRow {
 async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "describe-split");
 
-    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
@@ -436,7 +431,7 @@ async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
 async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "extract-split");
 
-    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
@@ -610,6 +605,7 @@ mod tests {
     use std::collections::BTreeSet;
     use std::ops::RangeInclusive;
     use std::path::PathBuf;
+    use std::str::FromStr;
 
     use quickwit_metastore::SplitMetadata;
     use time::macros::datetime;
@@ -697,7 +693,7 @@ mod tests {
                 config_uri,
                 index_id,
                 split_ids,
-            })) if config_uri == Uri::try_new("file:///config.yaml").unwrap()
+            })) if config_uri == Uri::from_str("file:///config.yaml").unwrap()
                 && index_id == "wikipedia"
                 && split_ids == vec!["split1".to_string(), "split2".to_string()]
         ));

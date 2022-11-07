@@ -33,25 +33,35 @@ use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_storage::SplitPayloadBuilder;
 use serde::Serialize;
+use tantivy::TrackedObject;
 use tokio::sync::oneshot::Sender;
 use tokio::sync::{oneshot, Semaphore, SemaphorePermit};
 use tracing::{info, instrument, warn, Instrument, Span};
 
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::Publisher;
+use crate::merge_policy::MergeOperation;
 use crate::metrics::INDEXER_METRICS;
 use crate::models::{
     create_split_metadata, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate,
 };
 use crate::split_store::IndexingSplitStore;
 
-/// This semaphore ensures that, at most, `MAX_CONCURRENT_SPLIT_UPLOADS` uploads can happen
-/// concurrently.
+/// The following two semaphores ensures that, we have at most `max_concurrent_split_uploads` split
+/// uploads can happen at the same time, as configured in the `IndexerConfig`.
 ///
-/// This permit applies to all uploader actors. In the future, we might want to have a nicer
-/// granularity, and put that semaphore back into the uploader actor, but have a single uploader
-/// actor for all indexing pipeline.
-static CONCURRENT_UPLOAD_PERMITS: OnceCell<Semaphore> = OnceCell::new();
+/// This "budget" is actually split into two semaphores: one for the indexing pipeline and the merge
+/// pipeline. The idea is that the merge pipeline is by nature a bit irregular, and we don't want it
+/// to stall the indexing pipeline, decreasing its throughput.
+static CONCURRENT_UPLOAD_PERMITS_INDEX: OnceCell<Semaphore> = OnceCell::new();
+static CONCURRENT_UPLOAD_PERMITS_MERGE: OnceCell<Semaphore> = OnceCell::new();
+
+#[derive(Clone, Copy, Debug)]
+pub enum UploaderType {
+    IndexUploader,
+    MergeUploader,
+    DeleteUploader,
+}
 
 /// [`SplitsUpdateMailbox`] wraps either a [`Mailbox<Sequencer>`] or [`Mailbox<Publisher>`].
 /// It makes it possible to send a [`SplitsUpdate`] either to the [`Sequencer`] or directly
@@ -70,6 +80,18 @@ static CONCURRENT_UPLOAD_PERMITS: OnceCell<Semaphore> = OnceCell::new();
 pub enum SplitsUpdateMailbox {
     Sequencer(Mailbox<Sequencer<Publisher>>),
     Publisher(Mailbox<Publisher>),
+}
+
+impl From<Mailbox<Publisher>> for SplitsUpdateMailbox {
+    fn from(publisher_mailbox: Mailbox<Publisher>) -> Self {
+        SplitsUpdateMailbox::Publisher(publisher_mailbox)
+    }
+}
+
+impl From<Mailbox<Sequencer<Publisher>>> for SplitsUpdateMailbox {
+    fn from(publisher_sequencer_mailbox: Mailbox<Sequencer<Publisher>>) -> Self {
+        SplitsUpdateMailbox::Sequencer(publisher_sequencer_mailbox)
+    }
 }
 
 impl SplitsUpdateMailbox {
@@ -139,7 +161,7 @@ impl SplitsUpdateSender {
 
 #[derive(Clone)]
 pub struct Uploader {
-    actor_name: &'static str,
+    uploader_type: UploaderType,
     metastore: Arc<dyn Metastore>,
     split_store: IndexingSplitStore,
     split_update_mailbox: SplitsUpdateMailbox,
@@ -149,14 +171,14 @@ pub struct Uploader {
 
 impl Uploader {
     pub fn new(
-        actor_name: &'static str,
+        uploader_type: UploaderType,
         metastore: Arc<dyn Metastore>,
         split_store: IndexingSplitStore,
         split_update_mailbox: SplitsUpdateMailbox,
         max_concurrent_split_uploads: usize,
     ) -> Uploader {
         Uploader {
-            actor_name,
+            uploader_type,
             metastore,
             split_store,
             split_update_mailbox,
@@ -169,11 +191,30 @@ impl Uploader {
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<SemaphorePermit<'static>> {
         let _guard = ctx.protect_zone();
-        let concurrent_upload_permits = CONCURRENT_UPLOAD_PERMITS
+        let (concurrent_upload_permits_once_cell, concurrent_upload_permits_gauge) =
+            match self.uploader_type {
+                UploaderType::IndexUploader => (
+                    &CONCURRENT_UPLOAD_PERMITS_INDEX,
+                    INDEXER_METRICS
+                        .available_concurrent_upload_permits
+                        .with_label_values(["indexer"]),
+                ),
+                UploaderType::MergeUploader => (
+                    &CONCURRENT_UPLOAD_PERMITS_MERGE,
+                    INDEXER_METRICS
+                        .available_concurrent_upload_permits
+                        .with_label_values(["merger"]),
+                ),
+                UploaderType::DeleteUploader => (
+                    &CONCURRENT_UPLOAD_PERMITS_MERGE,
+                    INDEXER_METRICS
+                        .available_concurrent_upload_permits
+                        .with_label_values(["merger"]),
+                ),
+            };
+        let concurrent_upload_permits = concurrent_upload_permits_once_cell
             .get_or_init(|| Semaphore::const_new(self.max_concurrent_split_uploads));
-        INDEXER_METRICS
-            .concurrent_upload_available_permits
-            .set(concurrent_upload_permits.available_permits() as i64);
+        concurrent_upload_permits_gauge.set(concurrent_upload_permits.available_permits() as i64);
         concurrent_upload_permits
             .acquire()
             .await
@@ -208,7 +249,7 @@ impl Actor for Uploader {
     }
 
     fn name(&self) -> String {
-        self.actor_name.to_string()
+        format!("{:?}", self.uploader_type)
     }
 }
 
@@ -276,7 +317,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     }
                     packaged_splits_and_metadatas.push((split, upload_result.unwrap()));
                 }
-                let splits_update = make_publish_operation(index_id, batch.publish_lock, packaged_splits_and_metadatas, batch.checkpoint_delta_opt, batch.parent_span);
+                let splits_update = make_publish_operation(index_id, batch.publish_lock, packaged_splits_and_metadatas, batch.checkpoint_delta_opt, batch.merge_operation, batch.parent_span);
                 split_udpate_sender.send(splits_update, &ctx_clone).await?;
                 // We explicitely drop it in order to force move the permit guard into the async
                 // task.
@@ -295,6 +336,7 @@ fn make_publish_operation(
     publish_lock: PublishLock,
     packaged_splits_and_metadatas: Vec<(PackagedSplit, SplitMetadata)>,
     checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+    merge_operation: Option<TrackedObject<MergeOperation>>,
     parent_span: Span,
 ) -> SplitsUpdate {
     assert!(!packaged_splits_and_metadatas.is_empty());
@@ -311,6 +353,7 @@ fn make_publish_operation(
             .collect_vec(),
         replaced_split_ids: Vec::from_iter(replaced_split_ids),
         checkpoint_delta_opt,
+        merge_operation,
         parent_span,
     }
 }
@@ -357,7 +400,7 @@ async fn stage_and_upload_split(
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
@@ -392,7 +435,7 @@ mod tests {
         let split_store =
             IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
         let uploader = Uploader::new(
-            "TestUploader",
+            UploaderType::IndexUploader,
             Arc::new(mock_metastore),
             split_store,
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
@@ -425,6 +468,7 @@ mod tests {
                 }],
                 checkpoint_delta_opt,
                 PublishLock::default(),
+                None,
                 Span::none(),
             ))
             .await?;
@@ -492,7 +536,7 @@ mod tests {
         let split_store =
             IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
         let uploader = Uploader::new(
-            "TestUploader",
+            UploaderType::IndexUploader,
             Arc::new(mock_metastore),
             split_store,
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
@@ -546,6 +590,7 @@ mod tests {
                 vec![packaged_split_1, package_split_2],
                 None,
                 PublishLock::default(),
+                None,
                 Span::none(),
             ))
             .await?;
@@ -618,7 +663,7 @@ mod tests {
         let split_store =
             IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
         let uploader = Uploader::new(
-            "TestUploader",
+            UploaderType::IndexUploader,
             Arc::new(mock_metastore),
             split_store,
             SplitsUpdateMailbox::Publisher(publisher_mailbox),
@@ -651,6 +696,7 @@ mod tests {
                 }],
                 checkpoint_delta_opt,
                 PublishLock::default(),
+                None,
                 Span::none(),
             ))
             .await?;
@@ -659,9 +705,19 @@ mod tests {
             ObservationType::Alive
         );
         // We have to wait a bit to make sure uploader has sent the message.
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        let mut splits_updates: Vec<SplitsUpdate> = publisher_inbox.drain_for_test_typed();
-        assert_eq!(splits_updates.len(), 1);
+
+        let start = Instant::now();
+        let mut splits_updates = loop {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            let split_updated: Vec<SplitsUpdate> = publisher_inbox.drain_for_test_typed();
+            if !split_updated.is_empty() {
+                break split_updated;
+            }
+            assert!(
+                start.elapsed() < Duration::from_secs(1),
+                "Failed to receive publisher message in time"
+            );
+        };
 
         let SplitsUpdate {
             index_id,

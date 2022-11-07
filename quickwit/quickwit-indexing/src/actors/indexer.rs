@@ -28,6 +28,7 @@ use fail::fail_point;
 use fnv::FnvHashMap;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::io::IoControls;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::{DocMapper, SortBy, QUICKWIT_TOKENIZER_MANAGER};
@@ -86,14 +87,19 @@ impl IndexerState {
             .settings(self.index_settings.clone())
             .schema(self.schema.clone())
             .tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
+
+        let io_controls = IoControls::default()
+            .set_progress(ctx.progress().clone())
+            .set_kill_switch(ctx.kill_switch().clone())
+            .set_index_and_component(&self.pipeline_id.index_id, "indexer");
+
         let indexed_split = IndexedSplitBuilder::new_in_dir(
             self.pipeline_id.clone(),
             partition_id,
             last_delete_opstamp,
             self.indexing_directory.scratch_directory().clone(),
             index_builder,
-            ctx.progress().clone(),
-            ctx.kill_switch().clone(),
+            io_controls,
         )?;
         info!(
             split_id = indexed_split.split_id(),

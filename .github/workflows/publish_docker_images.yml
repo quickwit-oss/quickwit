@@ -6,6 +6,7 @@ on:
       - "main"
     tags:
       - "v*"
+      - "happy-plazza"
 
 jobs:
   docker:
@@ -31,6 +32,7 @@ jobs:
             type=edge,branch=main,suffix=-bullseye
             type=semver,pattern={{version}}
             type=semver,pattern={{version}},suffix=-bullseye
+            type=ref,event=tag
           labels: |
             org.opencontainers.image.title=Quickwit
             maintainer=Quickwit, Inc. <hello@quickwit.io>

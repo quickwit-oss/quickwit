@@ -1,9 +1,10 @@
 ---
 title: AWS cluster setup
-sidebar_position: 3
+sidebar_position: 1
 ---
 
 Setting up a Quickwit cluster on AWS requires the configuration of three elements:
+
 - AWS credentials
 - AWS Region
 - Network configuration
@@ -22,7 +23,6 @@ When starting a node, Quickwit attempts to find AWS credentials using the creden
 
 If all these possibilities are exhausted, an error is returned.
 
-
 ## AWS Region
 
 Quickwit attempts to find an AWS Region in multiple locations and with the following order of precedence:
@@ -35,20 +35,17 @@ Quickwit attempts to find an AWS Region in multiple locations and with the follo
 
 4. Default value: `us-east-1`
 
-
 :::note
 
 AWS credentials or Region resolution may take a few seconds, especially if the Amazon EC2 instance metadata service is slow or unavailable.
 
 :::
 
-
 ## Network configuration
 
 ### Security groups
 
 In order to communicate with each other, nodes must reside in security groups that allow inbound and outbound traffic on one UDP port and two TCP ports. Please, refer to the [ports configuration](/configuration/ports-config.md) page for more details.
-
 
 ## Common errors
 

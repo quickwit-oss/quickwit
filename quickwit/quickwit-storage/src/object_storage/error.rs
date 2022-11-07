@@ -22,7 +22,8 @@ use quickwit_aws::retry::Retryable;
 use rusoto_core::RusotoError;
 use rusoto_s3::{
     AbortMultipartUploadError, CompleteMultipartUploadError, CreateMultipartUploadError,
-    DeleteObjectError, GetObjectError, HeadObjectError, PutObjectError, UploadPartError,
+    DeleteObjectError, DeleteObjectsError, GetObjectError, HeadObjectError, PutObjectError,
+    UploadPartError,
 };
 
 use crate::{StorageError, StorageErrorKind};
@@ -59,6 +60,12 @@ impl ToStorageErrorKind for GetObjectError {
 }
 
 impl ToStorageErrorKind for DeleteObjectError {
+    fn to_storage_error_kind(&self) -> StorageErrorKind {
+        StorageErrorKind::Service
+    }
+}
+
+impl ToStorageErrorKind for DeleteObjectsError {
     fn to_storage_error_kind(&self) -> StorageErrorKind {
         StorageErrorKind::Service
     }

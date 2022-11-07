@@ -19,13 +19,11 @@
 
 use std::collections::HashMap;
 use std::convert::TryInto;
-use std::fmt;
 use std::fmt::Debug;
-use std::fs::File;
-use std::io::{self, Write};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::{fmt, io};
 
 use async_trait::async_trait;
 use quickwit_common::chunk_range;
@@ -34,8 +32,10 @@ use serde::{Deserialize, Serialize};
 use tantivy::directory::FileSlice;
 use tantivy::HasLen;
 use thiserror::Error;
+use tokio::io::AsyncWriteExt;
 use tracing::error;
 
+use crate::storage::{BulkDeleteError, SendableAsync};
 use crate::{OwnedBytes, Storage, StorageError, StorageResult};
 
 /// BundleStorage bundles together multiple files into a single file.
@@ -184,19 +184,21 @@ impl Storage for BundleStorage {
         path: &Path,
         _payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
-        Err(unsupported_operation(path))
+        Err(unsupported_operation(&[path]))
     }
 
-    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> crate::StorageResult<()> {
+    async fn copy_to(
+        &self,
+        path: &Path,
+        output: &mut dyn SendableAsync,
+    ) -> crate::StorageResult<()> {
         let file_num_bytes = self.file_num_bytes(path).await? as usize;
-
-        let mut out_file = File::create(output_path)?;
         let block_size = 100_000_000;
         for block in chunk_range(0..file_num_bytes, block_size) {
             let file_content = self.get_slice(path, block).await?;
-            out_file.write_all(&file_content)?;
+            output.write_all(&file_content).await?;
         }
-
+        output.flush().await?;
         Ok(())
     }
 
@@ -230,7 +232,14 @@ impl Storage for BundleStorage {
     }
 
     async fn delete(&self, path: &Path) -> crate::StorageResult<()> {
-        Err(unsupported_operation(path))
+        Err(unsupported_operation(&[path]))
+    }
+
+    async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+        Err(BulkDeleteError {
+            error: Some(unsupported_operation(paths)),
+            ..Default::default()
+        })
     }
 
     async fn exists(&self, path: &Path) -> crate::StorageResult<bool> {
@@ -267,15 +276,16 @@ impl fmt::Debug for BundleStorage {
     }
 }
 
-fn unsupported_operation(path: &Path) -> StorageError {
+fn unsupported_operation<'a>(paths: &[&'a Path]) -> StorageError {
     let msg = "Unsupported operation. BundleStorage only supports async reads";
-    error!(path=?path, msg);
-    io::Error::new(io::ErrorKind::Other, format!("{}: {:?}", msg, path)).into()
+    error!(paths=?paths, msg);
+    io::Error::new(io::ErrorKind::Other, format!("{}: {:?}", msg, paths)).into()
 }
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::fs::{self, File};
+    use std::io::Write;
 
     use super::*;
     use crate::{PutPayload, RamStorageBuilder, SplitPayloadBuilder};

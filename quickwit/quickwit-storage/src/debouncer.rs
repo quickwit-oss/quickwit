@@ -29,6 +29,7 @@ use futures::{Future, FutureExt};
 use quickwit_common::uri::Uri;
 use tantivy::directory::OwnedBytes;
 
+use crate::storage::{BulkDeleteError, SendableAsync};
 use crate::{Storage, StorageResult};
 
 /// The AsyncDebouncer debounces inflight Futures, so that concurrent async request to the same data
@@ -141,8 +142,8 @@ impl<T: Storage> Storage for DebouncedStorage<T> {
         self.underlying.put(path, payload).await
     }
 
-    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
-        self.underlying.copy_to_file(path, output_path).await
+    async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
+        self.underlying.copy_to(path, output).await
     }
 
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
@@ -157,6 +158,10 @@ impl<T: Storage> Storage for DebouncedStorage<T> {
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         self.underlying.delete(path).await
+    }
+
+    async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+        self.underlying.bulk_delete(paths).await
     }
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
