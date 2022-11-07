@@ -794,15 +794,10 @@ async fn test_all_local_index() {
     // serve & api-search
     let run_cli_command = RunCliCommand {
         config_uri: test_env.config_uri.clone(),
-        data_dir_path: None,
         services: Some(HashSet::from([
             QuickwitService::Searcher,
             QuickwitService::Metastore,
         ])),
-        metastore_uri: None,
-        cluster_id: None,
-        node_id: None,
-        peer_seeds: None,
     };
 
     let service_task = tokio::spawn(async move { run_cli_command.execute().await.unwrap() });
@@ -841,7 +836,6 @@ async fn test_all_local_index() {
         config_uri: test_env.config_uri.clone(),
         index_id,
         dry_run: false,
-        data_dir: None,
     };
 
     delete_index_cli(args).await.unwrap();
