@@ -272,7 +272,11 @@ mod tests {
             .times(1)
             .returning(|index_id, split_ids| {
                 assert_eq!(index_id, "test-index");
-                assert_eq!(split_ids, vec!["a", "b", "c"]);
+
+                let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
+                let expected_split_ids = HashSet::<&str>::from_iter(["a", "b", "c"]);
+                assert_eq!(split_ids, expected_split_ids);
+
                 Ok(())
             });
 
@@ -328,7 +332,11 @@ mod tests {
             .times(1)
             .returning(|index_id, split_ids| {
                 assert_eq!(index_id, "test-index");
-                assert_eq!(split_ids, vec!["a", "b", "c"]);
+
+                let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
+                let expected_split_ids = HashSet::<&str>::from_iter(["a", "b", "c"]);
+
+                assert_eq!(split_ids, expected_split_ids);
                 Ok(())
             });
 
@@ -382,7 +390,11 @@ mod tests {
             .times(2)
             .returning(|index_id, split_ids| {
                 assert_eq!(index_id, "test-index");
-                assert_eq!(split_ids, vec!["a", "b"]);
+
+                let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
+                let expected_split_ids = HashSet::<&str>::from_iter(["a", "b"]);
+
+                assert_eq!(split_ids, expected_split_ids);
                 Ok(())
             });
 
@@ -516,7 +528,10 @@ mod tests {
             .expect_delete_splits()
             .times(2)
             .returning(|index_id, split_ids| {
-                assert_eq!(split_ids, vec!["a", "b"]);
+                let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
+                let expected_split_ids = HashSet::<&str>::from_iter(["a", "b"]);
+
+                assert_eq!(split_ids, expected_split_ids);
                 if index_id == "test-index-2" {
                     Err(MetastoreError::DbError {
                         message: "fail to delete".to_string(),
