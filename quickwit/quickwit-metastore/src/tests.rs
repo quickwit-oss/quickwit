@@ -1635,7 +1635,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let query = ListSplitsQuery::for_index().with_limit(3);
+            let query = ListSplitsQuery::for_index(index_id).with_limit(3);
             let splits = metastore.list_splits(query).await.unwrap();
             assert_eq!(
                 splits.len(),

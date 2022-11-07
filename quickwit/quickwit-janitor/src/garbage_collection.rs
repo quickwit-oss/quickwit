@@ -235,7 +235,7 @@ pub async fn delete_splits_with_files(
 mod tests {
     use std::time::Duration;
 
-    use quickwit_metastore::{metastore_for_test, IndexMetadata, SplitMetadata, SplitState};
+    use quickwit_metastore::{metastore_for_test, IndexMetadata, SplitMetadata, SplitState, ListSplitsQuery};
     use quickwit_storage::storage_for_test;
 
     use crate::run_garbage_collect;
@@ -262,9 +262,11 @@ mod tests {
             .await
             .unwrap();
 
+        let query = ListSplitsQuery::for_index(index_id)
+            .with_split_state(SplitState::Staged);
         assert_eq!(
             metastore
-                .list_splits(index_id, SplitState::Staged, None, None)
+                .list_splits(query)
                 .await
                 .unwrap()
                 .len(),
@@ -283,9 +285,11 @@ mod tests {
         .await
         .unwrap();
 
+        let query = ListSplitsQuery::for_index(index_id)
+            .with_split_state(SplitState::Staged);
         assert_eq!(
             metastore
-                .list_splits(index_id, SplitState::Staged, None, None)
+                .list_splits(query)
                 .await
                 .unwrap()
                 .len(),
@@ -306,9 +310,11 @@ mod tests {
         .await
         .unwrap();
 
+        let query = ListSplitsQuery::for_index(index_id)
+            .with_split_state(SplitState::Staged);
         assert_eq!(
             metastore
-                .list_splits(index_id, SplitState::Staged, None, None)
+                .list_splits(query)
                 .await
                 .unwrap()
                 .len(),
@@ -342,9 +348,11 @@ mod tests {
             .await
             .unwrap();
 
+        let query = ListSplitsQuery::for_index(index_id)
+            .with_split_state(SplitState::MarkedForDeletion);
         assert_eq!(
             metastore
-                .list_splits(index_id, SplitState::MarkedForDeletion, None, None)
+                .list_splits(query)
                 .await
                 .unwrap()
                 .len(),
@@ -363,9 +371,11 @@ mod tests {
         .await
         .unwrap();
 
+        let query = ListSplitsQuery::for_index(index_id)
+            .with_split_state(SplitState::MarkedForDeletion);
         assert_eq!(
             metastore
-                .list_splits(index_id, SplitState::MarkedForDeletion, None, None)
+                .list_splits(query)
                 .await
                 .unwrap()
                 .len(),
@@ -386,9 +396,11 @@ mod tests {
         .await
         .unwrap();
 
+        let query = ListSplitsQuery::for_index(index_id)
+            .with_split_state(SplitState::MarkedForDeletion);
         assert_eq!(
             metastore
-                .list_splits(index_id, SplitState::MarkedForDeletion, None, None)
+                .list_splits(query)
                 .await
                 .unwrap()
                 .len(),
