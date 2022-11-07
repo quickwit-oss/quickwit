@@ -18,14 +18,12 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::fs;
 use std::path::PathBuf;
-use std::process::{Child, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
-use std::{fs, io};
 
 use anyhow::bail;
-use assert_cmd::cargo::cargo_bin;
 use assert_cmd::Command;
 use predicates::str;
 use quickwit_common::net::find_available_tcp_port;
@@ -102,18 +100,6 @@ pub fn make_command(arguments: &str) -> Command {
     )
     .args(arguments.split_whitespace());
     cmd
-}
-
-/// Creates a quickwit-cli command running as a child process.
-pub fn spawn_command(arguments: &str) -> io::Result<Child> {
-    std::process::Command::new(cargo_bin(PACKAGE_BIN_NAME))
-        .args(arguments.split_whitespace())
-        .env(
-            quickwit_telemetry::DISABLE_TELEMETRY_ENV_KEY,
-            "disable-for-tests",
-        )
-        .stdout(Stdio::piped())
-        .spawn()
 }
 
 /// Waits until localhost:port is ready. Returns an error if it takes too long.

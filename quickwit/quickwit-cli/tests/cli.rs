@@ -44,7 +44,7 @@ use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreEr
 use serde_json::{json, Number, Value};
 use tokio::time::{sleep, Duration};
 
-use crate::helpers::{create_test_env, make_command, spawn_command, wait_port_ready};
+use crate::helpers::{create_test_env, make_command, wait_port_ready};
 
 fn create_logs_index(test_env: &TestEnv) {
     make_command(
@@ -776,20 +776,11 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
 
 /// testing the api via cli commands
 #[tokio::test]
-async fn test_all_local_index() -> Result<()> {
+async fn test_all_local_index() {
     quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-all");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
-    make_command(
-        format!(
-            "index create --index-config {} --config {}",
-            test_env.resource_files["index_config"].display(),
-            test_env.resource_files["config"].display()
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    create_logs_index(&test_env);
 
     let metadata_file_exists = test_env
         .storage
@@ -801,23 +792,27 @@ async fn test_all_local_index() -> Result<()> {
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
     // serve & api-search
-    let mut server_process = spawn_command(
-        format!(
-            "run --service searcher --service metastore --config {}",
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .unwrap();
-    // TODO: wait until port server accepts incoming connections and remove sleep.
-    sleep(Duration::from_secs(2)).await;
+    let run_cli_command = RunCliCommand {
+        config_uri: test_env.config_uri.clone(),
+        services: Some(HashSet::from([
+            QuickwitService::Searcher,
+            QuickwitService::Metastore,
+        ])),
+    };
+
+    let service_task = tokio::spawn(async move { run_cli_command.execute().await.unwrap() });
+
+    wait_port_ready(test_env.rest_listen_port).await.unwrap();
+
     let query_response = reqwest::get(format!(
         "http://127.0.0.1:{}/api/v1/{}/search?query=level:info",
         test_env.rest_listen_port, test_env.index_id
     ))
-    .await?
+    .await
+    .unwrap()
     .text()
-    .await?;
+    .await
+    .unwrap();
 
     let result: Value =
         serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
@@ -828,30 +823,29 @@ async fn test_all_local_index() -> Result<()> {
         test_env.rest_listen_port,
         test_env.index_id
     ))
-    .await?
+    .await
+    .unwrap()
     .text()
-    .await?;
+    .await
+    .unwrap();
     assert_eq!(search_stream_response, "2\n13\n");
 
-    server_process.kill().unwrap();
+    service_task.abort();
 
-    make_command(
-        format!(
-            "index delete --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display()
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
+    let args = DeleteIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id,
+        dry_run: false,
+    };
+
+    delete_index_cli(args).await.unwrap();
+
     let metadata_file_exists = test_env
         .storage
         .exists(&Path::new(&test_env.index_id).join("quickwit.json"))
-        .await?;
+        .await
+        .unwrap();
     assert_eq!(metadata_file_exists, false);
-
-    Ok(())
 }
 
 /// testing the api via cli commands
