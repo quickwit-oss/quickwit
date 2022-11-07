@@ -156,9 +156,7 @@ impl Metastore for InstrumentedMetastore {
     async fn list_splits<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>> {
         let index_id = query.index;
         instrument!(
-            self.underlying
-                .list_splits(query)
-                .await,
+            self.underlying.list_splits(query).await,
             [list_splits, index_id]
         );
     }

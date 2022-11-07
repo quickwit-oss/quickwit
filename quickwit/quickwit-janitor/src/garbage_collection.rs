@@ -235,7 +235,9 @@ pub async fn delete_splits_with_files(
 mod tests {
     use std::time::Duration;
 
-    use quickwit_metastore::{metastore_for_test, IndexMetadata, SplitMetadata, SplitState, ListSplitsQuery};
+    use quickwit_metastore::{
+        metastore_for_test, IndexMetadata, ListSplitsQuery, SplitMetadata, SplitState,
+    };
     use quickwit_storage::storage_for_test;
 
     use crate::run_garbage_collect;
@@ -262,16 +264,8 @@ mod tests {
             .await
             .unwrap();
 
-        let query = ListSplitsQuery::for_index(index_id)
-            .with_split_state(SplitState::Staged);
-        assert_eq!(
-            metastore
-                .list_splits(query)
-                .await
-                .unwrap()
-                .len(),
-            1
-        );
+        let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
+        assert_eq!(metastore.list_splits(query).await.unwrap().len(), 1);
         // The graced period hasn't passed yet so the split remains staged.
         run_garbage_collect(
             index_id,
@@ -285,16 +279,8 @@ mod tests {
         .await
         .unwrap();
 
-        let query = ListSplitsQuery::for_index(index_id)
-            .with_split_state(SplitState::Staged);
-        assert_eq!(
-            metastore
-                .list_splits(query)
-                .await
-                .unwrap()
-                .len(),
-            1
-        );
+        let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
+        assert_eq!(metastore.list_splits(query).await.unwrap().len(), 1);
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         // The graced period has passed so the split is marked for deletion and then deleted.
@@ -310,16 +296,8 @@ mod tests {
         .await
         .unwrap();
 
-        let query = ListSplitsQuery::for_index(index_id)
-            .with_split_state(SplitState::Staged);
-        assert_eq!(
-            metastore
-                .list_splits(query)
-                .await
-                .unwrap()
-                .len(),
-            0
-        );
+        let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
+        assert_eq!(metastore.list_splits(query).await.unwrap().len(), 0);
     }
 
     #[tokio::test]
@@ -348,16 +326,9 @@ mod tests {
             .await
             .unwrap();
 
-        let query = ListSplitsQuery::for_index(index_id)
-            .with_split_state(SplitState::MarkedForDeletion);
-        assert_eq!(
-            metastore
-                .list_splits(query)
-                .await
-                .unwrap()
-                .len(),
-            1
-        );
+        let query =
+            ListSplitsQuery::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
+        assert_eq!(metastore.list_splits(query).await.unwrap().len(), 1);
         // The graced period hasn't passed yet so the split remains marked for deletion.
         run_garbage_collect(
             index_id,
@@ -371,16 +342,9 @@ mod tests {
         .await
         .unwrap();
 
-        let query = ListSplitsQuery::for_index(index_id)
-            .with_split_state(SplitState::MarkedForDeletion);
-        assert_eq!(
-            metastore
-                .list_splits(query)
-                .await
-                .unwrap()
-                .len(),
-            1
-        );
+        let query =
+            ListSplitsQuery::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
+        assert_eq!(metastore.list_splits(query).await.unwrap().len(), 1);
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         // The graced period has passed so the split is deleted.
@@ -396,15 +360,8 @@ mod tests {
         .await
         .unwrap();
 
-        let query = ListSplitsQuery::for_index(index_id)
-            .with_split_state(SplitState::MarkedForDeletion);
-        assert_eq!(
-            metastore
-                .list_splits(query)
-                .await
-                .unwrap()
-                .len(),
-            0
-        );
+        let query =
+            ListSplitsQuery::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
+        assert_eq!(metastore.list_splits(query).await.unwrap().len(), 0);
     }
 }

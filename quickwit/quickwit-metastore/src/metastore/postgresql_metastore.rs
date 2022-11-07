@@ -19,10 +19,9 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
-use std::ops::Range;
+use std::ops::{Bound, Range};
 #[cfg(test)]
 use std::str::FromStr;
-use std::ops::Bound;
 use std::sync::Arc;
 use std::time::Duration;
 
