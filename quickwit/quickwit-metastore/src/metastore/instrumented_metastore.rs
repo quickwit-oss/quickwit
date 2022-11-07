@@ -30,7 +30,7 @@ use crate::{IndexMetadata, Metastore, MetastoreResult, Split, SplitMetadata, Spl
 
 macro_rules! instrument {
     ($expr:expr, [$operation:ident, $($label:expr),*]) => {
-        let labels = &[stringify!($operation), $($label,)*];
+        let labels = [stringify!($operation), $($label,)*];
         crate::metrics::METASTORE_METRICS.requests_total.with_label_values(labels).inc();
         let start = std::time::Instant::now();
         let (res, is_error) = match $expr {
@@ -43,7 +43,7 @@ macro_rules! instrument {
             },
         };
         let elapsed = start.elapsed();
-        let labels = &[stringify!($operation), $($label,)* is_error];
+        let labels = [stringify!($operation), $($label,)* is_error];
         crate::metrics::METASTORE_METRICS.request_duration_seconds.with_label_values(labels).observe(elapsed.as_secs_f64());
 
         if elapsed.as_secs() > 1 {

@@ -195,7 +195,7 @@ impl DeleteTaskPlanner {
                 .await?;
                 JANITOR_METRICS
                     .ongoing_num_delete_operations_total
-                    .with_label_values(&[&self.index_id])
+                    .with_label_values([&self.index_id])
                     .set(self.ongoing_delete_operations_inventory.list().len() as i64);
             }
         }

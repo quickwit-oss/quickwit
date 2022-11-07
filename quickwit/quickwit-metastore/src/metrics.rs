@@ -21,9 +21,9 @@ use once_cell::sync::Lazy;
 use quickwit_common::metrics::{new_counter_vec, new_histogram_vec, HistogramVec, IntCounterVec};
 
 pub struct MetastoreMetrics {
-    pub requests_total: IntCounterVec,
-    pub request_errors_total: IntCounterVec,
-    pub request_duration_seconds: HistogramVec,
+    pub requests_total: IntCounterVec<2>,
+    pub request_errors_total: IntCounterVec<2>,
+    pub request_duration_seconds: HistogramVec<3>,
 }
 
 impl Default for MetastoreMetrics {
@@ -33,19 +33,19 @@ impl Default for MetastoreMetrics {
                 "requests_total",
                 "Number of requests",
                 "quickwit_metastore",
-                &["operation", "index"],
+                ["operation", "index"],
             ),
             request_errors_total: new_counter_vec(
                 "request_errors_total",
                 "Number of failed requests",
                 "quickwit_metastore",
-                &["operation", "index"],
+                ["operation", "index"],
             ),
             request_duration_seconds: new_histogram_vec(
                 "request_duration_seconds",
                 "Duration of requests",
                 "quickwit_metastore",
-                &["operation", "index", "error"],
+                ["operation", "index", "error"],
             ),
         }
     }

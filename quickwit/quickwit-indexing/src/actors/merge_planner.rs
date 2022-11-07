@@ -206,7 +206,7 @@ impl Handler<RefreshMetric> for MergePlanner {
     ) -> Result<(), ActorExitStatus> {
         INDEXER_METRICS
             .ongoing_merge_operations
-            .with_label_values(&[
+            .with_label_values([
                 self.pipeline_id.index_id.as_str(),
                 self.pipeline_id.source_id.as_str(),
             ])

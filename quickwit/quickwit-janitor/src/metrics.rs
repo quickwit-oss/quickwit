@@ -21,7 +21,7 @@ use once_cell::sync::Lazy;
 use quickwit_common::metrics::{new_gauge_vec, IntGaugeVec};
 
 pub struct JanitorMetrics {
-    pub ongoing_num_delete_operations_total: IntGaugeVec,
+    pub ongoing_num_delete_operations_total: IntGaugeVec<1>,
 }
 
 impl Default for JanitorMetrics {
@@ -31,7 +31,7 @@ impl Default for JanitorMetrics {
                 "ongoing_num_delete_operations_total",
                 "Num of ongoing delete operations (per index).",
                 "quickwit_janitor",
-                &["index"],
+                ["index"],
             ),
         }
     }

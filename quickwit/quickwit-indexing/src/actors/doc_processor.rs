@@ -86,7 +86,7 @@ impl DocProcessorCounters {
         self.overall_num_bytes += num_bytes;
         crate::metrics::INDEXER_METRICS
             .processed_docs_total
-            .with_label_values(&[
+            .with_label_values([
                 self.index_id.as_str(),
                 self.source_id.as_str(),
                 "parsing_error",
@@ -94,7 +94,7 @@ impl DocProcessorCounters {
             .inc();
         crate::metrics::INDEXER_METRICS
             .processed_bytes
-            .with_label_values(&[
+            .with_label_values([
                 self.index_id.as_str(),
                 self.source_id.as_str(),
                 "parsing_error",
@@ -107,7 +107,7 @@ impl DocProcessorCounters {
         self.overall_num_bytes += num_bytes;
         crate::metrics::INDEXER_METRICS
             .processed_docs_total
-            .with_label_values(&[
+            .with_label_values([
                 self.index_id.as_str(),
                 self.source_id.as_str(),
                 "missing_field",
@@ -115,7 +115,7 @@ impl DocProcessorCounters {
             .inc();
         crate::metrics::INDEXER_METRICS
             .processed_bytes
-            .with_label_values(&[
+            .with_label_values([
                 self.index_id.as_str(),
                 self.source_id.as_str(),
                 "missing_field",
@@ -128,11 +128,11 @@ impl DocProcessorCounters {
         self.overall_num_bytes += num_bytes;
         crate::metrics::INDEXER_METRICS
             .processed_docs_total
-            .with_label_values(&[self.index_id.as_str(), self.source_id.as_str(), "valid"])
+            .with_label_values([self.index_id.as_str(), self.source_id.as_str(), "valid"])
             .inc();
         crate::metrics::INDEXER_METRICS
             .processed_bytes
-            .with_label_values(&[self.index_id.as_str(), self.source_id.as_str(), "valid"])
+            .with_label_values([self.index_id.as_str(), self.source_id.as_str(), "valid"])
             .inc_by(num_bytes);
     }
 }
