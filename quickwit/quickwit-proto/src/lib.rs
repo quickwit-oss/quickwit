@@ -30,6 +30,7 @@ pub mod ingest_api {
 
 pub mod metastore_api {
     pub use crate::quickwit_metastore_api::*;
+    pub use crate::quickwit_common::SetQuery;
 }
 
 pub mod jaeger {

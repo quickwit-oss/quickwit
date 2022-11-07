@@ -129,7 +129,48 @@ pub enum Query {
         terms: Vec<String>,
         /// Field getting searched in
         field_name: String,
+        /// Tags of split which shoud be searched
+        #[serde(default)]
+        // TODO use from_simple_list ?
+        tags: Vec<String>,
     },
+}
+
+impl From<Query> for SearchQuery {
+    fn from(query: Query) -> SearchQuery {
+        use quickwit_proto::metastore_api::SetQuery;
+        match query {
+            Query::QueryByString { query, .. } => SearchQuery::Text(query),
+            Query::QueryByTerms {
+                terms,
+                field_name,
+                tags,
+            } => SearchQuery::SetQuery(SetQuery {
+                terms,
+                field_name,
+                tags,
+            }),
+        }
+    }
+}
+
+impl From<Query> for quickwit_proto::metastore_api::delete_query::Query {
+    fn from(query: Query) -> quickwit_proto::metastore_api::delete_query::Query {
+        use quickwit_proto::metastore_api::delete_query::Query as SearchQuery;
+        use quickwit_proto::metastore_api::SetQuery;
+        match query {
+            Query::QueryByString { query, .. } => SearchQuery::Text(query),
+            Query::QueryByTerms {
+                terms,
+                field_name,
+                tags,
+            } => SearchQuery::SetQuery(SetQuery {
+                terms,
+                field_name,
+                tags,
+            }),
+        }
+    }
 }
 
 impl Default for Query {
@@ -160,18 +201,17 @@ async fn search_endpoint(
 ) -> Result<SearchResponseRest, SearchError> {
     let (sort_order, sort_by_field) = get_proto_search_by(&search_request);
 
-    let (query, search_fields) = match search_request.query {
-        Query::QueryByString {
-            query,
-            search_fields,
-        } => (SearchQuery::Text(query), search_fields),
-        Query::QueryByTerms { terms, field_name } => (SearchQuery::SetQuery(todo!()), None),
+    let search_fields = match &search_request.query {
+        Query::QueryByString { search_fields, .. } => {
+            search_fields.as_ref().cloned().unwrap_or_default()
+        }
+        Query::QueryByTerms { .. } => Vec::new(),
     };
 
     let search_request = quickwit_proto::SearchRequest {
         index_id,
-        query: Some(query.into()),
-        search_fields: search_fields.unwrap_or_default(),
+        query: Some(search_request.query.into()),
+        search_fields,
         snippet_fields: search_request.snippet_fields.unwrap_or_default(),
         start_timestamp: search_request.start_timestamp,
         end_timestamp: search_request.end_timestamp,

@@ -24,7 +24,6 @@ use quickwit_actors::Mailbox;
 use quickwit_janitor::actors::DeleteTaskService;
 use quickwit_metastore::Metastore;
 use quickwit_proto::metastore_api::DeleteQuery;
-use quickwit_proto::search_request::Query as SearchQuery;
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 
@@ -93,20 +92,19 @@ async fn post_delete_request(
     delete_request: DeleteQueryRequest,
     delete_task_service_mailbox: Mailbox<DeleteTaskService>,
 ) -> Result<impl warp::Reply, Infallible> {
-    let (query, search_fields) = match delete_request.query {
-        Query::QueryByString {
-            query,
-            search_fields,
-        } => (SearchQuery::Text(query), search_fields),
-        Query::QueryByTerms { terms, field_name } => (SearchQuery::SetQuery(todo!()), None),
+    let search_fields = match &delete_request.query {
+        Query::QueryByString { search_fields, .. } => {
+            search_fields.as_ref().cloned().unwrap_or_default()
+        }
+        Query::QueryByTerms { .. } => Vec::new(),
     };
 
     let delete_query = DeleteQuery {
         index_id: index_id.clone(),
         start_timestamp: delete_request.start_timestamp,
         end_timestamp: delete_request.end_timestamp,
-        query: Some(query.into()),
-        search_fields: search_fields.unwrap_or_default(),
+        query: Some(delete_request.query.into()),
+        search_fields,
     };
     let create_delete_task_reply = delete_task_service_mailbox
         .ask_for_res(delete_query)

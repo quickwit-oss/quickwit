@@ -26,7 +26,7 @@ use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::extract_time_range;
 use quickwit_common::uri::Uri;
-use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
+use quickwit_doc_mapper::tag_pruning::{extract_tags_from_query, TagFilterAst};
 use quickwit_indexing::actors::MergeSplitDownloader;
 use quickwit_indexing::merge_policy::{MergeOperation, MergePolicy};
 use quickwit_metastore::{
@@ -240,7 +240,22 @@ impl DeleteTaskPlanner {
                     let tags_filter = match &delete_query.query {
                         Some(Query::Text(query_string)) => extract_tags_from_query(query_string)
                             .expect("Delete query must have been validated upfront."),
-                        Some(Query::SetQuery(_)) => todo!(),
+                        Some(Query::SetQuery(set_query)) => {
+                            if set_query.tags.is_empty() {
+                                None
+                            } else {
+                                Some(TagFilterAst::Or(
+                                    set_query
+                                        .tags
+                                        .iter()
+                                        .map(|tag| TagFilterAst::Tag {
+                                            is_present: true,
+                                            tag: tag.clone(),
+                                        })
+                                        .collect(),
+                                ))
+                            }
+                        }
                         None => return false, // invalid query: ignore. TODO add log?
                     };
 

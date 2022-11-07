@@ -55,7 +55,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use itertools::Itertools;
 use quickwit_config::{build_doc_mapper, QuickwitConfig, SearcherConfig};
-use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
+use quickwit_doc_mapper::tag_pruning::{extract_tags_from_query, TagFilterAst};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{ListSplitsQuery, Metastore, SplitMetadata, SplitState};
 use quickwit_proto::search_request::Query;
@@ -131,7 +131,23 @@ async fn list_relevant_splits(
 
     let tags_filter = match &search_request.query {
         Some(Query::Text(query_string)) => extract_tags_from_query(query_string)?,
-        Some(Query::SetQuery(_)) => todo!(),
+
+        Some(Query::SetQuery(set_query)) => {
+            if set_query.tags.is_empty() {
+                None
+            } else {
+                Some(TagFilterAst::Or(
+                    set_query
+                        .tags
+                        .iter()
+                        .map(|tag| TagFilterAst::Tag {
+                            is_present: true,
+                            tag: tag.clone(),
+                        })
+                        .collect(),
+                ))
+            }
+        }
         None => return Err(anyhow::anyhow!("Invalid query: neither Text nor SetQuery.").into()),
     };
     
