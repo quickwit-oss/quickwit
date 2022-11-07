@@ -36,7 +36,6 @@ use tracing::{debug, error, info, instrument};
 use crate::actors::indexing_pipeline::wait_duration_before_retry;
 use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::publisher::PublisherType;
-use crate::actors::sequencer::Sequencer;
 use crate::actors::{MergeExecutor, MergePlanner, Packager, Publisher, Uploader, UploaderType};
 use crate::merge_policy::MergePolicy;
 use crate::models::{IndexingDirectory, IndexingPipelineId, MergeStatistics, Observe};
@@ -48,7 +47,6 @@ pub struct MergePipelineHandles {
     pub merge_executor: ActorHandle<MergeExecutor>,
     pub merge_packager: ActorHandle<Packager>,
     pub merge_uploader: ActorHandle<Uploader>,
-    pub merge_sequencer: ActorHandle<Sequencer<Publisher>>,
     pub merge_publisher: ActorHandle<Publisher>,
 }
 
@@ -118,7 +116,6 @@ impl MergePipeline {
                 &handles.merge_executor,
                 &handles.merge_packager,
                 &handles.merge_uploader,
-                &handles.merge_sequencer,
                 &handles.merge_publisher,
             ];
             supervisables
@@ -224,18 +221,12 @@ impl MergePipeline {
             .set_kill_switch(self.kill_switch.clone())
             .spawn(merge_publisher);
 
-        let merge_sequencer = Sequencer::new(merge_publisher_mailbox);
-        let (merge_sequencer_mailbox, merge_sequencer_handler) = ctx
-            .spawn_actor()
-            .set_kill_switch(self.kill_switch.clone())
-            .spawn(merge_sequencer);
-
         // Merge uploader
         let merge_uploader = Uploader::new(
             UploaderType::MergeUploader,
             self.params.metastore.clone(),
             self.params.split_store.clone(),
-            merge_sequencer_mailbox.into(),
+            merge_publisher_mailbox.into(),
             self.params.max_concurrent_split_uploads,
         );
         let (merge_uploader_mailbox, merge_uploader_handler) = ctx
@@ -318,7 +309,6 @@ impl MergePipeline {
             merge_executor: merge_executor_handler,
             merge_packager: merge_packager_handler,
             merge_uploader: merge_uploader_handler,
-            merge_sequencer: merge_sequencer_handler,
             merge_publisher: merge_publisher_handler,
         });
         Ok(())
