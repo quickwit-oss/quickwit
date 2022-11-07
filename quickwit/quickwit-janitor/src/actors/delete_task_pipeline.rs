@@ -26,6 +26,7 @@ use quickwit_actors::{
     HEARTBEAT,
 };
 use quickwit_common::io::IoControls;
+use quickwit_common::uri::Uri;
 use quickwit_config::{build_doc_mapper, IndexingSettings};
 use quickwit_indexing::actors::{
     MergeExecutor, MergeSplitDownloader, Packager, Publisher, Uploader, UploaderType,
@@ -140,7 +141,11 @@ impl DeleteTaskPipeline {
             root_dir=%self.delete_service_dir_path.display(),
             "Spawning delete tasks pipeline.",
         );
-        let index_metadata = self.metastore.index_metadata(&self.index_id).await?;
+        let index_config = self
+            .metastore
+            .index_metadata(&self.index_id)
+            .await?
+            .into_index_config();
         let publisher = Publisher::new(
             PublisherType::MergePublisher,
             self.metastore.clone(),
@@ -161,9 +166,9 @@ impl DeleteTaskPipeline {
         let (uploader_mailbox, uploader_supervisor_handler) = ctx.spawn_actor().supervise(uploader);
 
         let doc_mapper = build_doc_mapper(
-            &index_metadata.doc_mapping,
-            &index_metadata.search_settings,
-            &index_metadata.indexing_settings,
+            &index_config.doc_mapping,
+            &index_config.search_settings,
+            &index_config.indexing_settings,
         )?;
         let tag_fields = doc_mapper.tag_named_fields()?;
         let packager = Packager::new("MergePackager", tag_fields, uploader_mailbox);
@@ -174,7 +179,7 @@ impl DeleteTaskPipeline {
             pipeline_ord: 0,
             source_id: "unknown".to_string(),
         };
-        let throughput_limit: f64 = index_metadata
+        let throughput_limit: f64 = index_config
             .indexing_settings
             .resources
             .max_janitor_write_throughput
@@ -208,9 +213,10 @@ impl DeleteTaskPipeline {
             ctx.spawn_actor().supervise(merge_split_downloader);
         let merge_policy = merge_policy_from_settings(&self.indexing_settings);
         let doc_mapper_str = serde_json::to_string(&doc_mapper)?;
+        let index_uri: &Uri = &index_config.index_uri;
         let task_planner = DeleteTaskPlanner::new(
             self.index_id.clone(),
-            index_metadata.index_uri,
+            index_uri.clone(),
             doc_mapper_str,
             self.metastore.clone(),
             self.search_client_pool.clone(),

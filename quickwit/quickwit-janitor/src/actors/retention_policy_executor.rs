@@ -24,7 +24,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
-use quickwit_metastore::{IndexMetadata, Metastore};
+use quickwit_config::IndexConfig;
+use quickwit_metastore::Metastore;
 use serde::Serialize;
 use tracing::{debug, error, info};
 
@@ -60,7 +61,7 @@ pub struct RetentionPolicyExecutor {
     /// A map of index_id to index metadata that are managed by this executor.
     /// This act as local cache that is periodically updated while taking into
     /// account deleted indexes, updated or removed retention policy on indexes.
-    index_metadatas: HashMap<String, IndexMetadata>,
+    index_configs: HashMap<String, IndexConfig>,
     counters: RetentionPolicyExecutorCounters,
 }
 
@@ -68,7 +69,7 @@ impl RetentionPolicyExecutor {
     pub fn new(metastore: Arc<dyn Metastore>) -> Self {
         Self {
             metastore,
-            index_metadatas: HashMap::new(),
+            index_configs: HashMap::new(),
             counters: RetentionPolicyExecutorCounters::default(),
         }
     }
@@ -86,50 +87,53 @@ impl RetentionPolicyExecutor {
                 return;
             }
         };
-        debug!(index_ids=%index_metadatas.iter().map(|im| &im.index_id).join(", "), "Retention policy refresh.");
+        debug!(index_ids=%index_metadatas.iter().map(|im| im.index_id()).join(", "), "Retention policy refresh.");
 
         let deleted_indexes = compute_deleted_indexes(
-            self.index_metadatas.keys(),
-            index_metadatas.iter().map(|metadata| &metadata.index_id),
+            self.index_configs.keys().map(String::as_str),
+            index_metadatas
+                .iter()
+                .map(|index_metadata| index_metadata.index_id()),
         );
         if !deleted_indexes.is_empty() {
             debug!(index_ids=%deleted_indexes.iter().join(", "), "Deleting indexes from cache.");
-            for index_id in &deleted_indexes {
-                self.index_metadatas.remove(index_id);
+            for index_id in deleted_indexes {
+                self.index_configs.remove(&index_id);
             }
         }
 
-        for index_metadata in index_metadatas.into_iter() {
+        for index_metadata in index_metadatas {
+            let index_config = index_metadata.into_index_config();
             // We only care about indexes with a retention policy configured.
-            let retention_policy = match &index_metadata.retention_policy {
+            let retention_policy = match &index_config.retention_policy {
                 Some(policy) => policy,
                 None => {
                     // Remove the index from the cache if it exist.
                     // In case where the retention policy was removed this index might have
                     // been inserted in the cache from a previous iteration.
-                    self.index_metadatas.remove(&index_metadata.index_id);
+                    self.index_configs.remove(&index_config.index_id);
                     continue;
                 }
             };
 
             // Insert or update the index in the cache.
-            if let Some(value) = self.index_metadatas.get_mut(&index_metadata.index_id) {
+            if let Some(value) = self.index_configs.get_mut(&index_config.index_id) {
                 // Update the cache index entry in case the retention policy was updated.
-                *value = index_metadata;
+                *value = index_config;
                 continue;
             }
 
             if let Ok(next_interval) = retention_policy.duration_until_next_evaluation() {
                 let message = Execute {
-                    index_id: index_metadata.index_id.clone(),
+                    index_id: index_config.index_id.clone(),
                 };
-                info!(index_id=?index_metadata.index_id, scheduled_in=?next_interval, "retention-policy-schedule-operation");
+                info!(index_id=?index_config.index_id, scheduled_in=?next_interval, "retention-policy-schedule-operation");
                 // Inserts & schedule the index's first retention policy execution.
-                self.index_metadatas
-                    .insert(index_metadata.index_id.clone(), index_metadata);
+                self.index_configs
+                    .insert(index_config.index_id.clone(), index_config);
                 ctx.schedule_self_msg(next_interval, message).await;
             } else {
-                error!(index_id=%index_metadata.index_id, "Couldn't extract the index next schedule time.")
+                error!(index_id=%index_config.index_id, "Couldn't extract the index next schedule time.")
             }
         }
     }
@@ -183,15 +187,15 @@ impl Handler<Execute> for RetentionPolicyExecutor {
         info!(index_id=%message.index_id, "retention-policy-execute-operation");
         self.counters.num_execution_passes += 1;
 
-        let index_metadata = match self.index_metadatas.get(&message.index_id) {
-            Some(metadata) => metadata,
+        let index_config = match self.index_configs.get(&message.index_id) {
+            Some(config) => config,
             None => {
                 debug!(index_id=%message.index_id, "The index might have been deleted.");
                 return Ok(());
             }
         };
 
-        let retention_policy = index_metadata
+        let retention_policy = index_config
             .retention_policy
             .as_ref()
             .expect("Expected index to have retention policy configure.");
@@ -211,13 +215,13 @@ impl Handler<Execute> for RetentionPolicyExecutor {
         }
 
         if let Ok(next_interval) = retention_policy.duration_until_next_evaluation() {
-            info!(index_id=?index_metadata.index_id, scheduled_in=?next_interval, "retention-policy-schedule-operation");
+            info!(index_id=?index_config.index_id, scheduled_in=?next_interval, "retention-policy-schedule-operation");
             ctx.schedule_self_msg(next_interval, message).await;
         } else {
             // Since we have failed to schedule next execution for this index,
             // we remove it from the cache for it to be retried next time it gets
             // added back by the RetentionPolicyExecutor cache refresh loop.
-            self.index_metadatas.remove(&message.index_id);
+            self.index_configs.remove(&message.index_id);
             error!(index_id=%message.index_id, "Couldn't extract the index next schedule interval.");
         }
         Ok(())
@@ -226,12 +230,15 @@ impl Handler<Execute> for RetentionPolicyExecutor {
 
 /// Extract the list of deleted indexes.
 fn compute_deleted_indexes<'a>(
-    cached_indexes: impl Iterator<Item = &'a String>,
-    indexes: impl Iterator<Item = &'a String>,
+    cached_indexes: impl Iterator<Item = &'a str>,
+    indexes: impl Iterator<Item = &'a str>,
 ) -> HashSet<String> {
     let cached_set: HashSet<_> = cached_indexes.collect();
     let indexes_set: HashSet<_> = indexes.collect();
-    (&cached_set - &indexes_set).into_iter().cloned().collect()
+    (&cached_set - &indexes_set)
+        .into_iter()
+        .map(ToString::to_string)
+        .collect()
 }
 
 #[cfg(test)]
@@ -259,12 +266,15 @@ mod tests {
             _ctx: &ActorContext<Self>,
         ) -> Result<Self::Reply, quickwit_actors::ActorExitStatus> {
             let indexes_set: HashSet<_> = self
-                .index_metadatas
+                .index_configs
                 .values()
                 .map(|im| (&im.index_id, &im.retention_policy))
                 .collect();
 
-            let expected_indexes = make_indexes(&message.0);
+            let expected_indexes: Vec<IndexConfig> = make_indexes(&message.0)
+                .into_iter()
+                .map(IndexMetadata::into_index_config)
+                .collect();
             let expected_indexes_set: HashSet<_> = expected_indexes
                 .iter()
                 .map(|im| (&im.index_id, &im.retention_policy))
@@ -279,8 +289,8 @@ mod tests {
 
     const SCHEDULE_EXPR: &str = "hourly";
 
-    fn make_index(index_id: &str, retention_period_opt: Option<&str>) -> IndexMetadata {
-        let mut index = IndexMetadata::for_test(index_id, &format!("ram://indexes/{}", index_id));
+    fn make_index(index_id: &str, retention_period_opt: Option<&str>) -> IndexConfig {
+        let mut index = IndexConfig::for_test(index_id, &format!("ram://indexes/{}", index_id));
         if let Some(retention_period) = retention_period_opt {
             index.retention_policy = Some(RetentionPolicy::new(
                 retention_period.to_string(),
@@ -295,6 +305,7 @@ mod tests {
         index_ids
             .iter()
             .map(|(index_id, retention_period_opt)| make_index(index_id, *retention_period_opt))
+            .map(IndexMetadata::new)
             .collect()
     }
 

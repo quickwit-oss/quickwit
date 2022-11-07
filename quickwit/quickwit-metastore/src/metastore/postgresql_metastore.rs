@@ -548,7 +548,7 @@ impl Metastore for PostgresqlMetastore {
             .collect()
     }
 
-    #[instrument(skip(self), fields(index_id=index_metadata.index_id))]
+    #[instrument(skip(self), fields(index_id=index_metadata.index_id()))]
     async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
         let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|err| {
             MetastoreError::InternalError {
@@ -557,11 +557,11 @@ impl Metastore for PostgresqlMetastore {
             }
         })?;
         sqlx::query("INSERT INTO indexes (index_id, index_metadata_json) VALUES ($1, $2)")
-            .bind(&index_metadata.index_id)
+            .bind(index_metadata.index_id())
             .bind(&index_metadata_json)
             .execute(&self.connection_pool)
             .await
-            .map_err(|error| convert_sqlx_err(&index_metadata.index_id, error))?;
+            .map_err(|error| convert_sqlx_err(index_metadata.index_id(), error))?;
         Ok(())
     }
 
@@ -802,9 +802,14 @@ impl Metastore for PostgresqlMetastore {
     #[instrument(skip(self, source), fields(index_id=index_id, source_id=source.source_id))]
     async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()> {
         run_with_tx!(self.connection_pool, tx, {
-            mutate_index_metadata(tx, index_id, |index_metadata| {
-                index_metadata.add_source(source)
-            })
+            mutate_index_metadata::<MetastoreError, _>(
+                tx,
+                index_id,
+                |index_metadata: &mut IndexMetadata| {
+                    index_metadata.add_source(source)?;
+                    Ok(true)
+                },
+            )
             .await?;
             Ok(())
         })

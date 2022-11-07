@@ -75,12 +75,13 @@ pub async fn start_indexing_service(
 
     // List indexes and spawn indexing pipeline(s) for each of them.
     let index_metadatas = metastore.list_indexes_metadatas().await?;
-    info!(index_ids=%index_metadatas.iter().map(|im| &im.index_id).join(", "), "Spawning indexing pipeline(s).");
+    info!(index_ids=%index_metadatas.iter().map(|im| im.index_id()).join(", "), "Spawning indexing pipeline(s).");
 
     for index_metadata in index_metadatas {
+        let index_config = index_metadata.into_index_config();
         indexing_service
             .ask_for_res(SpawnPipelines {
-                index_id: index_metadata.index_id,
+                index_id: index_config.index_id,
             })
             .await?;
     }

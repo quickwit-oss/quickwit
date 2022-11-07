@@ -1,4 +1,4 @@
-version = 0
+version = "3"
 index_id = "hdfs-logs"
 index_uri = "s3://quickwit-indexes/hdfs-logs"
 
@@ -35,13 +35,3 @@ heap_size = "3G"
 
 [search_settings]
 default_search_fields = [ "severity_text", "body" ]
-
-[[sources]]
-source_id = "hdfs-logs-kafka-source"
-source_type = "kafka"
-params = { "topic" = "cloudera-cluster-logs", "client_params" = { "bootstrap.servers" = "host:9092" } }
-
-[[sources]]
-source_id = "hdfs-logs-kinesis-source"
-source_type = "kinesis"
-params = { "stream_name" = "emr-cluster-logs" }
