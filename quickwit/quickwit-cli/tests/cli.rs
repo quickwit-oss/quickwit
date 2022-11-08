@@ -40,11 +40,11 @@ use quickwit_common::ChecklistError;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::CLI_INGEST_SOURCE_ID;
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
-use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreError};
+use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreError, SplitState};
 use serde_json::{json, Number, Value};
 use tokio::time::{sleep, Duration};
 
-use crate::helpers::{create_test_env, make_command, spawn_command, wait_port_ready};
+use crate::helpers::{create_test_env, make_command, wait_port_ready};
 
 fn create_logs_index(test_env: &TestEnv) {
     make_command(
@@ -617,33 +617,50 @@ async fn test_garbage_collect_cli_no_grace() {
 }
 
 #[tokio::test]
-async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<()> {
+async fn test_garbage_collect_index_cli() {
     let index_id = append_random_suffix("test-gc-cmd");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env);
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
-    let metastore = test_env.metastore().await?;
-    let splits = metastore.list_all_splits(&test_env.index_id).await?;
+    let refresh_metastore = |metastore| {
+        // In this test we rely on the file backed metastore and
+        // modify it but the file backed metastore caches results.
+        // Therefore we need to force reading the disk to update split info.
+        //
+        // We do that by dropping and recreating our metastore.
+        drop(metastore);
+        quickwit_metastore_uri_resolver().resolve(&test_env.metastore_uri)
+    };
+
+    let create_gc_args = |grace_period_secs| GarbageCollectIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id: index_id.clone(),
+        grace_period: Duration::from_secs(grace_period_secs),
+        dry_run: false,
+    };
+
+    let metastore = quickwit_metastore_uri_resolver()
+        .resolve(&test_env.metastore_uri)
+        .await
+        .unwrap();
+
+    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
     assert_eq!(splits.len(), 1);
-    make_command(
-        format!(
-            "index gc --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "No dangling files to garbage collect",
-    ));
 
     let index_path = test_env.indexes_dir_path.join(&test_env.index_id);
     let split_filename = quickwit_common::split_file(splits[0].split_metadata.split_id.as_str());
     let split_path = index_path.join(&split_filename);
     assert_eq!(split_path.exists(), true);
+
+    let args = create_gc_args(3600);
+
+    garbage_collect_index_cli(args).await.unwrap();
+
+    // Split should still exists within grace period.
+    let metastore = refresh_metastore(metastore).await.unwrap();
+    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    assert_eq!(splits.len(), 1);
 
     // The following steps help turn an existing published split into a staged one
     // without deleting the files.
@@ -651,145 +668,55 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
     let split_ids = [split.split_metadata.split_id.as_str()];
     metastore
         .mark_splits_for_deletion(&test_env.index_id, &split_ids)
-        .await?;
+        .await
+        .unwrap();
     metastore
         .delete_splits(&test_env.index_id, &split_ids)
-        .await?;
+        .await
+        .unwrap();
     metastore
         .stage_split(&test_env.index_id, split.split_metadata)
-        .await?;
+        .await
+        .unwrap();
     assert_eq!(split_path.exists(), true);
 
-    make_command(
-        format!(
-            "index gc --index {} --config {} --grace-period 2s",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "No dangling files to garbage collect",
-    ));
+    let metastore = refresh_metastore(metastore).await.unwrap();
+    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    assert_eq!(splits[0].split_state, SplitState::Staged);
+
+    let args = create_gc_args(1);
+
+    garbage_collect_index_cli(args).await.unwrap();
+
     assert_eq!(split_path.exists(), true);
+    // Staged splits should still exist within grace period.
+    let metastore = refresh_metastore(metastore).await.unwrap();
+    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    assert_eq!(splits.len(), 1);
+    assert_eq!(splits[0].split_state, SplitState::Staged);
 
     // Wait for grace period.
     // TODO: edit split update timestamps and remove this sleep.
-    sleep(Duration::from_secs(3)).await;
-    make_command(
-        format!(
-            "index gc --index {} --config {} --dry-run --grace-period 2s",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "The following files will be garbage collected.",
-    ))
-    .stdout(predicate::str::contains(&split_filename));
-    assert_eq!(split_path.exists(), true);
+    sleep(Duration::from_secs(2)).await;
 
-    make_command(
-        format!(
-            "index gc --index {} --config {} --grace-period 2s",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(format!(
-        "Index `{}` successfully garbage collected",
-        test_env.index_id
-    )));
+    let args = create_gc_args(1);
+
+    garbage_collect_index_cli(args).await.unwrap();
+
+    let metastore = refresh_metastore(metastore).await.unwrap();
+    let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
+    // Splits should be deleted from both metastore and file system.
+    assert_eq!(splits.len(), 0);
     assert_eq!(split_path.exists(), false);
-
-    Ok(())
-}
-
-#[tokio::test]
-#[cfg_attr(not(feature = "ci-test"), ignore)]
-async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
-    let index_id = append_random_suffix("test-delete-cmd--s3-localstack");
-    let test_env = create_test_env(index_id, TestStorageType::S3)?;
-    make_command(
-        format!(
-            "index create --config {} --index-config {}",
-            test_env.resource_files["config"].display(),
-            test_env.resource_files["index_config"].display()
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
-
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
-
-    make_command(
-        format!(
-            "index gc --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "No dangling files to garbage collect",
-    ));
-
-    make_command(
-        format!(
-            "index delete --index {} --config {} --dry-run",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "The following files will be removed",
-    ))
-    .stdout(predicate::str::contains(".split"));
-
-    make_command(
-        format!(
-            "index delete --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
-
-    Ok(())
 }
 
 /// testing the api via cli commands
 #[tokio::test]
-async fn test_all_local_index() -> Result<()> {
+async fn test_all_local_index() {
     quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-all");
-    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
-    make_command(
-        format!(
-            "index create --index-config {} --config {}",
-            test_env.resource_files["index_config"].display(),
-            test_env.resource_files["config"].display()
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
+    let test_env = create_test_env(index_id.clone(), TestStorageType::LocalFileSystem).unwrap();
+    create_logs_index(&test_env);
 
     let metadata_file_exists = test_env
         .storage
@@ -801,23 +728,27 @@ async fn test_all_local_index() -> Result<()> {
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
     // serve & api-search
-    let mut server_process = spawn_command(
-        format!(
-            "run --service searcher --service metastore --config {}",
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .unwrap();
-    // TODO: wait until port server accepts incoming connections and remove sleep.
-    sleep(Duration::from_secs(2)).await;
+    let run_cli_command = RunCliCommand {
+        config_uri: test_env.config_uri.clone(),
+        services: Some(HashSet::from([
+            QuickwitService::Searcher,
+            QuickwitService::Metastore,
+        ])),
+    };
+
+    let service_task = tokio::spawn(async move { run_cli_command.execute().await.unwrap() });
+
+    wait_port_ready(test_env.rest_listen_port).await.unwrap();
+
     let query_response = reqwest::get(format!(
         "http://127.0.0.1:{}/api/v1/{}/search?query=level:info",
         test_env.rest_listen_port, test_env.index_id
     ))
-    .await?
+    .await
+    .unwrap()
     .text()
-    .await?;
+    .await
+    .unwrap();
 
     let result: Value =
         serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
@@ -828,30 +759,29 @@ async fn test_all_local_index() -> Result<()> {
         test_env.rest_listen_port,
         test_env.index_id
     ))
-    .await?
+    .await
+    .unwrap()
     .text()
-    .await?;
+    .await
+    .unwrap();
     assert_eq!(search_stream_response, "2\n13\n");
 
-    server_process.kill().unwrap();
+    service_task.abort();
 
-    make_command(
-        format!(
-            "index delete --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display()
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
+    let args = DeleteIndexArgs {
+        config_uri: test_env.config_uri.clone(),
+        index_id,
+        dry_run: false,
+    };
+
+    delete_index_cli(args).await.unwrap();
+
     let metadata_file_exists = test_env
         .storage
         .exists(&Path::new(&test_env.index_id).join("quickwit.json"))
-        .await?;
+        .await
+        .unwrap();
     assert_eq!(metadata_file_exists, false);
-
-    Ok(())
 }
 
 /// testing the api via cli commands
