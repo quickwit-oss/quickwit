@@ -345,7 +345,7 @@ impl Handler<Observe> for MergePipeline {
             self.statistics = self
                 .previous_generations_statistics
                 .clone()
-                .add_actor_counters(&*merge_uploader_counters, &*merge_publisher_counters)
+                .add_actor_counters(&merge_uploader_counters, &merge_publisher_counters)
                 .set_generation(self.statistics.generation)
                 .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
         }

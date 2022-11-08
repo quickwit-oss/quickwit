@@ -140,7 +140,7 @@ impl Deref for HotswappableIoControls {
     type Target = ArcSwap<IoControls>;
 
     fn deref(&self) -> &Self::Target {
-        &*self.0
+        &self.0
     }
 }
 
@@ -154,7 +154,7 @@ impl IoControlsAccess for HotswappableIoControls {
     fn apply<F, R>(&self, f: F) -> R
     where F: Fn(&IoControls) -> R {
         let guard = self.0.load();
-        f(&**guard)
+        f(&guard)
     }
 }
 

@@ -186,7 +186,7 @@ impl FileBackedMetastore {
     async fn read<T, F>(&self, index_id: &str, view: F) -> MetastoreResult<T>
     where F: FnOnce(&FileBackedIndex) -> MetastoreResult<T> {
         let locked_index = self.get_locked_index(index_id).await?;
-        view(&*locked_index)
+        view(&locked_index)
     }
 
     /// Returns a valid metadataset that is locked.
