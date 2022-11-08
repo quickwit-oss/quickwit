@@ -210,7 +210,6 @@ impl Display for HostAddr {
 /// Finds a random available TCP port.
 ///
 /// This function induces a race condition, use it only in unit tests.
-#[cfg(any(test, feature = "testsuite"))]
 pub fn find_available_tcp_port() -> anyhow::Result<u16> {
     let socket: SocketAddr = ([127, 0, 0, 1], 0u16).into();
     let listener = TcpListener::bind(socket)?;

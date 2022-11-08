@@ -408,9 +408,7 @@ impl<A: Actor> ActorContext<A> {
 
     pub(crate) fn observe(&self, actor: &mut A) -> A::ObservableState {
         let obs_state = actor.observable_state();
-        let _ = self
-            .observable_state_tx
-            .send(obs_state.clone());
+        let _ = self.observable_state_tx.send(obs_state.clone());
         obs_state
     }
 
