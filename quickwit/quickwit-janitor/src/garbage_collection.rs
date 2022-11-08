@@ -17,14 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::{Future, StreamExt};
+use futures::Future;
 use quickwit_actors::ActorContext;
 use quickwit_metastore::{Metastore, MetastoreError, SplitMetadata, SplitState};
-use quickwit_storage::{Storage, StorageError};
+use quickwit_storage::Storage;
 use serde::Serialize;
 use thiserror::Error;
 use time::OffsetDateTime;
@@ -32,15 +33,10 @@ use tracing::error;
 
 use crate::actors::GarbageCollector;
 
-const MAX_CONCURRENT_STORAGE_REQUESTS: usize = if cfg!(test) { 2 } else { 10 };
-
 /// SplitDeletionError denotes error that can happen when deleting split
 /// during garbage collection.
 #[derive(Error, Debug)]
 pub enum SplitDeletionError {
-    #[error("Failed to delete splits from storage: '{0:?}'.")]
-    StorageFailure(Vec<(String, StorageError)>),
-
     #[error("Failed to delete splits from metastore: '{0:?}'.")]
     MetastoreFailure(MetastoreError),
 }
@@ -182,44 +178,67 @@ pub async fn delete_splits_with_files(
     splits: Vec<SplitMetadata>,
     ctx_opt: Option<&ActorContext<GarbageCollector>>,
 ) -> anyhow::Result<Vec<FileEntry>, SplitDeletionError> {
-    let mut deleted_file_entries = Vec::new();
+    let mut paths_to_splits = HashMap::with_capacity(splits.len());
+
+    for split in splits {
+        let file_entry = FileEntry::from(&split);
+        let split_filename = quickwit_common::split_file(split.split_id());
+        let split_path = Path::new(&split_filename);
+
+        paths_to_splits.insert(
+            split_path.to_path_buf(),
+            (split.split_id().to_string(), file_entry),
+        );
+    }
+
+    let paths = paths_to_splits
+        .keys()
+        .map(|key| key.as_path())
+        .collect::<Vec<&Path>>();
+    let delete_result = storage.bulk_delete(&paths).await;
+
+    if let Some(ctx) = ctx_opt {
+        ctx.record_progress();
+    }
+
     let mut deleted_split_ids = Vec::new();
-    let mut failed_split_ids_to_error = Vec::new();
+    let mut deleted_file_entries = Vec::new();
 
-    let mut delete_splits_results_stream = tokio_stream::iter(splits.into_iter())
-        .map(|split| {
-            let moved_storage = storage.clone();
-            async move {
-                let file_entry = FileEntry::from(&split);
-                let split_filename = quickwit_common::split_file(split.split_id());
-                let split_path = Path::new(&split_filename);
-                let delete_result = moved_storage.delete(split_path).await;
-                if let Some(ctx) = ctx_opt {
-                    ctx.record_progress();
-                }
-                (split.split_id().to_string(), file_entry, delete_result)
+    match delete_result {
+        Ok(()) => {
+            for (split_id, entry) in paths_to_splits.into_values() {
+                deleted_split_ids.push(split_id);
+                deleted_file_entries.push(entry);
             }
-        })
-        .buffer_unordered(MAX_CONCURRENT_STORAGE_REQUESTS);
+        }
+        Err(bulk_delete_error) => {
+            let num_failed_splits =
+                bulk_delete_error.failures.len() + bulk_delete_error.unattempted.len();
+            let truncated_split_ids = bulk_delete_error
+                .failures
+                .keys()
+                .chain(bulk_delete_error.unattempted.iter())
+                .take(5)
+                .collect::<Vec<_>>();
 
-    while let Some((split_id, file_entry, delete_split_res)) =
-        delete_splits_results_stream.next().await
-    {
-        if let Err(error) = delete_split_res {
-            error!(error = ?error, index_id = ?index_id, split_id = ?split_id, "Failed to delete split.");
-            failed_split_ids_to_error.push((split_id, error));
-        } else {
-            deleted_split_ids.push(split_id);
-            deleted_file_entries.push(file_entry);
-        };
-    }
+            error!(
+                error = ?bulk_delete_error.error,
+                index_id = ?index_id,
+                num_failed_splits = num_failed_splits,
+                "Failed to delete {:?} and {} other splits.",
+                truncated_split_ids, num_failed_splits,
+            );
 
-    if !failed_split_ids_to_error.is_empty() {
-        error!(index_id = ?index_id, failed_split_ids_to_error = ?failed_split_ids_to_error, "Failed to delete splits.");
-        return Err(SplitDeletionError::StorageFailure(
-            failed_split_ids_to_error,
-        ));
-    }
+            for split_path in bulk_delete_error.successes {
+                let (split_id, entry) = paths_to_splits
+                    .remove(&split_path)
+                    .expect("The successful split path should be present within the lookup table.");
+
+                deleted_split_ids.push(split_id);
+                deleted_file_entries.push(entry);
+            }
+        }
+    };
 
     if !deleted_split_ids.is_empty() {
         let split_ids: Vec<&str> = deleted_split_ids.iter().map(String::as_str).collect();

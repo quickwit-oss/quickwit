@@ -52,7 +52,7 @@ where
 fn test_backward_compatibility<T>(test_dir: &Path, test: impl Fn(&T, &T)) -> anyhow::Result<()>
 where for<'a> T: Deserialize<'a> {
     for entry in
-        fs::read_dir(&test_dir).with_context(|| format!("Failed to read {}", test_dir.display()))?
+        fs::read_dir(test_dir).with_context(|| format!("Failed to read {}", test_dir.display()))?
     {
         let entry = entry?;
         let path = entry.path();
@@ -85,7 +85,7 @@ where for<'a> T: Serialize + Deserialize<'a> {
 fn test_and_update_expected_files<T>(test_dir: &Path) -> anyhow::Result<()>
 where for<'a> T: Deserialize<'a> + Serialize {
     let mut updated_expected_files = Vec::new();
-    for entry in fs::read_dir(&test_dir)? {
+    for entry in fs::read_dir(test_dir)? {
         let entry = entry?;
         let path = entry.path();
         if !path.to_string_lossy().ends_with(".expected.json") {

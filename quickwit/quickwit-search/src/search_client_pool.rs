@@ -265,11 +265,7 @@ impl SearchClientPool {
             sort_by_rendez_vous_hash(&mut nodes, job.split_id());
             // choose one of the the first two nodes based on least loaded
             let chosen_node_index: usize = if nodes.len() >= 2 {
-                if nodes[0].load > nodes[1].load {
-                    1
-                } else {
-                    0
-                }
+                usize::from(nodes[0].load > nodes[1].load)
             } else {
                 0
             };

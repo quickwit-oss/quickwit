@@ -93,7 +93,7 @@ fn ingest_filter() -> impl Filter<Extract = (String, String), Error = Rejection>
         .and(warp::post())
         .and(warp::body::content_length_limit(CONTENT_LENGTH_LIMIT))
         .and(warp::body::bytes().and_then(|body: Bytes| async move {
-            if let Ok(body_str) = std::str::from_utf8(&*body) {
+            if let Ok(body_str) = std::str::from_utf8(&body) {
                 Ok(body_str.to_string())
             } else {
                 Err(reject::custom(InvalidUtf8))
@@ -161,7 +161,7 @@ fn elastic_bulk_filter() -> impl Filter<Extract = (String,), Error = Rejection> 
         .and(warp::post())
         .and(warp::body::content_length_limit(CONTENT_LENGTH_LIMIT))
         .and(warp::body::bytes().and_then(|body: Bytes| async move {
-            if let Ok(body_str) = std::str::from_utf8(&*body) {
+            if let Ok(body_str) = std::str::from_utf8(&body) {
                 Ok(body_str.to_string())
             } else {
                 Err(reject::custom(InvalidUtf8))
