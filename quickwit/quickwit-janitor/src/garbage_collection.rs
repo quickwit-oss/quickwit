@@ -212,8 +212,9 @@ pub async fn delete_splits_with_files(
             }
         }
         Err(bulk_delete_error) => {
-            let num_failed_splits = bulk_delete_error.failures.len() + bulk_delete_error.unattempted.len();
-            let split_ids = bulk_delete_error
+            let num_failed_splits =
+                bulk_delete_error.failures.len() + bulk_delete_error.unattempted.len();
+            let truncated_split_ids = bulk_delete_error
                 .failures
                 .keys()
                 .chain(bulk_delete_error.unattempted.iter())
@@ -225,7 +226,7 @@ pub async fn delete_splits_with_files(
                 index_id = ?index_id,
                 num_failed_splits = num_failed_splits,
                 "Failed to delete {:?} and {} other splits.",
-                split_ids, num_failed_splits,
+                truncated_split_ids, num_failed_splits,
             );
 
             for split_path in bulk_delete_error.successes {
