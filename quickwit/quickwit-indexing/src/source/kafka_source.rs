@@ -113,7 +113,6 @@ impl From<BorrowedMessage<'_>> for KafkaMessage {
 }
 
 struct RdKafkaContext {
-    group_id: String,
     topic: String,
     events_tx: mpsc::Sender<KafkaEvent>,
 }
@@ -247,12 +246,21 @@ impl KafkaSource {
         let backfill_mode_enabled = params.enable_backfill_mode;
 
         let (events_tx, events_rx) = mpsc::channel(100);
-        let consumer = create_consumer(
+        let (client_config, consumer) = create_consumer(
             &ctx.index_id,
             &ctx.source_config.source_id,
             params,
             events_tx.clone(),
         )?;
+        let native_client_config = client_config.create_native_config()?;
+        let group_id = native_client_config.get("group.id")?;
+        let session_timeout_ms = native_client_config
+            .get("session.timeout.ms")?
+            .parse::<u64>()?;
+        let max_poll_interval_ms = native_client_config
+            .get("max.poll.interval.ms")?
+            .parse::<u64>()?;
+
         let poll_loop_jh = spawn_consumer_poll_loop(consumer.clone(), topic.clone(), events_tx);
         let publish_lock = PublishLock::default();
 
@@ -260,9 +268,18 @@ impl KafkaSource {
             index_id=%ctx.index_id,
             source_id=%ctx.source_config.source_id,
             topic=%topic,
-            group_id=%consumer.client().context().group_id,
+            group_id=%group_id,
+            max_poll_interval_ms=%max_poll_interval_ms,
+            session_timeout_ms=%session_timeout_ms,
             "Starting Kafka source."
         );
+        if max_poll_interval_ms <= 60_000 {
+            warn!(
+                "`max.poll.interval.ms` is set to a short duration that may cause the source to \
+                 crash when back pressure from the indexer occurs. The recommended value is \
+                 `300000` (5 minutes)."
+            );
+        }
         Ok(KafkaSource {
             ctx,
             topic,
@@ -658,7 +675,7 @@ fn create_consumer(
     source_id: &str,
     params: KafkaSourceParams,
     events_tx: mpsc::Sender<KafkaEvent>,
-) -> anyhow::Result<Arc<RdKafkaConsumer>> {
+) -> anyhow::Result<(ClientConfig, Arc<RdKafkaConsumer>)> {
     let mut client_config = parse_client_params(params.client_params)?;
 
     // Group ID is limited to 255 characters.
@@ -675,13 +692,12 @@ fn create_consumer(
         .set("group.id", &group_id)
         .set_log_level(log_level)
         .create_with_context(RdKafkaContext {
-            group_id,
             topic: params.topic,
             events_tx,
         })
         .context("Failed to create Kafka consumer.")?;
 
-    Ok(Arc::new(consumer))
+    Ok((client_config, Arc::new(consumer)))
 }
 
 fn parse_client_log_level(client_log_level: Option<String>) -> anyhow::Result<RDKafkaLogLevel> {
