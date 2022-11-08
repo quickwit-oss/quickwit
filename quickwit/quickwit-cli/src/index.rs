@@ -779,7 +779,7 @@ impl IndexStats {
     }
 
     pub fn display_as_table(&self) -> String {
-        let index_stats_table = create_table(&self, "General Information");
+        let index_stats_table = create_table(self, "General Information");
 
         let index_stats_table = if let Some(docs_stats) = &self.num_docs_descriptive {
             let doc_stats_table = create_table(docs_stats, "Document count stats");

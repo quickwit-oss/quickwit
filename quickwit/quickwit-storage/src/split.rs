@@ -157,9 +157,9 @@ impl SplitPayloadBuilder {
 
         footer_bytes.extend(metadata_json.as_bytes());
         let metadata_json_len = metadata_json.len() as u64;
-        footer_bytes.extend(&metadata_json_len.to_le_bytes());
+        footer_bytes.extend(metadata_json_len.to_le_bytes());
         footer_bytes.extend(hotcache);
-        footer_bytes.extend(&hotcache.len().to_le_bytes());
+        footer_bytes.extend(hotcache.len().to_le_bytes());
 
         let mut payloads: Vec<Box<dyn PutPayload>> = Vec::new();
 

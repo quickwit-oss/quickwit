@@ -180,9 +180,7 @@ impl DocProcessor {
             }
         })?;
         // Extract timestamp if necessary
-        let timestamp_field = if let Some(timestamp_field) = self.timestamp_field_opt {
-            timestamp_field
-        } else {
+        let Some(timestamp_field) = self.timestamp_field_opt else {
             // No need to check the timestamp, there are no timestamp.
             return Ok(PreparedDoc {
                 doc,

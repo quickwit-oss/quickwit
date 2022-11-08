@@ -109,7 +109,7 @@ fn spawn_index_metadata_polling_task(
         interval.tick().await; //< this is to prevent fetch right after the first population of the data.
         while let Some(metadata_mutex) = metastore_weak.upgrade() {
             interval.tick().await;
-            poll_index_metadata_once(&*storage, &index_id, &*metadata_mutex).await;
+            poll_index_metadata_once(&*storage, &index_id, &metadata_mutex).await;
         }
     });
 }

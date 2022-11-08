@@ -510,7 +510,7 @@ pub async fn create_cluster_for_test(
     let node_id = NODE_AUTO_INCREMENT.fetch_add(1, Ordering::Relaxed);
     let services = services
         .iter()
-        .map(|service_str| QuickwitService::from_str(*service_str))
+        .map(|service_str| QuickwitService::from_str(service_str))
         .collect::<Result<HashSet<_>, _>>()?;
     let cluster = create_cluster_for_test_with_id(
         node_id,

@@ -74,7 +74,7 @@ impl KillSwitch {
             alive: AtomicBool::new(self.is_alive()),
             ..Default::default()
         };
-        garbage_collect(&mut *lock);
+        garbage_collect(&mut lock);
         let child_inner_arc = Arc::new(child_inner);
         lock.push(Arc::downgrade(&child_inner_arc));
         KillSwitch {
