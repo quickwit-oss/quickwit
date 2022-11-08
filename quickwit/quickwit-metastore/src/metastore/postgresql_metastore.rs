@@ -263,9 +263,9 @@ async fn list_splits_helper(
 fn write_sql_filter<V: Display>(
     sql: &mut String,
     field_name: impl Display,
-    filter_range: FilterRange<V>,
+    filter_range: &FilterRange<V>,
 ) {
-    match filter_range.start {
+    match &filter_range.start {
         Bound::Included(value) => {
             let _ = write!(sql, " AND {} >= {}", field_name, value);
         }
@@ -275,7 +275,7 @@ fn write_sql_filter<V: Display>(
         Bound::Unbounded => {}
     };
 
-    match filter_range.end {
+    match &filter_range.end {
         Bound::Included(value) => {
             let _ = write!(sql, " AND {} <= {}", field_name, value);
         }
@@ -341,9 +341,9 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
     };
 
     // WARNING: Not SQL injection proof
-    write_sql_filter(&mut sql, "update_timestamp", query.update_timestamp);
-    write_sql_filter(&mut sql, "create_timestamp", query.create_timestamp);
-    write_sql_filter(&mut sql, "delete_opstamp", query.delete_opstamp);
+    write_sql_filter(&mut sql, "update_timestamp", &query.update_timestamp);
+    write_sql_filter(&mut sql, "create_timestamp", &query.create_timestamp);
+    write_sql_filter(&mut sql, "delete_opstamp", &query.delete_opstamp);
 
     if let Some(limit) = query.limit {
         let _ = write!(sql, " LIMIT {}", limit);
