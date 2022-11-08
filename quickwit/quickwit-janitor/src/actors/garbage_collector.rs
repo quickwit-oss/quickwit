@@ -232,14 +232,21 @@ mod tests {
     #[tokio::test]
     async fn test_run_garbage_collect_calls_dependencies_appropriately() {
         let mut mock_storage = MockStorage::default();
-        mock_storage.expect_delete().times(3).returning(|path| {
-            assert!(
-                path == Path::new("a.split")
-                    || path == Path::new("b.split")
-                    || path == Path::new("c.split")
-            );
-            Ok(())
-        });
+        mock_storage
+            .expect_bulk_delete()
+            .times(1)
+            .returning(|paths: &[&Path]| {
+                let actual: HashSet<&Path> = HashSet::from_iter(paths.iter().copied());
+                let expected: HashSet<&Path> = HashSet::from_iter([
+                    Path::new("a.split"),
+                    Path::new("b.split"),
+                    Path::new("c.split"),
+                ]);
+
+                assert_eq!(actual, expected);
+
+                Ok(())
+            });
 
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
@@ -285,7 +292,11 @@ mod tests {
             .times(1)
             .returning(|index_id, split_ids| {
                 assert_eq!(index_id, "test-index");
-                assert_eq!(split_ids, vec!["a", "b", "c"]);
+
+                let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
+                let expected_split_ids = HashSet::<&str>::from_iter(["a", "b", "c"]);
+                assert_eq!(split_ids, expected_split_ids);
+
                 Ok(())
             });
 
@@ -342,7 +353,11 @@ mod tests {
             .times(1)
             .returning(|index_id, split_ids| {
                 assert_eq!(index_id, "test-index");
-                assert_eq!(split_ids, vec!["a", "b", "c"]);
+
+                let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
+                let expected_split_ids = HashSet::<&str>::from_iter(["a", "b", "c"]);
+
+                assert_eq!(split_ids, expected_split_ids);
                 Ok(())
             });
 
@@ -397,7 +412,11 @@ mod tests {
             .times(2)
             .returning(|index_id, split_ids| {
                 assert_eq!(index_id, "test-index");
-                assert_eq!(split_ids, vec!["a", "b"]);
+
+                let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
+                let expected_split_ids = HashSet::<&str>::from_iter(["a", "b"]);
+
+                assert_eq!(split_ids, expected_split_ids);
                 Ok(())
             });
 
@@ -532,7 +551,10 @@ mod tests {
             .expect_delete_splits()
             .times(2)
             .returning(|index_id, split_ids| {
-                assert_eq!(split_ids, vec!["a", "b"]);
+                let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
+                let expected_split_ids = HashSet::<&str>::from_iter(["a", "b"]);
+
+                assert_eq!(split_ids, expected_split_ids);
                 if index_id == "test-index-2" {
                     Err(MetastoreError::DbError {
                         message: "fail to delete".to_string(),
