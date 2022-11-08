@@ -116,7 +116,8 @@ impl DeleteTaskService {
                 .pipeline_handles_by_index_id
                 .remove(deleted_index_id)
                 .expect("Handle must be present.");
-            pipeline_handle.quit().await;
+            // Kill the pipeline, this avoids to wait a long time for a delete operation to finish.
+            pipeline_handle.kill().await;
         }
 
         // Start new pipelines and add them to the handles hashmap.
@@ -228,6 +229,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_task_service() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
         let index_id = "test-delete-task-service-index";
         let doc_mapping_yaml = r#"
             field_mappings:
@@ -291,6 +293,12 @@ mod tests {
             .process_pending_and_observe()
             .await;
         assert_eq!(state_after_deletion.num_running_pipelines, 0);
+        assert!(universe.get_one::<DeleteTaskService>().is_some());
+        let actors_observations = universe.observe(HEARTBEAT).await;
+        // Once the pipeline is properly shut down, the only remaining actors are the scheduler and
+        // the delete service.
+        assert_eq!(actors_observations.len(), 2);
+        assert!(universe.get_one::<DeleteTaskService>().is_some());
         Ok(())
     }
 }

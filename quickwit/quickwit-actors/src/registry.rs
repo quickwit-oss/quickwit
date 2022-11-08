@@ -102,9 +102,9 @@ impl ActorRegistryForSpecificType {
 
 #[derive(Serialize, Debug)]
 pub struct ActorObservation {
-    type_name: &'static str,
-    instance_id: String,
-    obs: Option<serde_json::Value>,
+    pub type_name: &'static str,
+    pub instance_id: String,
+    pub obs: Option<serde_json::Value>,
 }
 
 impl ActorRegistry {
