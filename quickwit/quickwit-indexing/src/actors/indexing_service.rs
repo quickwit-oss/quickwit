@@ -386,7 +386,7 @@ impl IndexingService {
                     }
                 },
             );
-        // Evict and and killing merge pipelines that are not needed.
+        // Evict and kill merge pipelines that are not needed.
         let needed_merge_pipeline_ids: HashSet<MergePipelineId> = self
             .indexing_pipeline_handles
             .keys()
