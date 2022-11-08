@@ -19,7 +19,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
-use std::ops::{Bound, Range};
+use std::ops::Bound;
 #[cfg(test)]
 use std::str::FromStr;
 use std::sync::Arc;
@@ -298,7 +298,7 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
         sql.push(')');
     }
 
-    match query.equality_filters.time_range.start {
+    match query.time_range.start {
         Bound::Included(v) => {
             let _ = write!(
                 sql,
@@ -316,7 +316,7 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
         Bound::Unbounded => {}
     };
 
-    match query.equality_filters.time_range.end {
+    match query.time_range.end {
         Bound::Included(v) => {
             let _ = write!(
                 sql,
@@ -335,16 +335,8 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
     };
 
     // WARNING: Not SQL inject proof
-    define_sql_filter!(
-        &mut sql,
-        "update_timestamp",
-        query.equality_filters.update_timestamp
-    );
-    define_sql_filter!(
-        &mut sql,
-        "delete_opstamp",
-        query.equality_filters.delete_opstamp
-    );
+    define_sql_filter!(&mut sql, "update_timestamp", query.update_timestamp);
+    define_sql_filter!(&mut sql, "delete_opstamp", query.delete_opstamp);
 
     if let Some(limit) = query.limit {
         let _ = write!(sql, " LIMIT {}", limit);
