@@ -70,7 +70,7 @@ async fn fetch_docs_to_map(
             searcher_context.clone(),
             global_doc_addrs,
             index_storage.clone(),
-            *split_and_offset,
+            split_and_offset,
             doc_mapper_opt.clone(),
             search_request_opt,
         ));
@@ -315,9 +315,7 @@ async fn create_snippet_generator(
     });
     let mut terms_text: BTreeMap<String, f32> = BTreeMap::default();
     for term in terms {
-        let term_str = if let Some(term_str) = term.as_str() {
-            term_str
-        } else {
+        let Some(term_str) = term.as_str() else {
             continue;
         };
         let doc_freq = searcher.doc_freq_async(term).await?;

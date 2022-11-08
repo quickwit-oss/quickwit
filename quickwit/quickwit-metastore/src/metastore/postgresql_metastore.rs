@@ -449,7 +449,7 @@ where
     "#,
     )
     .bind(index_metadata_json)
-    .bind(&index_id)
+    .bind(index_id)
     .execute(tx)
     .await?;
     if update_index_res.rows_affected() == 0 {
@@ -543,7 +543,7 @@ impl Metastore for PostgresqlMetastore {
                     ($1, $2, $3, $4, $5, $6, $7, $8)
             "#)
             .bind(&metadata.split_id)
-            .bind(&SplitState::Staged.as_str())
+            .bind(SplitState::Staged.as_str())
             .bind(time_range_start)
             .bind(time_range_end)
             .bind(tags)

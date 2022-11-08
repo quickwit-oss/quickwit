@@ -142,9 +142,7 @@ impl Queues {
                 index_id: queue_id.to_string(),
             })?;
 
-        let last_position = if let Some(last_position) = last_position_opt {
-            last_position
-        } else {
+        let Some(last_position) = last_position_opt else {
             warn!("Attempted to truncate an empty queue.");
             return Ok(());
         };
@@ -243,7 +241,7 @@ impl Queues {
             if first_key_opt.is_none() {
                 first_key_opt = Some(position.into());
             }
-            num_bytes += add_doc(&*payload, &mut doc_batch);
+            num_bytes += add_doc(&payload, &mut doc_batch);
             if num_bytes > size_limit {
                 break;
             }
@@ -272,7 +270,7 @@ impl Queues {
             if first_key_opt.is_none() {
                 first_key_opt = Some(position.into());
             }
-            num_bytes += add_doc(&*payload, &mut doc_batch);
+            num_bytes += add_doc(&payload, &mut doc_batch);
             if num_bytes > FETCH_PAYLOAD_LIMIT {
                 break;
             }

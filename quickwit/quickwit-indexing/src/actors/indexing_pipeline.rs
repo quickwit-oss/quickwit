@@ -136,10 +136,10 @@ impl Actor for IndexingPipeline {
                 .previous_generations_statistics
                 .clone()
                 .add_actor_counters(
-                    &*doc_processor_counters,
-                    &*indexer_counters,
-                    &*uploader_counters,
-                    &*publisher_counters,
+                    &doc_processor_counters,
+                    &indexer_counters,
+                    &uploader_counters,
+                    &publisher_counters,
                 )
                 .set_generation(self.statistics.generation)
                 .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
@@ -409,10 +409,10 @@ impl Handler<Observe> for IndexingPipeline {
                 .previous_generations_statistics
                 .clone()
                 .add_actor_counters(
-                    &*doc_processor_counters,
-                    &*indexer_counters,
-                    &*uploader_counters,
-                    &*publisher_counters,
+                    &doc_processor_counters,
+                    &indexer_counters,
+                    &uploader_counters,
+                    &publisher_counters,
                 )
                 .set_generation(self.statistics.generation)
                 .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
