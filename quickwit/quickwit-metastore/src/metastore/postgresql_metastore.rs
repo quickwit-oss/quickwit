@@ -340,7 +340,7 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
         Bound::Unbounded => {}
     };
 
-    // WARNING: Not SQL inject proof
+    // WARNING: Not SQL injection proof
     write_sql_filter(&mut sql, "update_timestamp", query.update_timestamp);
     write_sql_filter(&mut sql, "create_timestamp", query.create_timestamp);
     write_sql_filter(&mut sql, "delete_opstamp", query.delete_opstamp);
