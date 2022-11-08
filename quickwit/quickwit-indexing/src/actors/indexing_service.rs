@@ -90,12 +90,13 @@ pub struct IndexingServiceState {
     pub num_running_pipelines: usize,
     pub num_successful_pipelines: usize,
     pub num_failed_pipelines: usize,
+    pub num_running_merge_pipelines: usize,
 }
 
 type IndexId = String;
 type SourceId = String;
 
-#[derive(Hash, Eq, PartialEq)]
+#[derive(Clone, Hash, Eq, PartialEq)]
 struct MergePipelineId {
     index_id: String,
     source_id: String,
@@ -385,19 +386,40 @@ impl IndexingService {
                     }
                 },
             );
-        // Evict merge pipelines that are not needed or failing.
+        // Evict and kill merge pipelines that are not needed.
         let needed_merge_pipeline_ids: HashSet<MergePipelineId> = self
             .indexing_pipeline_handles
             .keys()
             .map(MergePipelineId::from)
             .collect();
+        let current_merge_pipeline_ids: HashSet<MergePipelineId> =
+            self.merge_pipeline_handles.keys().cloned().collect();
+        for merge_pipeline_id_to_shut_down in
+            current_merge_pipeline_ids.difference(&needed_merge_pipeline_ids)
+        {
+            if let Some((_, merge_pipeline_handle)) = self
+                .merge_pipeline_handles
+                .remove_entry(merge_pipeline_id_to_shut_down)
+            {
+                // We kill the merge pipeline to avoid waiting a merge operation to finish as it can
+                // be long.
+                info!(
+                    index_id=%merge_pipeline_id_to_shut_down.index_id,
+                    source_id=%merge_pipeline_id_to_shut_down.source_id,
+                    "No more indexing pipeline on this index and source, killing merge pipeline."
+                );
+                merge_pipeline_handle.handle.kill().await;
+            }
+        }
+        // Finally remove the merge pipelien with an exit status.
         self.merge_pipeline_handles
-            .retain(|merge_pipeline_id, merge_pipeline_mailbox_handle| {
+            .retain(|_, merge_pipeline_mailbox_handle| {
                 match merge_pipeline_mailbox_handle.handle.health() {
-                    Health::Healthy => needed_merge_pipeline_ids.contains(merge_pipeline_id),
+                    Health::Healthy => true,
                     Health::FailureOrUnhealthy | Health::Success => false,
                 }
             });
+        self.state.num_running_merge_pipelines = self.merge_pipeline_handles.len();
         Ok(())
     }
 
@@ -617,7 +639,7 @@ impl Handler<ShutdownPipeline> for IndexingService {
 mod tests {
     use std::time::Duration;
 
-    use quickwit_actors::{ObservationType, Universe};
+    use quickwit_actors::{ObservationType, Universe, HEARTBEAT};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
     use quickwit_config::{SourceConfig, VecSourceParams};
@@ -852,5 +874,85 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
         panic!("Sleep");
+    }
+
+    #[tokio::test]
+    async fn test_indexing_service_shut_down_merge_pipeline_when_no_indexing_pipeline() {
+        quickwit_common::setup_logging_for_tests();
+        let metastore_uri = Uri::from_well_formed("ram:///metastore".to_string());
+        let metastore = quickwit_metastore_uri_resolver()
+            .resolve(&metastore_uri)
+            .await
+            .unwrap();
+
+        let index_id = append_random_suffix("test-indexing-service");
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
+
+        let source_config = SourceConfig {
+            source_id: "test-indexing-service--source".to_string(),
+            num_pipelines: 1,
+            enabled: true,
+            source_params: SourceParams::void(),
+        };
+        metastore.create_index(index_metadata).await.unwrap();
+        metastore
+            .add_source(&index_id, source_config.clone())
+            .await
+            .unwrap();
+
+        // Test `IndexingService::new`.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let data_dir_path = temp_dir.path().to_path_buf();
+        let indexer_config = IndexerConfig::for_test().unwrap();
+        let storage_resolver = StorageUriResolver::for_test();
+        let universe = Universe::new();
+        let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
+        init_ingest_api(&universe, &queues_dir_path).await.unwrap();
+        let indexing_server = IndexingService::new(
+            "test-node".to_string(),
+            data_dir_path,
+            indexer_config,
+            metastore.clone(),
+            storage_resolver.clone(),
+        )
+        .await
+        .unwrap();
+        let (indexing_server_mailbox, indexing_server_handle) =
+            universe.spawn_builder().spawn(indexing_server);
+        indexing_server_mailbox
+            .ask_for_res(SpawnPipelines {
+                index_id: index_id.clone(),
+            })
+            .await
+            .unwrap();
+        let observation = indexing_server_handle.observe().await;
+        assert_eq!(observation.num_running_pipelines, 1);
+        assert_eq!(observation.num_failed_pipelines, 0);
+        assert_eq!(observation.num_successful_pipelines, 0);
+
+        // Test `shutdown_pipeline`
+        indexing_server_mailbox
+            .ask_for_res(ShutdownPipelines {
+                index_id: index_id.clone(),
+                source_id: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            indexing_server_handle.observe().await.num_running_pipelines,
+            0
+        );
+        assert_eq!(
+            indexing_server_handle
+                .observe()
+                .await
+                .num_running_merge_pipelines,
+            0
+        );
+        universe.simulate_time_shift(HEARTBEAT).await;
+        // Check that the merge pipeline is also shut down as they are no more indexing pipeilne on
+        // the index.
+        assert!(universe.get_one::<MergePipeline>().is_none());
     }
 }

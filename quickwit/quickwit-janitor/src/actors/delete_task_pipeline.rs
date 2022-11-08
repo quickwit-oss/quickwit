@@ -19,11 +19,11 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Supervisor, SupervisorState,
+    HEARTBEAT,
 };
 use quickwit_common::io::IoControls;
 use quickwit_common::KillSwitch;
@@ -265,7 +265,7 @@ impl Handler<Observe> for DeleteTaskPipeline {
             }
         }
         // Supervisors supervise every `HEARTBEAT`. We can wait a bit more to observe supervisors.
-        ctx.schedule_self_msg(Duration::from_secs(5), Observe).await;
+        ctx.schedule_self_msg(HEARTBEAT, Observe).await;
         Ok(())
     }
 }

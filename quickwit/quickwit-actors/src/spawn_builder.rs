@@ -290,6 +290,7 @@ async fn actor_loop<A: Actor>(actor: A, inbox: Inbox<A>, ctx: ActorContext<A>) -
     };
 
     let final_exit_status = actor_env.finalize(after_process_exit_status).await;
+    // The last observation is collected on `ActorExecutionEnv::Drop`.
     actor_env.process_exit_status(&final_exit_status);
     final_exit_status
 }
