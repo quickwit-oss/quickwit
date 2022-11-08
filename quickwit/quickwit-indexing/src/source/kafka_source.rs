@@ -171,11 +171,6 @@ impl ConsumerContext for RdKafkaContext {
                 assignment_rx.recv(),
                 "Failed to receive assignment from source."
             );
-            info!(
-                topic=%self.topic,
-                partitions=%assignment.iter().map(|(partition, _)| partition).join(","),
-                "New partition assignment"
-            );
             for (partition, offset) in assignment {
                 let mut partition = tpl
                     .find_partition(&self.topic, partition)
@@ -231,12 +226,13 @@ pub struct KafkaSource {
 }
 
 impl fmt::Debug for KafkaSource {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "KafkaSource {{ source_id: {}, topic: {} }}",
-            self.ctx.source_config.source_id, self.topic
-        )
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter
+            .debug_struct("KafkaSource")
+            .field("index_id", &self.ctx.index_id)
+            .field("source_id", &self.ctx.source_config.source_id)
+            .field("topic", &self.topic)
+            .finish()
     }
 }
 
@@ -260,17 +256,11 @@ impl KafkaSource {
         let poll_loop_jh = spawn_consumer_poll_loop(consumer.clone(), topic.clone(), events_tx);
         let publish_lock = PublishLock::default();
 
-        let rebalance_protocol_str = match consumer.rebalance_protocol() {
-            RebalanceProtocol::None => "off group", // The consumer has not joined the group yet.
-            RebalanceProtocol::Eager => "eager",
-            RebalanceProtocol::Cooperative => "cooperative",
-        };
         info!(
             index_id=%ctx.index_id,
             source_id=%ctx.source_config.source_id,
-            group_id=%consumer.client().context().group_id,
             topic=%topic,
-            rebalance_protocol=%rebalance_protocol_str,
+            group_id=%consumer.client().context().group_id,
             "Starting Kafka source."
         );
         Ok(KafkaSource {
@@ -283,6 +273,14 @@ impl KafkaSource {
             poll_loop_jh,
             publish_lock,
         })
+    }
+
+    fn rebalance_protocol(&self) -> &str {
+        match self.consumer.rebalance_protocol() {
+            RebalanceProtocol::None => "unknown", // The consumer has not joined the group yet.
+            RebalanceProtocol::Eager => "eager",
+            RebalanceProtocol::Cooperative => "cooperative",
+        }
     }
 
     async fn process_message(
@@ -380,6 +378,14 @@ impl KafkaSource {
                 .insert(partition, current_position);
             next_offsets.push((partition, next_offset));
         }
+        info!(
+            index_id=%self.ctx.index_id,
+            source_id=%self.ctx.source_config.source_id,
+            topic=%self.topic,
+            partitions=?partitions,
+            rebalance_protocol=%self.rebalance_protocol(),
+            "New partition assignment after rebalance.",
+        );
         assignment_tx
             .send(next_offsets)
             .map_err(|_| anyhow!("Consumer context was dropped."))?;
