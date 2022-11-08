@@ -206,7 +206,7 @@ input_formats:
   - rfc3339
   - unix_timestamp
   - "%Y %m %d %H:%M:%S.%f %z"
-output: unix_timestamp
+output_format: unix_timestamp
 stored: true
 indexed: true
 fast: true
