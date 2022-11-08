@@ -23,9 +23,20 @@ package quickwit_common;
 
 message SetQuery {
   // List of terms to search.
-  repeated string terms = 1;
+  repeated Term terms = 1;
   // Field to search in.
   string field_name = 2;
   // Union of tags a split must have ot be searched.
   repeated string tags = 3;
+}
+
+message Term {
+  oneof term {
+    string text = 1;
+    uint64 unsigned = 2;
+    int64 signed = 3;
+    double fp64 = 4;
+    bool boolean = 5;
+    // bytes are represented as b64 text
+  }
 }

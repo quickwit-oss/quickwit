@@ -103,7 +103,7 @@ async fn post_delete_request(
         index_id: index_id.clone(),
         start_timestamp: delete_request.start_timestamp,
         end_timestamp: delete_request.end_timestamp,
-        query: Some(delete_request.query.into()),
+        query: Some(delete_request.query.try_into().unwrap_or_else(|_| todo!())),
         search_fields,
     };
     let create_delete_task_reply = delete_task_service_mailbox

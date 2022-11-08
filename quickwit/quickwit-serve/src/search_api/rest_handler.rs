@@ -126,7 +126,7 @@ pub enum Query {
     },
     QueryByTerms {
         /// List of terms to search for
-        terms: Vec<String>,
+        terms: Vec<serde_json::Value>,
         /// Field getting searched in
         field_name: String,
         /// Tags of split which shoud be searched
@@ -136,40 +136,56 @@ pub enum Query {
     },
 }
 
-impl From<Query> for SearchQuery {
-    fn from(query: Query) -> SearchQuery {
+impl TryFrom<Query> for SearchQuery {
+    type Error = SearchError;
+
+    fn try_from(query: Query) -> Result<SearchQuery, SearchError> {
         use quickwit_proto::metastore_api::SetQuery;
-        match query {
+        let query = match query {
             Query::QueryByString { query, .. } => SearchQuery::Text(query),
             Query::QueryByTerms {
                 terms,
                 field_name,
                 tags,
             } => SearchQuery::SetQuery(SetQuery {
-                terms,
+                terms: terms
+                    .into_iter()
+                    .map(|term| {
+                        term.try_into().map_err(|term| {
+                            SearchError::InvalidArgument(format!("Invalid term: {term}"))
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
                 field_name,
                 tags,
             }),
-        }
+        };
+        Ok(query)
     }
 }
 
-impl From<Query> for quickwit_proto::metastore_api::delete_query::Query {
-    fn from(query: Query) -> quickwit_proto::metastore_api::delete_query::Query {
+impl TryFrom<Query> for quickwit_proto::metastore_api::delete_query::Query {
+    type Error = (); // TODO TBD
+
+    fn try_from(query: Query) -> Result<quickwit_proto::metastore_api::delete_query::Query, ()> {
         use quickwit_proto::metastore_api::delete_query::Query as SearchQuery;
         use quickwit_proto::metastore_api::SetQuery;
-        match query {
+        let query = match query {
             Query::QueryByString { query, .. } => SearchQuery::Text(query),
             Query::QueryByTerms {
                 terms,
                 field_name,
                 tags,
             } => SearchQuery::SetQuery(SetQuery {
-                terms,
+                terms: terms
+                    .into_iter()
+                    .map(|term| term.try_into().map_err(|_| ()))
+                    .collect::<Result<Vec<_>, _>>()?,
                 field_name,
                 tags,
             }),
-        }
+        };
+        Ok(query)
     }
 }
 
@@ -210,7 +226,7 @@ async fn search_endpoint(
 
     let search_request = quickwit_proto::SearchRequest {
         index_id,
-        query: Some(search_request.query.into()),
+        query: Some(search_request.query.try_into()?),
         search_fields,
         snippet_fields: search_request.snippet_fields.unwrap_or_default(),
         start_timestamp: search_request.start_timestamp,

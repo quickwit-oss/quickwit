@@ -118,6 +118,7 @@ pub(crate) fn build_query(
                 todo!("return error")
             }
 
+            // TODO BooleanQuery(Must(Set(terms)), Must(Set(tag))) would probably be more coherent
             Box::new(tantivy::query::TermSetQuery::new(terms))
         }
         None => {

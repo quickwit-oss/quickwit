@@ -30,7 +30,7 @@ pub mod ingest_api {
 
 pub mod metastore_api {
     pub use crate::quickwit_metastore_api::*;
-    pub use crate::quickwit_common::SetQuery;
+    pub use crate::quickwit_common::*;
 }
 
 pub mod jaeger {
@@ -234,6 +234,48 @@ impl From<String> for metastore_api::delete_query::Query {
 impl From<String> for search_request::Query {
     fn from(query: String) -> search_request::Query {
         search_request::Query::Text(query)
+    }
+}
+
+impl From<metastore_api::Term> for serde_json::Value {
+    fn from(term: metastore_api::Term) -> serde_json::Value {
+        use metastore_api::term::Term as InnerTerm;
+        match term.term {
+            Some(InnerTerm::Text(s)) => s.into(),
+            Some(InnerTerm::Unsigned(u)) => u.into(),
+            Some(InnerTerm::Signed(i)) => i.into(),
+            Some(InnerTerm::Fp64(f)) => f.into(),
+            Some(InnerTerm::Boolean(b)) => b.into(),
+            None => serde_json::Value::Null,
+        }
+    }
+}
+
+impl TryFrom<serde_json::Value> for metastore_api::Term {
+    type Error = serde_json::Value;
+    fn try_from(term: serde_json::Value) -> Result<metastore_api::Term, serde_json::Value> {
+        use metastore_api::term::Term as InnerTerm;
+        use serde_json::Value as JsonValue;
+        let inner = match term {
+            JsonValue::Null | JsonValue::Array(_) | JsonValue::Object(_) => return Err(term),
+            JsonValue::String(s) => InnerTerm::Text(s),
+            JsonValue::Number(ref n) => {
+                if let Some(u) = n.as_u64() {
+                    InnerTerm::Unsigned(u)
+                } else if let Some(i) = n.as_i64() {
+                    InnerTerm::Signed(i)
+                } else if let Some(f) = n.as_f64() {
+                    InnerTerm::Fp64(f)
+                } else {
+                    // unreachable without arbitrary_precision flag on serde
+                    return Err(term);
+                }
+            },
+            JsonValue::Bool(b) => InnerTerm::Boolean(b),
+        };
+        Ok(metastore_api::Term {
+            term: Some(inner),
+        })
     }
 }
 
