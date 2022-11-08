@@ -21,10 +21,10 @@ use once_cell::sync::Lazy;
 use quickwit_common::metrics::{new_counter_vec, new_gauge_vec, IntCounterVec, IntGaugeVec};
 
 pub struct IndexerMetrics {
-    pub processed_docs_total: IntCounterVec,
-    pub processed_bytes: IntCounterVec,
-    pub available_concurrent_upload_permits: IntGaugeVec,
-    pub ongoing_merge_operations: IntGaugeVec,
+    pub processed_docs_total: IntCounterVec<3>,
+    pub processed_bytes: IntCounterVec<3>,
+    pub available_concurrent_upload_permits: IntGaugeVec<1>,
+    pub ongoing_merge_operations: IntGaugeVec<2>,
 }
 
 impl Default for IndexerMetrics {
@@ -35,26 +35,26 @@ impl Default for IndexerMetrics {
                 "Number of processed docs by index, source and processed status in [valid, \
                  missing_field, parsing_error]",
                 "quickwit_indexing",
-                &["index", "source", "docs_processed_status"],
+                ["index", "source", "docs_processed_status"],
             ),
             processed_bytes: new_counter_vec(
                 "processed_bytes",
                 "Number of bytes of processed documents by index, source and processed status in \
                  [valid, missing_field, parsing_error]",
                 "quickwit_indexing",
-                &["index", "source", "docs_processed_status"],
+                ["index", "source", "docs_processed_status"],
             ),
             available_concurrent_upload_permits: new_gauge_vec(
                 "concurrent_upload_available_permits_num",
                 "Number of available concurrent upload permits by component in [merger, indexer]",
                 "quickwit_indexing",
-                &["component"],
+                ["component"],
             ),
             ongoing_merge_operations: new_gauge_vec(
                 "ongoing_merge_operations",
                 "Number of ongoing merge operations",
                 "quickwit_indexing",
-                &["index", "source"],
+                ["index", "source"],
             ),
         }
     }

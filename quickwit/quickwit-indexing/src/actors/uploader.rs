@@ -197,19 +197,19 @@ impl Uploader {
                     &CONCURRENT_UPLOAD_PERMITS_INDEX,
                     INDEXER_METRICS
                         .available_concurrent_upload_permits
-                        .with_label_values(&["indexer"]),
+                        .with_label_values(["indexer"]),
                 ),
                 UploaderType::MergeUploader => (
                     &CONCURRENT_UPLOAD_PERMITS_MERGE,
                     INDEXER_METRICS
                         .available_concurrent_upload_permits
-                        .with_label_values(&["merger"]),
+                        .with_label_values(["merger"]),
                 ),
                 UploaderType::DeleteUploader => (
                     &CONCURRENT_UPLOAD_PERMITS_MERGE,
                     INDEXER_METRICS
                         .available_concurrent_upload_permits
-                        .with_label_values(&["merger"]),
+                        .with_label_values(["merger"]),
                 ),
             };
         let concurrent_upload_permits = concurrent_upload_permits_once_cell

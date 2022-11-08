@@ -917,7 +917,8 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         quickwit_storage_uri_resolver().clone(),
     )
     .await?;
-    let (indexing_server_mailbox, _) = universe.spawn_builder().spawn(indexing_server);
+    let (indexing_server_mailbox, indexing_server_handle) =
+        universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_server_mailbox
         .ask_for_res(SpawnPipeline {
             index_id: args.index_id.clone(),
@@ -942,6 +943,11 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     }
     let statistics =
         start_statistics_reporting_loop(pipeline_handle, args.input_path_opt.is_none()).await?;
+    // Shutdown the indexing server.
+    universe
+        .send_exit_with_success(&indexing_server_mailbox)
+        .await?;
+    indexing_server_handle.join().await;
     if statistics.num_published_splits > 0 {
         println!(
             "Now, you can query the index with the following command:\nquickwit index search \
