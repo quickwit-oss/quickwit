@@ -305,7 +305,7 @@ pub struct ListSplitsQuery<'a> {
 
 #[allow(unused_attributes)]
 impl<'a> ListSplitsQuery<'a> {
-    /// Create a new [ListSplitsQuery] for a specific index.
+    /// Creates a new [ListSplitsQuery] for a specific index.
     pub fn for_index(index: &'a str) -> Self {
         Self {
             index,
