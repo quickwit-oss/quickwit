@@ -21,6 +21,7 @@ use std::collections::{HashSet, VecDeque};
 use std::fmt::Display;
 use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
@@ -318,7 +319,7 @@ impl IndexCliCommand {
     fn parse_clear_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -335,11 +336,11 @@ impl IndexCliCommand {
     fn parse_create_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_config_uri = matches
             .value_of("index-config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`index-config` is a required arg.")?;
         let overwrite = matches.is_present("overwrite");
         let assume_yes = matches.is_present("yes");
@@ -355,7 +356,7 @@ impl IndexCliCommand {
     fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -370,7 +371,7 @@ impl IndexCliCommand {
     fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         Ok(Self::List(ListIndexesArgs { config_uri }))
     }
@@ -378,14 +379,14 @@ impl IndexCliCommand {
     fn parse_ingest_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
             .expect("`index` is a required arg.")
             .to_string();
         let input_path_opt = if let Some(input_path) = matches.value_of("input-path") {
-            Uri::try_new(input_path)?
+            Uri::from_str(input_path)?
                 .filepath()
                 .map(|path| path.to_path_buf())
         } else {
@@ -406,7 +407,7 @@ impl IndexCliCommand {
     fn parse_toggle_ingest_api_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -451,7 +452,7 @@ impl IndexCliCommand {
         };
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         Ok(Self::Search(SearchIndexArgs {
             index_id,
@@ -471,7 +472,7 @@ impl IndexCliCommand {
     fn parse_merge_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -491,7 +492,7 @@ impl IndexCliCommand {
     fn parse_garbage_collect_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -513,7 +514,7 @@ impl IndexCliCommand {
     fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -916,7 +917,8 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         quickwit_storage_uri_resolver().clone(),
     )
     .await?;
-    let (indexing_server_mailbox, _) = universe.spawn_builder().spawn(indexing_server);
+    let (indexing_server_mailbox, indexing_server_handle) =
+        universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_server_mailbox
         .ask_for_res(SpawnPipeline {
             index_id: args.index_id.clone(),
@@ -941,6 +943,11 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     }
     let statistics =
         start_statistics_reporting_loop(pipeline_handle, args.input_path_opt.is_none()).await?;
+    // Shutdown the indexing server.
+    universe
+        .send_exit_with_success(&indexing_server_mailbox)
+        .await?;
+    indexing_server_handle.join().await;
     if statistics.num_published_splits > 0 {
         println!(
             "Now, you can query the index with the following command:\nquickwit index search \
@@ -1324,6 +1331,7 @@ impl ThroughputCalculator {
 mod test {
 
     use std::ops::RangeInclusive;
+    use std::str::FromStr;
 
     use quickwit_metastore::SplitMetadata;
 
@@ -1359,7 +1367,7 @@ mod test {
             let command = CliCommand::parse_cli_args(&matches)?;
             let expected_command =
                 CliCommand::Index(IndexCliCommand::ToggleIngestApi(ToggleIngestApiArgs {
-                    config_uri: Uri::try_new("file:///config.yaml").unwrap(),
+                    config_uri: Uri::from_str("file:///config.yaml").unwrap(),
                     index_id: "foo".to_string(),
                     enable: true,
                 }));
@@ -1379,7 +1387,7 @@ mod test {
             let command = CliCommand::parse_cli_args(&matches)?;
             let expected_command =
                 CliCommand::Index(IndexCliCommand::ToggleIngestApi(ToggleIngestApiArgs {
-                    config_uri: Uri::try_new("file:///config.yaml").unwrap(),
+                    config_uri: Uri::from_str("file:///config.yaml").unwrap(),
                     index_id: "foo".to_string(),
                     enable: false,
                 }));

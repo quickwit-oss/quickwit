@@ -96,24 +96,6 @@ impl Actor for Publisher {
             PublisherType::MergePublisher => QueueCapacity::Unbounded,
         }
     }
-
-    async fn finalize(
-        &mut self,
-        _exit_status: &quickwit_actors::ActorExitStatus,
-        ctx: &ActorContext<Self>,
-    ) -> anyhow::Result<()> {
-        // The `garbage_collector` actor runs for ever.
-        // Periodically scheduling new messages for itself.
-        //
-        // The publisher actor being the last standing actor of the pipeline,
-        // its end of life should also means the end of life of never stopping actors.
-        // After all, when the publisher is stopped, there shouldn't be anything to process.
-        // It's fine if the merge planner is already dead.
-        if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
-            let _ = ctx.send_exit_with_success(merge_planner_mailbox).await;
-        }
-        Ok(())
-    }
 }
 
 #[async_trait]

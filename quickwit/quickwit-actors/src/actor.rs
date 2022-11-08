@@ -22,7 +22,7 @@ use std::convert::Infallible;
 use std::fmt;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -239,7 +239,7 @@ pub struct ActorContextInner<A: Actor> {
     // This counter is useful to unsure that obsolete WakeUp
     // events do not effect ulterior `sleep`.
     sleep_count: AtomicUsize,
-    observable_state_tx: Mutex<watch::Sender<A::ObservableState>>,
+    observable_state_tx: watch::Sender<A::ObservableState>,
 }
 
 /// Internal command used to resume an actor that was paused using
@@ -285,7 +285,7 @@ impl<A: Actor> ActorContext<A> {
                 registry,
                 actor_state: AtomicState::default(),
                 sleep_count: AtomicUsize::default(),
-                observable_state_tx: Mutex::new(observable_state_tx),
+                observable_state_tx,
             }
             .into(),
         }
@@ -408,11 +408,7 @@ impl<A: Actor> ActorContext<A> {
 
     pub(crate) fn observe(&self, actor: &mut A) -> A::ObservableState {
         let obs_state = actor.observable_state();
-        let _ = self
-            .observable_state_tx
-            .lock()
-            .unwrap()
-            .send(obs_state.clone());
+        let _ = self.observable_state_tx.send(obs_state.clone());
         obs_state
     }
 

@@ -18,14 +18,12 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::fs;
 use std::path::PathBuf;
-use std::process::{Child, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
-use std::{fs, io};
 
 use anyhow::bail;
-use assert_cmd::cargo::cargo_bin;
 use assert_cmd::Command;
 use predicates::str;
 use quickwit_common::net::find_available_tcp_port;
@@ -77,6 +75,7 @@ const DEFAULT_QUICKWIT_CONFIG: &str = r#"
     metastore_uri: #metastore_uri
     data_dir: #data_dir
     rest_listen_port: #rest_listen_port
+    grpc_listen_port: #grpc_listen_port
 "#;
 
 const LOGS_JSON_DOCS: &str = r#"{"event": "foo", "level": "info", "ts": 2, "device": "rpi", "city": "tokio"}
@@ -101,18 +100,6 @@ pub fn make_command(arguments: &str) -> Command {
     )
     .args(arguments.split_whitespace());
     cmd
-}
-
-/// Creates a quickwit-cli command running as a child process.
-pub fn spawn_command(arguments: &str) -> io::Result<Child> {
-    std::process::Command::new(cargo_bin(PACKAGE_BIN_NAME))
-        .args(arguments.split_whitespace())
-        .env(
-            quickwit_telemetry::DISABLE_TELEMETRY_ENV_KEY,
-            "disable-for-tests",
-        )
-        .stdout(Stdio::piped())
-        .spawn()
 }
 
 /// Waits until localhost:port is ready. Returns an error if it takes too long.
@@ -183,12 +170,14 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
     // TODO: refactor when we have a singleton storage resolver.
     let (metastore_uri, storage) = match storage_type {
         TestStorageType::LocalFileSystem => {
-            let metastore_uri = Uri::new(format!("file://{}", indexes_dir_path.display()));
+            let metastore_uri =
+                Uri::from_well_formed(format!("file://{}", indexes_dir_path.display()));
             let storage: Arc<dyn Storage> = Arc::new(LocalFileStorage::from_uri(&metastore_uri)?);
             (metastore_uri, storage)
         }
         TestStorageType::S3 => {
-            let metastore_uri = Uri::new("s3://quickwit-integration-tests/indexes".to_string());
+            let metastore_uri =
+                Uri::from_well_formed("s3://quickwit-integration-tests/indexes".to_string());
             let storage: Arc<dyn Storage> =
                 Arc::new(S3CompatibleObjectStorage::from_uri(&metastore_uri)?);
             (metastore_uri, storage)
@@ -211,13 +200,15 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
     )?;
     let quickwit_config_path = resources_dir_path.join("config.yaml");
     let rest_listen_port = find_available_tcp_port()?;
+    let grpc_listen_port = find_available_tcp_port()?;
     fs::write(
         &quickwit_config_path,
         // A poor's man templating engine reloaded...
         DEFAULT_QUICKWIT_CONFIG
             .replace("#metastore_uri", metastore_uri.as_str())
             .replace("#data_dir", data_dir_path.to_str().unwrap())
-            .replace("#rest_listen_port", &rest_listen_port.to_string()),
+            .replace("#rest_listen_port", &rest_listen_port.to_string())
+            .replace("#grpc_listen_port", &grpc_listen_port.to_string()),
     )?;
     let log_docs_path = resources_dir_path.join("logs.json");
     fs::write(&log_docs_path, LOGS_JSON_DOCS)?;
@@ -231,8 +222,9 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
     resource_files.insert("logs", log_docs_path);
     resource_files.insert("wiki", wikipedia_docs_path);
 
-    let config_uri = Uri::new(format!("file://{}", resource_files["config"].display()));
-    let index_config_uri = Uri::new(format!(
+    let config_uri =
+        Uri::from_well_formed(format!("file://{}", resource_files["config"].display()));
+    let index_config_uri = Uri::from_well_formed(format!(
         "file://{}",
         resource_files["index_config"].display()
     ));

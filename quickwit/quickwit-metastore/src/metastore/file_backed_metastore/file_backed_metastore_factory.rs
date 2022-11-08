@@ -29,6 +29,7 @@ use regex::Regex;
 use tokio::sync::Mutex;
 use tracing::debug;
 
+use crate::metastore::instrumented_metastore::InstrumentedMetastore;
 use crate::{
     FileBackedMetastore, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
 };
@@ -104,7 +105,7 @@ impl FileBackedMetastoreFactory {
 impl MetastoreFactory for FileBackedMetastoreFactory {
     async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
         let (uri_stripped, polling_interval_opt) = extract_polling_interval_from_uri(uri.as_str());
-        let uri = Uri::new(uri_stripped);
+        let uri = Uri::from_well_formed(uri_stripped);
         if let Some(metastore) = self.get_from_cache(&uri).await {
             debug!("using metastore from cache");
             return Ok(metastore);
@@ -130,8 +131,9 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
         let file_backed_metastore = FileBackedMetastore::try_new(storage, polling_interval_opt)
             .await
             .map_err(MetastoreResolverError::FailedToOpenMetastore)?;
+        let instrumented_metastore = InstrumentedMetastore::new(Box::new(file_backed_metastore));
         let unique_metastore_for_uri = self
-            .cache_metastore(uri, Arc::new(file_backed_metastore))
+            .cache_metastore(uri, Arc::new(instrumented_metastore))
             .await;
         Ok(unique_metastore_for_uri)
     }
