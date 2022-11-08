@@ -276,7 +276,7 @@ pub trait Metastore: Send + Sync + 'static {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-/// A query builder for filtering splits within the metastore.
+/// A query builder for listing splits within the metastore.
 pub struct ListSplitsQuery<'a> {
     /// The index to get splits from.
     pub index: &'a str,
