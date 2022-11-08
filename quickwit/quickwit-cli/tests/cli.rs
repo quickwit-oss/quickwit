@@ -690,6 +690,8 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
         "The following files will be garbage collected.",
     ))
     .stdout(predicate::str::contains(&split_filename));
+
+    dbg!(&split_path);
     assert_eq!(split_path.exists(), true);
 
     make_command(
