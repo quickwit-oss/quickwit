@@ -982,8 +982,6 @@ impl Metastore for PostgresqlMetastore {
         delete_opstamp: u64,
         num_splits: usize,
     ) -> MetastoreResult<Vec<Split>> {
-        // TODO: Remove as this can be done automatically by the trait.
-        //       Need to clarify about if order is important here or not.
         run_with_tx!(self.connection_pool, tx, {
             let stale_splits: Vec<postgresql_model::Split> =
                 sqlx::query_as::<_, postgresql_model::Split>(
