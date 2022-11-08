@@ -222,7 +222,7 @@ precision: milliseconds
 | `stored`        | Whether the field values are stored in the document store | `true` |
 | `indexed`       | Whether the field values are indexed | `true` |
 | `fast`          | Whether the field values are stored in a fast field | `false` |
-| `precision`     | The precision (`seconds`, `milliseconds`, or `microseconds`) used to store the fast values.It's also used to display date when output_format is set to `unix_timestamp`  | `seconds` |
+| `precision`     | The precision (`seconds`, `milliseconds`, or `microseconds`) used to store the fast values. It's also used to display date when output_format is set to `unix_timestamp`  | `seconds` |
 
 #### `bool` type
 
