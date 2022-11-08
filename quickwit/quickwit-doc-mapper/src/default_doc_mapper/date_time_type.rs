@@ -41,7 +41,7 @@ pub struct QuickwitDateTimeOptions {
     #[serde(default)]
     pub input_formats: InputFormats,
 
-    /// Accepted input formats.
+    /// Output format
     #[serde(default)]
     pub output_format: DateTimeFormat,
 
