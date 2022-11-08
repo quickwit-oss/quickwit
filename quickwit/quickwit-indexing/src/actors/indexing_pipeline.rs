@@ -117,6 +117,35 @@ impl Actor for IndexingPipeline {
         self.handle(Supervise, ctx).await?;
         Ok(())
     }
+
+    async fn finalize(
+        &mut self,
+        _exit_status: &ActorExitStatus,
+        _ctx: &ActorContext<Self>,
+    ) -> anyhow::Result<()> {
+        // We update the observation to ensure our last "black box" observation
+        // is up to date.
+        if let Some(handles) = &self.handles {
+            let (doc_processor_counters, indexer_counters, uploader_counters, publisher_counters) = join!(
+                handles.doc_processor.observe(),
+                handles.indexer.observe(),
+                handles.uploader.observe(),
+                handles.publisher.observe(),
+            );
+            self.statistics = self
+                .previous_generations_statistics
+                .clone()
+                .add_actor_counters(
+                    &*doc_processor_counters,
+                    &*indexer_counters,
+                    &*uploader_counters,
+                    &*publisher_counters,
+                )
+                .set_generation(self.statistics.generation)
+                .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
+        }
+        Ok(())
+    }
 }
 
 impl IndexingPipeline {
