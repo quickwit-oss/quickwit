@@ -710,67 +710,6 @@ async fn test_garbage_collect_index_cli() {
     assert_eq!(split_path.exists(), false);
 }
 
-#[tokio::test]
-#[cfg_attr(not(feature = "ci-test"), ignore)]
-async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
-    let index_id = append_random_suffix("test-delete-cmd--s3-localstack");
-    let test_env = create_test_env(index_id, TestStorageType::S3)?;
-    make_command(
-        format!(
-            "index create --config {} --index-config {}",
-            test_env.resource_files["config"].display(),
-            test_env.resource_files["index_config"].display()
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
-
-    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
-
-    make_command(
-        format!(
-            "index gc --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "No dangling files to garbage collect",
-    ));
-
-    make_command(
-        format!(
-            "index delete --index {} --config {} --dry-run",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success()
-    .stdout(predicate::str::contains(
-        "The following files will be removed",
-    ))
-    .stdout(predicate::str::contains(".split"));
-
-    make_command(
-        format!(
-            "index delete --index {} --config {}",
-            test_env.index_id,
-            test_env.resource_files["config"].display(),
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
-
-    Ok(())
-}
-
 /// testing the api via cli commands
 #[tokio::test]
 async fn test_all_local_index() {

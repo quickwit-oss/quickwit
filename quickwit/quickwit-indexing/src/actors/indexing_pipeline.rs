@@ -117,6 +117,35 @@ impl Actor for IndexingPipeline {
         self.handle(Supervise, ctx).await?;
         Ok(())
     }
+
+    async fn finalize(
+        &mut self,
+        _exit_status: &ActorExitStatus,
+        _ctx: &ActorContext<Self>,
+    ) -> anyhow::Result<()> {
+        // We update the observation to ensure our last "black box" observation
+        // is up to date.
+        if let Some(handles) = &self.handles {
+            let (doc_processor_counters, indexer_counters, uploader_counters, publisher_counters) = join!(
+                handles.doc_processor.observe(),
+                handles.indexer.observe(),
+                handles.uploader.observe(),
+                handles.publisher.observe(),
+            );
+            self.statistics = self
+                .previous_generations_statistics
+                .clone()
+                .add_actor_counters(
+                    &*doc_processor_counters,
+                    &*indexer_counters,
+                    &*uploader_counters,
+                    &*publisher_counters,
+                )
+                .set_generation(self.statistics.generation)
+                .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
+        }
+        Ok(())
+    }
 }
 
 impl IndexingPipeline {
@@ -475,13 +504,15 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    use quickwit_actors::Universe;
-    use quickwit_config::{IndexingSettings, SourceParams};
+    use quickwit_actors::{Command, Universe};
+    use quickwit_config::{IndexingSettings, SourceParams, VoidSourceParams};
     use quickwit_doc_mapper::default_doc_mapper_for_test;
     use quickwit_metastore::{IndexMetadata, MetastoreError, MockMetastore};
     use quickwit_storage::RamStorage;
 
     use super::{IndexingPipeline, *};
+    use crate::actors::merge_pipeline::{MergePipeline, MergePipelineParams};
+    use crate::merge_policy::default_merge_policy;
     use crate::models::IndexingDirectory;
 
     #[test]
@@ -672,6 +703,84 @@ mod tests {
         assert_eq!(pipeline_statistics.generation, 1);
         assert_eq!(pipeline_statistics.num_spawn_attempts, 1);
         assert_eq!(pipeline_statistics.num_published_splits, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_merge_pipeline_does_not_stop_on_indexing_pipeline_failure() -> anyhow::Result<()>
+    {
+        let mut metastore = MockMetastore::default();
+        metastore
+            .expect_index_metadata()
+            .withf(|index_id| index_id == "test-index")
+            .returning(|_| {
+                Ok(IndexMetadata::for_test(
+                    "test-index",
+                    "ram:///indexes/test-index",
+                ))
+            });
+        metastore
+            .expect_list_splits()
+            .returning(|_, _, _, _| Ok(Vec::new()));
+        let universe = Universe::new();
+        let node_id = "test-node";
+        let metastore = Arc::new(metastore);
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let pipeline_id = IndexingPipelineId {
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: node_id.to_string(),
+            pipeline_ord: 0,
+        };
+        let source_config = SourceConfig {
+            source_id: "test-source".to_string(),
+            num_pipelines: 1,
+            enabled: true,
+            source_params: SourceParams::Void(VoidSourceParams),
+        };
+        let storage = Arc::new(RamStorage::default());
+        let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
+        let merge_pipeline_params = MergePipelineParams {
+            pipeline_id: pipeline_id.clone(),
+            doc_mapper: doc_mapper.clone(),
+            indexing_directory: IndexingDirectory::for_test().await,
+            metastore: metastore.clone(),
+            split_store: split_store.clone(),
+            merge_policy: default_merge_policy(),
+            max_concurrent_split_uploads: 2,
+            merge_max_io_num_bytes_per_sec: None,
+        };
+        let merge_pipeline = MergePipeline::new(merge_pipeline_params);
+        let merge_planner_mailbox = merge_pipeline.merge_planner_mailbox().clone();
+        let (_merge_pipeline_mailbox, merge_pipeline_handler) =
+            universe.spawn_builder().spawn(merge_pipeline);
+        let indexing_pipeline_params = IndexingPipelineParams {
+            pipeline_id,
+            doc_mapper,
+            source_config,
+            indexing_directory: IndexingDirectory::for_test().await,
+            indexing_settings: IndexingSettings::for_test(),
+            metastore: metastore.clone(),
+            queues_dir_path: PathBuf::from("./queues"),
+            storage,
+            split_store,
+            max_concurrent_split_uploads_index: 4,
+            max_concurrent_split_uploads_merge: 5,
+            merge_planner_mailbox: merge_planner_mailbox.clone(),
+        };
+        let indexing_pipeline = IndexingPipeline::new(indexing_pipeline_params);
+        let (_indexing_pipeline_mailbox, indexing_pipeline_handler) =
+            universe.spawn_builder().spawn(indexing_pipeline);
+        assert_eq!(indexing_pipeline_handler.observe().await.generation, 1);
+        // Let's shutdown the indexer, this will trigger the the indexing pipeline failure and the
+        // restart.
+        let indexer = universe.get::<Indexer>().into_iter().next().unwrap();
+        indexer.send_message(Command::Quit).await.unwrap();
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        // Check indexing pipeline has restarted.
+        assert_eq!(indexing_pipeline_handler.observe().await.generation, 2);
+        // Check that the merge pipeline is still up.
+        assert_eq!(merge_pipeline_handler.health(), Health::Healthy);
         Ok(())
     }
 }
