@@ -521,21 +521,26 @@ mod list_splits_query_tests {
 
     #[test]
     fn test_filter_contains() {
-        let mut filter = FilterRange::default();
-        filter.end = Bound::Excluded(50);
+        let filter = FilterRange {
+            start: Bound::Unbounded,
+            end: Bound::Excluded(50),
+        };
         assert!(!filter.contains(&50));
         assert!(filter.contains(&0));
         assert!(filter.contains(&49));
 
-        let mut filter = FilterRange::default();
-        filter.start = Bound::Included(50);
+        let filter = FilterRange {
+            start: Bound::Included(50),
+            end: Bound::Unbounded,
+        };
         assert!(filter.contains(&50));
         assert!(filter.contains(&51));
         assert!(!filter.contains(&0));
 
-        let mut filter = FilterRange::default();
-        filter.start = Bound::Included(50);
-        filter.end = Bound::Excluded(75);
+        let filter = FilterRange {
+            start: Bound::Included(50),
+            end: Bound::Excluded(75),
+        };
         assert!(filter.contains(&50));
         assert!(filter.contains(&51));
         assert!(!filter.contains(&0));
