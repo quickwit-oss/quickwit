@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{HashMap, HashSet};
-use std::fmt::Write;
+use std::fmt::{Display, Write};
 use std::ops::Bound;
 #[cfg(test)]
 use std::str::FromStr;
@@ -41,6 +41,7 @@ use tracing::{debug, error, instrument, warn};
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::metastore::instrumented_metastore::InstrumentedMetastore;
 use crate::metastore::postgresql_model::{self, Index, IndexIdSplitIdRow};
+use crate::metastore::FilterRange;
 use crate::{
     IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreFactory,
     MetastoreResolverError, MetastoreResult, Split, SplitMetadata, SplitState,
@@ -256,28 +257,33 @@ async fn list_splits_helper(
     splits.into_iter().map(|split| split.try_into()).collect()
 }
 
-macro_rules! define_sql_filter {
-    ($sql:expr, $field:expr, $cmp:expr) => {{
-        match $cmp.start {
-            Bound::Included(v) => {
-                let _ = write!($sql, " AND {} >= {}", $field, v);
-            }
-            Bound::Excluded(v) => {
-                let _ = write!($sql, " AND {} > {}", $field, v);
-            }
-            Bound::Unbounded => {}
-        };
+/// Extends an existing SQL string with the generated filter range appended to the query.
+///
+/// This method is **not** SQL injection proof and should not be used with user-defined values.
+fn write_sql_filter<V: Display>(
+    sql: &mut String,
+    field_name: impl Display,
+    filter_range: FilterRange<V>,
+) {
+    match filter_range.start {
+        Bound::Included(value) => {
+            let _ = write!(sql, " AND {} >= {}", field_name, value);
+        }
+        Bound::Excluded(value) => {
+            let _ = write!(sql, " AND {} > {}", field_name, value);
+        }
+        Bound::Unbounded => {}
+    };
 
-        match $cmp.end {
-            Bound::Included(v) => {
-                let _ = write!($sql, " AND {} <= {}", $field, v);
-            }
-            Bound::Excluded(v) => {
-                let _ = write!($sql, " AND {} < {}", $field, v);
-            }
-            Bound::Unbounded => {}
-        };
-    }};
+    match filter_range.end {
+        Bound::Included(value) => {
+            let _ = write!(sql, " AND {} <= {}", field_name, value);
+        }
+        Bound::Excluded(value) => {
+            let _ = write!(sql, " AND {} < {}", field_name, value);
+        }
+        Bound::Unbounded => {}
+    };
 }
 
 fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
@@ -335,9 +341,9 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
     };
 
     // WARNING: Not SQL inject proof
-    define_sql_filter!(&mut sql, "update_timestamp", query.update_timestamp);
-    define_sql_filter!(&mut sql, "create_timestamp", query.create_timestamp);
-    define_sql_filter!(&mut sql, "delete_opstamp", query.delete_opstamp);
+    write_sql_filter(&mut sql, "update_timestamp", query.update_timestamp);
+    write_sql_filter(&mut sql, "create_timestamp", query.create_timestamp);
+    write_sql_filter(&mut sql, "delete_opstamp", query.delete_opstamp);
 
     if let Some(limit) = query.limit {
         let _ = write!(sql, " LIMIT {}", limit);
