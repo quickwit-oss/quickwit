@@ -487,7 +487,15 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery<'_>) -> bool {
     {
         return false;
     }
+
     if !query.update_timestamp.contains(&split.update_timestamp) {
+        return false;
+    }
+
+    if !query
+        .create_timestamp
+        .contains(&split.split_metadata.create_timestamp)
+    {
         return false;
     }
 
@@ -538,6 +546,7 @@ mod tests {
                     delete_opstamp: 9,
                     time_range: Some(32..=40),
                     tags: BTreeSet::from(["tag-1".to_string()]),
+                    create_timestamp: 12,
                     ..Default::default()
                 },
                 split_state: SplitState::Staged,
@@ -550,6 +559,7 @@ mod tests {
                     delete_opstamp: 4,
                     time_range: None,
                     tags: BTreeSet::from(["tag-2".to_string(), "tag-3".to_string()]),
+                    create_timestamp: 5,
                     ..Default::default()
                 },
                 split_state: SplitState::MarkedForDeletion,
@@ -562,6 +572,7 @@ mod tests {
                     delete_opstamp: 0,
                     time_range: Some(0..=90),
                     tags: BTreeSet::from(["tag-2".to_string(), "tag-4".to_string()]),
+                    create_timestamp: 64,
                     ..Default::default()
                 },
                 split_state: SplitState::Published,
@@ -590,6 +601,11 @@ mod tests {
         let query = ListSplitsQuery::for_index("test-index").with_update_timestamp_lt(51);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
+        assert!(split_query_predicate(&&split_3, &query));
+
+        let query = ListSplitsQuery::for_index("test-index").with_create_timestamp_gte(51);
+        assert!(!split_query_predicate(&&split_1, &query));
+        assert!(!split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
         let query = ListSplitsQuery::for_index("test-index").with_delete_opstamp_gte(4);
@@ -640,6 +656,13 @@ mod tests {
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
+
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_update_timestamp_lt(51)
+            .with_create_timestamp_lte(63);
+        assert!(!split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_2, &query));
+        assert!(!split_query_predicate(&&split_3, &query));
 
         let query = ListSplitsQuery::for_index("test-index")
             .with_time_range_gt(90)

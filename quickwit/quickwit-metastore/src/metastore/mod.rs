@@ -301,6 +301,9 @@ pub struct ListSplitsQuery<'a> {
 
     /// The update timestamp range to filter by.
     pub update_timestamp: FilterRange<i64>,
+
+    /// The create timestamp range to filter by.
+    pub create_timestamp: FilterRange<i64>,
 }
 
 #[allow(unused_attributes)]
@@ -316,6 +319,7 @@ impl<'a> ListSplitsQuery<'a> {
             time_range: Default::default(),
             delete_opstamp: Default::default(),
             update_timestamp: Default::default(),
+            create_timestamp: Default::default()
         }
     }
 
@@ -430,6 +434,34 @@ impl<'a> ListSplitsQuery<'a> {
     /// *greater than* the provided value.
     pub fn with_update_timestamp_gt(mut self, v: i64) -> Self {
         self.update_timestamp.start = Bound::Excluded(v);
+        self
+    }
+
+    /// Set the field's lower bound to match values that are
+    /// *less than or equal to* the provided value.
+    pub fn with_create_timestamp_lte(mut self, v: i64) -> Self {
+        self.create_timestamp.end = Bound::Included(v);
+        self
+    }
+
+    /// Set the field's lower bound to match values that are
+    /// *less than* the provided value.
+    pub fn with_create_timestamp_lt(mut self, v: i64) -> Self {
+        self.create_timestamp.end = Bound::Excluded(v);
+        self
+    }
+
+    /// Set the field's upper bound to match values that are
+    /// *greater than or equal to* the provided value.
+    pub fn with_create_timestamp_gte(mut self, v: i64) -> Self {
+        self.create_timestamp.start = Bound::Included(v);
+        self
+    }
+
+    /// Set the field's upper bound to match values that are
+    /// *greater than* the provided value.
+    pub fn with_create_timestamp_gt(mut self, v: i64) -> Self {
+        self.create_timestamp.start = Bound::Excluded(v);
         self
     }
 }

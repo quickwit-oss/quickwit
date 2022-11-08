@@ -29,7 +29,7 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
-use quickwit_doc_mapper::tag_pruning::TagFilterAst;
+use quickwit_doc_mapper::tag_pruning::{tag, TagFilterAst};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgDatabaseError, PgPoolOptions};
@@ -336,6 +336,7 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
 
     // WARNING: Not SQL inject proof
     define_sql_filter!(&mut sql, "update_timestamp", query.update_timestamp);
+    define_sql_filter!(&mut sql, "create_timestamp", query.create_timestamp);
     define_sql_filter!(&mut sql, "delete_opstamp", query.delete_opstamp);
 
     if let Some(limit) = query.limit {
@@ -1235,6 +1236,10 @@ mod tests {
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(sql, " WHERE index_id = $1 AND update_timestamp < 51");
 
+        let query = ListSplitsQuery::for_index("test-index").with_create_timestamp_lte(55);
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(sql, " WHERE index_id = $1 AND create_timestamp <= 55");
+
         let query = ListSplitsQuery::for_index("test-index").with_delete_opstamp_gte(4);
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(sql, " WHERE index_id = $1 AND delete_opstamp >= 4");
@@ -1288,12 +1293,11 @@ mod tests {
 
         let query = ListSplitsQuery::for_index("test-index")
             .with_update_timestamp_lt(51)
-            .with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
+            .with_create_timestamp_lte(63);
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
-            " WHERE index_id = $1 AND split_state IN ('Published', 'MarkedForDeletion') AND \
-             update_timestamp < 51"
+            " WHERE index_id = $1 AND update_timestamp < 51 AND create_timestamp <= 63"
         );
 
         let query = ListSplitsQuery::for_index("test-index")
