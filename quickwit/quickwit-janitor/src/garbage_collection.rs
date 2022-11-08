@@ -25,7 +25,7 @@ use std::time::Duration;
 use futures::Future;
 use quickwit_actors::ActorContext;
 use quickwit_metastore::{ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState};
-use quickwit_storage::{Storage, StorageError};
+use quickwit_storage::Storage;
 use serde::Serialize;
 use thiserror::Error;
 use time::OffsetDateTime;
