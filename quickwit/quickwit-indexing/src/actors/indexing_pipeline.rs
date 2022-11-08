@@ -721,7 +721,7 @@ mod tests {
             });
         metastore
             .expect_list_splits()
-            .returning(|_, _, _, _| Ok(Vec::new()));
+            .returning(|_| Ok(Vec::new()));
         let universe = Universe::new();
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
