@@ -388,7 +388,7 @@ mod tests {
         mock_metastore
             .expect_list_splits()
             .times(4)
-            .returning(|filter| {
+            .returning(|query| {
                 assert_eq!(filter.index, "test-index");
                 let splits = match get_first_split_state(filter.split_states) {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
