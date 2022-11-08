@@ -335,7 +335,7 @@ mod tests {
         mock_metastore
             .expect_list_splits()
             .times(..)
-            .returning(|_| Ok(vec![]));
+            .returning(|_| Ok(Vec::new()));
         mock_metastore
             .expect_list_indexes_metadatas()
             .times(1)

@@ -481,7 +481,7 @@ impl<T: PartialEq + PartialOrd> FilterRange<T> {
         self.start == Bound::Unbounded && self.end == Bound::Unbounded
     }
 
-    /// Checks if the provided value lied within the upper and lower bounds
+    /// Checks if the provided value lies within the upper and lower bounds
     /// of the range.
     pub fn contains(&self, value: &T) -> bool {
         if self.is_unbounded() {
