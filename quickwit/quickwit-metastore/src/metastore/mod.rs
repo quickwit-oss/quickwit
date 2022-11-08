@@ -319,7 +319,7 @@ impl<'a> ListSplitsQuery<'a> {
             time_range: Default::default(),
             delete_opstamp: Default::default(),
             update_timestamp: Default::default(),
-            create_timestamp: Default::default()
+            create_timestamp: Default::default(),
         }
     }
 
