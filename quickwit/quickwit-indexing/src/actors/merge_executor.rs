@@ -507,7 +507,7 @@ mod tests {
     use quickwit_common::split_file;
     use quickwit_metastore::SplitMetadata;
     use quickwit_proto::metastore_api::DeleteQuery;
-    use tantivy::Inventory;
+    use tantivy::{Inventory, ReloadPolicy};
 
     use super::*;
     use crate::merge_policy::MergeOperation;
@@ -596,7 +596,11 @@ mod tests {
         assert_eq!(split_attrs_after_merge.num_docs, 4);
         assert_eq!(split_attrs_after_merge.uncompressed_docs_size_in_bytes, 136);
         assert_eq!(split_attrs_after_merge.num_merge_ops, 1);
-        let reader = packager_msgs[0].splits[0].index.reader()?;
+        let reader = packager_msgs[0].splits[0]
+            .index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::Manual)
+            .try_into()?;
         let searcher = reader.searcher();
         assert_eq!(searcher.segment_readers().len(), 1);
         Ok(())
@@ -751,7 +755,11 @@ mod tests {
             split.split_attrs.uncompressed_docs_size_in_bytes,
             expected_uncompressed_docs_size_in_bytes,
         );
-        let reader = split.index.reader()?;
+        let reader = split
+            .index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::Manual)
+            .try_into()?;
         let searcher = reader.searcher();
         assert_eq!(searcher.segment_readers().len(), 1);
         Ok(())
