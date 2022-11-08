@@ -218,7 +218,7 @@ precision: milliseconds
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | `input_formats` | Formats used to parse input dates | [`rfc3339`, `unix_timestamp`] |
-| `output_format` | Formats used to display dates in search results | `rfc3339` |
+| `output_format` | Format used to display dates in search results | `rfc3339` |
 | `stored`        | Whether the field values are stored in the document store | `true` |
 | `indexed`       | Whether the field values are indexed | `true` |
 | `fast`          | Whether the field values are stored in a fast field | `false` |
