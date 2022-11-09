@@ -84,12 +84,12 @@ pub(crate) fn build_query(
 
             let field_type = schema.get_field_entry(field).field_type();
             if !field_type.is_indexed() {
-                todo!("return error")
+                return Err(anyhow::anyhow!("Attempted to search on not indexed field.").into());
             }
 
-            // TODO maybe Face could be allowed?
+            // TODO maybe Facet could be allowed?
             if matches!(field_type.value_type(), Type::Json | Type::Facet) {
-                todo!("return error")
+                return Err(anyhow::anyhow!("Attempted to search on unsuported field type.").into());
             }
 
             // TODO error on any parse error instead??
@@ -115,7 +115,7 @@ pub(crate) fn build_query(
                 .collect();
 
             if terms.is_empty() {
-                todo!("return error")
+                return Err(anyhow::anyhow!("No valid term to search for").into());
             }
 
             // TODO BooleanQuery(Must(Set(terms)), Must(Set(tag))) would probably be more coherent
