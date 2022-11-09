@@ -165,9 +165,11 @@ impl TryFrom<Query> for SearchQuery {
 }
 
 impl TryFrom<Query> for quickwit_proto::metastore_api::delete_query::Query {
-    type Error = (); // TODO TBD
+    type Error = String;
 
-    fn try_from(query: Query) -> Result<quickwit_proto::metastore_api::delete_query::Query, ()> {
+    fn try_from(
+        query: Query,
+    ) -> Result<quickwit_proto::metastore_api::delete_query::Query, String> {
         use quickwit_proto::metastore_api::delete_query::Query as SearchQuery;
         use quickwit_proto::metastore_api::SetQuery;
         let query = match query {
@@ -179,7 +181,10 @@ impl TryFrom<Query> for quickwit_proto::metastore_api::delete_query::Query {
             } => SearchQuery::SetQuery(SetQuery {
                 terms: terms
                     .into_iter()
-                    .map(|term| term.try_into().map_err(|_| ()))
+                    .map(|term| {
+                        term.try_into()
+                            .map_err(|term| format!("Invalid term: {term}"))
+                    })
                     .collect::<Result<Vec<_>, _>>()?,
                 field_name,
                 tags,
