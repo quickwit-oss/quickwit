@@ -541,7 +541,7 @@ fn get_metastore_grpc_addresses(members: &[ClusterMember]) -> HashSet<SocketAddr
         .iter()
         .filter(|member| {
             member
-                .available_services
+                .enabled_services
                 .contains(&QuickwitService::Metastore)
         })
         .map(|member| member.grpc_advertise_addr)
@@ -735,15 +735,15 @@ mod tests {
         let metastore_service_member = ClusterMember::new(
             "1".to_string(),
             0,
-            metastore_service_grpc_addr,
             HashSet::from([QuickwitService::Metastore, QuickwitService::Indexer]),
+            metastore_service_grpc_addr,
             metastore_service_grpc_addr,
         );
         let searcher_member = ClusterMember::new(
             "2".to_string(),
             0,
-            searcher_grpc_addr,
             HashSet::from([QuickwitService::Searcher]),
+            searcher_grpc_addr,
             searcher_grpc_addr,
         );
         let (members_tx, members_rx) =
@@ -808,22 +808,22 @@ mod tests {
         let metastore_member_1 = ClusterMember::new(
             "1".to_string(),
             0,
-            grpc_addr_1,
             HashSet::from([QuickwitService::Metastore]),
+            grpc_addr_1,
             grpc_addr_1,
         );
         let metastore_member_2 = ClusterMember::new(
             "2".to_string(),
             0,
-            grpc_addr_2,
             HashSet::from([QuickwitService::Metastore]),
+            grpc_addr_2,
             grpc_addr_2,
         );
         let metastore_member_3 = ClusterMember::new(
             "3".to_string(),
             0,
-            grpc_addr_3,
             HashSet::from([QuickwitService::Metastore]),
+            grpc_addr_3,
             grpc_addr_3,
         );
         let (members_tx, members_rx) =

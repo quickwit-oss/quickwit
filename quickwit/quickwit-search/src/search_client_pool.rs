@@ -134,11 +134,7 @@ impl SearchClientPool {
     async fn update_members(&self, cluster_members: &[ClusterMember]) {
         let members_grpc_addrs = cluster_members
             .iter()
-            .filter(|member| {
-                member
-                    .available_services
-                    .contains(&QuickwitService::Searcher)
-            })
+            .filter(|member| member.enabled_services.contains(&QuickwitService::Searcher))
             .map(|member| member.grpc_advertise_addr)
             .collect_vec();
         let mut new_clients = self.clients();

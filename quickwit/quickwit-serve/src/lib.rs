@@ -93,7 +93,7 @@ struct QuickwitServices {
 fn has_node_with_metastore_service(members: &[ClusterMember]) -> bool {
     members.iter().any(|member| {
         member
-            .available_services
+            .enabled_services
             .contains(&QuickwitService::Metastore)
     })
 }
