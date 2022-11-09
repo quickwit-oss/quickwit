@@ -683,7 +683,7 @@ impl Storage for S3CompatibleObjectStorage {
                     path.display()
                 ))
             })?;
-        tracing::Span::current().record("num_bytes_fetched", &bytes.len());
+        tracing::Span::current().record("num_bytes_fetched", bytes.len());
         Ok(bytes)
     }
 

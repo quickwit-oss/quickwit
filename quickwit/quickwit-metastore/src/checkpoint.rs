@@ -299,9 +299,7 @@ impl SourceCheckpoint {
     ) -> Result<(), IncompatibleCheckpointDelta> {
         info!(delta=?delta, checkpoint=?self);
         for (delta_partition, delta_position) in &delta.per_partition {
-            let position = if let Some(position) = self.per_partition.get(delta_partition) {
-                position
-            } else {
+            let Some(position) = self.per_partition.get(delta_partition) else {
                 continue;
             };
             match position.cmp(&delta_position.from) {

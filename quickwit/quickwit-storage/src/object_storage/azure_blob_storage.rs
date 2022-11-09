@@ -413,7 +413,7 @@ impl Storage for AzureBlobStorage {
                     path.display()
                 ))
             })?;
-        tracing::Span::current().record("fetched_bytes_len", &data.len());
+        tracing::Span::current().record("fetched_bytes_len", data.len());
         Ok(data)
     }
 

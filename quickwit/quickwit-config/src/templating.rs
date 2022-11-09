@@ -46,7 +46,7 @@ pub fn render_config(config_uri: &Uri, config_content: &[u8]) -> Result<String> 
             .expect("Captures should always have at least one match.")
             .as_str();
         let substitution_value = {
-            if let Ok(env_var_value) = std::env::var(&env_var_key) {
+            if let Ok(env_var_value) = std::env::var(env_var_key) {
                 debug!(
                     env_var_name=%env_var_key,
                     env_var_value=%env_var_value,
