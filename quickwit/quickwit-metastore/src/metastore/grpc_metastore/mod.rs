@@ -22,7 +22,6 @@ mod grpc_adapter;
 use std::collections::HashSet;
 use std::error::Error;
 use std::net::SocketAddr;
-use std::ops::Range;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -33,7 +32,6 @@ use quickwit_cluster::ClusterMember;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::SourceConfig;
-use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::metastore_api_service_client::MetastoreApiServiceClient;
 use quickwit_proto::metastore_api::{
     AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, DeleteQuery, DeleteSourceRequest,
@@ -56,7 +54,8 @@ use tracing::{error, info};
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    IndexMetadata, Metastore, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState,
+    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, Split,
+    SplitMetadata,
 };
 
 const CLIENT_TIMEOUT_DURATION: Duration = if cfg!(test) {
@@ -267,27 +266,14 @@ impl Metastore for MetastoreGrpcClient {
     }
 
     /// Lists the splits.
-    async fn list_splits(
-        &self,
-        index_id: &str,
-        split_state: SplitState,
-        time_range: Option<Range<i64>>,
-        tags: Option<TagFilterAst>,
-    ) -> MetastoreResult<Vec<Split>> {
-        let tags_serialized_json = tags
-            .map(|tags_filter| serde_json::to_string(&tags_filter))
-            .transpose()
-            .map_err(|error| MetastoreError::JsonSerializeError {
-                name: "TagFilterAst".to_string(),
+    async fn list_splits<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>> {
+        let filter_json =
+            serde_json::to_string(&query).map_err(|error| MetastoreError::JsonSerializeError {
+                name: "ListSplitsQuery".to_string(),
                 message: error.to_string(),
             })?;
-        let request = ListSplitsRequest {
-            index_id: index_id.to_string(),
-            split_state: split_state.as_str().to_string(),
-            time_range_start: time_range.as_ref().map(|range| range.start),
-            time_range_end: time_range.as_ref().map(|range| range.end),
-            tags_serialized_json,
-        };
+
+        let request = ListSplitsRequest { filter_json };
         let response = self
             .0
             .clone()

@@ -373,11 +373,10 @@ pub fn jobs_to_leaf_request(
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Range;
     use std::sync::Arc;
 
     use quickwit_indexing::mock_split;
-    use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
+    use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_proto::SplitSearchError;
 
     use super::*;
@@ -436,11 +435,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
-                Ok(vec![mock_split("split1"), mock_split("split2")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split1"), mock_split("split2")]));
         let mut mock_search_service2 = MockSearchService::new();
         mock_search_service2.expect_leaf_search().returning(
             |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
@@ -520,11 +517,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
-                Ok(vec![mock_split("split1")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split1")]));
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_leaf_search().returning(
             |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
@@ -578,11 +573,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
-                Ok(vec![mock_split("split1"), mock_split("split2")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split1"), mock_split("split2")]));
         let mut mock_search_service1 = MockSearchService::new();
         mock_search_service1.expect_leaf_search().returning(
             |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
@@ -658,11 +651,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
-                Ok(vec![mock_split("split1"), mock_split("split2")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split1"), mock_split("split2")]));
 
         let mut mock_search_service1 = MockSearchService::new();
         mock_search_service1
@@ -765,11 +756,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
-                Ok(vec![mock_split("split1"), mock_split("split2")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split1"), mock_split("split2")]));
         let mut mock_search_service1 = MockSearchService::new();
         mock_search_service1
             .expect_leaf_search()
@@ -889,11 +878,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
-                Ok(vec![mock_split("split1")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split1")]));
         let mut first_call = true;
         let mut mock_search_service1 = MockSearchService::new();
         mock_search_service1
@@ -962,11 +949,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
-                Ok(vec![mock_split("split1")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split1")]));
 
         let mut mock_search_service1 = MockSearchService::new();
         mock_search_service1
@@ -1021,11 +1006,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
-                Ok(vec![mock_split("split1")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split1")]));
         // Service1 - broken node.
         let mut mock_search_service1 = MockSearchService::new();
         mock_search_service1.expect_leaf_search().returning(
@@ -1104,11 +1087,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
-                Ok(vec![mock_split("split1")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split1")]));
 
         // Service1 - working node.
         let mut mock_search_service1 = MockSearchService::new();
@@ -1166,11 +1147,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
-                Ok(vec![mock_split("split")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split")]));
 
         let client_pool =
             SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
@@ -1256,11 +1235,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
-                Ok(vec![mock_split("split1")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split1")]));
         let client_pool =
             SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
@@ -1296,11 +1273,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
-                Ok(vec![mock_split("split1")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split1")]));
         let client_pool =
             SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
