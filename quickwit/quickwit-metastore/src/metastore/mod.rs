@@ -618,10 +618,13 @@ mod list_splits_query_tests {
             start: Bound::Included(50),
             end: Bound::Excluded(75),
         };
-        assert!(filter.contains(&50));
-        assert!(filter.contains(&51));
-        assert!(!filter.contains(&0));
-        assert!(!filter.contains(&75));
-        assert!(filter.contains(&74));
+        assert!(filter.overlaps_with(51..=75));
+        assert!(filter.overlaps_with(0..=51));
+        assert!(filter.overlaps_with(45..=76));
+        assert!(filter.overlaps_with(50..=76));
+        assert!(filter.overlaps_with(0..=50));
+        assert!(filter.overlaps_with(74..=124));
+        assert!(!filter.overlaps_with(0..=49));
+        assert!(!filter.overlaps_with(75..=124));
     }
 }
