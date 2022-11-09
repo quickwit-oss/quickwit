@@ -270,36 +270,39 @@ fn resolve_default_search_fields(
     schema: &Schema,
 ) -> Result<Vec<String>, anyhow::Error> {
     let mut default_search_field_names = Vec::new();
-    for field_name in default_search_fields {
+    'outer: for field_name in default_search_fields {
         if default_search_field_names.contains(field_name) {
             bail!("Duplicated default search field: `{}`", field_name)
         }
-        if field_name.contains('.') {
-            let potential_json_field_name = field_name
-                .split('.')
-                .next()
-                .expect("Field name should contain `.`");
 
-            if !potential_json_field_name.ends_with('\\')
-                && schema.get_field(potential_json_field_name).is_ok()
-            {
-                let field = schema
-                    .get_field(potential_json_field_name)
-                    .expect("Field should exist.");
+        // Block to handle potential json fields
+        'inner: {
+            let Some((potential_json_field_name, _)) = field_name.split_once('.') else {
+                break 'inner;
+            };
 
-                let field_entry = schema.get_field_entry(field);
-                match field_entry.field_type() {
-                    FieldType::JsonObject(_) => {
-                        default_search_field_names.push(field_name.clone());
-                        continue;
-                    }
-                    _ => bail!(
-                        "Field {} is not a JSON field. To search the non-json field `.` needs to \
-                         be escaped. ( {} )",
-                        potential_json_field_name,
-                        field_name.replace('.', r"\.")
-                    ),
+            // If field name is not escaped, it is handled as a regular field in the schema
+            // rather than a json field.
+            if potential_json_field_name.ends_with('\\') {
+                break 'inner;
+            }
+
+            let Ok(field) = schema.get_field(potential_json_field_name) else {
+                break 'inner;
+            };
+
+            let field_entry = schema.get_field_entry(field);
+            match field_entry.field_type() {
+                FieldType::JsonObject(_) => {
+                    default_search_field_names.push(field_name.clone());
+                    continue 'outer;
                 }
+                _ => bail!(
+                    "Field {} is not a JSON field. To search the non-json field `.` needs to be \
+                     escaped. ( {} )",
+                    potential_json_field_name,
+                    field_name.replace('.', r"\.")
+                ),
             }
         }
 
