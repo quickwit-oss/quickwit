@@ -186,12 +186,8 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
     ];
     test_index_builder.add_documents(batch_1).await?;
     test_index_builder.add_documents(batch_2).await?;
-    let query = ListSplitsQuery::for_index(&index_id)
-        .with_split_state(SplitState::Published);
-    let mut splits = test_index_builder
-        .metastore()
-        .list_splits(query)
-        .await?;
+    let query = ListSplitsQuery::for_index(&index_id).with_split_state(SplitState::Published);
+    let mut splits = test_index_builder.metastore().list_splits(query).await?;
     splits.sort_by_key(|split| *split.split_metadata.time_range.clone().unwrap().start());
     assert_eq!(splits.len(), 2);
     assert_eq!(
