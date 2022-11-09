@@ -26,7 +26,7 @@ pub mod postgresql_metastore;
 #[cfg(feature = "postgres")]
 mod postgresql_model;
 
-use std::ops::Bound;
+use std::ops::{Bound, RangeInclusive};
 
 use async_trait::async_trait;
 pub use index_metadata::IndexMetadata;
@@ -355,28 +355,28 @@ impl<'a> ListSplitsQuery<'a> {
 
     /// Set the field's lower bound to match values that are
     /// *less than or equal to* the provided value.
-    pub fn with_time_range_lte(mut self, v: i64) -> Self {
+    pub fn with_time_range_end_lte(mut self, v: i64) -> Self {
         self.time_range.end = Bound::Included(v);
         self
     }
 
     /// Set the field's lower bound to match values that are
     /// *less than* the provided value.
-    pub fn with_time_range_lt(mut self, v: i64) -> Self {
+    pub fn with_time_range_end_lt(mut self, v: i64) -> Self {
         self.time_range.end = Bound::Excluded(v);
         self
     }
 
     /// Set the field's upper bound to match values that are
     /// *greater than or equal to* the provided value.
-    pub fn with_time_range_gte(mut self, v: i64) -> Self {
+    pub fn with_time_range_start_gte(mut self, v: i64) -> Self {
         self.time_range.start = Bound::Included(v);
         self
     }
 
     /// Set the field's upper bound to match values that are
     /// *greater than* the provided value.
-    pub fn with_time_range_gt(mut self, v: i64) -> Self {
+    pub fn with_time_range_start_gt(mut self, v: i64) -> Self {
         self.time_range.start = Bound::Excluded(v);
         self
     }
@@ -502,6 +502,27 @@ impl<T: PartialEq + PartialOrd> FilterRange<T> {
 
         lower_check && upper_check
     }
+
+    /// Checks if the provided range overlaps with the range.
+    pub fn overlaps_with(&self, range: RangeInclusive<T>) -> bool {
+        if self.is_unbounded() {
+            return true;
+        }
+
+        let lower_check = match &self.start {
+            Bound::Unbounded => true,
+            Bound::Included(left) => left <= range.end(),
+            Bound::Excluded(left) => left < range.end(),
+        };
+
+        let upper_check = match &self.end {
+            Bound::Unbounded => true,
+            Bound::Included(left) => left >= range.start(),
+            Bound::Excluded(left) => left > range.start(),
+        };
+
+        lower_check && upper_check
+    }
 }
 
 // The `Default` derive implementation imposes a restriction
@@ -536,6 +557,62 @@ mod list_splits_query_tests {
         assert!(filter.contains(&50));
         assert!(filter.contains(&51));
         assert!(!filter.contains(&0));
+
+        let filter = FilterRange {
+            start: Bound::Included(50),
+            end: Bound::Excluded(75),
+        };
+        assert!(filter.contains(&50));
+        assert!(filter.contains(&51));
+        assert!(!filter.contains(&0));
+        assert!(!filter.contains(&75));
+        assert!(filter.contains(&74));
+    }
+
+    #[test]
+    fn test_overlaps_with() {
+        let filter = FilterRange {
+            start: Bound::Unbounded,
+            end: Bound::Excluded(50),
+        };
+        assert!(filter.overlaps_with(0..=50));
+        assert!(filter.overlaps_with(0..=51));
+        assert!(filter.overlaps_with(32..=63));
+        assert!(filter.overlaps_with(32..=32));
+        assert!(!filter.overlaps_with(51..=76));
+        assert!(!filter.overlaps_with(50..=76));
+
+        let filter = FilterRange {
+            start: Bound::Unbounded,
+            end: Bound::Included(50),
+        };
+        assert!(filter.overlaps_with(0..=50));
+        assert!(filter.overlaps_with(0..=51));
+        assert!(filter.overlaps_with(50..=76));
+        assert!(!filter.overlaps_with(51..=76));
+
+        let filter = FilterRange {
+            start: Bound::Excluded(50),
+            end: Bound::Unbounded,
+        };
+        assert!(filter.overlaps_with(51..=75));
+        assert!(filter.overlaps_with(0..=51));
+        assert!(filter.overlaps_with(51..=76));
+        assert!(filter.overlaps_with(50..=76));
+        assert!(!filter.overlaps_with(0..=49));
+        assert!(!filter.overlaps_with(0..=50));
+
+        let filter = FilterRange {
+            start: Bound::Included(50),
+            end: Bound::Unbounded,
+        };
+        assert!(filter.overlaps_with(51..=75));
+        assert!(filter.overlaps_with(0..=51));
+        assert!(filter.overlaps_with(51..=76));
+        assert!(filter.overlaps_with(50..=76));
+        assert!(filter.overlaps_with(0..=50));
+        assert!(!filter.overlaps_with(0..=49));
+
 
         let filter = FilterRange {
             start: Bound::Included(50),

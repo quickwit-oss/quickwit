@@ -1248,14 +1248,14 @@ mod tests {
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(sql, " WHERE index_id = $1 AND delete_opstamp >= 4");
 
-        let query = ListSplitsQuery::for_index("test-index").with_time_range_gt(45);
+        let query = ListSplitsQuery::for_index("test-index").with_time_range_start_gt(45);
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
             " WHERE index_id = $1 AND (time_range_end > 45 OR time_range_end IS NULL)"
         );
 
-        let query = ListSplitsQuery::for_index("test-index").with_time_range_lt(45);
+        let query = ListSplitsQuery::for_index("test-index").with_time_range_end_lt(45);
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
@@ -1276,8 +1276,8 @@ mod tests {
     #[test]
     fn test_combination_sql_query_builder() {
         let query = ListSplitsQuery::for_index("test-index")
-            .with_time_range_gt(0)
-            .with_time_range_lt(40);
+            .with_time_range_start_gt(0)
+            .with_time_range_end_lt(40);
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
@@ -1286,7 +1286,7 @@ mod tests {
         );
 
         let query = ListSplitsQuery::for_index("test-index")
-            .with_time_range_gt(45)
+            .with_time_range_start_gt(45)
             .with_delete_opstamp_gt(0);
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
@@ -1305,7 +1305,7 @@ mod tests {
         );
 
         let query = ListSplitsQuery::for_index("test-index")
-            .with_time_range_gt(90)
+            .with_time_range_start_gt(90)
             .with_tags_filter(TagFilterAst::Tag {
                 is_present: true,
                 tag: "tag-1".to_string(),

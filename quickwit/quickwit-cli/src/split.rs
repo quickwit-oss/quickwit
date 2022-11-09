@@ -317,10 +317,10 @@ async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
     let mut query = ListSplitsQuery::for_index(&args.index_id)
         .with_split_states(args.split_states.unwrap_or_default());
     if let Some(start_date) = args.start_date {
-        query = query.with_time_range_gte(start_date.unix_timestamp());
+        query = query.with_time_range_start_gte(start_date.unix_timestamp());
     }
     if let Some(end_date) = args.end_date {
-        query = query.with_time_range_lte(end_date.unix_timestamp());
+        query = query.with_time_range_end_lte(end_date.unix_timestamp());
     }
     if let Some(create_date) = args.create_date {
         query = query.with_create_timestamp_lte(create_date.unix_timestamp());

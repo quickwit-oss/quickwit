@@ -613,12 +613,12 @@ mod tests {
         assert!(split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index("test-index").with_time_range_gt(45);
+        let query = ListSplitsQuery::for_index("test-index").with_time_range_start_gt(45);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index("test-index").with_time_range_lt(45);
+        let query = ListSplitsQuery::for_index("test-index").with_time_range_end_lt(45);
         assert!(split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
@@ -637,14 +637,14 @@ mod tests {
         let [split_1, split_2, split_3] = make_splits();
 
         let query = ListSplitsQuery::for_index("test-index")
-            .with_time_range_gt(0)
-            .with_time_range_lt(40);
+            .with_time_range_start_gt(0)
+            .with_time_range_end_lt(40);
         assert!(split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
         let query = ListSplitsQuery::for_index("test-index")
-            .with_time_range_gt(45)
+            .with_time_range_start_gt(45)
             .with_delete_opstamp_gt(0);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
@@ -665,7 +665,7 @@ mod tests {
         assert!(!split_query_predicate(&&split_3, &query));
 
         let query = ListSplitsQuery::for_index("test-index")
-            .with_time_range_gt(90)
+            .with_time_range_start_gt(90)
             .with_tags_filter(TagFilterAst::Tag {
                 is_present: true,
                 tag: "tag-1".to_string(),
