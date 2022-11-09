@@ -23,19 +23,17 @@
 
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::ops::Range;
 
 use itertools::Itertools;
 use quickwit_config::SourceConfig;
-use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    split_tag_filter, split_time_range_filter, IndexMetadata, MetastoreError, MetastoreResult,
-    Split, SplitMetadata, SplitState,
+    split_tag_filter, IndexMetadata, ListSplitsQuery, MetastoreError, MetastoreResult, Split,
+    SplitMetadata, SplitState,
 };
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
@@ -318,35 +316,19 @@ impl FileBackedIndex {
     }
 
     /// Lists splits.
-    pub(crate) fn list_splits(
-        &self,
-        state: SplitState,
-        time_range_opt: Option<Range<i64>>,
-        tags_filter: Option<TagFilterAst>,
-        delete_opstamp_opt: Option<u64>,
-    ) -> MetastoreResult<Vec<Split>> {
-        let delete_opstamp_filter = |split: &&Split| {
-            delete_opstamp_opt
-                .map(|delete_opstamp| split.split_metadata.delete_opstamp < delete_opstamp)
-                .unwrap_or(true)
-        };
+    pub(crate) fn list_splits(&self, query: ListSplitsQuery<'_>) -> MetastoreResult<Vec<Split>> {
+        let limit = query.limit.unwrap_or(usize::MAX);
+        let offset = query.offset.unwrap_or_default();
 
-        let splits = self
+        let splits: Vec<Split> = self
             .splits
             .values()
-            .filter(|&split| split.split_state == state)
-            .filter(|split| split_time_range_filter(split, time_range_opt.as_ref()))
-            .filter(|split| split_tag_filter(split, tags_filter.as_ref()))
-            .filter(delete_opstamp_filter)
+            .filter(|split| split_query_predicate(split, &query))
+            .skip(offset)
+            .take(limit)
             .cloned()
             .collect();
 
-        Ok(splits)
-    }
-
-    /// Lists all splits.
-    pub(crate) fn list_all_splits(&self) -> MetastoreResult<Vec<Split>> {
-        let splits = self.splits.values().cloned().collect();
         Ok(splits)
     }
 
@@ -487,5 +469,188 @@ impl Stamper {
 impl Debug for Stamper {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         fmt.debug_struct("Stamper").field("stamp", &self.0).finish()
+    }
+}
+
+fn split_query_predicate(split: &&Split, query: &ListSplitsQuery<'_>) -> bool {
+    if !split_tag_filter(split, query.tags.as_ref()) {
+        return false;
+    }
+
+    if !query.split_states.is_empty() && !query.split_states.contains(&split.split_state) {
+        return false;
+    }
+
+    if !query
+        .delete_opstamp
+        .contains(&split.split_metadata.delete_opstamp)
+    {
+        return false;
+    }
+
+    if !query.update_timestamp.contains(&split.update_timestamp) {
+        return false;
+    }
+
+    if !query
+        .create_timestamp
+        .contains(&split.split_metadata.create_timestamp)
+    {
+        return false;
+    }
+
+    if let Some(range) = split.split_metadata.time_range.as_ref() {
+        if !query.time_range.overlaps_with(range.clone()) {
+            return false;
+        }
+    }
+
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use quickwit_doc_mapper::tag_pruning::TagFilterAst;
+
+    use crate::file_backed_metastore::file_backed_index::split_query_predicate;
+    use crate::{ListSplitsQuery, Split, SplitMetadata, SplitState};
+
+    fn make_splits() -> [Split; 3] {
+        [
+            Split {
+                split_metadata: SplitMetadata {
+                    split_id: "split-1".to_string(),
+                    delete_opstamp: 9,
+                    time_range: Some(32..=40),
+                    tags: BTreeSet::from(["tag-1".to_string()]),
+                    create_timestamp: 12,
+                    ..Default::default()
+                },
+                split_state: SplitState::Staged,
+                update_timestamp: 70i64,
+                publish_timestamp: None,
+            },
+            Split {
+                split_metadata: SplitMetadata {
+                    split_id: "split-2".to_string(),
+                    delete_opstamp: 4,
+                    time_range: None,
+                    tags: BTreeSet::from(["tag-2".to_string(), "tag-3".to_string()]),
+                    create_timestamp: 5,
+                    ..Default::default()
+                },
+                split_state: SplitState::MarkedForDeletion,
+                update_timestamp: 50i64,
+                publish_timestamp: None,
+            },
+            Split {
+                split_metadata: SplitMetadata {
+                    split_id: "split-3".to_string(),
+                    delete_opstamp: 0,
+                    time_range: Some(0..=90),
+                    tags: BTreeSet::from(["tag-2".to_string(), "tag-4".to_string()]),
+                    create_timestamp: 64,
+                    ..Default::default()
+                },
+                split_state: SplitState::Published,
+                update_timestamp: 0i64,
+                publish_timestamp: None,
+            },
+        ]
+    }
+
+    #[test]
+    fn test_single_filter_behaviour() {
+        let [split_1, split_2, split_3] = make_splits();
+
+        let query = ListSplitsQuery::for_index("test-index").with_split_state(SplitState::Staged);
+        assert!(split_query_predicate(&&split_1, &query));
+
+        let query =
+            ListSplitsQuery::for_index("test-index").with_split_state(SplitState::Published);
+        assert!(!split_query_predicate(&&split_2, &query));
+
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
+        assert!(!split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_3, &query));
+
+        let query = ListSplitsQuery::for_index("test-index").with_update_timestamp_lt(51);
+        assert!(!split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_2, &query));
+        assert!(split_query_predicate(&&split_3, &query));
+
+        let query = ListSplitsQuery::for_index("test-index").with_create_timestamp_gte(51);
+        assert!(!split_query_predicate(&&split_1, &query));
+        assert!(!split_query_predicate(&&split_2, &query));
+        assert!(split_query_predicate(&&split_3, &query));
+
+        let query = ListSplitsQuery::for_index("test-index").with_delete_opstamp_gte(4);
+        assert!(split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_2, &query));
+        assert!(!split_query_predicate(&&split_3, &query));
+
+        let query = ListSplitsQuery::for_index("test-index").with_time_range_start_gt(45);
+        assert!(!split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_2, &query));
+        assert!(split_query_predicate(&&split_3, &query));
+
+        let query = ListSplitsQuery::for_index("test-index").with_time_range_end_lt(45);
+        assert!(split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_2, &query));
+        assert!(split_query_predicate(&&split_3, &query));
+
+        let query = ListSplitsQuery::for_index("test-index").with_tags_filter(TagFilterAst::Tag {
+            is_present: false,
+            tag: "tag-2".to_string(),
+        });
+        assert!(split_query_predicate(&&split_1, &query));
+        assert!(!split_query_predicate(&&split_2, &query));
+        assert!(!split_query_predicate(&&split_3, &query));
+    }
+
+    #[test]
+    fn test_combination_filter() {
+        let [split_1, split_2, split_3] = make_splits();
+
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_time_range_start_gt(0)
+            .with_time_range_end_lt(40);
+        assert!(split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_2, &query));
+        assert!(split_query_predicate(&&split_3, &query));
+
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_time_range_start_gt(45)
+            .with_delete_opstamp_gt(0);
+        assert!(!split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_2, &query));
+        assert!(!split_query_predicate(&&split_3, &query));
+
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_update_timestamp_lt(51)
+            .with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
+        assert!(!split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_2, &query));
+        assert!(split_query_predicate(&&split_3, &query));
+
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_update_timestamp_lt(51)
+            .with_create_timestamp_lte(63);
+        assert!(!split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_2, &query));
+        assert!(!split_query_predicate(&&split_3, &query));
+
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_time_range_start_gt(90)
+            .with_tags_filter(TagFilterAst::Tag {
+                is_present: true,
+                tag: "tag-1".to_string(),
+            });
+        assert!(!split_query_predicate(&&split_1, &query));
+        assert!(!split_query_predicate(&&split_2, &query));
+        assert!(!split_query_predicate(&&split_3, &query));
     }
 }

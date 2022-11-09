@@ -32,7 +32,9 @@ pub mod test_suite {
     use tracing::{error, info};
 
     use crate::checkpoint::{IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint};
-    use crate::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
+    use crate::{
+        IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState,
+    };
 
     #[async_trait]
     pub trait DefaultForTest {
@@ -1589,10 +1591,10 @@ pub mod test_suite {
 
         {
             info!("List all splits on a non-existent index");
-            let metastore_err = metastore
-                .list_splits("non-existent-index", SplitState::Staged, None, None)
-                .await
-                .unwrap_err();
+
+            let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
+
+            let metastore_err = metastore.list_splits(query).await.unwrap_err();
             error!(err=?metastore_err);
             assert!(matches!(
                 metastore_err,
@@ -1633,10 +1635,28 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(0i64..99i64), None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id).with_limit(3);
+            let splits = metastore.list_splits(query).await.unwrap();
+            assert_eq!(
+                splits.len(),
+                3,
+                "Expected number of splits returned to match limit.",
+            );
+
+            let query = ListSplitsQuery::for_index(index_id).with_offset(3);
+            let splits = metastore.list_splits(query).await.unwrap();
+            assert_eq!(
+                splits.len(),
+                2,
+                "Expected 3 splits to be skipped out of the 5 provided splits.",
+            );
+
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(0)
+                .with_time_range_end_lt(99);
+
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1646,11 +1666,11 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-five"])
             );
 
-            let time_range_opt = Some(200..i64::MAX);
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, time_range_opt, None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(200);
+
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1659,10 +1679,11 @@ pub mod test_suite {
                 split_ids,
                 to_hash_set(&["list-splits-three", "list-splits-four", "list-splits-five"])
             );
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(i64::MIN..200), None)
-                .await
-                .unwrap();
+
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_end_lt(200);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1672,10 +1693,11 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-two", "list-splits-five"])
             );
 
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(0..100), None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(0)
+                .with_time_range_end_lt(100);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1685,10 +1707,11 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-five"])
             );
 
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(0..101), None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(0)
+                .with_time_range_end_lt(101);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1698,10 +1721,11 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-two", "list-splits-five"])
             );
 
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(0..199), None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(0)
+                .with_time_range_end_lt(199);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1711,10 +1735,11 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-two", "list-splits-five"])
             );
 
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(0..200), None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(0)
+                .with_time_range_end_lt(200);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1724,10 +1749,11 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-one", "list-splits-two", "list-splits-five"])
             );
 
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(0..201), None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(0)
+                .with_time_range_end_lt(201);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1742,10 +1768,11 @@ pub mod test_suite {
                 ])
             );
 
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(0..299), None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(0)
+                .with_time_range_end_lt(299);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1760,10 +1787,11 @@ pub mod test_suite {
                 ])
             );
 
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(0..300), None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(0)
+                .with_time_range_end_lt(300);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1778,10 +1806,11 @@ pub mod test_suite {
                 ])
             );
 
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(0..301), None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(0)
+                .with_time_range_end_lt(301);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1797,10 +1826,11 @@ pub mod test_suite {
                 ])
             );
 
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(301..400), None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(301)
+                .with_time_range_end_lt(400);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1810,10 +1840,12 @@ pub mod test_suite {
                 split_ids,
                 to_hash_set(&["list-splits-four", "list-splits-five"])
             );
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(300..400), None)
-                .await
-                .unwrap();
+
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(300)
+                .with_time_range_end_lt(400);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1823,10 +1855,11 @@ pub mod test_suite {
                 split_ids,
                 to_hash_set(&["list-splits-four", "list-splits-five"])
             );
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(299..400), None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(299)
+                .with_time_range_end_lt(400);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1836,10 +1869,11 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-three", "list-splits-four", "list-splits-five"])
             );
 
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(201..400), None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(201)
+                .with_time_range_end_lt(400);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1849,10 +1883,11 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-three", "list-splits-four", "list-splits-five"])
             );
 
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(200..400), None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(200)
+                .with_time_range_end_lt(400);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1863,10 +1898,11 @@ pub mod test_suite {
                 to_hash_set(&["list-splits-three", "list-splits-four", "list-splits-five"])
             );
 
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(199..400), None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(199)
+                .with_time_range_end_lt(400);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1881,10 +1917,11 @@ pub mod test_suite {
                 ])
             );
 
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(101..400), None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(101)
+                .with_time_range_end_lt(400);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1899,10 +1936,11 @@ pub mod test_suite {
                 ])
             );
 
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(101..400), None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(101)
+                .with_time_range_end_lt(400);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1917,10 +1955,11 @@ pub mod test_suite {
                 ])
             );
 
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(100..400), None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(100)
+                .with_time_range_end_lt(400);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1936,10 +1975,11 @@ pub mod test_suite {
                 ])
             );
 
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(99..400), None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(99)
+                .with_time_range_end_lt(400);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1955,10 +1995,11 @@ pub mod test_suite {
                 ])
             );
 
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, Some(1000..1100), None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_time_range_start_gte(1000)
+                .with_time_range_end_lt(1100);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -1983,10 +2024,8 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, None, None)
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|metadata| metadata.split_id().to_string())
@@ -2007,10 +2046,10 @@ pub mod test_suite {
                 TagFilterAst::Or(vec![no_tag("tag!"), tag("tag:bar")]),
                 TagFilterAst::Or(vec![no_tag("tag!"), tag("tag:baz")]),
             ]);
-            let splits = metastore
-                .list_splits(index_id, SplitState::Staged, None, Some(tag_filter_ast))
-                .await
-                .unwrap();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_tags_filter(tag_filter_ast);
+            let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|meta| meta.split_id().to_string())
@@ -2488,6 +2527,10 @@ pub mod test_suite {
                 .stage_split(index_id, split_metadata_3.clone())
                 .await
                 .unwrap();
+
+            // Sleep for 1 second to have different publish timestamps.
+            sleep(Duration::from_secs(1)).await;
+
             metastore
                 .stage_split(index_id, split_metadata_4.clone())
                 .await

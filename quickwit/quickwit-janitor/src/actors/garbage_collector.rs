@@ -200,13 +200,16 @@ impl Handler<Loop> for GarbageCollector {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Bound;
     use std::path::Path;
 
     use quickwit_actors::Universe;
     use quickwit_metastore::{
-        IndexMetadata, MetastoreError, MockMetastore, Split, SplitMetadata, SplitState,
+        IndexMetadata, ListSplitsQuery, MetastoreError, MockMetastore, Split, SplitMetadata,
+        SplitState,
     };
     use quickwit_storage::MockStorage;
+    use time::OffsetDateTime;
 
     use super::*;
 
@@ -246,19 +249,36 @@ mod tests {
             });
 
         let mut mock_metastore = MockMetastore::default();
-        mock_metastore.expect_list_splits().times(2).returning(
-            |index_id, split_state, _time_range, _tags| {
-                assert_eq!(index_id, "test-index");
-                let splits = match split_state {
+        mock_metastore
+            .expect_list_splits()
+            .times(2)
+            .returning(|query: ListSplitsQuery<'_>| {
+                assert_eq!(query.index, "test-index");
+
+                let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
+                        let expected_deletion_timestamp = OffsetDateTime::now_utc()
+                            .unix_timestamp()
+                            - DELETION_GRACE_PERIOD.as_secs() as i64;
+                        assert_eq!(
+                            query.update_timestamp.end,
+                            Bound::Included(expected_deletion_timestamp),
+                            "Expected splits query to only select splits which have not been \
+                             updated since the expected deletion timestamp.",
+                        );
+                        assert_eq!(
+                            query.update_timestamp.start,
+                            Bound::Unbounded,
+                            "Expected the lower bound to be unbounded when filtering splits.",
+                        );
+
                         make_splits(&["a", "b", "c"], SplitState::MarkedForDeletion)
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
                 Ok(splits)
-            },
-        );
+            });
         mock_metastore
             .expect_mark_splits_for_deletion()
             .times(1)
@@ -306,10 +326,12 @@ mod tests {
                     "ram://indexes/test-index",
                 )])
             });
-        mock_metastore.expect_list_splits().times(2).returning(
-            |index_id, split_state, _time_range, _tags| {
-                assert_eq!(index_id, "test-index");
-                let splits = match split_state {
+        mock_metastore
+            .expect_list_splits()
+            .times(2)
+            .returning(|query| {
+                assert_eq!(query.index, "test-index");
+                let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         make_splits(&["a", "b", "c"], SplitState::MarkedForDeletion)
@@ -317,8 +339,7 @@ mod tests {
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
                 Ok(splits)
-            },
-        );
+            });
         mock_metastore
             .expect_mark_splits_for_deletion()
             .times(1)
@@ -364,10 +385,12 @@ mod tests {
                     "ram://indexes/test-index",
                 )])
             });
-        mock_metastore.expect_list_splits().times(4).returning(
-            |index_id, split_state, _time_range, _tags| {
-                assert_eq!(index_id, "test-index");
-                let splits = match split_state {
+        mock_metastore
+            .expect_list_splits()
+            .times(4)
+            .returning(|query| {
+                assert_eq!(query.index, "test-index");
+                let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         make_splits(&["a", "b"], SplitState::MarkedForDeletion)
@@ -375,8 +398,7 @@ mod tests {
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
                 Ok(splits)
-            },
-        );
+            });
         mock_metastore
             .expect_mark_splits_for_deletion()
             .times(2)
@@ -503,10 +525,12 @@ mod tests {
                     IndexMetadata::for_test("test-index-2", "ram://indexes/test-index-2"),
                 ])
             });
-        mock_metastore.expect_list_splits().times(4).returning(
-            |index_id, split_state, _time_range, _tags| {
-                assert!(["test-index-1", "test-index-2"].contains(&index_id));
-                let splits = match split_state {
+        mock_metastore
+            .expect_list_splits()
+            .times(4)
+            .returning(|query| {
+                assert!(["test-index-1", "test-index-2"].contains(&query.index));
+                let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         make_splits(&["a", "b"], SplitState::MarkedForDeletion)
@@ -514,8 +538,7 @@ mod tests {
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
                 Ok(splits)
-            },
-        );
+            });
         mock_metastore
             .expect_mark_splits_for_deletion()
             .times(2)
