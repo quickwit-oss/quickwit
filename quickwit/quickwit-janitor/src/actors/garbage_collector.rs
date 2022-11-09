@@ -255,7 +255,7 @@ mod tests {
             .returning(|query: ListSplitsQuery<'_>| {
                 assert_eq!(query.index, "test-index");
 
-                let splits = match get_first_split_state(query.split_states.clone()) {
+                let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
                         let expected_deletion_timestamp = OffsetDateTime::now_utc()
