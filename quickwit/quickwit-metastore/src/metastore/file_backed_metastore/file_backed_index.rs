@@ -504,9 +504,7 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery<'_>) -> bool {
             .split_metadata
             .time_range
             .as_ref()
-            .map(|range| {
-                query.time_range.overlaps_with(range.clone())
-            })
+            .map(|range| query.time_range.overlaps_with(range.clone()))
             .unwrap_or(true);
 
         if !is_in_range {

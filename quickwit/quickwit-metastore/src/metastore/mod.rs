@@ -613,7 +613,6 @@ mod list_splits_query_tests {
         assert!(filter.overlaps_with(0..=50));
         assert!(!filter.overlaps_with(0..=49));
 
-
         let filter = FilterRange {
             start: Bound::Included(50),
             end: Bound::Excluded(75),
