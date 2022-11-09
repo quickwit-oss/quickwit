@@ -499,15 +499,8 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery<'_>) -> bool {
         return false;
     }
 
-    if !query.time_range.is_unbounded() {
-        let is_in_range = split
-            .split_metadata
-            .time_range
-            .as_ref()
-            .map(|range| query.time_range.overlaps_with(range.clone()))
-            .unwrap_or(true);
-
-        if !is_in_range {
+    if let Some(range) = split.split_metadata.time_range.as_ref() {
+        if !query.time_range.overlaps_with(range.clone()) {
             return false;
         }
     }
