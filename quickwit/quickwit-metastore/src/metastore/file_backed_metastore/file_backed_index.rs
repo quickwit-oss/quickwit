@@ -21,7 +21,7 @@
 //! import [`FileBackedIndex`] and run backward-compatibility tests. You should not have to import
 //! anything from here directly.
 
-use std::collections::{Bound, HashMap};
+use std::collections::HashMap;
 use std::fmt::Debug;
 
 use itertools::Itertools;
@@ -505,19 +505,7 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery<'_>) -> bool {
             .time_range
             .as_ref()
             .map(|range| {
-                let start_check = match &query.time_range.start {
-                    Bound::Included(v) => range.end() >= v,
-                    Bound::Excluded(v) => range.end() > v,
-                    Bound::Unbounded => true,
-                };
-
-                let end_check = match &query.time_range.end {
-                    Bound::Included(v) => range.start() <= v,
-                    Bound::Excluded(v) => range.start() < v,
-                    Bound::Unbounded => true,
-                };
-
-                start_check && end_check
+                query.time_range.overlaps_with(range.clone())
             })
             .unwrap_or(true);
 
