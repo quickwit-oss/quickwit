@@ -23,8 +23,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox, Observation,
-    Supervisable,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Health, Mailbox,
+    Observation,
 };
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_config::{
@@ -360,25 +360,25 @@ impl IndexingService {
     async fn handle_supervise(&mut self) -> Result<(), ActorExitStatus> {
         self.indexing_pipeline_handles
             .retain(
-                |pipeline_id, pipeline_handle| match pipeline_handle.health() {
-                    Health::Healthy => true,
-                    Health::Success => {
+                |pipeline_id, pipeline_handle| match pipeline_handle.state() {
+                    ActorState::Idle | ActorState::Paused | ActorState::Processing => true,
+                    ActorState::Success => {
                         info!(
                             index_id=%pipeline_id.index_id,
                             source_id=%pipeline_id.source_id,
                             pipeline_ord=%pipeline_id.pipeline_ord,
-                            "Indexing pipeline completed."
+                            "Indexing pipeline exited successfully."
                         );
                         self.state.num_successful_pipelines += 1;
                         self.state.num_running_pipelines -= 1;
                         false
                     }
-                    Health::FailureOrUnhealthy => {
+                    ActorState::Failure => {
                         error!(
                             index_id=%pipeline_id.index_id,
                             source_id=%pipeline_id.source_id,
                             pipeline_ord=%pipeline_id.pipeline_ord,
-                            "Indexing pipeline failed."
+                            "Indexing pipeline exited with failure."
                         );
                         self.state.num_failed_pipelines += 1;
                         self.state.num_running_pipelines -= 1;
@@ -411,13 +411,10 @@ impl IndexingService {
                 merge_pipeline_handle.handle.kill().await;
             }
         }
-        // Finally remove the merge pipelien with an exit status.
+        // Finally remove the merge pipeline with an exit status.
         self.merge_pipeline_handles
             .retain(|_, merge_pipeline_mailbox_handle| {
-                match merge_pipeline_mailbox_handle.handle.health() {
-                    Health::Healthy => true,
-                    Health::FailureOrUnhealthy | Health::Success => false,
-                }
+                merge_pipeline_mailbox_handle.handle.state().is_running()
             });
         self.state.num_running_merge_pipelines = self.merge_pipeline_handles.len();
         Ok(())
