@@ -73,12 +73,12 @@ async fn ingest_docs(input_path: &Path, test_env: &TestEnv) -> anyhow::Result<()
 #[test]
 fn test_cmd_help() {
     let cmd = build_cli();
-    let result = cmd
+    let error = cmd
         .clone()
-        .try_get_matches_from(vec![PACKAGE_BIN_NAME, "--help"]);
-    assert!(result.is_err());
+        .try_get_matches_from(vec![PACKAGE_BIN_NAME, "--help"])
+        .unwrap_err();
     // on `--help` clap returns an error.
-    assert_eq!(result.unwrap_err().kind(), ErrorKind::DisplayHelp);
+    assert_eq!(error.kind(), ErrorKind::DisplayHelp);
 }
 
 #[tokio::test]
@@ -105,7 +105,7 @@ async fn test_cmd_create() {
 
     let index_metadata = test_env.index_metadata().await.unwrap();
     assert_eq!(index_metadata.index_id, test_env.index_id);
-    assert_eq!(index_metadata.index_uri, test_env.index_uri.as_ref());
+    assert_eq!(index_metadata.index_uri, test_env.index_uri);
 
     // Create non existing index with --overwrite.
     let index_id = append_random_suffix("test-create-non-existing-index-with-overwrite");
@@ -123,11 +123,11 @@ async fn test_cmd_create() {
 
     let index_metadata = test_env.index_metadata().await.unwrap();
     assert_eq!(index_metadata.index_id, test_env.index_id);
-    assert_eq!(index_metadata.index_uri, test_env.index_uri.as_ref());
+    assert_eq!(index_metadata.index_uri, test_env.index_uri);
 
     // Attempt to create with ill-formed new command.
-    let cmd = build_cli();
-    let result = cmd.try_get_matches_from(vec![PACKAGE_BIN_NAME, "index", "create"]);
+    let app = build_cli();
+    let result = app.try_get_matches_from(vec![PACKAGE_BIN_NAME, "index", "create"]);
     assert!(result.is_err());
     assert_eq!(
         result.unwrap_err().kind(),
