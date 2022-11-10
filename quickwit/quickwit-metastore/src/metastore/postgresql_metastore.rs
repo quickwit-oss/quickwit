@@ -259,23 +259,24 @@ fn write_sql_filter<V: Display>(
     sql: &mut String,
     field_name: impl Display,
     filter_range: &FilterRange<V>,
+    value_formatter: impl Fn(&V) -> String,
 ) {
     match &filter_range.start {
         Bound::Included(value) => {
-            let _ = write!(sql, " AND {} >= {}", field_name, value);
+            let _ = write!(sql, " AND {} >= {}", field_name, (value_formatter)(value));
         }
         Bound::Excluded(value) => {
-            let _ = write!(sql, " AND {} > {}", field_name, value);
+            let _ = write!(sql, " AND {} > {}", field_name, (value_formatter)(value));
         }
         Bound::Unbounded => {}
     };
 
     match &filter_range.end {
         Bound::Included(value) => {
-            let _ = write!(sql, " AND {} <= {}", field_name, value);
+            let _ = write!(sql, " AND {} <= {}", field_name, (value_formatter)(value));
         }
         Bound::Excluded(value) => {
-            let _ = write!(sql, " AND {} < {}", field_name, value);
+            let _ = write!(sql, " AND {} < {}", field_name, (value_formatter)(value));
         }
         Bound::Unbounded => {}
     };
@@ -336,9 +337,21 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
     };
 
     // WARNING: Not SQL injection proof
-    write_sql_filter(&mut sql, "update_timestamp", &query.update_timestamp);
-    write_sql_filter(&mut sql, "create_timestamp", &query.create_timestamp);
-    write_sql_filter(&mut sql, "delete_opstamp", &query.delete_opstamp);
+    write_sql_filter(
+        &mut sql,
+        "update_timestamp",
+        &query.update_timestamp,
+        |val| format!("to_timestamp({})", val),
+    );
+    write_sql_filter(
+        &mut sql,
+        "create_timestamp",
+        &query.create_timestamp,
+        |val| format!("to_timestamp({})", val),
+    );
+    write_sql_filter(&mut sql, "delete_opstamp", &query.delete_opstamp, |val| {
+        val.to_string()
+    });
 
     if let Some(limit) = query.limit {
         let _ = write!(sql, " LIMIT {}", limit);
@@ -1230,11 +1243,17 @@ mod tests {
 
         let query = ListSplitsQuery::for_index("test-index").with_update_timestamp_lt(51);
         let sql = build_query_filter(String::new(), &query);
-        assert_eq!(sql, " WHERE index_id = $1 AND update_timestamp < 51");
+        assert_eq!(
+            sql,
+            " WHERE index_id = $1 AND update_timestamp < to_timestamp(51)"
+        );
 
         let query = ListSplitsQuery::for_index("test-index").with_create_timestamp_lte(55);
         let sql = build_query_filter(String::new(), &query);
-        assert_eq!(sql, " WHERE index_id = $1 AND create_timestamp <= 55");
+        assert_eq!(
+            sql,
+            " WHERE index_id = $1 AND create_timestamp <= to_timestamp(55)"
+        );
 
         let query = ListSplitsQuery::for_index("test-index").with_delete_opstamp_gte(4);
         let sql = build_query_filter(String::new(), &query);
@@ -1293,7 +1312,8 @@ mod tests {
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
-            " WHERE index_id = $1 AND update_timestamp < 51 AND create_timestamp <= 63"
+            " WHERE index_id = $1 AND update_timestamp < to_timestamp(51) AND create_timestamp <= \
+             to_timestamp(63)"
         );
 
         let query = ListSplitsQuery::for_index("test-index")
