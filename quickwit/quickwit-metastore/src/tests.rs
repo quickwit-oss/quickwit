@@ -1533,6 +1533,7 @@ pub mod test_suite {
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
             tags: to_set(&["tag!", "tag:foo", "tag:bar"]),
+            create_timestamp: initial_timestamp,
             delete_opstamp: 3,
             ..Default::default()
         };
@@ -1546,6 +1547,7 @@ pub mod test_suite {
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(100..=199),
             tags: to_set(&["tag!", "tag:bar"]),
+            create_timestamp: initial_timestamp,
             delete_opstamp: 1,
             ..Default::default()
         };
@@ -1559,6 +1561,7 @@ pub mod test_suite {
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(200..=299),
             tags: to_set(&["tag!", "tag:foo", "tag:baz"]),
+            create_timestamp: initial_timestamp,
             delete_opstamp: 5,
             ..Default::default()
         };
@@ -1585,6 +1588,7 @@ pub mod test_suite {
             uncompressed_docs_size_in_bytes: 2,
             time_range: None,
             tags: to_set(&["tag!", "tag:baz", "tag:biz"]),
+            create_timestamp: initial_timestamp,
             delete_opstamp: 9,
             ..Default::default()
         };
@@ -2006,6 +2010,8 @@ pub mod test_suite {
                 .collect();
             assert_eq!(split_ids, to_hash_set(&["list-splits-five"]));
 
+            // Artificially increase the create_timestamp
+            sleep(Duration::from_secs(2)).await;
             // add a split without tag
             let split_metadata_6 = SplitMetadata {
                 footer_offsets: 1000..2000,
@@ -2015,11 +2021,10 @@ pub mod test_suite {
                 num_docs: 1,
                 uncompressed_docs_size_in_bytes: 2,
                 time_range: None,
+                create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
                 tags: to_set(&[]),
                 ..Default::default()
             };
-            // Artificially increase the create_timestamp
-            sleep(Duration::from_secs_f64(1.5)).await;
             metastore
                 .stage_split(index_id, split_metadata_6.clone())
                 .await
