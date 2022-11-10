@@ -68,7 +68,6 @@ quickwit-storage = { workspace = true }
 quickwit-telemetry = { workspace = true }
 
 [dev-dependencies]
-assert_cmd = { workspace = true }
 predicates = { workspace = true }
 reqwest = { workspace = true }
 serial_test = { workspace = true }
