@@ -21,12 +21,12 @@ use indexmap::IndexSet;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
 use tantivy::schema::Value as TantivyValue;
-use tantivy::DatePrecision as DateTimePrecision;
-use time::format_description::well_known::{Iso8601, Rfc2822};
+use tantivy::{DatePrecision as DateTimePrecision, DateTime};
+use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
 use time::OffsetDateTime;
 
 use super::date_time_format::DateTimeFormat;
-use super::date_time_parsing::{parse_date_time, parse_rfc3339, parse_timestamp};
+use super::date_time_parsing::{parse_date_time, parse_timestamp};
 use super::default_as_true;
 
 /// A struct holding DateTime field options.
@@ -95,13 +95,10 @@ impl QuickwitDateTimeOptions {
         Ok(TantivyValue::Date(date_time))
     }
 
-    pub(crate) fn format_to_json(&self, date_time_str: &str) -> Result<JsonValue, String> {
-        if self.output_format == DateTimeFormat::RCF3339 {
-            return Ok(JsonValue::String(date_time_str.to_string()));
-        }
-
-        let date = parse_rfc3339(date_time_str)?;
+    pub(crate) fn format_to_json(&self, date_time: DateTime) -> Result<JsonValue, String> {
+        let date = date_time.into_utc();
         let format_result = match &self.output_format {
+            DateTimeFormat::RCF3339 => date.format(&Rfc3339).map(JsonValue::String),
             DateTimeFormat::ISO8601 => date.format(&Iso8601::DEFAULT).map(JsonValue::String),
             DateTimeFormat::RFC2822 => date.format(&Rfc2822).map(JsonValue::String),
             DateTimeFormat::Strptime(strftime_parser) => strftime_parser
@@ -109,9 +106,6 @@ impl QuickwitDateTimeOptions {
                 .map(JsonValue::String),
             DateTimeFormat::Timestamp => {
                 Ok(JsonValue::Number(self.extract_timestamp(&date).into()))
-            }
-            DateTimeFormat::RCF3339 => {
-                unreachable!("The format `rcf3339` should have been handled already.")
             }
         };
         format_result.map_err(|error| error.to_string())

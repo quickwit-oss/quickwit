@@ -25,7 +25,7 @@ use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
-use tantivy::schema::{Cardinality, Field, FieldType, Schema, STORED};
+use tantivy::schema::{Cardinality, Field, FieldType, Schema, Value, STORED};
 use tantivy::Document;
 
 use super::field_mapping_entry::QuickwitTextTokenizer;
@@ -369,7 +369,7 @@ impl std::fmt::Debug for DefaultDocMapper {
 }
 
 fn extract_single_obj(
-    doc: &mut BTreeMap<String, Vec<JsonValue>>,
+    doc: &mut BTreeMap<String, Vec<Value>>,
     key: &str,
 ) -> anyhow::Result<Option<serde_json::Map<String, serde_json::Value>>> {
     let mut values = if let Some(values) = doc.remove(key) {
@@ -383,7 +383,7 @@ fn extract_single_obj(
         );
     }
     match values.pop() {
-        Some(JsonValue::Object(dynamic_json_obj)) => Ok(Some(dynamic_json_obj)),
+        Some(Value::JsonObject(dynamic_json_obj)) => Ok(Some(dynamic_json_obj)),
         Some(_) => {
             bail!("The `{key}` value has to be a json object.");
         }
@@ -431,7 +431,7 @@ impl DocMapper for DefaultDocMapper {
 
     fn doc_to_json(
         &self,
-        mut named_doc: BTreeMap<String, Vec<serde_json::Value>>,
+        mut named_doc: BTreeMap<String, Vec<Value>>, // BTreeMap<String, Vec<serde_json::Value>>,
     ) -> anyhow::Result<serde_json::Map<String, JsonValue>> {
         let mut doc_json =
             extract_single_obj(&mut named_doc, DYNAMIC_FIELD_NAME)?.unwrap_or_default();

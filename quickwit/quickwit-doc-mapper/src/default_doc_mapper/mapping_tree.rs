@@ -38,16 +38,6 @@ use crate::default_doc_mapper::field_mapping_entry::{
 use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
 use crate::{DocParsingError, FieldMappingEntry, ModeType};
 
-#[derive(Clone, Copy, Eq, PartialEq)]
-enum JsonType {
-    Null,
-    Bool,
-    Array,
-    Number,
-    String,
-    Object,
-}
-
 #[derive(Clone)]
 pub enum LeafType {
     Text(QuickwitTextOptions),
@@ -62,18 +52,6 @@ pub enum LeafType {
 }
 
 impl LeafType {
-    fn json_type(&self) -> JsonType {
-        match self {
-            LeafType::Text(_) => JsonType::String,
-            LeafType::I64(_) | LeafType::U64(_) | LeafType::F64(_) => JsonType::Number,
-            LeafType::Bool(_) => JsonType::Bool,
-            LeafType::IpAddr(_) => JsonType::String,
-            LeafType::DateTime(_) => JsonType::String,
-            LeafType::Bytes(_) => JsonType::String,
-            LeafType::Json(_) => JsonType::Object,
-        }
-    }
-
     pub fn is_single_value_fast_field(&self) -> bool {
         match self {
             LeafType::Text(_) => false, // Text is always multivalue
@@ -185,21 +163,13 @@ impl MappingLeaf {
 
     fn populate_json<'a>(
         &'a self,
-        named_doc: &mut BTreeMap<String, Vec<JsonValue>>,
+        named_doc: &mut BTreeMap<String, Vec<Value>>,
         field_path: &[&'a str],
         doc_json: &mut serde_json::Map<String, serde_json::Value>,
     ) {
-        let json_type = self.typ.json_type();
-        if let Some(json_val) = extract_json_val(json_type, named_doc, field_path, self.cardinality)
+        if let Some(json_val) =
+            extract_json_val(self.get_type(), named_doc, field_path, self.cardinality)
         {
-            if let (LeafType::DateTime(date_time_options), Some(date_time_str)) =
-                (self.get_type(), json_val.as_str())
-            {
-                let date_time_json = date_time_options
-                    .format_to_json(date_time_str)
-                    .expect("Invalid datetime is not allowed.");
-                return insert_json_val(field_path, date_time_json, doc_json);
-            }
             insert_json_val(field_path, json_val, doc_json);
         }
     }
@@ -213,20 +183,9 @@ impl MappingLeaf {
     }
 }
 
-fn json_type_from_json_value(json_value: &JsonValue) -> JsonType {
-    match json_value {
-        JsonValue::Null => JsonType::Null,
-        JsonValue::Bool(_) => JsonType::Bool,
-        JsonValue::Array(_) => JsonType::Array,
-        JsonValue::Number(_) => JsonType::Number,
-        JsonValue::String(_) => JsonType::String,
-        JsonValue::Object(_) => JsonType::Object,
-    }
-}
-
 fn extract_json_val(
-    json_type: JsonType,
-    named_doc: &mut BTreeMap<String, Vec<JsonValue>>,
+    leaf_type: &LeafType,
+    named_doc: &mut BTreeMap<String, Vec<Value>>,
     field_path: &[&str],
     cardinality: Cardinality,
 ) -> Option<JsonValue> {
@@ -234,11 +193,41 @@ fn extract_json_val(
     let vals = named_doc.remove(&full_path)?;
     let mut vals_with_correct_type_it = vals
         .into_iter()
-        .filter(|json_val| json_type_from_json_value(json_val) == json_type);
+        .filter_map(|value| value_to_json(value, leaf_type));
     match cardinality {
         Cardinality::SingleValue => vals_with_correct_type_it.next(),
         Cardinality::MultiValues => Some(JsonValue::Array(vals_with_correct_type_it.collect())),
     }
+}
+
+fn value_to_json(value: Value, leaf_type: &LeafType) -> Option<JsonValue> {
+    // Make sure the requested type and the value type are consistent.
+    let matched_value = match (&value, leaf_type) {
+        (Value::Str(_), LeafType::Text(_)) => value,
+        (Value::I64(_), LeafType::I64(_)) => value,
+        (Value::U64(_), LeafType::U64(_)) => value,
+        (Value::F64(_), LeafType::F64(_)) => value,
+        (Value::Bool(_), LeafType::Bool(_)) => value,
+        (Value::IpAddr(_), LeafType::IpAddr(_)) => value,
+        (Value::Date(_), LeafType::DateTime(_)) => value,
+        (Value::Bytes(_), LeafType::Bytes(_)) => value,
+        (Value::JsonObject(_), LeafType::Json(_)) => value,
+        _ => return None,
+    };
+
+    // Apply user requested formatting.
+    if let (Value::Date(date_time), LeafType::DateTime(date_time_options)) =
+        (&matched_value, leaf_type)
+    {
+        let json_value = date_time_options
+            .format_to_json(*date_time)
+            .expect("Invalid datetime is not allowed.");
+        return Some(json_value);
+    }
+
+    let json_value =
+        serde_json::to_value(&matched_value).expect("Json serialization should never fail.");
+    Some(json_value)
 }
 
 fn insert_json_val(
@@ -392,7 +381,7 @@ impl MappingNode {
 
     pub fn populate_json<'a>(
         &'a self,
-        named_doc: &mut BTreeMap<String, Vec<JsonValue>>,
+        named_doc: &mut BTreeMap<String, Vec<Value>>,
         field_path: &mut Vec<&'a str>,
         doc_json: &mut serde_json::Map<String, serde_json::Value>,
     ) {
@@ -471,7 +460,7 @@ impl MappingTree {
 
     fn populate_json<'a>(
         &'a self,
-        named_doc: &mut BTreeMap<String, Vec<JsonValue>>,
+        named_doc: &mut BTreeMap<String, Vec<Value>>,
         field_path: &mut Vec<&'a str>,
         doc_json: &mut serde_json::Map<String, serde_json::Value>,
     ) {
