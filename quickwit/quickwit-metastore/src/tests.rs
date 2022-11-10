@@ -2092,6 +2092,15 @@ pub mod test_suite {
 
             let select_timestamp = OffsetDateTime::now_utc().unix_timestamp() - 1;
             let query =
+                ListSplitsQuery::for_index(index_id).with_update_timestamp_gte(select_timestamp);
+            let splits = metastore.list_splits(query).await.unwrap();
+            let split_ids: HashSet<String> = splits
+                .into_iter()
+                .map(|meta| meta.split_id().to_string())
+                .collect();
+            assert_eq!(split_ids, to_hash_set(&["list-splits-six"]));
+
+            let query =
                 ListSplitsQuery::for_index(index_id).with_create_timestamp_lte(select_timestamp);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
