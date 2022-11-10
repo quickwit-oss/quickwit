@@ -30,7 +30,6 @@ debug = 0
 anyhow = "1"
 arc-swap = "1.4"
 assert-json-diff = "2"
-assert_cmd = "2"
 async-speed-limit = "0.4"
 async-trait = "0.1"
 atty = "0.2"
