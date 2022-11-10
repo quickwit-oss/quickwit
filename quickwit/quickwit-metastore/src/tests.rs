@@ -1517,7 +1517,7 @@ pub mod test_suite {
         let _ = tracing_subscriber::fmt::try_init();
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+        let initial_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "list-splits-index";
         let index_uri = format!("ram://indexes/{index_id}");
@@ -1532,8 +1532,8 @@ pub mod test_suite {
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
-            create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:foo", "tag:bar"]),
+            delete_opstamp: 3,
             ..Default::default()
         };
 
@@ -1545,8 +1545,8 @@ pub mod test_suite {
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(100..=199),
-            create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:bar"]),
+            delete_opstamp: 1,
             ..Default::default()
         };
 
@@ -1558,8 +1558,8 @@ pub mod test_suite {
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(200..=299),
-            create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:foo", "tag:baz"]),
+            delete_opstamp: 5,
             ..Default::default()
         };
 
@@ -1571,8 +1571,8 @@ pub mod test_suite {
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(300..=399),
-            create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:foo"]),
+            delete_opstamp: 7,
             ..Default::default()
         };
 
@@ -1584,8 +1584,8 @@ pub mod test_suite {
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: None,
-            create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:baz", "tag:biz"]),
+            delete_opstamp: 9,
             ..Default::default()
         };
 
@@ -2015,10 +2015,11 @@ pub mod test_suite {
                 num_docs: 1,
                 uncompressed_docs_size_in_bytes: 2,
                 time_range: None,
-                create_timestamp: current_timestamp,
                 tags: to_set(&[]),
                 ..Default::default()
             };
+            // Artificially increase the create_timestamp
+            sleep(Duration::from_secs_f64(1.5)).await;
             metastore
                 .stage_split(index_id, split_metadata_6.clone())
                 .await
@@ -2064,6 +2065,61 @@ pub mod test_suite {
                     "list-splits-six",
                 ])
             );
+
+            let query =
+                ListSplitsQuery::for_index(index_id).with_update_timestamp_gte(initial_timestamp);
+            let splits = metastore.list_splits(query).await.unwrap();
+            let split_ids: HashSet<String> = splits
+                .into_iter()
+                .map(|meta| meta.split_id().to_string())
+                .collect();
+            assert_eq!(
+                split_ids,
+                to_hash_set(&[
+                    "list-splits-one",
+                    "list-splits-two",
+                    "list-splits-three",
+                    "list-splits-four",
+                    "list-splits-five",
+                    "list-splits-six",
+                ])
+            );
+
+            let select_timestamp = OffsetDateTime::now_utc().unix_timestamp() - 1;
+            let query =
+                ListSplitsQuery::for_index(index_id).with_create_timestamp_lte(select_timestamp);
+            let splits = metastore.list_splits(query).await.unwrap();
+            let split_ids: HashSet<String> = splits
+                .into_iter()
+                .map(|meta| meta.split_id().to_string())
+                .collect();
+            assert_eq!(
+                split_ids,
+                to_hash_set(&[
+                    "list-splits-one",
+                    "list-splits-two",
+                    "list-splits-three",
+                    "list-splits-four",
+                    "list-splits-five",
+                ])
+            );
+
+            let query = ListSplitsQuery::for_index(index_id).with_delete_opstamp_lt(6);
+            let splits = metastore.list_splits(query).await.unwrap();
+            let split_ids: HashSet<String> = splits
+                .into_iter()
+                .map(|meta| meta.split_id().to_string())
+                .collect();
+            assert_eq!(
+                split_ids,
+                to_hash_set(&[
+                    "list-splits-one",
+                    "list-splits-two",
+                    "list-splits-three",
+                    "list-splits-six",
+                ])
+            );
+
             cleanup_index(&metastore, index_id).await;
         }
     }
