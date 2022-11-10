@@ -24,15 +24,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::bail;
-use assert_cmd::Command;
 use predicates::str;
 use quickwit_common::net::find_available_tcp_port;
 use quickwit_common::uri::Uri;
-use quickwit_metastore::{FileBackedMetastore, MetastoreResult};
+use quickwit_metastore::{FileBackedMetastore, IndexMetadata, Metastore, MetastoreResult};
 use quickwit_storage::{LocalFileStorage, S3CompatibleObjectStorage, Storage};
 use tempfile::{tempdir, TempDir};
 
-const PACKAGE_BIN_NAME: &str = "quickwit";
+pub const PACKAGE_BIN_NAME: &str = "quickwit";
 
 const DEFAULT_INDEX_CONFIG: &str = r#"
     version: 0
@@ -91,17 +90,6 @@ const WIKI_JSON_DOCS: &str = r#"{"body": "foo", "title": "shimroy", "url": "http
 {"body": "biz", "title": "modern", "url": "https://wiki.com?id=13"}
 "#;
 
-/// Creates a quickwit-cli command with provided list of arguments.
-pub fn make_command(arguments: &str) -> Command {
-    let mut cmd = Command::cargo_bin(PACKAGE_BIN_NAME).unwrap();
-    cmd.env(
-        quickwit_telemetry::DISABLE_TELEMETRY_ENV_KEY,
-        "disable-for-tests",
-    )
-    .args(arguments.split_whitespace());
-    cmd
-}
-
 /// Waits until localhost:port is ready. Returns an error if it takes too long.
 pub async fn wait_port_ready(port: u16) -> anyhow::Result<()> {
     let timer_task = tokio::time::sleep(Duration::from_secs(10));
@@ -148,6 +136,21 @@ impl TestEnv {
     // For cache reason, it's safer to always create an instance and then make your assertions.
     pub async fn metastore(&self) -> MetastoreResult<FileBackedMetastore> {
         FileBackedMetastore::try_new(self.storage.clone(), None).await
+    }
+
+    pub fn index_config_without_uri(&self) -> String {
+        self.resource_files["index_config_without_uri"]
+            .display()
+            .to_string()
+    }
+
+    pub async fn index_metadata(&self) -> anyhow::Result<IndexMetadata> {
+        let index_metadata = self
+            .metastore()
+            .await?
+            .index_metadata(&self.index_id)
+            .await?;
+        Ok(index_metadata)
     }
 }
 
