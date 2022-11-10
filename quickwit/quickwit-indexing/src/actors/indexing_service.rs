@@ -636,12 +636,12 @@ impl Handler<ShutdownPipeline> for IndexingService {
 mod tests {
     use std::time::Duration;
 
-    use quickwit_actors::{ObservationType, Universe, HEARTBEAT};
+    use quickwit_actors::{ObservationType, Supervisable, Universe, HEARTBEAT};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
     use quickwit_config::{SourceConfig, VecSourceParams};
     use quickwit_ingest_api::init_ingest_api;
-    use quickwit_metastore::quickwit_metastore_uri_resolver;
+    use quickwit_metastore::{quickwit_metastore_uri_resolver, MockMetastore};
 
     use super::*;
 
@@ -951,5 +951,120 @@ mod tests {
         // Check that the merge pipeline is also shut down as they are no more indexing pipeilne on
         // the index.
         assert!(universe.get_one::<MergePipeline>().is_none());
+    }
+
+    #[derive(Debug)]
+    struct FreezePipeline;
+    #[async_trait]
+    impl Handler<FreezePipeline> for IndexingPipeline {
+        type Reply = ();
+        async fn handle(
+            &mut self,
+            _: FreezePipeline,
+            _ctx: &ActorContext<Self>,
+        ) -> Result<Self::Reply, ActorExitStatus> {
+            tokio::time::sleep(HEARTBEAT * 10).await;
+            Ok(())
+        }
+    }
+
+    #[derive(Debug)]
+    struct ObservePipelineHealth(IndexingPipelineId);
+    #[async_trait]
+    impl Handler<ObservePipelineHealth> for IndexingService {
+        type Reply = Health;
+        async fn handle(
+            &mut self,
+            message: ObservePipelineHealth,
+            _ctx: &ActorContext<Self>,
+        ) -> Result<Self::Reply, ActorExitStatus> {
+            Ok(self
+                .indexing_pipeline_handles
+                .get(&message.0)
+                .unwrap()
+                .health())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_indexing_service_does_not_shut_down_pipelines_on_indexing_pipeline_timeout() {
+        quickwit_common::setup_logging_for_tests();
+        let index_id = append_random_suffix("test-indexing-service-indexing-pipeline-timeout");
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let mut index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
+        let source_config = SourceConfig {
+            source_id: "test-indexing-service--source".to_string(),
+            num_pipelines: 1,
+            enabled: true,
+            source_params: SourceParams::void(),
+        };
+        index_metadata
+            .sources
+            .insert(source_config.source_id.clone(), source_config);
+        let mut metastore = MockMetastore::default();
+        metastore
+            .expect_index_metadata()
+            .returning(move |_| Ok(index_metadata.clone()));
+        metastore.expect_list_splits().returning(|_| Ok(Vec::new()));
+
+        // Test `IndexingService::new`.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let data_dir_path = temp_dir.path().to_path_buf();
+        let indexer_config = IndexerConfig::for_test().unwrap();
+        let storage_resolver = StorageUriResolver::for_test();
+        let universe = Universe::new();
+        let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
+        init_ingest_api(&universe, &queues_dir_path).await.unwrap();
+        let indexing_server = IndexingService::new(
+            "test-node".to_string(),
+            data_dir_path,
+            indexer_config,
+            Arc::new(metastore),
+            storage_resolver.clone(),
+        )
+        .await
+        .unwrap();
+        let (indexing_server_mailbox, indexing_server_handle) =
+            universe.spawn_builder().spawn(indexing_server);
+        let pipeline_ids = indexing_server_mailbox
+            .ask_for_res(SpawnPipelines {
+                index_id: index_id.clone(),
+            })
+            .await
+            .unwrap();
+        let observation = indexing_server_handle.observe().await;
+        assert_eq!(observation.num_running_pipelines, 1);
+        assert_eq!(observation.num_failed_pipelines, 0);
+        assert_eq!(observation.num_successful_pipelines, 0);
+
+        let indexing_pipeline = universe.get_one::<IndexingPipeline>().unwrap();
+
+        // Freeze pipeline during 10 heartbeats.
+        indexing_pipeline
+            .send_message(FreezePipeline)
+            .await
+            .unwrap();
+
+        // Check that the indexing pipeline is unhealthy. For that we need to do 2 health() call on
+        // the pipeline handle. Check `registered_activity_since_last_call` method for
+        // details.
+        let pipeline_health = indexing_server_mailbox
+            .ask(ObservePipelineHealth(pipeline_ids[0].clone()))
+            .await
+            .unwrap();
+        assert_eq!(pipeline_health, Health::Healthy);
+
+        tokio::time::sleep(HEARTBEAT).await;
+        let pipeline_health = indexing_server_mailbox
+            .ask(ObservePipelineHealth(pipeline_ids[0].clone()))
+            .await
+            .unwrap();
+        assert_eq!(pipeline_health, Health::FailureOrUnhealthy);
+
+        // Check indexing and merge pipelines are still running after a HEARTBEAT.
+        tokio::time::sleep(HEARTBEAT).await;
+        let observation = indexing_server_handle.observe().await;
+        assert_eq!(observation.num_running_pipelines, 1);
+        assert_eq!(observation.num_running_merge_pipelines, 1);
     }
 }
