@@ -308,6 +308,7 @@ async fn create_snippet_generator(
     field: Field,
 ) -> anyhow::Result<SnippetGenerator> {
     let mut terms: Vec<&Term> = Vec::new();
+    // TODO ok with termset?
     query.query_terms(&mut |term, _need_position| {
         if term.field() == field {
             terms.push(term);

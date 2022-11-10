@@ -152,16 +152,28 @@ pub(crate) async fn warmup(
         .instrument(debug_span!("warm_up_fastfields"));
     let warm_up_fieldnorms_future = warm_up_fieldnorms(searcher, requires_scoring)
         .instrument(debug_span!("warm_up_fieldnorms"));
-    let (warm_up_terms_res, warm_up_fastfields_res, warm_up_term_dict_res, warm_up_fieldnorms_res) = tokio::join!(
+    // TODO this should use its own dedicated parameter, this causes to load too
+    // much things when using aggregation
+    let warm_up_inverted_index_future = warm_up_inverted_index(searcher, term_dict_field_names)
+        .instrument(debug_span!("warm_up_inverted_index"));
+    let (
+        warm_up_terms_res,
+        warm_up_fastfields_res,
+        warm_up_term_dict_res,
+        warm_up_fieldnorms_res,
+        warm_up_inverted_index_res,
+    ) = tokio::join!(
         warm_up_terms_future,
         warm_up_fastfields_future,
         warm_up_term_dict_future,
         warm_up_fieldnorms_future,
+        warm_up_inverted_index_future,
     );
     warm_up_terms_res?;
     warm_up_fastfields_res?;
     warm_up_term_dict_res?;
     warm_up_fieldnorms_res?;
+    warm_up_inverted_index_res?;
     Ok(())
 }
 
@@ -192,6 +204,32 @@ async fn warm_up_term_dict_fields(
                 let dict = inverted_index.terms();
                 dict.warm_up_dictionary().await
             });
+        }
+    }
+    try_join_all(warm_up_futures).await?;
+    Ok(())
+}
+
+async fn warm_up_inverted_index(
+    searcher: &Searcher,
+    field_names: &HashSet<String>,
+) -> anyhow::Result<()> {
+    let mut fields = Vec::new();
+    for field_name in field_names.iter() {
+        let field = searcher
+            .schema()
+            .get_field(field_name)
+            .with_context(|| format!("Couldn't get field named {:?} from schema.", field_name))?;
+
+        fields.push(field);
+    }
+
+    let mut warm_up_futures = Vec::new();
+    for field in fields {
+        for segment_reader in searcher.segment_readers() {
+            let inverted_index = segment_reader.inverted_index(field)?.clone();
+            // TODO: warm_postings_full does not exist yet in tantivy
+            warm_up_futures.push(async move { inverted_index.warm_postings_full(false).await });
         }
     }
     try_join_all(warm_up_futures).await?;
@@ -337,11 +375,18 @@ async fn leaf_search_single_split(
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = reader.searcher();
+
+    let mut field_names_to_warmup = quickwit_collector.term_dict_field_names();
+    if let Some(quickwit_proto::search_request::Query::SetQuery(set_query)) = &search_request.query
+    {
+        field_names_to_warmup.insert(set_query.field_name.clone());
+    }
+
     warmup(
         &searcher,
         &query,
         &quickwit_collector.fast_field_names(),
-        &quickwit_collector.term_dict_field_names(),
+        &field_names_to_warmup,
         quickwit_collector.requires_scoring(),
     )
     .await?;

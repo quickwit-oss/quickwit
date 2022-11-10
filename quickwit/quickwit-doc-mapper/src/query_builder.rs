@@ -89,7 +89,9 @@ pub(crate) fn build_query(
 
             // TODO maybe Facet could be allowed?
             if matches!(field_type.value_type(), Type::Json | Type::Facet) {
-                return Err(anyhow::anyhow!("Attempted to search on unsuported field type.").into());
+                return Err(
+                    anyhow::anyhow!("Attempted to search on unsuported field type.").into(),
+                );
             }
 
             // TODO error on any parse error instead??
