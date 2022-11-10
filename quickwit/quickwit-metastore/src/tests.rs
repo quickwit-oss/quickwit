@@ -1517,7 +1517,7 @@ pub mod test_suite {
         let _ = tracing_subscriber::fmt::try_init();
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let initial_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "list-splits-index";
         let index_uri = format!("ram://indexes/{index_id}");
@@ -1532,8 +1532,8 @@ pub mod test_suite {
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
+            create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:foo", "tag:bar"]),
-            create_timestamp: initial_timestamp,
             delete_opstamp: 3,
             ..Default::default()
         };
@@ -1546,8 +1546,8 @@ pub mod test_suite {
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(100..=199),
+            create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:bar"]),
-            create_timestamp: initial_timestamp,
             delete_opstamp: 1,
             ..Default::default()
         };
@@ -1560,8 +1560,8 @@ pub mod test_suite {
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(200..=299),
+            create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:foo", "tag:baz"]),
-            create_timestamp: initial_timestamp,
             delete_opstamp: 5,
             ..Default::default()
         };
@@ -1587,8 +1587,8 @@ pub mod test_suite {
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: None,
+            create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:baz", "tag:biz"]),
-            create_timestamp: initial_timestamp,
             delete_opstamp: 9,
             ..Default::default()
         };
@@ -2072,7 +2072,7 @@ pub mod test_suite {
             );
 
             let query =
-                ListSplitsQuery::for_index(index_id).with_update_timestamp_gte(initial_timestamp);
+                ListSplitsQuery::for_index(index_id).with_update_timestamp_gte(current_timestamp);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
