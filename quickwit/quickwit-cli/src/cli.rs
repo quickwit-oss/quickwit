@@ -39,7 +39,7 @@ pub fn build_cli<'a>() -> Command<'a> {
                 .display_order(1),
         )
         .arg(
-            Arg::new("no-ansi")
+            Arg::new("no-color")
                 .long("no-color")
                 .help(
                     "Disable ANSI terminal codes (colors, etc...) being injected into the logging \

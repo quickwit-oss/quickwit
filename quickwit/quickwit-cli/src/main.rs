@@ -137,7 +137,7 @@ async fn main() -> anyhow::Result<()> {
 
     setup_logging_and_tracing(
         command.default_log_level(),
-        !matches.is_present("no-ansi"),
+        !matches.is_present("no-color"),
         &build_info,
     )?;
     info!(
