@@ -173,25 +173,25 @@ async fn mark_splits_as_published_helper(
     if split_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let publishable_states = [SplitState::Staged.as_str(), SplitState::Published.as_str()];
     let published_split_ids: Vec<String> = sqlx::query(
         r#"
         UPDATE splits
         SET
-            split_state = $1,
+            split_state = 'Published',
             update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
-            publish_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+            publish_timestamp = CASE -- The values we compare with are *before* the modification
+                WHEN split_state = 'Staged' THEN (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                ELSE publish_timestamp
+            END
         WHERE
-                index_id = $2
-            AND split_id = ANY($3)
-            AND split_state = ANY($4)
+                index_id = $1
+            AND split_id = ANY($2)
+            AND split_state IN ('Published', 'Staged')
         RETURNING split_id
     "#,
     )
-    .bind(SplitState::Published.as_str())
     .bind(index_id)
     .bind(split_ids)
-    .bind(&publishable_states[..])
     .map(|row| row.get(0))
     .fetch_all(tx)
     .await?;
@@ -213,7 +213,9 @@ async fn mark_splits_for_deletion(
     let marked_split_ids: Vec<String> = sqlx::query(
         r#"
         UPDATE splits
-        SET split_state = $1
+        SET
+            split_state = $1,
+            update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
         WHERE
                 index_id = $2
             AND split_id = ANY($3)
@@ -928,7 +930,9 @@ impl Metastore for PostgresqlMetastore {
             let sqlx_result = sqlx::query(
                 r#"
                 UPDATE splits
-                SET delete_opstamp = $1
+                SET
+                    delete_opstamp = $1,
+                    update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
                 WHERE
                     index_id = $2
                     AND split_id = ANY($3)
