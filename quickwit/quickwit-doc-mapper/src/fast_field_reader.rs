@@ -50,9 +50,9 @@ impl GenericFastFieldReader {
 
     pub fn get(&self, doc_id: DocId) -> i64 {
         match self {
-            GenericFastFieldReader::I64(fast_reader) => fast_reader.get_val(doc_id as u64),
+            GenericFastFieldReader::I64(fast_reader) => fast_reader.get_val(doc_id),
             GenericFastFieldReader::Date(fast_reader) => {
-                fast_reader.get_val(doc_id as u64).into_timestamp_secs()
+                fast_reader.get_val(doc_id).into_timestamp_secs()
             }
         }
     }
