@@ -478,6 +478,26 @@ pub mod metastore_api_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
+        /// Marks splits for deletion.
+        pub async fn mark_splits_for_deletion_by_query(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListSplitsRequest>,
+        ) -> Result<tonic::Response<super::SplitResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit_metastore_api.MetastoreApiService/mark_splits_for_deletion_by_query",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
         /// Deletes splits.
         pub async fn delete_splits(
             &mut self,
@@ -734,6 +754,11 @@ pub mod metastore_api_service_server {
         async fn mark_splits_for_deletion(
             &self,
             request: tonic::Request<super::MarkSplitsForDeletionRequest>,
+        ) -> Result<tonic::Response<super::SplitResponse>, tonic::Status>;
+        /// Marks splits for deletion.
+        async fn mark_splits_for_deletion_by_query(
+            &self,
+            request: tonic::Request<super::ListSplitsRequest>,
         ) -> Result<tonic::Response<super::SplitResponse>, tonic::Status>;
         /// Deletes splits.
         async fn delete_splits(
@@ -1195,6 +1220,48 @@ pub mod metastore_api_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = mark_splits_for_deletionSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit_metastore_api.MetastoreApiService/mark_splits_for_deletion_by_query" => {
+                    #[allow(non_camel_case_types)]
+                    struct mark_splits_for_deletion_by_querySvc<T: MetastoreApiService>(
+                        pub Arc<T>,
+                    );
+                    impl<
+                        T: MetastoreApiService,
+                    > tonic::server::UnaryService<super::ListSplitsRequest>
+                    for mark_splits_for_deletion_by_querySvc<T> {
+                        type Response = super::SplitResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListSplitsRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).mark_splits_for_deletion_by_query(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = mark_splits_for_deletion_by_querySvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

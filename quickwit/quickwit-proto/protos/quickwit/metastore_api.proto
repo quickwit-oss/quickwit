@@ -50,6 +50,9 @@ service MetastoreApiService {
   // Marks splits for deletion.
   rpc mark_splits_for_deletion(MarkSplitsForDeletionRequest) returns (SplitResponse);
 
+  // Marks splits for deletion.
+  rpc mark_splits_for_deletion_by_query(ListSplitsRequest) returns (SplitResponse);
+
   // Deletes splits.
   rpc delete_splits(DeleteSplitsRequest) returns (SplitResponse);
 

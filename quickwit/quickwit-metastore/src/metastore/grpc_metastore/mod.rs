@@ -336,6 +336,25 @@ impl Metastore for MetastoreGrpcClient {
         Ok(())
     }
 
+    /// Marks a set of splits matching the provided query for deletion.
+    async fn mark_splits_for_deletion_by_query<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<()> {
+        let filter_json =
+            serde_json::to_string(&query).map_err(|error| MetastoreError::JsonSerializeError {
+                name: "ListSplitsQuery".to_string(),
+                message: error.to_string(),
+            })?;
+
+        let request = ListSplitsRequest { filter_json };
+        self.0
+            .clone()
+            .mark_splits_for_deletion_by_query(request)
+            .await
+            .map(|tonic_response| tonic_response.into_inner())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+
+        Ok(())
+    }
+
     /// Deletes a list of splits.
     async fn delete_splits<'a>(
         &self,
