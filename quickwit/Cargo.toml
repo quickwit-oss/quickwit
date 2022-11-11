@@ -15,6 +15,7 @@ members = [
   "quickwit-jaeger",
   "quickwit-janitor",
   "quickwit-metastore",
+  "quickwit-metastore-utils",
   "quickwit-opentelemetry",
   "quickwit-proto",
   "quickwit-search",
