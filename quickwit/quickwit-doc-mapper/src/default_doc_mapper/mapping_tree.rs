@@ -30,6 +30,7 @@ use tantivy::schema::{
     NumericOptions, SchemaBuilder, TextOptions, Value,
 };
 use tantivy::{DateOptions, Document};
+use tracing::log::warn;
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use crate::default_doc_mapper::field_mapping_entry::{
@@ -38,7 +39,7 @@ use crate::default_doc_mapper::field_mapping_entry::{
 use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
 use crate::{DocParsingError, FieldMappingEntry, ModeType};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum LeafType {
     Text(QuickwitTextOptions),
     I64(QuickwitNumericOptions),
@@ -200,34 +201,38 @@ fn extract_json_val(
     }
 }
 
+/// Converts Tantivy::Value into Json Value.
+///
+/// Makes sure the type and value are consistent before converting.
+/// For certain LeafType, we use the type options to format the output.
 fn value_to_json(value: Value, leaf_type: &LeafType) -> Option<JsonValue> {
-    // Make sure the requested type and the value type are consistent.
-    let matched_value = match (&value, leaf_type) {
-        (Value::Str(_), LeafType::Text(_)) => value,
-        (Value::I64(_), LeafType::I64(_)) => value,
-        (Value::U64(_), LeafType::U64(_)) => value,
-        (Value::F64(_), LeafType::F64(_)) => value,
-        (Value::Bool(_), LeafType::Bool(_)) => value,
-        (Value::IpAddr(_), LeafType::IpAddr(_)) => value,
-        (Value::Date(_), LeafType::DateTime(_)) => value,
-        (Value::Bytes(_), LeafType::Bytes(_)) => value,
-        (Value::JsonObject(_), LeafType::Json(_)) => value,
-        _ => return None,
-    };
-
-    // Apply user requested formatting.
-    if let (Value::Date(date_time), LeafType::DateTime(date_time_options)) =
-        (&matched_value, leaf_type)
-    {
-        let json_value = date_time_options
-            .format_to_json(*date_time)
-            .expect("Invalid datetime is not allowed.");
-        return Some(json_value);
+    match (&value, leaf_type) {
+        (Value::Str(_), LeafType::Text(_))
+        | (Value::I64(_), LeafType::I64(_))
+        | (Value::U64(_), LeafType::U64(_))
+        | (Value::F64(_), LeafType::F64(_))
+        | (Value::Bool(_), LeafType::Bool(_))
+        | (Value::IpAddr(_), LeafType::IpAddr(_))
+        | (Value::Bytes(_), LeafType::Bytes(_))
+        | (Value::JsonObject(_), LeafType::Json(_)) => {
+            let json_value =
+                serde_json::to_value(&value).expect("Json serialization should never fail.");
+            Some(json_value)
+        }
+        (Value::Date(date_time), LeafType::DateTime(date_time_options)) => {
+            let json_value = date_time_options
+                .format_to_json(*date_time)
+                .expect("Invalid datetime is not allowed.");
+            Some(json_value)
+        }
+        _ => {
+            warn!(
+                "The value type `{:?}` doesn't match the requested type `{:?}`",
+                value, leaf_type
+            );
+            None
+        }
     }
-
-    let json_value =
-        serde_json::to_value(&matched_value).expect("Json serialization should never fail.");
-    Some(json_value)
 }
 
 fn insert_json_val(

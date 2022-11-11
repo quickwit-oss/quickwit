@@ -138,15 +138,12 @@ async fn list_relevant_splits(
         .collect::<Vec<_>>())
 }
 
-/// Converts a leaf document into a JSON String before sending
-///  it to the root search.
+/// Converts a Tantivy `NamedFieldDocument` into a json string using the
+/// schema defined by the DocMapper.
 ///
-/// We perform this conversion at leaf level in order to serialize
-/// the document fields in the user requested format only once
-/// before sending to the root.
-///
-/// Important! The doc_mapper should be the most recent doc_mapper.
-fn convert_leaf_doc_to_json(
+/// We perform this conversion at leaf level only to avoid having
+/// another intermediate json format between the leaves and the root.
+fn convert_document_to_json_string(
     named_field_doc: NamedFieldDocument,
     doc_mapper: &dyn DocMapper,
 ) -> anyhow::Result<String> {
@@ -205,7 +202,7 @@ pub async fn single_node_search(
         leaf_search_response.partial_hits,
         index_storage,
         &split_metadata,
-        doc_mapper.clone(),
+        doc_mapper,
         search_request_opt,
     )
     .await

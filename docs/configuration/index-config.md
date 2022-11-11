@@ -186,7 +186,7 @@ The `datetime` type handles dates and datetimes. Quickwit supports multiple inpu
 
 - `unix_timestamp`: parse Unix timestamp values. Timestamp values come in different precision, namely: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. Quickwit is capable of inferring the precision from the value. Because of this feature, Quickwit only supports timestamp values ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`.
 
-When a `datetime` field is stored as a fast field, the `precision` parameter indicates the precision used to truncate the values before encoding and compressing them. The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`.
+The `precision` parameter indicates the precision used to truncate the values before encoding and compressing them. The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`. It only affects what is stored in fast fields when a `datetime` field is marked as fast field. 
 
 :::info
 When specifying multiple input formats, the corresponding parsers are attempted in the order they are declared.
@@ -222,7 +222,7 @@ precision: milliseconds
 | `stored`        | Whether the field values are stored in the document store | `true` |
 | `indexed`       | Whether the field values are indexed | `true` |
 | `fast`          | Whether the field values are stored in a fast field | `false` |
-| `precision`     | The precision (`seconds`, `milliseconds`, or `microseconds`) used to store the fast values. It's also used to display date when output_format is set to `unix_timestamp`  | `seconds` |
+| `precision`     | The precision (`seconds`, `milliseconds`, or `microseconds`) used to store the fast values. It's also used to display timestamps in search result when output format is set to `unix_timestamp`  | `seconds` |
 
 #### `bool` type
 

@@ -730,7 +730,8 @@ fn test_convert_leaf_hit_aux(
     let default_doc_mapper: DefaultDocMapper =
         serde_json::from_value(default_doc_mapper_json).unwrap();
     let named_field_doc = json_to_named_field_doc(document_json);
-    let hit_json_str = convert_leaf_doc_to_json(named_field_doc, &default_doc_mapper).unwrap();
+    let hit_json_str =
+        convert_document_to_json_string(named_field_doc, &default_doc_mapper).unwrap();
     let hit_json: serde_json::Value = serde_json::from_str(&hit_json_str).unwrap();
     assert_eq!(hit_json, expected_hit_json);
 }
@@ -835,7 +836,7 @@ fn test_convert_leaf_object_used_to_be_dynamic() {
 }
 
 // This spec might change in the future. The mode has no impact on the
-// output of convert_leaf_doc_to_json. In particular, it does not ignore
+// output of convert_document_to_json_string. In particular, it does not ignore
 // the previously gathered dynamic field.
 #[test]
 fn test_convert_leaf_object_arguable_mode_does_not_affect_format() {

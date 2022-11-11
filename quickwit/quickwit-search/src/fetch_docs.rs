@@ -33,7 +33,7 @@ use tracing::error;
 
 use crate::leaf::open_index_with_caches;
 use crate::service::SearcherContext;
-use crate::{convert_leaf_doc_to_json, GlobalDocAddress};
+use crate::{convert_document_to_json_string, GlobalDocAddress};
 
 const SNIPPET_MAX_NUM_CHARS: usize = 150;
 
@@ -197,7 +197,8 @@ async fn fetch_docs_in_split(
                 .context("searcher-doc-async")?;
 
             let named_field_doc = moved_searcher.schema().to_named_doc(&doc);
-            let content_json = convert_leaf_doc_to_json(named_field_doc, &*moved_doc_mapper)?;
+            let content_json =
+                convert_document_to_json_string(named_field_doc, &*moved_doc_mapper)?;
             if fields_snippet_generator_opt_clone.is_none() {
                 return Ok((
                     global_doc_addr,
