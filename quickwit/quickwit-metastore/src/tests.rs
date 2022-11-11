@@ -1534,6 +1534,7 @@ pub mod test_suite {
             time_range: Some(0..=99),
             create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:foo", "tag:bar"]),
+            delete_opstamp: 3,
             ..Default::default()
         };
 
@@ -1547,6 +1548,7 @@ pub mod test_suite {
             time_range: Some(100..=199),
             create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:bar"]),
+            delete_opstamp: 1,
             ..Default::default()
         };
 
@@ -1560,6 +1562,7 @@ pub mod test_suite {
             time_range: Some(200..=299),
             create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:foo", "tag:baz"]),
+            delete_opstamp: 5,
             ..Default::default()
         };
 
@@ -1571,8 +1574,8 @@ pub mod test_suite {
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(300..=399),
-            create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:foo"]),
+            delete_opstamp: 7,
             ..Default::default()
         };
 
@@ -1586,6 +1589,7 @@ pub mod test_suite {
             time_range: None,
             create_timestamp: current_timestamp,
             tags: to_set(&["tag!", "tag:baz", "tag:biz"]),
+            delete_opstamp: 9,
             ..Default::default()
         };
 
@@ -2006,6 +2010,8 @@ pub mod test_suite {
                 .collect();
             assert_eq!(split_ids, to_hash_set(&["list-splits-five"]));
 
+            // Artificially increase the create_timestamp
+            sleep(Duration::from_secs(2)).await;
             // add a split without tag
             let split_metadata_6 = SplitMetadata {
                 footer_offsets: 1000..2000,
@@ -2015,7 +2021,7 @@ pub mod test_suite {
                 num_docs: 1,
                 uncompressed_docs_size_in_bytes: 2,
                 time_range: None,
-                create_timestamp: current_timestamp,
+                create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
                 tags: to_set(&[]),
                 ..Default::default()
             };
@@ -2064,6 +2070,70 @@ pub mod test_suite {
                     "list-splits-six",
                 ])
             );
+
+            let query =
+                ListSplitsQuery::for_index(index_id).with_update_timestamp_gte(current_timestamp);
+            let splits = metastore.list_splits(query).await.unwrap();
+            let split_ids: HashSet<String> = splits
+                .into_iter()
+                .map(|meta| meta.split_id().to_string())
+                .collect();
+            assert_eq!(
+                split_ids,
+                to_hash_set(&[
+                    "list-splits-one",
+                    "list-splits-two",
+                    "list-splits-three",
+                    "list-splits-four",
+                    "list-splits-five",
+                    "list-splits-six",
+                ])
+            );
+
+            let select_timestamp = OffsetDateTime::now_utc().unix_timestamp() - 1;
+            let query =
+                ListSplitsQuery::for_index(index_id).with_update_timestamp_gte(select_timestamp);
+            let splits = metastore.list_splits(query).await.unwrap();
+            let split_ids: HashSet<String> = splits
+                .into_iter()
+                .map(|meta| meta.split_id().to_string())
+                .collect();
+            assert_eq!(split_ids, to_hash_set(&["list-splits-six"]));
+
+            let query =
+                ListSplitsQuery::for_index(index_id).with_create_timestamp_lte(select_timestamp);
+            let splits = metastore.list_splits(query).await.unwrap();
+            let split_ids: HashSet<String> = splits
+                .into_iter()
+                .map(|meta| meta.split_id().to_string())
+                .collect();
+            assert_eq!(
+                split_ids,
+                to_hash_set(&[
+                    "list-splits-one",
+                    "list-splits-two",
+                    "list-splits-three",
+                    "list-splits-four",
+                    "list-splits-five",
+                ])
+            );
+
+            let query = ListSplitsQuery::for_index(index_id).with_delete_opstamp_lt(6);
+            let splits = metastore.list_splits(query).await.unwrap();
+            let split_ids: HashSet<String> = splits
+                .into_iter()
+                .map(|meta| meta.split_id().to_string())
+                .collect();
+            assert_eq!(
+                split_ids,
+                to_hash_set(&[
+                    "list-splits-one",
+                    "list-splits-two",
+                    "list-splits-three",
+                    "list-splits-six",
+                ])
+            );
+
             cleanup_index(&metastore, index_id).await;
         }
     }

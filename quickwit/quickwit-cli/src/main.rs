@@ -38,7 +38,11 @@ use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
-fn setup_logging_and_tracing(level: Level, build_info: &QuickwitBuildInfo) -> anyhow::Result<()> {
+fn setup_logging_and_tracing(
+    level: Level,
+    ansi: bool,
+    build_info: &QuickwitBuildInfo,
+) -> anyhow::Result<()> {
     #[cfg(feature = "tokio-console")]
     {
         if std::env::var_os(quickwit_cli::QW_ENABLE_TOKIO_CONSOLE_ENV_KEY).is_some() {
@@ -54,6 +58,7 @@ fn setup_logging_and_tracing(level: Level, build_info: &QuickwitBuildInfo) -> an
     let registry = tracing_subscriber::registry().with(env_filter);
     let event_format = tracing_subscriber::fmt::format()
         .with_target(true)
+        .with_ansi(ansi)
         .with_timer(
             // We do not rely on the Rfc3339 implementation, because it has a nanosecond precision.
             // See discussion here: https://github.com/time-rs/time/discussions/418
@@ -130,7 +135,11 @@ async fn main() -> anyhow::Result<()> {
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();
 
-    setup_logging_and_tracing(command.default_log_level(), &build_info)?;
+    setup_logging_and_tracing(
+        command.default_log_level(),
+        !matches.is_present("no-color"),
+        &build_info,
+    )?;
     info!(
         version = build_info.version,
         commit = build_info.commit_short_hash,
