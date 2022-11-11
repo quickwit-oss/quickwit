@@ -40,9 +40,12 @@ pub fn build_cli<'a>() -> Command<'a> {
         )
         .arg(
             Arg::new("no-ansi")
-                .long("no-ansi-logging")
-                .help("Disable ANSI terminal codes being injected into the logging output")
-                .env("QW_NO_ANSI_LOGGING")
+                .long("no-color")
+                .help(
+                    "Disable ANSI terminal codes (colors, etc...) being injected into the logging \
+                     output",
+                )
+                .env("NO_COLOR")
                 .global(true)
                 .display_order(2)
                 .takes_value(false),
