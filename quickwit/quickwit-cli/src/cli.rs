@@ -38,6 +38,18 @@ pub fn build_cli<'a>() -> Command<'a> {
                 .global(true)
                 .display_order(1),
         )
+        .arg(
+            Arg::new("no-ansi")
+                .long("no-ansi")
+                .help(
+                    "Disable ANSI terminal codes. This is useful for logging to a file, reducing \
+                     noise",
+                )
+                .env("QW_NO_ANSI_LOGGING")
+                .global(true)
+                .display_order(2)
+                .takes_value(false),
+        )
         .subcommand(build_run_command().display_order(1))
         .subcommand(build_index_command().display_order(2))
         .subcommand(build_source_command().display_order(3))
