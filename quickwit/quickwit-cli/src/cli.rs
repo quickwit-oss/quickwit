@@ -41,10 +41,7 @@ pub fn build_cli<'a>() -> Command<'a> {
         .arg(
             Arg::new("no-ansi")
                 .long("no-ansi-logging")
-                .help(
-                    "Disable ANSI terminal codes. This is useful for logging to a file, reducing \
-                     noise",
-                )
+                .help("Disable ANSI terminal codes being injected into the logging output")
                 .env("QW_NO_ANSI_LOGGING")
                 .global(true)
                 .display_order(2)
