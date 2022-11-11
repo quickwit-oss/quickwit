@@ -939,6 +939,7 @@ impl Metastore for PostgresqlMetastore {
                 UPDATE splits
                 SET
                     delete_opstamp = $1,
+                    -- The values we compare with are *before* the modification:
                     update_timestamp = CASE
                         WHEN delete_opstamp != $1 THEN (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
                         ELSE update_timestamp
