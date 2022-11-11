@@ -177,7 +177,10 @@ async fn mark_splits_as_published_helper(
     let published_split_ids: Vec<String> = sqlx::query(
         r#"
         UPDATE splits
-        SET split_state = $1
+        SET
+            split_state = $1,
+            update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+            publish_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
         WHERE
                 index_id = $2
             AND split_id = ANY($3)
