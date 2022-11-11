@@ -111,6 +111,22 @@ impl PostgresqlMetastore {
             connection_pool,
         })
     }
+
+    #[instrument(skip(self))]
+    async fn update_index_update_timestamp(&self, index_id: &str) -> MetastoreResult<()> {
+        let mut conn = self.connection_pool.acquire().await?;
+        sqlx::query(
+            r#"
+                UPDATE indexes
+            SET update_timestamp = current_timestamp
+            WHERE index_id = $1;
+            "#,
+        )
+        .bind(index_id)
+        .execute(&mut conn)
+        .await?;
+        Ok(())
+    }
 }
 
 /// Returns an Index object given an index_id or None if it does not exists.
@@ -179,27 +195,6 @@ async fn mark_splits_as_published_helper(
     Ok(published_split_ids)
 }
 
-#[instrument(skip(tx))]
-/// Updates the given index's `update_timestamp` to the current
-/// timestamp.
-async fn update_index_update_timestamp(
-    tx: &mut Transaction<'_, Postgres>,
-    index_id: &str,
-) -> MetastoreResult<()> {
-    sqlx::query(
-        r#"
-        UPDATE indexes
-        SET update_timestamp = current_timestamp
-        WHERE index_id = $1;
-    "#,
-    )
-    .bind(index_id)
-    .execute(tx)
-    .await?;
-
-    Ok(())
-}
-
 /// Marks multiple splits for deletion.
 /// Returns the IDs of the splits successfully marked for deletion.
 #[instrument(skip(tx))]
@@ -264,23 +259,24 @@ fn write_sql_filter<V: Display>(
     sql: &mut String,
     field_name: impl Display,
     filter_range: &FilterRange<V>,
+    value_formatter: impl Fn(&V) -> String,
 ) {
     match &filter_range.start {
         Bound::Included(value) => {
-            let _ = write!(sql, " AND {} >= {}", field_name, value);
+            let _ = write!(sql, " AND {} >= {}", field_name, (value_formatter)(value));
         }
         Bound::Excluded(value) => {
-            let _ = write!(sql, " AND {} > {}", field_name, value);
+            let _ = write!(sql, " AND {} > {}", field_name, (value_formatter)(value));
         }
         Bound::Unbounded => {}
     };
 
     match &filter_range.end {
         Bound::Included(value) => {
-            let _ = write!(sql, " AND {} <= {}", field_name, value);
+            let _ = write!(sql, " AND {} <= {}", field_name, (value_formatter)(value));
         }
         Bound::Excluded(value) => {
-            let _ = write!(sql, " AND {} < {}", field_name, value);
+            let _ = write!(sql, " AND {} < {}", field_name, (value_formatter)(value));
         }
         Bound::Unbounded => {}
     };
@@ -341,9 +337,21 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
     };
 
     // WARNING: Not SQL injection proof
-    write_sql_filter(&mut sql, "update_timestamp", &query.update_timestamp);
-    write_sql_filter(&mut sql, "create_timestamp", &query.create_timestamp);
-    write_sql_filter(&mut sql, "delete_opstamp", &query.delete_opstamp);
+    write_sql_filter(
+        &mut sql,
+        "update_timestamp",
+        &query.update_timestamp,
+        |val| format!("to_timestamp({})", val),
+    );
+    write_sql_filter(
+        &mut sql,
+        "create_timestamp",
+        &query.create_timestamp,
+        |val| format!("to_timestamp({})", val),
+    );
+    write_sql_filter(&mut sql, "delete_opstamp", &query.delete_opstamp, |val| {
+        val.to_string()
+    });
 
     if let Some(limit) = query.limit {
         let _ = write!(sql, " LIMIT {}", limit);
@@ -625,12 +633,11 @@ impl Metastore for PostgresqlMetastore {
             .execute(&mut *tx)
             .await
                 .map_err(|err| convert_sqlx_err(index_id, err))?;
-
-            update_index_update_timestamp(tx, index_id).await?;
-
             debug!(index_id=?index_id, split_id=?split_id, "The split has been staged");
             Ok(())
-        })
+        })?;
+        self.update_index_update_timestamp(index_id).await?;
+        Ok(())
     }
 
     #[instrument(skip(self))]
@@ -659,8 +666,6 @@ impl Metastore for PostgresqlMetastore {
                 &[SplitState::Published.as_str()],
             )
             .await?;
-
-            update_index_update_timestamp(tx, index_id).await?;
 
             if published_split_ids.len() != new_split_ids.len() {
                 let affected_split_ids: Vec<String> = published_split_ids
@@ -696,7 +701,9 @@ impl Metastore for PostgresqlMetastore {
                 });
             }
             Ok(())
-        })
+        })?;
+        self.update_index_update_timestamp(index_id).await?;
+        Ok(())
     }
 
     #[instrument(skip(self))]
@@ -725,12 +732,9 @@ impl Metastore for PostgresqlMetastore {
             )
             .await?;
 
-            update_index_update_timestamp(tx, index_id).await?;
-
             if marked_split_ids.len() == split_ids.len() {
                 return Ok(());
             }
-
             get_splits_with_invalid_state(tx, index_id, split_ids, &marked_split_ids).await?;
 
             let err_msg = format!("Failed to mark splits for deletion for index {index_id}.");
@@ -738,7 +742,9 @@ impl Metastore for PostgresqlMetastore {
                 message: err_msg,
                 cause: "".to_string(),
             })
-        })
+        })?;
+        self.update_index_update_timestamp(index_id).await?;
+        Ok(())
     }
 
     #[instrument(skip(self))]
@@ -767,12 +773,9 @@ impl Metastore for PostgresqlMetastore {
             .fetch_all(&mut *tx)
             .await?;
 
-            update_index_update_timestamp(tx, index_id).await?;
-
             if deleted_split_ids.len() == split_ids.len() {
                 return Ok(());
             }
-
             // There is an error, but we want to investigate and return a meaningful error.
             // From this point, we always have to return `Err` to abort the transaction.
             let not_deletable_ids =
@@ -781,7 +784,9 @@ impl Metastore for PostgresqlMetastore {
             Err(MetastoreError::SplitsNotDeletable {
                 split_ids: not_deletable_ids,
             })
-        })
+        })?;
+        self.update_index_update_timestamp(index_id).await?;
+        Ok(())
     }
 
     #[instrument(skip(self))]
@@ -932,8 +937,6 @@ impl Metastore for PostgresqlMetastore {
             .execute(&mut *tx)
             .await?;
 
-            update_index_update_timestamp(tx, index_id).await?;
-
             // If no splits is affected, maybe the index itself does not exist
             // in the first place.
             if sqlx_result.rows_affected() == 0 && index_opt(tx, index_id).await?.is_none() {
@@ -942,7 +945,9 @@ impl Metastore for PostgresqlMetastore {
                 });
             }
             Ok(())
-        })
+        })?;
+        self.update_index_update_timestamp(index_id).await?;
+        Ok(())
     }
 
     /// Lists delete tasks with opstamp > `opstamp_start`.
@@ -1238,11 +1243,17 @@ mod tests {
 
         let query = ListSplitsQuery::for_index("test-index").with_update_timestamp_lt(51);
         let sql = build_query_filter(String::new(), &query);
-        assert_eq!(sql, " WHERE index_id = $1 AND update_timestamp < 51");
+        assert_eq!(
+            sql,
+            " WHERE index_id = $1 AND update_timestamp < to_timestamp(51)"
+        );
 
         let query = ListSplitsQuery::for_index("test-index").with_create_timestamp_lte(55);
         let sql = build_query_filter(String::new(), &query);
-        assert_eq!(sql, " WHERE index_id = $1 AND create_timestamp <= 55");
+        assert_eq!(
+            sql,
+            " WHERE index_id = $1 AND create_timestamp <= to_timestamp(55)"
+        );
 
         let query = ListSplitsQuery::for_index("test-index").with_delete_opstamp_gte(4);
         let sql = build_query_filter(String::new(), &query);
@@ -1301,7 +1312,8 @@ mod tests {
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
-            " WHERE index_id = $1 AND update_timestamp < 51 AND create_timestamp <= 63"
+            " WHERE index_id = $1 AND update_timestamp < to_timestamp(51) AND create_timestamp <= \
+             to_timestamp(63)"
         );
 
         let query = ListSplitsQuery::for_index("test-index")
