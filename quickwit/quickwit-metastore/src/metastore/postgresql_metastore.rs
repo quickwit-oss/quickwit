@@ -604,43 +604,45 @@ impl Metastore for PostgresqlMetastore {
         })
     }
 
-    #[instrument(skip(self, metadata),fields(split_id=metadata.split_id.as_str()))]
-    async fn stage_split(&self, index_id: &str, metadata: SplitMetadata) -> MetastoreResult<()> {
-        run_with_tx!(self.connection_pool, tx, {
-            // Fit the time_range to the database model.
-            let time_range_start = metadata.time_range.clone().map(|range| *range.start());
-            let time_range_end = metadata.time_range.clone().map(|range| *range.end());
+    #[instrument(skip(self, split_metadata),fields(split_id=split_metadata.split_id))]
+    async fn stage_split(
+        &self,
+        index_id: &str,
+        split_metadata: SplitMetadata,
+    ) -> MetastoreResult<()> {
+        let split_metadata_json = serde_json::to_string(&split_metadata).map_err(|err| {
+            MetastoreError::InternalError {
+                message: "Failed to serialize split metadata.".to_string(),
+                cause: err.to_string(),
+            }
+        })?;
+        let time_range_start = split_metadata
+            .time_range
+            .as_ref()
+            .map(|range| *range.start());
+        let time_range_end = split_metadata.time_range.map(|range| *range.end());
+        let tags: Vec<String> = split_metadata.tags.into_iter().collect();
 
-            // Serialize the split metadata and footer offsets to fit the database model.
-            let split_metadata_json =
-                serde_json::to_string(&metadata).map_err(|err| MetastoreError::InternalError {
-                    message: "Failed to serialize split metadata and footer offsets".to_string(),
-                    cause: err.to_string(),
-                })?;
-
-            let tags: Vec<String> = metadata.tags.into_iter().collect();
-            // Insert a new split metadata as `Staged` state.
-            let split_id = metadata.split_id.clone();
-            sqlx::query(r#"
-                INSERT INTO splits
-                    (split_id, split_state, time_range_start, time_range_end, tags, split_metadata_json, index_id, delete_opstamp)
-                VALUES
-                    ($1, $2, $3, $4, $5, $6, $7, $8)
+        sqlx::query(r#"
+            INSERT INTO splits
+                (split_id, split_state, time_range_start, time_range_end, tags, split_metadata_json, index_id, delete_opstamp)
+            VALUES
+                ($1, $2, $3, $4, $5, $6, $7, $8)
             "#)
-            .bind(&metadata.split_id)
+            .bind(&split_metadata.split_id)
             .bind(SplitState::Staged.as_str())
             .bind(time_range_start)
             .bind(time_range_end)
             .bind(tags)
             .bind(split_metadata_json)
             .bind(index_id)
-            .bind(metadata.delete_opstamp as i64)
-            .execute(&mut *tx)
+            .bind(split_metadata.delete_opstamp as i64)
+            .execute(&self.connection_pool)
             .await
-                .map_err(|err| convert_sqlx_err(index_id, err))?;
-            debug!(index_id=?index_id, split_id=?split_id, "The split has been staged");
-            Ok(())
-        })?;
+            .map_err(|error| convert_sqlx_err(index_id, error))?;
+
+        debug!(index_id=%index_id, split_id=%split_metadata.split_id, "Split successfully staged.");
+
         self.update_index_update_timestamp(index_id).await;
         Ok(())
     }
