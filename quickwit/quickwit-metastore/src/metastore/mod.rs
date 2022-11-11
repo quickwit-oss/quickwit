@@ -212,6 +212,13 @@ pub trait Metastore: Send + Sync + 'static {
         split_ids: &[&'a str],
     ) -> MetastoreResult<()>;
 
+    /// Marks a set of splits matching the provided query for deletion.
+    ///
+    /// This API will change the state to [`SplitState::MarkedForDeletion`] so that it is not
+    /// referenced by the client anymore. It actually does not remove the split from storage. An
+    /// error will occur if you specify an index or split that does not exist in the storage.
+    async fn mark_splits_for_deletion_by_query<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<()>;
+
     /// Deletes a list of splits.
     ///
     /// This API only accepts splits that are in [`SplitState::Staged`] or
