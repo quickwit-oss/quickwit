@@ -178,8 +178,12 @@ async fn mark_splits_as_published_helper(
         UPDATE splits
         SET
             split_state = 'Published',
-            update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
-            publish_timestamp = CASE -- The values we compare with are *before* the modification
+            -- The values we compare with are *before* the modification:
+            update_timestamp = CASE
+                WHEN split_state = 'Staged' THEN (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                ELSE update_timestamp
+            END,
+            publish_timestamp = CASE
                 WHEN split_state = 'Staged' THEN (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
                 ELSE publish_timestamp
             END
@@ -214,16 +218,19 @@ async fn mark_splits_for_deletion(
         r#"
         UPDATE splits
         SET
-            split_state = $1,
-            update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+            split_state = 'MarkedForDeletion',
+            -- The values we compare with are *before* the modification:
+            update_timestamp = CASE
+                WHEN split_state != 'MarkedForDeletion' THEN (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                ELSE update_timestamp
+            END
         WHERE
-                index_id = $2
-            AND split_id = ANY($3)
-            AND split_state = ANY($4)
+                index_id = $1
+            AND split_id = ANY($2)
+            AND split_state = ANY($3)
         RETURNING split_id
     "#,
     )
-    .bind(SplitState::MarkedForDeletion.as_str())
     .bind(index_id)
     .bind(split_ids)
     .bind(deletable_states)
@@ -932,7 +939,10 @@ impl Metastore for PostgresqlMetastore {
                 UPDATE splits
                 SET
                     delete_opstamp = $1,
-                    update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                    update_timestamp = CASE
+                        WHEN delete_opstamp != $1 THEN (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                        ELSE update_timestamp
+                    END
                 WHERE
                     index_id = $2
                     AND split_id = ANY($3)
