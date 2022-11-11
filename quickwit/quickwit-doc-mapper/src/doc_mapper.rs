@@ -59,7 +59,7 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// to the same schema.
     fn doc_to_json(
         &self,
-        named_field_doc_map: BTreeMap<String, Vec<Value>>,
+        named_doc: BTreeMap<String, Vec<Value>>,
     ) -> anyhow::Result<serde_json::Map<String, JsonValue>>;
 
     /// Returns the schema.

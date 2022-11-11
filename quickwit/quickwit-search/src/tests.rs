@@ -696,8 +696,8 @@ async fn test_search_dynamic_mode() -> anyhow::Result<()> {
 }
 
 fn json_to_named_field_doc(doc_json: serde_json::Value) -> NamedFieldDocument {
-    let mut doc_map: BTreeMap<String, Vec<Value>> = BTreeMap::new();
     assert!(doc_json.is_object());
+    let mut doc_map: BTreeMap<String, Vec<Value>> = BTreeMap::new();
     for (key, value) in doc_json.as_object().unwrap().clone() {
         doc_map.insert(key, json_value_to_tantivy_value(value));
     }
@@ -730,7 +730,7 @@ fn test_convert_leaf_hit_aux(
     let default_doc_mapper: DefaultDocMapper =
         serde_json::from_value(default_doc_mapper_json).unwrap();
     let named_field_doc = json_to_named_field_doc(document_json);
-    let hit_json_str = named_field_doc_to_json(named_field_doc, &default_doc_mapper).unwrap();
+    let hit_json_str = convert_leaf_doc_to_json(named_field_doc, &default_doc_mapper).unwrap();
     let hit_json: serde_json::Value = serde_json::from_str(&hit_json_str).unwrap();
     assert_eq!(hit_json, expected_hit_json);
 }
@@ -834,9 +834,9 @@ fn test_convert_leaf_object_used_to_be_dynamic() {
     );
 }
 
-// This spec might change in the future. THe mode has no impact on the
-// output of convert_leaf_doc. In particular, it does not ignore the previously gathered
-// dynamic field.
+// This spec might change in the future. The mode has no impact on the
+// output of convert_leaf_doc_to_json. In particular, it does not ignore
+// the previously gathered dynamic field.
 #[test]
 fn test_convert_leaf_object_arguable_mode_does_not_affect_format() {
     test_convert_leaf_hit_aux(
@@ -851,8 +851,7 @@ fn test_convert_leaf_hit_with_source() {
     test_convert_leaf_hit_aux(
         json!({
             "field_mappings": [ {"name": "username", "type": "text"} ],
-            "mode": "strict",
-            "store_source": true
+            "mode": "strict"
         }),
         json!({ "_source": [{"username": "fulmicoton"}], "username": ["fulmicoton"] }),
         json!({ "username": "fulmicoton", "_source": {"username": "fulmicoton"}}),

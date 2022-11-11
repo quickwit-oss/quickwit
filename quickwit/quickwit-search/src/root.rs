@@ -25,8 +25,8 @@ use itertools::Itertools;
 use quickwit_config::build_doc_mapper;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::{
-    FetchDocsRequest, FetchDocsResponse, Hit, LeafSearchRequest, LeafSearchResponse, PartialHit,
-    SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
+    FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafSearchRequest, LeafSearchResponse,
+    PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
 };
 use tantivy::aggregation::agg_req::Aggregations;
 use tantivy::aggregation::agg_result::AggregationResults;
@@ -270,7 +270,7 @@ pub async fn root_search(
         .flat_map(|response| response.hits.into_iter());
 
     let mut hits: Vec<Hit> = leaf_hits
-        .map(|leaf_hit: quickwit_proto::LeafHit| Hit {
+        .map(|leaf_hit: LeafHit| Hit {
             json: leaf_hit.leaf_json,
             partial_hit: leaf_hit.partial_hit,
             snippet: leaf_hit.leaf_snippet_json,

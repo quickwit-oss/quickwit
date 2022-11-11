@@ -431,7 +431,7 @@ impl DocMapper for DefaultDocMapper {
 
     fn doc_to_json(
         &self,
-        mut named_doc: BTreeMap<String, Vec<Value>>, // BTreeMap<String, Vec<serde_json::Value>>,
+        mut named_doc: BTreeMap<String, Vec<Value>>,
     ) -> anyhow::Result<serde_json::Map<String, JsonValue>> {
         let mut doc_json =
             extract_single_obj(&mut named_doc, DYNAMIC_FIELD_NAME)?.unwrap_or_default();
