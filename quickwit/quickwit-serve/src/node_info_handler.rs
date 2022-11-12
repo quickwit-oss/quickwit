@@ -26,14 +26,14 @@ use warp::{Filter, Rejection};
 use crate::{with_arg, QuickwitBuildInfo};
 
 pub fn node_info_handler(
-    build_info: Arc<QuickwitBuildInfo>,
+    build_info: &'static QuickwitBuildInfo,
     config: Arc<QuickwitConfig>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     node_version_handler(build_info).or(node_config_handler(config))
 }
 
 fn node_version_handler(
-    build_info: Arc<QuickwitBuildInfo>,
+    build_info: &'static QuickwitBuildInfo,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     warp::path("version")
         .and(warp::path::end())
@@ -41,8 +41,10 @@ fn node_version_handler(
         .and_then(get_version)
 }
 
-async fn get_version(build_info: Arc<QuickwitBuildInfo>) -> Result<impl warp::Reply, Rejection> {
-    Ok(warp::reply::json(&*build_info))
+async fn get_version(
+    build_info: &'static QuickwitBuildInfo,
+) -> Result<impl warp::Reply, Rejection> {
+    Ok(warp::reply::json(build_info))
 }
 
 fn node_config_handler(
@@ -72,29 +74,21 @@ mod tests {
     use assert_json_diff::assert_json_include;
 
     use super::*;
-    use crate::recover_fn;
+    use crate::{quickwit_build_info, recover_fn};
 
     #[tokio::test]
     async fn test_rest_node_info() -> anyhow::Result<()> {
-        let build_info = QuickwitBuildInfo {
-            commit_version_tag: "commit_version_tag",
-            cargo_pkg_version: "cargo_pkg_version",
-            cargo_build_target: "cargo_build_target",
-            commit_short_hash: "commit_short_hash",
-            commit_date: "commit_date",
-            version: "version",
-        };
+        let build_info = quickwit_build_info();
         let mut config = QuickwitConfig::for_test();
         config.metastore_uri = Uri::for_test("postgresql://username:password@db");
         let handler =
-            super::node_info_handler(Arc::new(build_info.clone()), Arc::new(config.clone()))
-                .recover(recover_fn);
+            super::node_info_handler(build_info, Arc::new(config.clone())).recover(recover_fn);
         let resp = warp::test::request().path("/version").reply(&handler).await;
         assert_eq!(resp.status(), 200);
         let resp_build_info_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let expected_build_json = serde_json::json!({
-            "commit_date": "commit_date",
-            "version": "version",
+            "commit_date": build_info.commit_date,
+            "version": build_info.version,
         });
         assert_json_include!(actual: resp_build_info_json, expected: expected_build_json);
 

@@ -3642,6 +3642,7 @@ dependencies = [
  "tempfile",
  "termcolor",
  "thiserror",
+ "time 0.3.15",
  "tokio",
  "tokio-stream",
  "tracing",
