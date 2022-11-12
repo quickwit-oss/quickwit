@@ -150,7 +150,7 @@ async fn list_relevant_splits(
         }
         None => return Err(anyhow::anyhow!("Invalid query: neither Text nor SetQuery.").into()),
     };
-    
+
     if let Some(tags_filter) = tags_filter {
         query = query.with_tags_filter(tags_filter);
     }
