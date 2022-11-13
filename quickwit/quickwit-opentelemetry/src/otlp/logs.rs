@@ -76,12 +76,10 @@ impl LogsService for OtlpGrpcLogsService {
                 .unwrap_or_default();
             for scope_log in resource_log.scope_logs {
                 for log_record in scope_log.log_records {
-                    let body = log_record
-                        .body
-                        .and_then(|body| match body.value {
-                            Some(Value::StringValue(inner)) => Some(inner),
-                            _ => None,
-                        });
+                    let body = log_record.body.and_then(|body| match body.value {
+                        Some(Value::StringValue(inner)) => Some(inner),
+                        _ => None,
+                    });
                     let severity_text = log_record.severity_text;
                     let timestamp = if log_record.time_unix_nano != 0 {
                         // Quickwit supports only microseconds.
