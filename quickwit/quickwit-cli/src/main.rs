@@ -30,7 +30,7 @@ use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::{
     QW_ENABLE_JAEGER_EXPORTER_ENV_KEY, QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY,
 };
-use quickwit_serve::{build_quickwit_build_info, QuickwitBuildInfo};
+use quickwit_serve::{quickwit_build_info, QuickwitBuildInfo};
 use quickwit_telemetry::payload::TelemetryEvent;
 use tonic::metadata::MetadataMap;
 use tracing::{info, Level};
@@ -117,11 +117,11 @@ async fn main() -> anyhow::Result<()> {
 
     let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
     let about_text = about_text();
-    let build_info = build_quickwit_build_info();
+    let build_info = quickwit_build_info();
 
     let app = build_cli()
         .about(about_text.as_str())
-        .version(build_info.version);
+        .version(build_info.version.as_str());
     let matches = app.get_matches();
 
     let command = match CliCommand::parse_cli_args(&matches) {
@@ -138,7 +138,7 @@ async fn main() -> anyhow::Result<()> {
     setup_logging_and_tracing(
         command.default_log_level(),
         !matches.is_present("no-color"),
-        &build_info,
+        build_info,
     )?;
     info!(
         version = build_info.version,
