@@ -38,6 +38,7 @@ pub enum Protocol {
     PostgreSQL,
     Ram,
     S3,
+    Grpc,
 }
 
 impl Protocol {
@@ -48,6 +49,7 @@ impl Protocol {
             Protocol::PostgreSQL => "postgresql",
             Protocol::Ram => "ram",
             Protocol::S3 => "s3",
+            Protocol::Grpc => "grpc",
         }
     }
 
@@ -82,6 +84,10 @@ impl Protocol {
     pub fn is_database(&self) -> bool {
         matches!(&self, Protocol::PostgreSQL)
     }
+
+    pub fn is_grpc(&self) -> bool {
+        matches!(&self, Protocol::Grpc)
+    }
 }
 
 impl Display for Protocol {
@@ -100,6 +106,7 @@ impl FromStr for Protocol {
             "postgres" | "postgresql" => Ok(Protocol::PostgreSQL),
             "ram" => Ok(Protocol::Ram),
             "s3" => Ok(Protocol::S3),
+            "grpc" => Ok(Protocol::Grpc),
             _ => bail!("Unknown URI protocol `{}`.", protocol),
         }
     }
@@ -492,6 +499,10 @@ mod tests {
         assert_eq!(
             Uri::for_test("postgresql://localhost:5432/metastore").protocol(),
             Protocol::PostgreSQL
+        );
+        assert_eq!(
+            Uri::for_test("grpc://localhost:5432/metastore").protocol(),
+            Protocol::Grpc
         );
     }
 

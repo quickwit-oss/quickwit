@@ -75,7 +75,7 @@ const CLIENT_TIMEOUT_DURATION: Duration = if cfg!(test) {
 pub struct MetastoreGrpcClient {
     underlying:
         MetastoreApiServiceClient<InterceptedService<Timeout<Channel>, SpanContextInterceptor>>,
-    pool_size_rx: watch::Receiver<usize>,
+    metastore_uris_rx: watch::Receiver<HashSet<QuickwitUri>>,
 }
 
 impl MetastoreGrpcClient {
@@ -93,7 +93,7 @@ impl MetastoreGrpcClient {
         // TODO: ideally, we want to implement our own `Channel::balance_channel` to
         // properly raise a timeout error.
         let timeout_channel = Timeout::new(channel, CLIENT_TIMEOUT_DURATION);
-        let (pool_size_tx, pool_size_rx) = watch::channel(0);
+        let (metastore_uris_tx, metastore_uris_rx) = watch::channel(HashSet::new());
 
         // Watch for cluster members changes and dynamically update channel endpoint.
         tokio::spawn({
@@ -109,7 +109,11 @@ impl MetastoreGrpcClient {
                     .await?; // <- Fails if the channel is closed. In this case we can stop the loop.
                     current_grpc_address_pool = new_grpc_address_pool;
                     // TODO: Expose number of metastore servers in the pool as a Prometheus metric.
-                    pool_size_tx.send(current_grpc_address_pool.len())?;
+                    let metastore_uris: HashSet<QuickwitUri> = current_grpc_address_pool
+                        .iter()
+                        .map(|address| QuickwitUri::from_well_formed(format!("grpc://{}", address)))
+                        .collect();
+                    metastore_uris_tx.send(metastore_uris)?;
                 }
                 Result::<_, anyhow::Error>::Ok(())
             }
@@ -119,7 +123,7 @@ impl MetastoreGrpcClient {
 
         Ok(Self {
             underlying,
-            pool_size_rx,
+            metastore_uris_rx,
         })
     }
 
@@ -140,10 +144,13 @@ impl MetastoreGrpcClient {
         let timeout_channel = Timeout::new(channel, CLIENT_TIMEOUT_DURATION);
         let underlying =
             MetastoreApiServiceClient::with_interceptor(timeout_channel, SpanContextInterceptor);
-        let (_pool_size_tx, pool_size_rx) = watch::channel(1);
+        let (_metastore_uris_tx, metastore_uris_rx) =
+            watch::channel(HashSet::from_iter([QuickwitUri::from_well_formed(
+                "grpc://test.server".to_string(),
+            )]));
         Ok(Self {
             underlying,
-            pool_size_rx,
+            metastore_uris_rx,
         })
     }
 }
@@ -151,14 +158,21 @@ impl MetastoreGrpcClient {
 #[async_trait]
 impl Metastore for MetastoreGrpcClient {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
-        if *self.pool_size_rx.borrow() == 0 {
+        if self.metastore_uris_rx.borrow().len() == 0 {
             return Err(anyhow::anyhow!("No metastore server in the pool."));
         }
         Ok(())
     }
 
-    fn uri(&self) -> &QuickwitUri {
-        unimplemented!()
+    /// Returns one of the metastore client gRPC URI. If no metastore is available,
+    /// it returns the URI `grpc://no-metastore`.
+    fn uri(&self) -> QuickwitUri {
+        self.metastore_uris_rx
+            .borrow()
+            .iter()
+            .next()
+            .map(QuickwitUri::clone)
+            .unwrap_or_else(|| QuickwitUri::from_well_formed("grpc://no-metastore".to_string()))
     }
 
     /// Creates an index.
@@ -769,15 +783,20 @@ mod tests {
                 .unwrap();
 
         // gRPC service should send request on the running server.
-        metastore_client.pool_size_rx.changed().await.unwrap();
-        assert_eq!(*metastore_client.pool_size_rx.borrow(), 1);
+        metastore_client.metastore_uris_rx.changed().await.unwrap();
+        assert_eq!(metastore_client.metastore_uris_rx.borrow().len(), 1);
+        assert_eq!(
+            metastore_client.uri().as_str(),
+            format!("grpc://{}", metastore_service_grpc_addr)
+        );
         metastore_client.check_connectivity().await.unwrap();
         metastore_client.index_metadata(index_id).await.unwrap();
 
         // Send empty vec to signal that there is no more control plane in the cluster.
         members_tx.send(Vec::new()).unwrap();
-        metastore_client.pool_size_rx.changed().await.unwrap();
-        assert_eq!(*metastore_client.pool_size_rx.borrow(), 0);
+        metastore_client.metastore_uris_rx.changed().await.unwrap();
+        assert_eq!(metastore_client.metastore_uris_rx.borrow().len(), 0);
+        assert_eq!(metastore_client.uri().as_str(), "grpc://no-metastore");
         metastore_client.check_connectivity().await.unwrap_err();
         let error = metastore_client.index_metadata(index_id).await.unwrap_err();
         assert!(
@@ -854,8 +873,8 @@ mod tests {
                 .await
                 .unwrap();
 
-        metastore_client.pool_size_rx.changed().await.unwrap();
-        assert_eq!(*metastore_client.pool_size_rx.borrow(), 1);
+        metastore_client.metastore_uris_rx.changed().await.unwrap();
+        assert_eq!(metastore_client.metastore_uris_rx.borrow().len(), 1);
         metastore_client.index_metadata(index_id).await.unwrap();
 
         // Send two unavailable metastore members.
@@ -863,8 +882,8 @@ mod tests {
             .send(vec![metastore_member_2, metastore_member_3])
             .unwrap();
 
-        metastore_client.pool_size_rx.changed().await.unwrap();
-        assert_eq!(*metastore_client.pool_size_rx.borrow(), 2);
+        metastore_client.metastore_uris_rx.changed().await.unwrap();
+        assert_eq!(metastore_client.metastore_uris_rx.borrow().len(), 2);
 
         let error = metastore_client.index_metadata(index_id).await.unwrap_err();
         assert!(error
@@ -874,8 +893,8 @@ mod tests {
         // Send running metastore member.
         members_tx.send(vec![metastore_member_1]).unwrap();
 
-        metastore_client.pool_size_rx.changed().await.unwrap();
-        assert_eq!(*metastore_client.pool_size_rx.borrow(), 1);
+        metastore_client.metastore_uris_rx.changed().await.unwrap();
+        assert_eq!(metastore_client.metastore_uris_rx.borrow().len(), 1);
         metastore_client.index_metadata(index_id).await.unwrap();
         Ok(())
     }

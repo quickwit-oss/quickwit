@@ -89,7 +89,7 @@ use crate::{MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
 #[async_trait]
 pub trait Metastore: Send + Sync + 'static {
     /// Returns the metastore's uri.
-    fn uri(&self) -> &Uri;
+    fn uri(&self) -> Uri;
 
     /// Checks whether the metastore is available.
     async fn check_connectivity(&self) -> anyhow::Result<()>;

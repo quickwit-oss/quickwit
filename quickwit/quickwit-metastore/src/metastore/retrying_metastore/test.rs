@@ -72,7 +72,7 @@ impl RetryTestMetastore {
 
 #[async_trait]
 impl Metastore for RetryTestMetastore {
-    fn uri(&self) -> &Uri {
+    fn uri(&self) -> Uri {
         unimplemented!()
     }
 

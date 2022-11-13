@@ -55,7 +55,7 @@ impl RetryingMetastore {
 
 #[async_trait]
 impl Metastore for RetryingMetastore {
-    fn uri(&self) -> &Uri {
+    fn uri(&self) -> Uri {
         self.inner.uri()
     }
 

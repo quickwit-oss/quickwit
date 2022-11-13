@@ -867,8 +867,8 @@ impl Metastore for PostgresqlMetastore {
         })
     }
 
-    fn uri(&self) -> &Uri {
-        &self.uri
+    fn uri(&self) -> Uri {
+        self.uri.clone()
     }
 
     /// Retrieves the last delete opstamp for a given `index_id`.

@@ -500,8 +500,8 @@ impl Metastore for FileBackedMetastore {
         .await
     }
 
-    fn uri(&self) -> &Uri {
-        self.storage.uri()
+    fn uri(&self) -> Uri {
+        self.storage.uri().clone()
     }
 
     async fn check_connectivity(&self) -> anyhow::Result<()> {

@@ -74,7 +74,7 @@ impl InstrumentedMetastore {
 
 #[async_trait]
 impl Metastore for InstrumentedMetastore {
-    fn uri(&self) -> &Uri {
+    fn uri(&self) -> Uri {
         self.underlying.uri()
     }
 
