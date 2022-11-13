@@ -1054,7 +1054,7 @@ mod tests {
             .unwrap();
         assert_eq!(pipeline_health, Health::Healthy);
 
-        tokio::time::sleep(HEARTBEAT).await;
+        tokio::time::sleep(HEARTBEAT * 2).await;
         let pipeline_health = indexing_server_mailbox
             .ask(ObservePipelineHealth(pipeline_ids[0].clone()))
             .await
@@ -1062,7 +1062,7 @@ mod tests {
         assert_eq!(pipeline_health, Health::FailureOrUnhealthy);
 
         // Check indexing and merge pipelines are still running after a HEARTBEAT.
-        tokio::time::sleep(HEARTBEAT).await;
+        tokio::time::sleep(HEARTBEAT * 2).await;
         let observation = indexing_server_handle.observe().await;
         assert_eq!(observation.num_running_pipelines, 1);
         assert_eq!(observation.num_running_merge_pipelines, 1);
