@@ -208,7 +208,7 @@ impl From<search_request::Query> for metastore_api::delete_query::Query {
         use search_request::Query as Src;
         use metastore_api::delete_query::Query as Dst;
         match query {
-            Src::Text(text) => Dst::Text(text),
+            Src::Text(text) => Dst::QueryText(text),
             Src::SetQuery(query) => Dst::SetQuery(query),
         }
     }
@@ -219,7 +219,7 @@ impl From<metastore_api::delete_query::Query> for search_request::Query {
         use metastore_api::delete_query::Query as Src;
         use search_request::Query as Dst;
         match query {
-            Src::Text(text) => Dst::Text(text),
+            Src::QueryText(text) => Dst::Text(text),
             Src::SetQuery(query) => Dst::SetQuery(query),
         }
     }
@@ -227,7 +227,7 @@ impl From<metastore_api::delete_query::Query> for search_request::Query {
 
 impl From<String> for metastore_api::delete_query::Query {
     fn from(query: String) -> metastore_api::delete_query::Query {
-        metastore_api::delete_query::Query::Text(query)
+        metastore_api::delete_query::Query::QueryText(query)
     }
 }
 
@@ -287,7 +287,7 @@ pub(crate) mod serde_helpers {
 
     pub fn required_option<'de, D, T: Deserialize<'de> + std::fmt::Debug>(deserializer: D) -> Result<Option<T>, D::Error>
     where D: Deserializer<'de> {
-            dbg!(T::deserialize(deserializer).map(Some))
+            T::deserialize(deserializer).map(Some)
     }
 
     #[derive(Serialize, Deserialize)]
@@ -302,7 +302,7 @@ pub(crate) mod serde_helpers {
     impl From<Query> for SerializedQuery {
         fn from(query: Query) -> SerializedQuery {
             match query {
-                Query::Text(query) => SerializedQuery::Text {query},
+                Query::QueryText(query) => SerializedQuery::Text {query},
                 Query::SetQuery(sq) => SerializedQuery::SetQuery (sq),
             }
         }
@@ -311,7 +311,7 @@ pub(crate) mod serde_helpers {
     impl From<SerializedQuery> for Query {
         fn from(query: SerializedQuery) -> Query {
             match query {
-                SerializedQuery::Text {query} => Query::Text(query),
+                SerializedQuery::Text {query} => Query::QueryText(query),
                 SerializedQuery::SetQuery (sq) => Query::SetQuery(sq),
             }
         }

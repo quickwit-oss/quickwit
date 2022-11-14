@@ -19,6 +19,8 @@
 
 use std::collections::HashSet;
 
+use itertools::Itertools;
+
 use quickwit_proto::search_request::Query as SearchQuery;
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
@@ -76,7 +78,6 @@ pub(crate) fn build_query(
             query_parser.parse_query(query)?
         }
         Some(SearchQuery::SetQuery(set_query)) => {
-            let _ = (&set_query.terms, &set_query.field_name, &set_query.tags);
             let field_name = &set_query.field_name;
             let field = schema
                 .get_field(field_name)
@@ -84,7 +85,7 @@ pub(crate) fn build_query(
 
             let field_type = schema.get_field_entry(field).field_type();
             if !field_type.is_indexed() {
-                return Err(anyhow::anyhow!("Attempted to search on not indexed field.").into());
+                return Err(anyhow::anyhow!("Attempted to search on a field `{}`, which is no indexed.", field_name).into());
             }
 
             // TODO maybe Facet could be allowed?
@@ -94,27 +95,26 @@ pub(crate) fn build_query(
                 );
             }
 
-            // TODO error on any parse error instead??
-            let terms: Vec<_> = set_query
+            let terms = set_query
                 .terms
                 .iter()
-                // TODO not correct
-                .flat_map(|term| field_type.value_from_json(term.clone().into()).ok())
-                .map(|term| match term {
+                .map(|term| field_type.value_from_json(term.clone().into()))
+                .map_ok(|term| match term {
                     Value::Str(text) => Term::from_field_text(field, &text),
                     Value::PreTokStr(pre_tokenized_string) => {
                         Term::from_field_text(field, &pre_tokenized_string.text)
                     }
-                    Value::U64(int) => Term::from_field_u64(field, int),
-                    Value::I64(int) => Term::from_field_i64(field, int),
-                    Value::F64(int) => Term::from_field_f64(field, int),
-                    Value::Bool(b) => Term::from_field_bool(field, b),
+                    Value::U64(uint_val) => Term::from_field_u64(field, uint_val),
+                    Value::I64(int_val) => Term::from_field_i64(field, int_val),
+                    Value::F64(float_val) => Term::from_field_f64(field, float_val),
+                    Value::Bool(bool_val) => Term::from_field_bool(field, bool_val),
                     Value::Date(date) => Term::from_field_date(field, date),
                     Value::Bytes(buf) => Term::from_field_bytes(field, &buf),
-                    Value::IpAddr(ip) => Term::from_field_ip_addr(field, ip),
+                    Value::IpAddr(ip_addr) => Term::from_field_ip_addr(field, ip_addr),
                     Value::JsonObject(_) | Value::Facet(_) => unreachable!(),
                 })
-                .collect();
+                .collect::<Result<Vec<_>,_>>()
+                .map_err(|e| anyhow::anyhow!("Invalid term: {e:?}"))?;
 
             if terms.is_empty() {
                 return Err(anyhow::anyhow!("No valid term to search for").into());

@@ -187,7 +187,7 @@ message DeleteQuery {
   /// If set, restrict search to documents with a `timestamp < end_timestamp``.
   optional int64 end_timestamp = 3;
   oneof query {
-    string text = 4;
+    string query_text = 4;
     quickwit_common.SetQuery set_query = 6;
   }
   /// Search fields.

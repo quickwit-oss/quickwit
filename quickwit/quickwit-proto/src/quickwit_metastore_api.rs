@@ -185,7 +185,7 @@ pub mod delete_query {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Query {
         #[prost(string, tag="4")]
-        Text(::prost::alloc::string::String),
+        QueryText(::prost::alloc::string::String),
         #[prost(message, tag="6")]
         SetQuery(super::super::quickwit_common::SetQuery),
     }

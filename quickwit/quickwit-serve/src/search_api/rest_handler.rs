@@ -173,7 +173,7 @@ impl TryFrom<Query> for quickwit_proto::metastore_api::delete_query::Query {
         use quickwit_proto::metastore_api::delete_query::Query as SearchQuery;
         use quickwit_proto::metastore_api::SetQuery;
         let query = match query {
-            Query::QueryByString { query, .. } => SearchQuery::Text(query),
+            Query::QueryByString { query, .. } => SearchQuery::QueryText(query),
             Query::QueryByTerms {
                 terms,
                 field_name,
