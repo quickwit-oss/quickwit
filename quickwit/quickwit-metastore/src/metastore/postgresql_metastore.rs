@@ -33,7 +33,7 @@ use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgDatabaseError, PgPoolOptions};
-use sqlx::{ConnectOptions, Pool, Postgres, Row, Transaction};
+use sqlx::{ConnectOptions, Pool, Postgres, Transaction};
 use tokio::sync::Mutex;
 use tracing::log::LevelFilter;
 use tracing::{debug, error, instrument, warn};
@@ -135,19 +135,17 @@ impl PostgresqlMetastore {
 }
 
 /// Returns an Index object given an index_id or None if it does not exists.
-async fn index_opt<'a>(
-    tx: &mut Transaction<'a, Postgres>,
-    index_id: &str,
-) -> MetastoreResult<Option<Index>> {
+async fn index_opt<'a, E>(executor: E, index_id: &str) -> MetastoreResult<Option<Index>>
+where E: sqlx::Executor<'a, Database = Postgres> {
     let index_opt: Option<Index> = sqlx::query_as::<_, Index>(
         r#"
         SELECT *
         FROM indexes
         WHERE index_id = $1
-    "#,
+        "#,
     )
     .bind(index_id)
-    .fetch_optional(tx)
+    .fetch_optional(executor)
     .await
     .map_err(|error| MetastoreError::DbError {
         message: error.to_string(),
@@ -178,7 +176,7 @@ async fn mark_splits_as_published_helper(
     if split_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let published_split_ids: Vec<String> = sqlx::query(
+    let published_split_ids: Vec<String> = sqlx::query_scalar(
         r#"
         UPDATE splits
         SET
@@ -201,7 +199,6 @@ async fn mark_splits_as_published_helper(
     )
     .bind(index_id)
     .bind(split_ids)
-    .map(|row| row.get(0))
     .fetch_all(tx)
     .await?;
     Ok(published_split_ids)
@@ -219,7 +216,7 @@ async fn mark_splits_for_deletion(
     if split_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let marked_split_ids: Vec<String> = sqlx::query(
+    let marked_split_ids: Vec<String> = sqlx::query_scalar(
         r#"
         UPDATE splits
         SET
@@ -239,34 +236,10 @@ async fn mark_splits_for_deletion(
     .bind(index_id)
     .bind(split_ids)
     .bind(deletable_states)
-    .map(|row| row.get(0))
     .fetch_all(tx)
     .await?;
 
     Ok(marked_split_ids)
-}
-
-async fn list_splits_helper(
-    tx: &mut Transaction<'_, Postgres>,
-    query: ListSplitsQuery<'_>,
-) -> MetastoreResult<Vec<Split>> {
-    let sql_base = "SELECT * FROM splits".to_string();
-    let sql = build_query_filter(sql_base, &query);
-
-    let splits = sqlx::query_as::<_, postgresql_model::Split>(&sql)
-        .bind(query.index)
-        .fetch_all(&mut *tx)
-        .await?;
-
-    // If no splits was returned, maybe the index itself does not exist
-    // in the first place?
-    if splits.is_empty() && index_opt(&mut *tx, query.index).await?.is_none() {
-        return Err(MetastoreError::IndexDoesNotExist {
-            index_id: query.index.to_string(),
-        });
-    }
-
-    splits.into_iter().map(|split| split.try_into()).collect()
 }
 
 /// Extends an existing SQL string with the generated filter range appended to the query.
@@ -543,7 +516,7 @@ where
         UPDATE indexes
         SET index_metadata_json = $1
         WHERE index_id = $2
-    "#,
+        "#,
     )
     .bind(index_metadata_json)
     .bind(index_id)
@@ -564,59 +537,49 @@ impl Metastore for PostgresqlMetastore {
         Ok(())
     }
 
-    async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>> {
-        run_with_tx!(self.connection_pool, tx, {
-            let indexes: Vec<Index> = sqlx::query_as::<_, Index>("SELECT * FROM indexes")
-                .fetch_all(tx)
-                .await?;
-            let index_metadata: MetastoreResult<Vec<IndexMetadata>> = indexes
-                .into_iter()
-                .map(|index| index.index_metadata())
-                .collect::<MetastoreResult<_>>();
-            index_metadata
-        })
-    }
-
-    #[instrument(skip(self),fields(index_id=index_metadata.index_id.as_str()))]
-    async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
-        run_with_tx!(self.connection_pool, tx, {
-            // Serialize the index metadata to fit the database model.
-            let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|err| {
-                MetastoreError::InternalError {
-                    message: "Failed to serialize index metadata.".to_string(),
-                    cause: err.to_string(),
-                }
-            })?;
-            // Create index.
-            let create_index_statement_res =
-                sqlx::query("INSERT INTO indexes (index_id, index_metadata_json) VALUES ($1, $2)")
-                    .bind(&index_metadata.index_id)
-                    .bind(&index_metadata_json)
-                    .execute(tx)
-                    .await;
-            create_index_statement_res
-                .map_err(|err| convert_sqlx_err(&index_metadata.index_id, err))?;
-            Ok(())
-        })
-    }
-
     #[instrument(skip(self))]
-    async fn delete_index(&self, index_id: &str) -> MetastoreResult<()> {
-        run_with_tx!(self.connection_pool, tx, {
-            let query_res = sqlx::query("DELETE FROM indexes WHERE index_id = $1")
-                .bind(index_id)
-                .execute(tx)
-                .await?;
-            if query_res.rows_affected() == 0 {
-                return Err(MetastoreError::IndexDoesNotExist {
-                    index_id: index_id.to_string(),
-                });
-            }
-            Ok(())
-        })
+    async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>> {
+        let pg_indexes = sqlx::query_as::<_, postgresql_model::Index>("SELECT * FROM indexes")
+            .fetch_all(&self.connection_pool)
+            .await?;
+        pg_indexes
+            .into_iter()
+            .map(|pg_index| pg_index.index_metadata())
+            .collect()
     }
 
-    #[instrument(skip(self, split_metadata),fields(split_id=split_metadata.split_id))]
+    #[instrument(skip(self), fields(index_id=index_metadata.index_id))]
+    async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
+        let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|err| {
+            MetastoreError::InternalError {
+                message: "Failed to serialize index metadata.".to_string(),
+                cause: err.to_string(),
+            }
+        })?;
+        sqlx::query("INSERT INTO indexes (index_id, index_metadata_json) VALUES ($1, $2)")
+            .bind(&index_metadata.index_id)
+            .bind(&index_metadata_json)
+            .execute(&self.connection_pool)
+            .await
+            .map_err(|error| convert_sqlx_err(&index_metadata.index_id, error))?;
+        Ok(())
+    }
+
+    #[instrument(skip(self), fields(index_id=index_id))]
+    async fn delete_index(&self, index_id: &str) -> MetastoreResult<()> {
+        let delete_res = sqlx::query("DELETE FROM indexes WHERE index_id = $1")
+            .bind(index_id)
+            .execute(&self.connection_pool)
+            .await?;
+        if delete_res.rows_affected() == 0 {
+            return Err(MetastoreError::IndexDoesNotExist {
+                index_id: index_id.to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    #[instrument(skip(self, split_metadata), fields(index_id=index_id, split_id=split_metadata.split_id))]
     async fn stage_split(
         &self,
         index_id: &str,
@@ -659,7 +622,7 @@ impl Metastore for PostgresqlMetastore {
         Ok(())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), fields(index_id=index_id))]
     async fn publish_splits<'a>(
         &self,
         index_id: &str,
@@ -725,14 +688,33 @@ impl Metastore for PostgresqlMetastore {
         Ok(())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), fields(index_id=query.index))]
     async fn list_splits<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>> {
-        run_with_tx!(self.connection_pool, tx, {
-            list_splits_helper(tx, query).await
-        })
+        let sql_base = "SELECT * FROM splits".to_string();
+        let sql = build_query_filter(sql_base, &query);
+
+        let pg_splits = sqlx::query_as::<_, postgresql_model::Split>(&sql)
+            .bind(query.index)
+            .fetch_all(&self.connection_pool)
+            .await?;
+
+        // If no splits were returned, maybe the index does not exist in the first place?
+        if pg_splits.is_empty()
+            && index_opt(&self.connection_pool, query.index)
+                .await?
+                .is_none()
+        {
+            return Err(MetastoreError::IndexDoesNotExist {
+                index_id: query.index.to_string(),
+            });
+        }
+        pg_splits
+            .into_iter()
+            .map(|pg_split| pg_split.try_into())
+            .collect()
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), fields(index_id=index_id))]
     async fn mark_splits_for_deletion<'a>(
         &self,
         index_id: &str,
@@ -766,7 +748,7 @@ impl Metastore for PostgresqlMetastore {
         Ok(())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), fields(index_id=index_id))]
     async fn delete_splits<'a>(
         &self,
         index_id: &str,
@@ -777,7 +759,7 @@ impl Metastore for PostgresqlMetastore {
                 SplitState::Staged.as_str(),
                 SplitState::MarkedForDeletion.as_str(),
             ];
-            let deleted_split_ids: Vec<String> = sqlx::query(
+            let deleted_split_ids: Vec<String> = sqlx::query_scalar(
                 r#"
                 DELETE FROM splits
                 WHERE
@@ -788,7 +770,6 @@ impl Metastore for PostgresqlMetastore {
             )
             .bind(split_ids)
             .bind(&deletable_states[..])
-            .map(|pg_row| pg_row.get(0))
             .fetch_all(&mut *tx)
             .await?;
 
@@ -808,14 +789,17 @@ impl Metastore for PostgresqlMetastore {
         Ok(())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), fields(index_id=index_id))]
     async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata> {
-        run_with_tx!(self.connection_pool, tx, {
-            index_metadata(tx, index_id).await
-        })
+        index_opt(&self.connection_pool, index_id)
+            .await?
+            .ok_or_else(|| MetastoreError::IndexDoesNotExist {
+                index_id: index_id.to_string(),
+            })?
+            .index_metadata()
     }
 
-    #[instrument(skip(self, source), fields(source_id=source.source_id.as_str()))]
+    #[instrument(skip(self, source), fields(index_id=index_id, source_id=source.source_id))]
     async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()> {
         run_with_tx!(self.connection_pool, tx, {
             mutate_index_metadata(tx, index_id, |index_metadata| {
@@ -826,7 +810,7 @@ impl Metastore for PostgresqlMetastore {
         })
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), fields(index_id=index_id, source_id=source_id))]
     async fn toggle_source(
         &self,
         index_id: &str,
@@ -842,7 +826,7 @@ impl Metastore for PostgresqlMetastore {
         })
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), fields(index_id=index_id, source_id=source_id))]
     async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()> {
         run_with_tx!(self.connection_pool, tx, {
             mutate_index_metadata(tx, index_id, |index_metadata| {
@@ -853,7 +837,7 @@ impl Metastore for PostgresqlMetastore {
         })
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), fields(index_id=index_id, source_id=source_id))]
     async fn reset_source_checkpoint(
         &self,
         index_id: &str,
@@ -872,65 +856,56 @@ impl Metastore for PostgresqlMetastore {
         &self.uri
     }
 
-    /// Get last delete opstamp for given `index_id`.
-    #[instrument(skip(self))]
+    /// Retrieves the last delete opstamp for a given `index_id`.
+    #[instrument(skip(self), fields(index_id=index_id))]
     async fn last_delete_opstamp(&self, index_id: &str) -> MetastoreResult<u64> {
-        run_with_tx!(self.connection_pool, tx, {
-            let max_opstamp: u64 = sqlx::query(
-                r#"
-                    SELECT COALESCE(MAX(opstamp), 0)
-                    FROM delete_tasks
-                    WHERE index_id = $1
-                "#,
-            )
-            .bind(index_id)
-            .fetch_one(tx)
-            .await
-            .map(|row| {
-                let opstamp: i64 = row.get(0);
-                opstamp as u64
-            })
-            .map_err(|error| MetastoreError::DbError {
-                message: error.to_string(),
-            })?;
+        let max_opstamp: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COALESCE(MAX(opstamp), 0)
+            FROM delete_tasks
+            WHERE index_id = $1
+            "#,
+        )
+        .bind(index_id)
+        .fetch_one(&self.connection_pool)
+        .await
+        .map_err(|error| MetastoreError::DbError {
+            message: error.to_string(),
+        })?;
 
-            Ok(max_opstamp)
-        })
+        Ok(max_opstamp as u64)
     }
 
-    /// Creates delete task.
-    #[instrument(skip(self),fields(index_id=delete_query.index_id.as_str()))]
+    /// Creates a delete task from a delete query.
+    #[instrument(skip(self), fields(index_id=delete_query.index_id))]
     async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask> {
-        run_with_tx!(self.connection_pool, tx, {
-            // Serialize the delete query to fit the database model.
-            let delete_query_json = serde_json::to_string(&delete_query).map_err(|err| {
-                MetastoreError::InternalError {
-                    message: "Failed to serialize delete query.".to_string(),
-                    cause: err.to_string(),
-                }
+        let delete_query_json =
+            serde_json::to_string(&delete_query).map_err(|err| MetastoreError::InternalError {
+                message: "Failed to serialize delete query.".to_string(),
+                cause: err.to_string(),
             })?;
-            // Create delete task.
-            let (create_timestamp, opstamp): (sqlx::types::time::PrimitiveDateTime, i64) =
-                sqlx::query(
-                    "INSERT INTO delete_tasks (index_id, delete_query_json) VALUES ($1, $2) \
-                     RETURNING create_timestamp, opstamp",
-                )
-                .bind(&delete_query.index_id)
-                .bind(&delete_query_json)
-                .fetch_one(tx)
-                .await
-                .map(|row| (row.get(0), row.get(1)))
-                .map_err(|err| convert_sqlx_err(&delete_query.index_id, err))?;
-            Ok(DeleteTask {
-                create_timestamp: create_timestamp.assume_utc().unix_timestamp(),
-                opstamp: opstamp as u64,
-                delete_query: Some(delete_query),
-            })
+        let (create_timestamp, opstamp): (sqlx::types::time::PrimitiveDateTime, i64) =
+            sqlx::query_as(
+                r#"
+            INSERT INTO delete_tasks (index_id, delete_query_json) VALUES ($1, $2)
+            RETURNING create_timestamp, opstamp
+            "#,
+            )
+            .bind(&delete_query.index_id)
+            .bind(&delete_query_json)
+            .fetch_one(&self.connection_pool)
+            .await
+            .map_err(|error| convert_sqlx_err(&delete_query.index_id, error))?;
+
+        Ok(DeleteTask {
+            create_timestamp: create_timestamp.assume_utc().unix_timestamp(),
+            opstamp: opstamp as u64,
+            delete_query: Some(delete_query),
         })
     }
 
     /// Update splits delete opstamps.
-    #[instrument(skip(self))]
+    #[instrument(skip(self), fields(index_id=index_id))]
     async fn update_splits_delete_opstamp<'a>(
         &self,
         index_id: &str,
@@ -940,82 +915,79 @@ impl Metastore for PostgresqlMetastore {
         if split_ids.is_empty() {
             return Ok(());
         }
-        run_with_tx!(self.connection_pool, tx, {
-            let sqlx_result = sqlx::query(
-                r#"
-                UPDATE splits
-                SET
-                    delete_opstamp = $1,
-                    -- The values we compare with are *before* the modification:
-                    update_timestamp = CASE
-                        WHEN delete_opstamp != $1 THEN (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
-                        ELSE update_timestamp
-                    END
-                WHERE
-                    index_id = $2
-                    AND split_id = ANY($3)
+        let update_res = sqlx::query(
+            r#"
+            UPDATE splits
+            SET
+                delete_opstamp = $1,
+                -- The values we compare with are *before* the modification:
+                update_timestamp = CASE
+                    WHEN delete_opstamp != $1 THEN (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                    ELSE update_timestamp
+                END
+            WHERE
+                index_id = $2
+                AND split_id = ANY($3)
             "#,
-            )
-            .bind(delete_opstamp as i64)
-            .bind(index_id)
-            .bind(split_ids)
-            .execute(&mut *tx)
-            .await?;
+        )
+        .bind(delete_opstamp as i64)
+        .bind(index_id)
+        .bind(split_ids)
+        .execute(&self.connection_pool)
+        .await?;
 
-            // If no splits is affected, maybe the index itself does not exist
-            // in the first place.
-            if sqlx_result.rows_affected() == 0 && index_opt(tx, index_id).await?.is_none() {
-                return Err(MetastoreError::IndexDoesNotExist {
-                    index_id: index_id.to_string(),
-                });
-            }
-            Ok(())
-        })?;
+        // If no splits were updated, maybe the index does not exist in the first place?
+        if update_res.rows_affected() == 0
+            && index_opt(&self.connection_pool, index_id).await?.is_none()
+        {
+            return Err(MetastoreError::IndexDoesNotExist {
+                index_id: index_id.to_string(),
+            });
+        }
         self.update_index_update_timestamp(index_id).await;
         Ok(())
     }
 
-    /// Lists delete tasks with opstamp > `opstamp_start`.
-    #[instrument(skip(self))]
+    /// Lists the delete tasks with opstamp > `opstamp_start`.
+    #[instrument(skip(self), fields(index_id=index_id))]
     async fn list_delete_tasks(
         &self,
         index_id: &str,
         opstamp_start: u64,
     ) -> MetastoreResult<Vec<DeleteTask>> {
-        run_with_tx!(self.connection_pool, tx, {
-            let delete_tasks: Vec<postgresql_model::DeleteTask> =
-                sqlx::query_as::<_, postgresql_model::DeleteTask>(
-                    r#"
+        let pg_delete_tasks: Vec<postgresql_model::DeleteTask> =
+            sqlx::query_as::<_, postgresql_model::DeleteTask>(
+                r#"
                 SELECT * FROM delete_tasks
                 WHERE
                     index_id = $1
                     AND opstamp > $2
                 "#,
-                )
-                .bind(index_id)
-                .bind(opstamp_start as i64)
-                .fetch_all(tx)
-                .await?;
-            delete_tasks
-                .into_iter()
-                .map(|delete_task| delete_task.try_into())
-                .collect::<MetastoreResult<_>>()
-        })
+            )
+            .bind(index_id)
+            .bind(opstamp_start as i64)
+            .fetch_all(&self.connection_pool)
+            .await?;
+
+        pg_delete_tasks
+            .into_iter()
+            .map(|pg_delete_task| pg_delete_task.try_into())
+            .collect()
     }
 
-    /// Returns `num_splits` published splits with `split.delete_opstamp` < `delete_opstamp`
-    /// ordered by ASC `split.delete_opstamp`.
-    #[instrument(skip(self))]
+    /// Returns `num_splits` published splits with `split.delete_opstamp` < `delete_opstamp`.
+    /// Results are ordered by ascending `split.delete_opstamp` and `split.publish_timestamp`
+    /// values.
+    #[instrument(skip(self), fields(index_id=index_id))]
     async fn list_stale_splits(
         &self,
         index_id: &str,
         delete_opstamp: u64,
         num_splits: usize,
     ) -> MetastoreResult<Vec<Split>> {
-        run_with_tx!(self.connection_pool, tx, {
-            let stale_splits: Vec<postgresql_model::Split> =
-                sqlx::query_as::<_, postgresql_model::Split>(
-                    r#"
+        let pg_stale_splits: Vec<postgresql_model::Split> =
+            sqlx::query_as::<_, postgresql_model::Split>(
+                r#"
                 SELECT *
                 FROM splits
                 WHERE
@@ -1025,25 +997,25 @@ impl Metastore for PostgresqlMetastore {
                 ORDER BY delete_opstamp ASC, publish_timestamp ASC
                 LIMIT $4
                 "#,
-                )
-                .bind(index_id)
-                .bind(delete_opstamp as i64)
-                .bind(SplitState::Published.as_str())
-                .bind(num_splits as i64)
-                .fetch_all(&mut *tx)
-                .await?;
-            // If no splits was returned, maybe the index itself does not exist
-            // in the first place.
-            if stale_splits.is_empty() && index_opt(tx, index_id).await?.is_none() {
-                return Err(MetastoreError::IndexDoesNotExist {
-                    index_id: index_id.to_string(),
-                });
-            }
-            stale_splits
-                .into_iter()
-                .map(|split| split.try_into())
-                .collect::<MetastoreResult<_>>()
-        })
+            )
+            .bind(index_id)
+            .bind(delete_opstamp as i64)
+            .bind(SplitState::Published.as_str())
+            .bind(num_splits as i64)
+            .fetch_all(&self.connection_pool)
+            .await?;
+
+        // If no splits were returned, maybe the index does not exist in the first place?
+        if pg_stale_splits.is_empty() && index_opt(&self.connection_pool, index_id).await?.is_none()
+        {
+            return Err(MetastoreError::IndexDoesNotExist {
+                index_id: index_id.to_string(),
+            });
+        }
+        pg_stale_splits
+            .into_iter()
+            .map(|pg_split| pg_split.try_into())
+            .collect()
     }
 }
 
