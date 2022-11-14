@@ -19,7 +19,6 @@
 
 use std::collections::HashSet;
 
-use itertools::Itertools;
 use quickwit_proto::search_request::Query as SearchQuery;
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
@@ -101,23 +100,8 @@ pub(crate) fn build_query(
             let terms = set_query
                 .terms
                 .iter()
-                .map(|term| field_type.value_from_json(term.clone().into()))
-                .map_ok(|term| match term {
-                    Value::Str(text) => Term::from_field_text(field, &text),
-                    Value::PreTokStr(pre_tokenized_string) => {
-                        Term::from_field_text(field, &pre_tokenized_string.text)
-                    }
-                    Value::U64(uint_val) => Term::from_field_u64(field, uint_val),
-                    Value::I64(int_val) => Term::from_field_i64(field, int_val),
-                    Value::F64(float_val) => Term::from_field_f64(field, float_val),
-                    Value::Bool(bool_val) => Term::from_field_bool(field, bool_val),
-                    Value::Date(date) => Term::from_field_date(field, date),
-                    Value::Bytes(buf) => Term::from_field_bytes(field, &buf),
-                    Value::IpAddr(ip_addr) => Term::from_field_ip_addr(field, ip_addr),
-                    Value::JsonObject(_) | Value::Facet(_) => unreachable!(),
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| anyhow::anyhow!("Invalid term: {e:?}"))?;
+                .map(|term| value_to_term(&field_type, field, term.clone()))
+                .collect::<Result<Vec<_>, _>>()?;
 
             if terms.is_empty() {
                 return Err(anyhow::anyhow!("No valid term to search for").into());
@@ -135,6 +119,31 @@ pub(crate) fn build_query(
     };
 
     Ok(query)
+}
+
+fn value_to_term(
+    field_type: &FieldType,
+    field: Field,
+    term: quickwit_proto::metastore_api::Term,
+) -> anyhow::Result<Term> {
+    let res = match field_type.value_from_json(term.into()) {
+        Ok(Value::Str(text)) => Term::from_field_text(field, &text),
+        Ok(Value::PreTokStr(pre_tokenized_string)) => {
+            Term::from_field_text(field, &pre_tokenized_string.text)
+        }
+        Ok(Value::U64(uint_val)) => Term::from_field_u64(field, uint_val),
+        Ok(Value::I64(int_val)) => Term::from_field_i64(field, int_val),
+        Ok(Value::F64(float_val)) => Term::from_field_f64(field, float_val),
+        Ok(Value::Bool(bool_val)) => Term::from_field_bool(field, bool_val),
+        Ok(Value::Date(date)) => Term::from_field_date(field, date),
+        Ok(Value::Bytes(buf)) => Term::from_field_bytes(field, &buf),
+        Ok(Value::IpAddr(ip_addr)) => Term::from_field_ip_addr(field, ip_addr),
+        Ok(Value::JsonObject(_) | Value::Facet(_)) => {
+            return Err(anyhow::anyhow!("Unsupported field type."))
+        }
+        Err(e) => return Err(anyhow::anyhow!("Invalid term: {e:?}")),
+    };
+    Ok(res)
 }
 
 fn resolve_fields(schema: &Schema, field_names: &[String]) -> anyhow::Result<Vec<Field>> {
