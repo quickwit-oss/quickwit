@@ -688,24 +688,24 @@ impl Metastore for PostgresqlMetastore {
         Ok(())
     }
 
-    #[instrument(skip(self), fields(index_id=query.index))]
+    #[instrument(skip(self), fields(index_id=query.index_id))]
     async fn list_splits<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>> {
         let sql_base = "SELECT * FROM splits".to_string();
         let sql = build_query_filter(sql_base, &query);
 
         let pg_splits = sqlx::query_as::<_, postgresql_model::Split>(&sql)
-            .bind(query.index)
+            .bind(query.index_id)
             .fetch_all(&self.connection_pool)
             .await?;
 
         // If no splits were returned, maybe the index does not exist in the first place?
         if pg_splits.is_empty()
-            && index_opt(&self.connection_pool, query.index)
+            && index_opt(&self.connection_pool, query.index_id)
                 .await?
                 .is_none()
         {
             return Err(MetastoreError::IndexDoesNotExist {
-                index_id: query.index.to_string(),
+                index_id: query.index_id.to_string(),
             });
         }
         pg_splits
