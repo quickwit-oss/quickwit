@@ -59,7 +59,7 @@ impl SortingFieldComputer {
                 fast_field_reader,
                 order,
             } => {
-                let field_val = fast_field_reader.get_val(doc_id as u64);
+                let field_val = fast_field_reader.get_val(doc_id);
                 match order {
                     // Descending is our most common case.
                     SortOrder::Desc => field_val,

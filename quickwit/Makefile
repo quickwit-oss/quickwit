@@ -9,7 +9,7 @@ fmt:
 
 fix: fmt
 	@echo "Running cargo clippy --fix"
-	cargo clippy --fix --all-features --allow-dirty --allow-staged
+	@cargo clippy --fix --all-features --allow-dirty --allow-staged
 
 # Usage:
 # `make test-all` starts the Docker services and runs all the tests.

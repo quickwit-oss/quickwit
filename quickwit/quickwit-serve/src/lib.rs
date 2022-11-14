@@ -46,6 +46,7 @@ use std::time::Duration;
 use anyhow::anyhow;
 use format::Format;
 use itertools::Itertools;
+use once_cell::sync::OnceCell;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_config::service::QuickwitService;
@@ -75,7 +76,7 @@ const READYNESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "test
 
 struct QuickwitServices {
     pub config: Arc<QuickwitConfig>,
-    pub build_info: Arc<QuickwitBuildInfo>,
+    pub build_info: &'static QuickwitBuildInfo,
     pub cluster: Arc<Cluster>,
     pub metastore: Arc<dyn Metastore>,
     /// We do have a search service even on nodes that are not running `search`.
@@ -199,7 +200,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
     let services = config.enabled_services.clone();
     let quickwit_services = QuickwitServices {
         config: Arc::new(config),
-        build_info: Arc::new(build_quickwit_build_info()),
+        build_info: quickwit_build_info(),
         cluster,
         metastore,
         search_service,
@@ -284,32 +285,61 @@ async fn check_cluster_configuration(
     Ok(())
 }
 
-#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Debug)]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct QuickwitBuildInfo {
-    pub commit_version_tag: &'static str,
+    pub build_date: &'static str,
+    pub build_profile: &'static str,
+    pub build_target: &'static str,
     pub cargo_pkg_version: &'static str,
-    pub cargo_build_target: &'static str,
-    pub commit_short_hash: &'static str,
     pub commit_date: &'static str,
-    pub version: &'static str,
+    pub commit_hash: &'static str,
+    pub commit_short_hash: &'static str,
+    pub commit_tags: Vec<String>,
+    pub version: String,
 }
 
-/// Builds QuickwitBuildInfo from env variables.
-pub fn build_quickwit_build_info() -> QuickwitBuildInfo {
-    let commit_version_tag = env!("QW_COMMIT_VERSION_TAG");
-    let cargo_pkg_version = env!("CARGO_PKG_VERSION");
-    let version = if commit_version_tag == "none" {
-        // concat macro only accepts literals.
-        concat!(env!("CARGO_PKG_VERSION"), "-nightly")
-    } else {
-        cargo_pkg_version
-    };
-    QuickwitBuildInfo {
-        commit_version_tag,
-        cargo_pkg_version,
-        cargo_build_target: env!("CARGO_BUILD_TARGET"),
-        commit_short_hash: env!("QW_COMMIT_SHORT_HASH"),
-        commit_date: env!("QW_COMMIT_DATE"),
-        version,
-    }
+/// QuickwitBuildInfo from env variables prepopulated by the build script or CI env.
+pub fn quickwit_build_info() -> &'static QuickwitBuildInfo {
+    const UNKNOWN: &str = "unknown";
+
+    static INSTANCE: OnceCell<QuickwitBuildInfo> = OnceCell::new();
+    INSTANCE.get_or_init(|| {
+        let commit_date = option_env!("QW_COMMIT_DATE")
+            .filter(|commit_date| !commit_date.is_empty())
+            .unwrap_or(UNKNOWN);
+        let commit_hash = option_env!("QW_COMMIT_HASH")
+            .filter(|commit_hash| !commit_hash.is_empty())
+            .unwrap_or(UNKNOWN);
+        let commit_short_hash = option_env!("QW_COMMIT_HASH")
+            .filter(|commit_hash| commit_hash.len() >= 7)
+            .map(|commit_hash| &commit_hash[..7])
+            .unwrap_or(UNKNOWN);
+        let commit_tags: Vec<String> = option_env!("QW_COMMIT_TAGS")
+            .map(|tags| {
+                tags.split(',')
+                    .map(|tag| tag.trim().to_string())
+                    .filter(|tag| !tag.is_empty())
+                    .sorted()
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let version = commit_tags
+            .iter()
+            .find(|tag| tag.starts_with('v'))
+            .cloned()
+            .unwrap_or_else(|| concat!(env!("CARGO_PKG_VERSION"), "-nightly").to_string());
+
+        QuickwitBuildInfo {
+            build_date: env!("BUILD_DATE"),
+            build_profile: env!("BUILD_PROFILE"),
+            build_target: env!("BUILD_TARGET"),
+            cargo_pkg_version: env!("CARGO_PKG_VERSION"),
+            commit_date,
+            commit_hash,
+            commit_short_hash,
+            commit_tags,
+            version,
+        }
+    })
 }

@@ -30,7 +30,7 @@ use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::{
     QW_ENABLE_JAEGER_EXPORTER_ENV_KEY, QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY,
 };
-use quickwit_serve::{build_quickwit_build_info, QuickwitBuildInfo};
+use quickwit_serve::{quickwit_build_info, QuickwitBuildInfo};
 use quickwit_telemetry::payload::TelemetryEvent;
 use tonic::metadata::MetadataMap;
 use tracing::{info, Level};
@@ -38,7 +38,11 @@ use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
-fn setup_logging_and_tracing(level: Level, build_info: &QuickwitBuildInfo) -> anyhow::Result<()> {
+fn setup_logging_and_tracing(
+    level: Level,
+    ansi: bool,
+    build_info: &QuickwitBuildInfo,
+) -> anyhow::Result<()> {
     #[cfg(feature = "tokio-console")]
     {
         if std::env::var_os(quickwit_cli::QW_ENABLE_TOKIO_CONSOLE_ENV_KEY).is_some() {
@@ -54,6 +58,7 @@ fn setup_logging_and_tracing(level: Level, build_info: &QuickwitBuildInfo) -> an
     let registry = tracing_subscriber::registry().with(env_filter);
     let event_format = tracing_subscriber::fmt::format()
         .with_target(true)
+        .with_ansi(ansi)
         .with_timer(
             // We do not rely on the Rfc3339 implementation, because it has a nanosecond precision.
             // See discussion here: https://github.com/time-rs/time/discussions/418
@@ -112,11 +117,11 @@ async fn main() -> anyhow::Result<()> {
 
     let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
     let about_text = about_text();
-    let build_info = build_quickwit_build_info();
+    let build_info = quickwit_build_info();
 
     let app = build_cli()
         .about(about_text.as_str())
-        .version(build_info.version);
+        .version(build_info.version.as_str());
     let matches = app.get_matches();
 
     let command = match CliCommand::parse_cli_args(&matches) {
@@ -130,7 +135,11 @@ async fn main() -> anyhow::Result<()> {
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();
 
-    setup_logging_and_tracing(command.default_log_level(), &build_info)?;
+    setup_logging_and_tracing(
+        command.default_log_level(),
+        !matches.is_present("no-color"),
+        build_info,
+    )?;
     info!(
         version = build_info.version,
         commit = build_info.commit_short_hash,
