@@ -1048,13 +1048,14 @@ mod tests {
         // Check that the indexing pipeline is unhealthy. For that we need to do 2 health() call on
         // the pipeline handle. Check `registered_activity_since_last_call` method for
         // details.
+        tokio::time::sleep(HEARTBEAT).await;
         let pipeline_health = indexing_server_mailbox
             .ask(ObservePipelineHealth(pipeline_ids[0].clone()))
             .await
             .unwrap();
         assert_eq!(pipeline_health, Health::Healthy);
 
-        tokio::time::sleep(HEARTBEAT * 2).await;
+        tokio::time::sleep(HEARTBEAT).await;
         let pipeline_health = indexing_server_mailbox
             .ask(ObservePipelineHealth(pipeline_ids[0].clone()))
             .await
@@ -1062,7 +1063,7 @@ mod tests {
         assert_eq!(pipeline_health, Health::FailureOrUnhealthy);
 
         // Check indexing and merge pipelines are still running after a HEARTBEAT.
-        tokio::time::sleep(HEARTBEAT * 2).await;
+        tokio::time::sleep(HEARTBEAT).await;
         let observation = indexing_server_handle.observe().await;
         assert_eq!(observation.num_running_pipelines, 1);
         assert_eq!(observation.num_running_merge_pipelines, 1);
