@@ -141,24 +141,44 @@ pub async fn run_garbage_collect(
     let grace_period_deletion =
         OffsetDateTime::now_utc().unix_timestamp() - deletion_grace_period.as_secs() as i64;
 
-    let query = ListSplitsQuery::for_index(index_id)
-        .with_split_state(SplitState::MarkedForDeletion)
-        .with_update_timestamp_lte(grace_period_deletion);
 
-    let splits_to_delete = protect_future(ctx_opt, metastore.list_splits(query))
-        .await?
-        .into_iter()
-        .map(|meta| meta.split_metadata)
-        .collect();
+    let mut offset = 0;
+    let mut deleted_files = Vec::new();
+    loop {
+        let query = ListSplitsQuery::for_index(index_id)
+            .with_split_state(SplitState::MarkedForDeletion)
+            .with_update_timestamp_lte(grace_period_deletion)
+            .with_limit(1000)
+            .with_offset(offset);
 
-    let deleted_files = delete_splits_with_files(
-        index_id,
-        storage.clone(),
-        metastore.clone(),
-        splits_to_delete,
-        ctx_opt,
-    )
-    .await?;
+        let splits_to_delete = protect_future(ctx_opt, metastore.list_splits(query))
+            .await?
+            .into_iter()
+            .map(|meta| meta.split_metadata)
+            .collect::<Vec<_>>();
+
+        let num_splits = dbg!(splits_to_delete.len());
+        if num_splits == 0 {
+            break;
+        }
+
+        let entries = delete_splits_with_files(
+            index_id,
+            storage.clone(),
+            metastore.clone(),
+            splits_to_delete,
+            ctx_opt,
+        )
+        .await?;
+
+        deleted_files.extend(entries);
+
+        if num_splits < 1000 {
+            break;
+        }
+
+        offset += num_splits;
+    }
 
     Ok(deleted_files)
 }
