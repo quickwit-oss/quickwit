@@ -100,7 +100,7 @@ pub(crate) fn build_query(
             let terms = set_query
                 .terms
                 .iter()
-                .map(|term| value_to_term(&field_type, field, term.clone()))
+                .map(|term| value_to_term(field_type, field, term.clone()))
                 .collect::<Result<Vec<_>, _>>()?;
 
             if terms.is_empty() {
