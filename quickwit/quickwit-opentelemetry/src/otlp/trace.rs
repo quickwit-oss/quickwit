@@ -178,7 +178,7 @@ struct SpanKind {
     name: &'static str,
 }
 
-fn extract_attributes(attributes: Vec<KeyValue>) -> HashMap<String, JsonValue> {
+pub(crate) fn extract_attributes(attributes: Vec<KeyValue>) -> HashMap<String, JsonValue> {
     let mut attrs = HashMap::new();
     for attribute in attributes {
         // Filtering out empty attribute values is fine according to the OTel spec: <https://github.com/open-telemetry/opentelemetry-specification/tree/main/specification/common#attribute>
