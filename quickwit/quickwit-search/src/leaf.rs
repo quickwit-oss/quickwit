@@ -142,6 +142,7 @@ pub(crate) async fn warmup(
     query: &dyn Query,
     fast_field_names: &HashSet<String>,
     term_dict_field_names: &HashSet<String>,
+    postings: &HashSet<String>,
     requires_scoring: bool,
 ) -> anyhow::Result<()> {
     let warm_up_terms_future =
@@ -152,28 +153,26 @@ pub(crate) async fn warmup(
         .instrument(debug_span!("warm_up_fastfields"));
     let warm_up_fieldnorms_future = warm_up_fieldnorms(searcher, requires_scoring)
         .instrument(debug_span!("warm_up_fieldnorms"));
-    // TODO this should use its own dedicated parameter, this causes to load too
-    // much things when using aggregation
-    let warm_up_inverted_index_future = warm_up_inverted_index(searcher, term_dict_field_names)
-        .instrument(debug_span!("warm_up_inverted_index"));
+    let warm_up_postings_future =
+        warm_up_postings(searcher, postings).instrument(debug_span!("warm_up_postings"));
     let (
         warm_up_terms_res,
         warm_up_fastfields_res,
         warm_up_term_dict_res,
         warm_up_fieldnorms_res,
-        warm_up_inverted_index_res,
+        warm_up_postings_res,
     ) = tokio::join!(
         warm_up_terms_future,
         warm_up_fastfields_future,
         warm_up_term_dict_future,
         warm_up_fieldnorms_future,
-        warm_up_inverted_index_future,
+        warm_up_postings_future,
     );
     warm_up_terms_res?;
     warm_up_fastfields_res?;
     warm_up_term_dict_res?;
     warm_up_fieldnorms_res?;
-    warm_up_inverted_index_res?;
+    warm_up_postings_res?;
     Ok(())
 }
 
@@ -210,7 +209,7 @@ async fn warm_up_term_dict_fields(
     Ok(())
 }
 
-async fn warm_up_inverted_index(
+async fn warm_up_postings(
     searcher: &Searcher,
     field_names: &HashSet<String>,
 ) -> anyhow::Result<()> {
@@ -228,7 +227,6 @@ async fn warm_up_inverted_index(
     for field in fields {
         for segment_reader in searcher.segment_readers() {
             let inverted_index = segment_reader.inverted_index(field)?.clone();
-            // TODO: warm_postings_full does not exist yet in tantivy
             warm_up_futures.push(async move { inverted_index.warm_postings_full(false).await });
         }
     }
@@ -377,9 +375,11 @@ async fn leaf_search_single_split(
     let searcher = reader.searcher();
 
     let mut field_names_to_warmup = quickwit_collector.term_dict_field_names();
+    let mut posting_names_to_warmup = HashSet::new();
     if let Some(quickwit_proto::search_request::Query::SetQuery(set_query)) = &search_request.query
     {
         field_names_to_warmup.insert(set_query.field_name.clone());
+        posting_names_to_warmup.insert(set_query.field_name.clone());
     }
 
     warmup(
@@ -387,6 +387,7 @@ async fn leaf_search_single_split(
         &query,
         &quickwit_collector.fast_field_names(),
         &field_names_to_warmup,
+        &posting_names_to_warmup,
         quickwit_collector.requires_scoring(),
     )
     .await?;
