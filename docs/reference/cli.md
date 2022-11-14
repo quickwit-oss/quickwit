@@ -272,7 +272,7 @@ quickwit index search
 `--sort-by-score` Setting this flag calculates and sorts documents by their BM25 score.
 
 :::warning
-The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the `datetime` field precision. The `datetime` field precision configured in doc mapping only specifies how the field is internally stored as fast-field, whereas the split timestamp on which the document filtering is done is always stored using seconds precision.
+The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision. The timestamp field precision only affects the way it's stored as fast-fields, whereas the document filtering is always performed in seconds.
 :::
 
 *Examples*
