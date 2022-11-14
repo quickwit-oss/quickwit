@@ -20,7 +20,9 @@
 use std::net::SocketAddr;
 
 use hyper::http;
+use quickwit_actors::{Mailbox, Universe};
 use quickwit_common::metrics;
+use quickwit_janitor::actors::DeleteTaskService;
 use quickwit_proto::ServiceErrorCode;
 use tracing::{error, info};
 use warp::{redirect, Filter, Rejection, Reply};
@@ -37,18 +39,21 @@ use crate::search_api::{search_get_handler, search_post_handler, search_stream_h
 use crate::ui_handler::ui_handler;
 use crate::{Format, QuickwitServices};
 
-/// Starts REST service given a HTTP address and a search service.
+/// Starts REST services.
 pub(crate) async fn start_rest_server(
     rest_listen_addr: SocketAddr,
+    universe: &Universe,
     quickwit_services: &QuickwitServices,
 ) -> anyhow::Result<()> {
     info!(rest_listen_addr = %rest_listen_addr, "Starting REST server.");
     let request_counter = warp::log::custom(|_| {
         crate::SERVE_METRICS.http_requests_total.inc();
     });
+
     let metrics_service = warp::path("metrics")
         .and(warp::get())
         .map(metrics::metrics_handler);
+
     let api_v1_root_url = warp::path!("api" / "v1" / ..);
     let api_v1_routes = cluster_handler(quickwit_services.cluster.clone())
         .or(node_info_handler(
@@ -73,14 +78,16 @@ pub(crate) async fn start_rest_server(
         .or(index_management_handlers(
             quickwit_services.index_service.clone(),
         ))
-        .or(delete_task_api_handlers(
-            quickwit_services.metastore.clone(),
-            quickwit_services
-                .janitor_service
-                .as_ref()
-                .map(|service| service.delete_task_service_mailbox().clone()),
+        .or(health_check_handlers(
+            quickwit_services.cluster.clone(),
+            quickwit_services.indexer_service.clone(),
+            quickwit_services.janitor_service.clone(),
         ))
-        .or(health_check_handlers(quickwit_services.cluster.clone()));
+        .or({
+            let delete_task_service_opt: Option<Mailbox<DeleteTaskService>> = universe.get_one();
+            delete_task_api_handlers(quickwit_services.metastore.clone(), delete_task_service_opt)
+        });
+
     let api_v1_root_route = api_v1_root_url.and(api_v1_routes);
     let redirect_root_to_ui_route =
         warp::path::end().map(|| redirect(http::Uri::from_static("/ui/search")));

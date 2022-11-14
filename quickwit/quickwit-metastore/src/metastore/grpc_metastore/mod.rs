@@ -120,8 +120,8 @@ impl MetastoreGrpcClient {
         })
     }
 
-    /// Creates a [`MetastoreService`] from a duplex stream client for testing purpose.
-    #[doc(hidden)]
+    /// Creates a [`MetastoreGrpcClient`] from a duplex stream client for testing purpose.
+    #[cfg(any(test, feature = "testsuite"))]
     pub async fn from_duplex_stream(client: tokio::io::DuplexStream) -> anyhow::Result<Self> {
         let mut client = Some(client);
         let channel = Endpoint::try_from("http://test.server")?

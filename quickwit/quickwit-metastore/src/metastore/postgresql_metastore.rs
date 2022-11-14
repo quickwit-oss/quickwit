@@ -86,7 +86,7 @@ async fn run_postgres_migrations(pool: &Pool<Postgres>) -> MetastoreResult<()> {
         tx.rollback().await?;
         error!(err=?migration_err, "Database migrations failed");
         return Err(MetastoreError::InternalError {
-            message: "Failed to run migrator on Postgresql database.".to_string(),
+            message: "Failed to run migration on Postgresql database.".to_string(),
             cause: migration_err.to_string(),
         });
     }

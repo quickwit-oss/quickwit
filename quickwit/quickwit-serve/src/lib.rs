@@ -84,8 +84,7 @@ struct QuickwitServices {
     /// the root requests.
     pub search_service: Arc<dyn SearchService>,
     pub indexer_service: Option<Mailbox<IndexingService>>,
-    #[allow(dead_code)] // TODO remove
-    pub janitor_service: Option<JanitorService>,
+    pub janitor_service: Option<Mailbox<JanitorService>>,
     pub ingest_api_service: Option<Mailbox<IngestApiService>>,
     pub index_service: Arc<IndexService>,
     pub services: HashSet<QuickwitService>,
@@ -140,7 +139,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
     )
     .await?;
 
-    tokio::spawn(node_readyness_reporting_task(
+    tokio::spawn(node_readiness_reporting_task(
         cluster.clone(),
         metastore.clone(),
     ));
@@ -207,7 +206,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
         services,
     };
     let grpc_server = grpc::start_grpc_server(grpc_listen_addr, &quickwit_services);
-    let rest_server = rest::start_rest_server(rest_listen_addr, &quickwit_services);
+    let rest_server = rest::start_rest_server(rest_listen_addr, &universe, &quickwit_services);
     tokio::try_join!(grpc_server, rest_server)?;
     Ok(())
 }
@@ -231,8 +230,8 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
     warp::any().map(move || arg.clone())
 }
 
-/// Reports node readyness to chitchat cluster every 10 seconds (25 ms for tests).
-async fn node_readyness_reporting_task(cluster: Arc<Cluster>, metastore: Arc<dyn Metastore>) {
+/// Reports node readiness to chitchat cluster every 10 seconds (25 ms for tests).
+async fn node_readiness_reporting_task(cluster: Arc<Cluster>, metastore: Arc<dyn Metastore>) {
     let mut interval = tokio::time::interval(READYNESS_REPORTING_INTERVAL);
     loop {
         interval.tick().await;

@@ -48,7 +48,7 @@ pub(crate) mod tests;
 mod universe;
 
 pub use actor::{Actor, ActorExitStatus, Handler};
-pub use actor_handle::{ActorHandle, Health, Supervisable};
+pub use actor_handle::{ActorHandle, Health, Healthz, Supervisable};
 pub use command::Command;
 pub use observation::{Observation, ObservationType};
 use quickwit_common::{KillSwitch, Progress, ProtectedZoneGuard};
