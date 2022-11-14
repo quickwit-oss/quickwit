@@ -30,11 +30,10 @@ use quickwit_proto::opentelemetry::proto::collector::logs::v1::{
 use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
-use tracing::error;
 
 use crate::otlp::trace::extract_attributes;
 
-const OTEL_LOG_INDEX_ID: &str = "otel-log";
+const OTEL_LOG_INDEX_ID: &str = "otel-log-v0";
 
 #[derive(Clone)]
 pub struct OtlpGrpcLogsService {
@@ -95,22 +94,24 @@ impl LogsService for OtlpGrpcLogsService {
                         severity: severity_text,
                         resource: resource.clone(),
                     };
-                    let log_event_json = serde_json::to_vec(&log_event).expect("");
+                    let log_event_json = serde_json::to_vec(&log_event)
+                        .expect("`LogEvent` are serializable, this should never happened.");
                     let log_event_json_len = log_event_json.len() as u64;
                     doc_batch.concat_docs.extend_from_slice(&log_event_json);
                     doc_batch.doc_lens.push(log_event_json_len);
                 }
             }
         }
+
         let ingest_request = IngestRequest {
             doc_batches: vec![doc_batch],
         };
 
-        // TODO: return appropriate tonic status
-        if let Err(error) = self.ingest_api_service.ask_for_res(ingest_request).await {
-            error!(error=?error, "Failed to ingest logs");
-        }
-        let response = ExportLogsServiceResponse::default();
-        Ok(tonic::Response::new(response))
+        self.ingest_api_service
+            .ask_for_res(ingest_request)
+            .await
+            .map_err(|err| tonic::Status::internal(err.to_string()))?;
+
+        Ok(tonic::Response::new(ExportLogsServiceResponse::default()))
     }
 }
