@@ -20,7 +20,6 @@
 use std::collections::HashSet;
 
 use itertools::Itertools;
-
 use quickwit_proto::search_request::Query as SearchQuery;
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
@@ -85,7 +84,11 @@ pub(crate) fn build_query(
 
             let field_type = schema.get_field_entry(field).field_type();
             if !field_type.is_indexed() {
-                return Err(anyhow::anyhow!("Attempted to search on a field `{}`, which is no indexed.", field_name).into());
+                return Err(anyhow::anyhow!(
+                    "Attempted to search on a field `{}`, which is no indexed.",
+                    field_name
+                )
+                .into());
             }
 
             // TODO maybe Facet could be allowed?
@@ -113,7 +116,7 @@ pub(crate) fn build_query(
                     Value::IpAddr(ip_addr) => Term::from_field_ip_addr(field, ip_addr),
                     Value::JsonObject(_) | Value::Facet(_) => unreachable!(),
                 })
-                .collect::<Result<Vec<_>,_>>()
+                .collect::<Result<Vec<_>, _>>()
                 .map_err(|e| anyhow::anyhow!("Invalid term: {e:?}"))?;
 
             if terms.is_empty() {

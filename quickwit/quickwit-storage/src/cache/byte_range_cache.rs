@@ -276,13 +276,13 @@ impl ByteRangeCache {
 
 #[cfg(test)]
 mod tests {
-    use super::ByteRangeCache;
-
     use std::collections::HashMap;
     use std::ops::Range;
     use std::path::Path;
+
     use proptest::prelude::*;
 
+    use super::ByteRangeCache;
     use crate::metrics::CACHE_METRICS_FOR_TESTS;
     use crate::OwnedBytes;
 
@@ -303,9 +303,7 @@ mod tests {
     }
 
     fn range_strategy() -> impl Strategy<Value = Range<usize>> {
-        (0usize..4095usize).prop_perturb(|start, mut rng| {
-            start..rng.gen_range(start..4096)
-        })
+        (0usize..4095usize).prop_perturb(|start, mut rng| start..rng.gen_range(start..4096))
     }
 
     fn op_strategy() -> impl Strategy<Value = Operation> {

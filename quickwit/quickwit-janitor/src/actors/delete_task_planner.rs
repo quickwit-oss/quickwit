@@ -238,8 +238,10 @@ impl DeleteTaskPlanner {
                     );
                     // TODO: validate the query at the beginning and return an appropriate error.
                     let tags_filter = match &delete_query.query {
-                        Some(Query::QueryText(query_string)) => extract_tags_from_query(query_string)
-                            .expect("Delete query must have been validated upfront."),
+                        Some(Query::QueryText(query_string)) => {
+                            extract_tags_from_query(query_string)
+                                .expect("Delete query must have been validated upfront.")
+                        }
                         Some(Query::SetQuery(set_query)) => {
                             if set_query.tags.is_empty() {
                                 None
