@@ -76,6 +76,10 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
     }
 
     fn get_slice(&mut self, tag: &T, byte_range: Range<usize>) -> Option<OwnedBytes> {
+        if byte_range.start == byte_range.end {
+            return Some(OwnedBytes::empty());
+        }
+
         let key = CacheKey::from_borrowed(tag, byte_range.start);
         let (k, v) = if let Some((k, v)) = self.get_block(&key, byte_range.end) {
             (k, v)
@@ -267,5 +271,92 @@ impl ByteRangeCache {
             .lock()
             .unwrap()
             .put_slice(path, byte_range, bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ByteRangeCache;
+
+    use std::collections::HashMap;
+    use std::ops::Range;
+    use std::path::Path;
+    use proptest::prelude::*;
+
+    use crate::metrics::CACHE_METRICS_FOR_TESTS;
+    use crate::OwnedBytes;
+
+    #[derive(Debug)]
+    enum Operation {
+        Insert {
+            range: Range<usize>,
+            tag: &'static str,
+        },
+        Get {
+            range: Range<usize>,
+            tag: &'static str,
+        },
+    }
+
+    fn tag_strategy() -> impl Strategy<Value = &'static str> {
+        prop_oneof![Just("path1"), Just("path2"),]
+    }
+
+    fn range_strategy() -> impl Strategy<Value = Range<usize>> {
+        (0usize..4095usize).prop_perturb(|start, mut rng| {
+            start..rng.gen_range(start..4096)
+        })
+    }
+
+    fn op_strategy() -> impl Strategy<Value = Operation> {
+        prop_oneof![
+            (tag_strategy(), range_strategy())
+                .prop_map(|(tag, range)| Operation::Insert { range, tag }),
+            (tag_strategy(), range_strategy())
+                .prop_map(|(tag, range)| Operation::Get { range, tag }),
+        ]
+    }
+
+    fn ops_strategy() -> impl Strategy<Value = Vec<Operation>> {
+        prop::collection::vec(op_strategy(), 1..100)
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn test_proptest_byte_range_cache(ops in ops_strategy()) {
+            let mut state = HashMap::new();
+            state.insert("path1", vec![false; 4096]);
+            state.insert("path2", vec![false; 4096]);
+
+            let cache = ByteRangeCache::with_infinite_capacity(&CACHE_METRICS_FOR_TESTS);
+
+            for op in ops {
+                match op {
+                    Operation::Insert {
+                        range,
+                        tag,
+                    } => {
+                        state.get_mut(tag).unwrap()
+                            [range.clone()].fill(true);
+                        let bytes = range.clone().map(|i| (i%256) as u8).collect::<Vec<_>>();
+                        cache.put_slice(tag.into(), range, OwnedBytes::new(bytes));
+                    }
+                    Operation::Get {
+                        range,
+                        tag,
+                    } => {
+                        let slice = cache.get_slice(Path::new(tag), range.clone());
+                        if state[tag][range.clone()].iter().all(|t| *t) {
+                            let slice = slice.unwrap();
+                            let bytes = range.clone().map(|i| (i%256) as u8).collect::<Vec<_>>();
+                            assert_eq!(slice[..], bytes[..]);
+
+                        } else {
+                            assert!(slice.is_none());
+                        }
+                    },
+                }
+            }
+        }
     }
 }
