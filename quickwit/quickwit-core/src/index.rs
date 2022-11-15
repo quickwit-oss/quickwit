@@ -26,7 +26,7 @@ use quickwit_common::fs::{empty_dir, get_cache_directory_path};
 use quickwit_config::{IndexConfig, QuickwitConfig, SourceConfig};
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_janitor::{
-    delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
+    delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError, SplitRemovalInfo,
 };
 use quickwit_metastore::{
     quickwit_metastore_uri_resolver, IndexMetadata, ListSplitsQuery, Metastore, MetastoreError,
@@ -213,7 +213,7 @@ impl IndexService {
         index_id: &str,
         grace_period: Duration,
         dry_run: bool,
-    ) -> anyhow::Result<Vec<FileEntry>> {
+    ) -> anyhow::Result<SplitRemovalInfo> {
         let index_config = self
             .metastore
             .index_metadata(index_id)
