@@ -3432,7 +3432,6 @@ dependencies = [
  "rusoto_kinesis",
  "serde",
  "serde_json",
- "serde_yaml",
  "tantivy",
  "tempfile",
  "thiserror",

@@ -271,7 +271,7 @@ impl Metastore for FileBackedMetastore {
     /// -------------------------------------------------------------------------------
     /// Mutations over the high-level index.
     async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
-        let index_id = index_metadata.index_id.clone();
+        let index_id = index_metadata.index_id().to_string();
 
         // We pick the outer lock here, so that we enter a critical section.
         let mut per_index_metastores_wlock = self.per_index_metastores.write().await;
@@ -285,10 +285,10 @@ impl Metastore for FileBackedMetastore {
         if let Some(index_state) = per_index_metastores_wlock.get(&index_id) {
             if let IndexState::Alive(_) = index_state {
                 return Err(MetastoreError::IndexAlreadyExists {
-                    index_id: index_metadata.index_id.clone(),
+                    index_id: index_id.clone(),
                 });
             }
-        } else if index_exists(&*self.storage, &index_metadata.index_id).await? {
+        } else if index_exists(&*self.storage, &index_id).await? {
             return Err(MetastoreError::InternalError {
                 message: format!("Index {index_id} cannot be created."),
                 cause: format!(
@@ -438,8 +438,11 @@ impl Metastore for FileBackedMetastore {
     }
 
     async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()> {
-        self.mutate(index_id, |index| index.add_source(source))
-            .await?;
+        self.mutate(index_id, |index| {
+            index.add_source(source)?;
+            Ok(true)
+        })
+        .await?;
         Ok(())
     }
 
@@ -640,10 +643,15 @@ mod tests {
             .await
             .unwrap();
 
+        let index_config = index_metadata.into_index_config();
+
         // Open index and check its metadata
         let created_index = metastore.get_index(index_id).await.unwrap();
-        assert_eq!(created_index.index_id(), index_metadata.index_id);
-        assert_eq!(created_index.metadata().index_uri, index_metadata.index_uri);
+        assert_eq!(created_index.index_id(), index_config.index_id);
+        assert_eq!(
+            created_index.metadata().index_uri(),
+            &index_config.index_uri
+        );
 
         // Check index is returned by list indexes.
         let indexes = metastore.list_indexes_metadatas().await.unwrap();

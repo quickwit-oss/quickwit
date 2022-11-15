@@ -28,7 +28,7 @@ use quickwit_actors::{
 };
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_config::{
-    build_doc_mapper, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
+    build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
 };
 use quickwit_ingest_api::QUEUES_DIR_NAME;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
@@ -206,8 +206,11 @@ impl IndexingService {
             node_id: self.node_id.clone(),
             pipeline_ord,
         };
-        let index_metadata = self.index_metadata(ctx, &pipeline_id.index_id).await?;
-        self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_metadata, source_config)
+        let index_config = self
+            .index_metadata(ctx, &pipeline_id.index_id)
+            .await?
+            .into_index_config();
+        self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_config, source_config)
             .await?;
         Ok(pipeline_id)
     }
@@ -218,9 +221,13 @@ impl IndexingService {
         index_id: String,
     ) -> Result<Vec<IndexingPipelineId>, IndexingServiceError> {
         let mut pipeline_ids = Vec::new();
-        let index_metadata = self.index_metadata(ctx, &index_id).await?;
+        let IndexMetadata {
+            index_config,
+            sources,
+            ..
+        } = self.index_metadata(ctx, &index_id).await?;
 
-        for source_config in index_metadata.sources.values() {
+        for source_config in sources.values() {
             // Skip disabled source
             if !source_config.enabled {
                 continue;
@@ -241,7 +248,7 @@ impl IndexingService {
                 self.spawn_pipeline_inner(
                     ctx,
                     pipeline_id.clone(),
-                    index_metadata.clone(),
+                    index_config.clone(),
                     source_config.clone(),
                 )
                 .await?;
@@ -256,7 +263,7 @@ impl IndexingService {
         &mut self,
         ctx: &ActorContext<Self>,
         pipeline_id: IndexingPipelineId,
-        index_metadata: IndexMetadata,
+        index_config: IndexConfig,
         source_config: SourceConfig,
     ) -> Result<(), IndexingServiceError> {
         if self.indexing_pipeline_handles.contains_key(&pipeline_id) {
@@ -270,10 +277,10 @@ impl IndexingService {
         let indexing_directory = self
             .get_or_create_indexing_directory(&pipeline_id, indexing_dir_path)
             .await?;
-        let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
+        let storage = self.storage_resolver.resolve(&index_config.index_uri)?;
         let queues_dir_path = self.data_dir_path.join(QUEUES_DIR_NAME);
         let merge_policy =
-            crate::merge_policy::merge_policy_from_settings(&index_metadata.indexing_settings);
+            crate::merge_policy::merge_policy_from_settings(&index_config.indexing_settings);
         let split_store = IndexingSplitStore::new(
             storage.clone(),
             merge_policy.clone(),
@@ -281,9 +288,9 @@ impl IndexingService {
         );
 
         let doc_mapper = build_doc_mapper(
-            &index_metadata.doc_mapping,
-            &index_metadata.search_settings,
-            &index_metadata.indexing_settings,
+            &index_config.doc_mapping,
+            &index_config.search_settings,
+            &index_config.indexing_settings,
         )
         .map_err(IndexingServiceError::InvalidParams)?;
 
@@ -294,7 +301,7 @@ impl IndexingService {
             metastore: self.metastore.clone(),
             split_store: split_store.clone(),
             merge_policy,
-            merge_max_io_num_bytes_per_sec: index_metadata
+            merge_max_io_num_bytes_per_sec: index_config
                 .indexing_settings
                 .resources
                 .max_merge_write_throughput,
@@ -311,7 +318,7 @@ impl IndexingService {
         let pipeline_params = IndexingPipelineParams {
             pipeline_id: pipeline_id.clone(),
             doc_mapper,
-            indexing_settings: index_metadata.indexing_settings,
+            indexing_settings: index_config.indexing_settings.clone(),
             source_config,
             indexing_directory,
             metastore: self.metastore.clone(),
@@ -335,14 +342,17 @@ impl IndexingService {
         ctx: &ActorContext<Self>,
         pipeline_id: IndexingPipelineId,
     ) -> Result<IndexingPipelineId, IndexingServiceError> {
-        let index_metadata = self.index_metadata(ctx, &pipeline_id.index_id).await?;
+        let index_config = self
+            .index_metadata(ctx, &pipeline_id.index_id)
+            .await?
+            .into_index_config();
         let source_config = SourceConfig {
             source_id: pipeline_id.source_id.clone(),
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::Vec(VecSourceParams::default()),
         };
-        self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_metadata, source_config)
+        self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_config, source_config)
             .await?;
         Ok(pipeline_id)
     }

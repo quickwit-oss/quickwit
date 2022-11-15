@@ -320,7 +320,11 @@ async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
         .await?;
     let source_config_content = load_file(&args.source_config_uri).await?;
     let source_config =
-        SourceConfig::load(&args.source_config_uri, source_config_content.as_slice()).await?;
+        SourceConfig::load(&args.source_config_uri, source_config_content.as_slice())?;
+    // This is a bit redundant, as SourceConfig deserialization also checks
+    // that the indentifier is valid. However it authorizes the special
+    // private names internal to quickwit, so we do an extra check.
+    validate_identifier("Source ID", &source_config.source_id)?;
     if let SourceParams::IngestApi = source_config.source_params {
         bail!(
             "Failed to create Ingest API source `{}` for index `{}`. Ingest API sources are \

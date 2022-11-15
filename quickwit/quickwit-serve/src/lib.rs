@@ -189,11 +189,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
     .await?;
 
     // Always instantiate index management service.
-    let index_service = Arc::new(IndexService::new(
-        metastore.clone(),
-        storage_resolver,
-        config.default_index_root_uri.clone(),
-    ));
+    let index_service = Arc::new(IndexService::new(metastore.clone(), storage_resolver));
 
     let grpc_listen_addr = config.grpc_listen_addr;
     let rest_listen_addr = config.rest_listen_addr;
@@ -265,16 +261,16 @@ async fn check_cluster_configuration(
         .list_indexes_metadatas()
         .await?
         .into_iter()
-        .filter(|index_metadata| index_metadata.index_uri.protocol().is_file_storage())
+        .filter(|index_metadata| index_metadata.index_uri().protocol().is_file_storage())
         .collect::<Vec<_>>();
     if !file_backed_indexes.is_empty() {
         let index_ids = file_backed_indexes
             .iter()
-            .map(|index_metadata| &index_metadata.index_id)
+            .map(|index_metadata| index_metadata.index_id())
             .join(", ");
         let index_uris = file_backed_indexes
             .iter()
-            .map(|index_metadata| &index_metadata.index_uri)
+            .map(|index_metadata| index_metadata.index_uri())
             .join(", ");
         warn!(
             index_ids=%index_ids,

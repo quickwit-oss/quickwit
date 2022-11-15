@@ -35,7 +35,7 @@ use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
-    IndexConfig, IndexerConfig, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
+    ConfigFormat, IndexConfig, IndexerConfig, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
     INGEST_API_SOURCE_ID,
 };
 use quickwit_core::{
@@ -571,7 +571,13 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
 
     let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let file_content = load_file(&args.index_config_uri).await?;
-    let index_config = IndexConfig::load(&args.index_config_uri, file_content.as_slice()).await?;
+    let index_config_format = ConfigFormat::sniff_from_uri(&args.index_config_uri)?;
+    let index_config = quickwit_config::load_index_config_from_user_config(
+        index_config_format,
+        file_content.as_slice(),
+        &quickwit_config.default_index_root_uri,
+    )
+    .with_context(|| format!("Failed to parse index_config `{}`", &args.index_config_uri))?;
     let index_id = index_config.index_id.clone();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
@@ -600,11 +606,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         }
     }
 
-    let index_service = IndexService::new(
-        metastore,
-        quickwit_storage_uri_resolver().clone(),
-        quickwit_config.default_index_root_uri,
-    );
+    let index_service = IndexService::new(metastore, quickwit_storage_uri_resolver().clone());
     index_service
         .create_index(index_config, args.overwrite)
         .await?;
@@ -620,14 +622,15 @@ pub async fn list_index_cli(args: ListIndexesArgs) -> anyhow::Result<()> {
         .resolve(&quickwit_config.metastore_uri)
         .await?;
     let indexes = metastore.list_indexes_metadatas().await?;
-    let index_table = make_list_indexes_table(indexes);
+    let index_table =
+        make_list_indexes_table(indexes.into_iter().map(IndexMetadata::into_index_config));
 
     println!("\n{}\n", index_table);
     Ok(())
 }
 
 fn make_list_indexes_table<I>(indexes: I) -> Table
-where I: IntoIterator<Item = IndexMetadata> {
+where I: IntoIterator<Item = IndexConfig> {
     let rows = indexes
         .into_iter()
         .map(|index| IndexRow {
@@ -738,7 +741,12 @@ impl IndexStats {
             .collect_vec();
         let total_bytes = splits_bytes.iter().sum::<usize>();
 
-        let timestamp_range = if index_metadata.indexing_settings.timestamp_field.is_some() {
+        let timestamp_range = if index_metadata
+            .index_config()
+            .indexing_settings
+            .timestamp_field
+            .is_some()
+        {
             let time_min = splits
                 .iter()
                 .flat_map(|split| split.split_metadata.time_range.clone())
@@ -766,14 +774,15 @@ impl IndexStats {
         } else {
             (None, None)
         };
+        let index_config = index_metadata.into_index_config();
 
         Ok(Self {
-            index_id: index_metadata.index_id,
-            index_uri: index_metadata.index_uri,
+            index_id: index_config.index_id.clone(),
+            index_uri: index_config.index_uri.clone(),
             num_published_splits: splits.len(),
             num_published_docs: total_num_docs,
             size_published_docs: total_bytes,
-            timestamp_field_name: index_metadata.indexing_settings.timestamp_field,
+            timestamp_field_name: index_config.indexing_settings.timestamp_field,
             timestamp_range,
             num_docs_descriptive,
             num_bytes_descriptive,
@@ -899,11 +908,8 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         .await?;
 
     if args.overwrite {
-        let index_service = IndexService::new(
-            metastore.clone(),
-            quickwit_storage_uri_resolver().clone(),
-            config.default_index_root_uri.clone(),
-        );
+        let index_service =
+            IndexService::new(metastore.clone(), quickwit_storage_uri_resolver().clone());
         index_service.clear_index(&args.index_id).await?;
     }
     let indexer_config = IndexerConfig {
@@ -1074,11 +1080,7 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&quickwit_config.metastore_uri)
         .await?;
-    let index_service = IndexService::new(
-        metastore,
-        quickwit_storage_uri_resolver().clone(),
-        quickwit_config.default_index_root_uri,
-    );
+    let index_service = IndexService::new(metastore, quickwit_storage_uri_resolver().clone());
     let affected_files = index_service
         .delete_index(&args.index_id, args.dry_run)
         .await?;
@@ -1113,11 +1115,7 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&quickwit_config.metastore_uri)
         .await?;
-    let index_service = IndexService::new(
-        metastore,
-        quickwit_storage_uri_resolver().clone(),
-        quickwit_config.default_index_root_uri,
-    );
+    let index_service = IndexService::new(metastore, quickwit_storage_uri_resolver().clone());
     let deleted_files = index_service
         .garbage_collect_index(&args.index_id, args.grace_period, args.dry_run)
         .await?;
