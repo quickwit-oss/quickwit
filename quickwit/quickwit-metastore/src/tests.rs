@@ -2104,8 +2104,8 @@ pub mod test_suite {
                 .collect();
             assert_eq!(split_ids, to_hash_set(&["list-splits-six"]));
 
-            let query =
-                ListSplitsQuery::for_index(index_id).with_create_timestamp_lte(select_timestamp);
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_create_timestamp_lte(select_timestamp - 1);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
@@ -2821,7 +2821,9 @@ macro_rules! metastore_test_suite {
             #[tokio::test]
             async fn test_metastore_list_splits() {
                 let _ = tracing_subscriber::fmt::try_init();
-                crate::tests::test_suite::test_metastore_list_splits::<$metastore_type>().await;
+                for _ in 0..100 {
+                    crate::tests::test_suite::test_metastore_list_splits::<$metastore_type>().await;
+                }
             }
 
             #[tokio::test]
