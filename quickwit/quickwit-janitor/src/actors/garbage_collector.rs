@@ -530,8 +530,8 @@ mod tests {
             .times(1)
             .returning(|| {
                 Ok(vec![
-                    IndexMetadata::for_test("test-index-1", "ram://indexes/test-index-1"),
-                    IndexMetadata::for_test("test-index-2", "ram://indexes/test-index-2"),
+                    IndexMetadata::for_test("test-index-1", "ram:///indexes/test-index-1"),
+                    IndexMetadata::for_test("test-index-2", "ram:///indexes/test-index-2"),
                 ])
             });
         mock_metastore
