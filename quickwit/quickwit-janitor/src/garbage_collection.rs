@@ -313,8 +313,8 @@ pub async fn delete_splits_with_files(
         let split_ids: Vec<&str> = deleted_split_ids.iter().map(String::as_str).collect();
         protect_future(ctx_opt, metastore.delete_splits(index_id, &split_ids))
             .await
-            .map_err(|cause| SplitDeletionError::MetastoreFailure {
-                error: cause,
+            .map_err(|error| SplitDeletionError::MetastoreFailure {
+                error,
                 split_ids: split_ids.into_iter().map(str::to_string).collect(),
             })?;
     }
