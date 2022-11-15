@@ -34,6 +34,7 @@ use quickwit_proto::metastore_api::{
     UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::tonic;
+use quickwit_proto::tonic::{Request, Response, Status};
 
 use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreError};
 
@@ -232,6 +233,21 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
         let mark_splits_for_deletion_reply = self
             .0
             .mark_splits_for_deletion(&mark_splits_for_deletion_request.index_id, &split_ids)
+            .await
+            .map(|_| SplitResponse {})?;
+        Ok(tonic::Response::new(mark_splits_for_deletion_reply))
+    }
+
+    async fn mark_splits_for_deletion_by_query(&self, request: Request<ListSplitsRequest>) -> Result<Response<SplitResponse>, Status> {
+        let mark_splits_for_deletion_request = request.into_inner();
+        let query: ListSplitsQuery<'_> = serde_json::from_str(&mark_splits_for_deletion_request.filter_json)
+            .map_err(|error| MetastoreError::JsonDeserializeError {
+                name: "ListSplitsQuery".to_string(),
+                message: error.to_string(),
+            })?;
+        let mark_splits_for_deletion_reply = self
+            .0
+            .mark_splits_for_deletion_by_query(query)
             .await
             .map(|_| SplitResponse {})?;
         Ok(tonic::Response::new(mark_splits_for_deletion_reply))
