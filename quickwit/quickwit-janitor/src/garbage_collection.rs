@@ -142,14 +142,12 @@ pub async fn run_garbage_collect(
         OffsetDateTime::now_utc().unix_timestamp() - deletion_grace_period.as_secs() as i64;
 
 
-    let mut offset = 0;
     let mut deleted_files = Vec::new();
     loop {
         let query = ListSplitsQuery::for_index(index_id)
             .with_split_state(SplitState::MarkedForDeletion)
             .with_update_timestamp_lte(grace_period_deletion)
-            .with_limit(1000)
-            .with_offset(offset);
+            .with_limit(1000);
 
         let splits_to_delete = protect_future(ctx_opt, metastore.list_splits(query))
             .await?
@@ -157,27 +155,33 @@ pub async fn run_garbage_collect(
             .map(|meta| meta.split_metadata)
             .collect::<Vec<_>>();
 
-        let num_splits = dbg!(splits_to_delete.len());
-        if num_splits == 0 {
+        let num_splits_to_delete = splits_to_delete.len();
+        if num_splits_to_delete == 0 {
             break;
         }
 
-        let entries = delete_splits_with_files(
+        let delete_splits_result = delete_splits_with_files(
             index_id,
             storage.clone(),
             metastore.clone(),
             splits_to_delete,
             ctx_opt,
         )
-        .await?;
+        .await;
 
-        deleted_files.extend(entries);
-
-        if num_splits < 1000 {
-            break;
+        match delete_splits_result {
+            Ok(entries) => {
+                deleted_files.extend(entries);
+            },
+            Err(error) => {
+                error!(error = ?error, "Failed to delete splits.");
+                return Ok(deleted_files);
+            },
         }
 
-        offset += num_splits;
+        if num_splits_to_delete < 1000 {
+            break;
+        }
     }
 
     Ok(deleted_files)
