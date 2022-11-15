@@ -44,3 +44,7 @@ testsuite = []
 [[bench]]
 name = "doc_to_json_bench"
 harness = false
+
+[[bench]]
+name = "log_tokenizer_bench"
+harness = false
