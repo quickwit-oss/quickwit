@@ -33,6 +33,9 @@ use tracing::{error, instrument};
 
 use crate::actors::GarbageCollector;
 
+/// The maximum number of splits that should be deleted in one go by the GC.
+const DELETE_SPLITS_BATCH_SIZE: usize = 1000;
+
 /// SplitDeletionError denotes error that can happen when deleting split
 /// during garbage collection.
 #[derive(Error, Debug)]
@@ -174,7 +177,7 @@ async fn incrementally_remove_marked_splits(
         let query = ListSplitsQuery::for_index(index_id)
             .with_split_state(SplitState::MarkedForDeletion)
             .with_update_timestamp_lte(updated_before_timestamp)
-            .with_limit(1000);
+            .with_limit(DELETE_SPLITS_BATCH_SIZE);
 
         let list_splits_result = protect_future(ctx_opt, metastore.list_splits(query)).await;
 
@@ -221,7 +224,7 @@ async fn incrementally_remove_marked_splits(
             }
         }
 
-        if num_splits_to_delete < 1000 {
+        if num_splits_to_delete < DELETE_SPLITS_BATCH_SIZE {
             break;
         }
     }
@@ -312,10 +315,7 @@ pub async fn delete_splits_with_files(
             .await
             .map_err(|cause| SplitDeletionError::MetastoreFailure {
                 error: cause,
-                split_ids: split_ids
-                    .into_iter()
-                    .map(str::to_string)
-                    .collect()
+                split_ids: split_ids.into_iter().map(str::to_string).collect(),
             })?;
     }
 
