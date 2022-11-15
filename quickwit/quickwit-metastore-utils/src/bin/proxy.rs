@@ -35,6 +35,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::Mutex;
 use tokio::time::Instant;
+use quickwit_proto::tonic::{Request, Response, Status};
 
 struct Inner {
     start: Instant,
@@ -167,6 +168,15 @@ impl MetastoreApiService for MetastoreProxyService {
         let resp = lock.client.mark_splits_for_deletion(request).await?;
         Ok(resp)
     }
+
+    /// Marks splits matching a given query for deletion.
+    async fn mark_splits_for_deletion_by_query(&self, request: Request<ListSplitsRequest>) -> Result<Response<SplitResponse>, Status> {
+        let mut lock = self.inner.lock().await;
+        lock.record(request.get_ref().clone()).await.unwrap();
+        let resp = lock.client.mark_splits_for_deletion_by_query(request).await?;
+        Ok(resp)
+    }
+
     /// Deletes splits.
     async fn delete_splits(
         &self,
