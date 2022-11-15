@@ -748,6 +748,32 @@ impl Metastore for PostgresqlMetastore {
         Ok(())
     }
 
+    async fn mark_splits_for_deletion_by_query<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<()> {
+        if query.limit.is_some() {
+            return Err(MetastoreError::UnsupportedQuery {
+                name: "limit".to_string(),
+                message: "Limit operations cannot be applied to update operations.".to_string(),
+            });
+        }
+
+        if query.offset.is_some() {
+            return Err(MetastoreError::UnsupportedQuery {
+                name: "offset".to_string(),
+                message: "Offset operations cannot be applied to update operations.".to_string(),
+            });
+        }
+
+        let sql_base = String::from("UPDATE splits SET split_state = 'MarkedForDeletion'");
+        let sql = build_query_filter(sql_base, &query);
+
+        sqlx::query(&sql)
+            .bind(query.index_id)
+            .execute(&self.connection_pool)
+            .await?;
+
+        Ok(())
+    }
+
     #[instrument(skip(self), fields(index_id=index_id))]
     async fn delete_splits<'a>(
         &self,
