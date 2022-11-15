@@ -21,7 +21,8 @@ use std::collections::HashSet;
 
 use bytes::Bytes;
 use futures::{StreamExt, TryStreamExt};
-use quickwit_config::build_doc_mapper;
+use quickwit_common::uri::Uri;
+use quickwit_config::{build_doc_mapper, IndexConfig};
 use quickwit_metastore::Metastore;
 use quickwit_proto::{LeafSearchStreamRequest, SearchRequest, SearchStreamRequest};
 use tokio_stream::StreamMap;
@@ -43,12 +44,15 @@ pub async fn root_search_stream(
     // This needs some refactoring: relevant splits, metadata_map, jobs...
 
     let search_request = SearchRequest::from(search_stream_request.clone());
-    let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
+    let index_config: IndexConfig = metastore
+        .index_metadata(&search_request.index_id)
+        .await?
+        .into_index_config();
     let split_metadatas = list_relevant_splits(&search_request, metastore).await?;
     let doc_mapper = build_doc_mapper(
-        &index_metadata.doc_mapping,
-        &index_metadata.search_settings,
-        &index_metadata.indexing_settings,
+        &index_config.doc_mapping,
+        &index_config.search_settings,
+        &index_config.indexing_settings,
     )
     .map_err(|err| {
         SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
@@ -61,6 +65,7 @@ pub async fn root_search_stream(
         SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {}", err))
     })?;
 
+    let index_uri: &Uri = &index_config.index_uri;
     let leaf_search_jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
 
     let assigned_leaf_search_jobs: Vec<(SearchServiceClient, Vec<SearchJob>)> =
@@ -72,7 +77,7 @@ pub async fn root_search_stream(
         let leaf_request: LeafSearchStreamRequest = jobs_to_leaf_request(
             &search_stream_request,
             &doc_mapper_str,
-            index_metadata.index_uri.as_ref(),
+            index_uri.as_ref(),
             client_jobs,
         );
         let leaf_stream = cluster_client
@@ -88,7 +93,7 @@ pub async fn root_search_stream(
 fn jobs_to_leaf_request(
     request: &SearchStreamRequest,
     doc_mapper_str: &str,
-    index_uri: &str,
+    index_uri: &str, // TODO make Uri
     jobs: Vec<SearchJob>,
 ) -> LeafSearchStreamRequest {
     LeafSearchStreamRequest {

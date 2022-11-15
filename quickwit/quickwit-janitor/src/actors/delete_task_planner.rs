@@ -433,7 +433,10 @@ mod tests {
             test_sandbox.add_documents(vec![doc]).await?;
         }
         let metastore = test_sandbox.metastore();
-        let index_metadata = metastore.index_metadata(index_id).await?;
+        let index_config = metastore
+            .index_metadata(index_id)
+            .await?
+            .into_index_config();
         let split_metas: Vec<SplitMetadata> = metastore
             .list_all_splits(index_id)
             .await?
@@ -442,9 +445,9 @@ mod tests {
             .collect_vec();
         assert_eq!(split_metas.len(), 3);
         let doc_mapper = build_doc_mapper(
-            &index_metadata.doc_mapping,
-            &index_metadata.search_settings,
-            &index_metadata.indexing_settings,
+            &index_config.doc_mapping,
+            &index_config.search_settings,
+            &index_config.indexing_settings,
         )?;
         let doc_mapper_str = serde_json::to_string(&doc_mapper)?;
 
@@ -496,7 +499,7 @@ mod tests {
         let (downloader_mailbox, downloader_inbox) = create_test_mailbox();
         let delete_planner_executor = DeleteTaskPlanner::new(
             index_id.to_string(),
-            index_metadata.index_uri,
+            index_config.index_uri.clone(),
             doc_mapper_str,
             metastore.clone(),
             client_pool,

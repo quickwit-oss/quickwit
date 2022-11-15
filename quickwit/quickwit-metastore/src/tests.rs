@@ -152,7 +152,7 @@ pub mod test_suite {
             .checkpoint
             .is_empty());
 
-        cleanup_index(&metastore, &index_metadata.index_id).await;
+        cleanup_index(&metastore, index_metadata.index_id()).await;
     }
 
     pub async fn test_metastore_add_source<MetastoreToTest: Metastore + DefaultForTest>() {
@@ -193,7 +193,7 @@ pub mod test_suite {
 
         let index_metadata = metastore.index_metadata(index_id).await.unwrap();
 
-        let sources = index_metadata.sources;
+        let sources = &index_metadata.sources;
         assert_eq!(sources.len(), 1);
         assert!(sources.contains_key(source_id));
         assert_eq!(sources.get(source_id).unwrap().source_id, source_id);
@@ -217,7 +217,7 @@ pub mod test_suite {
                 .unwrap_err(),
             MetastoreError::IndexDoesNotExist { .. }
         ));
-        cleanup_index(&metastore, &index_metadata.index_id).await;
+        cleanup_index(&metastore, index_metadata.index_id()).await;
     }
 
     pub async fn test_metastore_toggle_source<MetastoreToTest: Metastore + DefaultForTest>() {
@@ -265,7 +265,7 @@ pub mod test_suite {
         let source = index_metadata.sources.get(source_id).unwrap();
         assert_eq!(source.enabled, true);
 
-        cleanup_index(&metastore, &index_metadata.index_id).await;
+        cleanup_index(&metastore, index_metadata.index_id()).await;
     }
 
     pub async fn test_metastore_delete_source<MetastoreToTest: Metastore + DefaultForTest>() {
@@ -284,7 +284,7 @@ pub mod test_suite {
         };
 
         let mut index_metadata = IndexMetadata::for_test(index_id, index_uri.as_str());
-        index_metadata.sources.insert(source_id.to_string(), source);
+        index_metadata.add_source(source).unwrap();
 
         metastore
             .create_index(index_metadata.clone())
@@ -310,7 +310,7 @@ pub mod test_suite {
             MetastoreError::IndexDoesNotExist { .. }
         ));
 
-        cleanup_index(&metastore, &index_metadata.index_id).await;
+        cleanup_index(&metastore, index_metadata.index_id()).await;
     }
 
     pub async fn test_metastore_create_index<MetastoreToTest: Metastore + DefaultForTest>() {
@@ -372,9 +372,13 @@ pub mod test_suite {
             .unwrap();
 
         // Get an index metadata
-        let index_metadata = metastore.index_metadata(index_id).await.unwrap();
-        assert_eq!(index_metadata.index_id, index_id);
-        assert_eq!(index_metadata.index_uri, index_uri);
+        let index_config = metastore
+            .index_metadata(index_id)
+            .await
+            .unwrap()
+            .into_index_config();
+        assert_eq!(index_config.index_id, index_id);
+        assert_eq!(index_config.index_uri, index_uri);
 
         cleanup_index(&metastore, index_id).await;
     }
@@ -2288,7 +2292,7 @@ pub mod test_suite {
         let index_id_2 = "index-metadata-list-indexes-2";
         let index_uri_2 = format!("ram:///indexes/{index_id_2}");
         let index_metadata_2 = IndexMetadata::for_test(index_id_2, &index_uri_2);
-        let index_ids = vec![index_id_1, index_id_2];
+        let index_ids: &[&str] = &[index_id_1, index_id_2];
 
         // Get a non-existent index metadata
         let result = metastore
@@ -2296,7 +2300,7 @@ pub mod test_suite {
             .await
             .unwrap()
             .into_iter()
-            .filter(|index_metadata| index_ids.contains(&index_metadata.index_id.as_str()))
+            .filter(|index_metadata| index_ids.contains(&index_metadata.index_id()))
             .collect_vec();
         assert!(result.is_empty());
 
@@ -2315,7 +2319,7 @@ pub mod test_suite {
             .await
             .unwrap()
             .into_iter()
-            .filter(|index_metadata| index_ids.contains(&index_metadata.index_id.as_str()))
+            .filter(|index_metadata| index_ids.contains(&index_metadata.index_id()))
             .collect_vec();
         assert_eq!(2, result.len());
 
@@ -2328,7 +2332,7 @@ pub mod test_suite {
             .await
             .unwrap()
             .into_iter()
-            .filter(|index_metadata| index_ids.contains(&index_metadata.index_id.as_str()))
+            .filter(|index_metadata| index_ids.contains(&index_metadata.index_id()))
             .collect_vec();
         assert!(result.is_empty());
     }

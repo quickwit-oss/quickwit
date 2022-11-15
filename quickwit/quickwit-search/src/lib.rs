@@ -177,15 +177,26 @@ pub async fn single_node_search(
     storage_resolver: StorageUriResolver,
 ) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
-    let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
-    let index_storage = storage_resolver.resolve(&index_metadata.index_uri)?;
+    let index_config = metastore
+        .index_metadata(&search_request.index_id)
+        .await?
+        .into_index_config();
+
+    // This should never happen.
+    //
+    // The IndexConfig object has an option because it is used both
+    // as the index config the user supplies. After validation however,
+    // it should contain an `index_uri`.
+    //
+    // TODO see if it can be improved.
+    let index_storage = storage_resolver.resolve(&index_config.index_uri)?;
     let metas = list_relevant_splits(search_request, metastore).await?;
     let split_metadata: Vec<SplitIdAndFooterOffsets> =
         metas.iter().map(extract_split_and_footer_offsets).collect();
     let doc_mapper = build_doc_mapper(
-        &index_metadata.doc_mapping,
-        &index_metadata.search_settings,
-        &index_metadata.indexing_settings,
+        &index_config.doc_mapping,
+        &index_config.search_settings,
+        &index_config.indexing_settings,
     )
     .map_err(|err| {
         SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))

@@ -48,8 +48,8 @@ Search for documents matching a query in the given index `<index id>`. This endp
 | Variable                  | Type                 | Description                                                                                                | Default value                                                                                   |
 | ------------------------- | -------------------- | -------------------------------------------------------------------------------------------------          | ----------------------------------------------------------------------------------------------- |
 | **query**                 | `String`             | Query text. See the [query language doc](query-language.md) (mandatory)                                    |                                                                                                 |
-| **start_timestamp**       | `i64`                | If set, restrict search to documents with a `timestamp >= start_timestamp`                                 |                                                                                                 |
-| **end_timestamp**         | `i64`                | If set, restrict search to documents with a `timestamp < end_timestamp`                                    |                                                                                                 |
+| **start_timestamp**       | `i64`                | If set, restrict search to documents with a `timestamp >= start_timestamp`. The value must be in seconds.                                |                                                                                                 |
+| **end_timestamp**         | `i64`                | If set, restrict search to documents with a `timestamp < end_timestamp`. The value must be in seconds.                                   |                                                                                                 |
 | **start_offset**          | `Integer`            | Number of documents to skip                                                                                | `0`                                                                                             |
 | **max_hits**              | `Integer`            | Maximum number of hits to return (by default 20)                                                           | `20`                                                                                            |
 | **search_field**          | `[String]`           | Fields to search on if no field name is specified in the query. Comma-separated list, e.g. "field1,field2" | index_config.search_settings.default_search_fields                                              |
@@ -57,6 +57,10 @@ Search for documents matching a query in the given index `<index id>`. This endp
 | **sort_by_field**         | `String`             | Field to sort query results by. By default, documents are sorted by their document id. It is possible to sort by specific fast fields by passing the field name. Setting this value to `_score` calculates and sorts by BM25 score of the documents.         |                               |
 | **format**                | `Enum`               | The output format. Allowed values are "json" or "prettyjson"                                               | `prettyjson`                                                                                    |
 | **aggs**               | `JSON`               | The aggregations request. See the [aggregations doc](aggregation.md) for supported aggregations.      |
+
+:::warning
+The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision. The timestamp field precision only affects the way it's stored as fast-fields, whereas the document filtering is always performed in seconds.
+:::
 
 #### Response
 
@@ -99,9 +103,13 @@ The endpoint will return 10 million values if 10 million documents match the que
 | **query**           | `String`   | Query text. See the [query language doc](query-language.md) (mandatory)                                          |                                                    |
 | **fast_field**      | `String`   | Name of a field to retrieve from documents. This field must be marked as "fast" in the index config. (mandatory) |                                                    |
 | **search_field**    | `[String]` | Fields to search on. Comma-separated list, e.g. "field1,field2"                                                  | index_config.search_settings.default_search_fields |
-| **start_timestamp** | `i64`      | If set, restrict search to documents with a `timestamp >= start_timestamp`                                       |                                                    |
-| **end_timestamp**   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`                                          |                                                    |
+| **start_timestamp** | `i64`      | If set, restrict search to documents with a `timestamp >= start_timestamp`. The value must be in seconds.                                   |                                                    |
+| **end_timestamp**   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`. The value must be in seconds.                                        |                                                    |
 | **output_format**   | `String`   | Response output format. `csv` or `clickHouseRowBinary`                                                           | `csv`                                              |
+
+:::warning
+The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision. The timestamp field precision only affects the way it's stored as fast-fields, whereas the document filtering is always performed in seconds.
+::: 
 
 #### Response
 

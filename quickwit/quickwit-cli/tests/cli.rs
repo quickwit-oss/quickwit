@@ -86,8 +86,9 @@ async fn test_cmd_create() {
     let index_id = append_random_suffix("test-create-cmd");
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem).unwrap();
     create_logs_index(&test_env).await.unwrap();
+
     let index_metadata = test_env.index_metadata().await.unwrap();
-    assert_eq!(index_metadata.index_id, test_env.index_id);
+    assert_eq!(index_metadata.index_id(), test_env.index_id);
 
     // Create without giving `index-uri`.
     let index_id = append_random_suffix("test-create-cmd-no-index-uri");
@@ -104,8 +105,8 @@ async fn test_cmd_create() {
     create_index_cli(args).await.unwrap();
 
     let index_metadata = test_env.index_metadata().await.unwrap();
-    assert_eq!(index_metadata.index_id, test_env.index_id);
-    assert_eq!(index_metadata.index_uri, test_env.index_uri);
+    assert_eq!(index_metadata.index_id(), test_env.index_id);
+    assert_eq!(index_metadata.index_uri(), &test_env.index_uri);
 
     // Create non existing index with --overwrite.
     let index_id = append_random_suffix("test-create-non-existing-index-with-overwrite");
@@ -122,8 +123,8 @@ async fn test_cmd_create() {
     create_index_cli(args).await.unwrap();
 
     let index_metadata = test_env.index_metadata().await.unwrap();
-    assert_eq!(index_metadata.index_id, test_env.index_id);
-    assert_eq!(index_metadata.index_uri, test_env.index_uri);
+    assert_eq!(index_metadata.index_id(), &test_env.index_id);
+    assert_eq!(index_metadata.index_uri(), &test_env.index_uri);
 
     // Attempt to create with ill-formed new command.
     let app = build_cli();
