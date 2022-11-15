@@ -29,7 +29,7 @@ use quickwit_storage::Storage;
 use serde::Serialize;
 use thiserror::Error;
 use time::OffsetDateTime;
-use tracing::error;
+use tracing::{error, instrument};
 
 use crate::actors::GarbageCollector;
 
@@ -138,21 +138,54 @@ pub async fn run_garbage_collect(
     .await?;
 
     // We wait another 2 minutes until the split is actually deleted.
-    let grace_period_deletion =
+    let updated_before_timestamp =
         OffsetDateTime::now_utc().unix_timestamp() - deletion_grace_period.as_secs() as i64;
 
+    let deleted_files = incrementally_remove_marked_splits(
+        index_id,
+        updated_before_timestamp,
+        storage,
+        metastore,
+        ctx_opt,
+    ).await;
 
+    Ok(deleted_files)
+}
+
+#[instrument(skip(storage, metastore, ctx_opt))]
+/// Incrementally removes any splits marked for deletion which haven't been
+/// updated after the given grace period in batches of 1000 splits.
+///
+/// The aim of this is to spread the load out across a longer period
+/// rather than short, heavy bursts on the metastore and storage system itself.
+async fn incrementally_remove_marked_splits(
+    index_id: &str,
+    updated_before_timestamp: i64,
+    storage: Arc<dyn Storage>,
+    metastore: Arc<dyn Metastore>,
+    ctx_opt: Option<&ActorContext<GarbageCollector>>,
+) -> Vec<FileEntry> {
     let mut deleted_files = Vec::new();
     loop {
         let query = ListSplitsQuery::for_index(index_id)
             .with_split_state(SplitState::MarkedForDeletion)
-            .with_update_timestamp_lte(grace_period_deletion)
+            .with_update_timestamp_lte(updated_before_timestamp)
             .with_limit(1000);
 
-        let splits_to_delete = protect_future(ctx_opt, metastore.list_splits(query))
-            .await?
+        let list_splits_result = protect_future(ctx_opt, metastore.list_splits(query))
+            .await;
+
+        let splits_to_delete = match list_splits_result {
+            Ok(splits) => splits,
+            Err(error) => {
+                error!(error = ?error, "Failed to fetch deletable splits.");
+                break;
+            }
+        };
+
+        let splits_to_delete = splits_to_delete
             .into_iter()
-            .map(|meta| meta.split_metadata)
+            .map(|split| split.split_metadata)
             .collect::<Vec<_>>();
 
         let num_splits_to_delete = splits_to_delete.len();
@@ -175,7 +208,7 @@ pub async fn run_garbage_collect(
             },
             Err(error) => {
                 error!(error = ?error, "Failed to delete splits.");
-                return Ok(deleted_files);
+                break;
             },
         }
 
@@ -184,7 +217,7 @@ pub async fn run_garbage_collect(
         }
     }
 
-    Ok(deleted_files)
+    deleted_files
 }
 
 /// Delete a list of splits from the storage and the metastore.
