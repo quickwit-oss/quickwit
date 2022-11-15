@@ -147,11 +147,19 @@ impl GarbageCollector {
             };
 
             if !deleted_file_entries.is_empty() {
+                let num_deleted_splits = deleted_file_entries.len();
                 let deleted_files: HashSet<&str> = deleted_file_entries
                     .iter()
                     .map(|deleted_entry| deleted_entry.file_name.as_str())
+                    .take(5)
                     .collect();
-                info!(index_id=%index_id, deleted_files=?deleted_files, "gc-delete");
+                info!(
+                    index_id=%index_id,
+                    num_deleted_splits=num_deleted_splits,
+                    "Janitor deleted {:?} and {} other splits.",
+                    deleted_files,
+                    num_deleted_splits,
+                );
 
                 self.counters.num_deleted_files += deleted_file_entries.len();
                 self.counters.num_deleted_bytes += deleted_file_entries
