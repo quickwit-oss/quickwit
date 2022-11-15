@@ -63,7 +63,7 @@ use crate::{
 const CLIENT_TIMEOUT_DURATION: Duration = if cfg!(test) {
     Duration::from_millis(100)
 } else {
-    Duration::from_secs(5)
+    Duration::from_secs(30)
 };
 
 /// The [`MetastoreGrpcClient`] sends gRPC requests to cluster members running a [`Metastore`]
