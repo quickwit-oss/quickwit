@@ -60,6 +60,9 @@ pub struct SplitAttrs {
 
     // Number of merge operation the split has been through so far.
     pub num_merge_ops: usize,
+
+    /// Timestamp for tracking when the split was finalized.
+    pub indexing_end_timestamp: i64,
 }
 
 impl fmt::Debug for SplitAttrs {
@@ -94,6 +97,7 @@ pub fn create_split_metadata(
         time_range: split_attrs.time_range.clone(),
         uncompressed_docs_size_in_bytes: split_attrs.uncompressed_docs_size_in_bytes,
         create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
+        indexing_end_timestamp: split_attrs.indexing_end_timestamp,
         tags,
         footer_offsets,
         delete_opstamp: split_attrs.delete_opstamp,

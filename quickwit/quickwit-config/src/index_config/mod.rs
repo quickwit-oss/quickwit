@@ -341,8 +341,8 @@ pub struct SearchSettings {
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub enum RetentionPolicyCutoffReference {
-    /// The split is deleted when `now() - split.publish_timestamp >= retention_policy.period`
-    PublishTimestamp,
+    /// The split is deleted when `now() - split.indexing_end_timestamp >= retention_policy.period`
+    IndexingTimestamp,
     /// The split is deleted when `now() - split.time_range.end >= retention_policy.period`
     SplitTimestampField,
 }
@@ -598,7 +598,7 @@ impl TestableForRegression for IndexConfig {
         };
         let retention_policy = Some(RetentionPolicy::new(
             "90 days".to_string(),
-            RetentionPolicyCutoffReference::PublishTimestamp,
+            RetentionPolicyCutoffReference::IndexingTimestamp,
             "daily".to_string(),
         ));
         let stable_log_config = StableLogMergePolicyConfig {
@@ -894,7 +894,7 @@ mod tests {
     fn test_retention_policy_serialization() {
         let retention_policy = RetentionPolicy {
             retention_period: "90 days".to_string(),
-            cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+            cutoff_reference: RetentionPolicyCutoffReference::IndexingTimestamp,
             evaluation_schedule: "hourly".to_string(),
         };
         let retention_policy_yaml = serde_yaml::to_string(&retention_policy).unwrap();
@@ -909,14 +909,14 @@ mod tests {
         {
             let retention_policy_yaml = r#"
             period: 90 days
-            cutoff_reference: publish_timestamp
+            cutoff_reference: indexing_timestamp
         "#;
             let retention_policy =
                 serde_yaml::from_str::<RetentionPolicy>(retention_policy_yaml).unwrap();
 
             let expected_retention_policy = RetentionPolicy {
                 retention_period: "90 days".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                cutoff_reference: RetentionPolicyCutoffReference::IndexingTimestamp,
                 evaluation_schedule: "hourly".to_string(),
             };
             assert_eq!(retention_policy, expected_retention_policy);
@@ -924,7 +924,7 @@ mod tests {
         {
             let retention_policy_yaml = r#"
             period: 90 days
-            cutoff_reference: publish_timestamp
+            cutoff_reference: indexing_timestamp
             schedule: daily
         "#;
             let retention_policy =
@@ -932,7 +932,7 @@ mod tests {
 
             let expected_retention_policy = RetentionPolicy {
                 retention_period: "90 days".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                cutoff_reference: RetentionPolicyCutoffReference::IndexingTimestamp,
                 evaluation_schedule: "daily".to_string(),
             };
             assert_eq!(retention_policy, expected_retention_policy);
@@ -944,7 +944,7 @@ mod tests {
         {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                cutoff_reference: RetentionPolicyCutoffReference::IndexingTimestamp,
                 evaluation_schedule: "hourly".to_string(),
             };
             assert_eq!(
@@ -954,7 +954,7 @@ mod tests {
             {
                 let retention_policy = RetentionPolicy {
                     retention_period: "foo".to_string(),
-                    cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                    cutoff_reference: RetentionPolicyCutoffReference::IndexingTimestamp,
                     evaluation_schedule: "hourly".to_string(),
                 };
                 assert_eq!(
@@ -979,7 +979,7 @@ mod tests {
         {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                cutoff_reference: RetentionPolicyCutoffReference::IndexingTimestamp,
                 evaluation_schedule: "@hourly".to_string(),
             };
             assert_eq!(
@@ -990,7 +990,7 @@ mod tests {
         {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                cutoff_reference: RetentionPolicyCutoffReference::IndexingTimestamp,
                 evaluation_schedule: "hourly".to_string(),
             };
             assert_eq!(
@@ -1001,7 +1001,7 @@ mod tests {
         {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                cutoff_reference: RetentionPolicyCutoffReference::IndexingTimestamp,
                 evaluation_schedule: "0 * * * * *".to_string(),
             };
             let evaluation_schedule = retention_policy.evaluation_schedule().unwrap();
@@ -1015,7 +1015,7 @@ mod tests {
         {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                cutoff_reference: RetentionPolicyCutoffReference::IndexingTimestamp,
                 evaluation_schedule: "hourly".to_string(),
             };
             retention_policy.validate().unwrap();
@@ -1023,7 +1023,7 @@ mod tests {
         {
             let retention_policy = RetentionPolicy {
                 retention_period: "foo".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                cutoff_reference: RetentionPolicyCutoffReference::IndexingTimestamp,
                 evaluation_schedule: "hourly".to_string(),
             };
             retention_policy.validate().unwrap_err();
@@ -1031,7 +1031,7 @@ mod tests {
         {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                cutoff_reference: RetentionPolicyCutoffReference::IndexingTimestamp,
                 evaluation_schedule: "foo".to_string(),
             };
             retention_policy.validate().unwrap_err();
@@ -1044,7 +1044,7 @@ mod tests {
             let hourly_schedule = Schedule::from_str(&prepend_at_char(schedule_str)).unwrap();
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
-                cutoff_reference: RetentionPolicyCutoffReference::PublishTimestamp,
+                cutoff_reference: RetentionPolicyCutoffReference::IndexingTimestamp,
                 evaluation_schedule: schedule_str.to_string(),
             };
 

@@ -72,7 +72,7 @@
       "timestamp_field": "timestamp"
     },
     "retention": {
-      "cutoff_reference": "publish_timestamp",
+      "cutoff_reference": "indexing_timestamp",
       "period": "90 days",
       "schedule": "daily"
     },

@@ -250,6 +250,7 @@ pub fn merge_split_attrs(
         uncompressed_docs_size_in_bytes,
         delete_opstamp,
         num_merge_ops: max_merge_ops(splits) + 1,
+        indexing_end_timestamp: max_indexing_end_timestamp(splits),
     }
 }
 
@@ -257,6 +258,14 @@ fn max_merge_ops(splits: &[SplitMetadata]) -> usize {
     splits
         .iter()
         .map(|split| split.num_merge_ops)
+        .max()
+        .unwrap_or(0)
+}
+
+fn max_indexing_end_timestamp(splits: &[SplitMetadata]) -> i64 {
+    splits
+        .iter()
+        .map(|split| split.indexing_end_timestamp)
         .max()
         .unwrap_or(0)
 }
@@ -409,7 +418,8 @@ impl MergeExecutor {
                 num_docs,
                 uncompressed_docs_size_in_bytes,
                 delete_opstamp: last_delete_opstamp,
-                num_merge_ops: max_merge_ops(&[split]),
+                num_merge_ops: split.num_merge_ops,
+                indexing_end_timestamp: split.indexing_end_timestamp,
             },
             index: merged_index,
             split_scratch_directory: merge_scratch_directory,

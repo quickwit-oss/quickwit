@@ -390,6 +390,7 @@ mod tests {
                 replaced_split_ids: Vec::new(),
                 delete_opstamp: 0,
                 num_merge_ops: 0,
+                indexing_end_timestamp: 0,
             },
             index,
             split_scratch_directory,

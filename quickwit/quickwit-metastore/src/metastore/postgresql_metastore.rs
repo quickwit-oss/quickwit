@@ -38,6 +38,7 @@ use tokio::sync::Mutex;
 use tracing::log::LevelFilter;
 use tracing::{debug, error, instrument, warn};
 
+use super::AgeFilter;
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::metastore::instrumented_metastore::InstrumentedMetastore;
 use crate::metastore::postgresql_model::{self, Index, IndexIdSplitIdRow};
@@ -325,6 +326,25 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery<'_>) -> String {
         }
         Bound::Unbounded => {}
     };
+
+    if let Some(age_filter) = &query.age_filter_opt {
+        match age_filter {
+            AgeFilter::IndexingTimestamp(duration) => {
+                let _ = write!(
+                    sql,
+                    " AND (NOW() - indexing_end_timestamp >= INTERVAL '{} seconds')",
+                    duration.as_secs()
+                );
+            }
+            AgeFilter::SplitTimestampField(duration) => {
+                let _ = write!(
+                    sql,
+                    " AND (NOW() - to_timestamp(time_range_end) >= INTERVAL '{} seconds')",
+                    duration.as_secs()
+                );
+            }
+        }
+    }
 
     // WARNING: Not SQL injection proof
     write_sql_filter(
@@ -1160,6 +1180,8 @@ metastore_test_suite!(crate::PostgresqlMetastore);
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
 
     use super::{build_query_filter, tags_filter_expression_helper};
@@ -1284,6 +1306,23 @@ mod tests {
             sql,
             " WHERE index_id = $1 AND (NOT ($$tag-2$$ = ANY(tags)))"
         );
+
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_age_on_indexing_end_timestamp(Duration::from_secs(60 * 3));
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(
+            sql,
+            " WHERE index_id = $1 AND (NOW() - indexing_end_timestamp >= INTERVAL '180 seconds')"
+        );
+
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_age_on_split_timestamp_field(Duration::from_secs(60 * 2));
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(
+            sql,
+            " WHERE index_id = $1 AND (NOW() - to_timestamp(time_range_end) >= INTERVAL '120 \
+             seconds')"
+        );
     }
 
     #[test]
@@ -1329,6 +1368,17 @@ mod tests {
             sql,
             " WHERE index_id = $1 AND ($$tag-1$$ = ANY(tags)) AND (time_range_end > 90 OR \
              time_range_end IS NULL)"
+        );
+
+        let query = ListSplitsQuery::for_index("test-index")
+            .with_update_timestamp_lt(30)
+            .with_age_on_split_timestamp_field(Duration::from_secs(60 * 2));
+
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(
+            sql,
+            " WHERE index_id = $1 AND (NOW() - to_timestamp(time_range_end) >= INTERVAL '120 \
+             seconds') AND update_timestamp < to_timestamp(30)"
         );
     }
 }

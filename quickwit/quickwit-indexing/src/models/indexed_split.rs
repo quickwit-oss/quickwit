@@ -24,6 +24,7 @@ use quickwit_common::io::IoControls;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use tantivy::directory::MmapDirectory;
 use tantivy::{IndexBuilder, TrackedObject};
+use time::OffsetDateTime;
 use tracing::{instrument, Span};
 
 use crate::controlled_directory::ControlledDirectory;
@@ -107,6 +108,7 @@ impl IndexedSplitBuilder {
                 time_range: None,
                 delete_opstamp: last_delete_opstamp,
                 num_merge_ops: 0,
+                indexing_end_timestamp: 0,
             },
             index_writer,
             split_scratch_directory,
@@ -132,7 +134,10 @@ impl IndexedSplitBuilder {
     pub fn finalize(self) -> anyhow::Result<IndexedSplit> {
         let index = self.index_writer.finalize()?;
         Ok(IndexedSplit {
-            split_attrs: self.split_attrs,
+            split_attrs: SplitAttrs {
+                indexing_end_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
+                ..self.split_attrs
+            },
             index,
             split_scratch_directory: self.split_scratch_directory,
             controlled_directory_opt: self.controlled_directory_opt,

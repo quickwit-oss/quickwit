@@ -6,6 +6,7 @@
     "start": 1000
   },
   "index_id": "my-index",
+  "indexing_end_timestamp": 0,
   "node_id": "node",
   "num_docs": 12303,
   "num_merge_ops": 3,

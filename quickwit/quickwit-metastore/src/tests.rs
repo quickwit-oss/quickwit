@@ -2142,6 +2142,115 @@ pub mod test_suite {
         }
     }
 
+    pub async fn test_metastore_list_splits_with_age<
+        MetastoreToTest: Metastore + DefaultForTest,
+    >() {
+        let metastore = MetastoreToTest::default_for_test().await;
+        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+        let index_id = "list-retention-splits";
+        let index_uri = format!("ram://indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
+
+        let split_id_1 = "list-retention-splits-one";
+        let split_metadata_1 = SplitMetadata {
+            footer_offsets: 1000..2000,
+            split_id: split_id_1.to_string(),
+            num_docs: 1,
+            uncompressed_docs_size_in_bytes: 2,
+            create_timestamp: current_timestamp,
+            delete_opstamp: 20,
+            time_range: Some(0..=current_timestamp),
+            indexing_end_timestamp: current_timestamp,
+            ..Default::default()
+        };
+        let split_id_2 = "list-retention-splits-two";
+        let split_metadata_2 = SplitMetadata {
+            footer_offsets: 1000..2000,
+            split_id: split_id_2.to_string(),
+            num_docs: 1,
+            uncompressed_docs_size_in_bytes: 2,
+            create_timestamp: current_timestamp,
+            delete_opstamp: 10,
+            indexing_end_timestamp: current_timestamp,
+            ..Default::default()
+        };
+        let split_id_3 = "list-retention-splits-three";
+        let split_metadata_3 = SplitMetadata {
+            footer_offsets: 1000..2000,
+            split_id: split_id_3.to_string(),
+            num_docs: 1,
+            uncompressed_docs_size_in_bytes: 2,
+            create_timestamp: current_timestamp,
+            delete_opstamp: 0,
+            indexing_end_timestamp: current_timestamp - 1, // 1 seconds old
+            ..Default::default()
+        };
+
+        metastore
+            .create_index(index_metadata.clone())
+            .await
+            .unwrap();
+        metastore
+            .stage_split(index_id, split_metadata_1.clone())
+            .await
+            .unwrap();
+        metastore
+            .stage_split(index_id, split_metadata_2.clone())
+            .await
+            .unwrap();
+        metastore
+            .stage_split(index_id, split_metadata_3.clone())
+            .await
+            .unwrap();
+
+        {
+            info!("List old splits right after staging (creation).");
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_age_on_indexing_end_timestamp(Duration::from_secs(2));
+            let splits = metastore.list_splits(query).await.unwrap();
+            assert_eq!(splits.len(), 0);
+
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_age_on_split_timestamp_field(Duration::from_secs(2));
+            let splits = metastore.list_splits(query).await.unwrap();
+            assert_eq!(splits.len(), 0);
+        }
+
+        sleep(Duration::from_secs(2)).await;
+
+        {
+            info!("List old splits based on `indexing_end_timestamp`.");
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_age_on_indexing_end_timestamp(Duration::from_secs(2));
+            let splits = metastore.list_splits(query).await.unwrap();
+            let split_ids: HashSet<String> = splits
+                .into_iter()
+                .map(|metadata| metadata.split_id().to_string())
+                .collect();
+            assert_eq!(
+                split_ids,
+                to_hash_set(&[
+                    "list-retention-splits-one",
+                    "list-retention-splits-two",
+                    "list-retention-splits-three"
+                ])
+            );
+
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_age_on_split_timestamp_field(Duration::from_secs(2));
+            let splits = metastore.list_splits(query).await.unwrap();
+            let split_ids: HashSet<String> = splits
+                .into_iter()
+                .map(|metadata| metadata.split_id().to_string())
+                .collect();
+            assert_eq!(split_ids, to_hash_set(&["list-retention-splits-one"]));
+        }
+    }
+
     pub async fn test_metastore_split_update_timestamp<
         MetastoreToTest: Metastore + DefaultForTest,
     >() {
@@ -2163,6 +2272,7 @@ pub mod test_suite {
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
             create_timestamp: current_timestamp,
+            indexing_end_timestamp: 42,
             ..Default::default()
         };
 
@@ -2183,6 +2293,7 @@ pub mod test_suite {
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
         assert!(split_meta.publish_timestamp.is_none());
+        assert_eq!(split_meta.split_metadata.indexing_end_timestamp, 42);
         assert!(
             metastore
                 .index_metadata(index_id)
@@ -2215,6 +2326,7 @@ pub mod test_suite {
             split_meta.publish_timestamp,
             Some(split_meta.update_timestamp)
         );
+        assert_eq!(split_meta.split_metadata.indexing_end_timestamp, 42);
         assert!(
             metastore
                 .index_metadata(index_id)
@@ -2242,6 +2354,7 @@ pub mod test_suite {
             .unwrap();
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
         assert_eq!(split_meta.publish_timestamp, last_publish_timestamp_opt);
+        assert_eq!(split_meta.split_metadata.indexing_end_timestamp, 42);
 
         current_timestamp = split_meta.update_timestamp;
 
@@ -2254,6 +2367,7 @@ pub mod test_suite {
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
         assert!(split_meta.publish_timestamp.is_some());
+        assert_eq!(split_meta.split_metadata.indexing_end_timestamp, 42);
         assert!(
             metastore
                 .index_metadata(index_id)
@@ -2654,11 +2768,11 @@ pub mod test_suite {
     >() {
         let metastore = MetastoreToTest::default_for_test().await;
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
-        let index_id = "udpate-splits-delete-opstamp";
+        let index_id = "update-splits-delete-opstamp";
         let index_uri = format!("ram://indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
-        let split_id_1 = "list-stale-splits-one";
+        let split_id_1 = "update-splits-delete-opstamp-one";
         let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: split_id_1.to_string(),
@@ -2668,7 +2782,7 @@ pub mod test_suite {
             delete_opstamp: 20,
             ..Default::default()
         };
-        let split_id_2 = "list-stale-splits-two";
+        let split_id_2 = "update-splits-delete-opstamp-two";
         let split_metadata_2 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: split_id_2.to_string(),
@@ -2678,7 +2792,7 @@ pub mod test_suite {
             delete_opstamp: 10,
             ..Default::default()
         };
-        let split_id_3 = "list-stale-splits-three";
+        let split_id_3 = "update-splits-delete-opstamp-three";
         let split_metadata_3 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: split_id_3.to_string(),
@@ -2822,6 +2936,12 @@ macro_rules! metastore_test_suite {
             async fn test_metastore_list_splits() {
                 let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_list_splits::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_list_splits_with_age() {
+                let _ = tracing_subscriber::fmt::try_init();
+                crate::tests::test_suite::test_metastore_list_splits_with_age::<$metastore_type>().await;
             }
 
             #[tokio::test]

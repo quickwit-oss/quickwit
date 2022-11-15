@@ -32,11 +32,12 @@ use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use serde::{Deserialize, Serialize};
 use serialize::VersionedFileBackedIndex;
 use time::OffsetDateTime;
+use tracing::warn;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    split_tag_filter, IndexMetadata, ListSplitsQuery, MetastoreError, MetastoreResult, Split,
-    SplitMetadata, SplitState,
+    split_tag_filter, AgeFilter, IndexMetadata, ListSplitsQuery, MetastoreError, MetastoreResult,
+    Split, SplitMetadata, SplitState,
 };
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
@@ -475,6 +476,32 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery<'_>) -> bool {
 
     if let Some(range) = split.split_metadata.time_range.as_ref() {
         if !query.time_range.overlaps_with(range.clone()) {
+            return false;
+        }
+    }
+
+    if let Some(age_filter) = &query.age_filter_opt {
+        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+        let is_old_split = match (age_filter, &split.split_metadata.time_range) {
+            (AgeFilter::IndexingTimestamp(duration), _) => {
+                (current_timestamp - split.split_metadata.indexing_end_timestamp)
+                    >= duration.as_secs() as i64
+            }
+            (AgeFilter::SplitTimestampField(duration), Some(split_time_range)) => {
+                println!(
+                    "EVAN {} {} {}",
+                    current_timestamp,
+                    split_time_range.end(),
+                    duration.as_secs()
+                );
+                (current_timestamp - *split_time_range.end()) >= duration.as_secs() as i64
+            }
+            (AgeFilter::SplitTimestampField(_), None) => {
+                warn!(index_id=%split.split_metadata.index_id, split_id=%split.split_id(), "Retention policy execution expected a `time_range` on the split, but none exist.");
+                false
+            }
+        };
+        if !is_old_split {
             return false;
         }
     }

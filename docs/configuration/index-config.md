@@ -563,7 +563,7 @@ retention:
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | `period`      | Duration after which splits are dropped, expressed in a human-readable way (`1 day`, `2 hours`, `a week`, ...). (1) | required |
-| `cutoff_reference`      | Split attribute from which the retention policy is applied relatively, possible values are: `publish_timestamp`, and `split_timestamp_field`. (2) | required |
+| `cutoff_reference`      | Split attribute from which the retention policy is applied relatively, possible values are: `indexing_timestamp`, and `split_timestamp_field`. (2) | required |
 | `schedule`      | Frequency at which the retention policy is evaluated and applied, expressed as a cron expression (`0 0 * * * *`) or human-readable form (`hourly`, `daily`, `weekly`, `monthly`, `yearly`). | `hourly` |
 
 
@@ -580,5 +580,5 @@ retention:
   - `years`, `year`, `y` -- a year is defined as `365.25 days`
 
 (2) `cutoff_reference` possible values:
-  - `publish_timestamp` will evaluate based on the timestamp the split was published at.
+  - `indexing_timestamp` will evaluate based on the timestamp the split was published at.
   - `split_timestamp_field` will evaluate based on the index timestamp field specified in the (`indexing_settings.timestamp_field`) settings.

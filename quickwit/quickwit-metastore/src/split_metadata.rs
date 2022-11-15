@@ -99,6 +99,9 @@ pub struct SplitMetadata {
     /// Timestamp for tracking when the split was created.
     pub create_timestamp: i64,
 
+    /// Timestamp for tracking when the split was finalized
+    pub indexing_end_timestamp: i64,
+
     /// Set of unique tags values of form `{field_name}:{field_value}`.
     /// The set is filled at indexing with values from each field registered
     /// in the [`DocMapping`](quickwit_config::DocMapping) `tag_fields` attribute and only when
@@ -174,6 +177,7 @@ impl TestableForRegression for SplitMetadata {
             uncompressed_docs_size_in_bytes: 234234,
             time_range: Some(121000..=130198),
             create_timestamp: 3,
+            indexing_end_timestamp: 0,
             tags: ["234".to_string(), "aaa".to_string()].into_iter().collect(),
             footer_offsets: 1000..2000,
             num_merge_ops: 3,
