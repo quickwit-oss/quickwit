@@ -30,7 +30,7 @@ use futures::StreamExt;
 use quickwit_common::ignore_error_kind;
 use quickwit_common::uri::{Protocol, Uri};
 use tokio::fs;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tracing::warn;
 
 use crate::storage::{BulkDeleteError, DeleteFailure, SendableAsync};
@@ -180,14 +180,25 @@ impl Storage for LocalFileStorage {
         payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
         let full_path = self.full_path(path)?;
-        if let Some(parent_dir) = full_path.parent() {
-            fs::create_dir_all(parent_dir).await?;
-        }
+        let parent_dir = full_path.parent().ok_or_else(|| {
+            let err = anyhow::anyhow!("No parent directory for {full_path:?}");
+            StorageErrorKind::InternalError.with_error(err)
+        })?;
 
+        fs::create_dir_all(parent_dir).await?;
         let mut reader = payload.byte_stream().await?.into_async_read();
-        let mut f = tokio::fs::File::create(full_path).await?;
-        tokio::io::copy(&mut reader, &mut f).await?;
-
+        let named_temp_file = tempfile::NamedTempFile::new_in(parent_dir)?;
+        let (temp_std_file, temp_filepath) = named_temp_file.into_parts();
+        let mut temp_tokio_file = tokio::fs::File::from_std(temp_std_file);
+        tokio::io::copy(&mut reader, &mut temp_tokio_file).await?;
+        temp_tokio_file.flush().await?;
+        temp_tokio_file.sync_data().await?;
+        temp_filepath
+            .persist(&full_path)
+            .map_err(|err| StorageErrorKind::Io.with_error(err))?;
+        // We also need to sync the parent directory to ensure it
+        // the file move has been persisted on all file systems.
+        tokio::fs::File::open(parent_dir).await?.sync_data().await?;
         Ok(())
     }
 
