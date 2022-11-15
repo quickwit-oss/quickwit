@@ -23,7 +23,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use quickwit_common::fs::{empty_dir, get_cache_directory_path};
-use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, QuickwitConfig, SourceConfig};
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_janitor::{
@@ -35,7 +34,6 @@ use quickwit_metastore::{
 };
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use quickwit_storage::{quickwit_storage_uri_resolver, StorageResolverError, StorageUriResolver};
-use tantivy::time::OffsetDateTime;
 use thiserror::Error;
 use tracing::{error, info};
 
@@ -66,20 +64,14 @@ impl ServiceError for IndexServiceError {
 pub struct IndexService {
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
-    default_index_root_uri: Uri,
 }
 
 impl IndexService {
     /// Creates an `IndexService`.
-    pub fn new(
-        metastore: Arc<dyn Metastore>,
-        storage_resolver: StorageUriResolver,
-        default_index_root_uri: Uri,
-    ) -> Self {
+    pub fn new(metastore: Arc<dyn Metastore>, storage_resolver: StorageUriResolver) -> Self {
         Self {
             metastore,
             storage_resolver,
-            default_index_root_uri,
         }
     }
 
@@ -88,7 +80,7 @@ impl IndexService {
             .resolve(&config.metastore_uri)
             .await?;
         let storage_resolver = quickwit_storage_uri_resolver().clone();
-        let index_service = Self::new(metastore, storage_resolver, config.default_index_root_uri);
+        let index_service = Self::new(metastore, storage_resolver);
         Ok(index_service)
     }
 
@@ -130,48 +122,15 @@ impl IndexService {
                 }
             }
         }
-        index_config
-            .validate()
-            .map_err(|error| IndexServiceError::InvalidIndexConfig(error.to_string()))?;
-        let index_id = index_config.index_id.clone();
-        let index_uri = if let Some(index_uri) = &index_config.index_uri {
-            index_uri.clone()
-        } else {
-            let index_uri = self.default_index_root_uri.join(&index_id).expect(
-                "Failed to create default index URI. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.",
-            );
-            info!(
-                index_id = %index_id,
-                index_uri = %index_uri,
-                "Index config does not specify `index_uri`, falling back to default value.",
-            );
-            index_uri
-        };
+
         // Add default ingest-api source config.
         let ingest_api_source_config = SourceConfig::ingest_api_default();
-        let mut sources = index_config.sources();
-        sources.insert(
-            ingest_api_source_config.source_id.clone(),
-            ingest_api_source_config,
-        );
-        let index_metadata = IndexMetadata {
-            index_id,
-            index_uri,
-            checkpoint: Default::default(),
-            sources,
-            doc_mapping: index_config.doc_mapping,
-            indexing_settings: index_config.indexing_settings,
-            search_settings: index_config.search_settings,
-            retention_policy: index_config.retention_policy,
-            create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
-            update_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
-        };
+        let index_id = index_config.index_id.clone();
+        let mut index_metadata = IndexMetadata::new(index_config);
+        index_metadata.add_source(ingest_api_source_config)?;
 
         self.metastore.create_index(index_metadata).await?;
-        let index_metadata = self
-            .metastore
-            .index_metadata(&index_config.index_id)
-            .await?;
+        let index_metadata = self.metastore.index_metadata(&index_id).await?;
         Ok(index_metadata)
     }
 
@@ -186,7 +145,13 @@ impl IndexService {
         index_id: &str,
         dry_run: bool,
     ) -> Result<Vec<FileEntry>, IndexServiceError> {
-        let index_uri = self.metastore.index_metadata(index_id).await?.index_uri;
+        let index_uri = self
+            .metastore
+            .index_metadata(index_id)
+            .await?
+            .into_index_config()
+            .index_uri
+            .clone();
         let storage = self.storage_resolver.resolve(&index_uri)?;
 
         if dry_run {
@@ -249,8 +214,12 @@ impl IndexService {
         grace_period: Duration,
         dry_run: bool,
     ) -> anyhow::Result<Vec<FileEntry>> {
-        let index_uri = self.metastore.index_metadata(index_id).await?.index_uri;
-        let storage = self.storage_resolver.resolve(&index_uri)?;
+        let index_config = self
+            .metastore
+            .index_metadata(index_id)
+            .await?
+            .into_index_config();
+        let storage = self.storage_resolver.resolve(&index_config.index_uri)?;
 
         let deleted_entries = run_garbage_collect(
             index_id,
@@ -279,7 +248,7 @@ impl IndexService {
     /// * `storage_resolver` - A storage resolver object to access the storage.
     pub async fn clear_index(&self, index_id: &str) -> anyhow::Result<()> {
         let index_metadata = self.metastore.index_metadata(index_id).await?;
-        let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
+        let storage = self.storage_resolver.resolve(index_metadata.index_uri())?;
         let splits = self.metastore.list_all_splits(index_id).await?;
         let split_ids: Vec<&str> = splits.iter().map(|split| split.split_id()).collect();
         self.metastore
@@ -338,10 +307,6 @@ pub async fn validate_storage_uri(
     index_config: &IndexConfig,
 ) -> anyhow::Result<()> {
     storage_uri_resolver.resolve(&quickwit_config.default_index_root_uri)?;
-
-    // Optional: check custom index uri
-    if let Some(index_uri) = index_config.index_uri.as_ref() {
-        storage_uri_resolver.resolve(index_uri)?;
-    }
+    storage_uri_resolver.resolve(&index_config.index_uri)?;
     Ok(())
 }

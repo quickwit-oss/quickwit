@@ -107,26 +107,6 @@ impl FromStr for Protocol {
 
 const PROTOCOL_SEPARATOR: &str = "://";
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum Extension {
-    Json,
-    Toml,
-    Unknown(String),
-    Yaml,
-}
-
-impl Extension {
-    fn maybe_new(extension: &str) -> Option<Self> {
-        match extension {
-            "json" => Some(Self::Json),
-            "toml" => Some(Self::Toml),
-            "yaml" | "yml" => Some(Self::Yaml),
-            "" => None,
-            unknown => Some(Self::Unknown(unknown.to_string())),
-        }
-    }
-}
-
 /// Encapsulates the URI type.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct Uri {
@@ -155,11 +135,8 @@ impl Uri {
     }
 
     /// Returns the extension of the URI.
-    pub fn extension(&self) -> Option<Extension> {
-        Path::new(&self.uri)
-            .extension()
-            .and_then(OsStr::to_str)
-            .and_then(Extension::maybe_new)
+    pub fn extension(&self) -> Option<&str> {
+        Path::new(&self.uri).extension().and_then(OsStr::to_str)
     }
 
     /// Returns the URI as a string slice.
@@ -365,7 +342,7 @@ impl PartialEq<String> for Uri {
 impl<'de> Deserialize<'de> for Uri {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: serde::Deserializer<'de> {
-        let uri_str: String = Deserialize::deserialize(deserializer)?;
+        let uri_str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
         let uri = Uri::from_str(&uri_str).map_err(D::Error::custom)?;
         Ok(uri)
     }
@@ -523,11 +500,11 @@ mod tests {
 
         assert_eq!(
             Uri::for_test("s3://config.json").extension().unwrap(),
-            Extension::Json
+            "json"
         );
         assert_eq!(
             Uri::for_test("azure://config.foo").extension().unwrap(),
-            Extension::Unknown("foo".to_string())
+            "foo"
         );
     }
 

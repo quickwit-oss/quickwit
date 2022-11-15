@@ -95,16 +95,17 @@ impl GarbageCollector {
                 return;
             }
         };
-        info!(index_ids=%index_metadatas.iter().map(|im| &im.index_id).join(", "), "Garbage collecting indexes.");
+        info!(index_ids=%index_metadatas.iter().map(|im| im.index_id()).join(", "), "Garbage collecting indexes.");
 
         let index_ids_to_storage_iter = index_metadatas
             .into_iter()
             .filter_map(|index_metadata| {
-                match self.storage_resolver.resolve(&index_metadata.index_uri) {
-                    Ok(storage) => Some((index_metadata.index_id, storage)),
+                let index_uri = index_metadata.index_uri();
+                match self.storage_resolver.resolve(index_uri) {
+                    Ok(storage) => Some((index_metadata.index_id().to_string(), storage)),
                     Err(error) => {
                         self.counters.num_failed_storage_resolution += 1;
-                        error!(index=%index_metadata.index_id, error=?error, "Failed to resolve the index storage Uri.");
+                        error!(index=%index_metadata.index_id(), error=?error, "Failed to resolve the index storage Uri.");
                         None
                     },
                 }
@@ -253,7 +254,7 @@ mod tests {
             .expect_list_splits()
             .times(2)
             .returning(|query: ListSplitsQuery<'_>| {
-                assert_eq!(query.index, "test-index");
+                assert_eq!(query.index_id, "test-index");
 
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
@@ -330,7 +331,7 @@ mod tests {
             .expect_list_splits()
             .times(2)
             .returning(|query| {
-                assert_eq!(query.index, "test-index");
+                assert_eq!(query.index_id, "test-index");
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -389,7 +390,7 @@ mod tests {
             .expect_list_splits()
             .times(4)
             .returning(|query| {
-                assert_eq!(query.index, "test-index");
+                assert_eq!(query.index_id, "test-index");
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -529,7 +530,7 @@ mod tests {
             .expect_list_splits()
             .times(4)
             .returning(|query| {
-                assert!(["test-index-1", "test-index-2"].contains(&query.index));
+                assert!(["test-index-1", "test-index-2"].contains(&query.index_id));
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {

@@ -34,7 +34,7 @@ use tempfile::{tempdir, TempDir};
 pub const PACKAGE_BIN_NAME: &str = "quickwit";
 
 const DEFAULT_INDEX_CONFIG: &str = r#"
-    version: 0
+    version: 3
 
     index_id: #index_id
     index_uri: #index_uri
@@ -70,7 +70,7 @@ const DEFAULT_INDEX_CONFIG: &str = r#"
 "#;
 
 const DEFAULT_QUICKWIT_CONFIG: &str = r#"
-    version: 0
+    version: 3
     metastore_uri: #metastore_uri
     data_dir: #data_dir
     rest_listen_port: #rest_listen_port

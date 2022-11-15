@@ -17,15 +17,48 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod file_backed_index;
-mod index_metadata;
-mod split_metadata;
-
 use std::fs;
 use std::path::Path;
 
-use anyhow::Context;
+use anyhow::{bail, Context};
+use quickwit_config::TestableForRegression;
 use serde::{Deserialize, Serialize};
+
+use crate::file_backed_metastore::file_backed_index::FileBackedIndex;
+use crate::{IndexMetadata, SplitMetadata};
+
+/// In order to avoid confusion, we need to make sure that the
+/// resource versions is the same for all resources.
+///
+/// We don't want to confuse quickwit users with different source_config /
+/// index_config versions.
+///
+/// If you bump this version, makes sure to update all resources.
+/// Of course some resource may not have any config change.
+///
+/// You can just reuse the same versioned object in that case.
+/// ```
+/// enum MyResource {
+///     #[serde(rename="v1")]
+///     V1(MyResourceV1),
+///     #[serde(rename="v2")]
+///     V2(MyResourceV1) //< there was no change in this version.
+/// }
+const GLOBAL_QUICKWIT_RESOURCE_VERSION: &str = "3";
+
+/// This test makes sure that the resource is using the current `GLOBAL_QUICKWIT_RESOURCE_VERSION`.
+fn test_global_version<T: Serialize>(serializable: &T) -> anyhow::Result<()> {
+    let json = serde_json::to_value(serializable).unwrap();
+    let version_value = json.get("version").context("No version tag")?;
+    let version_str = version_value.as_str().context("version should be a str")?;
+    if version_str != GLOBAL_QUICKWIT_RESOURCE_VERSION {
+        bail!(
+            "Version `{version_str}` is not the global quickwit resource version \
+             ({GLOBAL_QUICKWIT_RESOURCE_VERSION})"
+        );
+    }
+    Ok(())
+}
 
 fn deserialize_json_file<T>(path: &Path) -> anyhow::Result<T>
 where for<'a> T: Deserialize<'a> {
@@ -34,23 +67,18 @@ where for<'a> T: Deserialize<'a> {
     Ok(deserialized)
 }
 
-fn test_backward_compatibility_single_case<T>(
-    path: &Path,
-    test: impl Fn(&T, &T),
-) -> anyhow::Result<()>
-where
-    for<'a> T: Deserialize<'a>,
-{
+fn test_backward_compatibility_single_case<T>(path: &Path) -> anyhow::Result<()>
+where T: TestableForRegression {
     println!("---\nTest deserialization of {}", path.display());
-    let deserialized = deserialize_json_file(path)?;
+    let deserialized: T = deserialize_json_file(path)?;
     let expected_path = path.to_string_lossy().replace(".json", ".expected.json");
-    let expected = deserialize_json_file(Path::new(&expected_path))?;
-    test(&deserialized, &expected);
+    let expected: T = deserialize_json_file(Path::new(&expected_path))?;
+    deserialized.test_equality(&expected);
     Ok(())
 }
 
-fn test_backward_compatibility<T>(test_dir: &Path, test: impl Fn(&T, &T)) -> anyhow::Result<()>
-where for<'a> T: Deserialize<'a> {
+fn test_backward_compatibility<T>(test_dir: &Path) -> anyhow::Result<()>
+where T: TestableForRegression {
     for entry in
         fs::read_dir(test_dir).with_context(|| format!("Failed to read {}", test_dir.display()))?
     {
@@ -59,7 +87,7 @@ where for<'a> T: Deserialize<'a> {
         if path.to_string_lossy().ends_with(".expected.json") {
             continue;
         }
-        test_backward_compatibility_single_case(&path, &test)
+        test_backward_compatibility_single_case::<T>(&path)
             .with_context(|| format!("test path {}", path.display()))?;
     }
     Ok(())
@@ -133,17 +161,29 @@ where for<'a> T: Serialize {
 /// - `test_name` is just the subdirectory name, for the type being test.
 /// - `test` is a function asserting the equality of the deserialized version
 /// and the expected version.
-pub(crate) fn test_json_backward_compatibility_helper<T>(
-    test_name: &str,
-    test: impl Fn(&T, &T),
-    sample_instance: T,
-) -> anyhow::Result<()>
-where
-    for<'a> T: Deserialize<'a> + Serialize,
-{
+pub(crate) fn test_json_backward_compatibility_helper<T>(test_name: &str) -> anyhow::Result<()>
+where T: TestableForRegression {
+    let sample_instance: T = T::sample_for_regression();
     let test_dir = Path::new("test-data").join(test_name);
-    test_backward_compatibility(&test_dir, test).context("backward-compatiblitity")?;
+    test_global_version(&sample_instance).context("Version is not the global version.")?;
+    test_backward_compatibility::<T>(&test_dir).context("backward-compatibility")?;
     test_and_update_expected_files::<T>(&test_dir).context("test-and-update")?;
-    test_and_create_new_test(&test_dir, sample_instance).context("test-and-create-new-test")?;
+    test_and_create_new_test::<T>(&test_dir, sample_instance)
+        .context("test-and-create-new-test")?;
     Ok(())
+}
+
+#[test]
+fn test_split_metadata_backward_compatibility() {
+    test_json_backward_compatibility_helper::<SplitMetadata>("split-metadata").unwrap();
+}
+
+#[test]
+fn test_index_metadata_backward_compatibility() {
+    test_json_backward_compatibility_helper::<IndexMetadata>("index-metadata").unwrap();
+}
+
+#[test]
+fn test_file_backed_index_backward_compatibility() {
+    test_json_backward_compatibility_helper::<FileBackedIndex>("file-backed-index").unwrap();
 }

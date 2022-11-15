@@ -116,7 +116,7 @@ impl IngestApiGarbageCollector {
             .await
             .context("Failed to list queues")?
             .into_iter()
-            .map(|index_metadata| index_metadata.index_id)
+            .map(|index_metadata| index_metadata.index_id().to_string())
             .collect();
         debug!(index_ids=?index_ids, metastore_uri=%self.metastore.uri(), "List indexes.");
 

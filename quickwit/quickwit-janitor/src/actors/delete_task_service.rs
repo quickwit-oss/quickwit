@@ -23,8 +23,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, HEARTBEAT};
-use quickwit_config::build_doc_mapper;
-use quickwit_metastore::{IndexMetadata, Metastore};
+use quickwit_config::{build_doc_mapper, IndexConfig};
+use quickwit_metastore::Metastore;
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use quickwit_proto::SearchRequest;
 use quickwit_search::SearchClientPool;
@@ -95,14 +95,19 @@ impl DeleteTaskService {
         &mut self,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
-        let mut index_metadata_by_index_id: HashMap<String, IndexMetadata> = self
+        let mut index_config_by_index_id: HashMap<String, IndexConfig> = self
             .metastore
             .list_indexes_metadatas()
             .await?
             .into_iter()
-            .map(|index_metadata| (index_metadata.index_id.clone(), index_metadata))
+            .map(|index_metadata| {
+                (
+                    index_metadata.index_id().to_string(),
+                    index_metadata.into_index_config(),
+                )
+            })
             .collect();
-        let index_ids: HashSet<String> = index_metadata_by_index_id.keys().cloned().collect();
+        let index_ids: HashSet<String> = index_config_by_index_id.keys().cloned().collect();
         let pipeline_index_ids: HashSet<String> =
             self.pipeline_handles_by_index_id.keys().cloned().collect();
 
@@ -122,10 +127,10 @@ impl DeleteTaskService {
 
         // Start new pipelines and add them to the handles hashmap.
         for index_id in index_ids.difference(&pipeline_index_ids) {
-            let index_metadata = index_metadata_by_index_id
+            let index_config = index_config_by_index_id
                 .remove(index_id)
                 .expect("Index metadata must be present.");
-            if self.spawn_pipeline(index_metadata, ctx).await.is_err() {
+            if self.spawn_pipeline(index_config, ctx).await.is_err() {
                 warn!("Failed to spawn delete pipeline for {index_id}");
             }
         }
@@ -135,23 +140,24 @@ impl DeleteTaskService {
 
     pub async fn spawn_pipeline(
         &mut self,
-        index_metadata: IndexMetadata,
+        index_config: IndexConfig,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         let delete_task_service_dir = self.data_dir_path.join(DELETE_SERVICE_TASK_DIR_NAME);
-        let index_storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
+        let index_uri = index_config.index_uri.clone();
+        let index_storage = self.storage_resolver.resolve(&index_uri)?;
         let pipeline = DeleteTaskPipeline::new(
-            index_metadata.index_id.to_string(),
+            index_config.index_id.clone(),
             self.metastore.clone(),
             self.search_client_pool.clone(),
-            index_metadata.indexing_settings,
+            index_config.indexing_settings,
             index_storage,
             delete_task_service_dir,
             self.max_concurrent_split_uploads,
         );
         let (_pipeline_mailbox, pipeline_handler) = ctx.spawn_actor().spawn(pipeline);
         self.pipeline_handles_by_index_id
-            .insert(index_metadata.index_id, pipeline_handler);
+            .insert(index_config.index_id, pipeline_handler);
         Ok(())
     }
 
@@ -159,14 +165,15 @@ impl DeleteTaskService {
         &self,
         delete_query: DeleteQuery,
     ) -> Result<DeleteTask, JanitorError> {
-        let index_metadata = self
+        let index_config: IndexConfig = self
             .metastore
             .index_metadata(&delete_query.index_id)
-            .await?;
+            .await?
+            .into_index_config();
         let doc_mapper = build_doc_mapper(
-            &index_metadata.doc_mapping,
-            &index_metadata.search_settings,
-            &index_metadata.indexing_settings,
+            &index_config.doc_mapping,
+            &index_config.search_settings,
+            &index_config.indexing_settings,
         )
         .map_err(|error| JanitorError::InternalError(error.to_string()))?;
         let delete_search_request = SearchRequest::from(delete_query.clone());
