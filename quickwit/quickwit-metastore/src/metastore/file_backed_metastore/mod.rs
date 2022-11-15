@@ -424,6 +424,14 @@ impl Metastore for FileBackedMetastore {
         Ok(())
     }
 
+    async fn mark_splits_for_deletion_by_query<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<()> {
+        self.mutate(query.index_id, |index| {
+            index.mark_splits_for_deletion_by_query(query)
+        })
+        .await?;
+        Ok(())
+    }
+
     async fn delete_splits<'a>(
         &self,
         index_id: &str,

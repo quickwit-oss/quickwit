@@ -222,6 +222,38 @@ impl FileBackedIndex {
         Ok(is_modified)
     }
 
+    /// Marks any splits matching the given query for deletion.
+    ///
+    /// Returns whether a mutation occurred.
+    pub(crate) fn mark_splits_for_deletion_by_query(
+        &mut self,
+        query: ListSplitsQuery<'_>,
+    ) -> MetastoreResult<bool> {
+        let mut is_modified = false;
+        let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+
+        let splits_iter = self.splits
+            .values_mut()
+            .filter(|split| split_query_predicate(split, &query));
+
+        for metadata in splits_iter {
+            if metadata.split_state == SplitState::MarkedForDeletion {
+                // If the split is already marked for deletion, This is fine, we just skip it.
+                continue;
+            }
+
+            metadata.split_state = SplitState::MarkedForDeletion;
+            metadata.update_timestamp = now_timestamp;
+            is_modified = true;
+        }
+
+        if is_modified {
+            self.metadata.update_timestamp = now_timestamp;
+        }
+
+        Ok(is_modified)
+    }
+
     /// Helper to mark a list of splits as published.
     /// This function however does not update the checkpoint.
     fn mark_splits_as_published_helper<'a>(
@@ -446,7 +478,7 @@ impl Debug for Stamper {
     }
 }
 
-fn split_query_predicate(split: &&Split, query: &ListSplitsQuery<'_>) -> bool {
+fn split_query_predicate(split: &Split, query: &ListSplitsQuery<'_>) -> bool {
     if !split_tag_filter(split, query.tags.as_ref()) {
         return false;
     }
