@@ -181,6 +181,16 @@ impl Metastore for InstrumentedMetastore {
         );
     }
 
+    async fn mark_splits_for_deletion_by_query<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<()> {
+        let index_id = query.index_id;
+        instrument!(
+            self.underlying
+                .mark_splits_for_deletion_by_query(query)
+                .await,
+            [mark_splits_for_deletion_by_query, index_id]
+        );
+    }
+
     async fn delete_splits<'a>(
         &self,
         index_id: &str,
