@@ -50,7 +50,7 @@ quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
-testsuite = ["mockall", "tempfile"]
+testsuite = ["mockall", "tempfile", "quickwit-config/testsuite"]
 ci-test = []
 postgres = ["sqlx"]
 azure = ["quickwit-storage/azure"]

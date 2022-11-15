@@ -5,16 +5,15 @@
 
 version: 0
 
-index_id: otel-logs
+index_id: otel-log-v0
 
 doc_mapping:
   field_mappings:
     - name: timestamp
-      type: i64
+      type: datetime
+      input_formats:
+        - unix_timestamp
       fast: true
-    - name: name
-      type: text
-      tokenizer: default
     - name: severity
       type: text
       tokenizer: raw

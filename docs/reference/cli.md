@@ -267,9 +267,13 @@ quickwit index search
 `--start-offset` Offset in the global result set of the first hit returned. (default: 0) \
 `--search-fields` List of fields that Quickwit will search into if the user query does not explicitly target a field in the query. It overrides the default search fields defined in the index config. Space-separated list, e.g. "field1 field2". \
 `--snippet-fields` List of fields that Quickwit will extract snippet on. Space-separated list, e.g. "field1 field2". \
-`--start-timestamp` Filters out documents before that timestamp (time-series indexes only). \
-`--end-timestamp` Filters out documents after that timestamp (time-series indexes only). \
+`--start-timestamp` Filters out documents before that timestamp in seconds (time-series indexes only). \
+`--end-timestamp` Filters out documents after that timestamp in seconds (time-series indexes only). \
 `--sort-by-score` Setting this flag calculates and sorts documents by their BM25 score.
+
+:::warning
+The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision. The timestamp field precision only affects the way it's stored as fast-fields, whereas the document filtering is always performed in seconds.
+:::
 
 *Examples*
 
@@ -389,8 +393,8 @@ quickwit split list
 
 `--index` ID of the target index. \
 `--states` Comma-separated list of split states to filter on. Possible values are `staged`, `published`, and `marked`. \
-`--start-date` Filters out splits containing documents from this timestamp onwards (time-series indexes only).  \
-`--end-date` Filters out splits containing documents before this timestamp (time-series indexes only).  \
+`--start-date` Filters out splits containing documents from this timestamp in seconds onwards (time-series indexes only). \
+`--end-date` Filters out splits containing documents before this timestamp in seconds (time-series indexes only). \
 `--tags` Comma-separated list of tags, only splits that contain all of the tags will be returned.  \
 `--config` Quickwit config file.  \
 `--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.  \

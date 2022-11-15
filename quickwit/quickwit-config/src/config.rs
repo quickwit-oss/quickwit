@@ -25,10 +25,9 @@ use std::str::FromStr;
 
 use anyhow::{bail, Context};
 use byte_unit::Byte;
-use json_comments::StripComments;
 use quickwit_common::net::{find_private_ip, Host, HostAddr};
 use quickwit_common::new_coolid;
-use quickwit_common::uri::{Extension, Uri};
+use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
@@ -36,7 +35,7 @@ use crate::config_value::ConfigValue;
 use crate::qw_env_vars::*;
 use crate::service::QuickwitService;
 use crate::templating::render_config;
-use crate::validate_identifier;
+use crate::{validate_identifier, ConfigFormat};
 
 pub const DEFAULT_QW_CONFIG_PATH: &str = "config/quickwit.yaml";
 
@@ -226,7 +225,7 @@ impl FromStr for List {
 #[serde(deny_unknown_fields)]
 struct QuickwitConfigBuilder {
     #[serde(default)]
-    version: ConfigValue<usize, QW_NONE>,
+    version: ConfigValue<String, QW_NONE>,
     #[serde(default = "default_cluster_id")]
     cluster_id: ConfigValue<String, QW_CLUSTER_ID>,
     #[serde(default = "default_node_id")]
@@ -256,39 +255,10 @@ struct QuickwitConfigBuilder {
 }
 
 impl QuickwitConfigBuilder {
-    async fn from_uri(uri: &Uri, config_content: &[u8]) -> anyhow::Result<Self> {
-        let parser_fn = match uri.extension() {
-            Some(Extension::Json) => Self::from_json,
-            Some(Extension::Toml) => Self::from_toml,
-            Some(Extension::Yaml) => Self::from_yaml,
-            Some(Extension::Unknown(extension)) => bail!(
-                "Failed to read quickwit config file `{}`: file extension `.{}` is not supported. \
-                 Supported file formats and extensions are JSON (.json), TOML (.toml), and YAML \
-                 (.yaml or .yml).",
-                uri,
-                extension
-            ),
-            None => bail!(
-                "Failed to read config file `{}`: file extension is missing. Supported file \
-                 formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or .yml).",
-                uri
-            ),
-        };
+    fn from_uri(uri: &Uri, config_content: &[u8]) -> anyhow::Result<Self> {
+        let config_format = ConfigFormat::sniff_from_uri(uri)?;
         let rendered_config = render_config(uri, config_content)?;
-        parser_fn(rendered_config.as_bytes())
-    }
-
-    fn from_json(bytes: &[u8]) -> anyhow::Result<Self> {
-        serde_json::from_reader(StripComments::new(bytes))
-            .context("Failed to parse JSON config file.")
-    }
-
-    fn from_toml(bytes: &[u8]) -> anyhow::Result<Self> {
-        toml::from_slice(bytes).context("Failed to parse TOML config file.")
-    }
-
-    fn from_yaml(bytes: &[u8]) -> anyhow::Result<Self> {
-        serde_yaml::from_slice(bytes).context("Failed to parse YAML config file.")
+        config_format.parse(rendered_config.as_bytes())
     }
 
     pub async fn build(self, env_vars: &HashMap<String, String>) -> anyhow::Result<QuickwitConfig> {
@@ -371,7 +341,7 @@ impl QuickwitConfigBuilder {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct QuickwitConfig {
-    pub version: usize,
+    pub version: String,
     pub cluster_id: String,
     pub node_id: String,
     pub enabled_services: HashSet<QuickwitService>,
@@ -401,7 +371,7 @@ impl QuickwitConfig {
         config_content: &[u8],
         env_vars: &HashMap<String, String>,
     ) -> anyhow::Result<Self> {
-        let config_builder = QuickwitConfigBuilder::from_uri(config_uri, config_content).await?;
+        let config_builder = QuickwitConfigBuilder::from_uri(config_uri, config_content)?;
         let config = config_builder.build(env_vars).await?;
         config.validate()?;
         Ok(config)
@@ -487,7 +457,7 @@ impl QuickwitConfig {
         let default_index_root_uri = default_index_root_uri(&data_dir_uri);
 
         Self {
-            version: 0,
+            version: "3".to_string(),
             cluster_id: default_cluster_id().unwrap(),
             node_id: default_node_id().unwrap(),
             enabled_services,
@@ -519,7 +489,7 @@ mod tests {
     impl Default for QuickwitConfigBuilder {
         fn default() -> Self {
             Self {
-                version: ConfigValue::with_default(0),
+                version: ConfigValue::none(),
                 cluster_id: default_cluster_id(),
                 node_id: default_node_id(),
                 enabled_services: default_enabled_services(),
@@ -546,97 +516,108 @@ mod tests {
         )
     }
 
-    macro_rules! test_parser {
-        ($test_function_name:ident, $file_extension:expr) => {
-            #[tokio::test]
-            async fn $test_function_name() -> anyhow::Result<()> {
-                let config_filepath =
-                    get_config_filepath(&format!("quickwit.{}", stringify!($file_extension)));
-                let config_uri = Uri::from_str(&config_filepath)?;
-                let file = std::fs::read_to_string(&config_filepath).unwrap();
-                let config = QuickwitConfigBuilder::from_uri(&config_uri, file.as_bytes())
-                    .await?
-                    .build(&HashMap::new())
-                    .await?;
-                assert_eq!(config.version, 0);
-                assert_eq!(config.cluster_id, "quickwit-cluster");
+    #[track_caller]
+    async fn test_quickwit_config_parse_aux(config_format: ConfigFormat) -> anyhow::Result<()> {
+        let config_filepath =
+            get_config_filepath(&format!("quickwit.{config_format:?}").to_lowercase());
+        let config_uri = Uri::from_str(&config_filepath)?;
+        let file = std::fs::read_to_string(&config_filepath).unwrap();
+        let config = QuickwitConfigBuilder::from_uri(&config_uri, file.as_bytes())?
+            .build(&HashMap::new())
+            .await?;
+        assert_eq!(config.version, "3");
+        assert_eq!(config.cluster_id, "quickwit-cluster");
 
-                assert_eq!(config.enabled_services.len(), 2);
+        assert_eq!(config.enabled_services.len(), 2);
 
-                assert!(config.enabled_services.contains(&QuickwitService::Janitor));
-                assert!(config
-                    .enabled_services
-                    .contains(&QuickwitService::Metastore));
+        assert!(config.enabled_services.contains(&QuickwitService::Janitor));
+        assert!(config
+            .enabled_services
+            .contains(&QuickwitService::Metastore));
 
-                assert_eq!(
-                    config.rest_listen_addr,
-                    SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 1111)
-                );
-                assert_eq!(
-                    config.gossip_listen_addr,
-                    SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 2222)
-                );
-                assert_eq!(
-                    config.grpc_listen_addr,
-                    SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 3333)
-                );
-                assert_eq!(
-                    config.gossip_advertise_addr,
-                    SocketAddr::new(IpAddr::V4(Ipv4Addr::new(172, 0, 0, 12)), 2222)
-                );
-                assert_eq!(
-                    config.grpc_advertise_addr,
-                    SocketAddr::new(IpAddr::V4(Ipv4Addr::new(172, 0, 0, 12)), 3333)
-                );
-                assert_eq!(
-                    config.peer_seeds,
-                    vec![
-                        "quickwit-searcher-0.local".to_string(),
-                        "quickwit-searcher-1.local".to_string()
-                    ]
-                );
-                assert_eq!(config.data_dir_path, Path::new("/opt/quickwit/data"));
-                assert_eq!(
-                    config.metastore_uri,
-                    "postgres://username:password@host:port/db"
-                );
-                assert_eq!(config.default_index_root_uri, "s3://quickwit-indexes");
-                assert_eq!(
-                    config.indexer_config,
-                    IndexerConfig {
-                        enable_opentelemetry_otlp_service: false,
-                        split_store_max_num_bytes: Byte::from_str("1T").unwrap(),
-                        split_store_max_num_splits: 10_000,
-                        max_concurrent_split_uploads: 8,
-                    }
-                );
-                assert_eq!(
-                    config.searcher_config,
-                    SearcherConfig {
-                        enable_jaeger_service: false,
-                        fast_field_cache_capacity: Byte::from_str("10G").unwrap(),
-                        split_footer_cache_capacity: Byte::from_str("1G").unwrap(),
-                        max_num_concurrent_split_searches: 150,
-                        max_num_concurrent_split_streams: 120,
-                    }
-                );
-                Ok(())
+        assert_eq!(
+            config.rest_listen_addr,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 1111)
+        );
+        assert_eq!(
+            config.gossip_listen_addr,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 2222)
+        );
+        assert_eq!(
+            config.grpc_listen_addr,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 3333)
+        );
+        assert_eq!(
+            config.gossip_advertise_addr,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(172, 0, 0, 12)), 2222)
+        );
+        assert_eq!(
+            config.grpc_advertise_addr,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(172, 0, 0, 12)), 3333)
+        );
+        assert_eq!(
+            config.peer_seeds,
+            vec![
+                "quickwit-searcher-0.local".to_string(),
+                "quickwit-searcher-1.local".to_string()
+            ]
+        );
+        assert_eq!(config.data_dir_path, Path::new("/opt/quickwit/data"));
+        assert_eq!(
+            config.metastore_uri,
+            "postgres://username:password@host:port/db"
+        );
+        assert_eq!(config.default_index_root_uri, "s3://quickwit-indexes");
+        assert_eq!(
+            config.indexer_config,
+            IndexerConfig {
+                enable_opentelemetry_otlp_service: false,
+                split_store_max_num_bytes: Byte::from_str("1T").unwrap(),
+                split_store_max_num_splits: 10_000,
+                max_concurrent_split_uploads: 8,
             }
-        };
+        );
+        assert_eq!(
+            config.searcher_config,
+            SearcherConfig {
+                enable_jaeger_service: false,
+                fast_field_cache_capacity: Byte::from_str("10G").unwrap(),
+                split_footer_cache_capacity: Byte::from_str("1G").unwrap(),
+                max_num_concurrent_split_searches: 150,
+                max_num_concurrent_split_streams: 120,
+            }
+        );
+        Ok(())
     }
 
-    test_parser!(test_config_from_json, json);
-    test_parser!(test_config_from_toml, toml);
-    test_parser!(test_config_from_yaml, yaml);
+    #[tokio::test]
+    async fn test_quickwit_config_parse_json() {
+        test_quickwit_config_parse_aux(ConfigFormat::Json)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_quickwit_config_parse_toml() {
+        test_quickwit_config_parse_aux(ConfigFormat::Toml)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_quickwit_config_parse_yaml() {
+        test_quickwit_config_parse_aux(ConfigFormat::Toml)
+            .await
+            .unwrap();
+    }
 
     #[tokio::test]
     async fn test_config_contains_wrong_values() {
         let config_filepath = get_config_filepath("quickwit.wrongkey.yaml");
         let config_uri = Uri::from_str(&config_filepath).unwrap();
         let config_str = std::fs::read_to_string(&config_filepath).unwrap();
-        let parsing_error = QuickwitConfigBuilder::from_uri(&config_uri, config_str.as_bytes())
-            .await
-            .unwrap_err();
+        let parsing_error =
+            QuickwitConfigBuilder::from_uri(&config_uri, config_str.as_bytes()).unwrap_err();
         assert!(format!("{parsing_error:?}")
             .contains("unknown field `max_num_concurrent_split_searchs`"));
     }
@@ -655,10 +636,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_quickwit_config_default_values_minimal() {
-        let config_yaml = "version: 0";
+        let config_yaml = "version: 3";
         let config_builder = serde_yaml::from_str::<QuickwitConfigBuilder>(config_yaml).unwrap();
         let config = config_builder.build(&HashMap::new()).await.unwrap();
-        assert_eq!(config.version, 0);
+        assert_eq!(config.version, "3");
         assert_eq!(config.cluster_id, DEFAULT_CLUSTER_ID);
         assert!(config.node_id.starts_with("node-"));
         assert_eq!(
@@ -699,7 +680,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_quickwit_config_env_var_override() {
-        let config_yaml = "version: 0";
+        let config_yaml = "version: 3";
         let config_builder = serde_yaml::from_str::<QuickwitConfigBuilder>(config_yaml).unwrap();
         let mut env_vars = HashMap::new();
         env_vars.insert("QW_CLUSTER_ID".to_string(), "test-cluster".to_string());
@@ -779,13 +760,13 @@ mod tests {
     #[tokio::test]
     async fn test_quickwwit_config_default_values_storage() {
         let config_yaml = r#"
-            version: 0
+            version: 3
             node_id: 1
             metastore_uri: postgres://username:password@host:port/db
         "#;
         let config_builder = serde_yaml::from_str::<QuickwitConfigBuilder>(config_yaml).unwrap();
         let config = config_builder.build(&HashMap::new()).await.unwrap();
-        assert_eq!(config.version, 0);
+        assert_eq!(config.version, "3");
         assert_eq!(config.cluster_id, DEFAULT_CLUSTER_ID);
         assert_eq!(config.node_id, "1");
         assert_eq!(
@@ -797,13 +778,13 @@ mod tests {
     #[tokio::test]
     async fn test_quickwit_config_config_default_values_default_indexer_searcher_config() {
         let config_yaml = r#"
-            version: 0
+            version: 3
             metastore_uri: postgres://username:password@host:port/db
             data_dir: /opt/quickwit/data
         "#;
         let config_builder = serde_yaml::from_str::<QuickwitConfigBuilder>(config_yaml).unwrap();
         let config = config_builder.build(&HashMap::new()).await.unwrap();
-        assert_eq!(config.version, 0);
+        assert_eq!(config.version, "3");
         assert_eq!(
             config.metastore_uri,
             "postgres://username:password@host:port/db"
@@ -834,6 +815,7 @@ mod tests {
     async fn test_peer_socket_addrs() {
         {
             let quickwit_config = QuickwitConfigBuilder {
+                version: ConfigValue::for_test("3".to_string()),
                 rest_listen_port: ConfigValue::for_test(1789),
                 ..Default::default()
             }
@@ -844,6 +826,7 @@ mod tests {
         }
         {
             let quickwit_config = QuickwitConfigBuilder {
+                version: ConfigValue::for_test("3".to_string()),
                 rest_listen_port: ConfigValue::for_test(1789),
                 peer_seeds: ConfigValue::for_test(List(vec!["unresolvable-host".to_string()])),
                 ..Default::default()
@@ -855,6 +838,7 @@ mod tests {
         }
         {
             let quickwit_config = QuickwitConfigBuilder {
+                version: ConfigValue::for_test("3".to_string()),
                 rest_listen_port: ConfigValue::for_test(1789),
                 peer_seeds: ConfigValue::for_test(List(vec![
                     "unresolvable-host".to_string(),
@@ -884,6 +868,7 @@ mod tests {
     async fn test_socket_addr_ports() {
         {
             let quickwit_config = QuickwitConfigBuilder {
+                version: ConfigValue::for_test("3".to_string()),
                 listen_address: default_listen_address(),
                 ..Default::default()
             }
@@ -905,6 +890,7 @@ mod tests {
         }
         {
             let quickwit_config = QuickwitConfigBuilder {
+                version: ConfigValue::for_test("3".to_string()),
                 listen_address: default_listen_address(),
                 rest_listen_port: ConfigValue::for_test(1789),
                 ..Default::default()
@@ -927,6 +913,7 @@ mod tests {
         }
         {
             let quickwit_config = QuickwitConfigBuilder {
+                version: ConfigValue::for_test("3".to_string()),
                 listen_address: default_listen_address(),
                 rest_listen_port: ConfigValue::for_test(1789),
                 gossip_listen_port: ConfigValue::for_test(1889),
@@ -966,7 +953,7 @@ mod tests {
     async fn test_config_validates_uris() {
         {
             let config_yaml = r#"
-            version: 0
+            version: 3
             node_id: 1
             metastore_uri: ''
         "#;
@@ -974,7 +961,7 @@ mod tests {
         }
         {
             let config_yaml = r#"
-            version: 0
+            version: 3
             node_id: 1
             metastore_uri: postgres://username:password@host:port/db
             default_index_root_uri: ''
@@ -987,7 +974,7 @@ mod tests {
     async fn test_quickwit_config_data_dir_accepts_both_file_uris_and_file_paths() {
         {
             let config_yaml = r#"
-                version: 0
+                version: 3
                 data_dir: /opt/quickwit/data
             "#;
             let config_builder =
@@ -997,7 +984,7 @@ mod tests {
         }
         {
             let config_yaml = r#"
-                version: 0
+                version: 3
                 data_dir: file:///opt/quickwit/data
             "#;
             let config_builder =
@@ -1007,7 +994,7 @@ mod tests {
         }
         {
             let config_yaml = r#"
-                version: 0
+                version: 3
                 data_dir: s3://indexes/foo
             "#;
             let config_builder =

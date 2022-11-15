@@ -15,6 +15,7 @@ members = [
   "quickwit-jaeger",
   "quickwit-janitor",
   "quickwit-metastore",
+  "quickwit-metastore-utils",
   "quickwit-opentelemetry",
   "quickwit-proto",
   "quickwit-search",
@@ -151,7 +152,7 @@ thiserror = "1"
 thousands = "0.2.0"
 tikv-jemalloc-ctl = "0.5"
 tikv-jemallocator = "0.5"
-time = { version = "0.3.7", features = ["std", "macros"] }
+time = { version = "0.3.7", features = ["std", "formatting", "macros"] }
 tokio = { version = "^1.21", features = ["full", "test-util"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["full"] }
@@ -192,14 +193,14 @@ quickwit-serve = { version = "0.3.1", path = "./quickwit-serve" }
 quickwit-storage = { version = "0.3.1", path = "./quickwit-storage" }
 quickwit-telemetry = { version = "0.3.1", path = "./quickwit-telemetry" }
 
-fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", rev = "c24157f" }
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "c24157f", default-features = false, features = [
+fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", rev = "55a9d80" }
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "55a9d80", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",
   "quickwit",
 ] }
-tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "c24157f" }
+tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "55a9d80" }
 
 # This is actually not used directly the goal is to fix the version
 # used by reqwest. 0.8.30 has an unclear license.

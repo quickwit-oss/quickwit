@@ -279,7 +279,7 @@ pub trait Metastore: Send + Sync + 'static {
 /// A query builder for listing splits within the metastore.
 pub struct ListSplitsQuery<'a> {
     /// The index to get splits from.
-    pub index: &'a str,
+    pub index_id: &'a str,
 
     /// The maximum number of splits to retrieve.
     pub limit: Option<usize>,
@@ -309,12 +309,12 @@ pub struct ListSplitsQuery<'a> {
 #[allow(unused_attributes)]
 impl<'a> ListSplitsQuery<'a> {
     /// Creates a new [ListSplitsQuery] for a specific index.
-    pub fn for_index(index: &'a str) -> Self {
+    pub fn for_index(index_id: &'a str) -> Self {
         Self {
-            index,
+            index_id,
             limit: None,
             offset: None,
-            split_states: vec![],
+            split_states: Vec::new(),
             tags: None,
             time_range: Default::default(),
             delete_opstamp: Default::default(),
