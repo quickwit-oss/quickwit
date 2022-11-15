@@ -369,7 +369,7 @@ impl Metastore for MetastoreGrpcClient {
             })?;
 
         let request = ListSplitsRequest { filter_json };
-        self.0
+        self.underlying
             .clone()
             .mark_splits_for_deletion_by_query(request)
             .await
