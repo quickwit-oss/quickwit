@@ -147,7 +147,8 @@ pub async fn run_garbage_collect(
         storage,
         metastore,
         ctx_opt,
-    ).await;
+    )
+    .await;
 
     Ok(deleted_files)
 }
@@ -172,8 +173,7 @@ async fn incrementally_remove_marked_splits(
             .with_update_timestamp_lte(updated_before_timestamp)
             .with_limit(1000);
 
-        let list_splits_result = protect_future(ctx_opt, metastore.list_splits(query))
-            .await;
+        let list_splits_result = protect_future(ctx_opt, metastore.list_splits(query)).await;
 
         let splits_to_delete = match list_splits_result {
             Ok(splits) => splits,
@@ -203,13 +203,11 @@ async fn incrementally_remove_marked_splits(
         .await;
 
         match delete_splits_result {
-            Ok(entries) => {
-                deleted_files.extend(entries);
-            },
+            Ok(entries) => deleted_files.extend(entries),
             Err(error) => {
                 error!(error = ?error, "Failed to delete splits.");
                 break;
-            },
+            }
         }
 
         if num_splits_to_delete < 1000 {
