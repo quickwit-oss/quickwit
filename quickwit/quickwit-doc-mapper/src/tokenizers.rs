@@ -151,33 +151,19 @@ static REGEX_ERROR_MSG: &str = "Failed to compile regular expression. This shoul
 // Regex array ordered by the most frequent pattern encountered in logs.
 // If an expression appears a lot, it should be place at the smallest index possible
 // to avoid iterating through the array as much as possible.
-static REGEX_ARRAY: Lazy<[Regex; 2]> = Lazy::new(|| {
-    [
-        // Regex to match identifiers: IP, URI, UUID, Dates...
-        Regex::new(
-            r"(?xi)             # Multiline regex that ignores case.
-        ^
-        ([a-z0-9]+://)?             # Optional scheme: https, file, s3,...
-        [/\.]*                      # Optional file prefix path: ./../path
-        [a-z0-9]+                   # Identifier starts with an alphanumeric...
-        [-/%_\\.:]                  # And must be followed by a special character to form an ID.
-        [-/%_\\.:$@,a-z0-9]+          # Authorized identifier characters. 
-        [/a-z0-9]                   # Identifier must end with an alphanumeric.
-        ",
-        )
-        .expect(REGEX_ERROR_MSG),
-        // Regex to match dates that starts with a month. Such a format is common in syslog.
-        Regex::new(
-            r"(?xi)              # Multiline regex that ignores case.
-        ^
-        [a-z]{2,3}                  # Month.
-        \s{1,2}                     # Space separator.
-        [0-9]{1,2}                  # Year/day.
-        (\s{1,2}[0-9]+[-_/:0-9]*)?  # Year/day/hours/minutes/seconds.
-        ",
-        )
-        .expect(REGEX_ERROR_MSG),
-    ]
+static IDENTIFIER_REGEX: Lazy<Regex> = Lazy::new(|| {
+    // Regex to match identifiers: IP, URI, UUID, Dates...
+    Regex::new(
+        r"(?xi)             # Multiline regex that ignores case.
+    ^
+    ([a-z0-9]+://)?             # Optional scheme: https, file, s3,...
+    [a-z0-9]+                   # Identifier starts with an alphanumeric...
+    [-/%_\\.:]                  # And must be followed by a special character to form an ID.
+    [-/%_\\.:$@,a-z0-9]+        # Authorized identifier characters. 
+    [/a-z0-9]                   # Identifier must end with an alphanumeric.
+    ",
+    )
+    .expect(REGEX_ERROR_MSG)
 });
 
 /// Log friendly tokenizer that avoids splittings on ponctuation in:
@@ -241,13 +227,10 @@ impl<'a> TokenStream for LogTokenStream<'a> {
 
             // Tries first to find a matching regex. If found, advances the iterator to the
             // start of the next token and push the token in the stream.
-            for regex in REGEX_ARRAY.iter() {
-                if let Some(regex_match) = regex.find(text_substring) {
-                    let offset_to = self.handle_match(offset_from + regex_match.end());
-                    self.push_token(offset_from, offset_to);
-
-                    return true;
-                }
+            if let Some(regex_match) = IDENTIFIER_REGEX.find(text_substring) {
+                let offset_to = self.handle_match(offset_from + regex_match.end());
+                self.push_token(offset_from, offset_to);
+                return true;
             }
 
             // When no regex is match, falls back to the simple tokenizer that splits on non
@@ -468,7 +451,7 @@ mod tests {
     #[test]
     fn log_tokenizer_basic_test() {
         let test_string =
-            "255.255.255.255 test \n\ttest\t 27-05-2022 \t\t  \n \tat\r\n 02:51\n\nJul 10 -";
+            "255.255.255.255 test \n\ttest\t 27-05-2022 \t\t  \n \tat\r\n 02:51\n\nJul-10 -";
         let array_ref: [&str; 7] = [
             "255.255.255.255",
             "test",
@@ -476,7 +459,7 @@ mod tests {
             "27-05-2022",
             "at",
             "02:51",
-            "Jul 10",
+            "Jul-10",
         ];
 
         log_tokenizer_test_helper(test_string, &array_ref)
@@ -524,31 +507,6 @@ mod tests {
     }
 
     #[test]
-    fn log_tokenizer_log_test() {
-        let test_string = "Dec 10 06:55:48 LabSZ sshd[24200]: Failed password for invalid user \
-                           webmaster from 173.234.31.186 port 38926 ssh2";
-        let array_ref: [&str; 15] = [
-            "Dec 10 06:55:48",
-            "LabSZ",
-            "sshd",
-            "24200",
-            "Failed",
-            "password",
-            "for",
-            "invalid",
-            "user",
-            "webmaster",
-            "from",
-            "173.234.31.186",
-            "port",
-            "38926",
-            "ssh2",
-        ];
-
-        log_tokenizer_test_helper(test_string, &array_ref)
-    }
-
-    #[test]
     fn log_tokenizer_log_2() {
         let test_string = "1331901000.000000    CHEt7z3AzG4gyCNgci    192.168.202.79    50465    \
                            192.168.229.251    80    1    HEAD 192.168.229.251    /DEASLog02.nsf    \
@@ -564,7 +522,7 @@ mod tests {
             "1",
             "HEAD",
             "192.168.229.251",
-            "/DEASLog02.nsf",
+            "DEASLog02.nsf",
             "Mozilla/5.0",
         ];
 
@@ -581,7 +539,7 @@ mod tests {
             "211.11.9.0",
             "1998-06-21T15:00:01-05:00",
             "GET",
-            "/english/index.html",
+            "english/index.html",
             "HTTP/1.0",
             "304",
             "0",
@@ -619,12 +577,12 @@ mod tests {
             peut-etre.out ";
 
         let array_ref: [&str; 7] = [
-            "./quickwit/quickwit-doc-mapper/src/tokenizers.rs",
-            "/endpoint/index.html",
-            "/bin/sh",
+            "quickwit/quickwit-doc-mapper/src/tokenizers.rs",
+            "endpoint/index.html",
+            "bin/sh",
             "src/bin/",
             "test_files.cc",
-            ".././folder/_trying-stuff_out.cc",
+            "folder/_trying-stuff_out.cc",
             "peut-etre.out",
         ];
 
@@ -640,7 +598,7 @@ mod tests {
             "22/Jan/2019:03:56:14",
             "0330",
             "GET",
-            "/filter/27",
+            "filter/27",
             "HTTP/1.1",
             "200",
             "30577",
@@ -703,11 +661,11 @@ mod tests {
             "2015-07-29",
             "19:04:12,394",
             "INFO",
-            "/10.10.34.11:3888:QuorumCnxManager$Listener@493",
+            "10.10.34.11:3888:QuorumCnxManager$Listener@493",
             "Received",
             "connection",
             "request",
-            "/10.10.34.11:45307",
+            "10.10.34.11:45307",
         ];
 
         log_tokenizer_test_helper(test_string, &array_ref)
