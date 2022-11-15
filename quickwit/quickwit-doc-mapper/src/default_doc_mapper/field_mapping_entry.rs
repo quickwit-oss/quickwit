@@ -127,6 +127,8 @@ pub enum QuickwitTextTokenizer {
     StemEn,
     #[serde(rename = "chinese_compatible")]
     Chinese,
+    #[serde(rename = "log")]
+    Log,
 }
 
 impl QuickwitTextTokenizer {
@@ -136,6 +138,7 @@ impl QuickwitTextTokenizer {
             QuickwitTextTokenizer::Default => "default",
             QuickwitTextTokenizer::StemEn => "en_stem",
             QuickwitTextTokenizer::Chinese => "chinese_compatible",
+            QuickwitTextTokenizer::Log => "log",
         }
     }
 }
