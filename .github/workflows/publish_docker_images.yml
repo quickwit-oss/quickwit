@@ -3,10 +3,12 @@ name: Build and publish Docker images
 on:
   push:
     branches:
-      - "main"
+      - main
     tags:
-      - "v*"
-      - "happy-plazza"
+      - airmail
+      - happy-plazza
+      - qw*
+      - v*
 
 jobs:
   docker:
@@ -45,10 +47,20 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
+      - name: Retrieve commit date, hash, and tags
+        run: |
+          echo "QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
+          echo "QW_COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
+          echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> $GITHUB_ENV
+
       - name: Build and push
         uses: docker/build-push-action@v3
         with:
           context: .
           push: true
+          build-args: |
+            QW_COMMIT_DATE=${{ env.QW_COMMIT_DATE }}
+            QW_COMMIT_HASH=${{ env.QW_COMMIT_HASH }}
+            QW_COMMIT_TAGS=${{ env.QW_COMMIT_TAGS }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

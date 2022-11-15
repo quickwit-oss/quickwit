@@ -435,7 +435,7 @@ mod tests {
                 let now = OffsetDateTime::now_utc().unix_timestamp();
                 let two_hours_ago = now - (60 * 60 * 2);
                 let three_hours_ago = now - (60 * 60 * 3);
-                let splits = match query.index {
+                let splits = match query.index_id {
                     "a" => vec![
                         make_split("split-1", Some(two_hours_ago), None),
                         make_split("split-2", Some(three_hours_ago), None),

@@ -1048,6 +1048,7 @@ mod tests {
         // Check that the indexing pipeline is unhealthy. For that we need to do 2 health() call on
         // the pipeline handle. Check `registered_activity_since_last_call` method for
         // details.
+        tokio::time::sleep(HEARTBEAT).await;
         let pipeline_health = indexing_server_mailbox
             .ask(ObservePipelineHealth(pipeline_ids[0].clone()))
             .await
