@@ -158,7 +158,7 @@ impl GarbageCollector {
                     num_deleted_splits=num_deleted_splits,
                     "Janitor deleted {:?} and {} other splits.",
                     deleted_files,
-                    num_deleted_files,
+                    num_deleted_splits,
                 );
 
                 self.counters.num_deleted_files += deleted_file_entries.len();
