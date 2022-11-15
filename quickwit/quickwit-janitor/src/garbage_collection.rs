@@ -43,7 +43,7 @@ pub enum SplitDeletionError {
     #[error("Failed to delete splits from metastore: '{error:?}'.")]
     MetastoreFailure {
         error: MetastoreError,
-        split_ids: Vec<String>,
+        failed_split_ids: Vec<String>,
     },
 }
 
@@ -210,9 +210,12 @@ async fn incrementally_remove_marked_splits(
 
         match delete_splits_result {
             Ok(entries) => deleted_files.extend(entries),
-            Err(SplitDeletionError::MetastoreFailure { error, split_ids }) => {
-                let num_failed_splits = split_ids.len();
-                let truncated_split_ids = split_ids.into_iter().take(5).collect::<Vec<_>>();
+            Err(SplitDeletionError::MetastoreFailure {
+                error,
+                failed_split_ids,
+            }) => {
+                let num_failed_splits = failed_split_ids.len();
+                let truncated_split_ids = failed_split_ids.into_iter().take(5).collect::<Vec<_>>();
                 error!(
                     error = ?error,
                     num_failed_splits = num_failed_splits,
@@ -315,7 +318,7 @@ pub async fn delete_splits_with_files(
             .await
             .map_err(|error| SplitDeletionError::MetastoreFailure {
                 error,
-                split_ids: split_ids.into_iter().map(str::to_string).collect(),
+                failed_split_ids: split_ids.into_iter().map(str::to_string).collect(),
             })?;
     }
 
