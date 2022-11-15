@@ -30,12 +30,12 @@ use quickwit_proto::metastore_api::metastore_api_service_server::{
 use quickwit_proto::metastore_api::*;
 use quickwit_proto::tonic;
 use quickwit_proto::tonic::transport::Channel;
+use quickwit_proto::tonic::{Request, Response, Status};
 use structopt::StructOpt;
 use tokio::fs::File;
 use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::Mutex;
 use tokio::time::Instant;
-use quickwit_proto::tonic::{Request, Response, Status};
 
 struct Inner {
     start: Instant,
@@ -170,10 +170,16 @@ impl MetastoreApiService for MetastoreProxyService {
     }
 
     /// Marks splits matching a given query for deletion.
-    async fn mark_splits_for_deletion_by_query(&self, request: Request<ListSplitsRequest>) -> Result<Response<SplitResponse>, Status> {
+    async fn mark_splits_for_deletion_by_query(
+        &self,
+        request: Request<ListSplitsRequest>,
+    ) -> Result<Response<SplitResponse>, Status> {
         let mut lock = self.inner.lock().await;
         lock.record(request.get_ref().clone()).await.unwrap();
-        let resp = lock.client.mark_splits_for_deletion_by_query(request).await?;
+        let resp = lock
+            .client
+            .mark_splits_for_deletion_by_query(request)
+            .await?;
         Ok(resp)
     }
 

@@ -748,7 +748,10 @@ impl Metastore for PostgresqlMetastore {
         Ok(())
     }
 
-    async fn mark_splits_for_deletion_by_query<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<()> {
+    async fn mark_splits_for_deletion_by_query<'a>(
+        &self,
+        query: ListSplitsQuery<'a>,
+    ) -> MetastoreResult<()> {
         if query.limit.is_some() {
             return Err(MetastoreError::UnsupportedQuery {
                 name: "limit".to_string(),

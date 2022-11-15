@@ -361,7 +361,10 @@ impl Metastore for MetastoreGrpcClient {
     }
 
     /// Marks a set of splits matching the provided query for deletion.
-    async fn mark_splits_for_deletion_by_query<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<()> {
+    async fn mark_splits_for_deletion_by_query<'a>(
+        &self,
+        query: ListSplitsQuery<'a>,
+    ) -> MetastoreResult<()> {
         let filter_json =
             serde_json::to_string(&query).map_err(|error| MetastoreError::JsonSerializeError {
                 name: "ListSplitsQuery".to_string(),

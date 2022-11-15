@@ -232,7 +232,8 @@ impl FileBackedIndex {
         let mut is_modified = false;
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
-        let splits_iter = self.splits
+        let splits_iter = self
+            .splits
             .values_mut()
             .filter(|split| split_query_predicate(split, &query));
 

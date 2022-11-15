@@ -122,7 +122,7 @@ impl ServiceError for MetastoreError {
             Self::DbError { .. } => ServiceErrorCode::Internal,
             Self::JsonDeserializeError { .. } => ServiceErrorCode::Internal,
             Self::JsonSerializeError { .. } => ServiceErrorCode::Internal,
-            MetastoreError::UnsupportedQuery { .. } => ServiceErrorCode::BadRequest
+            MetastoreError::UnsupportedQuery { .. } => ServiceErrorCode::BadRequest,
         }
     }
 }
