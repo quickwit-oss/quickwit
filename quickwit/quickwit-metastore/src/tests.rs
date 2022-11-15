@@ -2821,7 +2821,9 @@ macro_rules! metastore_test_suite {
             #[tokio::test]
             async fn test_metastore_list_splits() {
                 let _ = tracing_subscriber::fmt::try_init();
-                crate::tests::test_suite::test_metastore_list_splits::<$metastore_type>().await;
+                for _ in 0..100 {
+                    crate::tests::test_suite::test_metastore_list_splits::<$metastore_type>().await;
+                }
             }
 
             #[tokio::test]
