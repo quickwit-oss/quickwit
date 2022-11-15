@@ -1,6 +1,6 @@
 # Replay
 
-Replay is a small util that sequentially replays a bunch of gRPC call made to the
+Replay is a small util that sequentially replays a bunch of gRPC calls made to the
 quickwit metastore, as fast as possible.
 
 Right now, both the grpc address and the file are hardcoded.

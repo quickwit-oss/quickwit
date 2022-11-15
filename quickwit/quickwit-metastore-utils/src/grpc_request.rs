@@ -19,7 +19,7 @@
 
 use quickwit_proto::metastore_api::*;
 
-// The macro below are generating a req enum of the form
+// The macros below are generating a req enum of the form
 //
 // ```
 // enum GrpcRequest {
