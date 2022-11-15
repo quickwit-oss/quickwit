@@ -2104,8 +2104,8 @@ pub mod test_suite {
                 .collect();
             assert_eq!(split_ids, to_hash_set(&["list-splits-six"]));
 
-            let query =
-                ListSplitsQuery::for_index(index_id).with_create_timestamp_lte(select_timestamp);
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_create_timestamp_lte(select_timestamp - 1);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
