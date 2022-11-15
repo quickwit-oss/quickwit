@@ -151,7 +151,7 @@ impl GarbageCollector {
                     .iter()
                     .map(|deleted_entry| deleted_entry.file_name.as_str())
                     .collect();
-                info!(index_id=%index_id, num_splits=?deleted_files.len(), "gc-delete");
+                info!(index_id=%index_id, deleted_files=?deleted_files, "gc-delete");
 
                 self.counters.num_deleted_files += deleted_file_entries.len();
                 self.counters.num_deleted_bytes += deleted_file_entries
