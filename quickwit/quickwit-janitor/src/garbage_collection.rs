@@ -37,8 +37,11 @@ use crate::actors::GarbageCollector;
 /// during garbage collection.
 #[derive(Error, Debug)]
 pub enum SplitDeletionError {
-    #[error("Failed to delete splits from metastore: '{0:?}'.")]
-    MetastoreFailure(MetastoreError),
+    #[error("Failed to delete splits from metastore: '{error:?}'.")]
+    MetastoreFailure {
+        error: MetastoreError,
+        split_ids: Vec<String>,
+    },
 }
 
 #[allow(missing_docs)]
@@ -204,8 +207,16 @@ async fn incrementally_remove_marked_splits(
 
         match delete_splits_result {
             Ok(entries) => deleted_files.extend(entries),
-            Err(error) => {
-                error!(error = ?error, "Failed to delete splits.");
+            Err(SplitDeletionError::MetastoreFailure { error, split_ids }) => {
+                let num_failed_splits = split_ids.len();
+                let truncated_split_ids = split_ids.into_iter().take(5).collect::<Vec<_>>();
+                error!(
+                    error = ?error,
+                    num_failed_splits = num_failed_splits,
+                    "Failed to delete {:?} and {} other splits.",
+                    truncated_split_ids,
+                    num_failed_splits
+                );
                 break;
             }
         }
@@ -299,7 +310,13 @@ pub async fn delete_splits_with_files(
         let split_ids: Vec<&str> = deleted_split_ids.iter().map(String::as_str).collect();
         protect_future(ctx_opt, metastore.delete_splits(index_id, &split_ids))
             .await
-            .map_err(SplitDeletionError::MetastoreFailure)?;
+            .map_err(|cause| SplitDeletionError::MetastoreFailure {
+                error: cause,
+                split_ids: split_ids
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect()
+            })?;
     }
 
     Ok(deleted_file_entries)
