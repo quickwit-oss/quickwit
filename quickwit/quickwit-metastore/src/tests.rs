@@ -2015,7 +2015,7 @@ pub mod test_suite {
             assert_eq!(split_ids, to_hash_set(&["list-splits-five"]));
 
             // Artificially increase the create_timestamp
-            sleep(Duration::from_secs(2)).await;
+            sleep(Duration::from_secs(3)).await;
             // add a split without tag
             let split_metadata_6 = SplitMetadata {
                 footer_offsets: 1000..2000,
