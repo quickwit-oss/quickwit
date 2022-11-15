@@ -79,6 +79,14 @@ where
     }
 }
 
+/// Information on what splits have and have not been cleaned up by the GC.
+pub struct SplitRemovalInfo {
+    /// The set of splits that have been removed.
+    pub removed_split_entries: Vec<FileEntry>,
+    /// The set of split ids that were attempted to be removed, but were unsuccessful.
+    pub failed_split_ids: Vec<String>,
+}
+
 /// Detect all dangling splits and associated files from the index and removes them.
 ///
 /// * `index_id` - The target index id.
@@ -98,7 +106,7 @@ pub async fn run_garbage_collect(
     deletion_grace_period: Duration,
     dry_run: bool,
     ctx_opt: Option<&ActorContext<GarbageCollector>>,
-) -> anyhow::Result<Vec<FileEntry>> {
+) -> anyhow::Result<SplitRemovalInfo> {
     // Select staged splits with staging timestamp older than grace period timestamp.
     let grace_period_timestamp =
         OffsetDateTime::now_utc().unix_timestamp() - staged_grace_period.as_secs() as i64;
@@ -129,7 +137,10 @@ pub async fn run_garbage_collect(
             .iter()
             .map(FileEntry::from)
             .collect();
-        return Ok(candidate_entries);
+        return Ok(SplitRemovalInfo {
+            removed_split_entries: candidate_entries,
+            failed_split_ids: Vec::new(),
+        });
     }
 
     // Schedule all eligible staged splits for delete
@@ -171,8 +182,9 @@ async fn incrementally_remove_marked_splits(
     storage: Arc<dyn Storage>,
     metastore: Arc<dyn Metastore>,
     ctx_opt: Option<&ActorContext<GarbageCollector>>,
-) -> Vec<FileEntry> {
-    let mut deleted_files = Vec::new();
+) -> SplitRemovalInfo {
+    let mut failed_split_ids = Vec::new();
+    let mut removed_split_files = Vec::new();
     loop {
         let query = ListSplitsQuery::for_index(index_id)
             .with_split_state(SplitState::MarkedForDeletion)
@@ -209,13 +221,13 @@ async fn incrementally_remove_marked_splits(
         .await;
 
         match delete_splits_result {
-            Ok(entries) => deleted_files.extend(entries),
+            Ok(entries) => removed_split_files.extend(entries),
             Err(SplitDeletionError::MetastoreFailure {
                 error,
-                failed_split_ids,
+                failed_split_ids: split_ids,
             }) => {
-                let num_failed_splits = failed_split_ids.len();
-                let truncated_split_ids = failed_split_ids.into_iter().take(5).collect::<Vec<_>>();
+                let num_failed_splits = split_ids.len();
+                let truncated_split_ids = split_ids.iter().take(5).collect::<Vec<_>>();
                 error!(
                     error = ?error,
                     num_failed_splits = num_failed_splits,
@@ -223,6 +235,7 @@ async fn incrementally_remove_marked_splits(
                     truncated_split_ids,
                     num_failed_splits
                 );
+                failed_split_ids.extend(split_ids);
                 break;
             }
         }
@@ -232,7 +245,10 @@ async fn incrementally_remove_marked_splits(
         }
     }
 
-    deleted_files
+    SplitRemovalInfo {
+        removed_split_entries: removed_split_files,
+        failed_split_ids,
+    }
 }
 
 /// Delete a list of splits from the storage and the metastore.

@@ -1116,23 +1116,35 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
         .resolve(&quickwit_config.metastore_uri)
         .await?;
     let index_service = IndexService::new(metastore, quickwit_storage_uri_resolver().clone());
-    let deleted_files = index_service
+    let removal_info = index_service
         .garbage_collect_index(&args.index_id, args.grace_period, args.dry_run)
         .await?;
-    if deleted_files.is_empty() {
+    if removal_info.removed_split_entries.is_empty() && removal_info.failed_split_ids.is_empty() {
         println!("No dangling files to garbage collect.");
         return Ok(());
     }
 
     if args.dry_run {
         println!("The following files will be garbage collected.");
-        for file_entry in deleted_files {
+        for file_entry in removal_info.removed_split_entries {
             println!(" - {}", file_entry.file_name);
         }
         return Ok(());
     }
 
-    let deleted_bytes: u64 = deleted_files
+    if !removal_info.failed_split_ids.is_empty() {
+        println!("The following splits were attempted to be removed, but failed.");
+        for split_id in removal_info.failed_split_ids.iter() {
+            println!(" - {}", split_id);
+        }
+        println!(
+            "{} Splits were unable to be removed.",
+            removal_info.failed_split_ids.len()
+        );
+    }
+
+    let deleted_bytes: u64 = removal_info
+        .removed_split_entries
         .iter()
         .map(|entry| entry.file_size_in_bytes)
         .sum();
@@ -1140,7 +1152,17 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
         "{}MB of storage garbage collected.",
         deleted_bytes / 1_000_000
     );
-    println!("Index `{}` successfully garbage collected.", args.index_id);
+
+    if removal_info.failed_split_ids.is_empty() {
+        println!("Index `{}` successfully garbage collected.", args.index_id);
+    } else if removal_info.removed_split_entries.is_empty()
+        && !removal_info.failed_split_ids.is_empty()
+    {
+        println!("Failed to garbage collect index `{}`.", args.index_id);
+    } else {
+        println!("Index `{}` partially garbage collected.", args.index_id);
+    }
+
     Ok(())
 }
 

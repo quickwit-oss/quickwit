@@ -36,7 +36,7 @@ mod retention_policy_execution;
 pub use janitor_service::JanitorService;
 
 pub use self::garbage_collection::{
-    delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError,
+    delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionError, SplitRemovalInfo,
 };
 use crate::actors::{DeleteTaskService, GarbageCollector, RetentionPolicyExecutor};
 

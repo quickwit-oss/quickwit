@@ -61,6 +61,8 @@ pub struct GarbageCollectorCounters {
     pub num_successful_gc_run_on_index: usize,
     /// The number or failed storage resolution.
     pub num_failed_storage_resolution: usize,
+    /// The number of splits that were unable to be removed.
+    pub num_failed_splits: usize,
 }
 
 #[derive(Debug)]
@@ -135,9 +137,10 @@ impl GarbageCollector {
             tokio_stream::iter(run_gc_tasks).buffer_unordered(MAX_CONCURRENT_STORAGE_REQUESTS);
         while let Some((index_id, run_gc_result)) = stream.next().await {
             let deleted_file_entries = match run_gc_result {
-                Ok(deleted_files) => {
+                Ok(removal_info) => {
                     self.counters.num_successful_gc_run_on_index += 1;
-                    deleted_files
+                    self.counters.num_failed_splits += removal_info.failed_split_ids.len();
+                    removal_info.removed_split_entries
                 }
                 Err(error) => {
                     self.counters.num_failed_gc_run_on_index += 1;
@@ -371,6 +374,7 @@ mod tests {
         assert_eq!(state_after_initialization.num_passes, 1);
         assert_eq!(state_after_initialization.num_deleted_files, 3);
         assert_eq!(state_after_initialization.num_deleted_bytes, 60);
+        assert_eq!(state_after_initialization.num_failed_splits, 0);
     }
 
     #[tokio::test]
@@ -433,6 +437,7 @@ mod tests {
         assert_eq!(counters.num_successful_gc_run_on_index, 1);
         assert_eq!(counters.num_failed_storage_resolution, 0);
         assert_eq!(counters.num_failed_gc_run_on_index, 0);
+        assert_eq!(counters.num_failed_splits, 0);
 
         // 30 secs later
         universe.simulate_time_shift(Duration::from_secs(30)).await;
@@ -443,6 +448,7 @@ mod tests {
         assert_eq!(counters.num_successful_gc_run_on_index, 1);
         assert_eq!(counters.num_failed_storage_resolution, 0);
         assert_eq!(counters.num_failed_gc_run_on_index, 0);
+        assert_eq!(counters.num_failed_splits, 0);
 
         // 60 secs later
         universe.simulate_time_shift(RUN_INTERVAL).await;
@@ -453,6 +459,7 @@ mod tests {
         assert_eq!(counters.num_successful_gc_run_on_index, 2);
         assert_eq!(counters.num_failed_storage_resolution, 0);
         assert_eq!(counters.num_failed_gc_run_on_index, 0);
+        assert_eq!(counters.num_failed_splits, 0);
     }
 
     #[tokio::test]
@@ -511,6 +518,7 @@ mod tests {
         assert_eq!(counters.num_successful_gc_run_on_index, 0);
         assert_eq!(counters.num_failed_storage_resolution, 1);
         assert_eq!(counters.num_failed_gc_run_on_index, 0);
+        assert_eq!(counters.num_failed_splits, 0);
     }
 
     #[tokio::test]
@@ -578,6 +586,7 @@ mod tests {
         assert_eq!(counters.num_successful_gc_run_on_index, 1);
         assert_eq!(counters.num_failed_storage_resolution, 0);
         assert_eq!(counters.num_failed_gc_run_on_index, 1);
+        assert_eq!(counters.num_failed_splits, 0);
     }
 
     #[tokio::test]
@@ -648,5 +657,6 @@ mod tests {
         assert_eq!(counters.num_successful_gc_run_on_index, 2);
         assert_eq!(counters.num_failed_storage_resolution, 0);
         assert_eq!(counters.num_failed_gc_run_on_index, 0);
+        assert_eq!(counters.num_failed_splits, 2);
     }
 }
