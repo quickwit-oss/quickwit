@@ -111,46 +111,33 @@ pub async fn run_garbage_collect(
     let grace_period_timestamp =
         OffsetDateTime::now_utc().unix_timestamp() - staged_grace_period.as_secs() as i64;
 
-    let query = ListSplitsQuery::for_index(index_id)
-        .with_split_state(SplitState::Staged)
-        .with_update_timestamp_lte(grace_period_timestamp);
-
-    let deletable_staged_splits: Vec<SplitMetadata> =
-        protect_future(ctx_opt, metastore.list_splits(query))
-            .await?
-            .into_iter()
-            .map(|meta| meta.split_metadata)
-            .collect();
-
     if dry_run {
-        let query =
-            ListSplitsQuery::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
+        let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
+        let splits_marked_for_deletion = protect_future(ctx_opt, metastore.list_splits(query)).await?;
 
-        let mut splits_marked_for_deletion = protect_future(ctx_opt, metastore.list_splits(query))
-            .await?
-            .into_iter()
-            .map(|meta| meta.split_metadata)
-            .collect::<Vec<_>>();
-        splits_marked_for_deletion.extend(deletable_staged_splits);
+        let query = ListSplitsQuery::for_index(index_id)
+            .with_split_state(SplitState::Staged)
+            .with_update_timestamp_lte(grace_period_timestamp);
+        let deletable_staged_splits = protect_future(ctx_opt, metastore.list_splits(query)).await?;
 
         let candidate_entries: Vec<FileEntry> = splits_marked_for_deletion
-            .iter()
-            .map(FileEntry::from)
+            .into_iter()
+            .chain(deletable_staged_splits.into_iter())
+            .map(|split| FileEntry::from(&split.split_metadata))
             .collect();
+
         return Ok(SplitRemovalInfo {
             removed_split_entries: candidate_entries,
             failed_split_ids: Vec::new(),
         });
     }
 
-    // Schedule all eligible staged splits for delete
-    let split_ids: Vec<&str> = deletable_staged_splits
-        .iter()
-        .map(|meta| meta.split_id())
-        .collect();
+    let query = ListSplitsQuery::for_index(index_id)
+        .with_split_state(SplitState::Staged)
+        .with_update_timestamp_lte(grace_period_timestamp);
     protect_future(
         ctx_opt,
-        metastore.mark_splits_for_deletion(index_id, &split_ids),
+        metastore.mark_splits_for_deletion_by_query(query),
     )
     .await?;
 

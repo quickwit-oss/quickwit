@@ -263,7 +263,7 @@ mod tests {
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_list_splits()
-            .times(2)
+            .times(1)
             .returning(|query: ListSplitsQuery<'_>| {
                 assert_eq!(query.index_id, "test-index");
 
@@ -292,11 +292,11 @@ mod tests {
                 Ok(splits)
             });
         mock_metastore
-            .expect_mark_splits_for_deletion()
+            .expect_mark_splits_for_deletion_by_query()
             .times(1)
-            .returning(|index_id, split_ids| {
-                assert_eq!(index_id, "test-index");
-                assert_eq!(split_ids, vec!["a"]);
+            .returning(|query| {
+                assert_eq!(query.index_id, "test-index");
+                assert_eq!(query.split_states, vec![SplitState::Staged]);
                 Ok(())
             });
         mock_metastore
@@ -353,11 +353,11 @@ mod tests {
                 Ok(splits)
             });
         mock_metastore
-            .expect_mark_splits_for_deletion()
+            .expect_mark_splits_for_deletion_by_query()
             .times(1)
-            .returning(|index_id, split_ids| {
-                assert_eq!(index_id, "test-index");
-                assert_eq!(split_ids, vec!["a"]);
+            .returning(|query| {
+                assert_eq!(query.index_id, "test-index");
+                assert_eq!(query.split_states, vec![SplitState::Staged]);
                 Ok(())
             });
         mock_metastore
@@ -413,11 +413,11 @@ mod tests {
                 Ok(splits)
             });
         mock_metastore
-            .expect_mark_splits_for_deletion()
+            .expect_mark_splits_for_deletion_by_query()
             .times(2)
-            .returning(|index_id, split_ids| {
-                assert_eq!(index_id, "test-index");
-                assert_eq!(split_ids, vec!["a"]);
+            .returning(|query| {
+                assert_eq!(query.index_id, "test-index");
+                assert_eq!(query.split_states, vec![SplitState::Staged]);
                 Ok(())
             });
         mock_metastore
@@ -544,15 +544,9 @@ mod tests {
             });
         mock_metastore
             .expect_list_splits()
-            .times(4)
+            .times(2)
             .returning(|query| {
                 assert!(["test-index-1", "test-index-2"].contains(&query.index_id));
-
-                if query.index_id == "test-index-2" {
-                    return Err(MetastoreError::DbError {
-                        message: "fail to delete".to_string(),
-                    });
-                }
 
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
@@ -564,11 +558,18 @@ mod tests {
                 Ok(splits)
             });
         mock_metastore
-            .expect_mark_splits_for_deletion()
+            .expect_mark_splits_for_deletion_by_query()
             .times(2)
-            .returning(|index_id, split_ids| {
-                assert!(["test-index-1", "test-index-2"].contains(&index_id));
-                assert_eq!(split_ids, vec!["a"]);
+            .returning(|query| {
+                assert!(["test-index-1", "test-index-2"].contains(&query.index_id));
+                assert_eq!(query.split_states, vec![SplitState::Staged]);
+
+                if query.index_id == "test-index-2" {
+                    return Err(MetastoreError::DbError {
+                        message: "fail to delete".to_string(),
+                    });
+                }
+
                 Ok(())
             });
         mock_metastore
@@ -612,7 +613,7 @@ mod tests {
             });
         mock_metastore
             .expect_list_splits()
-            .times(4)
+            .times(2)
             .returning(|query| {
                 assert!(["test-index-1", "test-index-2"].contains(&query.index_id));
                 let splits = match query.split_states[0] {
@@ -625,11 +626,11 @@ mod tests {
                 Ok(splits)
             });
         mock_metastore
-            .expect_mark_splits_for_deletion()
+            .expect_mark_splits_for_deletion_by_query()
             .times(2)
-            .returning(|index_id, split_ids| {
-                assert!(["test-index-1", "test-index-2"].contains(&index_id));
-                assert_eq!(split_ids, vec!["a"]);
+            .returning(|query: ListSplitsQuery<'_>| {
+                assert!(["test-index-1", "test-index-2"].contains(&query.index_id));
+                assert_eq!(query.split_states, vec![SplitState::Staged]);
                 Ok(())
             });
         mock_metastore
