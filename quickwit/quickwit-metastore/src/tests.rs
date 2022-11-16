@@ -2850,7 +2850,8 @@ pub mod test_suite {
                 .collect();
             assert_eq!(split_ids, to_hash_set(&[split_id_1]));
 
-            let current_ts = OffsetDateTime::now_utc().unix_timestamp();
+            // Make sure splits are correctly filtered out by ranges.
+            let current_ts = OffsetDateTime::now_utc().unix_timestamp() + 1;
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_update_timestamp_gt(current_ts);
@@ -2865,7 +2866,7 @@ pub mod test_suite {
                 .into_iter()
                 .map(|meta| meta.split_id().to_string())
                 .collect();
-            assert_eq!(split_ids, to_hash_set(&[split_id_2, split_id_3,]));
+            assert_eq!(split_ids, to_hash_set(&[split_id_2, split_id_3]));
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
