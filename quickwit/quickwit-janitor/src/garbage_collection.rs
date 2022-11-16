@@ -112,8 +112,10 @@ pub async fn run_garbage_collect(
         OffsetDateTime::now_utc().unix_timestamp() - staged_grace_period.as_secs() as i64;
 
     if dry_run {
-        let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
-        let splits_marked_for_deletion = protect_future(ctx_opt, metastore.list_splits(query)).await?;
+        let query =
+            ListSplitsQuery::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
+        let splits_marked_for_deletion =
+            protect_future(ctx_opt, metastore.list_splits(query)).await?;
 
         let query = ListSplitsQuery::for_index(index_id)
             .with_split_state(SplitState::Staged)
@@ -135,11 +137,7 @@ pub async fn run_garbage_collect(
     let query = ListSplitsQuery::for_index(index_id)
         .with_split_state(SplitState::Staged)
         .with_update_timestamp_lte(grace_period_timestamp);
-    protect_future(
-        ctx_opt,
-        metastore.mark_splits_for_deletion_by_query(query),
-    )
-    .await?;
+    protect_future(ctx_opt, metastore.mark_splits_for_deletion_by_query(query)).await?;
 
     // We wait another 2 minutes until the split is actually deleted.
     let updated_before_timestamp =

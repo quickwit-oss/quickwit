@@ -2787,7 +2787,6 @@ pub mod test_suite {
             ..Default::default()
         };
 
-
         {
             info!("Mark splits for deletion on a non-existent index.");
             let query = ListSplitsQuery::for_index(index_id);
@@ -2810,15 +2809,19 @@ pub mod test_suite {
         {
             info!("Check unsupported operations.");
 
-            let query = ListSplitsQuery::for_index(index_id)
-                .with_limit(5);
+            let query = ListSplitsQuery::for_index(index_id).with_limit(5);
             let result = metastore.mark_splits_for_deletion_by_query(query).await;
-            assert!(matches!(result, Err(MetastoreError::UnsupportedQuery { .. })), "Metastore request should be rejected.");
+            assert!(
+                matches!(result, Err(MetastoreError::UnsupportedQuery { .. })),
+                "Metastore request should be rejected."
+            );
 
-            let query = ListSplitsQuery::for_index(index_id)
-                .with_offset(5);
+            let query = ListSplitsQuery::for_index(index_id).with_offset(5);
             let result = metastore.mark_splits_for_deletion_by_query(query).await;
-            assert!(matches!(result, Err(MetastoreError::UnsupportedQuery { .. })), "Metastore request should be rejected.");
+            assert!(
+                matches!(result, Err(MetastoreError::UnsupportedQuery { .. })),
+                "Metastore request should be rejected."
+            );
         }
 
         {
@@ -2845,9 +2848,12 @@ pub mod test_suite {
         {
             info!("Test query samples.");
 
-            let query = ListSplitsQuery::for_index(index_id)
-                .with_split_state(SplitState::Published);
-            metastore.mark_splits_for_deletion_by_query(query).await.unwrap();
+            let query =
+                ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Published);
+            metastore
+                .mark_splits_for_deletion_by_query(query)
+                .await
+                .unwrap();
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::MarkedForDeletion);
@@ -2862,27 +2868,26 @@ pub mod test_suite {
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_update_timestamp_gt(current_ts);
-            metastore.mark_splits_for_deletion_by_query(query).await.unwrap();
+            metastore
+                .mark_splits_for_deletion_by_query(query)
+                .await
+                .unwrap();
 
-            let query = ListSplitsQuery::for_index(index_id)
-                .with_split_state(SplitState::Staged);
+            let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
                 .map(|meta| meta.split_id().to_string())
                 .collect();
-            assert_eq!(
-                split_ids,
-                to_hash_set(&[
-                    split_id_2,
-                    split_id_3,
-                ])
-            );
+            assert_eq!(split_ids, to_hash_set(&[split_id_2, split_id_3,]));
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::Staged)
                 .with_update_timestamp_lte(current_ts);
-            metastore.mark_splits_for_deletion_by_query(query).await.unwrap();
+            metastore
+                .mark_splits_for_deletion_by_query(query)
+                .await
+                .unwrap();
 
             let query = ListSplitsQuery::for_index(index_id)
                 .with_split_state(SplitState::MarkedForDeletion);
@@ -2893,11 +2898,7 @@ pub mod test_suite {
                 .collect();
             assert_eq!(
                 split_ids,
-                to_hash_set(&[
-                    split_id_1,
-                    split_id_2,
-                    split_id_3,
-                ])
+                to_hash_set(&[split_id_1, split_id_2, split_id_3,])
             );
         }
 
