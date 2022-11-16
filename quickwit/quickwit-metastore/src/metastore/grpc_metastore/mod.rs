@@ -365,6 +365,20 @@ impl Metastore for MetastoreGrpcClient {
         &self,
         query: ListSplitsQuery<'a>,
     ) -> MetastoreResult<()> {
+        if query.limit.is_some() {
+            return Err(MetastoreError::UnsupportedQuery {
+                name: "limit".to_string(),
+                message: "Limit operations cannot be applied to update operations.".to_string(),
+            });
+        }
+
+        if query.offset.is_some() {
+            return Err(MetastoreError::UnsupportedQuery {
+                name: "offset".to_string(),
+                message: "Offset operations cannot be applied to update operations.".to_string(),
+            });
+        }
+
         let filter_json =
             serde_json::to_string(&query).map_err(|error| MetastoreError::JsonSerializeError {
                 name: "ListSplitsQuery".to_string(),

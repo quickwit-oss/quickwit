@@ -229,6 +229,20 @@ impl FileBackedIndex {
         &mut self,
         query: ListSplitsQuery<'_>,
     ) -> MetastoreResult<bool> {
+        if query.limit.is_some() {
+            return Err(MetastoreError::UnsupportedQuery {
+                name: "limit".to_string(),
+                message: "Limit operations cannot be applied to update operations.".to_string(),
+            });
+        }
+
+        if query.offset.is_some() {
+            return Err(MetastoreError::UnsupportedQuery {
+                name: "offset".to_string(),
+                message: "Offset operations cannot be applied to update operations.".to_string(),
+            });
+        }
+
         let mut is_modified = false;
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
