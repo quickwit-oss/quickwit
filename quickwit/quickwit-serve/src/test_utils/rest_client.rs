@@ -28,7 +28,7 @@ use serde::de::DeserializeOwned;
 use tokio_stream::StreamExt;
 
 pub struct QuickwitRestClient {
-    api_root: String,
+    root_url: String,
     client: hyper::Client<HttpConnector, Body>,
 }
 
@@ -38,12 +38,12 @@ impl QuickwitRestClient {
             .pool_idle_timeout(Duration::from_secs(30))
             .http2_only(true)
             .build_http();
-        let api_root = format!("http://{}/api/v1", addr);
-        Self { api_root, client }
+        let root_url = format!("http://{}", addr);
+        Self { root_url, client }
     }
 
     pub async fn cluster_snapshot(&self) -> anyhow::Result<ClusterSnapshot> {
-        let uri = format!("{}/cluster", self.api_root)
+        let uri = format!("{}/api/v1/cluster", self.root_url)
             .parse::<hyper::Uri>()
             .unwrap();
         let response = self.client.get(uri).await?;
@@ -52,7 +52,7 @@ impl QuickwitRestClient {
     }
 
     pub async fn indexing_service_counters(&self) -> anyhow::Result<IndexingServiceCounters> {
-        let uri = format!("{}/indexing", self.api_root)
+        let uri = format!("{}/api/v1/indexing", self.root_url)
             .parse::<hyper::Uri>()
             .unwrap();
         let response = self.client.get(uri).await?;
@@ -61,7 +61,7 @@ impl QuickwitRestClient {
     }
 
     pub async fn is_live(&self) -> anyhow::Result<bool> {
-        let uri = format!("{}/health/livez", self.api_root)
+        let uri = format!("{}/health/livez", self.root_url)
             .parse::<hyper::Uri>()
             .unwrap();
         let response = self.client.get(uri).await?;
@@ -72,7 +72,7 @@ impl QuickwitRestClient {
     }
 
     pub async fn is_ready(&self) -> anyhow::Result<bool> {
-        let uri = format!("{}/health/readyz", self.api_root)
+        let uri = format!("{}/health/readyz", self.root_url)
             .parse::<hyper::Uri>()
             .unwrap();
         let response = self.client.get(uri).await?;

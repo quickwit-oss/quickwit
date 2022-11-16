@@ -50,10 +50,19 @@ pub(crate) async fn start_rest_server(
         crate::SERVE_METRICS.http_requests_total.inc();
     });
 
-    let metrics_service = warp::path("metrics")
+    // `/health/*` routes.
+    let health_check_routes = health_check_handlers(
+        quickwit_services.cluster.clone(),
+        quickwit_services.indexer_service.clone(),
+        quickwit_services.janitor_service.clone(),
+    );
+
+    // `/metrics` route.
+    let metrics_routes = warp::path("metrics")
         .and(warp::get())
         .map(metrics::metrics_handler);
 
+    // `/api/v1/*` routes.
     let api_v1_root_url = warp::path!("api" / "v1" / ..);
     let api_v1_routes = cluster_handler(quickwit_services.cluster.clone())
         .or(node_info_handler(
@@ -78,11 +87,6 @@ pub(crate) async fn start_rest_server(
         .or(index_management_handlers(
             quickwit_services.index_service.clone(),
         ))
-        .or(health_check_handlers(
-            quickwit_services.cluster.clone(),
-            quickwit_services.indexer_service.clone(),
-            quickwit_services.janitor_service.clone(),
-        ))
         .or({
             let delete_task_service_opt: Option<Mailbox<DeleteTaskService>> = universe.get_one();
             delete_task_api_handlers(quickwit_services.metastore.clone(), delete_task_service_opt)
@@ -91,10 +95,13 @@ pub(crate) async fn start_rest_server(
     let api_v1_root_route = api_v1_root_url.and(api_v1_routes);
     let redirect_root_to_ui_route =
         warp::path::end().map(|| redirect(http::Uri::from_static("/ui/search")));
+
+    // Combine all the routes together.
     let rest_routes = api_v1_root_route
         .or(redirect_root_to_ui_route)
         .or(ui_handler())
-        .or(metrics_service)
+        .or(health_check_routes)
+        .or(metrics_routes)
         .with(request_counter)
         .recover(recover_fn);
 
