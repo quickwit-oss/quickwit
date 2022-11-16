@@ -49,6 +49,10 @@ pub enum Health {
     Success,
 }
 
+/// Message received by health probe handlers.
+#[derive(Clone, Debug)]
+pub struct Healthz;
+
 impl<A: Actor> fmt::Debug for ActorHandle<A> {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
