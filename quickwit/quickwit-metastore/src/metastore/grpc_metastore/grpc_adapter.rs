@@ -247,7 +247,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
             &mark_splits_for_deletion_request.filter_json,
         )
         .map_err(|error| MetastoreError::JsonDeserializeError {
-            name: "ListSplitsQuery".to_string(),
+            struct_name: "ListSplitsQuery".to_string(),
             message: error.to_string(),
         })?;
         let mark_splits_for_deletion_reply = self

@@ -295,8 +295,12 @@ mod tests {
             .expect_mark_splits_for_deletion_by_query()
             .times(1)
             .returning(|query| {
+                let expected_ts = OffsetDateTime::now_utc().unix_timestamp()
+                    - STAGED_GRACE_PERIOD.as_secs() as i64;
+
                 assert_eq!(query.index_id, "test-index");
                 assert_eq!(query.split_states, vec![SplitState::Staged]);
+                assert_eq!(query.update_timestamp.end, Bound::Included(expected_ts));
                 Ok(())
             });
         mock_metastore
@@ -356,8 +360,12 @@ mod tests {
             .expect_mark_splits_for_deletion_by_query()
             .times(1)
             .returning(|query| {
+                let expected_ts = OffsetDateTime::now_utc().unix_timestamp()
+                    - STAGED_GRACE_PERIOD.as_secs() as i64;
+
                 assert_eq!(query.index_id, "test-index");
                 assert_eq!(query.split_states, vec![SplitState::Staged]);
+                assert_eq!(query.update_timestamp.end, Bound::Included(expected_ts));
                 Ok(())
             });
         mock_metastore
@@ -416,8 +424,12 @@ mod tests {
             .expect_mark_splits_for_deletion_by_query()
             .times(2)
             .returning(|query| {
+                let expected_ts = OffsetDateTime::now_utc().unix_timestamp()
+                    - STAGED_GRACE_PERIOD.as_secs() as i64;
+
                 assert_eq!(query.index_id, "test-index");
                 assert_eq!(query.split_states, vec![SplitState::Staged]);
+                assert_eq!(query.update_timestamp.end, Bound::Included(expected_ts));
                 Ok(())
             });
         mock_metastore
@@ -561,8 +573,12 @@ mod tests {
             .expect_mark_splits_for_deletion_by_query()
             .times(2)
             .returning(|query| {
+                let expected_ts = OffsetDateTime::now_utc().unix_timestamp()
+                    - STAGED_GRACE_PERIOD.as_secs() as i64;
+
                 assert!(["test-index-1", "test-index-2"].contains(&query.index_id));
                 assert_eq!(query.split_states, vec![SplitState::Staged]);
+                assert_eq!(query.update_timestamp.end, Bound::Included(expected_ts));
 
                 if query.index_id == "test-index-2" {
                     return Err(MetastoreError::DbError {
@@ -628,9 +644,13 @@ mod tests {
         mock_metastore
             .expect_mark_splits_for_deletion_by_query()
             .times(2)
-            .returning(|query: ListSplitsQuery<'_>| {
+            .returning(|query| {
+                let expected_ts = OffsetDateTime::now_utc().unix_timestamp()
+                    - STAGED_GRACE_PERIOD.as_secs() as i64;
+
                 assert!(["test-index-1", "test-index-2"].contains(&query.index_id));
                 assert_eq!(query.split_states, vec![SplitState::Staged]);
+                assert_eq!(query.update_timestamp.end, Bound::Included(expected_ts));
                 Ok(())
             });
         mock_metastore

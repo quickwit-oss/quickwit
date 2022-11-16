@@ -380,7 +380,7 @@ impl Metastore for MetastoreGrpcClient {
 
         let filter_json =
             serde_json::to_string(&query).map_err(|error| MetastoreError::JsonSerializeError {
-                name: "ListSplitsQuery".to_string(),
+                struct_name: "ListSplitsQuery".to_string(),
                 message: error.to_string(),
             })?;
 
