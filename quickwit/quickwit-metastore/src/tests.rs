@@ -2787,17 +2787,121 @@ pub mod test_suite {
             ..Default::default()
         };
 
+
+        {
+            info!("Mark splits for deletion on a non-existent index.");
+            let query = ListSplitsQuery::for_index(index_id);
+            let metastore_err = metastore
+                .mark_splits_for_deletion_by_query(query)
+                .await
+                .unwrap_err();
+            error!(err=?metastore_err);
+            assert!(matches!(
+                metastore_err,
+                MetastoreError::IndexDoesNotExist { .. }
+            ));
+        }
+
+        metastore
+            .create_index(index_metadata.clone())
+            .await
+            .unwrap();
+
         {
             info!("Check unsupported operations.");
 
-            // TODO: Add
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_limit(5);
+            let result = metastore.mark_splits_for_deletion_by_query(query).await;
+            assert!(matches!(result, Err(MetastoreError::UnsupportedQuery { .. })), "Metastore request should be rejected.");
+
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_offset(5);
+            let result = metastore.mark_splits_for_deletion_by_query(query).await;
+            assert!(matches!(result, Err(MetastoreError::UnsupportedQuery { .. })), "Metastore request should be rejected.");
+        }
+
+        {
+            info!("Stage splits.");
+
+            metastore
+                .stage_split(index_id, split_metadata_1.clone())
+                .await
+                .unwrap();
+            metastore
+                .stage_split(index_id, split_metadata_2.clone())
+                .await
+                .unwrap();
+            metastore
+                .stage_split(index_id, split_metadata_3.clone())
+                .await
+                .unwrap();
+            metastore
+                .publish_splits(index_id, &[split_id_1], &[], None)
+                .await
+                .unwrap();
         }
 
         {
             info!("Test query samples.");
 
-            // TODO: Add
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Published);
+            metastore.mark_splits_for_deletion_by_query(query).await.unwrap();
+
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::MarkedForDeletion);
+            let splits = metastore.list_splits(query).await.unwrap();
+            let split_ids: HashSet<String> = splits
+                .into_iter()
+                .map(|meta| meta.split_id().to_string())
+                .collect();
+            assert_eq!(split_ids, to_hash_set(&[split_id_1]));
+
+            let current_ts = OffsetDateTime::now_utc().unix_timestamp();
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_update_timestamp_gt(current_ts);
+            metastore.mark_splits_for_deletion_by_query(query).await.unwrap();
+
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged);
+            let splits = metastore.list_splits(query).await.unwrap();
+            let split_ids: HashSet<String> = splits
+                .into_iter()
+                .map(|meta| meta.split_id().to_string())
+                .collect();
+            assert_eq!(
+                split_ids,
+                to_hash_set(&[
+                    split_id_2,
+                    split_id_3,
+                ])
+            );
+
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::Staged)
+                .with_update_timestamp_lte(current_ts);
+            metastore.mark_splits_for_deletion_by_query(query).await.unwrap();
+
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_split_state(SplitState::MarkedForDeletion);
+            let splits = metastore.list_splits(query).await.unwrap();
+            let split_ids: HashSet<String> = splits
+                .into_iter()
+                .map(|meta| meta.split_id().to_string())
+                .collect();
+            assert_eq!(
+                split_ids,
+                to_hash_set(&[
+                    split_id_1,
+                    split_id_2,
+                    split_id_3,
+                ])
+            );
         }
+
+        cleanup_index(&metastore, index_id).await;
     }
 }
 
@@ -2943,6 +3047,12 @@ macro_rules! metastore_test_suite {
             async fn test_metastore_update_splits_delete_opstamp() {
                 let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_update_splits_delete_opstamp::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_mark_splits_for_deletion_by_query() {
+                let _ = tracing_subscriber::fmt::try_init();
+                crate::tests::test_suite::test_metastore_mark_splits_for_deletion_by_query::<$metastore_type>().await;
             }
         }
     }
