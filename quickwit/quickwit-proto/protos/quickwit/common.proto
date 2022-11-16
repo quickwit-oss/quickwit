@@ -26,8 +26,6 @@ message SetQuery {
   repeated Term terms = 1;
   // Field to search in.
   string field_name = 2;
-  // Union of tags a split must have to be searched.
-  repeated string tags = 3;
 }
 
 message Term {

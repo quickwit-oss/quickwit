@@ -24,9 +24,8 @@ use quickwit_actors::Mailbox;
 use quickwit_janitor::actors::DeleteTaskService;
 use quickwit_metastore::Metastore;
 use quickwit_proto::metastore_api::DeleteQuery;
-use quickwit_proto::{ServiceError, ServiceErrorCode};
+use quickwit_proto::search_request::Query as SearchQuery;
 use serde::Deserialize;
-use thiserror::Error;
 use warp::{Filter, Rejection};
 
 use crate::format::{Format, FormatError};
@@ -43,20 +42,6 @@ pub struct DeleteQueryRequest {
     pub start_timestamp: Option<i64>,
     /// If set, restrict delete to documents with a `timestamp < end_timestamp``.
     pub end_timestamp: Option<i64>,
-}
-
-#[derive(Error, Debug, Clone)]
-pub enum DeleteApiError {
-    #[error("Invalid argument: {0}")]
-    InvalidArgument(String),
-}
-
-impl ServiceError for DeleteApiError {
-    fn status_code(&self) -> ServiceErrorCode {
-        match self {
-            DeleteApiError::InvalidArgument(_) => ServiceErrorCode::BadRequest,
-        }
-    }
 }
 
 /// Delete query API handlers.
@@ -103,46 +88,33 @@ pub fn post_delete_tasks_handler(
         .and_then(post_delete_request)
 }
 
-async fn post_delete_request_endpoint(
+async fn post_delete_request(
     index_id: String,
     delete_request: DeleteQueryRequest,
     delete_task_service_mailbox: Mailbox<DeleteTaskService>,
-) -> Result<impl serde::Serialize, FormatError> {
-    let search_fields = match &delete_request.query {
-        Query::QueryByString { search_fields, .. } => {
-            search_fields.as_ref().cloned().unwrap_or_default()
-        }
-        Query::QueryByTerms { .. } => Vec::new(),
+) -> Result<impl warp::Reply, Infallible> {
+    let (query, search_fields) = match delete_request.query {
+        Query::QueryByString {
+            query,
+            search_fields,
+        } => (SearchQuery::Text(query), search_fields),
+        Query::QueryByTerms { terms, field_name } => (SearchQuery::SetQuery(todo!()), None),
     };
 
     let delete_query = DeleteQuery {
         index_id: index_id.clone(),
         start_timestamp: delete_request.start_timestamp,
         end_timestamp: delete_request.end_timestamp,
-        query: Some(
-            delete_request
-                .query
-                .try_into()
-                .map_err(DeleteApiError::InvalidArgument)
-                .map_err(FormatError::wrap)?,
-        ),
-        search_fields,
+        query: Some(query.into()),
+        search_fields: search_fields.unwrap_or_default(),
     };
 
-    delete_task_service_mailbox
+    let create_delete_task_reply = delete_task_service_mailbox
         .ask_for_res(delete_query)
         .await
-        .map_err(FormatError::wrap)
-}
+        .map_err(FormatError::wrap);
 
-async fn post_delete_request(
-    index_id: String,
-    delete_request: DeleteQueryRequest,
-    delete_task_service_mailbox: Mailbox<DeleteTaskService>,
-) -> Result<impl warp::Reply, Infallible> {
-    Ok(Format::PrettyJson.make_rest_reply(
-        post_delete_request_endpoint(index_id, delete_request, delete_task_service_mailbox).await,
-    ))
+    Ok(Format::PrettyJson.make_rest_reply(create_delete_task_reply))
 }
 
 #[cfg(test)]
