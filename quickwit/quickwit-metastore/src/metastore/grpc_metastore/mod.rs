@@ -49,7 +49,6 @@ use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt;
 use tower::discover::Change;
-use tower::service_fn;
 use tower::timeout::error::Elapsed;
 use tower::timeout::Timeout;
 use tracing::{error, info};
@@ -125,7 +124,7 @@ impl MetastoreGrpcClient {
     pub async fn from_duplex_stream(client: tokio::io::DuplexStream) -> anyhow::Result<Self> {
         let mut client = Some(client);
         let channel = Endpoint::try_from("http://test.server")?
-            .connect_with_connector(service_fn(move |_: Uri| {
+            .connect_with_connector(tower::service_fn(move |_: Uri| {
                 let client = client.take();
                 async move {
                     client.ok_or_else(|| {

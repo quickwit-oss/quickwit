@@ -32,7 +32,7 @@ use warp::{Filter, Rejection};
 use crate::with_arg;
 
 /// Health check handlers.
-pub fn health_check_handlers(
+pub(crate) fn health_check_handlers(
     cluster: Arc<Cluster>,
     indexer_service_opt: Option<Mailbox<IndexingService>>,
     janitor_service_opt: Option<Mailbox<JanitorService>>,
@@ -40,23 +40,21 @@ pub fn health_check_handlers(
     liveness_handler(indexer_service_opt, janitor_service_opt).or(readiness_handler(cluster))
 }
 
-pub fn liveness_handler(
+fn liveness_handler(
     indexer_service_opt: Option<Mailbox<IndexingService>>,
     janitor_service_opt: Option<Mailbox<JanitorService>>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     warp::path!("health" / "livez")
-        .and(warp::path::end())
         .and(warp::get())
         .and(with_arg(indexer_service_opt))
         .and(with_arg(janitor_service_opt))
         .and_then(get_liveness)
 }
 
-pub fn readiness_handler(
+fn readiness_handler(
     cluster: Arc<Cluster>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     warp::path!("health" / "readyz")
-        .and(warp::path::end())
         .and(warp::get())
         .and(with_arg(cluster))
         .and_then(get_readiness)
