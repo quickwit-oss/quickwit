@@ -25,14 +25,14 @@ use tantivy::schema::{Field, FieldType, Schema};
 use tantivy_query_grammar::{UserInputAst, UserInputLeaf, UserInputLiteral};
 
 use crate::sort_by::validate_sort_by_field_name;
-use crate::{QueryParserError, DYNAMIC_FIELD_NAME, QUICKWIT_TOKENIZER_MANAGER};
+use crate::{QueryParserError, WarmupInfo, DYNAMIC_FIELD_NAME, QUICKWIT_TOKENIZER_MANAGER};
 
 /// Build a `Query` with field resolution & forbidding range clauses.
 pub(crate) fn build_query(
     schema: Schema,
     request: &SearchRequest,
     default_field_names: &[String],
-) -> Result<Box<dyn Query>, QueryParserError> {
+) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
     let user_input_ast = tantivy_query_grammar::parse_query(&request.query)
         .map_err(|_| TantivyQueryParserError::SyntaxError(request.query.to_string()))?;
 
@@ -61,11 +61,19 @@ pub(crate) fn build_query(
         validate_sort_by_field_name(sort_by_field, &schema, Some(&search_fields))?;
     }
 
+    let mut term_set_query_fields = HashSet::new();
+    extract_term_set_query_fields(&user_input_ast, &mut term_set_query_fields);
+
+    let warmup_info = WarmupInfo {
+        term_dict_names: term_set_query_fields.clone(),
+        posting_names: term_set_query_fields,
+    };
+
     let mut query_parser =
         QueryParser::new(schema, search_fields, QUICKWIT_TOKENIZER_MANAGER.clone());
     query_parser.set_conjunction_by_default();
     let query = query_parser.parse_query(&request.query)?;
-    Ok(query)
+    Ok((query, warmup_info))
 }
 
 fn resolve_fields(schema: &Schema, field_names: &[String]) -> anyhow::Result<Vec<Field>> {
@@ -98,6 +106,7 @@ fn extract_field_name(leaf: &UserInputLeaf) -> Option<&str> {
     match leaf {
         UserInputLeaf::Literal(UserInputLiteral { field_name, .. }) => field_name.as_deref(),
         UserInputLeaf::Range { field, .. } => field.as_deref(),
+        UserInputLeaf::Set { field, .. } => field.as_deref(),
         UserInputLeaf::All => None,
     }
 }
@@ -107,6 +116,20 @@ fn has_range_clause(user_input_ast: &UserInputAst) -> bool {
     collect_leaves(user_input_ast)
         .into_iter()
         .any(|leaf| matches!(*leaf, UserInputLeaf::Range { .. }))
+}
+
+fn extract_term_set_query_fields(user_input_ast: &UserInputAst, set: &mut HashSet<String>) {
+    set.extend(
+        collect_leaves(user_input_ast)
+            .into_iter()
+            .filter_map(|leaf| {
+                if let UserInputLeaf::Set { field, .. } = leaf {
+                    field.clone()
+                } else {
+                    None
+                }
+            }),
+    )
 }
 
 /// Tells if the query has a Term or Range node which does not

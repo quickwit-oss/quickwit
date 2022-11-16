@@ -286,7 +286,7 @@ async fn create_fields_snippet_generator(
     search_request: &SearchRequest,
 ) -> anyhow::Result<FieldsSnippetGenerator> {
     let schema = searcher.schema();
-    let query = doc_mapper.query(schema.clone(), search_request)?;
+    let (query, _) = doc_mapper.query(schema.clone(), search_request)?;
     let mut snippet_generators = HashMap::new();
     for field_name in &search_request.snippet_fields {
         let field = schema

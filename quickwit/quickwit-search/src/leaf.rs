@@ -367,23 +367,22 @@ async fn leaf_search_single_split(
         search_request,
         &split_schema,
     )?;
-    let query = doc_mapper.query(split_schema, search_request)?;
+    let (query, warmup_info) = doc_mapper.query(split_schema, search_request)?;
     let reader = index
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = reader.searcher();
 
-    let field_names_to_warmup = quickwit_collector.term_dict_field_names();
-    let posting_names_to_warmup = HashSet::new();
-    // TODO add TermSetQuery fields in both sets
+    let mut field_names_to_warmup = quickwit_collector.term_dict_field_names();
+    field_names_to_warmup.extend(warmup_info.term_dict_names.into_iter());
 
     warmup(
         &searcher,
         &query,
         &quickwit_collector.fast_field_names(),
         &field_names_to_warmup,
-        &posting_names_to_warmup,
+        &warmup_info.posting_names,
         quickwit_collector.requires_scoring(),
     )
     .await?;

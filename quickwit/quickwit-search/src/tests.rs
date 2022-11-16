@@ -78,7 +78,6 @@ async fn test_single_node_simple() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_single_node_termset() -> anyhow::Result<()> {
     let index_id = "single-node-termset-1";
     let doc_mapping_yaml = r#"

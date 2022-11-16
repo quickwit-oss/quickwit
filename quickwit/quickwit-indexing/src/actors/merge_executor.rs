@@ -469,7 +469,7 @@ impl MergeExecutor {
                     "Delete all documents matched by query `{:?}`",
                     search_request
                 );
-                let query = doc_mapper.query(union_index.schema(), &search_request)?;
+                let (query, _) = doc_mapper.query(union_index.schema(), &search_request)?;
                 index_writer.delete_query(query)?;
             }
             debug!("commit-delete-operations");

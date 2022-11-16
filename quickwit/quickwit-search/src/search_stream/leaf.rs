@@ -142,7 +142,7 @@ async fn leaf_search_stream_single_split(
     }
 
     let search_request = Arc::new(SearchRequest::from(stream_request.clone()));
-    let query = doc_mapper.query(split_schema.clone(), &search_request)?;
+    let (query, warmup_info) = doc_mapper.query(split_schema.clone(), &search_request)?;
     let reader = index
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
@@ -161,13 +161,12 @@ async fn leaf_search_stream_single_split(
     let requires_scoring =
         matches!(&search_request.sort_by_field, Some(field_name) if field_name == "_score");
 
-    // TODO add TermSetQuery fields in both sets
     warmup(
         &searcher,
         query.as_ref(),
         &request_fields.fast_fields_for_request(timestamp_filter_builder_opt.as_ref()),
-        &HashSet::new(),
-        &HashSet::new(),
+        &warmup_info.term_dict_names,
+        &warmup_info.posting_names,
         requires_scoring,
     )
     .await?;
