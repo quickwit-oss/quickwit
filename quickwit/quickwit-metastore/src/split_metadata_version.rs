@@ -64,7 +64,7 @@ pub(crate) struct SplitMetadataV3 {
     #[serde(default = "utc_now_timestamp")]
     pub create_timestamp: i64,
 
-    /// Timestamp for tracking when the split was finalized
+    /// Timestamp for tracking when the split was finalized.
     pub indexing_end_timestamp: i64,
 
     /// A set of tags for categorizing and searching group of splits.

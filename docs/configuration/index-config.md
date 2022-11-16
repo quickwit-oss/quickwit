@@ -580,5 +580,5 @@ retention:
   - `years`, `year`, `y` -- a year is defined as `365.25 days`
 
 (2) `cutoff_reference` possible values:
-  - `indexing_timestamp` will evaluate based on the timestamp the split was published at.
+  - `indexing_timestamp` will evaluate based on the timestamp the split was finalized at.
   - `split_timestamp_field` will evaluate based on the index timestamp field specified in the (`indexing_settings.timestamp_field`) settings.

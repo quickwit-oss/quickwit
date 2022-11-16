@@ -27,7 +27,6 @@ pub mod postgresql_metastore;
 mod postgresql_model;
 
 use std::ops::{Bound, RangeInclusive};
-use std::time::Duration;
 
 use async_trait::async_trait;
 pub use index_metadata::IndexMetadata;
@@ -306,8 +305,8 @@ pub struct ListSplitsQuery<'a> {
     /// The create timestamp range to filter by.
     pub create_timestamp: FilterRange<i64>,
 
-    /// The age to filter by.
-    pub age_filter_opt: Option<AgeFilter>,
+    /// The indexing end timestamp to filter by.
+    pub indexing_end_timestamp: FilterRange<i64>,
 }
 
 #[allow(unused_attributes)]
@@ -324,7 +323,7 @@ impl<'a> ListSplitsQuery<'a> {
             delete_opstamp: Default::default(),
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
-            age_filter_opt: None,
+            indexing_end_timestamp: Default::default(),
         }
     }
 
@@ -470,17 +469,17 @@ impl<'a> ListSplitsQuery<'a> {
         self
     }
 
-    /// Set the age filter to match splits with `indexing_end_timestamp`
-    /// *older than or equal to* the provided duration.
-    pub fn with_age_on_indexing_end_timestamp(mut self, v: Duration) -> Self {
-        self.age_filter_opt = Some(AgeFilter::IndexingTimestamp(v));
+    /// Set the field's lower bound to match values that are
+    /// *less than or equal to* the provided value.
+    pub fn with_indexing_end_timestamp_lte(mut self, v: i64) -> Self {
+        self.indexing_end_timestamp.end = Bound::Included(v);
         self
     }
 
-    /// Set the age filter to match splits with `time_range_end`
-    /// *older than or equal to* the provided duration.
-    pub fn with_age_on_split_timestamp_field(mut self, v: Duration) -> Self {
-        self.age_filter_opt = Some(AgeFilter::SplitTimestampField(v));
+    /// Set the field's lower bound to match values that are
+    /// *less than* the provided value.
+    pub fn with_indexing_end_timestamp_lt(mut self, v: i64) -> Self {
+        self.indexing_end_timestamp.end = Bound::Excluded(v);
         self
     }
 }
@@ -553,16 +552,6 @@ impl<T> Default for FilterRange<T> {
             end: Bound::Unbounded,
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// A filter specifying a field and a duration to filter documents by.
-/// Only documents *older than or equal to* duration are included.
-pub enum AgeFilter {
-    /// Filter based on `SplitMetadata::indexing_end_timestamp`
-    IndexingTimestamp(Duration),
-    /// Filter based on `SplitMetadata::time_range_end`
-    SplitTimestampField(Duration),
 }
 
 #[cfg(test)]

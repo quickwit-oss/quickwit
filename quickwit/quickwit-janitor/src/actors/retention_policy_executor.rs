@@ -243,12 +243,12 @@ fn compute_deleted_indexes<'a>(
 
 #[cfg(test)]
 mod tests {
+    use std::ops::RangeInclusive;
+
     use mockall::Sequence;
     use quickwit_actors::Universe;
     use quickwit_config::{RetentionPolicy, RetentionPolicyCutoffReference};
-    use quickwit_metastore::{
-        AgeFilter, IndexMetadata, MockMetastore, Split, SplitMetadata, SplitState,
-    };
+    use quickwit_metastore::{IndexMetadata, MockMetastore, Split, SplitMetadata, SplitState};
 
     use super::*;
 
@@ -293,7 +293,7 @@ mod tests {
         if let Some(retention_period) = retention_period_opt {
             index.retention_policy = Some(RetentionPolicy::new(
                 retention_period.to_string(),
-                RetentionPolicyCutoffReference::IndexingTimestamp,
+                RetentionPolicyCutoffReference::SplitTimestampField,
                 SCHEDULE_EXPR.to_string(),
             ))
         }
@@ -308,11 +308,12 @@ mod tests {
             .collect()
     }
 
-    fn make_split(split_id: &str) -> Split {
+    fn make_split(split_id: &str, time_range: Option<RangeInclusive<i64>>) -> Split {
         Split {
             split_metadata: SplitMetadata {
                 split_id: split_id.to_string(),
                 footer_offsets: 5..20,
+                time_range,
                 ..Default::default()
             },
             split_state: SplitState::Published,
@@ -437,22 +438,15 @@ mod tests {
             .times(2)
             .returning(|query| {
                 assert_eq!(query.split_states, &[SplitState::Published]);
-
                 let splits = match query.index_id {
                     "a" => {
-                        assert_eq!(
-                            query.age_filter_opt,
-                            Some(AgeFilter::IndexingTimestamp(Duration::from_secs(
-                                2 * 60 * 60
-                            )))
-                        );
-                        vec![make_split("split-1"), make_split("split-2")]
+                        vec![
+                            make_split("split-1", Some(1000..=5000)),
+                            make_split("split-2", Some(2000..=6000)),
+                            make_split("split-3", None),
+                        ]
                     }
                     "b" => {
-                        assert_eq!(
-                            query.age_filter_opt,
-                            Some(AgeFilter::IndexingTimestamp(Duration::from_secs(60 * 60)))
-                        );
                         vec![]
                     }
                     unknown => panic!("Unknown index: `{}`.", unknown),
