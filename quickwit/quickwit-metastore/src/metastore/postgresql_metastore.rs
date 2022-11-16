@@ -506,11 +506,12 @@ where
     if !mutation_occurred {
         return Ok(mutation_occurred);
     }
-    let index_metadata_json =
-        serde_json::to_string(&index_metadata).map_err(|err| MetastoreError::InternalError {
-            message: "Failed to serialize index metadata.".to_string(),
-            cause: err.to_string(),
-        })?;
+    let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|error| {
+        MetastoreError::JsonSerializeError {
+            struct_name: "IndexMetadata".to_string(),
+            message: error.to_string(),
+        }
+    })?;
     let update_index_res = sqlx::query(
         r#"
         UPDATE indexes
@@ -550,10 +551,10 @@ impl Metastore for PostgresqlMetastore {
 
     #[instrument(skip(self), fields(index_id=index_metadata.index_id()))]
     async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
-        let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|err| {
-            MetastoreError::InternalError {
-                message: "Failed to serialize index metadata.".to_string(),
-                cause: err.to_string(),
+        let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|error| {
+            MetastoreError::JsonSerializeError {
+                struct_name: "IndexMetadata".to_string(),
+                message: error.to_string(),
             }
         })?;
         sqlx::query("INSERT INTO indexes (index_id, index_metadata_json) VALUES ($1, $2)")
@@ -585,10 +586,10 @@ impl Metastore for PostgresqlMetastore {
         index_id: &str,
         split_metadata: SplitMetadata,
     ) -> MetastoreResult<()> {
-        let split_metadata_json = serde_json::to_string(&split_metadata).map_err(|err| {
-            MetastoreError::InternalError {
-                message: "Failed to serialize split metadata.".to_string(),
-                cause: err.to_string(),
+        let split_metadata_json = serde_json::to_string(&split_metadata).map_err(|error| {
+            MetastoreError::JsonSerializeError {
+                struct_name: "SplitMetadata".to_string(),
+                message: error.to_string(),
             }
         })?;
         let time_range_start = split_metadata
@@ -884,11 +885,12 @@ impl Metastore for PostgresqlMetastore {
     /// Creates a delete task from a delete query.
     #[instrument(skip(self), fields(index_id=delete_query.index_id))]
     async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask> {
-        let delete_query_json =
-            serde_json::to_string(&delete_query).map_err(|err| MetastoreError::InternalError {
-                message: "Failed to serialize delete query.".to_string(),
-                cause: err.to_string(),
-            })?;
+        let delete_query_json = serde_json::to_string(&delete_query).map_err(|error| {
+            MetastoreError::JsonSerializeError {
+                struct_name: "DeleteQuery".to_string(),
+                message: error.to_string(),
+            }
+        })?;
         let (create_timestamp, opstamp): (sqlx::types::time::PrimitiveDateTime, i64) =
             sqlx::query_as(
                 r#"
