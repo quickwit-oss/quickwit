@@ -87,7 +87,7 @@ pub enum MetastoreError {
         message: String,
     },
 
-    #[error("Cannot correctly use query due to unsupported condition: `{name}`: `{message}`.")]
+    #[error("Cannot use query due to unsupported condition: `{name}`: `{message}`.")]
     UnsupportedQuery { name: String, message: String },
 }
 
