@@ -6,7 +6,10 @@ pub struct SearchRequest {
     /// Index ID
     #[prost(string, tag="1")]
     pub index_id: ::prost::alloc::string::String,
-    /// Fields to search on. Should be empty if query.text is not set.
+    /// Query
+    #[prost(string, tag="2")]
+    pub query: ::prost::alloc::string::String,
+    /// Fields to search on
     #[prost(string, repeated, tag="3")]
     pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// Time filter
@@ -36,23 +39,6 @@ pub struct SearchRequest {
     /// Fields to extract snippet on
     #[prost(string, repeated, tag="12")]
     pub snippet_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// Query
-    #[prost(oneof="search_request::Query", tags="2, 13")]
-    #[serde(flatten)]
-    #[serde(deserialize_with = "crate::serde_helpers::required_option")]
-    pub query: ::core::option::Option<search_request::Query>,
-}
-/// Nested message and enum types in `SearchRequest`.
-pub mod search_request {
-    /// Query
-    #[derive(Serialize, Deserialize)]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Query {
-        #[prost(string, tag="2")]
-        Text(::prost::alloc::string::String),
-        #[prost(message, tag="13")]
-        SetQuery(super::super::quickwit_common::SetQuery),
-    }
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]

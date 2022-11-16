@@ -1224,7 +1224,7 @@ mod tests {
             start_timestamp: None,
             end_timestamp: None,
             index_id: index_id.to_string(),
-            query: Some("harry potter".to_string().into()),
+            query: "harry potter".to_string(),
             search_fields: Vec::new(),
         };
 
@@ -1260,7 +1260,7 @@ mod tests {
             start_timestamp: None,
             end_timestamp: None,
             index_id: index_id_2.to_string(),
-            query: Some("harry potter".to_string().into()),
+            query: "harry potter".to_string(),
             search_fields: Vec::new(),
         };
         let delete_task_4 = metastore

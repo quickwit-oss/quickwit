@@ -20,7 +20,6 @@
 #![allow(clippy::derive_partial_eq_without_eq)]
 
 mod quickwit;
-mod quickwit_common;
 mod quickwit_ingest_api;
 mod quickwit_metastore_api;
 
@@ -30,7 +29,6 @@ pub mod ingest_api {
 
 pub mod metastore_api {
     pub use crate::quickwit_metastore_api::*;
-    pub use crate::quickwit_common::*;
 }
 
 pub mod jaeger {
@@ -166,11 +164,9 @@ pub fn convert_to_grpc_result<T, E: ServiceError>(
 
 impl From<SearchStreamRequest> for SearchRequest {
     fn from(item: SearchStreamRequest) -> Self {
-        use crate::search_request::Query;
-        let query = Some(Query::Text(item.query));
         Self {
             index_id: item.index_id,
-            query,
+            query: item.query,
             search_fields: item.search_fields,
             snippet_fields: item.snippet_fields,
             start_timestamp: item.start_timestamp,
@@ -188,7 +184,7 @@ impl From<DeleteQuery> for SearchRequest {
     fn from(delete_query: DeleteQuery) -> Self {
         Self {
             index_id: delete_query.index_id,
-            query: delete_query.query.map(Into::into),
+            query: delete_query.query,
             start_timestamp: delete_query.start_timestamp,
             end_timestamp: delete_query.end_timestamp,
             search_fields: delete_query.search_fields,
@@ -200,120 +196,5 @@ impl From<DeleteQuery> for SearchRequest {
 impl fmt::Display for SplitSearchError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "({}, split_id: {})", self.error, self.split_id)
-    }
-}
-
-impl From<search_request::Query> for metastore_api::delete_query::Query {
-    fn from(query: search_request::Query) -> metastore_api::delete_query::Query {
-        use search_request::Query as Src;
-        use metastore_api::delete_query::Query as Dst;
-        match query {
-            Src::Text(text) => Dst::QueryText(text),
-            Src::SetQuery(query) => Dst::SetQuery(query),
-        }
-    }
-}
-
-impl From<metastore_api::delete_query::Query> for search_request::Query {
-    fn from(query: metastore_api::delete_query::Query) -> search_request::Query {
-        use metastore_api::delete_query::Query as Src;
-        use search_request::Query as Dst;
-        match query {
-            Src::QueryText(text) => Dst::Text(text),
-            Src::SetQuery(query) => Dst::SetQuery(query),
-        }
-    }
-}
-
-impl From<String> for metastore_api::delete_query::Query {
-    fn from(query: String) -> metastore_api::delete_query::Query {
-        metastore_api::delete_query::Query::QueryText(query)
-    }
-}
-
-impl From<String> for search_request::Query {
-    fn from(query: String) -> search_request::Query {
-        search_request::Query::Text(query)
-    }
-}
-
-impl From<metastore_api::Term> for serde_json::Value {
-    fn from(term: metastore_api::Term) -> serde_json::Value {
-        use metastore_api::term::Term as InnerTerm;
-        match term.term {
-            Some(InnerTerm::Text(s)) => s.into(),
-            Some(InnerTerm::Unsigned(u)) => u.into(),
-            Some(InnerTerm::Signed(i)) => i.into(),
-            Some(InnerTerm::Fp64(f)) => f.into(),
-            Some(InnerTerm::Boolean(b)) => b.into(),
-            None => serde_json::Value::Null,
-        }
-    }
-}
-
-impl TryFrom<serde_json::Value> for metastore_api::Term {
-    type Error = serde_json::Value;
-    fn try_from(term: serde_json::Value) -> Result<metastore_api::Term, serde_json::Value> {
-        use metastore_api::term::Term as InnerTerm;
-        use serde_json::Value as JsonValue;
-        let inner = match term {
-            JsonValue::Null | JsonValue::Array(_) | JsonValue::Object(_) => return Err(term),
-            JsonValue::String(s) => InnerTerm::Text(s),
-            JsonValue::Number(ref n) => {
-                if let Some(u) = n.as_u64() {
-                    InnerTerm::Unsigned(u)
-                } else if let Some(i) = n.as_i64() {
-                    InnerTerm::Signed(i)
-                } else if let Some(f) = n.as_f64() {
-                    InnerTerm::Fp64(f)
-                } else {
-                    // unreachable without arbitrary_precision flag on serde
-                    return Err(term);
-                }
-            },
-            JsonValue::Bool(b) => InnerTerm::Boolean(b),
-        };
-        Ok(metastore_api::Term {
-            term: Some(inner),
-        })
-    }
-}
-
-pub(crate) mod serde_helpers {
-    use serde::de::{Deserialize, Deserializer};
-    use serde::Serialize;
-    use crate::metastore_api::delete_query::Query;
-    use crate::quickwit_common::SetQuery;
-
-    pub fn required_option<'de, D, T: Deserialize<'de> + std::fmt::Debug>(deserializer: D) -> Result<Option<T>, D::Error>
-    where D: Deserializer<'de> {
-            T::deserialize(deserializer).map(Some)
-    }
-
-    #[derive(Serialize, Deserialize)]
-    #[serde(untagged)]
-    pub enum SerializedQuery {
-        Text {
-            query: String
-        },
-        SetQuery(SetQuery),
-    }
-
-    impl From<Query> for SerializedQuery {
-        fn from(query: Query) -> SerializedQuery {
-            match query {
-                Query::QueryText(query) => SerializedQuery::Text {query},
-                Query::SetQuery(sq) => SerializedQuery::SetQuery (sq),
-            }
-        }
-    }
-
-    impl From<SerializedQuery> for Query {
-        fn from(query: SerializedQuery) -> Query {
-            match query {
-                SerializedQuery::Text {query} => Query::QueryText(query),
-                SerializedQuery::SetQuery (sq) => Query::SetQuery(sq),
-            }
-        }
     }
 }

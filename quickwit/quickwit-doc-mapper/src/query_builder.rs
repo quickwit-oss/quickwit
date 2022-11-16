@@ -19,10 +19,9 @@
 
 use std::collections::HashSet;
 
-use quickwit_proto::search_request::Query as SearchQuery;
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
-use tantivy::schema::{Field, FieldType, Schema, Term, Type, Value};
+use tantivy::schema::{Field, FieldType, Schema};
 use tantivy_query_grammar::{UserInputAst, UserInputLeaf, UserInputLiteral};
 
 use crate::sort_by::validate_sort_by_field_name;
@@ -34,116 +33,39 @@ pub(crate) fn build_query(
     request: &SearchRequest,
     default_field_names: &[String],
 ) -> Result<Box<dyn Query>, QueryParserError> {
-    let query = match &request.query {
-        Some(SearchQuery::Text(query)) => {
-            let user_input_ast = tantivy_query_grammar::parse_query(query)
-                .map_err(|_| TantivyQueryParserError::SyntaxError(query.clone()))?;
+    let user_input_ast = tantivy_query_grammar::parse_query(&request.query)
+        .map_err(|_| TantivyQueryParserError::SyntaxError(request.query.to_string()))?;
 
-            if has_range_clause(&user_input_ast) {
-                return Err(anyhow::anyhow!("Range queries are not currently allowed.").into());
-            }
+    if has_range_clause(&user_input_ast) {
+        return Err(anyhow::anyhow!("Range queries are not currently allowed.").into());
+    }
 
-            if needs_default_search_field(&user_input_ast)
-                && request.search_fields.is_empty()
-                && (default_field_names.is_empty() || default_field_names == [DYNAMIC_FIELD_NAME])
-            {
-                return Err(anyhow::anyhow!(
-                    "No default field declared and no field specified in query."
-                )
-                .into());
-            }
+    if needs_default_search_field(&user_input_ast)
+        && request.search_fields.is_empty()
+        && (default_field_names.is_empty() || default_field_names == [DYNAMIC_FIELD_NAME])
+    {
+        return Err(
+            anyhow::anyhow!("No default field declared and no field specified in query.").into(),
+        );
+    }
 
-            validate_requested_snippet_fields(
-                &schema,
-                request,
-                &user_input_ast,
-                default_field_names,
-            )?;
+    validate_requested_snippet_fields(&schema, request, &user_input_ast, default_field_names)?;
 
-            let search_fields = if request.search_fields.is_empty() {
-                resolve_fields(&schema, default_field_names)?
-            } else {
-                resolve_fields(&schema, &request.search_fields)?
-            };
-
-            if let Some(sort_by_field) = request.sort_by_field.as_ref() {
-                validate_sort_by_field_name(sort_by_field, &schema, Some(&search_fields))?;
-            }
-
-            let mut query_parser =
-                QueryParser::new(schema, search_fields, QUICKWIT_TOKENIZER_MANAGER.clone());
-            query_parser.set_conjunction_by_default();
-            query_parser.parse_query(query)?
-        }
-        Some(SearchQuery::SetQuery(set_query)) => {
-            let field_name = &set_query.field_name;
-            let field = schema
-                .get_field(field_name)
-                .ok_or_else(|| TantivyQueryParserError::FieldDoesNotExist(field_name.clone()))?;
-
-            let field_type = schema.get_field_entry(field).field_type();
-            if !field_type.is_indexed() {
-                return Err(anyhow::anyhow!(
-                    "Attempted to search on a field `{}`, which is no indexed.",
-                    field_name
-                )
-                .into());
-            }
-
-            // TODO maybe Facet could be allowed?
-            if matches!(field_type.value_type(), Type::Json | Type::Facet) {
-                return Err(
-                    anyhow::anyhow!("Attempted to search on unsuported field type.").into(),
-                );
-            }
-
-            let terms = set_query
-                .terms
-                .iter()
-                .map(|term| value_to_term(field_type, field, term.clone()))
-                .collect::<Result<Vec<_>, _>>()?;
-
-            if terms.is_empty() {
-                return Err(anyhow::anyhow!("No valid term to search for").into());
-            }
-
-            // TODO BooleanQuery(Must(Set(terms)), Must(Set(tag))) would probably be more coherent
-            Box::new(tantivy::query::TermSetQuery::new(terms))
-        }
-        None => {
-            return Err(anyhow::anyhow!(
-                "Invalid request state: neither a text query nor a set query"
-            )
-            .into())
-        }
+    let search_fields = if request.search_fields.is_empty() {
+        resolve_fields(&schema, default_field_names)?
+    } else {
+        resolve_fields(&schema, &request.search_fields)?
     };
 
+    if let Some(sort_by_field) = request.sort_by_field.as_ref() {
+        validate_sort_by_field_name(sort_by_field, &schema, Some(&search_fields))?;
+    }
+
+    let mut query_parser =
+        QueryParser::new(schema, search_fields, QUICKWIT_TOKENIZER_MANAGER.clone());
+    query_parser.set_conjunction_by_default();
+    let query = query_parser.parse_query(&request.query)?;
     Ok(query)
-}
-
-fn value_to_term(
-    field_type: &FieldType,
-    field: Field,
-    term: quickwit_proto::metastore_api::Term,
-) -> anyhow::Result<Term> {
-    let res = match field_type.value_from_json(term.into()) {
-        Ok(Value::Str(text)) => Term::from_field_text(field, &text),
-        Ok(Value::PreTokStr(pre_tokenized_string)) => {
-            Term::from_field_text(field, &pre_tokenized_string.text)
-        }
-        Ok(Value::U64(uint_val)) => Term::from_field_u64(field, uint_val),
-        Ok(Value::I64(int_val)) => Term::from_field_i64(field, int_val),
-        Ok(Value::F64(float_val)) => Term::from_field_f64(field, float_val),
-        Ok(Value::Bool(bool_val)) => Term::from_field_bool(field, bool_val),
-        Ok(Value::Date(date)) => Term::from_field_date(field, date),
-        Ok(Value::Bytes(buf)) => Term::from_field_bytes(field, &buf),
-        Ok(Value::IpAddr(ip_addr)) => Term::from_field_ip_addr(field, ip_addr),
-        Ok(Value::JsonObject(_) | Value::Facet(_)) => {
-            return Err(anyhow::anyhow!("Unsupported field type."))
-        }
-        Err(e) => return Err(anyhow::anyhow!("Invalid term: {e:?}")),
-    };
-    Ok(res)
 }
 
 fn resolve_fields(schema: &Schema, field_names: &[String]) -> anyhow::Result<Vec<Field>> {
@@ -283,7 +205,7 @@ mod test {
         let request = SearchRequest {
             aggregation_request: None,
             index_id: "test_index".to_string(),
-            query: Some(query_str.to_string().into()),
+            query: query_str.to_string(),
             search_fields,
             snippet_fields: vec![],
             start_timestamp: None,
@@ -436,7 +358,7 @@ mod test {
         let request = SearchRequest {
             aggregation_request: None,
             index_id: "test_index".to_string(),
-            query: Some(query_str.to_string().into()),
+            query: query_str.to_string(),
             search_fields,
             snippet_fields,
             start_timestamp: None,
@@ -446,8 +368,8 @@ mod test {
             sort_order: None,
             sort_by_field: None,
         };
-        let user_input_ast = tantivy_query_grammar::parse_query(query_str)
-            .map_err(|_| QueryParserError::SyntaxError(query_str.to_owned()))
+        let user_input_ast = tantivy_query_grammar::parse_query(&request.query)
+            .map_err(|_| QueryParserError::SyntaxError(request.query.clone()))
             .unwrap();
         let default_field_names =
             default_search_fields.unwrap_or_else(|| vec!["title".to_string(), "desc".to_string()]);

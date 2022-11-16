@@ -21,7 +21,6 @@ mod grpc_adapter;
 mod rest_handler;
 
 pub use self::grpc_adapter::GrpcSearchAdapter;
-pub(crate) use self::rest_handler::Query;
 pub use self::rest_handler::{search_get_handler, search_post_handler, search_stream_handler};
 
 #[cfg(test)]

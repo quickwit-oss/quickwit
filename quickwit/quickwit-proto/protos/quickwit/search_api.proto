@@ -20,7 +20,6 @@
 syntax = "proto3";
 
 package quickwit;
-import "common.proto";
 
 service SearchService {
   // Root search API.
@@ -54,12 +53,9 @@ message SearchRequest {
   string index_id = 1;
 
   // Query
-  oneof query {
-    string text = 2;
-    quickwit_common.SetQuery set_query = 13;
-  }
+  string query = 2;
 
-  // Fields to search on. Should be empty if query.text is not set.
+  // Fields to search on
   repeated string  search_fields = 3;
 
   // Time filter

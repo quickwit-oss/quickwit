@@ -32,7 +32,6 @@ use quickwit_indexing::merge_policy::{MergeOperation, MergePolicy};
 use quickwit_metastore::{
     split_tag_filter, split_time_range_filter, Metastore, MetastoreResult, Split,
 };
-use quickwit_proto::metastore_api::delete_query::Query;
 use quickwit_proto::metastore_api::DeleteTask;
 use quickwit_proto::SearchRequest;
 use quickwit_search::{jobs_to_leaf_request, SearchClientPool, SearchJob};
@@ -237,15 +236,8 @@ impl DeleteTaskPlanner {
                         delete_query.end_timestamp,
                     );
                     // TODO: validate the query at the beginning and return an appropriate error.
-                    let tags_filter = match &delete_query.query {
-                        Some(Query::QueryText(query_string)) => {
-                            extract_tags_from_query(query_string)
-                                .expect("Delete query must have been validated upfront.")
-                        }
-                        Some(Query::SetQuery(_)) => todo!(),
-                        None => return false, // invalid query: ignore. TODO add log?
-                    };
-
+                    let tags_filter = extract_tags_from_query(&delete_query.query)
+                        .expect("Delete query must have been validated upfront.");
                     split_time_range_filter(stale_split, time_range.as_ref())
                         && split_tag_filter(stale_split, tags_filter.as_ref())
                 })
@@ -300,7 +292,7 @@ impl DeleteTaskPlanner {
                 .expect("Delete task must have a delete query.");
             let search_request = SearchRequest {
                 index_id: delete_query.index_id.clone(),
-                query: delete_query.query.clone().map(|q| q.into()),
+                query: delete_query.query.clone(),
                 start_timestamp: delete_query.start_timestamp,
                 end_timestamp: delete_query.end_timestamp,
                 search_fields: delete_query.search_fields.clone(),
@@ -464,7 +456,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
-                query: Some("body:delete".to_string().into()),
+                query: "body:delete".to_string(),
                 search_fields: Vec::new(),
             })
             .await?;
@@ -473,7 +465,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
-                query: Some("MatchNothing".to_string().into()),
+                query: "MatchNothing".to_string(),
                 search_fields: Vec::new(),
             })
             .await?;
@@ -487,8 +479,7 @@ mod tests {
                 // Search on body:delete should return one hit only on the last split
                 // that should contains the doc.
                 if request.split_offsets[0].split_id == split_id_with_doc_to_delete
-                    && request.search_request.as_ref().unwrap().query
-                        == Some("body:delete".to_string().into())
+                    && request.search_request.as_ref().unwrap().query == "body:delete"
                 {
                     return Ok(LeafSearchResponse {
                         num_hits: 1,

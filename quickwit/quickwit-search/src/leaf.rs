@@ -374,13 +374,9 @@ async fn leaf_search_single_split(
         .try_into()?;
     let searcher = reader.searcher();
 
-    let mut field_names_to_warmup = quickwit_collector.term_dict_field_names();
-    let mut posting_names_to_warmup = HashSet::new();
-    if let Some(quickwit_proto::search_request::Query::SetQuery(set_query)) = &search_request.query
-    {
-        field_names_to_warmup.insert(set_query.field_name.clone());
-        posting_names_to_warmup.insert(set_query.field_name.clone());
-    }
+    let field_names_to_warmup = quickwit_collector.term_dict_field_names();
+    let posting_names_to_warmup = HashSet::new();
+    // TODO add TermSetQuery fields in both sets
 
     warmup(
         &searcher,

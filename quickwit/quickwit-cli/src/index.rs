@@ -995,7 +995,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
         .await?;
     let search_request = SearchRequest {
         index_id: args.index_id,
-        query: Some(args.query.clone().into()),
+        query: args.query.clone(),
         search_fields: args.search_fields.unwrap_or_default(),
         snippet_fields: args.snippet_fields.unwrap_or_default(),
         start_timestamp: args.start_timestamp,

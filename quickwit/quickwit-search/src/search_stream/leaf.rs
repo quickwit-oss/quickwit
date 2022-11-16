@@ -161,18 +161,13 @@ async fn leaf_search_stream_single_split(
     let requires_scoring =
         matches!(&search_request.sort_by_field, Some(field_name) if field_name == "_score");
 
-    let mut postings_names_to_warmup = HashSet::new();
-    if let Some(quickwit_proto::search_request::Query::SetQuery(set_query)) = &search_request.query
-    {
-        postings_names_to_warmup.insert(set_query.field_name.clone());
-    }
-
+    // TODO add TermSetQuery fields in both sets
     warmup(
         &searcher,
         query.as_ref(),
         &request_fields.fast_fields_for_request(timestamp_filter_builder_opt.as_ref()),
-        &postings_names_to_warmup,
-        &postings_names_to_warmup,
+        &HashSet::new(),
+        &HashSet::new(),
         requires_scoring,
     )
     .await?;

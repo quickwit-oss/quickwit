@@ -274,7 +274,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
-                query: Some("*".to_string().into()),
+                query: "*".to_string(),
                 search_fields: Vec::new(),
             })
             .await;

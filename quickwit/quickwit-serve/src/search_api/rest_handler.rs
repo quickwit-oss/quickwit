@@ -24,7 +24,6 @@ use futures::stream::StreamExt;
 use hyper::header::HeaderValue;
 use hyper::HeaderMap;
 use quickwit_doc_mapper::{SortByField, SortOrder};
-use quickwit_proto::search_request::Query as SearchQuery;
 use quickwit_proto::{OutputFormat, ServiceError, SortOrder as ProtoSortOrder};
 use quickwit_search::{SearchError, SearchResponseRest, SearchService};
 use serde::{de, Deserialize, Deserializer};
@@ -79,12 +78,17 @@ where D: Deserializer<'de> {
 /// This struct represents the QueryString passed to
 /// the rest API.
 #[derive(Deserialize, Debug, Eq, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SearchRequestQueryString {
-    /// Query to execute
-    #[serde(flatten)]
-    pub query: Query,
+    /// Query text. The query language is that of tantivy.
+    pub query: String,
     /// The aggregation JSON string.
     pub aggs: Option<serde_json::Value>,
+    // Fields to search on
+    #[serde(default)]
+    #[serde(rename(deserialize = "search_field"))]
+    #[serde(deserialize_with = "from_simple_list")]
+    pub search_fields: Option<Vec<String>>,
     /// Fields to extract snippets on.
     #[serde(default)]
     #[serde(deserialize_with = "from_simple_list")]
@@ -112,35 +116,6 @@ pub struct SearchRequestQueryString {
     sort_by_field: Option<SortByField>,
 }
 
-#[derive(Deserialize, Debug, Eq, PartialEq)]
-#[serde(untagged)]
-pub enum Query {
-    QueryByString {
-        /// Query text. The query language is that of tantivy.
-        query: String,
-        // Fields to search on
-        #[serde(default)]
-        #[serde(rename(deserialize = "search_field"))]
-        #[serde(deserialize_with = "from_simple_list")]
-        search_fields: Option<Vec<String>>,
-    },
-    QueryByTerms {
-        /// List of terms to search for
-        terms: Vec<serde_json::Value>,
-        /// Field getting searched in
-        field_name: String,
-    },
-}
-
-impl Default for Query {
-    fn default() -> Self {
-        Query::QueryByString {
-            query: String::new(),
-            search_fields: None,
-        }
-    }
-}
-
 fn get_proto_search_by(search_request: &SearchRequestQueryString) -> (Option<i32>, Option<String>) {
     if let Some(sort_by_field) = &search_request.sort_by_field {
         let sort_order = match sort_by_field.order {
@@ -159,19 +134,10 @@ async fn search_endpoint(
     search_service: &dyn SearchService,
 ) -> Result<SearchResponseRest, SearchError> {
     let (sort_order, sort_by_field) = get_proto_search_by(&search_request);
-
-    let (query, search_fields) = match search_request.query {
-        Query::QueryByString {
-            query,
-            search_fields,
-        } => (SearchQuery::Text(query), search_fields),
-        Query::QueryByTerms { terms, field_name } => (SearchQuery::SetQuery(todo!()), None),
-    };
-
     let search_request = quickwit_proto::SearchRequest {
         index_id,
-        query: Some(query.into()),
-        search_fields: search_fields.unwrap_or_default(),
+        query: search_request.query,
+        search_fields: search_request.search_fields.unwrap_or_default(),
         snippet_fields: search_request.snippet_fields.unwrap_or_default(),
         start_timestamp: search_request.start_timestamp,
         end_timestamp: search_request.end_timestamp,
@@ -423,10 +389,8 @@ mod tests {
         assert_eq!(
             &req,
             &super::SearchRequestQueryString {
-                query: Query::QueryByString {
-                    query: "*".to_string(),
-                    search_fields: None
-                },
+                query: "*".to_string(),
+                search_fields: None,
                 start_timestamp: None,
                 max_hits: 10,
                 format: Format::default(),
@@ -452,10 +416,8 @@ mod tests {
         assert_eq!(
             &req,
             &super::SearchRequestQueryString {
-                query: Query::QueryByString {
-                    query: "*".to_string(),
-                    search_fields: None
-                },
+                query: "*".to_string(),
+                search_fields: None,
                 start_timestamp: None,
                 end_timestamp: Some(1450720000),
                 max_hits: 10,
@@ -482,10 +444,8 @@ mod tests {
         assert_eq!(
             &req,
             &super::SearchRequestQueryString {
-                query: Query::QueryByString {
-                    query: "*".to_string(),
-                    search_fields: Some(vec!["title".to_string(), "body".to_string()])
-                },
+                query: "*".to_string(),
+                search_fields: Some(vec!["title".to_string(), "body".to_string()]),
                 start_timestamp: None,
                 end_timestamp: Some(1450720000),
                 max_hits: 20,
@@ -509,15 +469,13 @@ mod tests {
         assert_eq!(
             &req,
             &super::SearchRequestQueryString {
-                query: Query::QueryByString {
-                    query: "*".to_string(),
-                    search_fields: None
-                },
+                query: "*".to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
                 max_hits: 20,
                 start_offset: 0,
                 format: Format::Json,
+                search_fields: None,
                 sort_by_field: None,
                 ..Default::default()
             }
@@ -535,15 +493,13 @@ mod tests {
         assert_eq!(
             &req,
             &super::SearchRequestQueryString {
-                query: Query::QueryByString {
-                    query: "*".to_string(),
-                    search_fields: None
-                },
+                query: "*".to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
                 max_hits: 20,
                 start_offset: 0,
                 format: Format::Json,
+                search_fields: None,
                 sort_by_field: Some(SortByField {
                     field_name: "field".to_string(),
                     order: SortOrder::Asc
@@ -561,15 +517,13 @@ mod tests {
         assert_eq!(
             &req,
             &super::SearchRequestQueryString {
-                query: Query::QueryByString {
-                    query: "*".to_string(),
-                    search_fields: None
-                },
+                query: "*".to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
                 max_hits: 20,
                 start_offset: 0,
                 format: Format::Json,
+                search_fields: None,
                 sort_by_field: Some(SortByField {
                     field_name: "field".to_string(),
                     order: SortOrder::Asc
@@ -587,15 +541,13 @@ mod tests {
         assert_eq!(
             &req,
             &SearchRequestQueryString {
-                query: Query::QueryByString {
-                    query: "*".to_string(),
-                    search_fields: None
-                },
+                query: "*".to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
                 max_hits: 20,
                 start_offset: 0,
                 format: Format::Json,
+                search_fields: None,
                 sort_by_field: Some(SortByField {
                     field_name: "field".to_string(),
                     order: SortOrder::Desc
@@ -605,7 +557,6 @@ mod tests {
         );
     }
 
-    #[ignore] // TODO re-enable when parsing is no longer leniant
     #[tokio::test]
     async fn test_rest_search_api_route_invalid_key() -> anyhow::Result<()> {
         let resp = warp::test::request()
@@ -621,7 +572,6 @@ mod tests {
         Ok(())
     }
 
-    #[ignore] // TODO re-enable when parsing is no longer leniant
     #[tokio::test]
     async fn test_rest_search_api_route_post_with_invalid_payload() -> anyhow::Result<()> {
         let resp = warp::test::request()

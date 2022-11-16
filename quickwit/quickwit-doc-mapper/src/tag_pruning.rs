@@ -51,27 +51,6 @@ pub fn extract_tags_from_query(user_query: &str) -> Result<Option<TagFilterAst>,
     Ok(user_input_ast_to_tags_filter_ast(user_input_ast))
 }
 
-/// Create a `TagFilterAst` from an union of tags.
-///
-/// Returns a `TagFilterAst` which will match a split if it
-/// contains any of the tags from `tag_iterator`, or None if
-/// the iterator is empty.
-pub fn extract_tags_from_list_union<'a, I: Iterator<Item = &'a str>>(
-    tag_iterator: I,
-) -> Option<TagFilterAst> {
-    let tag_list: Vec<_> = tag_iterator
-        .map(|tag| TagFilterAst::Tag {
-            is_present: true,
-            tag: tag.to_owned(),
-        })
-        .collect();
-    if tag_list.is_empty() {
-        None
-    } else {
-        Some(TagFilterAst::Or(tag_list))
-    }
-}
-
 /// Intermediary AST that may contain leaf that are
 /// equivalent to the "Uninformative" predicate.
 #[derive(Clone, Debug, Eq, PartialEq)]

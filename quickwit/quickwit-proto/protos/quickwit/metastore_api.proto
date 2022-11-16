@@ -21,7 +21,6 @@
 syntax = "proto3";
 
 package quickwit_metastore_api;
-import "common.proto";
 
 service MetastoreApiService {
   // Creates an index.
@@ -186,10 +185,8 @@ message DeleteQuery {
   optional int64 start_timestamp = 2;
   /// If set, restrict search to documents with a `timestamp < end_timestamp``.
   optional int64 end_timestamp = 3;
-  oneof query {
-    string query_text = 4;
-    quickwit_common.SetQuery set_query = 6;
-  }
+  /// Query text. The query language is that of tantivy.
+  string query = 4;
   /// Search fields.
   repeated string search_fields = 5;
 }

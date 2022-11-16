@@ -459,7 +459,7 @@ impl MergeExecutor {
                     .expect("A delete task must have a delete query.");
                 let search_request = SearchRequest {
                     index_id: delete_query.index_id,
-                    query: delete_query.query.map(Into::into),
+                    query: delete_query.query,
                     start_timestamp: delete_query.start_timestamp,
                     end_timestamp: delete_query.end_timestamp,
                     search_fields: delete_query.search_fields,
@@ -675,7 +675,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
-                query: Some("body:delete".to_string().into()),
+                query: "body:delete".to_string(),
                 search_fields: Vec::new(),
             })
             .await?;

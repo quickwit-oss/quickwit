@@ -53,7 +53,7 @@ async fn test_single_node_simple() -> anyhow::Result<()> {
     test_sandbox.add_documents(docs.clone()).await?;
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
-        query: Some("anthropomorphic".to_string().into()),
+        query: "anthropomorphic".to_string(),
         search_fields: vec!["body".to_string()],
         start_timestamp: None,
         end_timestamp: None,
@@ -78,6 +78,7 @@ async fn test_single_node_simple() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_single_node_termset() -> anyhow::Result<()> {
     let index_id = "single-node-termset-1";
     let doc_mapping_yaml = r#"
@@ -98,15 +99,9 @@ async fn test_single_node_termset() -> anyhow::Result<()> {
         json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle", "binary": "bWFkZSB5b3UgbG9vay4="}),
     ];
     test_sandbox.add_documents(docs.clone()).await?;
-    let query =
-        quickwit_proto::search_request::Query::SetQuery(quickwit_proto::metastore_api::SetQuery {
-            terms: vec![json!("beagle").try_into().unwrap()],
-            field_name: "title".to_owned(),
-            tags: Vec::new(),
-        });
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
-        query: Some(query),
+        query: "title: IN [beagle]".to_string(),
         start_timestamp: None,
         end_timestamp: None,
         max_hits: 2,
@@ -149,7 +144,7 @@ async fn test_single_search_with_snippet() -> anyhow::Result<()> {
     test_sandbox.add_documents(docs.clone()).await?;
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
-        query: Some("beagle".to_string().into()),
+        query: "beagle".to_string(),
         search_fields: vec!["title".to_string(), "body".to_string()],
         snippet_fields: vec!["title".to_string(), "body".to_string()],
         start_timestamp: None,
@@ -190,7 +185,7 @@ async fn slop_search_and_check(
 ) -> anyhow::Result<()> {
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
-        query: Some(query.to_string().into()),
+        query: query.to_string(),
         search_fields: vec!["body".to_string()],
         start_timestamp: None,
         end_timestamp: None,
@@ -299,7 +294,7 @@ async fn test_single_node_several_splits() -> anyhow::Result<()> {
     }
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
-        query: Some("beagle".to_string().into()),
+        query: "beagle".to_string(),
         search_fields: vec![],
         start_timestamp: None,
         end_timestamp: None,
@@ -368,7 +363,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
 
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
-        query: Some("info".to_string().into()),
+        query: "info".to_string(),
         search_fields: vec![],
         start_timestamp: Some(start_timestamp + 10),
         end_timestamp: Some(start_timestamp + 20),
@@ -390,7 +385,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
     // filter on time range [i64::MIN 20[ should only hit first 19 docs because of filtering
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
-        query: Some("info".to_string().into()),
+        query: "info".to_string(),
         search_fields: vec![],
         start_timestamp: None,
         end_timestamp: Some(start_timestamp + 20),
@@ -412,7 +407,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
     // filter on tag, should return an error since no split is tagged
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
-        query: Some("tag:foo AND info".to_string().into()),
+        query: "tag:foo AND info".to_string(),
         search_fields: vec![],
         start_timestamp: None,
         end_timestamp: None,
@@ -497,7 +492,7 @@ async fn single_node_search_sort_by_field(
 
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
-        query: Some("city".to_string().into()),
+        query: "city".to_string(),
         search_fields: vec![],
         start_timestamp: None,
         end_timestamp: None,
@@ -577,7 +572,7 @@ async fn test_single_node_invalid_sorting_with_query() -> anyhow::Result<()> {
 
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
-        query: Some("city".to_string().into()),
+        query: "city".to_string(),
         search_fields: vec![],
         start_timestamp: None,
         end_timestamp: None,
@@ -628,7 +623,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
     let selected_splits = list_relevant_splits(
         &SearchRequest {
             index_id: index_id.to_string(),
-            query: Some("owner:francois".to_string().into()),
+            query: "owner:francois".to_string(),
             ..Default::default()
         },
         &*test_sandbox.metastore(),
@@ -639,7 +634,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
     let selected_splits = list_relevant_splits(
         &SearchRequest {
             index_id: index_id.to_string(),
-            query: Some("".to_string().into()),
+            query: "".to_string(),
             ..Default::default()
         },
         &*test_sandbox.metastore(),
@@ -650,11 +645,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
     let selected_splits = list_relevant_splits(
         &SearchRequest {
             index_id: index_id.to_string(),
-            query: Some(
-                "owner:francois OR owner:paul OR owner:adrien"
-                    .to_string()
-                    .into(),
-            ),
+            query: "owner:francois OR owner:paul OR owner:adrien".to_string(),
             ..Default::default()
         },
         &*test_sandbox.metastore(),
@@ -695,7 +686,7 @@ async fn test_search_dynamic_util(test_sandbox: &TestSandbox, query: &str) -> Ve
         .collect();
     let request = quickwit_proto::SearchRequest {
         index_id: DYNAMIC_TEST_INDEX_ID.to_string(),
-        query: Some(query.to_string().into()),
+        query: query.to_string(),
         max_hits: 100,
         ..Default::default()
     };
@@ -936,7 +927,7 @@ async fn test_single_node_aggregation() -> anyhow::Result<()> {
     test_sandbox.add_documents(docs.clone()).await?;
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
-        query: Some("*".to_string().into()),
+        query: "*".to_string(),
         search_fields: vec!["color".to_string()],
         max_hits: 2,
         start_offset: 0,
@@ -1010,7 +1001,7 @@ async fn test_single_node_aggregation_missing_fast_field() -> anyhow::Result<()>
     test_sandbox.add_documents(docs.clone()).await?;
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
-        query: Some("*".to_string().into()),
+        query: "*".to_string(),
         search_fields: vec!["color".to_string()],
         max_hits: 2,
         start_offset: 0,
@@ -1055,7 +1046,7 @@ async fn test_single_node_with_ip_field() -> anyhow::Result<()> {
     {
         let search_request = SearchRequest {
             index_id: index_id.to_string(),
-            query: Some("*".to_string().into()),
+            query: "*".to_string(),
             search_fields: vec!["host".to_string()],
             start_timestamp: None,
             end_timestamp: None,
@@ -1075,7 +1066,7 @@ async fn test_single_node_with_ip_field() -> anyhow::Result<()> {
     {
         let search_request = SearchRequest {
             index_id: index_id.to_string(),
-            query: Some("10.10.11.125".to_string().into()),
+            query: "10.10.11.125".to_string(),
             search_fields: vec!["host".to_string()],
             start_timestamp: None,
             end_timestamp: None,

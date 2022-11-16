@@ -58,7 +58,6 @@ use quickwit_config::{build_doc_mapper, QuickwitConfig, SearcherConfig};
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{ListSplitsQuery, Metastore, SplitMetadata, SplitState};
-use quickwit_proto::search_request::Query;
 use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
 use serde_json::Value as JsonValue;
@@ -129,18 +128,11 @@ async fn list_relevant_splits(
         query = query.with_time_range_end_lt(end_ts);
     }
 
-    let tags_filter = match &search_request.query {
-        Some(Query::Text(query_string)) => extract_tags_from_query(query_string)?,
-        Some(Query::SetQuery(_)) => todo!(),
-        None => return Err(anyhow::anyhow!("Invalid query: neither Text nor SetQuery.").into()),
-    };
-
-    if let Some(tags_filter) = tags_filter {
+    if let Some(tags_filter) = extract_tags_from_query(&search_request.query)? {
         query = query.with_tags_filter(tags_filter);
     }
 
     let split_metas = metastore.list_splits(query).await?;
-
     Ok(split_metas
         .into_iter()
         .map(|metadata| metadata.split_metadata)

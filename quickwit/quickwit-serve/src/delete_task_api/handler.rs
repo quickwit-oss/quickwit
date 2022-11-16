@@ -24,20 +24,22 @@ use quickwit_actors::Mailbox;
 use quickwit_janitor::actors::DeleteTaskService;
 use quickwit_metastore::Metastore;
 use quickwit_proto::metastore_api::DeleteQuery;
-use quickwit_proto::search_request::Query as SearchQuery;
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 
 use crate::format::{Format, FormatError};
-use crate::search_api::Query;
 use crate::{require, with_arg};
 
 /// This struct represents the delete query passed to
 /// the rest API.
 #[derive(Deserialize, Debug, Eq, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct DeleteQueryRequest {
-    #[serde(flatten)]
-    pub query: Query,
+    /// Query text. The query language is that of tantivy.
+    pub query: String,
+    // Fields to search on
+    #[serde(default)]
+    pub search_fields: Vec<String>,
     /// If set, restrict delete to documents with a `timestamp >= start_timestamp`.
     pub start_timestamp: Option<i64>,
     /// If set, restrict delete to documents with a `timestamp < end_timestamp``.
@@ -93,27 +95,17 @@ async fn post_delete_request(
     delete_request: DeleteQueryRequest,
     delete_task_service_mailbox: Mailbox<DeleteTaskService>,
 ) -> Result<impl warp::Reply, Infallible> {
-    let (query, search_fields) = match delete_request.query {
-        Query::QueryByString {
-            query,
-            search_fields,
-        } => (SearchQuery::Text(query), search_fields),
-        Query::QueryByTerms { terms, field_name } => (SearchQuery::SetQuery(todo!()), None),
-    };
-
     let delete_query = DeleteQuery {
         index_id: index_id.clone(),
         start_timestamp: delete_request.start_timestamp,
         end_timestamp: delete_request.end_timestamp,
-        query: Some(query.into()),
-        search_fields: search_fields.unwrap_or_default(),
+        query: delete_request.query,
+        search_fields: delete_request.search_fields,
     };
-
     let create_delete_task_reply = delete_task_service_mailbox
         .ask_for_res(delete_query)
         .await
         .map_err(FormatError::wrap);
-
     Ok(Format::PrettyJson.make_rest_reply(create_delete_task_reply))
 }
 
@@ -186,7 +178,7 @@ mod tests {
         assert_eq!(created_delete_task.opstamp, 1);
         let created_delete_query = created_delete_task.delete_query.unwrap();
         assert_eq!(created_delete_query.index_id, index_id);
-        assert_eq!(created_delete_query.query, Some("term".to_string().into()));
+        assert_eq!(created_delete_query.query, "term");
         assert_eq!(created_delete_query.start_timestamp, Some(1));
         assert_eq!(created_delete_query.end_timestamp, Some(10));
 
