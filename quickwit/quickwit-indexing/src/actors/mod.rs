@@ -32,7 +32,7 @@ mod uploader;
 
 pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineHandles, IndexingPipelineParams};
 pub use indexing_service::{
-    IndexingService, IndexingServiceError, IndexingServiceState, INDEXING_DIR_NAME,
+    IndexingService, IndexingServiceCounters, IndexingServiceError, INDEXING_DIR_NAME,
 };
 pub use sequencer::Sequencer;
 mod merge_executor;

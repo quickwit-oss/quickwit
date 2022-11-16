@@ -59,7 +59,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
             &create_index_request.index_metadata_serialized_json,
         )
         .map_err(|error| MetastoreError::JsonDeserializeError {
-            name: "IndexMetadata".to_string(),
+            struct_name: "IndexMetadata".to_string(),
             message: error.to_string(),
         })?;
         let create_index_reply = self
@@ -84,7 +84,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
                 index_metadata_serialized_json,
             })
             .map_err(|error| MetastoreError::JsonSerializeError {
-                name: "IndexMetadata".to_string(),
+                struct_name: "IndexMetadata".to_string(),
                 message: error.to_string(),
             })?;
         Ok(tonic::Response::new(index_metadata_reply))
@@ -102,7 +102,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
                 },
             )
             .map_err(|error| MetastoreError::JsonSerializeError {
-                name: "Vec<IndexMetadata>".to_string(),
+                struct_name: "Vec<IndexMetadata>".to_string(),
                 message: error.to_string(),
             })?;
         Ok(tonic::Response::new(list_indexes_metadatas_reply))
@@ -135,7 +135,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
                 splits_serialized_json,
             })
             .map_err(|error| MetastoreError::JsonSerializeError {
-                name: "Vec<Split>".to_string(),
+                struct_name: "Vec<Split>".to_string(),
                 message: error.to_string(),
             })?;
         Ok(tonic::Response::new(list_all_splits_reply))
@@ -148,7 +148,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
         let list_splits_request = request.into_inner();
         let query: ListSplitsQuery<'_> = serde_json::from_str(&list_splits_request.filter_json)
             .map_err(|error| MetastoreError::JsonDeserializeError {
-                name: "ListSplitsQuery".to_string(),
+                struct_name: "ListSplitsQuery".to_string(),
                 message: error.to_string(),
             })?;
 
@@ -158,7 +158,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
                 splits_serialized_json,
             })
             .map_err(|error| MetastoreError::JsonSerializeError {
-                name: "Vec<Split>".to_string(),
+                struct_name: "Vec<Split>".to_string(),
                 message: error.to_string(),
             })?;
         Ok(tonic::Response::new(list_splits_reply))
@@ -173,7 +173,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
             &stage_split_request.split_metadata_serialized_json,
         )
         .map_err(|error| MetastoreError::JsonDeserializeError {
-            name: "SplitMetadata".to_string(),
+            struct_name: "SplitMetadata".to_string(),
             message: error.to_string(),
         })?;
         let stage_split_reply = self
@@ -204,7 +204,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
             .map(|json| serde_json::from_str(&json))
             .transpose()
             .map_err(|error| MetastoreError::JsonDeserializeError {
-                name: "IndexCheckpointDelta".to_string(),
+                struct_name: "IndexCheckpointDelta".to_string(),
                 message: error.to_string(),
             })?;
         let publish_splits_reply = self
@@ -283,7 +283,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
         let add_source_request = request.into_inner();
         let source_config = serde_json::from_str(&add_source_request.source_config_serialized_json)
             .map_err(|error| MetastoreError::JsonDeserializeError {
-                name: "SourceConfig".to_string(),
+                struct_name: "SourceConfig".to_string(),
                 message: error.to_string(),
             })?;
         let add_source_reply = self
@@ -413,7 +413,7 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
                 splits_serialized_json,
             })
             .map_err(|error| MetastoreError::JsonSerializeError {
-                name: "Vec<Split>".to_string(),
+                struct_name: "Vec<Split>".to_string(),
                 message: error.to_string(),
             })?;
         Ok(tonic::Response::new(reply))

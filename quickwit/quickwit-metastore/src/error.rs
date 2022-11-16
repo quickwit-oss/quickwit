@@ -75,11 +75,17 @@ pub enum MetastoreError {
     #[error("Database error: `{message}`.")]
     DbError { message: String },
 
-    #[error("Cannot parse `{name}` from json string: `{message}`.")]
-    JsonDeserializeError { name: String, message: String },
+    #[error("Failed to deserialize `{struct_name}` from JSON: `{message}`.")]
+    JsonDeserializeError {
+        struct_name: String,
+        message: String,
+    },
 
-    #[error("Cannot serialize in json entiy `{name}`: `{message}`.")]
-    JsonSerializeError { name: String, message: String },
+    #[error("Failed to serialize `{struct_name}` to JSON: `{message}`.")]
+    JsonSerializeError {
+        struct_name: String,
+        message: String,
+    },
 
     #[error("Cannot correctly use query due to unsupported condition: `{name}`: `{message}`.")]
     UnsupportedQuery { name: String, message: String },
@@ -122,7 +128,7 @@ impl ServiceError for MetastoreError {
             Self::DbError { .. } => ServiceErrorCode::Internal,
             Self::JsonDeserializeError { .. } => ServiceErrorCode::Internal,
             Self::JsonSerializeError { .. } => ServiceErrorCode::Internal,
-            MetastoreError::UnsupportedQuery { .. } => ServiceErrorCode::BadRequest,
+            Self::UnsupportedQuery { .. } => ServiceErrorCode::BadRequest,
         }
     }
 }
