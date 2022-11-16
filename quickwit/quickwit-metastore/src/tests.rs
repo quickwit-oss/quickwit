@@ -2787,20 +2787,6 @@ pub mod test_suite {
             ..Default::default()
         };
 
-        {
-            info!("Mark splits for deletion on a non-existent index.");
-            let query = ListSplitsQuery::for_index(index_id);
-            let metastore_err = metastore
-                .mark_splits_for_deletion_by_query(query)
-                .await
-                .unwrap_err();
-            error!(err=?metastore_err);
-            assert!(matches!(
-                metastore_err,
-                MetastoreError::IndexDoesNotExist { .. }
-            ));
-        }
-
         metastore
             .create_index(index_metadata.clone())
             .await
