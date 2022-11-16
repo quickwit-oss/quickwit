@@ -69,7 +69,7 @@ impl Actor for MergePlanner {
     }
 
     fn queue_capacity(&self) -> QueueCapacity {
-        QueueCapacity::Bounded(0)
+        MergePlanner::queue_capacity()
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
@@ -134,6 +134,10 @@ impl Handler<NewSplits> for MergePlanner {
 }
 
 impl MergePlanner {
+    pub fn queue_capacity() -> QueueCapacity {
+        QueueCapacity::Bounded(0)
+    }
+
     pub fn new(
         pipeline_id: IndexingPipelineId,
         published_splits: Vec<SplitMetadata>,
