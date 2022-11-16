@@ -32,7 +32,7 @@ use crate::{
     SplitMetadata,
 };
 
-/// Retry layer for [`MetastoreGrpcClient`]. 
+/// Retry layer for [`MetastoreGrpcClient`].
 /// This is a band-aid solution for now. This will be removed after retry can be usable on
 /// tonic level.
 /// Tracking Issue: https://github.com/tower-rs/tower/issues/682
