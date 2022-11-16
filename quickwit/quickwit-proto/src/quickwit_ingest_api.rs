@@ -1,65 +1,56 @@
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct QueueExistsRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub queue_id: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct CreateQueueRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub queue_id: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct CreateQueueIfNotExistsRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub queue_id: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct DropQueueRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub queue_id: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct IngestRequest {
-    #[prost(message, repeated, tag="1")]
+    #[prost(message, repeated, tag = "1")]
     pub doc_batches: ::prost::alloc::vec::Vec<DocBatch>,
 }
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct IngestResponse {
-    #[prost(uint64, tag="1")]
+    #[prost(uint64, tag = "1")]
     pub num_docs_for_processing: u64,
 }
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct FetchRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    #[prost(uint64, optional, tag="2")]
+    #[prost(uint64, optional, tag = "2")]
     pub start_after: ::core::option::Option<u64>,
-    #[prost(uint64, optional, tag="3")]
+    #[prost(uint64, optional, tag = "3")]
     pub num_bytes_limit: ::core::option::Option<u64>,
 }
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct FetchResponse {
-    #[prost(uint64, optional, tag="1")]
+    #[prost(uint64, optional, tag = "1")]
     pub first_position: ::core::option::Option<u64>,
-    #[prost(message, optional, tag="2")]
+    #[prost(message, optional, tag = "2")]
     pub doc_batch: ::core::option::Option<DocBatch>,
 }
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct DocBatch {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    #[prost(bytes="vec", tag="2")]
+    #[prost(bytes = "vec", tag = "2")]
     pub concat_docs: ::prost::alloc::vec::Vec<u8>,
-    #[prost(uint64, repeated, tag="3")]
+    #[prost(uint64, repeated, tag = "3")]
     pub doc_lens: ::prost::alloc::vec::Vec<u64>,
 }
 /// / Suggest to truncate the queue.
@@ -75,35 +66,30 @@ pub struct DocBatch {
 /// / In other words, truncating from a position, and fetching records starting
 /// / earlier than this position can yield undefined result:
 /// / the truncated records may or may not be returned.
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct SuggestTruncateRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag="2")]
+    #[prost(uint64, tag = "2")]
     pub up_to_position_included: u64,
 }
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct TailRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ListQueuesRequest {
-}
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, ::prost::Message)]
+pub struct ListQueuesRequest {}
+#[derive(Serialize, Deserialize, Clone, PartialEq, ::prost::Message)]
 pub struct ListQueuesResponse {
-    #[prost(string, repeated, tag="1")]
+    #[prost(string, repeated, tag = "1")]
     pub queues: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// Generated client implementations.
 pub mod ingest_api_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     #[derive(Debug, Clone)]
     pub struct IngestApiServiceClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -147,9 +133,8 @@ pub mod ingest_api_service_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-            >>::Error: Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + Send + Sync,
         {
             IngestApiServiceClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -179,15 +164,12 @@ pub mod ingest_api_service_client {
             &mut self,
             request: impl tonic::IntoRequest<super::IngestRequest>,
         ) -> Result<tonic::Response<super::IngestResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit_ingest_api.IngestAPIService/Ingest",
@@ -208,19 +190,15 @@ pub mod ingest_api_service_client {
             &mut self,
             request: impl tonic::IntoRequest<super::FetchRequest>,
         ) -> Result<tonic::Response<super::FetchResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/quickwit_ingest_api.IngestAPIService/Fetch",
-            );
+            let path =
+                http::uri::PathAndQuery::from_static("/quickwit_ingest_api.IngestAPIService/Fetch");
             self.inner.unary(request.into_request(), path, codec).await
         }
         //// Returns a batch containing the last records.
@@ -232,19 +210,15 @@ pub mod ingest_api_service_client {
             &mut self,
             request: impl tonic::IntoRequest<super::TailRequest>,
         ) -> Result<tonic::Response<super::FetchResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/quickwit_ingest_api.IngestAPIService/Tail",
-            );
+            let path =
+                http::uri::PathAndQuery::from_static("/quickwit_ingest_api.IngestAPIService/Tail");
             self.inner.unary(request.into_request(), path, codec).await
         }
     }
@@ -310,10 +284,7 @@ pub mod ingest_api_service_server {
                 send_compression_encodings: Default::default(),
             }
         }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InterceptedService<Self, F>
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
             F: tonic::service::Interceptor,
         {
@@ -341,10 +312,7 @@ pub mod ingest_api_service_server {
         type Response = http::Response<tonic::body::BoxBody>;
         type Error = std::convert::Infallible;
         type Future = BoxFuture<Self::Response, Self::Error>;
-        fn poll_ready(
-            &mut self,
-            _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -353,15 +321,9 @@ pub mod ingest_api_service_server {
                 "/quickwit_ingest_api.IngestAPIService/Ingest" => {
                     #[allow(non_camel_case_types)]
                     struct IngestSvc<T: IngestApiService>(pub Arc<T>);
-                    impl<
-                        T: IngestApiService,
-                    > tonic::server::UnaryService<super::IngestRequest>
-                    for IngestSvc<T> {
+                    impl<T: IngestApiService> tonic::server::UnaryService<super::IngestRequest> for IngestSvc<T> {
                         type Response = super::IngestResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::IngestRequest>,
@@ -378,11 +340,10 @@ pub mod ingest_api_service_server {
                         let inner = inner.0;
                         let method = IngestSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            );
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
@@ -391,14 +352,9 @@ pub mod ingest_api_service_server {
                 "/quickwit_ingest_api.IngestAPIService/Fetch" => {
                     #[allow(non_camel_case_types)]
                     struct FetchSvc<T: IngestApiService>(pub Arc<T>);
-                    impl<
-                        T: IngestApiService,
-                    > tonic::server::UnaryService<super::FetchRequest> for FetchSvc<T> {
+                    impl<T: IngestApiService> tonic::server::UnaryService<super::FetchRequest> for FetchSvc<T> {
                         type Response = super::FetchResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::FetchRequest>,
@@ -415,11 +371,10 @@ pub mod ingest_api_service_server {
                         let inner = inner.0;
                         let method = FetchSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            );
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
@@ -428,14 +383,9 @@ pub mod ingest_api_service_server {
                 "/quickwit_ingest_api.IngestAPIService/Tail" => {
                     #[allow(non_camel_case_types)]
                     struct TailSvc<T: IngestApiService>(pub Arc<T>);
-                    impl<
-                        T: IngestApiService,
-                    > tonic::server::UnaryService<super::TailRequest> for TailSvc<T> {
+                    impl<T: IngestApiService> tonic::server::UnaryService<super::TailRequest> for TailSvc<T> {
                         type Response = super::FetchResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::TailRequest>,
@@ -452,28 +402,23 @@ pub mod ingest_api_service_server {
                         let inner = inner.0;
                         let method = TailSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            );
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
                 }
-                _ => {
-                    Box::pin(async move {
-                        Ok(
-                            http::Response::builder()
-                                .status(200)
-                                .header("grpc-status", "12")
-                                .header("content-type", "application/grpc")
-                                .body(empty_body())
-                                .unwrap(),
-                        )
-                    })
-                }
+                _ => Box::pin(async move {
+                    Ok(http::Response::builder()
+                        .status(200)
+                        .header("grpc-status", "12")
+                        .header("content-type", "application/grpc")
+                        .body(empty_body())
+                        .unwrap())
+                }),
             }
         }
     }
