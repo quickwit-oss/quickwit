@@ -2746,6 +2746,59 @@ pub mod test_suite {
             cleanup_index(&metastore, index_id).await;
         }
     }
+
+    pub async fn test_metastore_mark_splits_for_deletion_by_query<
+        MetastoreToTest: Metastore + DefaultForTest,
+    >() {
+        let metastore = MetastoreToTest::default_for_test().await;
+        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+        let index_id = "mark-splits-for-deletion-by-query";
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
+
+        let split_id_1 = "split-one";
+        let split_metadata_1 = SplitMetadata {
+            footer_offsets: 1000..2000,
+            split_id: split_id_1.to_string(),
+            num_docs: 1,
+            uncompressed_docs_size_in_bytes: 2,
+            create_timestamp: current_timestamp,
+            delete_opstamp: 20,
+            ..Default::default()
+        };
+        let split_id_2 = "split-two";
+        let split_metadata_2 = SplitMetadata {
+            footer_offsets: 1000..2000,
+            split_id: split_id_2.to_string(),
+            num_docs: 1,
+            uncompressed_docs_size_in_bytes: 2,
+            create_timestamp: current_timestamp,
+            delete_opstamp: 10,
+            ..Default::default()
+        };
+        let split_id_3 = "split-three";
+        let split_metadata_3 = SplitMetadata {
+            footer_offsets: 1000..2000,
+            split_id: split_id_3.to_string(),
+            num_docs: 1,
+            uncompressed_docs_size_in_bytes: 2,
+            create_timestamp: current_timestamp,
+            delete_opstamp: 0,
+            ..Default::default()
+        };
+
+        {
+            info!("Check unsupported operations.");
+
+            // TODO: Add
+        }
+
+        {
+            info!("Test query samples.");
+
+            // TODO: Add
+        }
+    }
 }
 
 macro_rules! metastore_test_suite {
