@@ -26,7 +26,7 @@ Note that a query like `title:barack obama` will find only `barack` in the title
 ### Searching structures nested in documents.
 
 Quickwit is designed to index structured data.
-If you search into some object nested into your document, whether it is an `object`, a `json` object, or a whether it was caught through the `dynamic` mode, the query language is the same. You simply need to chain the different steps to reach your value from the root of the document.
+If you search into some object nested into your document, whether it is an `object`, a `json` object, or whether it was caught through the `dynamic` mode, the query language is the same. You simply need to chain the different steps to reach your value from the root of the document.
 
 For instance, the document `{"product": {"attributes": {color": "red"}}}` is returned if you query `product.attributes.color:red`.
 If a dot `.` exists in one of the key of your object, you need to escape it.
