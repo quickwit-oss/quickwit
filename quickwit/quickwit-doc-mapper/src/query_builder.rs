@@ -262,7 +262,7 @@ mod test {
                     query_result.is_ok(),
                     "Expected a success when parsing {sub_str}, but got error"
                 );
-                let query = query_result.unwrap();
+                let (query, _) = query_result.unwrap();
                 assert!(
                     format!("{query:?}").contains(sub_str),
                     "Error query parsing {:?} should contain {}",
@@ -366,6 +366,20 @@ mod test {
             vec![],
             None,
             TestExpectation::Ok("TermQuery"),
+        )
+        .unwrap();
+        check_build_query(
+            "title: IN [hello]",
+            vec![],
+            None,
+            TestExpectation::Ok("TermSetQuery"),
+        )
+        .unwrap();
+        check_build_query(
+            "IN [hello]",
+            vec![],
+            None,
+            TestExpectation::Err("Unsupported query: Set query need to target a specific field."),
         )
         .unwrap();
     }
@@ -484,5 +498,50 @@ mod test {
             validation_result.unwrap_err().to_string(),
             "The snippet field `server.running` must be of type `Str`, got `Bool`."
         );
+    }
+
+    #[test]
+    fn test_build_queryè_warmup_info() -> anyhow::Result<()> {
+        let request_with_set = SearchRequest {
+            aggregation_request: None,
+            index_id: "test_index".to_string(),
+            query: "title: IN [hello]".to_string(),
+            search_fields: vec![],
+            snippet_fields: vec![],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 20,
+            start_offset: 0,
+            sort_order: None,
+            sort_by_field: None,
+        };
+        let request_without_set = SearchRequest {
+            aggregation_request: None,
+            index_id: "test_index".to_string(),
+            query: "title:hello".to_string(),
+            search_fields: vec![],
+            snippet_fields: vec![],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 20,
+            start_offset: 0,
+            sort_order: None,
+            sort_by_field: None,
+        };
+
+        let default_field_names = vec!["title".to_string(), "desc".to_string()];
+
+        let (_, warmup_info) = build_query(make_schema(), &request_with_set, &default_field_names)?;
+        assert_eq!(warmup_info.term_dict_names.len(), 1);
+        assert_eq!(warmup_info.posting_names.len(), 1);
+        assert!(warmup_info.term_dict_names.contains("title"));
+        assert!(warmup_info.posting_names.contains("title"));
+
+        let (_, warmup_info) =
+            build_query(make_schema(), &request_without_set, &default_field_names)?;
+        assert!(warmup_info.term_dict_names.is_empty());
+        assert!(warmup_info.posting_names.is_empty());
+
+        Ok(())
     }
 }

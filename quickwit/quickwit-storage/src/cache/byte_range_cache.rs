@@ -107,7 +107,6 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         }
 
         let start_key = CacheKey::from_borrowed(tag.borrow(), byte_range.start);
-        // -1 because end is not inclusive
         let end_key = CacheKey::from_borrowed(tag.borrow(), byte_range.end);
 
         let first_matching_block = self
