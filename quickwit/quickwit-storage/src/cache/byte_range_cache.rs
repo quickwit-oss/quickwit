@@ -101,7 +101,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
 
     fn put_slice(&mut self, tag: T::Owned, byte_range: Range<usize>, bytes: OwnedBytes) {
         let len = byte_range.end - byte_range.start;
-        assert!(len == bytes.len());
+        assert_eq!(len, bytes.len());
         if len == 0 {
             return;
         }
@@ -123,11 +123,11 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         let first_matching_block = first_matching_block.unwrap_or(&start_key);
         let last_matching_block = last_matching_block.unwrap_or(&end_key);
 
-        let overlapping = self
+        let overlapping: Vec<Range<usize>> = self
             .cache
             .range(first_matching_block..=last_matching_block)
             .map(|(k, v)| k.range_start..v.range_end)
-            .collect::<Vec<_>>();
+            .collect();
 
         let can_drop_first = overlapping
             .first()
@@ -145,14 +145,14 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
             let start = if can_drop_first {
                 byte_range.start
             } else {
-                // if no first, can_drop_first is false
+                // if no first, can_drop_first is true
                 overlapping.first().unwrap().start
             };
 
             let end = if can_drop_last {
                 byte_range.end
             } else {
-                // if no last, can_drop_last is false
+                // if no last, can_drop_last is true
                 overlapping.last().unwrap().end
             };
 
@@ -189,7 +189,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         for range in overlapping.into_iter() {
             key.range_start = range.start;
             self.cache.remove(&key);
-            self.drop_item(range.end - range.start);
+            self.update_counter_drop_item(range.end - range.start);
         }
 
         key.range_start = final_range.start;
@@ -198,7 +198,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
             bytes: final_bytes,
         };
         self.cache.insert(key, value);
-        self.record_item(final_range.end - final_range.start);
+        self.update_counter_record_item(final_range.end - final_range.start);
     }
 
     // Return a block that contain everything between query.range_start and range_end
@@ -213,14 +213,14 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
             .filter(|(k, v)| k.tag == query.tag && range_end <= v.range_end)
     }
 
-    pub fn record_item(&mut self, num_bytes: usize) {
+    fn update_counter_record_item(&mut self, num_bytes: usize) {
         self.num_items += 1;
         self.num_bytes += num_bytes as u64;
         self.cache_counters.in_cache_count.inc();
         self.cache_counters.in_cache_num_bytes.add(num_bytes as i64);
     }
 
-    pub fn drop_item(&mut self, num_bytes: usize) {
+    fn update_counter_drop_item(&mut self, num_bytes: usize) {
         self.num_items -= 1;
         self.num_bytes -= num_bytes as u64;
         self.cache_counters.in_cache_count.dec();
@@ -302,7 +302,7 @@ mod tests {
     }
 
     fn range_strategy() -> impl Strategy<Value = Range<usize>> {
-        (0usize..4095usize).prop_perturb(|start, mut rng| start..rng.gen_range(start..4096))
+        (0usize..11usize).prop_perturb(|start, mut rng| start..rng.gen_range(start..12usize))
     }
 
     fn op_strategy() -> impl Strategy<Value = Operation> {
@@ -321,9 +321,9 @@ mod tests {
     proptest::proptest! {
         #[test]
         fn test_proptest_byte_range_cache(ops in ops_strategy()) {
-            let mut state = HashMap::new();
-            state.insert("path1", vec![false; 4096]);
-            state.insert("path2", vec![false; 4096]);
+            let mut state: HashMap<&'static str, Vec<bool>> = HashMap::new();
+            state.insert("path1", vec![false; 12]);
+            state.insert("path2", vec![false; 12]);
 
             let cache = ByteRangeCache::with_infinite_capacity(&CACHE_METRICS_FOR_TESTS);
 
@@ -337,6 +337,20 @@ mod tests {
                             [range.clone()].fill(true);
                         let bytes = range.clone().map(|i| (i%256) as u8).collect::<Vec<_>>();
                         cache.put_slice(tag.into(), range, OwnedBytes::new(bytes));
+
+
+                        let expected_item_count: usize = state.values()
+                            .map(|tagged_state| {
+                                count_items(tagged_state)
+                            })
+                            .sum();
+                        assert_eq!(cache.inner.lock().unwrap().num_items, expected_item_count as u64);
+
+                        let expected_byte_count = state.values()
+                            .flatten()
+                            .filter(|stored| **stored)
+                            .count();
+                        assert_eq!(cache.inner.lock().unwrap().num_bytes, expected_byte_count as u64);
                     }
                     Operation::Get {
                         range,
@@ -355,5 +369,18 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn count_items(state: &[bool]) -> usize {
+        state
+            .iter()
+            .fold((false, 0), |(last_val, count), next| {
+                if *next && !last_val {
+                    (*next, count + 1)
+                } else {
+                    (*next, count)
+                }
+            })
+            .1
     }
 }

@@ -375,14 +375,14 @@ async fn leaf_search_single_split(
     let searcher = reader.searcher();
 
     let mut field_names_to_warmup = quickwit_collector.term_dict_field_names();
-    field_names_to_warmup.extend(warmup_info.term_dict_names.into_iter());
+    field_names_to_warmup.extend(warmup_info.term_dict_field_names.into_iter());
 
     warmup(
         &searcher,
         &query,
         &quickwit_collector.fast_field_names(),
         &field_names_to_warmup,
-        &warmup_info.posting_names,
+        &warmup_info.posting_field_names,
         quickwit_collector.requires_scoring(),
     )
     .await?;

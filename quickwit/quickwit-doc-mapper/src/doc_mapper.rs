@@ -141,10 +141,10 @@ clone_trait_object!(DocMapper);
 pub struct WarmupInfo {
     /// Name of fields from the term dictionnary which needs to be entirely
     /// loaded
-    pub term_dict_names: HashSet<String>,
+    pub term_dict_field_names: HashSet<String>,
     /// Name of fields from the posting lists which needs to be entirely
     /// loaded
-    pub posting_names: HashSet<String>,
+    pub posting_field_names: HashSet<String>,
 }
 
 #[cfg(test)]

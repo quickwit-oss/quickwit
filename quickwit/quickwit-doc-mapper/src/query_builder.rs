@@ -65,8 +65,8 @@ pub(crate) fn build_query(
     extract_term_set_query_fields(&user_input_ast, &mut term_set_query_fields);
 
     let warmup_info = WarmupInfo {
-        term_dict_names: term_set_query_fields.clone(),
-        posting_names: term_set_query_fields,
+        term_dict_field_names: term_set_query_fields.clone(),
+        posting_field_names: term_set_query_fields,
     };
 
     let mut query_parser =
@@ -501,7 +501,7 @@ mod test {
     }
 
     #[test]
-    fn test_build_queryè_warmup_info() -> anyhow::Result<()> {
+    fn test_build_query_warmup_info() -> anyhow::Result<()> {
         let request_with_set = SearchRequest {
             aggregation_request: None,
             index_id: "test_index".to_string(),
@@ -532,15 +532,15 @@ mod test {
         let default_field_names = vec!["title".to_string(), "desc".to_string()];
 
         let (_, warmup_info) = build_query(make_schema(), &request_with_set, &default_field_names)?;
-        assert_eq!(warmup_info.term_dict_names.len(), 1);
-        assert_eq!(warmup_info.posting_names.len(), 1);
-        assert!(warmup_info.term_dict_names.contains("title"));
-        assert!(warmup_info.posting_names.contains("title"));
+        assert_eq!(warmup_info.term_dict_field_names.len(), 1);
+        assert_eq!(warmup_info.posting_field_names.len(), 1);
+        assert!(warmup_info.term_dict_field_names.contains("title"));
+        assert!(warmup_info.posting_field_names.contains("title"));
 
         let (_, warmup_info) =
             build_query(make_schema(), &request_without_set, &default_field_names)?;
-        assert!(warmup_info.term_dict_names.is_empty());
-        assert!(warmup_info.posting_names.is_empty());
+        assert!(warmup_info.term_dict_field_names.is_empty());
+        assert!(warmup_info.posting_field_names.is_empty());
 
         Ok(())
     }
