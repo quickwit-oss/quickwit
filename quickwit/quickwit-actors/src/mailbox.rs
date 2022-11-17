@@ -175,21 +175,21 @@ impl<A: Actor> Mailbox<A> {
     pub async fn send_message_with_backpressure_counter<M>(
         &self,
         message: M,
-        backpressure_micros_opt: Option<&IntCounter>,
+        backpressure_micros_counter_opt: Option<&IntCounter>,
     ) -> Result<oneshot::Receiver<A::Reply>, SendError>
     where
         A: Handler<M>,
         M: 'static + Send + Sync + fmt::Debug,
     {
         let (envelope, response_rx) = wrap_in_envelope(message);
-        if let Some(backpressure_micros) = backpressure_micros_opt {
+        if let Some(backpressure_micros_counter) = backpressure_micros_counter_opt {
             match self.inner.tx.try_send_low_priority(envelope) {
                 Ok(()) => Ok(response_rx),
                 Err(TrySendError::Full(msg)) => {
                     let now = Instant::now();
                     self.inner.tx.send_low_priority(msg).await?;
                     let elapsed = now.elapsed();
-                    backpressure_micros.inc_by(elapsed.as_micros() as u64);
+                    backpressure_micros_counter.inc_by(elapsed.as_micros() as u64);
                     Ok(response_rx)
                 }
                 Err(TrySendError::Disconnected) => Err(SendError::Disconnected),
@@ -235,14 +235,14 @@ impl<A: Actor> Mailbox<A> {
     pub async fn ask_with_backpressure_counter<M, T>(
         &self,
         message: M,
-        backpressure_micros_opt: Option<&IntCounter>,
+        backpressure_micros_counter_opt: Option<&IntCounter>,
     ) -> Result<T, AskError<Infallible>>
     where
         A: Handler<M, Reply = T>,
         M: 'static + Send + Sync + fmt::Debug,
     {
         let resp = self
-            .send_message_with_backpressure_counter(message, backpressure_micros_opt)
+            .send_message_with_backpressure_counter(message, backpressure_micros_counter_opt)
             .await;
         resp.map_err(|_send_error| AskError::MessageNotDelivered)?
             .await
