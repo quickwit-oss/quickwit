@@ -71,15 +71,15 @@ export function getDateTimeFormat(timeUnit: TimeUnit) {
 // Guess time unit of the timestamp field from index splits.
 export function guessTimeUnit(index: Index): TimeUnit {
   // If we have no split or , we cannot guess the time unit.
-  if (!index.metadata.indexing_settings.timestamp_field) {
+  if (!index.metadata.index_config.indexing_settings.timestamp_field) {
     return TimeUnit.UNKNOWN;
   }
   if (index.splits.length === 0) {
-    console.warn(`Index ${index.metadata.index_id} has no split, TimeUnit of timestamp_field set to UNKNOWN.`);
+    console.warn(`Index ${index.metadata.index_config.index_id} has no split, TimeUnit of timestamp_field set to UNKNOWN.`);
     return TimeUnit.UNKNOWN;
   }
   if (index.splits[0]?.time_range === null) {
-    console.warn(`Index ${index.metadata.index_id} has a split with an undefined time_range, TimeUnit of timestamp_field set to UNKNOWN.`);
+    console.warn(`Index ${index.metadata.index_config.index_id} has a split with an undefined time_range, TimeUnit of timestamp_field set to UNKNOWN.`);
     return TimeUnit.MILLI_SECOND;
   }
   const range_start_values = index.splits.map(split => split.time_range === null ? 0 : split.time_range.start);
@@ -148,13 +148,18 @@ export type SearchResponse = {
   errors: Array<any> | undefined;
 }
 
-export type IndexMetadata = {
+export type IndexConfig = {
+  version: string;
   index_id: string;
   index_uri: string;
-  checkpoint: object;
   doc_mapping: DocMapping;
   indexing_settings: IndexingSettings;
   search_settings: object;
+}
+
+export type IndexMetadata = {
+  index_config: IndexConfig;
+  checkpoint: object;
   sources: object[] | undefined;
   create_timestamp: number;
   update_timestamp: number;
@@ -165,22 +170,25 @@ export type IndexingSettings = {
 }
 
 export const EMPTY_INDEX_METADATA: IndexMetadata = {
-  index_id: '',
-  index_uri: '',
-  checkpoint: {},
-  indexing_settings: {
-    timestamp_field: null
+  index_config: {
+    version: '',
+    index_uri: '',
+    index_id: '',
+    doc_mapping: {
+      field_mappings: [],
+      tag_fields: [],
+      store: false,
+      dynamic_mapping: false,
+    },
+    indexing_settings: {
+      timestamp_field: null,
+    },
+    search_settings: {},
   },
-  search_settings: {},
-  sources: [],
-  create_timestamp: 0,
+  checkpoint: {},
+  sources: undefined,
   update_timestamp: 0,
-  doc_mapping: {
-    store: false,
-    field_mappings: [],
-    tag_fields: [],
-    dynamic_mapping: false,
-  }
+  create_timestamp: 0,
 };
 
 export type SplitMetadata = {

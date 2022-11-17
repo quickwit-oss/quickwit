@@ -45,9 +45,9 @@ function SearchView() {
   const runSearch = (updatedSearchRequest: SearchRequest) => {
     console.log('Run search...', updatedSearchRequest);
     // If we have a timestamp field, order by desc on the timestamp field.
-    if (index?.metadata.indexing_settings.timestamp_field) {
+    if (index?.metadata.index_config.indexing_settings.timestamp_field) {
       updatedSearchRequest.sortByField = {
-        field_name: index?.metadata.indexing_settings.timestamp_field,
+        field_name: index?.metadata.index_config.indexing_settings.timestamp_field,
         order: 'Desc'
       };
     } else {
@@ -71,32 +71,32 @@ function SearchView() {
   }
   const onIndexMetadataUpdate = (indexMetadata: IndexMetadata | null) => {
     setSearchRequest(previousRequest => {
-      return {...previousRequest, indexId: indexMetadata === null ? null : indexMetadata.index_id};
+      return {...previousRequest, indexId: indexMetadata === null ? null : indexMetadata.index_config.index_id};
     });
   }
   const onSearchRequestUpdate = (searchRequest: SearchRequest) => {
     setSearchRequest(searchRequest);
   }
   useEffect(() => {
-    if (prevIndexIdRef.current !== index?.metadata.index_id) {
+    if (prevIndexIdRef.current !== index?.metadata.index_config.index_id) {
       setSearchResponse(null);
     }
     // Run search only if this is the first time we set the index.
     if (prevIndexIdRef.current === null) {
       runSearch(searchRequest);
     }
-    prevIndexIdRef.current = index === null ? null : index.metadata.index_id;
+    prevIndexIdRef.current = index === null ? null : index.metadata.index_config.index_id;
   }, [index]);
   useEffect(() => {
     if (searchRequest.indexId === null || searchRequest.indexId === undefined || searchRequest.indexId === '') {
       return;
     }
-    if (index !== null && index.metadata.index_id === searchRequest.indexId) {
+    if (index !== null && index.metadata.index_config.index_id === searchRequest.indexId) {
       return;
     }
     // If index id is changing, it's better to reset timestamps as the time unit may be different
     // between indexes.
-    if (prevIndexIdRef.current !== null && prevIndexIdRef.current !== index?.metadata.index_id) {
+    if (prevIndexIdRef.current !== null && prevIndexIdRef.current !== index?.metadata.index_config.index_id) {
       searchRequest.startTimestamp = null;
       searchRequest.endTimestamp = null;
     }
@@ -132,7 +132,7 @@ function SearchView() {
               searchResponse={searchResponse}
               index={index} />
           </FullBoxContainer>
-          { index !== null && ApiUrlFooter(`api/v1/${index?.metadata.index_id}/search?${searchParams.toString()}`) }
+          { index !== null && ApiUrlFooter(`api/v1/${index?.metadata.index_config.index_id}/search?${searchParams.toString()}`) }
         </FullBoxContainer>
       </ViewUnderAppBarBox>
   );
