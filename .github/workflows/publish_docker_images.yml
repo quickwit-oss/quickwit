@@ -64,3 +64,4 @@ jobs:
             QW_COMMIT_TAGS=${{ env.QW_COMMIT_TAGS }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
