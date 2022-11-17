@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use byte_unit::Byte;
 use quickwit_actors::{
     create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Inbox,
-    Mailbox, QueueCapacity, Supervisable,
+    Mailbox, Supervisable,
 };
 use quickwit_common::io::IoControls;
 use quickwit_common::KillSwitch;
@@ -91,8 +91,10 @@ impl Actor for MergePipeline {
 
 impl MergePipeline {
     pub fn new(params: MergePipelineParams) -> Self {
-        let (merge_planner_mailbox, merge_planner_inbox) =
-            create_mailbox::<MergePlanner>("MergePlanner".to_string(), QueueCapacity::Unbounded);
+        let (merge_planner_mailbox, merge_planner_inbox) = create_mailbox::<MergePlanner>(
+            "MergePlanner".to_string(),
+            MergePlanner::queue_capacity(),
+        );
         Self {
             params,
             previous_generations_statistics: Default::default(),
