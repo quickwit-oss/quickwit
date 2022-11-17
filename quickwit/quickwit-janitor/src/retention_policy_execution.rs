@@ -44,29 +44,24 @@ pub async fn run_execute_retention_policy(
     // Select splits that are published and older than the retention period.
     let retention_period = retention_policy.retention_period()?;
     let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
-    let retention_timestamp = current_timestamp - retention_period.as_secs() as i64;
+    let max_retention_timestamp = current_timestamp - retention_period.as_secs() as i64;
     let base_query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Published);
     let query = match retention_policy.cutoff_reference {
         RetentionPolicyCutoffReference::IndexingTimestamp => {
-            base_query.with_indexing_end_timestamp_lte(retention_timestamp)
+            base_query.with_indexing_end_timestamp_lte(max_retention_timestamp)
         }
         RetentionPolicyCutoffReference::SplitTimestampField => {
-            base_query.with_time_range_end_lte(retention_timestamp)
+            base_query.with_time_range_end_lte(max_retention_timestamp)
         }
     };
 
-    let candidate_splits: Vec<SplitMetadata> = ctx
+    let expired_splits: Vec<SplitMetadata> = ctx
         .protect_future(metastore.list_splits(query))
         .await?
         .into_iter()
-        .map(|meta| meta.split_metadata)
+        .map(|split| split.split_metadata)
+        .filter(|split_metadata| is_split_expired(split_metadata, retention_policy))
         .collect();
-    let expired_splits = ignore_not_applicable_splits(
-        index_id,
-        candidate_splits,
-        retention_policy.cutoff_reference,
-    );
-
     if expired_splits.is_empty() {
         return Ok(expired_splits);
     }
@@ -80,36 +75,20 @@ pub async fn run_execute_retention_policy(
     Ok(expired_splits)
 }
 
-/// Get rid of splits without time range.
+/// Checks to see if a split is indeed expired based on the retention policy.
 ///
-/// For retention policy with cutoff_reference set to `split_timestamp_field`, we cannot
-/// apply the retention policy to splits without time range.
-/// We instead list them in a warning message.
-fn ignore_not_applicable_splits(
-    index_id: &str,
-    splits: Vec<SplitMetadata>,
-    cutoff_reference: RetentionPolicyCutoffReference,
-) -> Vec<SplitMetadata> {
-    if cutoff_reference != RetentionPolicyCutoffReference::SplitTimestampField {
-        return splits;
-    }
-
-    let mut expired_splits = Vec::with_capacity(splits.len());
-    let mut not_applicable_splits = vec![];
-    for split_metadata in splits {
-        if split_metadata.time_range.is_some() {
-            expired_splits.push(split_metadata);
-        } else {
-            not_applicable_splits.push(split_metadata);
+/// Retention policy with cutoff_reference set to `split_timestamp_field`
+/// cannot be applied to splits without time range.
+fn is_split_expired(split_metadata: &SplitMetadata, retention_policy: &RetentionPolicy) -> bool {
+    match (
+        &split_metadata.time_range,
+        retention_policy.cutoff_reference,
+    ) {
+        (None, RetentionPolicyCutoffReference::SplitTimestampField) => {
+            warn!(index_id=%split_metadata.index_id, split_id=%split_metadata.split_id,
+                "Retention policy execution expected a `time_range` on the split, but none exist.");
+            false
         }
+        _ => true,
     }
-
-    if !not_applicable_splits.is_empty() {
-        warn!(
-            index_id=%index_id,
-            not_applicable_splits=?not_applicable_splits,
-            "Retention policy with cutoff_reference set to `split_timestamp_field` cannot be applied to splits without time range."
-        );
-    }
-    expired_splits
 }

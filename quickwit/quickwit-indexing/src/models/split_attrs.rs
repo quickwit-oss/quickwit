@@ -61,7 +61,7 @@ pub struct SplitAttrs {
     // Number of merge operation the split has been through so far.
     pub num_merge_ops: usize,
 
-    /// Timestamp for tracking when the split was finalized.
+    /// Timestamp for tracking when we stopped indexing documents in the split.
     pub indexing_end_timestamp: i64,
 }
 

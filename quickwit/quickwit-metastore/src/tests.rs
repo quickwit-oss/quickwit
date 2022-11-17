@@ -2204,21 +2204,25 @@ pub mod test_suite {
             .stage_split(index_id, split_metadata_3.clone())
             .await
             .unwrap();
+        metastore
+            .publish_splits(index_id, &[split_id_1, split_id_2, split_id_3], &[], None)
+            .await
+            .unwrap();
 
         let query = ListSplitsQuery::for_index(index_id)
-            .with_split_state(SplitState::Staged)
+            .with_split_state(SplitState::Published)
             .with_indexing_end_timestamp_lte(1000);
         let splits = metastore.list_splits(query).await.unwrap();
         assert_eq!(splits.len(), 0);
 
         let query = ListSplitsQuery::for_index(index_id)
-            .with_split_state(SplitState::Staged)
+            .with_split_state(SplitState::Published)
             .with_time_range_end_lte(1000);
         let splits = metastore.list_splits(query).await.unwrap();
         assert_eq!(splits.len(), 0);
 
         let query = ListSplitsQuery::for_index(index_id)
-            .with_split_state(SplitState::Staged)
+            .with_split_state(SplitState::Published)
             .with_indexing_end_timestamp_lte(3000);
         let splits = metastore.list_splits(query).await.unwrap();
         let split_ids: HashSet<String> = splits
@@ -2227,25 +2231,18 @@ pub mod test_suite {
             .collect();
         assert_eq!(
             split_ids,
-            to_hash_set(&[
-                "list-retention-splits-one",
-                "list-retention-splits-two",
-                "list-retention-splits-three"
-            ])
+            to_hash_set(&[split_id_1, split_id_2, split_id_3])
         );
 
         let query = ListSplitsQuery::for_index(index_id)
-            .with_split_state(SplitState::Staged)
+            .with_split_state(SplitState::Published)
             .with_time_range_end_lte(2000);
         let splits = metastore.list_splits(query).await.unwrap();
         let split_ids: HashSet<String> = splits
             .into_iter()
             .map(|metadata| metadata.split_id().to_string())
             .collect();
-        assert_eq!(
-            split_ids,
-            to_hash_set(&["list-retention-splits-one", "list-retention-splits-two"])
-        );
+        assert_eq!(split_ids, to_hash_set(&[split_id_1, split_id_2]));
 
         cleanup_index(&metastore, index_id).await;
     }

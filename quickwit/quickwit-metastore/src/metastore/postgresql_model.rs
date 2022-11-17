@@ -79,7 +79,7 @@ pub struct Split {
     pub time_range_end: Option<i64>,
     /// Timestamp for tracking when the split was created.
     pub create_timestamp: sqlx::types::time::PrimitiveDateTime,
-    /// Timestamp for tracking when the split was finalized.
+    /// Timestamp for tracking when we stopped indexing documents in the split.
     pub indexing_end_timestamp: sqlx::types::time::PrimitiveDateTime,
     /// Timestamp for tracking when the split was last updated.
     pub update_timestamp: sqlx::types::time::PrimitiveDateTime,

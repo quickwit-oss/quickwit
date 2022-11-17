@@ -580,5 +580,5 @@ retention:
   - `years`, `year`, `y` -- a year is defined as `365.25 days`
 
 (2) `cutoff_reference` possible values:
-  - `indexing_timestamp` will evaluate based on the timestamp the split was finalized at.
-  - `split_timestamp_field` will evaluate based on the index timestamp field specified in the (`indexing_settings.timestamp_field`) settings.
+  - `indexing_timestamp` corresponds to the timestamp at which we stopped indexing documents in the split. Using this setting, the retention policy will delete a split when `now() - split.indexing_end_timestamp >= retention_policy.period`
+  - `split_timestamp_field` corresponds to the index timestamp field specified in the (`indexing_settings.timestamp_field`) settings. Using this setting, the retention policy will delete a split when `now() - split.time_range.end >= retention_policy.period`
