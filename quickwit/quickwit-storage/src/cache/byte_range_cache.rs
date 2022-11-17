@@ -56,7 +56,7 @@ struct CacheValue {
     bytes: OwnedBytes,
 }
 
-// T is a tag, usually a file path, R is the range bound type
+/// T is a tag, usually a file path.
 struct NeedMutByteRangeCache<T: 'static + ToOwned + ?Sized> {
     cache: BTreeMap<CacheKey<'static, T>, CacheValue>,
     // this is hardly significant as items can get merged if they overlap
@@ -240,11 +240,19 @@ impl<T: 'static + ToOwned + ?Sized> Drop for NeedMutByteRangeCache<T> {
 }
 
 /// Cache for ranges of bytes in files.
-/// Contrary to `MemorySizedCache`, it's able to answer subset of known ranges.
+///
+/// This cache is used in the contraption that makes it possible for Quickwit
+/// to use tantivy while doing asynchronous io.
+/// Quickwit manually populates this cache in an asynchronous "warmup" phase.
+/// tantivy then gets its data from this cache without performing any IO.
+///
+/// Contrary to `MemorySizedCache`, it's able to answer subset of known ranges,
+/// does not have any eviction, and assumes an infinite capacity.
 ///
 /// This cache assume immutable data: if you put a new slice and it overlap with
 /// cached data, the changes may or may not get recorded.
-// At the moment this is hardly a cache as it features no eviction policy.
+///
+/// At the moment this is hardly a cache as it features no eviction policy.
 pub struct ByteRangeCache {
     inner: Mutex<NeedMutByteRangeCache<Path>>,
 }
