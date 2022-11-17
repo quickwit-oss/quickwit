@@ -170,26 +170,26 @@ impl<A: Actor> Mailbox<A> {
     /// Sends a message to the actor owning the associated inbox.
     ///
     /// If the actor experiences some backpressure, then
-    /// `backpressure_microsecs` will be increased by the amount of
+    /// `backpressure_micros` will be increased by the amount of
     /// microseconds of backpressure experienced.
     pub async fn send_message_with_backpressure_counter<M>(
         &self,
         message: M,
-        backpressure_microsecs_opt: Option<&IntCounter>,
+        backpressure_micros_opt: Option<&IntCounter>,
     ) -> Result<oneshot::Receiver<A::Reply>, SendError>
     where
         A: Handler<M>,
         M: 'static + Send + Sync + fmt::Debug,
     {
         let (envelope, response_rx) = wrap_in_envelope(message);
-        if let Some(backpressure_microsecs) = backpressure_microsecs_opt {
+        if let Some(backpressure_micros) = backpressure_micros_opt {
             match self.inner.tx.try_send_low_priority(envelope) {
                 Ok(()) => Ok(response_rx),
                 Err(TrySendError::Full(msg)) => {
                     let now = Instant::now();
                     self.inner.tx.send_low_priority(msg).await?;
                     let elapsed = now.elapsed();
-                    backpressure_microsecs.inc_by(elapsed.as_micros() as u64);
+                    backpressure_micros.inc_by(elapsed.as_micros() as u64);
                     Ok(response_rx)
                 }
                 Err(TrySendError::Disconnected) => Err(SendError::Disconnected),
@@ -235,14 +235,14 @@ impl<A: Actor> Mailbox<A> {
     pub async fn ask_with_backpressure_counter<M, T>(
         &self,
         message: M,
-        backpressure_microsecs_opt: Option<&IntCounter>,
+        backpressure_micros_opt: Option<&IntCounter>,
     ) -> Result<T, AskError<Infallible>>
     where
         A: Handler<M, Reply = T>,
         M: 'static + Send + Sync + fmt::Debug,
     {
         let resp = self
-            .send_message_with_backpressure_counter(message, backpressure_microsecs_opt)
+            .send_message_with_backpressure_counter(message, backpressure_micros_opt)
             .await;
         resp.map_err(|_send_error| AskError::MessageNotDelivered)?
             .await
@@ -424,19 +424,19 @@ mod tests {
             .await
             .unwrap();
         // At this point the actor was started and even processed a message entirely.
-        let backpressure_microsecs_counter =
+        let backpressure_micros_counter =
             IntCounter::new("test_counter", "help for test_counter").unwrap();
         let wait_duration = Duration::from_millis(1);
         let processed = mailbox
             .send_message_with_backpressure_counter(
                 wait_duration,
-                Some(&backpressure_microsecs_counter),
+                Some(&backpressure_micros_counter),
             )
             .await
             .unwrap();
-        assert_eq!(backpressure_microsecs_counter.get(), 0u64);
+        assert_eq!(backpressure_micros_counter.get(), 0u64);
         processed.await.unwrap();
-        assert_eq!(backpressure_microsecs_counter.get(), 0u64);
+        assert_eq!(backpressure_micros_counter.get(), 0u64);
     }
 
     #[tokio::test]
@@ -450,26 +450,26 @@ mod tests {
             .ask_with_backpressure_counter(Duration::default(), None)
             .await
             .unwrap();
-        let backpressure_microsecs_counter =
+        let backpressure_micros_counter =
             IntCounter::new("test_counter", "help for test_counter").unwrap();
         let wait_duration = Duration::from_millis(1);
         mailbox
             .send_message_with_backpressure_counter(
                 wait_duration,
-                Some(&backpressure_microsecs_counter),
+                Some(&backpressure_micros_counter),
             )
             .await
             .unwrap();
         // That second message will present some backpressure, since the capacity is 0 and
-        // the first message willl take 1000 microsecs to be processed.
+        // the first message willl take 1000 micros to be processed.
         mailbox
             .send_message_with_backpressure_counter(
                 Duration::default(),
-                Some(&backpressure_microsecs_counter),
+                Some(&backpressure_micros_counter),
             )
             .await
             .unwrap();
-        assert!(backpressure_microsecs_counter.get() > 1_000u64);
+        assert!(backpressure_micros_counter.get() > 1_000u64);
     }
 
     #[tokio::test]
@@ -481,7 +481,7 @@ mod tests {
             .ask_with_backpressure_counter(Duration::default(), None)
             .await
             .unwrap();
-        let backpressure_microsecs_counter =
+        let backpressure_micros_counter =
             IntCounter::new("test_counter", "help for test_counter").unwrap();
         let start = Instant::now();
         mailbox
@@ -490,6 +490,6 @@ mod tests {
             .unwrap();
         let elapsed = start.elapsed();
         assert!(elapsed.as_micros() > 1000);
-        assert_eq!(backpressure_microsecs_counter.get(), 0);
+        assert_eq!(backpressure_micros_counter.get(), 0);
     }
 }

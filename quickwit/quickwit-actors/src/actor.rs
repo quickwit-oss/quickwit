@@ -136,8 +136,8 @@ pub trait Actor: Send + Sync + Sized + 'static {
     /// The runner method makes it possible to decide the environment
     /// of execution of the Actor.
     ///
-    /// Actor with a handler that may block for more than 50microsecs should
-    /// use the `ActorRunner::DedicatedThread`.
+    /// Actor with a handler that may block for more than 50 microseconds
+    /// should use the `ActorRunner::DedicatedThread`.
     fn runtime_handle(&self) -> tokio::runtime::Handle {
         tokio::runtime::Handle::current()
     }
@@ -240,7 +240,7 @@ pub struct ActorContextInner<A: Actor> {
     // This counter is useful to unsure that obsolete WakeUp
     // events do not effect ulterior `sleep`.
     sleep_count: AtomicUsize,
-    backpressure_microsecs_opt: Option<IntCounter>,
+    backpressure_micros_opt: Option<IntCounter>,
     observable_state_tx: watch::Sender<A::ObservableState>,
 }
 
@@ -277,7 +277,7 @@ impl<A: Actor> ActorContext<A> {
         scheduler_mailbox: Mailbox<Scheduler>,
         registry: ActorRegistry,
         observable_state_tx: watch::Sender<A::ObservableState>,
-        backpressure_microsecs_opt: Option<IntCounter>,
+        backpressure_micros_opt: Option<IntCounter>,
     ) -> Self {
         ActorContext {
             inner: ActorContextInner {
@@ -289,7 +289,7 @@ impl<A: Actor> ActorContext<A> {
                 actor_state: AtomicState::default(),
                 sleep_count: AtomicUsize::default(),
                 observable_state_tx,
-                backpressure_microsecs_opt,
+                backpressure_micros_opt,
             }
             .into(),
         }
@@ -475,7 +475,7 @@ impl<A: Actor> ActorContext<A> {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg);
         mailbox
-            .send_message_with_backpressure_counter(msg, self.backpressure_microsecs_opt.as_ref())
+            .send_message_with_backpressure_counter(msg, self.backpressure_micros_opt.as_ref())
             .await
     }
 
@@ -491,7 +491,7 @@ impl<A: Actor> ActorContext<A> {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg, "ask");
         mailbox
-            .ask_with_backpressure_counter(msg, self.backpressure_microsecs_opt.as_ref())
+            .ask_with_backpressure_counter(msg, self.backpressure_micros_opt.as_ref())
             .await
     }
 

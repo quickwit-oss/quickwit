@@ -269,9 +269,9 @@ impl IndexingPipeline {
         let (publisher_mailbox, publisher_handler) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .set_backpressure_microsecs_counter(
+            .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
-                    .backpressure_microsecs
+                    .backpressure_micros
                     .with_label_values([index_id, "Publisher"]),
             )
             .spawn(publisher);
@@ -279,9 +279,9 @@ impl IndexingPipeline {
         let sequencer = Sequencer::new(publisher_mailbox);
         let (sequencer_mailbox, sequencer_handler) = ctx
             .spawn_actor()
-            .set_backpressure_microsecs_counter(
+            .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
-                    .backpressure_microsecs
+                    .backpressure_micros
                     .with_label_values([index_id, "Sequencer"]),
             )
             .set_kill_switch(self.kill_switch.clone())
@@ -297,9 +297,9 @@ impl IndexingPipeline {
         );
         let (uploader_mailbox, uploader_handler) = ctx
             .spawn_actor()
-            .set_backpressure_microsecs_counter(
+            .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
-                    .backpressure_microsecs
+                    .backpressure_micros
                     .with_label_values([index_id, "Uploader"]),
             )
             .set_kill_switch(self.kill_switch.clone())
@@ -331,9 +331,9 @@ impl IndexingPipeline {
         );
         let (indexer_mailbox, indexer_handler) = ctx
             .spawn_actor()
-            .set_backpressure_microsecs_counter(
+            .set_backpressure_micros_counter(
                 crate::metrics::INDEXER_METRICS
-                    .backpressure_microsecs
+                    .backpressure_micros
                     .with_label_values([index_id, "Indexer"]),
             )
             .set_kill_switch(self.kill_switch.clone())

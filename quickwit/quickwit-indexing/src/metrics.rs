@@ -23,7 +23,7 @@ use quickwit_common::metrics::{new_counter_vec, new_gauge_vec, IntCounterVec, In
 pub struct IndexerMetrics {
     pub processed_docs_total: IntCounterVec<3>,
     pub processed_bytes: IntCounterVec<3>,
-    pub backpressure_microsecs: IntCounterVec<2>,
+    pub backpressure_micros: IntCounterVec<2>,
     pub available_concurrent_upload_permits: IntGaugeVec<1>,
     pub ongoing_merge_operations: IntGaugeVec<2>,
 }
@@ -45,9 +45,9 @@ impl Default for IndexerMetrics {
                 "quickwit_indexing",
                 ["index", "source", "docs_processed_status"],
             ),
-            backpressure_microsecs: new_counter_vec(
-                "backpressure_microsecs",
-                "Amount of time spent in backpressure (in microsecs). This time only includes the \
+            backpressure_micros: new_counter_vec(
+                "backpressure_micros",
+                "Amount of time spent in backpressure (in micros). This time only includes the \
                  amount of time spent waiting for a place in the queue of another actor.",
                 "quickwit_indexing",
                 ["index", "actor_name"],

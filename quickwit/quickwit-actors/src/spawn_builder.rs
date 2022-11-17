@@ -38,7 +38,7 @@ pub struct SpawnBuilder<A: Actor> {
     kill_switch: KillSwitch,
     #[allow(clippy::type_complexity)]
     mailboxes: Option<(Mailbox<A>, Inbox<A>)>,
-    backpressure_microsecs_opt: Option<IntCounter>,
+    backpressure_micros_opt: Option<IntCounter>,
 }
 
 impl<A: Actor> SpawnBuilder<A> {
@@ -52,7 +52,7 @@ impl<A: Actor> SpawnBuilder<A> {
             registry,
             kill_switch,
             mailboxes: None,
-            backpressure_microsecs_opt: None,
+            backpressure_micros_opt: None,
         }
     }
 
@@ -82,11 +82,11 @@ impl<A: Actor> SpawnBuilder<A> {
     ///
     /// When using `.ask` the amount of time counted may be misleading.
     /// (See `Mailbox::ask_with_backpressure_counter` for more details)
-    pub fn set_backpressure_microsecs_counter(
+    pub fn set_backpressure_micros_counter(
         mut self,
-        backpressure_microsecs: IntCounter,
+        backpressure_micros: IntCounter,
     ) -> Self {
-        self.backpressure_microsecs_opt = Some(backpressure_microsecs);
+        self.backpressure_micros_opt = Some(backpressure_micros);
         self
     }
 
@@ -116,7 +116,7 @@ impl<A: Actor> SpawnBuilder<A> {
             self.scheduler_mailbox.clone(),
             self.registry.clone(),
             state_tx,
-            self.backpressure_microsecs_opt,
+            self.backpressure_micros_opt,
         );
         (ctx, inbox, state_rx)
     }
