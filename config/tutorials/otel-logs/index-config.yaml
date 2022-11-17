@@ -3,7 +3,7 @@
 # Link: https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md
 #
 
-version: 0
+version: 3
 
 index_id: otel-log-v0
 
