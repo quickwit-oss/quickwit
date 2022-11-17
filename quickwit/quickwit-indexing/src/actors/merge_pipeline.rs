@@ -282,6 +282,14 @@ impl MergePipeline {
         let (merge_split_downloader_mailbox, merge_split_downloader_handler) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
+            .set_backpressure_micros_counter(
+                crate::metrics::INDEXER_METRICS
+                    .backpressure_micros
+                    .with_label_values([
+                        self.params.pipeline_id.index_id.as_str(),
+                        "MergeSplitDownloader",
+                    ]),
+            )
             .spawn(merge_split_downloader);
 
         // Merge planner
