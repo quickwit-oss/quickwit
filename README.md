@@ -29,7 +29,9 @@ Search more with less
 </h4>
 <br/>
 
-Quickwit is a cloud-native search engine for log management & analytics. It is designed to be very cost-effective, easy to operate, and scale to petabytes.
+<b> Quickwit 0.4 is now released. </b>
+
+Quickwit is a cloud-native search engine for log management & analytics written in Rust. It is designed to be very cost-effective, easy to operate, and scale to petabytes. 
 
 <br/>
 
@@ -39,30 +41,22 @@ Quickwit is a cloud-native search engine for log management & analytics. It is d
 
 # 💡 Features
 
-- Index data persisted on object storage (AWS S3, GCS, MinIO, Ceph)
-- Ingest JSON documents with or without a strict schema
+- Cloud-scale: K8-native, decoupled compute & storage
+- Store & query data with full-text search capabilities on object storage (AWS S3, Azure, GCS, MinIO, Ceph, Scaleway, and more)
 - Ingest & Aggregation API Elasticsearch compatible
-- Lightweight Embedded UI
-- Runs on a fraction of the resources: written in Rust, powered by the mighty tantivy
-- Works out of the box with sensible defaults
-- Optimized for multi-tenancy. Add and scale tenants with no overhead costs
-- Distributed search
-- Cloud-native: Kubernetes ready
+- Search stream API for full-text search in ClickHouse
+- Multi-tenancy
 - Add and remove nodes in seconds
-- Decoupled compute & storage
-- Sleep like a log: all your indexed data is safely stored on object storage
-- Ingest your documents with exactly-once semantics
-- Kafka-native ingestion
-- Search stream API that notably unlocks full-text search in ClickHouse
+- Distributed search
+- Distributed indexing with Kafka
+- Native support for Kafka & Kinesis with exactly-once semantics
+- Ingest JSON documents with or without a strict schema
+- Support for key metrics via Prometheus (or any front-end that support Prometheus)
+- Lightweight Embedded UI
+- Works out of the box with sensible defaults
 
 ### 🔮 Roadmap
-- [Quickwit 0.4 - November 2022](https://github.com/quickwit-oss/quickwit/projects/5)
-  - Distributed indexing with Kafka
-  - Native support for Kubernetes
-  - Index partitioning
-  - Boolean, datetime, and IP address fields
-  - Retention policies
-  - Support for BM25 scoring, snippeting
+
 - [Quickwit 0.5 - Q1 2023](https://github.com/quickwit-oss/quickwit/projects/6)
   - Grafana data source
   - Native support for OpenTelemetry
@@ -132,8 +126,10 @@ Our business model relies on our commercial license. There is no plan to become 
 <p align="left">
 <img align="center" src="docs/assets/images/aws-logo.png#gh-light-mode-only" alt="Store logs on AWS S3" height="25" width="auto" />
 <img align="center" src="docs/assets/images/aws-dark-theme-logo.png#gh-dark-mode-only" alt="Store logs on AWS S3" height="25" width="auto" /> &nbsp;
+<img align="center" src="docs/assets/images/azure-logo.png" alt="Store logs on Azure" height="25" width="auto" /> &nbsp;
 <img align="center" src="docs/assets/images/google-cloud-storage.svg" alt="Google Cloud Storage" height="30" width="auto"/> &nbsp;
 <img align="center" src="docs/assets/images/postgresql-logo.png" alt="Metastore Backed by Postgresql" height="30" width="auto"/> &nbsp;&nbsp;
+<img align="center" src="docs/assets/images/scaleway-logo.png" alt="Store logs on Scaleway" height="25" width="auto" /> &nbsp;
 <img align="center" src="docs/assets/images/minio-logo.png" alt="Integrate with Minio" height="10" width="auto"/> &nbsp;
 <img align="center" src="docs/assets/images/ceph-light-mode-logo.png#gh-light-mode-only" alt="Integration with Ceph" height="20" width="auto"/>
 <img align="center" src="docs/assets/images/ceph-dark-mode-logo.png#gh-dark-mode-only" alt="Integration with Ceph" height="20" width="auto"/> &nbsp;
@@ -141,11 +137,13 @@ Our business model relies on our commercial license. There is no plan to become 
 <img align="center" src="docs/assets/images/kafka-logo.png#gh-light-mode-only" alt="Ingest Logs with Kafka" height="30" width="auto"/>
 <img align="center" src="docs/assets/images/kafka-dark-theme.png#gh-dark-mode-only" alt="Ingest Logs with Kafka" height="30" width="auto"/> &nbsp;
 <img align="center" src="docs/assets/images/kinesis-logo.svg" alt="Ingest logs with Amazon Kinesis" height="30" width="auto"/> &nbsp;
+<img align="center" src="docs/assets/images/clickhouse-logo.png" alt="Ingest logs with Amazon Kinesis" height="30" width="auto"/> &nbsp;
 </p>
 
 # 💬 Community
 
 ### [📝 Blog Posts](https://quickwit.io/blog)
+  - [Filtering a Vector with SIMD Instructions](https://quickwit.io/blog/filtering%20a%20vector%20with%20simd%20instructions%20avx-2%20and%20avx-512)
   - [ChitChat: Cluster Membership with Failure Detection](https://quickwit.io/blog/chitchat)
   - [How to investigate memory usage of your rust program](https://quickwit.io/blog/memory-inspector-gadget)
 ### [📽 Youtube Videos](https://www.youtube.com/channel/UCvZVuRm2FiDq1_ul0mY85wA)
