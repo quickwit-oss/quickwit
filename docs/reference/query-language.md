@@ -23,6 +23,15 @@ title:"barack obama" AND president
 
 Note that a query like `title:barack obama` will find only `barack` in the title and `obama` in the default fields. If no default field has been set on the index, this will result in an error.
 
+### Searching structures nested in documents.
+
+Quickwit is designed to index structured data.
+If you search into some object nested into your document, whether it is an `object`, a `json` object, or whether it was caught through the `dynamic` mode, the query language is the same. You simply need to chain the different steps to reach your value from the root of the document.
+
+For instance, the document `{"product": {"attributes": {color": "red"}}}` is returned if you query `product.attributes.color:red`.
+If a dot `.` exists in one of the key of your object, you need to escape it.
+For instance, the document `{"attributes": {"server.name": "elephant"}}` is returned if you query `attributes:server\.name:elephant`.
+
 ### Boolean Operators
 
 Quickwit supports `AND`, `+`, `OR`, `NOT` and `-` as Boolean operators (case sensitive). By default, the `AND` is chosen, this means that if you omit it in a query like `title:"barack obama" president` Quickwit will interpret the query as `title:"barack obama" AND president`.
@@ -46,7 +55,7 @@ Slop queries can only be used on field indexed with the [record option](./../con
 #### Examples:
 
 With the following corpus:
-```json 
+```json
 [
     {"id": 1, "body": "a red bike"},
     {"id": 2, "body": "a small blue bike"},
@@ -55,14 +64,14 @@ With the following corpus:
     {"id": 5, "body": "a tiny shelter"}
 ]
 ```
-The following queries will output: 
+The following queries will output:
 
 - `body:"small bird"~2`: no match []
 - `body:"red bike"~2`: matches [1]
 - `body:"small blue bike"~3`: matches [2]
 - `body:"small bike"`: matches [4]
 - `body:"small bike"~1`: matches [2, 4]
-- `body:"small bike"~2`: matches [2, 4] 
+- `body:"small bike"~2`: matches [2, 4]
 - `body:"small bike"~3`: matches [2, 3, 4]
 
 ### Escaping Special Characters
