@@ -25,6 +25,7 @@ mod instrumented_metastore;
 pub mod postgresql_metastore;
 #[cfg(feature = "postgres")]
 mod postgresql_model;
+pub mod retrying_metastore;
 
 use std::ops::{Bound, RangeInclusive};
 

@@ -217,8 +217,8 @@ pub struct FetchDocsRequest {
     #[prost(message, optional, tag="5")]
     pub search_request: ::core::option::Option<SearchRequest>,
     /// `DocMapper` as json serialized trait.
-    #[prost(string, optional, tag="6")]
-    pub doc_mapper: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag="6")]
+    pub doc_mapper: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]

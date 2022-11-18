@@ -25,7 +25,7 @@ use dyn_clone::{clone_trait_object, DynClone};
 use quickwit_proto::SearchRequest;
 use serde_json::Value as JsonValue;
 use tantivy::query::Query;
-use tantivy::schema::{Field, FieldType, Schema};
+use tantivy::schema::{Field, FieldType, Schema, Value};
 use tantivy::Document;
 
 pub type Partition = u64;
@@ -59,7 +59,7 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// to the same schema.
     fn doc_to_json(
         &self,
-        named_doc: BTreeMap<String, Vec<JsonValue>>,
+        named_doc: BTreeMap<String, Vec<Value>>,
     ) -> anyhow::Result<serde_json::Map<String, JsonValue>>;
 
     /// Returns the schema.

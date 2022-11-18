@@ -166,17 +166,13 @@ impl SearchService for SearchServiceImpl {
             .storage_uri_resolver
             .resolve(&Uri::from_well_formed(fetch_docs_request.index_uri))?;
         let search_request_opt = fetch_docs_request.search_request.as_ref();
-        let doc_mapper_opt = if let Some(doc_mapper_str) = &fetch_docs_request.doc_mapper {
-            Some(deserialize_doc_mapper(doc_mapper_str)?)
-        } else {
-            None
-        };
+        let doc_mapper = deserialize_doc_mapper(&fetch_docs_request.doc_mapper)?;
         let fetch_docs_response = fetch_docs(
             self.searcher_context.clone(),
             fetch_docs_request.partial_hits,
             storage,
             &fetch_docs_request.split_offsets,
-            doc_mapper_opt,
+            doc_mapper,
             search_request_opt,
         )
         .await?;
