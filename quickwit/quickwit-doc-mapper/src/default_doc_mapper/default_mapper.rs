@@ -25,7 +25,7 @@ use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
-use tantivy::schema::{Cardinality, Field, FieldType, Schema, STORED};
+use tantivy::schema::{Cardinality, Field, FieldType, Schema, Value as TantivyValue, STORED};
 use tantivy::Document;
 
 use super::field_mapping_entry::QuickwitTextTokenizer;
@@ -370,9 +370,9 @@ impl std::fmt::Debug for DefaultDocMapper {
 }
 
 fn extract_single_obj(
-    doc: &mut BTreeMap<String, Vec<JsonValue>>,
+    doc: &mut BTreeMap<String, Vec<TantivyValue>>,
     key: &str,
-) -> anyhow::Result<Option<serde_json::Map<String, serde_json::Value>>> {
+) -> anyhow::Result<Option<serde_json::Map<String, JsonValue>>> {
     let mut values = if let Some(values) = doc.remove(key) {
         values
     } else {
@@ -384,7 +384,7 @@ fn extract_single_obj(
         );
     }
     match values.pop() {
-        Some(JsonValue::Object(dynamic_json_obj)) => Ok(Some(dynamic_json_obj)),
+        Some(TantivyValue::JsonObject(dynamic_json_obj)) => Ok(Some(dynamic_json_obj)),
         Some(_) => {
             bail!("The `{key}` value has to be a json object.");
         }
@@ -432,7 +432,7 @@ impl DocMapper for DefaultDocMapper {
 
     fn doc_to_json(
         &self,
-        mut named_doc: BTreeMap<String, Vec<serde_json::Value>>,
+        mut named_doc: BTreeMap<String, Vec<TantivyValue>>,
     ) -> anyhow::Result<serde_json::Map<String, JsonValue>> {
         let mut doc_json =
             extract_single_obj(&mut named_doc, DYNAMIC_FIELD_NAME)?.unwrap_or_default();
@@ -487,7 +487,7 @@ mod tests {
 
     use quickwit_proto::SearchRequest;
     use serde_json::{self, json, Value as JsonValue};
-    use tantivy::schema::{FieldType, Type, Value};
+    use tantivy::schema::{FieldType, Type, Value as TantivyValue};
 
     use super::DefaultDocMapper;
     use crate::{
@@ -495,7 +495,7 @@ mod tests {
         SOURCE_FIELD_NAME,
     };
 
-    fn example_json_doc_value() -> serde_json::Value {
+    fn example_json_doc_value() -> JsonValue {
         serde_json::json!({
             "timestamp": 1586960586000i64,
             "body": "20200415T072306-0700 INFO This is a great log",
@@ -779,7 +779,7 @@ mod tests {
         let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
         let doc_mapper = builder.try_build().unwrap();
         let schema = doc_mapper.schema();
-        let json_doc_value: serde_json::Value = serde_json::json!({
+        let json_doc_value: JsonValue = serde_json::json!({
             "city": "tokio",
             "image": "YWJj"
         });
@@ -1080,9 +1080,9 @@ mod tests {
         let (_, doc) = default_doc_mapper
             .doc_from_json(r#"{ "a": { "b": 5, "c": 6 } }"#.to_string())
             .unwrap();
-        let vals: Vec<&Value> = doc.get_all(dynamic_field).collect();
+        let vals: Vec<&TantivyValue> = doc.get_all(dynamic_field).collect();
         assert_eq!(vals.len(), 1);
-        if let Value::JsonObject(json_val) = &vals[0] {
+        if let TantivyValue::JsonObject(json_val) = &vals[0] {
             assert_eq!(
                 serde_json::to_value(json_val).unwrap(),
                 json!({
@@ -1127,9 +1127,9 @@ mod tests {
             .schema()
             .get_field(DYNAMIC_FIELD_NAME)
             .unwrap();
-        let vals: Vec<&Value> = doc.get_all(dynamic_field).collect();
+        let vals: Vec<&TantivyValue> = doc.get_all(dynamic_field).collect();
         assert_eq!(vals.len(), 1);
-        if let Value::JsonObject(json_val) = &vals[0] {
+        if let TantivyValue::JsonObject(json_val) = &vals[0] {
             assert_eq!(
                 serde_json::to_value(json_val).unwrap(),
                 serde_json::json!({
@@ -1173,9 +1173,9 @@ mod tests {
             .schema()
             .get_field("some_obj.json_obj")
             .unwrap();
-        let vals: Vec<&Value> = doc.get_all(json_field).collect();
+        let vals: Vec<&TantivyValue> = doc.get_all(json_field).collect();
         assert_eq!(vals.len(), 1);
-        if let Value::JsonObject(json_val) = &vals[0] {
+        if let TantivyValue::JsonObject(json_val) = &vals[0] {
             assert_eq!(
                 serde_json::to_value(json_val).unwrap(),
                 serde_json::json!({

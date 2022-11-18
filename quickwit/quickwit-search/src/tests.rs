@@ -17,14 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use assert_json_diff::{assert_json_eq, assert_json_include};
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DefaultDocMapper;
 use quickwit_indexing::TestSandbox;
-use quickwit_proto::{LeafHit, SearchRequest, SortOrder};
+use quickwit_proto::{SearchRequest, SortOrder};
 use serde_json::json;
+use tantivy::schema::Value;
 use tantivy::time::OffsetDateTime;
 
 use super::*;
@@ -740,23 +741,44 @@ async fn test_search_dynamic_mode() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn json_to_named_field_doc(doc_json: serde_json::Value) -> NamedFieldDocument {
+    assert!(doc_json.is_object());
+    let mut doc_map: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    for (key, value) in doc_json.as_object().unwrap().clone() {
+        doc_map.insert(key, json_value_to_tantivy_value(value));
+    }
+    NamedFieldDocument(doc_map)
+}
+
+fn json_value_to_tantivy_value(value: serde_json::Value) -> Vec<Value> {
+    use serde_json::Value as JsonValue;
+    match value {
+        JsonValue::Bool(val) => vec![Value::Bool(val)],
+        JsonValue::String(val) => vec![Value::Str(val)],
+        JsonValue::Array(values) => values
+            .into_iter()
+            .flat_map(json_value_to_tantivy_value)
+            .collect(),
+        JsonValue::Object(object) => {
+            vec![Value::JsonObject(object)]
+        }
+        JsonValue::Null => vec![],
+        value => vec![value.into()],
+    }
+}
+
 #[track_caller]
 fn test_convert_leaf_hit_aux(
     default_doc_mapper_json: serde_json::Value,
-    leaf_hit_json: serde_json::Value,
+    document_json: serde_json::Value,
     expected_hit_json: serde_json::Value,
 ) {
     let default_doc_mapper: DefaultDocMapper =
         serde_json::from_value(default_doc_mapper_json).unwrap();
-    let hit = convert_leaf_hit(
-        LeafHit {
-            leaf_json: serde_json::to_string(&leaf_hit_json).unwrap(),
-            ..Default::default()
-        },
-        &default_doc_mapper,
-    )
-    .unwrap();
-    let hit_json: serde_json::Value = serde_json::from_str(&hit.json).unwrap();
+    let named_field_doc = json_to_named_field_doc(document_json);
+    let hit_json_str =
+        convert_document_to_json_string(named_field_doc, &default_doc_mapper).unwrap();
+    let hit_json: serde_json::Value = serde_json::from_str(&hit_json_str).unwrap();
     assert_eq!(hit_json, expected_hit_json);
 }
 
@@ -859,9 +881,9 @@ fn test_convert_leaf_object_used_to_be_dynamic() {
     );
 }
 
-// This spec might change in the future. THe mode has no impact on the
-// output of convert_leaf_doc. In particular, it does not ignore the previously gathered
-// dynamic field.
+// This spec might change in the future. The mode has no impact on the
+// output of convert_document_to_json_string. In particular, it does not ignore
+// the previously gathered dynamic field.
 #[test]
 fn test_convert_leaf_object_arguable_mode_does_not_affect_format() {
     test_convert_leaf_hit_aux(

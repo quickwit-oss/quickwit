@@ -42,25 +42,24 @@ mod metrics;
 mod tests;
 
 use metrics::SEARCH_METRICS;
+use quickwit_doc_mapper::DocMapper;
 use root::validate_request;
 use service::SearcherContext;
+use tantivy::schema::NamedFieldDocument;
 
 /// Refer to this as `crate::Result<T>`.
 pub type Result<T> = std::result::Result<T, SearchError>;
 
 use std::cmp::Reverse;
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anyhow::Context;
 use itertools::Itertools;
 use quickwit_config::{build_doc_mapper, QuickwitConfig, SearcherConfig};
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
-use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{ListSplitsQuery, Metastore, SplitMetadata, SplitState};
-use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
+use quickwit_proto::{Hit, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
-use serde_json::Value as JsonValue;
 use tantivy::aggregation::agg_req::Aggregations;
 use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
@@ -139,34 +138,20 @@ async fn list_relevant_splits(
         .collect::<Vec<_>>())
 }
 
-/// Converts a `LeafHit` into a `Hit`.
+/// Converts a Tantivy `NamedFieldDocument` into a json string using the
+/// schema defined by the DocMapper.
 ///
-/// Splits may have been created with different DocMappers.
-/// For this reason, leaves are returning a document that is -as much
-/// as possible-, `DocMapper` agnostic.
-///
-/// As a result, all documents will have the actual same schema,
-/// hence facilitating the implementation on the consumer side.
-///
-/// For instance, if the cardinality of a field changed from single-valued
-/// to multivalued, we do want the documents emitted from old splits to
-/// also serialize the fields values as a JsonArray.
-///
-/// The `convert_leaf_hit` is critical and needs to be tested against
-/// allowed DocMapper changes.
-fn convert_leaf_hit(
-    leaf_hit: quickwit_proto::LeafHit,
+/// We perform this conversion at leaf level only to avoid having
+/// another intermediate json format between the leaves and the root.
+fn convert_document_to_json_string(
+    named_field_doc: NamedFieldDocument,
     doc_mapper: &dyn DocMapper,
-) -> crate::Result<quickwit_proto::Hit> {
-    let hit_json: BTreeMap<String, Vec<JsonValue>> = serde_json::from_str(&leaf_hit.leaf_json)
-        .map_err(|_| SearchError::InternalError("Invalid leaf json.".to_string()))?;
-    let doc = doc_mapper.doc_to_json(hit_json)?;
-    let json = serde_json::to_string(&doc).expect("Json serialization should never fail.");
-    Ok(quickwit_proto::Hit {
-        json,
-        partial_hit: leaf_hit.partial_hit,
-        snippet: leaf_hit.leaf_snippet_json,
-    })
+) -> anyhow::Result<String> {
+    let NamedFieldDocument(named_field_doc_map) = named_field_doc;
+    let doc_json_map = doc_mapper.doc_to_json(named_field_doc_map)?;
+    let content_json =
+        serde_json::to_string(&doc_json_map).expect("Json serialization should never fail.");
+    Ok(content_json)
 }
 
 /// Performs a search on the current node.
@@ -217,11 +202,6 @@ pub async fn single_node_search(
     .await
     .context("Failed to perform leaf search.")?;
 
-    let doc_mapper_opt = if !search_request.snippet_fields.is_empty() {
-        Some(doc_mapper.clone())
-    } else {
-        None
-    };
     let search_request_opt = if !search_request.snippet_fields.is_empty() {
         Some(search_request)
     } else {
@@ -233,16 +213,20 @@ pub async fn single_node_search(
         leaf_search_response.partial_hits,
         index_storage,
         &split_metadata,
-        doc_mapper_opt,
+        doc_mapper,
         search_request_opt,
     )
     .await
     .context("Failed to perform fetch docs.")?;
-    let hits: Vec<quickwit_proto::Hit> = fetch_docs_response
+    let hits: Vec<Hit> = fetch_docs_response
         .hits
         .into_iter()
-        .map(|leaf_hit| crate::convert_leaf_hit(leaf_hit, &*doc_mapper))
-        .collect::<crate::Result<_>>()?;
+        .map(|leaf_hit| Hit {
+            json: leaf_hit.leaf_json,
+            partial_hit: leaf_hit.partial_hit,
+            snippet: leaf_hit.leaf_snippet_json,
+        })
+        .collect();
     let elapsed = start_instant.elapsed();
     let aggregation = if let Some(intermediate_aggregation_result) =
         leaf_search_response.intermediate_aggregation_result
