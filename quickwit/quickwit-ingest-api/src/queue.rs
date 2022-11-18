@@ -83,13 +83,9 @@ fn default_rocks_db_write_options() -> rocksdb::WriteOptions {
 /// If no record has been pushed yet, return Ok(None)
 /// Returns an error if the queue does not exist.
 fn last_position(db: &DB, queue_id: &str) -> crate::Result<Option<Position>> {
-    let cf = db
-        .cf_handle(queue_id)
-        .ok_or_else(|| crate::IngestApiError::Corruption {
-            msg: format!("RocksDB error: Missing column `{queue_id}`"),
-        })?;
+    let cf = column_family(db, queue_id)?;
     // That's iterating backward
-    let mut full_it = db.full_iterator_cf(&cf, IteratorMode::End);
+    let mut full_it = db.full_iterator_cf(cf, IteratorMode::End);
     match full_it.next() {
         Some(Ok((key, _))) => {
             let position = Position::try_from(&*key)?;
