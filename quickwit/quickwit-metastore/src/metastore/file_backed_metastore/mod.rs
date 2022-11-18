@@ -150,7 +150,7 @@ impl FileBackedMetastore {
         if !mutation_occurred {
             return Ok(false);
         }
-
+        locked_index.set_recently_modified();
         let put_result = put_index(&*self.storage, &index).await;
         match put_result {
             Ok(()) => {

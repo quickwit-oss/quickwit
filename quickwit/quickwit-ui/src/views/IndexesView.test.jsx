@@ -46,21 +46,23 @@ afterEach(() => {
 
 test('renders IndexesView', async () => {
   const indexes = [{
-    index_id: 'my-new-fresh-index',
-    index_uri: 'my-uri',
-    indexing_settings: {
-      timestamp_field: 'timestamp'
+    index_config: {
+      index_id: 'my-new-fresh-index',
+      index_uri: 'my-uri',
+      indexing_settings: {
+        timestamp_field: 'timestamp'
+      },
+      search_settings: {},
+      doc_mapping: {
+        store: false,
+        field_mappings: [],
+        tag_fields: [],
+        dynamic_mapping: false,
+      },
     },
-    search_settings: {},
     sources: [],
     create_timestamp: 1000,
     update_timestamp: 1000,
-    doc_mapping: {
-      store: false,
-      field_mappings: [],
-      tag_fields: [],
-      dynamic_mapping: false,
-    }
   }];
   Client.prototype.listIndexes.mockResolvedValueOnce(() => indexes);
 
@@ -68,5 +70,5 @@ test('renders IndexesView', async () => {
     render(<IndexesView />, container);
   });
 
-  expect(screen.getByText(indexes[0].index_id)).toBeInTheDocument();
+  expect(screen.getByText(indexes[0].index_config.index_id)).toBeInTheDocument();
 });
