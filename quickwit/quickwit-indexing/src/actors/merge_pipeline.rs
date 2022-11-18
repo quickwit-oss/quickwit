@@ -184,7 +184,7 @@ impl MergePipeline {
     }
 
     // TODO: Should return an error saying whether we can retry or not.
-    #[instrument(name="", level="info", skip_all, fields(index=%self.params.pipeline_id.index_id, gen=self.generation()))]
+    #[instrument(name="spawn_merge_pipeline", level="info", skip_all, fields(index=%self.params.pipeline_id.index_id, gen=self.generation()))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         self.statistics.num_spawn_attempts += 1;
         self.kill_switch = ctx.kill_switch().child();
