@@ -42,7 +42,7 @@ Quickwit is a cloud-native search engine for log management & analytics written 
 # 💡 Features
 
 - Cloud-scale: K8-native, decoupled compute & storage
-- Store & query data with full-text search capabilities on object storage (AWS S3, Azure, GCS, MinIO, Ceph, Scaleway, and more)
+- Store & query data with full-text search capabilities on object storage (AWS S3, Azure...)
 - Ingest & Aggregation API Elasticsearch compatible
 - Search stream API for full-text search in ClickHouse
 - Multi-tenancy
@@ -50,10 +50,9 @@ Quickwit is a cloud-native search engine for log management & analytics written 
 - Distributed search
 - Distributed indexing with Kafka
 - Native support for Kafka & Kinesis with exactly-once semantics
-- Ingest JSON documents with or without a strict schema
-- Support for key metrics via Prometheus (or any front-end that support Prometheus)
-- Lightweight Embedded UI
+- Schemaless or strict schema indexing
 - Works out of the box with sensible defaults
+- Lightweight Embedded UI
 
 ### 🔮 Roadmap
 
