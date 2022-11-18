@@ -22,8 +22,6 @@ mod retry;
 #[cfg(test)]
 mod test;
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
@@ -36,15 +34,15 @@ use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreResult, Split, S
 /// Retry layer for [`MetastoreGrpcClient`].
 /// This is a band-aid solution for now. This will be removed after retry can be usable on
 /// tonic level.
-/// Tracking Issue: https://github.com/tower-rs/tower/issues/682
+/// Tracking Issue: <https://github.com/tower-rs/tower/issues/682>
 pub struct RetryingMetastore {
-    inner: Arc<dyn Metastore>,
+    inner: Box<dyn Metastore>,
     retry_params: RetryParams,
 }
 
 impl RetryingMetastore {
     /// Creates a retry layer for [`MetastoreGrpcClient`]
-    pub fn new(metastore: Arc<dyn Metastore>) -> Self {
+    pub fn new(metastore: Box<dyn Metastore>) -> Self {
         Self {
             inner: metastore,
             retry_params: RetryParams {

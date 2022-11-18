@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
@@ -52,7 +51,7 @@ impl RetryTestMetastore {
         errors: &[MetastoreError],
     ) -> RetryingMetastore {
         RetryingMetastore {
-            inner: Arc::new(RetryTestMetastore::new_with_errors(errors)),
+            inner: Box::new(RetryTestMetastore::new_with_errors(errors)),
             retry_params: RetryParams {
                 max_attempts,
                 ..Default::default()
@@ -263,10 +262,9 @@ async fn test_retryable_more_than_max_retry() {
             .collect::<Vec<_>>(),
     );
 
-    let result = metastore.list_indexes_metadatas().await;
-    assert!(result.is_err());
+    let error = metastore.list_indexes_metadatas().await.unwrap_err();
     assert_eq!(
-        result.unwrap_err(),
+        error,
         MetastoreError::ConnectionError {
             message: "2".to_string() // Max 3 retries, last error index is 2
         }
@@ -296,12 +294,10 @@ async fn test_mixed_retryable_metastore_errors() {
         ],
     );
 
-    let result = metastore.list_indexes_metadatas().await;
-
-    assert!(result.is_err());
+    let error = metastore.list_indexes_metadatas().await.unwrap_err();
 
     assert_eq!(
-        result.unwrap_err(),
+        error,
         MetastoreError::SourceAlreadyExists {
             source_id: "".to_string(),
             source_type: "".to_string(),
