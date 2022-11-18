@@ -24,7 +24,8 @@ use quickwit_actors::{Mailbox, Universe};
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
-    build_doc_mapper, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
+    build_doc_mapper, ConfigFormat, IndexConfig, IndexerConfig, SourceConfig, SourceParams,
+    VecSourceParams,
 };
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{
@@ -69,17 +70,18 @@ impl TestSandbox {
     ) -> anyhow::Result<Self> {
         let node_id = append_random_suffix("test-node");
         let index_uri = index_uri(index_id);
-        let mut index_meta = IndexMetadata::for_test(index_id, index_uri.as_str());
-        index_meta.doc_mapping = serde_yaml::from_str(doc_mapping_yaml)?;
-        index_meta.indexing_settings = serde_yaml::from_str(indexing_settings_yaml)?;
-        index_meta.search_settings.default_search_fields = search_fields
+        let mut index_config = IndexConfig::for_test(index_id, index_uri.as_str());
+        index_config.doc_mapping = ConfigFormat::Yaml.parse(doc_mapping_yaml.as_bytes())?;
+        index_config.indexing_settings =
+            ConfigFormat::Yaml.parse(indexing_settings_yaml.as_bytes())?;
+        index_config.search_settings.default_search_fields = search_fields
             .iter()
             .map(|search_field| search_field.to_string())
             .collect();
         let doc_mapper = build_doc_mapper(
-            &index_meta.doc_mapping,
-            &index_meta.search_settings,
-            &index_meta.indexing_settings,
+            &index_config.doc_mapping,
+            &index_config.search_settings,
+            &index_config.indexing_settings,
         )?;
         let temp_dir = tempfile::tempdir()?;
         let indexer_config = IndexerConfig::for_test()?;
@@ -88,7 +90,8 @@ impl TestSandbox {
         let metastore = metastore_uri_resolver
             .resolve(&Uri::from_well_formed(metastore_uri.to_string()))
             .await?;
-        metastore.create_index(index_meta.clone()).await?;
+        let index_metadata = IndexMetadata::new(index_config);
+        metastore.create_index(index_metadata.clone()).await?;
         let storage_resolver = StorageUriResolver::for_test();
         let storage = storage_resolver.resolve(&index_uri)?;
         let universe = Universe::new();

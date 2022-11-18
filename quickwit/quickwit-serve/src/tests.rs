@@ -29,7 +29,7 @@ use quickwit_metastore::{IndexMetadata, MockMetastore};
 use quickwit_proto::SearchRequest;
 
 use crate::test_utils::ClusterSandbox;
-use crate::{check_cluster_configuration, node_readyness_reporting_task};
+use crate::{check_cluster_configuration, node_readiness_reporting_task};
 
 #[tokio::test]
 async fn test_check_cluster_configuration() {
@@ -54,11 +54,12 @@ async fn test_check_cluster_configuration() {
 }
 
 #[tokio::test]
-async fn test_standalone_server_no_indexer() -> anyhow::Result<()> {
+async fn test_standalone_server_no_indexer() {
     quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
+
     let mut search_client = sandbox.get_random_search_client();
-    let search_result = search_client
+    search_client
         .root_search(SearchRequest {
             index_id: sandbox.index_id_for_test.clone(),
             query: "*".to_string(),
@@ -72,20 +73,22 @@ async fn test_standalone_server_no_indexer() -> anyhow::Result<()> {
             sort_order: None,
             start_offset: 0,
         })
-        .await;
-    assert!(search_result.is_ok());
-    let cluster_result = sandbox.rest_client.cluster_snapshot().await;
-    assert!(cluster_result.is_ok());
-    let is_ready_result = sandbox.rest_client.is_ready().await.unwrap();
-    assert!(is_ready_result);
-    let indexing_service_state_result = sandbox.rest_client.indexing_service_state().await;
-    // There is no indexing service running.
-    assert!(indexing_service_state_result.is_err());
-    Ok(())
+        .await
+        .unwrap();
+    sandbox.rest_client.cluster_snapshot().await.unwrap();
+
+    assert!(sandbox.rest_client.is_ready().await.unwrap());
+
+    // The indexing service is no longer running.
+    sandbox
+        .rest_client
+        .indexing_service_counters()
+        .await
+        .unwrap_err();
 }
 
 #[tokio::test]
-async fn test_multi_nodes_cluster() -> anyhow::Result<()> {
+async fn test_multi_nodes_cluster() {
     let nodes_services = vec![
         HashSet::from_iter([QuickwitService::Searcher]),
         HashSet::from_iter([QuickwitService::Metastore]),
@@ -96,7 +99,7 @@ async fn test_multi_nodes_cluster() -> anyhow::Result<()> {
         .unwrap();
     sandbox.wait_for_cluster_num_ready_nodes(2).await.unwrap();
     let mut search_client = sandbox.get_random_search_client();
-    let search_result = search_client
+    search_client
         .root_search(SearchRequest {
             index_id: sandbox.index_id_for_test.clone(),
             query: "*".to_string(),
@@ -110,15 +113,21 @@ async fn test_multi_nodes_cluster() -> anyhow::Result<()> {
             start_offset: 0,
             snippet_fields: Vec::new(),
         })
-        .await;
-    assert!(search_result.is_ok());
-    let indexing_service_state = sandbox.rest_client.indexing_service_state().await.unwrap();
-    assert_eq!(indexing_service_state.num_running_pipelines, 1);
-    Ok(())
+        .await
+        .unwrap();
+
+    assert!(sandbox.rest_client.is_live().await.unwrap());
+
+    let indexing_service_counters = sandbox
+        .rest_client
+        .indexing_service_counters()
+        .await
+        .unwrap();
+    assert_eq!(indexing_service_counters.num_running_pipelines, 1);
 }
 
 #[tokio::test]
-async fn test_readyness_updates() -> anyhow::Result<()> {
+async fn test_readiness_updates() -> anyhow::Result<()> {
     let transport = ChannelTransport::default();
     let cluster = Arc::new(
         create_cluster_for_test(Vec::new(), &[], &transport, false)
@@ -138,7 +147,7 @@ async fn test_readyness_updates() -> anyhow::Result<()> {
             }
             Ok(())
         });
-    tokio::spawn(node_readyness_reporting_task(
+    tokio::spawn(node_readiness_reporting_task(
         cluster.clone(),
         Arc::new(metastore),
     ));

@@ -52,9 +52,13 @@ impl Index {
     /// timestamps.
     pub fn index_metadata(&self) -> MetastoreResult<IndexMetadata> {
         let mut index_metadata = serde_json::from_str::<IndexMetadata>(&self.index_metadata_json)
-            .map_err(|err| MetastoreError::InternalError {
-            message: "Failed to deserialize index metadata.".to_string(),
-            cause: err.to_string(),
+            .map_err(|error| {
+            error!(index_id=%self.index_id, error=?error, "Failed to deserialize index metadata.");
+
+            MetastoreError::JsonDeserializeError {
+                struct_name: "IndexMetadata".to_string(),
+                message: error.to_string(),
+            }
         })?;
         // `create_timestamp` and `update_timestamp` are stored in dedicated columns but are also
         // duplicated in [`IndexMetadata`]. We must override the duplicates with the authentic
@@ -96,36 +100,24 @@ pub struct Split {
 impl Split {
     /// Deserializes and returns the split's metadata.
     fn split_metadata(&self) -> MetastoreResult<SplitMetadata> {
-        serde_json::from_str::<SplitMetadata>(&self.split_metadata_json).map_err(|err| {
-            error!(
-                index_id = %self.index_id, split_id = %self.split_id,
-                "Failed to deserialize split metadata."
-            );
-            let message = format!(
-                "Failed to deserialize split metadata. index_id=`{}`, split_id=`{}`.",
-                self.index_id, self.split_id
-            );
-            MetastoreError::InternalError {
-                message,
-                cause: err.to_string(),
+        serde_json::from_str::<SplitMetadata>(&self.split_metadata_json).map_err(|error| {
+            error!(index_id=%self.index_id, split_id=%self.split_id, error=?error, "Failed to deserialize split metadata.");
+
+            MetastoreError::JsonDeserializeError {
+                struct_name: "SplitMetadata".to_string(),
+                message: error.to_string(),
             }
         })
     }
 
     /// Deserializes and returns the split's state.
     fn split_state(&self) -> MetastoreResult<SplitState> {
-        SplitState::from_str(&self.split_state).map_err(|err| {
-            error!(
-                index_id = %self.index_id, split_id = %self.split_id, split_state = %self.split_state,
-                "Failed to deserialize split state."
-            );
-            let message = format!(
-                "Failed to deserialize split state: `{}`. index_id=`{}`, split_id=`{}`.",
-                self.split_state, self.index_id, self.split_id
-            );
-            MetastoreError::InternalError {
-                message,
-                cause: err,
+        SplitState::from_str(&self.split_state).map_err(|error| {
+            error!(index_id=%self.index_id, split_id=%self.split_id, split_state=?self.split_state, error=?error, "Failed to deserialize split state.");
+
+            MetastoreError::JsonDeserializeError {
+                struct_name: "SplitState".to_string(),
+                message: error,
             }
         })
     }
@@ -139,13 +131,13 @@ impl TryInto<QuickwitSplit> for Split {
         // `create_timestamp` and `delete_opstamp` are duplicated in `SplitMetadata` and needs to be
         // overridden with the "true" value stored in a column.
         split_metadata.create_timestamp = self.create_timestamp.assume_utc().unix_timestamp();
-        split_metadata.index_id = self.index_id.clone();
-        split_metadata.delete_opstamp = self.delete_opstamp as u64;
         let split_state = self.split_state()?;
         let update_timestamp = self.update_timestamp.assume_utc().unix_timestamp();
         let publish_timestamp = self
             .publish_timestamp
             .map(|publish_timestamp| publish_timestamp.assume_utc().unix_timestamp());
+        split_metadata.index_id = self.index_id;
+        split_metadata.delete_opstamp = self.delete_opstamp as u64;
         Ok(QuickwitSplit {
             split_metadata,
             split_state,
@@ -171,18 +163,12 @@ pub struct DeleteTask {
 impl DeleteTask {
     /// Deserializes and returns the split's metadata.
     fn delete_query(&self) -> MetastoreResult<DeleteQuery> {
-        serde_json::from_str::<DeleteQuery>(&self.delete_query_json).map_err(|err| {
-            error!(
-                opstamp = %self.opstamp,
-                "Failed to deserialize delete query."
-            );
-            let message = format!(
-                "Failed to deserialize delete query. opstamp=`{}`.",
-                self.opstamp
-            );
-            MetastoreError::InternalError {
-                message,
-                cause: err.to_string(),
+        serde_json::from_str::<DeleteQuery>(&self.delete_query_json).map_err(|error| {
+            error!(index_id=%self.index_id, opstamp=%self.opstamp, error=?error, "Failed to deserialize delete query.");
+
+            MetastoreError::JsonDeserializeError {
+                struct_name: "DeleteQuery".to_string(),
+                message: error.to_string(),
             }
         })
     }

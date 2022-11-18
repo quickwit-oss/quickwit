@@ -15,6 +15,7 @@ members = [
   "quickwit-jaeger",
   "quickwit-janitor",
   "quickwit-metastore",
+  "quickwit-metastore-utils",
   "quickwit-opentelemetry",
   "quickwit-proto",
   "quickwit-search",
@@ -191,7 +192,6 @@ quickwit-search = { version = "0.3.1", path = "./quickwit-search" }
 quickwit-serve = { version = "0.3.1", path = "./quickwit-serve" }
 quickwit-storage = { version = "0.3.1", path = "./quickwit-storage" }
 quickwit-telemetry = { version = "0.3.1", path = "./quickwit-telemetry" }
-
 
 fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e758080" }
 tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e758080", default-features = false, features = [

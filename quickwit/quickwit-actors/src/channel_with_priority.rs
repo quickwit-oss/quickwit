@@ -62,6 +62,23 @@ pub enum SendError {
     Full,
 }
 
+#[derive(Debug, Error)]
+pub enum TrySendError<M> {
+    #[error("The channel is closed.")]
+    Disconnected,
+    #[error("The channel is full.")]
+    Full(M),
+}
+
+impl<M> From<flume::TrySendError<M>> for TrySendError<M> {
+    fn from(err: flume::TrySendError<M>) -> Self {
+        match err {
+            flume::TrySendError::Full(msg) => TrySendError::Full(msg),
+            flume::TrySendError::Disconnected(_) => TrySendError::Disconnected,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum RecvError {
     #[error("No message are currently available.")]
@@ -131,6 +148,11 @@ pub struct Sender<T> {
 impl<T> Sender<T> {
     pub fn is_disconnected(&self) -> bool {
         self.low_priority_tx.is_disconnected()
+    }
+
+    pub fn try_send_low_priority(&self, msg: T) -> Result<(), TrySendError<T>> {
+        self.low_priority_tx.try_send(msg)?;
+        Ok(())
     }
 
     pub async fn send_low_priority(&self, msg: T) -> Result<(), SendError> {

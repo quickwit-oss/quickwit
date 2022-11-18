@@ -72,6 +72,7 @@ fn setup_logging_and_tracing(
     if std::env::var_os(QW_ENABLE_JAEGER_EXPORTER_ENV_KEY).is_some() {
         let tracer = opentelemetry_jaeger::new_agent_pipeline()
             .with_service_name("quickwit")
+            .with_auto_split_batch(true)
             .install_batch(opentelemetry::runtime::Tokio)
             .context("Failed to initialize Jaeger exporter.")?;
         registry
