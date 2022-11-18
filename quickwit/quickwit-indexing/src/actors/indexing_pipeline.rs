@@ -357,8 +357,8 @@ impl IndexingPipeline {
             .source_checkpoint(source_id)
             .cloned()
             .unwrap_or_default(); // TODO Have a stricter check.
-        let source = quickwit_supported_sources()
-            .load_source(
+        let source = ctx
+            .protect_future(quickwit_supported_sources().load_source(
                 Arc::new(SourceExecutionContext {
                     metastore: self.params.metastore.clone(),
                     index_id: self.params.pipeline_id.index_id.clone(),
@@ -366,7 +366,7 @@ impl IndexingPipeline {
                     source_config: self.params.source_config.clone(),
                 }),
                 source_checkpoint,
-            )
+            ))
             .await?;
         let actor_source = SourceActor {
             source,
