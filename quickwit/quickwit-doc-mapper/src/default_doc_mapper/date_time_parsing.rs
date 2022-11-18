@@ -63,7 +63,7 @@ pub(super) fn parse_date_time_str(
     ))
 }
 
-pub(super) fn parse_date_time_number(
+pub(super) fn parse_date_time_int(
     timestamp: i64,
     date_time_formats: &[InputDateTimeFormat],
 ) -> Result<TantivyDateTime, String> {
@@ -241,10 +241,10 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_date_time_number() {
+    fn test_parse_date_time_int() {
         {
             let unix_ts_secs = time::OffsetDateTime::now_utc().unix_timestamp();
-            let date_time = parse_date_time_number(
+            let date_time = parse_date_time_int(
                 unix_ts_secs,
                 &[InputDateTimeFormat::ISO8601, InputDateTimeFormat::Timestamp],
             )
@@ -253,7 +253,7 @@ mod tests {
         }
 
         {
-            let error = parse_date_time_number(
+            let error = parse_date_time_int(
                 1668730394917,
                 &[InputDateTimeFormat::ISO8601, InputDateTimeFormat::RFC2822],
             )

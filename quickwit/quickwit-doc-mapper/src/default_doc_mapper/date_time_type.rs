@@ -25,7 +25,7 @@ use tantivy::{DatePrecision as DateTimePrecision, DateTime};
 use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
 
 use super::date_time_format::{InputDateTimeFormat, OutputDateTimeFormat};
-use super::date_time_parsing::{parse_date_time_number, parse_date_time_str};
+use super::date_time_parsing::{parse_date_time_int, parse_date_time_str};
 use super::default_as_true;
 
 /// A struct holding DateTime field options.
@@ -79,7 +79,7 @@ impl QuickwitDateTimeOptions {
                 let timestamp = number.as_i64().ok_or_else(|| {
                     format!("Failed to parse datetime. Expected an integer, got `{number:?}`.")
                 })?;
-                parse_date_time_number(timestamp, &self.input_formats.0)?
+                parse_date_time_int(timestamp, &self.input_formats.0)?
             }
             JsonValue::String(date_time_str) => {
                 parse_date_time_str(&date_time_str, &self.input_formats.0)?

@@ -185,6 +185,11 @@ When specifying multiple input formats, the corresponding parsers are attempted 
 The timezone name format specifier (`%Z`) is not currently supported in `strptime` format.
 :::
 
+In addition, Quickwit support the `output_format` field option to specify how datetimes are represented in search result. This options supports the same value as input formats except for `Timestamp` which is replace by the following formats are for finer grained control:
+- `unix_timestamp_secs`: displays timestamps in seconds.
+- `unix_timestamp_millis`: displays timestamps in milliseconds.
+- `unix_timestamp_micros`: displays timestamps in microseconds.
+
 Example of a mapping for a datetime field:
 
 ```yaml
@@ -195,7 +200,7 @@ input_formats:
   - rfc3339
   - unix_timestamp
   - "%Y %m %d %H:%M:%S.%f %z"
-output_format: unix_timestamp
+output_format: unix_timestamp_secs
 stored: true
 indexed: true
 fast: true
@@ -211,7 +216,7 @@ precision: milliseconds
 | `stored`        | Whether the field values are stored in the document store | `true` |
 | `indexed`       | Whether the field values are indexed | `true` |
 | `fast`          | Whether the field values are stored in a fast field | `false` |
-| `precision`     | The precision (`seconds`, `milliseconds`, or `microseconds`) used to store the fast values. It's also used to display timestamps in search result when output format is set to `unix_timestamp`  | `seconds` |
+| `precision`     | The precision (`seconds`, `milliseconds`, or `microseconds`) used to store the fast values. | `seconds` |
 
 #### `bool` type
 

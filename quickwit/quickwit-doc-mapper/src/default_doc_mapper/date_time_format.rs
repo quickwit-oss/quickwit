@@ -165,7 +165,7 @@ impl<'de> Deserialize<'de> for InputDateTimeFormat {
     }
 }
 
-/// Specifies the datetime and unix timestamp formats to use when displaying date time values.
+/// Specifies the datetime format to use when displaying datetime values.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum OutputDateTimeFormat {
     ISO8601,
