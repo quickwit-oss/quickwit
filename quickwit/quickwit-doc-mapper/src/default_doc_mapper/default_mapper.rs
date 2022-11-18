@@ -37,7 +37,8 @@ use crate::query_builder::build_query;
 use crate::routing_expression::RoutingExpr;
 use crate::sort_by::{validate_sort_by_field_name, SortBy, SortOrder};
 use crate::{
-    DocMapper, DocParsingError, ModeType, QueryParserError, DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
+    DocMapper, DocParsingError, ModeType, QueryParserError, WarmupInfo, DYNAMIC_FIELD_NAME,
+    SOURCE_FIELD_NAME,
 };
 
 /// Specifies the name of the sort field and the sort order for an index.
@@ -453,7 +454,7 @@ impl DocMapper for DefaultDocMapper {
         &self,
         split_schema: Schema,
         request: &SearchRequest,
-    ) -> Result<Box<dyn Query>, QueryParserError> {
+    ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
         let mut tantivy_default_search_field_names = self.default_search_field_names.clone();
         if let Mode::Dynamic(default_mapping_options) = &self.mode {
             if default_mapping_options.indexed {
@@ -1194,7 +1195,7 @@ mod tests {
             query: query.to_string(),
             ..Default::default()
         };
-        let query = doc_mapper
+        let (query, _) = doc_mapper
             .query(doc_mapper.schema(), &search_request)
             .map_err(|err| err.to_string())?;
         Ok(format!("{:?}", query))

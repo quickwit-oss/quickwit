@@ -469,7 +469,7 @@ impl MergeExecutor {
                     "Delete all documents matched by query `{:?}`",
                     search_request
                 );
-                let query = doc_mapper.query(union_index.schema(), &search_request)?;
+                let (query, _) = doc_mapper.query(union_index.schema(), &search_request)?;
                 index_writer.delete_query(query)?;
             }
             debug!("commit-delete-operations");
@@ -635,10 +635,13 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_delete_and_merge_executor() -> anyhow::Result<()> {
+    async fn aux_test_delete_and_merge_executor(
+        index_id: &str,
+        docs: Vec<serde_json::Value>,
+        delete_query: &str,
+        result_docs: Vec<serde_json::Value>,
+    ) -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let index_id = "test-delete-and-merge-index";
         let pipeline_id = IndexingPipelineId {
             index_id: index_id.to_string(),
             node_id: "unknown".to_string(),
@@ -664,10 +667,6 @@ mod tests {
             None,
         )
         .await?;
-        let docs = vec![
-            serde_json::json!({"body": "info", "ts": 1624928208 }),
-            serde_json::json!({"body": "delete", "ts": 1634928208 }),
-        ];
         test_sandbox.add_documents(docs).await?;
         let metastore = test_sandbox.metastore();
         metastore
@@ -675,7 +674,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
-                query: "body:delete".to_string(),
+                query: delete_query.to_string(),
                 search_fields: Vec::new(),
             })
             .await?;
@@ -747,7 +746,7 @@ mod tests {
         let packager_msgs: Vec<IndexedSplitBatch> = merge_packager_inbox.drain_for_test_typed();
         assert_eq!(packager_msgs.len(), 1);
         let split = &packager_msgs[0].splits[0];
-        assert_eq!(split.split_attrs.num_docs, 1);
+        assert_eq!(split.split_attrs.num_docs, result_docs.len() as u64);
         assert_eq!(split.split_attrs.delete_opstamp, 1);
         // Delete operations do not update the num_merge_ops value.
         assert_eq!(split.split_attrs.num_merge_ops, 1);
@@ -762,6 +761,61 @@ mod tests {
             .try_into()?;
         let searcher = reader.searcher();
         assert_eq!(searcher.segment_readers().len(), 1);
+
+        let documents_left = searcher
+            .search(
+                &tantivy::query::AllQuery,
+                &tantivy::collector::TopDocs::with_limit(result_docs.len() + 1),
+            )?
+            .into_iter()
+            .map(|(_, doc_address)| {
+                let doc = searcher.doc(doc_address).unwrap();
+                let doc_json = searcher.schema().to_json(&doc);
+                serde_json::from_str(&doc_json).unwrap()
+            })
+            .collect::<Vec<serde_json::Value>>();
+
+        assert_eq!(documents_left.len(), result_docs.len());
+        for doc in &documents_left {
+            assert!(result_docs.contains(dbg!(doc)));
+        }
+        for doc in &result_docs {
+            assert!(documents_left.contains(doc));
+        }
+
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_delete_and_merge_executor() -> anyhow::Result<()> {
+        aux_test_delete_and_merge_executor(
+            "test-delete-and-merge-index",
+            vec![
+                serde_json::json!({"body": "info", "ts": 1624928208 }),
+                serde_json::json!({"body": "delete", "ts": 1634928208 }),
+            ],
+            "body:delete",
+            vec![serde_json::json!({"body": ["info"], "ts": ["2021-06-29T00:56:48Z"] })],
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_delete_termset_and_merge_executor() -> anyhow::Result<()> {
+        aux_test_delete_and_merge_executor(
+            "test-delete-termset-and-merge-executor",
+            vec![
+                serde_json::json!({"body": "info", "ts": 1624928208 }),
+                serde_json::json!({"body": "info", "ts": 1624928209 }),
+                serde_json::json!({"body": "delete", "ts": 1634928208 }),
+                serde_json::json!({"body": "delete", "ts": 1634928209 }),
+            ],
+            "body: IN [delete]",
+            vec![
+                serde_json::json!({"body": ["info"], "ts": ["2021-06-29T00:56:48Z"] }),
+                serde_json::json!({"body": ["info"], "ts": ["2021-06-29T00:56:49Z"] }),
+            ],
+        )
+        .await
     }
 }
