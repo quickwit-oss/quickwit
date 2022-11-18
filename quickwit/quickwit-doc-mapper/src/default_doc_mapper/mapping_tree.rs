@@ -194,7 +194,7 @@ fn extract_json_val(
     let vals = named_doc.remove(&full_path)?;
     let mut vals_with_correct_type_it = vals
         .into_iter()
-        .filter_map(|value| value_to_json(value, leaf_type));
+        .flat_map(|value| value_to_json(value, leaf_type));
     match cardinality {
         Cardinality::SingleValue => vals_with_correct_type_it.next(),
         Cardinality::MultiValues => Some(JsonValue::Array(vals_with_correct_type_it.collect())),

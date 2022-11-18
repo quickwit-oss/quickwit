@@ -24,7 +24,7 @@ use tantivy::schema::Value as TantivyValue;
 use tantivy::{DatePrecision as DateTimePrecision, DateTime};
 use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
 
-use super::date_time_format::{InputDateTimeFormat, OutputDateTimeFormat};
+use super::date_time_format::{DateTimeInputFormat, DateTimeOutputFormat};
 use super::date_time_parsing::{parse_date_time_int, parse_date_time_str};
 use super::default_as_true;
 
@@ -42,7 +42,7 @@ pub struct QuickwitDateTimeOptions {
 
     /// Output format
     #[serde(default)]
-    pub output_format: OutputDateTimeFormat,
+    pub output_format: DateTimeOutputFormat,
 
     /// Internal storage precision.
     #[serde(default)]
@@ -63,7 +63,7 @@ impl Default for QuickwitDateTimeOptions {
         Self {
             description: None,
             input_formats: InputFormats::default(),
-            output_format: OutputDateTimeFormat::default(),
+            output_format: DateTimeOutputFormat::default(),
             precision: DateTimePrecision::default(),
             indexed: true,
             stored: true,
@@ -97,20 +97,20 @@ impl QuickwitDateTimeOptions {
     pub(crate) fn format_to_json(&self, date_time: DateTime) -> Result<JsonValue, String> {
         let date = date_time.into_utc();
         let format_result = match &self.output_format {
-            OutputDateTimeFormat::RCF3339 => date.format(&Rfc3339).map(JsonValue::String),
-            OutputDateTimeFormat::ISO8601 => date.format(&Iso8601::DEFAULT).map(JsonValue::String),
-            OutputDateTimeFormat::RFC2822 => date.format(&Rfc2822).map(JsonValue::String),
-            OutputDateTimeFormat::Strptime(strftime_parser) => strftime_parser
+            DateTimeOutputFormat::RCF3339 => date.format(&Rfc3339).map(JsonValue::String),
+            DateTimeOutputFormat::ISO8601 => date.format(&Iso8601::DEFAULT).map(JsonValue::String),
+            DateTimeOutputFormat::RFC2822 => date.format(&Rfc2822).map(JsonValue::String),
+            DateTimeOutputFormat::Strptime(strftime_parser) => strftime_parser
                 .format_date_time(&date)
                 .map(JsonValue::String),
-            OutputDateTimeFormat::TimestampSecs => {
+            DateTimeOutputFormat::TimestampSecs => {
                 Ok(JsonValue::Number(date.unix_timestamp().into()))
             }
-            OutputDateTimeFormat::TimestampMillis => {
+            DateTimeOutputFormat::TimestampMillis => {
                 let timestamp_value = (date.unix_timestamp_nanos() / 1_000_000) as i64;
                 Ok(JsonValue::Number(timestamp_value.into()))
             }
-            OutputDateTimeFormat::TimestampMicros => {
+            DateTimeOutputFormat::TimestampMicros => {
                 let timestamp_value = (date.unix_timestamp_nanos() / 1_000) as i64;
                 Ok(JsonValue::Number(timestamp_value.into()))
             }
@@ -120,13 +120,13 @@ impl QuickwitDateTimeOptions {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct InputFormats(Vec<InputDateTimeFormat>);
+pub struct InputFormats(Vec<DateTimeInputFormat>);
 
 impl Default for InputFormats {
     fn default() -> Self {
         Self(vec![
-            InputDateTimeFormat::RCF3339,
-            InputDateTimeFormat::Timestamp,
+            DateTimeInputFormat::RCF3339,
+            DateTimeInputFormat::Timestamp,
         ])
     }
 }
@@ -134,7 +134,7 @@ impl Default for InputFormats {
 impl<'de> Deserialize<'de> for InputFormats {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
-        let date_time_formats = IndexSet::<InputDateTimeFormat>::deserialize(deserializer)?;
+        let date_time_formats = IndexSet::<DateTimeInputFormat>::deserialize(deserializer)?;
 
         if date_time_formats.is_empty() {
             return Ok(InputFormats::default());
@@ -181,11 +181,11 @@ mod tests {
             }
             _ => panic!("Expected a date time field mapping."),
         };
-        let expected_input_formats = InputFormats(vec![InputDateTimeFormat::RCF3339]);
+        let expected_input_formats = InputFormats(vec![DateTimeInputFormat::RCF3339]);
         let expected_date_time_options = QuickwitDateTimeOptions {
             description: Some("When the record was last updated.".to_string()),
             input_formats: expected_input_formats,
-            output_format: OutputDateTimeFormat::RCF3339,
+            output_format: DateTimeOutputFormat::RCF3339,
             precision: DateTimePrecision::Milliseconds,
             indexed: true,
             fast: true,
@@ -223,11 +223,11 @@ mod tests {
             }
             _ => panic!("Expected a date time field mapping."),
         };
-        let expected_input_formats = InputFormats(vec![InputDateTimeFormat::RCF3339]);
+        let expected_input_formats = InputFormats(vec![DateTimeInputFormat::RCF3339]);
         let expected_date_time_options = QuickwitDateTimeOptions {
             description: Some("When the record was last updated.".to_string()),
             input_formats: expected_input_formats,
-            output_format: OutputDateTimeFormat::TimestampSecs,
+            output_format: DateTimeOutputFormat::TimestampSecs,
             precision: DateTimePrecision::Milliseconds,
             indexed: true,
             fast: true,
@@ -242,11 +242,11 @@ mod tests {
         assert_eq!(date_time_options, QuickwitDateTimeOptions::default());
         assert_eq!(
             date_time_options.input_formats.0,
-            &[InputDateTimeFormat::RCF3339, InputDateTimeFormat::Timestamp]
+            &[DateTimeInputFormat::RCF3339, DateTimeInputFormat::Timestamp]
         );
         assert_eq!(
             date_time_options.output_format,
-            OutputDateTimeFormat::RCF3339
+            DateTimeOutputFormat::RCF3339
         );
         assert_eq!(date_time_options.precision, DateTimePrecision::Seconds);
         assert!(date_time_options.indexed);
@@ -316,7 +316,7 @@ mod tests {
             let input_formats: InputFormats = serde_json::from_str(input_formats_json).unwrap();
             assert_eq!(
                 input_formats.0,
-                &[InputDateTimeFormat::RCF3339, InputDateTimeFormat::Timestamp]
+                &[DateTimeInputFormat::RCF3339, DateTimeInputFormat::Timestamp]
             );
         }
         {
@@ -324,7 +324,7 @@ mod tests {
             let input_formats: InputFormats = serde_json::from_str(input_formats_json).unwrap();
             assert_eq!(
                 input_formats.0,
-                &[InputDateTimeFormat::RCF3339, InputDateTimeFormat::Timestamp]
+                &[DateTimeInputFormat::RCF3339, DateTimeInputFormat::Timestamp]
             );
         }
     }
@@ -344,8 +344,8 @@ mod tests {
     fn test_date_time_options_parse_json() {
         let date_time_options = QuickwitDateTimeOptions {
             input_formats: InputFormats(vec![
-                InputDateTimeFormat::RCF3339,
-                InputDateTimeFormat::Timestamp,
+                DateTimeInputFormat::RCF3339,
+                DateTimeInputFormat::Timestamp,
             ]),
             ..Default::default()
         };
