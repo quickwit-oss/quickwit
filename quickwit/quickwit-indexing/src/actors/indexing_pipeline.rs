@@ -246,10 +246,12 @@ impl IndexingPipeline {
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         let _spawn_pipeline_permit = SPAWN_PIPELINE_SEMAPHORE.acquire().await.expect("Failed to acquire spawn pipeline permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
         self.statistics.num_spawn_attempts += 1;
+        let index_id = self.params.pipeline_id.index_id.as_str();
+        let source_id = self.params.pipeline_id.source_id.as_str();
         self.kill_switch = ctx.kill_switch().child();
         info!(
-            index_id=%self.params.pipeline_id.index_id,
-            source_id=%self.params.pipeline_id.source_id,
+            index_id=%index_id,
+            source_id=%source_id,
             pipeline_ord=%self.params.pipeline_id.pipeline_ord,
             root_dir=%self.params.indexing_directory.path().display(),
             "Spawning indexing pipeline.",
@@ -267,11 +269,21 @@ impl IndexingPipeline {
         let (publisher_mailbox, publisher_handler) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
+            .set_backpressure_micros_counter(
+                crate::metrics::INDEXER_METRICS
+                    .backpressure_micros
+                    .with_label_values([index_id, "Publisher"]),
+            )
             .spawn(publisher);
 
         let sequencer = Sequencer::new(publisher_mailbox);
         let (sequencer_mailbox, sequencer_handler) = ctx
             .spawn_actor()
+            .set_backpressure_micros_counter(
+                crate::metrics::INDEXER_METRICS
+                    .backpressure_micros
+                    .with_label_values([index_id, "Sequencer"]),
+            )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(sequencer);
 
@@ -285,6 +297,11 @@ impl IndexingPipeline {
         );
         let (uploader_mailbox, uploader_handler) = ctx
             .spawn_actor()
+            .set_backpressure_micros_counter(
+                crate::metrics::INDEXER_METRICS
+                    .backpressure_micros
+                    .with_label_values([index_id, "Uploader"]),
+            )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(uploader);
 
@@ -314,12 +331,17 @@ impl IndexingPipeline {
         );
         let (indexer_mailbox, indexer_handler) = ctx
             .spawn_actor()
+            .set_backpressure_micros_counter(
+                crate::metrics::INDEXER_METRICS
+                    .backpressure_micros
+                    .with_label_values([index_id, "Indexer"]),
+            )
             .set_kill_switch(self.kill_switch.clone())
             .spawn(indexer);
 
         let doc_processor = DocProcessor::new(
-            self.params.pipeline_id.index_id.clone(),
-            self.params.pipeline_id.source_id.clone(),
+            index_id.to_string(),
+            source_id.to_string(),
             self.params.doc_mapper.clone(),
             indexer_mailbox,
         );
@@ -329,14 +351,10 @@ impl IndexingPipeline {
             .spawn(doc_processor);
 
         // Fetch index_metadata to be sure to have the last updated checkpoint.
-        let index_metadata = self
-            .params
-            .metastore
-            .index_metadata(&self.params.pipeline_id.index_id)
-            .await?;
+        let index_metadata = self.params.metastore.index_metadata(index_id).await?;
         let source_checkpoint = index_metadata
             .checkpoint
-            .source_checkpoint(&self.params.pipeline_id.source_id)
+            .source_checkpoint(source_id)
             .cloned()
             .unwrap_or_default(); // TODO Have a stricter check.
         let source = quickwit_supported_sources()
