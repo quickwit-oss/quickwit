@@ -78,6 +78,52 @@ async fn test_single_node_simple() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn test_single_node_termset() -> anyhow::Result<()> {
+    let index_id = "single-node-termset-1";
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: title
+                type: text
+              - name: body
+                type: text
+              - name: url
+                type: text
+              - name: binary
+                type: bytes
+        "#;
+    let test_sandbox =
+        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"], None).await?;
+    let docs = vec![
+        json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy", "binary": "dGhpcyBpcyBhIHRlc3Qu"}),
+        json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle", "binary": "bWFkZSB5b3UgbG9vay4="}),
+    ];
+    test_sandbox.add_documents(docs.clone()).await?;
+    let search_request = SearchRequest {
+        index_id: index_id.to_string(),
+        query: "title: IN [beagle]".to_string(),
+        start_timestamp: None,
+        end_timestamp: None,
+        max_hits: 2,
+        start_offset: 0,
+        ..Default::default()
+    };
+    let single_node_result = single_node_search(
+        &search_request,
+        &*test_sandbox.metastore(),
+        test_sandbox.storage_uri_resolver(),
+    )
+    .await?;
+    assert_eq!(single_node_result.num_hits, 1);
+    assert_eq!(single_node_result.hits.len(), 1);
+    let hit_json: serde_json::Value = serde_json::from_str(&single_node_result.hits[0].json)?;
+    let expected_json: serde_json::Value = json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle", "binary": "bWFkZSB5b3UgbG9vay4="});
+    assert_json_include!(actual: hit_json, expected: expected_json);
+    assert!(single_node_result.elapsed_time_micros > 10);
+    assert!(single_node_result.elapsed_time_micros < 1_000_000);
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_single_search_with_snippet() -> anyhow::Result<()> {
     let index_id = "single-node-with-snippet";
     let doc_mapping_yaml = r#"

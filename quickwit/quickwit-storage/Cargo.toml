@@ -42,6 +42,7 @@ quickwit-common = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
+proptest = { workspace = true }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 rusoto_mock = { workspace = true }
 tokio = { workspace = true }
