@@ -24,8 +24,8 @@ use futures::TryStreamExt;
 use opentelemetry::global;
 use opentelemetry::propagation::Extractor;
 use quickwit_proto::{
-    convert_to_grpc_result, search_service_server as grpc, tonic, LeafSearchStreamRequest,
-    LeafSearchStreamResponse, ServiceError,
+    convert_to_grpc_result, search_service_server as grpc, set_parent_span_from_request_metadata,
+    tonic, LeafSearchStreamRequest, LeafSearchStreamResponse, ServiceError,
 };
 use quickwit_search::SearchService;
 use tracing::{instrument, Span};
@@ -84,9 +84,7 @@ impl grpc::SearchService for GrpcSearchAdapter {
         &self,
         request: tonic::Request<quickwit_proto::LeafSearchRequest>,
     ) -> Result<tonic::Response<quickwit_proto::LeafSearchResponse>, tonic::Status> {
-        let parent_cx =
-            global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
-        Span::current().set_parent(parent_cx);
+        set_parent_span_from_request_metadata(request.metadata());
         let leaf_search_request = request.into_inner();
         let leaf_search_res = self.0.leaf_search(leaf_search_request).await;
         convert_to_grpc_result(leaf_search_res)
@@ -97,9 +95,7 @@ impl grpc::SearchService for GrpcSearchAdapter {
         &self,
         request: tonic::Request<quickwit_proto::FetchDocsRequest>,
     ) -> Result<tonic::Response<quickwit_proto::FetchDocsResponse>, tonic::Status> {
-        let parent_cx =
-            global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
-        Span::current().set_parent(parent_cx);
+        set_parent_span_from_request_metadata(request.metadata());
         let fetch_docs_request = request.into_inner();
         let fetch_docs_res = self.0.fetch_docs(fetch_docs_request).await;
         convert_to_grpc_result(fetch_docs_res)
@@ -117,9 +113,7 @@ impl grpc::SearchService for GrpcSearchAdapter {
         &self,
         request: tonic::Request<LeafSearchStreamRequest>,
     ) -> Result<tonic::Response<Self::LeafSearchStreamStream>, tonic::Status> {
-        let parent_cx =
-            global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
-        Span::current().set_parent(parent_cx);
+        set_parent_span_from_request_metadata(request.metadata());
         let leaf_search_request = request.into_inner();
         let leaf_search_result = self
             .0
