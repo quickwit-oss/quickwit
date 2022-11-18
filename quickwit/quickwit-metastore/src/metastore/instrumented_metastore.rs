@@ -85,10 +85,10 @@ impl Metastore for InstrumentedMetastore {
     // Index API
 
     async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
-        let index_id = index_metadata.index_id.clone();
+        let index_id = index_metadata.index_id().to_string();
         instrument!(
             self.underlying.create_index(index_metadata).await,
-            [create_index, index_id.as_ref()]
+            [create_index, index_id.as_str()]
         );
     }
 

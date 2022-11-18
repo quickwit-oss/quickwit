@@ -143,7 +143,6 @@ async fn get_indexes_metadatas(
 #[cfg(test)]
 mod tests {
     use assert_json_diff::assert_json_include;
-    use quickwit_common::uri::Uri;
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_storage::StorageUriResolver;
@@ -162,11 +161,7 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        let index_service = IndexService::new(
-            Arc::new(metastore),
-            StorageUriResolver::for_test(),
-            Uri::from_well_formed("ram:///indexes".to_string()),
-        );
+        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
         let index_management_handler =
             super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
         let resp = warp::test::request()
@@ -180,7 +175,7 @@ mod tests {
             "index_uri": "ram:///indexes/test-index",
         });
         assert_json_include!(
-            actual: actual_response_json,
+            actual: actual_response_json.get("index_config").unwrap(),
             expected: expected_response_json
         );
         Ok(())
@@ -192,11 +187,7 @@ mod tests {
         metastore
             .expect_list_all_splits()
             .returning(|_index_id: &str| Ok(vec![mock_split("split_1")]));
-        let index_service = IndexService::new(
-            Arc::new(metastore),
-            StorageUriResolver::for_test(),
-            Uri::from_well_formed("ram:///indexes".to_string()),
-        );
+        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
         let index_management_handler =
             super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
         let resp = warp::test::request()
@@ -225,11 +216,7 @@ mod tests {
                 "ram:///indexes/test-index",
             )])
         });
-        let index_service = IndexService::new(
-            Arc::new(metastore),
-            StorageUriResolver::for_test(),
-            Uri::from_well_formed("ram:///indexes".to_string()),
-        );
+        let index_service = IndexService::new(Arc::new(metastore), StorageUriResolver::for_test());
         let index_management_handler =
             super::index_management_handlers(Arc::new(index_service)).recover(recover_fn);
         let resp = warp::test::request()
@@ -238,12 +225,15 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 200);
         let actual_response_json: serde_json::Value = serde_json::from_slice(resp.body())?;
-        let expected_response_json = serde_json::json!([{
+        let actual_response_arr: &Vec<serde_json::Value> = actual_response_json.as_array().unwrap();
+        assert_eq!(actual_response_arr.len(), 1);
+        let actual_index_metadata_json: &serde_json::Value = &actual_response_arr[0];
+        let expected_response_json = serde_json::json!({
             "index_id": "test-index",
             "index_uri": "ram:///indexes/test-index",
-        }]);
+        });
         assert_json_include!(
-            actual: actual_response_json,
+            actual: actual_index_metadata_json.get("index_config").unwrap(),
             expected: expected_response_json
         );
         Ok(())

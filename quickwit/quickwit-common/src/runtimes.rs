@@ -42,7 +42,7 @@ pub enum RuntimeType {
     /// The non-blocking runtime is closer to what one would expect from
     /// a regular tokio runtime.
     ///
-    /// Task are expect to yield within 500 microsecs.
+    /// Task are expect to yield within 500 micros.
     NonBlocking,
 
     /// The ingest API is a bit special in that it has its own

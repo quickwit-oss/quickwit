@@ -95,13 +95,13 @@ function IndexView() {
             <JsonEditor content={index.metadata.sources} resizeOnMount={false} />
           </CustomTabPanel>
           <CustomTabPanel value="3">
-            <JsonEditor content={index.metadata.doc_mapping} resizeOnMount={false} />
+            <JsonEditor content={index.metadata.index_config.doc_mapping} resizeOnMount={false} />
           </CustomTabPanel>
           <CustomTabPanel value="4">
-            <JsonEditor content={index.metadata.indexing_settings} resizeOnMount={false} />
+            <JsonEditor content={index.metadata.index_config.indexing_settings} resizeOnMount={false} />
           </CustomTabPanel>
           <CustomTabPanel value="5">
-            <JsonEditor content={index.metadata.search_settings} resizeOnMount={false} />
+            <JsonEditor content={index.metadata.index_config.search_settings} resizeOnMount={false} />
           </CustomTabPanel>
           <CustomTabPanel value="6">
             <JsonEditor content={index.splits} resizeOnMount={false} />

@@ -11,9 +11,8 @@ In addition to the `index_id`, the index configuration lets you define five item
 - The **doc mapping**: it defines how a document and the fields it contains are stored and indexed for a given index.
 - The **indexing settings**: it defines the timestamp field used for sharding, and some more advanced parameters like the merge policy.
 - The **search settings**: it defines the default search fields `default_search_fields`, a list of fields that Quickwit will search into if the user query does not explicitly target a field.
-- The (data) **sources**: it defines a list of sources of types like file or Kafka source.
 
-Configuration is set at index creation and cannot be modified except for the sources using the CLI ``quickwit source``  commands.
+Configuration is set at index creation and cannot be modified with the current version of Quickwit.
 
 ## Config file format
 
@@ -21,7 +20,7 @@ The index configuration format is YAML. When a key is absent from the configurat
 Here is a complete example suited for the HDFS logs dataset:
 
 ```yaml
-version: 0 # File format version.
+version: 3 # File format version.
 
 index_id: "hdfs"
 
@@ -53,16 +52,6 @@ indexing_settings:
 
 search_settings:
   default_search_fields: [severity_text, body]
-
-sources:
- - hdfs: hdfs-log-kafka
-   source_type: kafka
-   params:
-     topic: hdfs-logs
-     client_params:
-       bootstrap.servers: localhost:9092
-       group.id: quickwit-consumer-group
-       security.protocol: SSL
 ```
 
 ## Index uri
@@ -365,7 +354,7 @@ field_mappings:
 The `mode` describes how Quickwit should behave when it receives a field that is not defined in the field mapping.
 
 Quickwit offers you three different modes:
-- `lenient`: unmapped fields are dismissed by Quickwit.
+- `lenient` (default value): unmapped fields are dismissed by Quickwit.
 - `strict`: if a document contains a field that is not mapped, quickwit will dismiss it, and count it as an error.
 - `dynamic`: unmapped fields are gathered by Quickwit and handled as defined in the `dynamic_mapping` parameter.
 
@@ -593,8 +582,3 @@ retention:
 (2) `cutoff_reference` possible values:
   - `publish_timestamp` will evaluate based on the timestamp the split was published at.
   - `split_timestamp_field` will evaluate based on the index timestamp field specified in the (`indexing_settings.timestamp_field`) settings.
-
-
-## Sources
-
-An index can have one or several data sources. [Learn how to configure them](source-config.md).

@@ -23,12 +23,12 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Health, Mailbox,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Healthz, Mailbox,
     Observation,
 };
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_config::{
-    build_doc_mapper, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
+    build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
 };
 use quickwit_ingest_api::QUEUES_DIR_NAME;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
@@ -86,7 +86,7 @@ impl ServiceError for IndexingServiceError {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct IndexingServiceState {
+pub struct IndexingServiceCounters {
     pub num_running_pipelines: usize,
     pub num_successful_pipelines: usize,
     pub num_failed_pipelines: usize,
@@ -122,7 +122,7 @@ pub struct IndexingService {
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
     indexing_pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
-    state: IndexingServiceState,
+    counters: IndexingServiceCounters,
     indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
     local_split_store: Arc<LocalSplitStore>,
     max_concurrent_split_uploads: usize,
@@ -130,11 +130,6 @@ pub struct IndexingService {
 }
 
 impl IndexingService {
-    pub fn check_health(&self) -> Health {
-        // In the future, check metrics such as available disk space.
-        Health::Healthy
-    }
-
     pub async fn new(
         node_id: String,
         data_dir_path: PathBuf,
@@ -156,7 +151,7 @@ impl IndexingService {
             storage_resolver,
             local_split_store: Arc::new(local_split_store),
             indexing_pipeline_handles: Default::default(),
-            state: Default::default(),
+            counters: Default::default(),
             indexing_directories: HashMap::new(),
             max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
             merge_pipeline_handles: HashMap::new(),
@@ -174,7 +169,7 @@ impl IndexingService {
                 index_id: pipeline_id.index_id.clone(),
                 source_id: pipeline_id.source_id.clone(),
             })?;
-        self.state.num_running_pipelines -= 1;
+        self.counters.num_running_pipelines -= 1;
         Ok(pipeline_handle)
     }
 
@@ -206,8 +201,11 @@ impl IndexingService {
             node_id: self.node_id.clone(),
             pipeline_ord,
         };
-        let index_metadata = self.index_metadata(ctx, &pipeline_id.index_id).await?;
-        self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_metadata, source_config)
+        let index_config = self
+            .index_metadata(ctx, &pipeline_id.index_id)
+            .await?
+            .into_index_config();
+        self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_config, source_config)
             .await?;
         Ok(pipeline_id)
     }
@@ -218,9 +216,13 @@ impl IndexingService {
         index_id: String,
     ) -> Result<Vec<IndexingPipelineId>, IndexingServiceError> {
         let mut pipeline_ids = Vec::new();
-        let index_metadata = self.index_metadata(ctx, &index_id).await?;
+        let IndexMetadata {
+            index_config,
+            sources,
+            ..
+        } = self.index_metadata(ctx, &index_id).await?;
 
-        for source_config in index_metadata.sources.values() {
+        for source_config in sources.values() {
             // Skip disabled source
             if !source_config.enabled {
                 continue;
@@ -241,7 +243,7 @@ impl IndexingService {
                 self.spawn_pipeline_inner(
                     ctx,
                     pipeline_id.clone(),
-                    index_metadata.clone(),
+                    index_config.clone(),
                     source_config.clone(),
                 )
                 .await?;
@@ -256,7 +258,7 @@ impl IndexingService {
         &mut self,
         ctx: &ActorContext<Self>,
         pipeline_id: IndexingPipelineId,
-        index_metadata: IndexMetadata,
+        index_config: IndexConfig,
         source_config: SourceConfig,
     ) -> Result<(), IndexingServiceError> {
         if self.indexing_pipeline_handles.contains_key(&pipeline_id) {
@@ -270,10 +272,10 @@ impl IndexingService {
         let indexing_directory = self
             .get_or_create_indexing_directory(&pipeline_id, indexing_dir_path)
             .await?;
-        let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
+        let storage = self.storage_resolver.resolve(&index_config.index_uri)?;
         let queues_dir_path = self.data_dir_path.join(QUEUES_DIR_NAME);
         let merge_policy =
-            crate::merge_policy::merge_policy_from_settings(&index_metadata.indexing_settings);
+            crate::merge_policy::merge_policy_from_settings(&index_config.indexing_settings);
         let split_store = IndexingSplitStore::new(
             storage.clone(),
             merge_policy.clone(),
@@ -281,9 +283,9 @@ impl IndexingService {
         );
 
         let doc_mapper = build_doc_mapper(
-            &index_metadata.doc_mapping,
-            &index_metadata.search_settings,
-            &index_metadata.indexing_settings,
+            &index_config.doc_mapping,
+            &index_config.search_settings,
+            &index_config.indexing_settings,
         )
         .map_err(IndexingServiceError::InvalidParams)?;
 
@@ -294,7 +296,7 @@ impl IndexingService {
             metastore: self.metastore.clone(),
             split_store: split_store.clone(),
             merge_policy,
-            merge_max_io_num_bytes_per_sec: index_metadata
+            merge_max_io_num_bytes_per_sec: index_config
                 .indexing_settings
                 .resources
                 .max_merge_write_throughput,
@@ -311,7 +313,7 @@ impl IndexingService {
         let pipeline_params = IndexingPipelineParams {
             pipeline_id: pipeline_id.clone(),
             doc_mapper,
-            indexing_settings: index_metadata.indexing_settings,
+            indexing_settings: index_config.indexing_settings.clone(),
             source_config,
             indexing_directory,
             metastore: self.metastore.clone(),
@@ -326,7 +328,7 @@ impl IndexingService {
         let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
         self.indexing_pipeline_handles
             .insert(pipeline_id, pipeline_handle);
-        self.state.num_running_pipelines += 1;
+        self.counters.num_running_pipelines += 1;
         Ok(())
     }
 
@@ -335,14 +337,17 @@ impl IndexingService {
         ctx: &ActorContext<Self>,
         pipeline_id: IndexingPipelineId,
     ) -> Result<IndexingPipelineId, IndexingServiceError> {
-        let index_metadata = self.index_metadata(ctx, &pipeline_id.index_id).await?;
+        let index_config = self
+            .index_metadata(ctx, &pipeline_id.index_id)
+            .await?
+            .into_index_config();
         let source_config = SourceConfig {
             source_id: pipeline_id.source_id.clone(),
             num_pipelines: 1,
             enabled: true,
             source_params: SourceParams::Vec(VecSourceParams::default()),
         };
-        self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_metadata, source_config)
+        self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_config, source_config)
             .await?;
         Ok(pipeline_id)
     }
@@ -369,8 +374,8 @@ impl IndexingService {
                             pipeline_ord=%pipeline_id.pipeline_ord,
                             "Indexing pipeline exited successfully."
                         );
-                        self.state.num_successful_pipelines += 1;
-                        self.state.num_running_pipelines -= 1;
+                        self.counters.num_successful_pipelines += 1;
+                        self.counters.num_running_pipelines -= 1;
                         false
                     }
                     ActorState::Failure => {
@@ -380,8 +385,8 @@ impl IndexingService {
                             pipeline_ord=%pipeline_id.pipeline_ord,
                             "Indexing pipeline exited with failure."
                         );
-                        self.state.num_failed_pipelines += 1;
-                        self.state.num_running_pipelines -= 1;
+                        self.counters.num_failed_pipelines += 1;
+                        self.counters.num_running_pipelines -= 1;
                         false
                     }
                 },
@@ -416,7 +421,7 @@ impl IndexingService {
             .retain(|_, merge_pipeline_mailbox_handle| {
                 merge_pipeline_mailbox_handle.handle.state().is_running()
             });
-        self.state.num_running_merge_pipelines = self.merge_pipeline_handles.len();
+        self.counters.num_running_merge_pipelines = self.merge_pipeline_handles.len();
         Ok(())
     }
 
@@ -517,10 +522,10 @@ impl Handler<SuperviseLoop> for IndexingService {
 
 #[async_trait]
 impl Actor for IndexingService {
-    type ObservableState = IndexingServiceState;
+    type ObservableState = IndexingServiceCounters;
 
     fn observable_state(&self) -> Self::ObservableState {
-        self.state.clone()
+        self.counters.clone()
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
@@ -609,7 +614,7 @@ impl Handler<ShutdownPipelines> for IndexingService {
         for pipeline_id in pipelines_to_shutdown {
             if let Some(pipeline_handle) = self.indexing_pipeline_handles.remove(&pipeline_id) {
                 pipeline_handle.quit().await;
-                self.state.num_running_pipelines -= 1;
+                self.counters.num_running_pipelines -= 1;
             }
         }
         Ok(Ok(()))
@@ -626,9 +631,23 @@ impl Handler<ShutdownPipeline> for IndexingService {
     ) -> Result<Self::Reply, ActorExitStatus> {
         if let Some(pipeline_handle) = self.indexing_pipeline_handles.remove(&message.pipeline_id) {
             pipeline_handle.quit().await;
-            self.state.num_running_pipelines -= 1;
+            self.counters.num_running_pipelines -= 1;
         }
         Ok(Ok(()))
+    }
+}
+
+#[async_trait]
+impl Handler<Healthz> for IndexingService {
+    type Reply = bool;
+
+    async fn handle(
+        &mut self,
+        _msg: Healthz,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<bool, ActorExitStatus> {
+        // In the future, check metrics such as available disk space.
+        Ok(true)
     }
 }
 
@@ -636,7 +655,7 @@ impl Handler<ShutdownPipeline> for IndexingService {
 mod tests {
     use std::time::Duration;
 
-    use quickwit_actors::{ObservationType, Supervisable, Universe, HEARTBEAT};
+    use quickwit_actors::{Health, ObservationType, Supervisable, Universe, HEARTBEAT};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
     use quickwit_config::{SourceConfig, VecSourceParams};

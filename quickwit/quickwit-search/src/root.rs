@@ -22,7 +22,7 @@ use std::collections::{HashMap, HashSet};
 
 use futures::future::try_join_all;
 use itertools::Itertools;
-use quickwit_config::build_doc_mapper;
+use quickwit_config::{build_doc_mapper, IndexConfig};
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse, PartialHit,
@@ -147,12 +147,15 @@ pub async fn root_search(
 ) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
 
-    let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
+    let index_config: IndexConfig = metastore
+        .index_metadata(&search_request.index_id)
+        .await?
+        .into_index_config();
 
     let doc_mapper = build_doc_mapper(
-        &index_metadata.doc_mapping,
-        &index_metadata.search_settings,
-        &index_metadata.indexing_settings,
+        &index_config.doc_mapping,
+        &index_config.search_settings,
+        &index_config.indexing_settings,
     )
     .map_err(|err| {
         SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
@@ -180,6 +183,8 @@ pub async fn root_search(
         })
         .collect();
 
+    let index_uri = &index_config.index_uri;
+
     let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
     let assigned_leaf_search_jobs = client_pool.assign_jobs(jobs, &HashSet::default())?;
     debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
@@ -190,7 +195,7 @@ pub async fn root_search(
                 let leaf_request = jobs_to_leaf_request(
                     search_request,
                     &doc_mapper_str,
-                    index_metadata.index_uri.as_ref(),
+                    index_uri.as_ref(),
                     client_jobs,
                 );
                 cluster_client.leaf_search(leaf_request, client)
@@ -251,7 +256,7 @@ pub async fn root_search(
                         partial_hits,
                         index_id: search_request.index_id.to_string(),
                         split_offsets,
-                        index_uri: index_metadata.index_uri.to_string(),
+                        index_uri: index_uri.to_string(),
                         search_request: None,
                         doc_mapper: None,
                     }
@@ -260,7 +265,7 @@ pub async fn root_search(
                         partial_hits,
                         index_id: search_request.index_id.to_string(),
                         split_offsets,
-                        index_uri: index_metadata.index_uri.to_string(),
+                        index_uri: index_uri.to_string(),
                         search_request: Some(search_request.clone()),
                         doc_mapper: Some(doc_mapper_str.clone()),
                     }
@@ -357,7 +362,7 @@ fn compute_split_cost(_split_metadata: &SplitMetadata) -> u32 {
 pub fn jobs_to_leaf_request(
     request: &SearchRequest,
     doc_mapper_str: &str,
-    index_uri: &str,
+    index_uri: &str, // TODO make Uri
     jobs: Vec<SearchJob>,
 ) -> LeafSearchRequest {
     let mut request_with_offset_0 = request.clone();
