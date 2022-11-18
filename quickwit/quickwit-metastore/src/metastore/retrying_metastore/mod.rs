@@ -31,7 +31,7 @@ use self::retry::{retry, RetryParams};
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreResult, Split, SplitMetadata};
 
-/// Retry layer for [`MetastoreGrpcClient`].
+/// Retry layer for a [`Metastore`].
 /// This is a band-aid solution for now. This will be removed after retry can be usable on
 /// tonic level.
 /// Tracking Issue: <https://github.com/tower-rs/tower/issues/682>
@@ -41,7 +41,7 @@ pub struct RetryingMetastore {
 }
 
 impl RetryingMetastore {
-    /// Creates a retry layer for [`MetastoreGrpcClient`]
+    /// Creates a retry layer for a [`Metastore`]
     pub fn new(metastore: Box<dyn Metastore>) -> Self {
         Self {
             inner: metastore,
