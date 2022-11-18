@@ -22,7 +22,7 @@ use tantivy::DateTime as TantivyDateTime;
 use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
 use time::OffsetDateTime;
 
-use super::date_time_format::DateTimeFormat;
+use super::date_time_format::InputDateTimeFormat;
 
 // Minimum supported timestamp value in seconds (13 Apr 1972 23:59:55 GMT).
 const MIN_TIMESTAMP_SECONDS: i64 = 72_057_595;
@@ -30,16 +30,22 @@ const MIN_TIMESTAMP_SECONDS: i64 = 72_057_595;
 // Maximum supported timestamp value in seconds (16 Mar 2242 12:56:31 GMT).
 const MAX_TIMESTAMP_SECONDS: i64 = 8_589_934_591;
 
-pub(super) fn parse_date_time(
+pub(super) fn parse_date_time_str(
     date_time_str: &str,
-    date_time_formats: &[DateTimeFormat],
+    date_time_formats: &[InputDateTimeFormat],
 ) -> Result<TantivyDateTime, String> {
     for date_time_format in date_time_formats {
         let date_time_res = match date_time_format {
-            DateTimeFormat::ISO8601 => parse_iso8601(date_time_str).map(TantivyDateTime::from_utc),
-            DateTimeFormat::RFC2822 => parse_rfc2822(date_time_str).map(TantivyDateTime::from_utc),
-            DateTimeFormat::RCF3339 => parse_rfc3339(date_time_str).map(TantivyDateTime::from_utc),
-            DateTimeFormat::Strptime(parser) => parser
+            InputDateTimeFormat::ISO8601 => {
+                parse_iso8601(date_time_str).map(TantivyDateTime::from_utc)
+            }
+            InputDateTimeFormat::RFC2822 => {
+                parse_rfc2822(date_time_str).map(TantivyDateTime::from_utc)
+            }
+            InputDateTimeFormat::RCF3339 => {
+                parse_rfc3339(date_time_str).map(TantivyDateTime::from_utc)
+            }
+            InputDateTimeFormat::Strptime(parser) => parser
                 .parse_date_time(date_time_str)
                 .map(TantivyDateTime::from_utc),
             _ => continue,
@@ -57,6 +63,22 @@ pub(super) fn parse_date_time(
     ))
 }
 
+pub(super) fn parse_date_time_number(
+    timestamp: i64,
+    date_time_formats: &[InputDateTimeFormat],
+) -> Result<TantivyDateTime, String> {
+    if !date_time_formats.contains(&InputDateTimeFormat::Timestamp) {
+        return Err(format!(
+            "Failed to parse datetime `{timestamp}` using the following formats: `{}`.",
+            date_time_formats
+                .iter()
+                .map(|date_time_format| date_time_format.as_str())
+                .join("`, `")
+        ));
+    }
+    parse_timestamp(timestamp)
+}
+
 /// Parses a ISO8601 date.
 fn parse_iso8601(value: &str) -> Result<OffsetDateTime, String> {
     OffsetDateTime::parse(value, &Iso8601::DEFAULT).map_err(|error| error.to_string())
@@ -68,7 +90,7 @@ fn parse_rfc2822(value: &str) -> Result<OffsetDateTime, String> {
 }
 
 /// Parses a RFC3339 date.
-pub(super) fn parse_rfc3339(value: &str) -> Result<OffsetDateTime, String> {
+fn parse_rfc3339(value: &str) -> Result<OffsetDateTime, String> {
     OffsetDateTime::parse(value, &Rfc3339).map_err(|error| error.to_string())
 }
 
@@ -78,7 +100,7 @@ pub(super) fn parse_rfc3339(value: &str) -> Result<OffsetDateTime, String> {
 /// The tradeoff is that we can only support dates ranging:
 /// - from `13 Apr 1972 23:59:55`: smallest value that can be converted to all precisions.
 /// - to: `16 Mar 2242 12:56:31`: greatest value that can be converted to all precisions.
-pub(super) fn parse_timestamp(timestamp: i64) -> Result<TantivyDateTime, String> {
+fn parse_timestamp(timestamp: i64) -> Result<TantivyDateTime, String> {
     const MIN_TIMESTAMP_MILLIS: i64 = MIN_TIMESTAMP_SECONDS * 1000;
     const MAX_TIMESTAMP_MILLIS: i64 = MAX_TIMESTAMP_SECONDS * 1000;
 
@@ -175,7 +197,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_date_time() {
+    fn test_parse_date_time_str() {
         for date_time_str in [
             "20120521T120914Z",
             "Mon, 21 May 2012 12:09:14 GMT",
@@ -184,19 +206,19 @@ mod tests {
             "2012/05/21 12:09:14",
             "2012/05/21 12:09:14 +00:00",
         ] {
-            let date_time = parse_date_time(
+            let date_time = parse_date_time_str(
                 date_time_str,
                 &[
-                    DateTimeFormat::ISO8601,
-                    DateTimeFormat::RFC2822,
-                    DateTimeFormat::RCF3339,
-                    DateTimeFormat::Strptime(
+                    InputDateTimeFormat::ISO8601,
+                    InputDateTimeFormat::RFC2822,
+                    InputDateTimeFormat::RCF3339,
+                    InputDateTimeFormat::Strptime(
                         StrptimeParser::from_str("%Y-%m-%d %H:%M:%S").unwrap(),
                     ),
-                    DateTimeFormat::Strptime(
+                    InputDateTimeFormat::Strptime(
                         StrptimeParser::from_str("%Y/%m/%d %H:%M:%S").unwrap(),
                     ),
-                    DateTimeFormat::Strptime(
+                    InputDateTimeFormat::Strptime(
                         StrptimeParser::from_str("%Y/%m/%d %H:%M:%S %z").unwrap(),
                     ),
                 ],
@@ -207,12 +229,41 @@ mod tests {
                 datetime!(2012-05-21 12:09:14 UTC).unix_timestamp()
             );
         }
-        let error = parse_date_time("foo", &[DateTimeFormat::ISO8601, DateTimeFormat::RFC2822])
-            .unwrap_err();
+        let error = parse_date_time_str(
+            "foo",
+            &[InputDateTimeFormat::ISO8601, InputDateTimeFormat::RFC2822],
+        )
+        .unwrap_err();
         assert_eq!(
             error,
             "Failed to parse datetime `foo` using the following formats: `iso8601`, `rfc2822`."
         );
+    }
+
+    #[test]
+    fn test_parse_date_time_number() {
+        {
+            let unix_ts_secs = time::OffsetDateTime::now_utc().unix_timestamp();
+            let date_time = parse_date_time_number(
+                unix_ts_secs,
+                &[InputDateTimeFormat::ISO8601, InputDateTimeFormat::Timestamp],
+            )
+            .unwrap();
+            assert_eq!(date_time.into_timestamp_secs(), unix_ts_secs);
+        }
+
+        {
+            let error = parse_date_time_number(
+                1668730394917,
+                &[InputDateTimeFormat::ISO8601, InputDateTimeFormat::RFC2822],
+            )
+            .unwrap_err();
+            assert_eq!(
+                error,
+                "Failed to parse datetime `1668730394917` using the following formats: `iso8601`, \
+                 `rfc2822`."
+            );
+        }
     }
 
     #[test]
@@ -222,12 +273,12 @@ mod tests {
             "2012-05-21T12:09:14.12-00:00",
             "2012-05-21 12:09:14.120",
         ] {
-            let date_time = parse_date_time(
+            let date_time = parse_date_time_str(
                 date_time_str,
                 &[
-                    DateTimeFormat::ISO8601,
-                    DateTimeFormat::RCF3339,
-                    DateTimeFormat::Strptime(
+                    InputDateTimeFormat::ISO8601,
+                    InputDateTimeFormat::RCF3339,
+                    InputDateTimeFormat::Strptime(
                         StrptimeParser::from_str("%Y-%m-%d %H:%M:%S.%f").unwrap(),
                     ),
                 ],

@@ -102,7 +102,7 @@ impl std::hash::Hash for StrptimeParser {
 
 /// Specifies the datetime and unix timestamp formats to use when parsing date strings.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum DateTimeFormat {
+pub enum InputDateTimeFormat {
     ISO8601,
     RFC2822,
     RCF3339,
@@ -110,53 +110,124 @@ pub enum DateTimeFormat {
     Timestamp,
 }
 
-impl Default for DateTimeFormat {
+impl Default for InputDateTimeFormat {
     fn default() -> Self {
-        DateTimeFormat::RCF3339
+        InputDateTimeFormat::RCF3339
     }
 }
 
-impl DateTimeFormat {
+impl InputDateTimeFormat {
     pub fn as_str(&self) -> &str {
         match self {
-            DateTimeFormat::ISO8601 => "iso8601",
-            DateTimeFormat::RFC2822 => "rfc2822",
-            DateTimeFormat::RCF3339 => "rfc3339",
-            DateTimeFormat::Strptime(parser) => parser.borrow_strptime_format(),
-            DateTimeFormat::Timestamp => "unix_timestamp",
+            InputDateTimeFormat::ISO8601 => "iso8601",
+            InputDateTimeFormat::RFC2822 => "rfc2822",
+            InputDateTimeFormat::RCF3339 => "rfc3339",
+            InputDateTimeFormat::Strptime(parser) => parser.borrow_strptime_format(),
+            InputDateTimeFormat::Timestamp => "unix_timestamp",
         }
     }
 }
 
-impl Display for DateTimeFormat {
+impl Display for InputDateTimeFormat {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter.write_str(self.as_str())
     }
 }
 
-impl FromStr for DateTimeFormat {
+impl FromStr for InputDateTimeFormat {
     type Err = String;
 
     fn from_str(date_time_format_str: &str) -> Result<Self, Self::Err> {
         let date_time_format = match date_time_format_str.to_lowercase().as_str() {
-            "iso8601" => DateTimeFormat::ISO8601,
-            "rfc2822" => DateTimeFormat::RFC2822,
-            "rfc3339" => DateTimeFormat::RCF3339,
-            "unix_timestamp" => DateTimeFormat::Timestamp,
-            _ => DateTimeFormat::Strptime(StrptimeParser::from_str(date_time_format_str)?),
+            "iso8601" => InputDateTimeFormat::ISO8601,
+            "rfc2822" => InputDateTimeFormat::RFC2822,
+            "rfc3339" => InputDateTimeFormat::RCF3339,
+            "unix_timestamp" => InputDateTimeFormat::Timestamp,
+            _ => InputDateTimeFormat::Strptime(StrptimeParser::from_str(date_time_format_str)?),
         };
         Ok(date_time_format)
     }
 }
 
-impl Serialize for DateTimeFormat {
+impl Serialize for InputDateTimeFormat {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where S: serde::Serializer {
         serializer.serialize_str(self.as_str())
     }
 }
 
-impl<'de> Deserialize<'de> for DateTimeFormat {
+impl<'de> Deserialize<'de> for InputDateTimeFormat {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        let date_time_format_str: String = Deserialize::deserialize(deserializer)?;
+        let date_time_format = date_time_format_str.parse().map_err(D::Error::custom)?;
+        Ok(date_time_format)
+    }
+}
+
+/// Specifies the datetime and unix timestamp formats to use when displaying date time values.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum OutputDateTimeFormat {
+    ISO8601,
+    RFC2822,
+    RCF3339,
+    Strptime(StrptimeParser),
+    TimestampSecs,
+    TimestampMillis,
+    TimestampMicros,
+}
+
+impl Default for OutputDateTimeFormat {
+    fn default() -> Self {
+        OutputDateTimeFormat::RCF3339
+    }
+}
+
+impl OutputDateTimeFormat {
+    pub fn as_str(&self) -> &str {
+        match self {
+            OutputDateTimeFormat::ISO8601 => "iso8601",
+            OutputDateTimeFormat::RFC2822 => "rfc2822",
+            OutputDateTimeFormat::RCF3339 => "rfc3339",
+            OutputDateTimeFormat::Strptime(parser) => parser.borrow_strptime_format(),
+            OutputDateTimeFormat::TimestampSecs => "unix_timestamp_secs",
+            OutputDateTimeFormat::TimestampMillis => "unix_timestamp_millis",
+            OutputDateTimeFormat::TimestampMicros => "unix_timestamp_micros",
+        }
+    }
+}
+
+impl Display for OutputDateTimeFormat {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl FromStr for OutputDateTimeFormat {
+    type Err = String;
+
+    fn from_str(date_time_format_str: &str) -> Result<Self, Self::Err> {
+        let date_time_format = match date_time_format_str.to_lowercase().as_str() {
+            "iso8601" => OutputDateTimeFormat::ISO8601,
+            "rfc2822" => OutputDateTimeFormat::RFC2822,
+            "rfc3339" => OutputDateTimeFormat::RCF3339,
+            "unix_timestamp_secs" => OutputDateTimeFormat::TimestampSecs,
+            "unix_timestamp_millis" => OutputDateTimeFormat::TimestampMillis,
+            "unix_timestamp_micros" => OutputDateTimeFormat::TimestampMicros,
+            _ => OutputDateTimeFormat::Strptime(StrptimeParser::from_str(date_time_format_str)?),
+        };
+        Ok(date_time_format)
+    }
+}
+
+impl Serialize for OutputDateTimeFormat {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: serde::Serializer {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for OutputDateTimeFormat {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
         let date_time_format_str: String = Deserialize::deserialize(deserializer)?;
@@ -170,12 +241,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_date_time_format_ser() {
+    fn test_input_date_time_format_ser() {
         let date_time_formats_json = serde_json::to_value(&[
-            DateTimeFormat::ISO8601,
-            DateTimeFormat::RFC2822,
-            DateTimeFormat::RCF3339,
-            DateTimeFormat::Timestamp,
+            InputDateTimeFormat::ISO8601,
+            InputDateTimeFormat::RFC2822,
+            InputDateTimeFormat::RCF3339,
+            InputDateTimeFormat::Timestamp,
         ])
         .unwrap();
 
@@ -185,7 +256,7 @@ mod tests {
     }
 
     #[test]
-    fn test_date_time_format_deser() {
+    fn test_input_date_time_format_deser() {
         let date_time_formats_json = r#"
             [
                 "iso8601",
@@ -194,13 +265,61 @@ mod tests {
                 "unix_timestamp"
             ]
             "#;
-        let date_time_formats: Vec<DateTimeFormat> =
+        let date_time_formats: Vec<InputDateTimeFormat> =
             serde_json::from_str(date_time_formats_json).unwrap();
         let expected_date_time_formats = [
-            DateTimeFormat::ISO8601,
-            DateTimeFormat::RFC2822,
-            DateTimeFormat::RCF3339,
-            DateTimeFormat::Timestamp,
+            InputDateTimeFormat::ISO8601,
+            InputDateTimeFormat::RFC2822,
+            InputDateTimeFormat::RCF3339,
+            InputDateTimeFormat::Timestamp,
+        ];
+        assert_eq!(date_time_formats, &expected_date_time_formats);
+    }
+
+    #[test]
+    fn test_output_date_time_format_ser() {
+        let date_time_formats_json = serde_json::to_value(&[
+            OutputDateTimeFormat::ISO8601,
+            OutputDateTimeFormat::RFC2822,
+            OutputDateTimeFormat::RCF3339,
+            OutputDateTimeFormat::TimestampSecs,
+            OutputDateTimeFormat::TimestampMillis,
+            OutputDateTimeFormat::TimestampMicros,
+        ])
+        .unwrap();
+
+        let expected_date_time_formats = serde_json::json!([
+            "iso8601",
+            "rfc2822",
+            "rfc3339",
+            "unix_timestamp_secs",
+            "unix_timestamp_millis",
+            "unix_timestamp_micros",
+        ]);
+        assert_eq!(date_time_formats_json, expected_date_time_formats);
+    }
+
+    #[test]
+    fn test_output_date_time_format_deser() {
+        let date_time_formats_json = r#"
+            [
+                "iso8601",
+                "rfc2822",
+                "rfc3339",
+                "unix_timestamp_secs",
+                "unix_timestamp_millis",
+                "unix_timestamp_micros"
+            ]
+            "#;
+        let date_time_formats: Vec<OutputDateTimeFormat> =
+            serde_json::from_str(date_time_formats_json).unwrap();
+        let expected_date_time_formats = [
+            OutputDateTimeFormat::ISO8601,
+            OutputDateTimeFormat::RFC2822,
+            OutputDateTimeFormat::RCF3339,
+            OutputDateTimeFormat::TimestampSecs,
+            OutputDateTimeFormat::TimestampMillis,
+            OutputDateTimeFormat::TimestampMicros,
         ];
         assert_eq!(date_time_formats, &expected_date_time_formats);
     }
