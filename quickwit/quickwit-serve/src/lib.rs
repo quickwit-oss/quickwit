@@ -56,7 +56,9 @@ use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest_api::{start_ingest_api_service, IngestApiService};
 use quickwit_janitor::{start_janitor_service, JanitorService};
-use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore, MetastoreGrpcClient};
+use quickwit_metastore::{
+    quickwit_metastore_uri_resolver, Metastore, MetastoreGrpcClient, RetryingMetastore,
+};
 use quickwit_search::{start_searcher_service, SearchClientPool, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use serde::{Deserialize, Serialize};
@@ -125,10 +127,11 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
                      run --service metastore`."
                 )
             })?;
-        let metastore_client = MetastoreGrpcClient::create_and_update_from_members(
+        let grpc_metastore_client = MetastoreGrpcClient::create_and_update_from_members(
             cluster.ready_member_change_watcher(),
         )
         .await?;
+        let metastore_client = RetryingMetastore::new(Box::new(grpc_metastore_client));
         Arc::new(metastore_client)
     };
 

@@ -266,7 +266,7 @@ impl<'de> Deserialize<'de> for SourceCheckpoint {
 /// Error returned when trying to apply a checkpoint delta to a checkpoint that is not
 /// compatible. ie: the checkpoint delta starts from a point anterior to
 /// the checkpoint.
-#[derive(Debug, Error, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Error, Eq, PartialEq, Serialize, Deserialize)]
 #[error(
     "IncompatibleChkptDelta at partition: {partition_id:?} cur_pos:{current_position:?} \
      delta_pos:{delta_position_from:?}"
