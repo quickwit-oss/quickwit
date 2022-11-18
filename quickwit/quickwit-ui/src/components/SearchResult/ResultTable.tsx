@@ -40,8 +40,8 @@ export function ResultTable({searchResponse, index}: {searchResponse: SearchResp
                 <Row
                   key={idx}
                   row={hit}
-                  timestampField={index.metadata.indexing_settings.timestamp_field}
-                  docMapping={index.metadata.doc_mapping}
+                  timestampField={index.metadata.index_config.indexing_settings.timestamp_field}
+                  docMapping={index.metadata.index_config.doc_mapping}
                   timeUnit={timeUnit}
                 />
             )}

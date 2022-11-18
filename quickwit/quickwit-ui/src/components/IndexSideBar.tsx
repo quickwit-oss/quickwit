@@ -82,7 +82,7 @@ function IndexAutocomplete(props: IndexMetadataProps) {
         } else {
           setValue(updatedValue);
         }
-        if (updatedValue == null || updatedValue.index_id == null) {
+        if (updatedValue == null || updatedValue.index_config.index_id == null) {
           props.onIndexMetadataUpdate(null);
         } else {
           props.onIndexMetadataUpdate(updatedValue);
@@ -94,8 +94,8 @@ function IndexAutocomplete(props: IndexMetadataProps) {
       onClose={() => {
         setOpen(false);
       }}
-      isOptionEqualToValue={(option, value) => option.index_id === value.index_id}
-      getOptionLabel={(option) => option.index_id}
+      isOptionEqualToValue={(option, value) => option.index_config.index_id === value.index_config.index_id}
+      getOptionLabel={(option) => option.index_config.index_id}
       options={options}
       loading={loading}
       renderInput={(params) => (
@@ -133,7 +133,7 @@ function fieldTypeLabel(fieldMapping: FieldMapping): string {
 
 export function IndexSideBar(props: IndexMetadataProps) {
   const [open, setOpen] = useState(true);
-  const fields = (props.indexMetadata === null) ? [] : getAllFields(props.indexMetadata.doc_mapping);
+  const fields = (props.indexMetadata === null) ? [] : getAllFields(props.indexMetadata.index_config.doc_mapping);
   return (
     <IndexBarWrapper>
       <Box sx={{ px: 3, py: 2}}>

@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use quickwit_proto::ingest_api::{DocBatch, FetchResponse, ListQueuesResponse};
-use rocksdb::{Direction, IteratorMode, WriteBatch, WriteOptions, DB};
+use rocksdb::{ColumnFamily, Direction, IteratorMode, WriteBatch, WriteOptions, DB};
 use tracing::warn;
 
 use crate::{add_doc, Position};
@@ -29,6 +29,33 @@ use crate::{add_doc, Position};
 const FETCH_PAYLOAD_LIMIT: usize = 2_000_000; // 2MB
 
 const QUICKWIT_CF_PREFIX: &str = ".queue_";
+
+fn queue_to_cf(queue_id: &str) -> String {
+    format!("{QUICKWIT_CF_PREFIX}{queue_id}")
+}
+
+fn cf_to_queue(queue_cf_id: &str) -> Option<&str> {
+    queue_cf_id.strip_prefix(QUICKWIT_CF_PREFIX)
+}
+
+struct ColumnFamilyDoesNotExist<'a>(&'a str);
+
+impl<'a> From<ColumnFamilyDoesNotExist<'a>> for crate::IngestApiError {
+    fn from(err: ColumnFamilyDoesNotExist) -> Self {
+        crate::IngestApiError::IndexDoesNotExist {
+            index_id: err.0.to_string(),
+        }
+    }
+}
+
+fn column_family<'a, 'b>(
+    db: &'a DB,
+    queue_id: &'b str,
+) -> Result<&'a ColumnFamily, ColumnFamilyDoesNotExist<'b>> {
+    let cf_name = queue_to_cf(queue_id);
+    db.cf_handle(&cf_name)
+        .ok_or(ColumnFamilyDoesNotExist(queue_id))
+}
 
 pub struct Queues {
     db: DB,
@@ -51,14 +78,14 @@ fn default_rocks_db_write_options() -> rocksdb::WriteOptions {
     write_options
 }
 
-fn next_position(db: &DB, queue_id: &str) -> crate::Result<Option<Position>> {
-    let cf = db
-        .cf_handle(queue_id)
-        .ok_or_else(|| crate::IngestApiError::Corruption {
-            msg: format!("RocksDB error: Missing column `{queue_id}`"),
-        })?;
+/// Returns the last inserted position position for a given queue.
+///
+/// If no record has been pushed yet, return Ok(None)
+/// Returns an error if the queue does not exist.
+fn last_position(db: &DB, queue_id: &str) -> crate::Result<Option<Position>> {
+    let cf = column_family(db, queue_id)?;
     // That's iterating backward
-    let mut full_it = db.full_iterator_cf(&cf, IteratorMode::End);
+    let mut full_it = db.full_iterator_cf(cf, IteratorMode::End);
     match full_it.next() {
         Some(Ok((key, _))) => {
             let position = Position::try_from(&*key)?;
@@ -72,26 +99,27 @@ fn next_position(db: &DB, queue_id: &str) -> crate::Result<Option<Position>> {
 impl Queues {
     pub fn open(queues_dir_path: &Path) -> crate::Result<Queues> {
         let options = default_rocks_db_options();
-        let queue_ids = if queues_dir_path.join("CURRENT").exists() {
+        let cf_names: Vec<String> = if queues_dir_path.join("CURRENT").exists() {
             DB::list_cf(&options, queues_dir_path)?
         } else {
             Vec::new()
         };
-        let db = DB::open_cf(&options, queues_dir_path, &queue_ids)?;
-        let mut next_position_per_queue = HashMap::default();
-        for queue_id in queue_ids {
-            let next_position = next_position(&db, &queue_id)?;
-            next_position_per_queue.insert(queue_id, next_position);
+        let db = DB::open_cf(&options, queues_dir_path, &cf_names)?;
+        let mut last_position_per_queue = HashMap::default();
+        for cf_name in cf_names {
+            if let Some(queue_id) = cf_to_queue(&cf_name) {
+                let last_position = last_position(&db, queue_id)?;
+                last_position_per_queue.insert(queue_id.to_string(), last_position);
+            }
         }
         Ok(Queues {
             db,
-            last_position_per_queue: next_position_per_queue,
+            last_position_per_queue,
         })
     }
 
     pub fn queue_exists(&self, queue_id: &str) -> bool {
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        self.db.cf_handle(&real_queue_id).is_some()
+        column_family(&self.db, queue_id).is_ok()
     }
 
     pub fn create_queue(&mut self, queue_id: &str) -> crate::Result<()> {
@@ -100,17 +128,16 @@ impl Queues {
                 index_id: queue_id.to_string(),
             });
         }
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
         let cf_opts = default_rocks_db_options();
-        self.db.create_cf(&real_queue_id, &cf_opts)?;
-        self.last_position_per_queue.insert(real_queue_id, None);
+        self.db.create_cf(&queue_to_cf(queue_id), &cf_opts)?;
+        self.last_position_per_queue
+            .insert(queue_id.to_string(), None);
         Ok(())
     }
 
     pub fn drop_queue(&mut self, queue_id: &str) -> crate::Result<()> {
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        self.db.drop_cf(&real_queue_id)?;
-        self.last_position_per_queue.remove(&real_queue_id);
+        self.db.drop_cf(&queue_to_cf(queue_id))?;
+        self.last_position_per_queue.remove(queue_id);
         Ok(())
     }
 
@@ -132,15 +159,13 @@ impl Queues {
         queue_id: &str,
         up_to_offset_included: Position,
     ) -> crate::Result<()> {
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        let cf_ref = self.db.cf_handle(&real_queue_id).unwrap(); // FIXME
-                                                                 // We want to keep the last record.
+        let cf_ref = column_family(&self.db, queue_id)?;
+
+        // We want to keep the last record.
         let last_position_opt = *self
             .last_position_per_queue
-            .get(&real_queue_id)
-            .ok_or_else(|| crate::IngestApiError::IndexDoesNotExist {
-                index_id: queue_id.to_string(),
-            })?;
+            .get(queue_id)
+            .ok_or(ColumnFamilyDoesNotExist(queue_id))?;
 
         let Some(last_position) = last_position_opt else {
             warn!("Attempted to truncate an empty queue.");
@@ -176,24 +201,17 @@ impl Queues {
         queue_id: &str,
         records_it: impl Iterator<Item = &'a [u8]>,
     ) -> crate::Result<()> {
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        let column_does_not_exist = || crate::IngestApiError::IndexDoesNotExist {
-            index_id: queue_id.to_string(),
-        };
         let last_position_opt = self
             .last_position_per_queue
-            .get_mut(&real_queue_id)
-            .ok_or_else(column_does_not_exist)?;
+            .get_mut(queue_id)
+            .ok_or(ColumnFamilyDoesNotExist(queue_id))?;
 
         let mut next_position = last_position_opt
             .as_ref()
             .map(Position::inc)
             .unwrap_or_default();
 
-        let cf_ref = self
-            .db
-            .cf_handle(&real_queue_id)
-            .ok_or_else(column_does_not_exist)?;
+        let cf_ref = column_family(&self.db, queue_id)?;
 
         let mut batch = WriteBatch::default();
         for record in records_it {
@@ -217,12 +235,7 @@ impl Queues {
         start_after: Option<Position>,
         num_bytes_limit: Option<usize>,
     ) -> crate::Result<FetchResponse> {
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        let cf = self.db.cf_handle(&real_queue_id).ok_or_else(|| {
-            crate::IngestApiError::IndexDoesNotExist {
-                index_id: queue_id.to_string(),
-            }
-        })?;
+        let cf = column_family(&self.db, queue_id)?;
 
         let start_position = start_after
             .map(|position| position.inc())
@@ -254,13 +267,8 @@ impl Queues {
 
     // Streams messages from the start of the Stream.
     pub fn tail(&self, queue_id: &str) -> crate::Result<FetchResponse> {
-        let real_queue_id = format!("{}{}", QUICKWIT_CF_PREFIX, queue_id);
-        let cf = self.db.cf_handle(&real_queue_id).ok_or_else(|| {
-            crate::IngestApiError::IndexDoesNotExist {
-                index_id: queue_id.to_string(),
-            }
-        })?;
-        let full_it = self.db.full_iterator_cf(&cf, IteratorMode::End);
+        let cf = column_family(&self.db, queue_id)?;
+        let full_it = self.db.full_iterator_cf(cf, IteratorMode::End);
         let mut doc_batch = DocBatch::default();
         let mut num_bytes = 0;
         let mut first_key_opt: Option<u64> = None;
@@ -286,7 +294,6 @@ impl Queues {
             queues: self
                 .last_position_per_queue
                 .keys()
-                .filter_map(|real_queue_id| real_queue_id.strip_prefix(QUICKWIT_CF_PREFIX))
                 .map(ToString::to_string)
                 .collect(),
         })

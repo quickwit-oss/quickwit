@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Debug;
 
 use anyhow::Context;
@@ -76,7 +76,7 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
         &self,
         split_schema: Schema,
         request: &SearchRequest,
-    ) -> Result<Box<dyn Query>, QueryParserError>;
+    ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError>;
 
     /// Returns the default sort
     fn sort_by(&self) -> SortBy {
@@ -133,6 +133,19 @@ pub struct NamedField {
 }
 
 clone_trait_object!(DocMapper);
+
+/// Informations about what a DocMapper think should be warmed up before
+/// running the query.
+#[derive(Debug, Default, Clone)]
+#[non_exhaustive]
+pub struct WarmupInfo {
+    /// Name of fields from the term dictionnary which needs to be entirely
+    /// loaded
+    pub term_dict_field_names: HashSet<String>,
+    /// Name of fields from the posting lists which needs to be entirely
+    /// loaded
+    pub posting_field_names: HashSet<String>,
+}
 
 #[cfg(test)]
 mod tests {
@@ -236,7 +249,7 @@ mod tests {
             sort_by_field: None,
             aggregation_request: None,
         };
-        let query = doc_mapper.query(schema, &search_request).unwrap();
+        let (query, _) = doc_mapper.query(schema, &search_request).unwrap();
         assert_eq!(
             format!("{:?}", query),
             r#"TermQuery(Term(type=Json, field=0, path=toto.titi, vtype=Str, "hello"))"#
@@ -308,7 +321,7 @@ mod tests {
             sort_by_field: None,
             aggregation_request: None,
         };
-        let query = doc_mapper.query(schema, &search_request).unwrap();
+        let (query, _) = doc_mapper.query(schema, &search_request).unwrap();
         assert_eq!(
             format!("{:?}", query),
             r#"TermQuery(Term(type=Json, field=0, path=toto.titi, vtype=Str, "hello"))"#
@@ -343,7 +356,7 @@ mod tests {
             sort_by_field: None,
             aggregation_request: None,
         };
-        let query = doc_mapper.query(schema, &search_request).unwrap();
+        let (query, _) = doc_mapper.query(schema, &search_request).unwrap();
         assert_eq!(
             format!("{:?}", query),
             r#"BooleanQuery { subqueries: [(Should, TermQuery(Term(type=Json, field=0, path=toto, vtype=U64, 5))), (Should, TermQuery(Term(type=Json, field=0, path=toto, vtype=Str, "5")))] }"#
