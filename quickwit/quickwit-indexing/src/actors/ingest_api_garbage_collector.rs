@@ -35,7 +35,7 @@ use super::IndexingService;
 use crate::models::ShutdownPipelines;
 
 const RUN_INTERVAL: Duration = if cfg!(test) {
-    Duration::from_secs(60) // 1min
+    Duration::from_secs(30)
 } else {
     Duration::from_secs(60 * 60) // 1h
 };
@@ -189,7 +189,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_api_garbage_collector() -> anyhow::Result<()> {
-        let index_id = "test-index".to_string();
+        let index_id = "test-ingest-api-gc-index".to_string();
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
 
@@ -218,7 +218,7 @@ mod tests {
         let indexer_config = IndexerConfig::for_test().unwrap();
         let storage_resolver = StorageUriResolver::for_test();
         let indexing_server = IndexingService::new(
-            "test-node".to_string(),
+            "test-ingest-api-gc-node".to_string(),
             data_dir_path,
             indexer_config,
             metastore.clone(),
@@ -239,15 +239,15 @@ mod tests {
         assert_eq!(state_after_initialization.num_passes, 1);
         assert_eq!(state_after_initialization.num_deleted_queues, 0);
 
-        // 30 seconds later
-        universe.simulate_time_shift(Duration::from_secs(30)).await;
+        // 15 seconds later
+        universe.simulate_time_shift(Duration::from_secs(15)).await;
         let state_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(state_after_initialization.num_passes, 1);
         assert_eq!(state_after_initialization.num_deleted_queues, 0);
 
         metastore.delete_index(&index_id).await.unwrap();
 
-        // 1m later
+        // 45 seconds later
         universe.simulate_time_shift(RUN_INTERVAL).await;
         let state_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(state_after_initialization.num_passes, 2);
