@@ -131,7 +131,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
             cluster.ready_member_change_watcher(),
         )
         .await?;
-        let metastore_client = RetryingMetastore::new(grpc_metastore_client);
+        let metastore_client = RetryingMetastore::new(Arc::new(grpc_metastore_client));
         Arc::new(metastore_client)
     };
 

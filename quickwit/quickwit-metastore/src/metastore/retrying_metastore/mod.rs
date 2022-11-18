@@ -19,6 +19,10 @@
 
 mod error;
 mod retry;
+#[cfg(test)]
+mod test;
+
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
@@ -27,27 +31,24 @@ use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 
 use self::retry::{retry, RetryParams};
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{
-    IndexMetadata, ListSplitsQuery, Metastore, MetastoreGrpcClient, MetastoreResult, Split,
-    SplitMetadata,
-};
+use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreResult, Split, SplitMetadata};
 
 /// Retry layer for [`MetastoreGrpcClient`].
 /// This is a band-aid solution for now. This will be removed after retry can be usable on
 /// tonic level.
 /// Tracking Issue: https://github.com/tower-rs/tower/issues/682
 pub struct RetryingMetastore {
-    inner: MetastoreGrpcClient,
+    inner: Arc<dyn Metastore>,
     retry_params: RetryParams,
 }
 
 impl RetryingMetastore {
-    /// Create a retry layer for [`MetastoreGrpcClient`]
-    pub fn new(metastore: MetastoreGrpcClient) -> Self {
+    /// Creates a retry layer for [`MetastoreGrpcClient`]
+    pub fn new(metastore: Arc<dyn Metastore>) -> Self {
         Self {
             inner: metastore,
             retry_params: RetryParams {
-                max_attempts: 3,
+                max_attempts: 5,
                 ..Default::default()
             },
         }

@@ -25,7 +25,7 @@ use crate::checkpoint::IncompatibleCheckpointDelta;
 
 /// Metastore error kinds.
 #[allow(missing_docs)]
-#[derive(Debug, Error, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Error, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub enum MetastoreError {
     #[error("Connection error: `{message}`.")]
     ConnectionError { message: String },
