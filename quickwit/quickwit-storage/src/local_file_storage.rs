@@ -420,7 +420,7 @@ mod tests {
         let failure = error.failures.get(Path::new("bar-dir")).unwrap();
         assert_eq!(failure.error.as_ref().unwrap().kind(), StorageErrorKind::Io);
 
-        assert!(!tempdir.path().join("foo-dir").exists());
+        assert!(!tempdir.path().join("foo-dir").try_exists().unwrap());
     }
 
     #[tokio::test]
@@ -430,25 +430,25 @@ mod tests {
         tokio::fs::create_dir_all(dir_path.clone()).await?;
 
         // check all empty directory
-        assert_eq!(dir_path.exists(), true);
+        assert_eq!(dir_path.try_exists().unwrap(), true);
         delete_all_dirs_if_empty(&path_root, dir_path.as_path()).await?;
-        assert_eq!(dir_path.exists(), false);
-        assert_eq!(dir_path.parent().unwrap().exists(), false);
+        assert_eq!(dir_path.try_exists().unwrap(), false);
+        assert_eq!(dir_path.parent().unwrap().try_exists().unwrap(), false);
 
         // check with intermediate file
         tokio::fs::create_dir_all(dir_path.clone()).await?;
         let intermediate_file = dir_path.parent().unwrap().join("fizz.txt");
         tokio::fs::File::create(intermediate_file.clone()).await?;
-        assert_eq!(dir_path.exists(), true);
-        assert_eq!(intermediate_file.exists(), true);
+        assert_eq!(dir_path.try_exists().unwrap(), true);
+        assert_eq!(intermediate_file.try_exists().unwrap(), true);
         delete_all_dirs_if_empty(&path_root, dir_path.as_path()).await?;
-        assert_eq!(dir_path.exists(), false);
-        assert_eq!(dir_path.parent().unwrap().exists(), true);
+        assert_eq!(dir_path.try_exists().unwrap(), false);
+        assert_eq!(dir_path.parent().unwrap().try_exists().unwrap(), true);
 
         // make sure it does not go beyond the path
         tokio::fs::create_dir_all(path_root.join("home/foo/bar")).await?;
         delete_all_dirs_if_empty(&path_root.join("home/foo"), Path::new("bar")).await?;
-        assert_eq!(path_root.join("home/foo").exists(), true);
+        assert_eq!(path_root.join("home/foo").try_exists().unwrap(), true);
 
         Ok(())
     }
