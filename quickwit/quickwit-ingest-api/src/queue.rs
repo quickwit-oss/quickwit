@@ -99,7 +99,7 @@ fn last_position(db: &DB, queue_id: &str) -> crate::Result<Option<Position>> {
 impl Queues {
     pub fn open(queues_dir_path: &Path) -> crate::Result<Queues> {
         let options = default_rocks_db_options();
-        let cf_names: Vec<String> = if queues_dir_path.join("CURRENT").exists() {
+        let cf_names: Vec<String> = if queues_dir_path.join("CURRENT").try_exists()? {
             DB::list_cf(&options, queues_dir_path)?
         } else {
             Vec::new()
