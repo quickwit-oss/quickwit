@@ -291,11 +291,11 @@ mod tests {
             split_store
                 .store_split(&split_metadata1, &split1_dir, Box::new(b"1234".to_vec()))
                 .await?;
-            assert!(!split1_dir.exists());
+            assert!(!split1_dir.try_exists()?);
             assert!(split_cache_dir
                 .path()
                 .join(format!("{split_id1}.split"))
-                .exists());
+                .try_exists()?);
             let local_store_stats = split_store.inspect_local_store().await;
             assert_eq!(local_store_stats.len(), 1);
             assert_eq!(
@@ -311,11 +311,11 @@ mod tests {
             split_store
                 .store_split(&split_metadata2, &split2_dir, Box::new(b"567".to_vec()))
                 .await?;
-            assert!(!split2_dir.exists());
+            assert!(!split2_dir.try_exists()?);
             assert!(split_cache_dir
                 .path()
                 .join(format!("{split_id2}.split"))
-                .exists());
+                .try_exists()?);
         }
 
         let local_store_stats = split_store.inspect_local_store().await;
@@ -365,11 +365,11 @@ mod tests {
                     Box::new(SplitPayloadBuilder::get_split_payload(&[], &[5, 5, 5])?),
                 )
                 .await?;
-            assert!(!split_path.exists());
+            assert!(!split_path.try_exists()?);
             assert!(split_cache_dir
                 .path()
                 .join(format!("{split_id1}.split"))
-                .exists());
+                .try_exists()?);
             let local_store_stats = split_store.inspect_local_store().await;
             assert_eq!(local_store_stats.len(), 1);
             assert_eq!(
@@ -390,11 +390,11 @@ mod tests {
                     Box::new(SplitPayloadBuilder::get_split_payload(&[], &[5, 5, 5])?),
                 )
                 .await?;
-            assert!(!split_path.exists());
+            assert!(!split_path.try_exists()?);
             assert!(split_cache_dir
                 .path()
                 .join(format!("{split_id2}.split"))
-                .exists());
+                .try_exists()?);
             let local_store_stats = split_store.inspect_local_store().await;
             assert_eq!(local_store_stats.len(), 1);
             assert_eq!(

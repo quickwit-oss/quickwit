@@ -126,12 +126,12 @@ mod tests {
             .unwrap_or(false));
 
         mem::drop(parent);
-        assert!(parent_path.exists());
-        assert!(child_path.exists());
+        assert!(parent_path.try_exists()?);
+        assert!(child_path.try_exists()?);
 
         mem::drop(child);
-        assert!(!parent_path.exists());
-        assert!(!child_path.exists());
+        assert!(!parent_path.try_exists()?);
+        assert!(!child_path.try_exists()?);
         Ok(())
     }
 
@@ -140,10 +140,10 @@ mod tests {
         let parent = ScratchDirectory::for_test()?;
         let parent_path = parent.path().to_path_buf();
         std::fs::write(parent.path().join("hello.txt"), b"hello")?;
-        assert!(parent_path.exists());
+        assert!(parent_path.try_exists()?);
 
         mem::drop(parent);
-        assert!(!parent_path.exists());
+        assert!(!parent_path.try_exists()?);
         Ok(())
     }
 
@@ -151,24 +151,24 @@ mod tests {
     fn test_scratch_directory_in_path() -> io::Result<()> {
         let tempdir = tempfile::tempdir()?;
         let tempdir_path = tempdir.path().to_path_buf();
-        assert!(tempdir_path.exists());
+        assert!(tempdir_path.try_exists()?);
 
         let parent = ScratchDirectory::new_in_dir(tempdir_path.clone());
         assert_eq!(parent.path(), tempdir.path());
-        assert!(tempdir.path().exists());
+        assert!(tempdir.path().try_exists()?);
 
         let child = parent.named_temp_child("child-")?;
         let child_path = child.path().to_path_buf();
-        assert!(child_path.exists());
+        assert!(child_path.try_exists()?);
 
         mem::drop(child);
-        assert!(!child_path.exists());
+        assert!(!child_path.try_exists()?);
 
         mem::drop(parent);
-        assert!(!child_path.exists());
+        assert!(!child_path.try_exists()?);
 
         mem::drop(tempdir);
-        assert!(!tempdir_path.exists());
+        assert!(!tempdir_path.try_exists()?);
         Ok(())
     }
 }
