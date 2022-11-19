@@ -54,7 +54,6 @@ where
         }
     }
 
-    #[cfg(test)]
     pub(crate) fn none() -> Self {
         Self {
             provided: None,
