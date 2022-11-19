@@ -19,6 +19,7 @@
 
 #![warn(missing_docs)]
 #![allow(clippy::bool_assert_comparison)]
+#![deny(clippy::disallowed_methods)]
 
 //! `quickwit-metastore` is the abstraction used in quickwit to interface itself to different
 //! metastore:

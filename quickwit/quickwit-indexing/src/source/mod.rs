@@ -299,7 +299,7 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
     match &source_config.source_params {
         SourceParams::File(params) => {
             if let Some(filepath) = &params.filepath {
-                if !Path::new(filepath).exists() {
+                if !Path::new(filepath).try_exists()? {
                     bail!("File `{}` does not exist.", filepath.display())
                 }
             }

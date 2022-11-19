@@ -167,7 +167,7 @@ fn delete_all_dirs_if_empty<'a>(
 #[async_trait]
 impl Storage for LocalFileStorage {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
-        if !self.root.exists() {
+        if !self.root.try_exists()? {
             // By creating directories, we check if we have the right permissions.
             fs::create_dir_all(&self.root).await?
         }
