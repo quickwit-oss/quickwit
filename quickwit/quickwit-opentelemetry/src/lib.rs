@@ -20,7 +20,3 @@
 #![deny(clippy::disallowed_methods)]
 
 pub mod otlp;
-
-pub async fn start_otlp_service() -> anyhow::Result<()> {
-    Ok(())
-}

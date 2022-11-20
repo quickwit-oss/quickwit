@@ -153,7 +153,7 @@ pub mod metrics_service_client {
 pub mod metrics_service_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    ///Generated trait containing gRPC methods that should be implemented for use with MetricsServiceServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with MetricsServiceServer.
     #[async_trait]
     pub trait MetricsService: Send + Sync + 'static {
         /// For performance reasons, it is recommended to keep this RPC

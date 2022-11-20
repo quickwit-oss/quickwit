@@ -652,7 +652,7 @@ pub mod metastore_api_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = "/ Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`."]
+        /// / Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
         pub async fn list_stale_splits(
             &mut self,
             request: impl tonic::IntoRequest<super::ListStaleSplitsRequest>,
@@ -678,7 +678,7 @@ pub mod metastore_api_service_client {
 pub mod metastore_api_service_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    ///Generated trait containing gRPC methods that should be implemented for use with MetastoreApiServiceServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with MetastoreApiServiceServer.
     #[async_trait]
     pub trait MetastoreApiService: Send + Sync + 'static {
         /// Creates an index.
@@ -774,7 +774,7 @@ pub mod metastore_api_service_server {
             &self,
             request: tonic::Request<super::ListDeleteTasksRequest>,
         ) -> Result<tonic::Response<super::ListDeleteTasksResponse>, tonic::Status>;
-        #[doc = "/ Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`."]
+        /// / Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
         async fn list_stale_splits(
             &self,
             request: tonic::Request<super::ListStaleSplitsRequest>,
