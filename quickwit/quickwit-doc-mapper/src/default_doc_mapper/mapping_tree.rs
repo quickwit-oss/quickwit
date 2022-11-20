@@ -30,7 +30,7 @@ use tantivy::schema::{
     NumericOptions, SchemaBuilder, TextOptions, Value as TantivyValue,
 };
 use tantivy::{DateOptions, Document};
-use tracing::log::warn;
+use tracing::warn;
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use crate::default_doc_mapper::field_mapping_entry::{
