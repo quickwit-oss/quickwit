@@ -98,7 +98,6 @@ impl SourceLoader {
     ) -> Result<Box<dyn Source>, SourceLoaderError> {
         let source_type = ctx.source_config.source_type().to_string();
         let source_id = ctx.source_config.source_id.clone();
-
         let source_factory = self
             .type_to_factory
             .get(ctx.source_config.source_type())
