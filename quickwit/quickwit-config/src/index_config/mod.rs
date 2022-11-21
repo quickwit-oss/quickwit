@@ -74,18 +74,13 @@ pub struct IndexingResources {
     pub __num_threads_deprecated: IgnoredAny, // DEPRECATED
     #[serde(default = "IndexingResources::default_heap_size")]
     pub heap_size: Byte,
-    /// Sets the maximum write IO throughput for the merge pipeline,
-    /// in bytes per secs. On hardware where IO is limited, this parameter can help limiting
-    /// the impact of merges on indexing.
+    /// Sets the maximum write IO throughput in bytes/sec for the merge and delete pipelines.
+    /// The IO limit is applied both to the downloader and to the merge executor.
+    /// On hardware where IO is limited, this parameter can help limiting the impact of
+    /// merges/deletes on indexing.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_merge_write_throughput: Option<Byte>,
-    /// Sets the maximum write IO throughput for the janitor, in bytes per secs.
-    /// On hardware where IO is limited, this parameter can help limiting
-    /// the impact on indexing.
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_janitor_write_throughput: Option<Byte>,
 }
 
 impl PartialEq for IndexingResources {
@@ -113,7 +108,6 @@ impl Default for IndexingResources {
         Self {
             heap_size: Self::default_heap_size(),
             max_merge_write_throughput: None,
-            max_janitor_write_throughput: None,
             __num_threads_deprecated: IgnoredAny,
         }
     }
