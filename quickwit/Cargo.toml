@@ -160,9 +160,9 @@ toml = "0.5.8"
 tonic = "0.8"
 tonic-build = "0.8.0"
 tower = "0.4.13"
-tracing = "0.1.29"
-tracing-opentelemetry = "0.18"
-tracing-subscriber = { version = "0.3", features = [
+tracing = "0.1.37"
+tracing-opentelemetry = "0.18.0"
+tracing-subscriber = { version = "0.3.16", features = [
   "time",
   "std",
   "env-filter",
