@@ -90,7 +90,10 @@ pub mod test_suite {
         let index_uri = format!("ram://indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
 
-        metastore.create_index(index_metadata).await.unwrap();
+        metastore
+            .create_index(index_metadata.clone())
+            .await
+            .unwrap();
 
         assert!(metastore.index_exists(&index_id).await.unwrap());
 
@@ -102,6 +105,9 @@ pub mod test_suite {
             index_metadata.create_timestamp,
             index_metadata.update_timestamp
         );
+
+        let error = metastore.create_index(index_metadata).await.unwrap_err();
+        assert!(matches!(error, MetastoreError::IndexAlreadyExists { .. }));
 
         cleanup_index(&metastore, &index_id).await;
     }
