@@ -24,6 +24,7 @@ mod stable_log_merge_policy;
 use std::fmt;
 use std::sync::Arc;
 
+pub(crate) use const_write_amplification::ConstWriteAmplificationMergePolicy;
 use itertools::Itertools;
 pub use nop_merge_policy::NopMergePolicy;
 use quickwit_config::merge_policy_config::MergePolicyConfig;
@@ -33,7 +34,6 @@ use serde::Serialize;
 pub(crate) use stable_log_merge_policy::StableLogMergePolicy;
 use tracing::{info_span, Span};
 
-use crate::merge_policy::const_write_amplification::ConstWriteAmplificationMergePolicy;
 use crate::new_split_id;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
