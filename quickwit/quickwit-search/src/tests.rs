@@ -45,8 +45,7 @@ async fn test_single_node_simple() -> anyhow::Result<()> {
               - name: binary
                 type: bytes
         "#;
-    let test_sandbox =
-        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"], None).await?;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
     let docs = vec![
         json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy", "binary": "dGhpcyBpcyBhIHRlc3Qu"}),
         json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle", "binary": "bWFkZSB5b3UgbG9vay4="}),
@@ -92,8 +91,7 @@ async fn test_single_node_termset() -> anyhow::Result<()> {
               - name: binary
                 type: bytes
         "#;
-    let test_sandbox =
-        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"], None).await?;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
     let docs = vec![
         json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy", "binary": "dGhpcyBpcyBhIHRlc3Qu"}),
         json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle", "binary": "bWFkZSB5b3UgbG9vay4="}),
@@ -134,8 +132,7 @@ async fn test_single_search_with_snippet() -> anyhow::Result<()> {
               - name: body
                 type: text
         "#;
-    let test_sandbox =
-        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"], None).await?;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
     let docs = vec![
         json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle in the comic strip."}),
         json!({"title": "beagle", "body": "The beagle is a breed of small scent hound."}),
@@ -225,8 +222,7 @@ async fn test_slop_queries() -> anyhow::Result<()> {
                 record: position
         "#;
 
-    let test_sandbox =
-        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"], None).await?;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
     let docs = vec![
         json!({"title": "one", "body": "a red bike"}),
         json!({"title": "two", "body": "a small blue bike"}),
@@ -284,8 +280,7 @@ async fn test_single_node_several_splits() -> anyhow::Result<()> {
                 type: text
                 tokenizer: 'raw'
         "#;
-    let test_sandbox =
-        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"], None).await?;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
     for _ in 0..10u32 {
         test_sandbox.add_documents(vec![
                 json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
@@ -349,7 +344,6 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         doc_mapping_yaml,
         indexing_settings_json,
         &["body"],
-        None,
     )
     .await?;
 
@@ -479,7 +473,6 @@ async fn single_node_search_sort_by_field(
         doc_mapping_yaml,
         indexing_settings_json,
         &["description"],
-        None,
     )
     .await?;
 
@@ -559,7 +552,6 @@ async fn test_single_node_invalid_sorting_with_query() -> anyhow::Result<()> {
         doc_mapping_yaml,
         indexing_settings_json,
         &["description"],
-        None,
     )
     .await?;
 
@@ -610,7 +602,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
                 tokenizer: raw
         "#;
     let index_id = "single-node-pruning-by-tags";
-    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &[], None).await?;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &[]).await?;
     let owners = ["paul", "adrien"];
     for owner in owners {
         let mut docs = vec![];
@@ -719,10 +711,9 @@ async fn test_search_dynamic_mode() -> anyhow::Result<()> {
             dynamic_mapping:
                 tokenizer: raw
         "#;
-    let test_sandbox =
-        TestSandbox::create(DYNAMIC_TEST_INDEX_ID, doc_mapping_yaml, "{}", &[], None)
-            .await
-            .unwrap();
+    let test_sandbox = TestSandbox::create(DYNAMIC_TEST_INDEX_ID, doc_mapping_yaml, "{}", &[])
+        .await
+        .unwrap();
     let docs = vec![
         json!({"body": "hello happy tax payer"}),
         json!({"body": "hello"}),
@@ -749,10 +740,9 @@ async fn test_search_dynamic_mode_expand_dots() -> anyhow::Result<()> {
             #dynamic_mapping:
             #  expand_dots: true -- that's the default value.
         "#;
-    let test_sandbox =
-        TestSandbox::create(DYNAMIC_TEST_INDEX_ID, doc_mapping_yaml, "{}", &[], None)
-            .await
-            .unwrap();
+    let test_sandbox = TestSandbox::create(DYNAMIC_TEST_INDEX_ID, doc_mapping_yaml, "{}", &[])
+        .await
+        .unwrap();
     let docs = vec![json!({"k8s.component.name": "quickwit"})];
     test_sandbox.add_documents(docs).await.unwrap();
     {
@@ -775,10 +765,9 @@ async fn test_search_dynamic_mode_do_not_expand_dots() -> anyhow::Result<()> {
             dynamic_mapping:
                 expand_dots: false
         "#;
-    let test_sandbox =
-        TestSandbox::create(DYNAMIC_TEST_INDEX_ID, doc_mapping_yaml, "{}", &[], None)
-            .await
-            .unwrap();
+    let test_sandbox = TestSandbox::create(DYNAMIC_TEST_INDEX_ID, doc_mapping_yaml, "{}", &[])
+        .await
+        .unwrap();
     let docs = vec![json!({"k8s.component.name": "quickwit"})];
     test_sandbox.add_documents(docs).await.unwrap();
     {
@@ -969,8 +958,7 @@ async fn test_single_node_aggregation() -> anyhow::Result<()> {
                 type: f64
                 fast: true
         "#;
-    let test_sandbox =
-        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["color"], None).await?;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["color"]).await?;
     let docs = vec![
         json!({"color": "blue", "price": 10.0}),
         json!({"color": "blue", "price": 15.0}),
@@ -1043,8 +1031,7 @@ async fn test_single_node_aggregation_missing_fast_field() -> anyhow::Result<()>
                 type: f64
                 fast: true
         "#;
-    let test_sandbox =
-        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["color"], None).await?;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["color"]).await?;
     let docs = vec![
         json!({"color": "blue", "price": 10.0}),
         json!({"color": "blue", "price": 15.0}),
@@ -1105,8 +1092,7 @@ async fn test_single_node_with_ip_field() -> anyhow::Result<()> {
               - name: host
                 type: ip
         "#;
-    let test_sandbox =
-        TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["log"], None).await?;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["log"]).await?;
     let docs = vec![
         json!({"log": "User not found", "host": "192.168.0.1"}),
         json!({"log": "Request failed", "host": "10.10.12.123"}),

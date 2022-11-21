@@ -538,7 +538,6 @@ mod tests {
             doc_mapping_yaml,
             indexing_settings_yaml,
             &["body"],
-            None,
         )
         .await?;
         for split_id in 0..4 {
@@ -664,7 +663,6 @@ mod tests {
             doc_mapping_yaml,
             indexing_settings_yaml,
             &["body"],
-            None,
         )
         .await?;
         test_sandbox.add_documents(docs).await?;

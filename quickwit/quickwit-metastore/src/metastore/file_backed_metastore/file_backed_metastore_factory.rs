@@ -53,8 +53,9 @@ pub struct FileBackedMetastoreFactory {
 
 impl Default for FileBackedMetastoreFactory {
     fn default() -> Self {
+        let storage_uri_resolver = quickwit_storage_uri_resolver().clone();
         FileBackedMetastoreFactory {
-            storage_uri_resolver: quickwit_storage_uri_resolver().clone(),
+            storage_uri_resolver,
             cache: Default::default(),
         }
     }
@@ -79,6 +80,15 @@ fn extract_polling_interval_from_uri(uri: &str) -> (String, Option<Duration>) {
 }
 
 impl FileBackedMetastoreFactory {
+    /// Builds a FileBackedMetastoreFactory wrapping a given storage uri resolver.
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn new(storage_uri_resolver: StorageUriResolver) -> FileBackedMetastoreFactory {
+        FileBackedMetastoreFactory {
+            storage_uri_resolver,
+            cache: Default::default(),
+        }
+    }
+
     async fn get_from_cache(&self, uri: &Uri) -> Option<Arc<dyn Metastore>> {
         let cache_lock = self.cache.lock().await;
         cache_lock.get(uri).and_then(Weak::upgrade)

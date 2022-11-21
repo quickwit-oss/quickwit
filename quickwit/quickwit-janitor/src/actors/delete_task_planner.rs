@@ -422,8 +422,7 @@ mod tests {
                 type: i64
                 fast: true
         "#;
-        let test_sandbox =
-            TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"], None).await?;
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
         let docs = vec![
             serde_json::json!({"body": "info", "ts": 0 }),
             serde_json::json!({"body": "info", "ts": 0 }),
