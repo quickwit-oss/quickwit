@@ -579,18 +579,18 @@ mod tests {
         let local_store = LocalSplitStore::open(cache_dir.path().to_path_buf(), quota)
             .await
             .unwrap();
-        assert!(split_dir.exists());
+        assert!(split_dir.try_exists().unwrap());
         assert!(local_store
             .move_into_cache(&split_id, &split_dir)
             .await
             .unwrap());
-        assert!(!split_dir.exists());
+        assert!(!split_dir.try_exists().unwrap());
         let split_path = local_store
             .get_cached_split(&split_id, temp_dir_in.path())
             .await
             .unwrap()
             .unwrap();
-        assert!(split_path.exists());
+        assert!(split_path.try_exists().unwrap());
         assert_eq!(split_path.parent().unwrap(), temp_dir_in.path());
     }
 }

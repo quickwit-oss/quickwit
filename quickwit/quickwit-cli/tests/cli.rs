@@ -520,7 +520,8 @@ async fn test_delete_index_cli() {
         .join(INDEXING_DIR_NAME)
         .join(test_env.index_id)
         .as_path()
-        .exists());
+        .try_exists()
+        .unwrap());
 }
 
 #[tokio::test]
@@ -563,7 +564,7 @@ async fn test_garbage_collect_cli_no_grace() {
 
     // On gc splits within grace period should still exist.
     let index_path = test_env.indexes_dir_path.join(&test_env.index_id);
-    assert_eq!(index_path.exists(), true);
+    assert_eq!(index_path.try_exists().unwrap(), true);
 
     let split_ids = [splits[0].split_id()];
     let metastore = refresh_metastore(metastore).await.unwrap();
@@ -580,7 +581,7 @@ async fn test_garbage_collect_cli_no_grace() {
     for split_id in split_ids {
         let split_file = quickwit_common::split_file(split_id);
         let split_filepath = index_path.join(&split_file);
-        assert_eq!(split_filepath.exists(), true);
+        assert_eq!(split_filepath.try_exists().unwrap(), true);
     }
 
     let args = create_gc_args(false);
@@ -591,7 +592,7 @@ async fn test_garbage_collect_cli_no_grace() {
     for split_id in split_ids {
         let split_file = quickwit_common::split_file(split_id);
         let split_filepath = index_path.join(&split_file);
-        assert_eq!(split_filepath.exists(), false);
+        assert_eq!(split_filepath.try_exists().unwrap(), false);
     }
 
     let metastore = refresh_metastore(metastore).await.unwrap();
@@ -612,7 +613,7 @@ async fn test_garbage_collect_cli_no_grace() {
 
     delete_index_cli(args).await.unwrap();
 
-    assert_eq!(index_path.exists(), false);
+    assert_eq!(index_path.try_exists().unwrap(), false);
 }
 
 #[tokio::test]
@@ -652,7 +653,7 @@ async fn test_garbage_collect_index_cli() {
     let index_path = test_env.indexes_dir_path.join(&test_env.index_id);
     let split_filename = quickwit_common::split_file(splits[0].split_metadata.split_id.as_str());
     let split_path = index_path.join(&split_filename);
-    assert_eq!(split_path.exists(), true);
+    assert_eq!(split_path.try_exists().unwrap(), true);
 
     let args = create_gc_args(3600);
 
@@ -679,7 +680,7 @@ async fn test_garbage_collect_index_cli() {
         .stage_split(&test_env.index_id, split.split_metadata)
         .await
         .unwrap();
-    assert_eq!(split_path.exists(), true);
+    assert_eq!(split_path.try_exists().unwrap(), true);
 
     let metastore = refresh_metastore(metastore).await.unwrap();
     let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
@@ -689,7 +690,7 @@ async fn test_garbage_collect_index_cli() {
 
     garbage_collect_index_cli(args).await.unwrap();
 
-    assert_eq!(split_path.exists(), true);
+    assert_eq!(split_path.try_exists().unwrap(), true);
     // Staged splits should still exist within grace period.
     let metastore = refresh_metastore(metastore).await.unwrap();
     let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
@@ -708,7 +709,7 @@ async fn test_garbage_collect_index_cli() {
     let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
     // Splits should be deleted from both metastore and file system.
     assert_eq!(splits.len(), 0);
-    assert_eq!(split_path.exists(), false);
+    assert_eq!(split_path.try_exists().unwrap(), false);
 }
 
 /// testing the api via cli commands

@@ -27,6 +27,7 @@
 //! - The `DebugDirectory` acts as a proxy to another directory to instrument it and record all of
 //!   its IO.
 #![warn(missing_docs)]
+#![deny(clippy::disallowed_methods)]
 
 mod bundle_directory;
 mod caching_directory;

@@ -20,6 +20,7 @@
 //! This projects implements quickwit's search API.
 #![warn(missing_docs)]
 #![allow(clippy::bool_assert_comparison)]
+#![deny(clippy::disallowed_methods)]
 
 mod client;
 mod cluster_client;

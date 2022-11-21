@@ -20,6 +20,7 @@
 #![warn(missing_docs)]
 #![allow(clippy::bool_assert_comparison)]
 #![allow(clippy::len_without_is_empty)]
+#![deny(clippy::disallowed_methods)]
 
 //! `quickwit-storage` is the abstraction used in quickwit to interface itself
 //! to different storage:

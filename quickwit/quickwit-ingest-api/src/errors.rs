@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::io;
+
 use quickwit_proto::{tonic, ServiceError, ServiceErrorCode};
 use serde::Serialize;
 use thiserror::Error;
@@ -31,6 +33,16 @@ pub enum IngestApiError {
     IndexAlreadyExists { index_id: String },
     #[error("Ingest API service is down")]
     IngestAPIServiceDown,
+    #[error("Io Error {msg}")]
+    IoError { msg: String },
+}
+
+impl From<io::Error> for IngestApiError {
+    fn from(io_err: io::Error) -> Self {
+        IngestApiError::IoError {
+            msg: format!("{:?}", io_err),
+        }
+    }
 }
 
 impl ServiceError for IngestApiError {
@@ -40,6 +52,7 @@ impl ServiceError for IngestApiError {
             IngestApiError::IndexDoesNotExist { .. } => ServiceErrorCode::NotFound,
             IngestApiError::IndexAlreadyExists { .. } => ServiceErrorCode::BadRequest,
             IngestApiError::IngestAPIServiceDown => ServiceErrorCode::Internal,
+            IngestApiError::IoError { .. } => ServiceErrorCode::Internal,
         }
     }
 }
@@ -71,6 +84,7 @@ impl From<IngestApiError> for tonic::Status {
             IngestApiError::IndexDoesNotExist { .. } => tonic::Code::NotFound,
             IngestApiError::IndexAlreadyExists { .. } => tonic::Code::AlreadyExists,
             IngestApiError::IngestAPIServiceDown => tonic::Code::Internal,
+            IngestApiError::IoError { .. } => tonic::Code::Internal,
         };
         let message = error.to_string();
         tonic::Status::new(code, message)

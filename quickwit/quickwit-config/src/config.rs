@@ -390,7 +390,7 @@ impl QuickwitConfig {
         if self.peer_seeds.is_empty() {
             warn!("Peer seed list is empty.");
         }
-        if !self.data_dir_path.exists() {
+        if !self.data_dir_path.try_exists()? {
             bail!(
                 "Data dir `{}` does not exist.",
                 self.data_dir_path.display()
