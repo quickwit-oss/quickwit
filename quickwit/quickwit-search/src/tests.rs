@@ -444,7 +444,7 @@ async fn single_node_search_sort_by_field(
                 type: text
                 fieldnorms: true
               - name: ts
-                type: i64
+                type: datetime
                 fast: true
               - name: temperature
                 type: i64
@@ -456,7 +456,7 @@ async fn single_node_search_sort_by_field(
               - name: description
                 type: text
               - name: ts
-                type: i64
+                type: datetime
                 fast: true
               - name: temperature
                 type: i64
@@ -484,9 +484,11 @@ async fn single_node_search_sort_by_field(
     .await?;
 
     let mut docs = vec![];
+    let start_timestamp = 72057595;
     for i in 0..30 {
-        let description = format!("city info-{}", i + 1);
-        docs.push(json!({"description": description, "ts": i+1, "temperature": i+32}));
+        let timestamp = start_timestamp + (i + 1) as i64;
+        let description = format!("city info-{}", timestamp);
+        docs.push(json!({"description": description, "ts": timestamp, "temperature": i+32}));
     }
     test_sandbox.add_documents(docs).await?;
 

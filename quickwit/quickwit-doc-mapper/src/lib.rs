@@ -71,7 +71,8 @@ pub fn default_doc_mapper_for_test() -> DefaultDocMapper {
             "field_mappings": [
                 {
                     "name": "timestamp",
-                    "type": "i64",
+                    "type": "datetime",
+                    "output_format": "unix_timestamp_secs",
                     "fast": true
                 },
                 {

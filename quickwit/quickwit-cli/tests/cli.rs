@@ -256,6 +256,8 @@ async fn test_ingest_docs_cli() {
     assert!(cache_directory_path.read_dir().unwrap().next().is_none());
 }
 
+//TODO: reinstate this test when we aggregation on Date fields is supported.
+#[ignore]
 #[tokio::test]
 async fn test_cmd_search_aggregation() -> Result<()> {
     let index_id = append_random_suffix("test-search-cmd");
@@ -271,8 +273,8 @@ async fn test_cmd_search_aggregation() -> Result<()> {
       "range_buckets": {
         "range": {
           "field": "ts",
-          "ranges": [ { "to": 2f64 }, { "from": 2f64, "to": 5f64 }, { "from": 5f64, "to": 9f64 }, { "from": 9f64 } ]
-        },
+          "ranges": [ { "to": 72057597f64 }, { "from": 72057597f64, "to": 72057600f64 }, {
+"from": 72057600f64, "to": 72057604f64 }, { "from": 72057604f64 } ]         },
         "aggs": {
           "average_ts": {
             "avg": { "field": "ts" }
@@ -378,7 +380,7 @@ async fn test_cmd_search_with_snippets() -> Result<()> {
     let hit = &search_response.hits[0];
     assert_eq!(
         serde_json::from_str::<Value>(&hit.json).unwrap(),
-        json!({"event": "baz", "ts": 9})
+        json!({"event": "baz", "ts": 72057604})
     );
     assert_eq!(
         serde_json::from_str::<Value>(hit.snippet.as_ref().unwrap()).unwrap(),
@@ -767,7 +769,7 @@ async fn test_all_local_index() {
     .text()
     .await
     .unwrap();
-    assert_eq!(search_stream_response, "2\n13\n");
+    assert_eq!(search_stream_response, "72057597000000\n72057608000000\n");
 
     service_task.abort();
 

@@ -464,7 +464,7 @@ impl IndexConfig {
             "field_mappings": [
                 {
                     "name": "timestamp",
-                    "type": "i64",
+                    "type": "datetime",
                     "fast": true
                 },
                 {
@@ -557,7 +557,7 @@ impl TestableForRegression for IndexConfig {
         let timestamp_mapping = serde_json::from_str(
             r#"{
                 "name": "timestamp",
-                "type": "i64",
+                "type": "datetime",
                 "fast": true
         }"#,
         )
