@@ -36,7 +36,7 @@ const IndexBarWrapper = styled('div')({
 function IndexAutocomplete(props: IndexMetadataProps) {
   const [open, setOpen] = React.useState(false);
   const [options, setOptions] = React.useState<readonly IndexMetadata[]>([]);
-  const [value, setValue] = React.useState<IndexMetadata | undefined>(undefined);
+  const [value, setValue] = React.useState<IndexMetadata | null>(null);
   const loading = open && options.length <= 1;
   const quickwitClient = useMemo(() => new Client(), []);
 
@@ -63,26 +63,18 @@ function IndexAutocomplete(props: IndexMetadataProps) {
   }, [open, props.indexMetadata, options.length]);
 
   useEffect(() => {
-    if (props.indexMetadata !== null) {
       setValue(props.indexMetadata);
-    } else {
-      setValue(undefined);
-    }
   }, [props.indexMetadata]);
 
   return (
     <Autocomplete
-      disableClearable
       size="small"
       sx={{ width: 210 }}
       open={open}
       value={value}
       onChange={(_, updatedValue) => {
-        if (updatedValue === null) {
-          setValue(undefined);
-        } else {
-          setValue(updatedValue);
-        }
+        setValue(updatedValue);
+
         if (updatedValue == null || updatedValue.index_config.index_id == null) {
           props.onIndexMetadataUpdate(null);
         } else {
