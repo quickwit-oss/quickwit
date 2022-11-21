@@ -376,7 +376,7 @@ impl<A: Actor> ActorContext<A> {
         self.progress.record_progress();
     }
 
-    pub(crate) fn state(&self) -> ActorState {
+    pub fn state(&self) -> ActorState {
         self.actor_state.get_state()
     }
 
