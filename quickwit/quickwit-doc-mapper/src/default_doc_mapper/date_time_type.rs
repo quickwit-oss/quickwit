@@ -104,15 +104,13 @@ impl QuickwitDateTimeOptions {
                 .format_date_time(&date)
                 .map(JsonValue::String),
             DateTimeOutputFormat::TimestampSecs => {
-                Ok(JsonValue::Number(date.unix_timestamp().into()))
+                Ok(JsonValue::Number(date_time.into_timestamp_secs().into()))
             }
             DateTimeOutputFormat::TimestampMillis => {
-                let timestamp_value = (date.unix_timestamp_nanos() / 1_000_000) as i64;
-                Ok(JsonValue::Number(timestamp_value.into()))
+                Ok(JsonValue::Number(date_time.into_timestamp_millis().into()))
             }
             DateTimeOutputFormat::TimestampMicros => {
-                let timestamp_value = (date.unix_timestamp_nanos() / 1_000) as i64;
-                Ok(JsonValue::Number(timestamp_value.into()))
+                Ok(JsonValue::Number(date_time.into_timestamp_micros().into()))
             }
         };
         format_result.map_err(|error| error.to_string())
