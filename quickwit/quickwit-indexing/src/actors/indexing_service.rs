@@ -330,7 +330,6 @@ impl IndexingService {
         let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
         self.indexing_pipeline_states
             .insert(pipeline_id.clone(), pipeline_handle.context());
-        info!("Adding services actor {:?}", &pipeline_id);
         self.indexing_pipeline_handles
             .insert(pipeline_id, pipeline_handle);
         self.counters.num_running_pipelines += 1;
