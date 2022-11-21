@@ -741,6 +741,58 @@ async fn test_search_dynamic_mode() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn test_search_dynamic_mode_expand_dots() -> anyhow::Result<()> {
+    let doc_mapping_yaml = r#"
+            field_mappings: []
+            mode: dynamic
+            #dynamic_mapping:
+            #  expand_dots: true -- that's the default value.
+        "#;
+    let test_sandbox =
+        TestSandbox::create(DYNAMIC_TEST_INDEX_ID, doc_mapping_yaml, "{}", &[], None)
+            .await
+            .unwrap();
+    let docs = vec![json!({"k8s.component.name": "quickwit"})];
+    test_sandbox.add_documents(docs).await.unwrap();
+    {
+        let docs = test_search_dynamic_util(&test_sandbox, "k8s.component.name:quickwit").await;
+        assert_eq!(&docs[..], &[0u32]);
+    }
+    {
+        let docs =
+            test_search_dynamic_util(&test_sandbox, r#"k8s\.component\.name:quickwit"#).await;
+        assert_eq!(&docs[..], &[0u32]);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_search_dynamic_mode_do_not_expand_dots() -> anyhow::Result<()> {
+    let doc_mapping_yaml = r#"
+            field_mappings: []
+            mode: dynamic
+            dynamic_mapping:
+                expand_dots: false
+        "#;
+    let test_sandbox =
+        TestSandbox::create(DYNAMIC_TEST_INDEX_ID, doc_mapping_yaml, "{}", &[], None)
+            .await
+            .unwrap();
+    let docs = vec![json!({"k8s.component.name": "quickwit"})];
+    test_sandbox.add_documents(docs).await.unwrap();
+    {
+        let docs =
+            test_search_dynamic_util(&test_sandbox, r#"k8s\.component\.name:quickwit"#).await;
+        assert_eq!(&docs[..], &[0u32]);
+    }
+    {
+        let docs = test_search_dynamic_util(&test_sandbox, r#"k8s.component.name:quickwit"#).await;
+        assert!(docs.is_empty());
+    }
+    Ok(())
+}
+
 fn json_to_named_field_doc(doc_json: serde_json::Value) -> NamedFieldDocument {
     assert!(doc_json.is_object());
     let mut doc_map: BTreeMap<String, Vec<Value>> = BTreeMap::new();

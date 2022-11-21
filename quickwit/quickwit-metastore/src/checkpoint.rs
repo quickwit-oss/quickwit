@@ -525,6 +525,11 @@ impl SourceCheckpointDelta {
         self.per_partition.len()
     }
 
+    /// Returns an iterator over the partition_ids.
+    pub fn partitions(&self) -> impl Iterator<Item = &PartitionId> {
+        self.per_partition.keys()
+    }
+
     /// Returns `true` if the checkpoint delta is empty.
     pub fn is_empty(&self) -> bool {
         self.per_partition.is_empty()

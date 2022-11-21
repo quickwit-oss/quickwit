@@ -42,8 +42,10 @@ use quickwit_proto::metastore_api::{
     ResetSourceCheckpointRequest, StageSplitRequest, ToggleSourceRequest,
     UpdateSplitsDeleteOpstampRequest,
 };
+use quickwit_proto::tonic::codegen::InterceptedService;
 use quickwit_proto::tonic::transport::{Channel, Endpoint};
 use quickwit_proto::tonic::Status;
+use quickwit_proto::SpanContextInterceptor;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
@@ -71,7 +73,8 @@ const CLIENT_TIMEOUT_DURATION: Duration = if cfg!(test) {
 /// listen to cluster live nodes changes to keep updated the list of available nodes.
 #[derive(Clone)]
 pub struct MetastoreGrpcClient {
-    underlying: MetastoreApiServiceClient<Timeout<Channel>>,
+    underlying:
+        MetastoreApiServiceClient<InterceptedService<Timeout<Channel>, SpanContextInterceptor>>,
     pool_size_rx: watch::Receiver<usize>,
 }
 
@@ -111,7 +114,8 @@ impl MetastoreGrpcClient {
                 Result::<_, anyhow::Error>::Ok(())
             }
         });
-        let underlying = MetastoreApiServiceClient::new(timeout_channel);
+        let underlying =
+            MetastoreApiServiceClient::with_interceptor(timeout_channel, SpanContextInterceptor);
 
         Ok(Self {
             underlying,
@@ -133,8 +137,9 @@ impl MetastoreGrpcClient {
                 }
             }))
             .await?;
+        let timeout_channel = Timeout::new(channel, CLIENT_TIMEOUT_DURATION);
         let underlying =
-            MetastoreApiServiceClient::new(Timeout::new(channel, CLIENT_TIMEOUT_DURATION));
+            MetastoreApiServiceClient::with_interceptor(timeout_channel, SpanContextInterceptor);
         let (_pool_size_tx, pool_size_rx) = watch::channel(1);
         Ok(Self {
             underlying,

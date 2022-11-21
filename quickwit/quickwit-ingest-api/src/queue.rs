@@ -62,6 +62,22 @@ pub struct Queues {
     last_position_per_queue: HashMap<String, Option<Position>>,
 }
 
+pub fn list_cf(db_path: &Path) -> crate::Result<Vec<String>> {
+    let options = default_rocks_db_options();
+    let cf_names: Vec<String> = if db_path.join("CURRENT").try_exists()? {
+        DB::list_cf(&options, db_path)?
+    } else {
+        Vec::new()
+    };
+    Ok(cf_names)
+}
+
+pub fn open_db(db_path: &Path, cf_names: &[String]) -> crate::Result<DB> {
+    let options = default_rocks_db_options();
+    let db = DB::open_cf(&options, db_path, cf_names)?;
+    Ok(db)
+}
+
 fn default_rocks_db_options() -> rocksdb::Options {
     // TODO tweak
     let mut options = rocksdb::Options::default();
@@ -97,17 +113,10 @@ fn last_position(db: &DB, queue_id: &str) -> crate::Result<Option<Position>> {
 }
 
 impl Queues {
-    pub fn open(queues_dir_path: &Path) -> crate::Result<Queues> {
-        let options = default_rocks_db_options();
-        let cf_names: Vec<String> = if queues_dir_path.join("CURRENT").try_exists()? {
-            DB::list_cf(&options, queues_dir_path)?
-        } else {
-            Vec::new()
-        };
-        let db = DB::open_cf(&options, queues_dir_path, &cf_names)?;
+    pub fn open_db(db: DB, cf_names: &[String]) -> crate::Result<Queues> {
         let mut last_position_per_queue = HashMap::default();
         for cf_name in cf_names {
-            if let Some(queue_id) = cf_to_queue(&cf_name) {
+            if let Some(queue_id) = cf_to_queue(cf_name) {
                 let last_position = last_position(&db, queue_id)?;
                 last_position_per_queue.insert(queue_id.to_string(), last_position);
             }
@@ -116,6 +125,12 @@ impl Queues {
             db,
             last_position_per_queue,
         })
+    }
+
+    pub fn open_path(db_path: &Path) -> crate::Result<Queues> {
+        let cf_names = list_cf(db_path)?;
+        let db = open_db(db_path, &cf_names)?;
+        Self::open_db(db, &cf_names)
     }
 
     pub fn queue_exists(&self, queue_id: &str) -> bool {
@@ -333,7 +348,7 @@ mod tests {
     impl QueuesForTest {
         fn reload(&mut self) {
             std::mem::drop(self.queues.take());
-            self.queues = Some(Queues::open(self.tempdir.path()).unwrap());
+            self.queues = Some(Queues::open_path(self.tempdir.path()).unwrap());
         }
 
         #[track_caller]
@@ -541,7 +556,7 @@ mod tests {
             .collect();
 
         let tmpdir = tempfile::tempdir_in(".").unwrap();
-        let mut queues = Queues::open(tmpdir.path()).unwrap();
+        let mut queues = Queues::open_path(tmpdir.path()).unwrap();
         for queue_id in 0..NUM_QUEUES {
             println!("create queue {queue_id}");
             queues.create_queue(&queue_id.to_string()).unwrap();

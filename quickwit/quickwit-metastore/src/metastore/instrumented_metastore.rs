@@ -235,7 +235,7 @@ impl Metastore for InstrumentedMetastore {
         );
     }
 
-    // Delete tasks API
+    // Delete task API
     async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask> {
         let index_id = delete_query.index_id.clone();
         instrument!(

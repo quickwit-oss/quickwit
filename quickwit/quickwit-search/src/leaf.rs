@@ -386,8 +386,8 @@ async fn leaf_search_single_split(
         quickwit_collector.requires_scoring(),
     )
     .await?;
+    let span = info_span!( "tantivy_search", split_id = %split.split_id);
     let leaf_search_response = crate::run_cpu_intensive(move || {
-        let span = info_span!( "search", split_id = %split.split_id);
         let _span_guard = span.enter();
         searcher.search(&query, &quickwit_collector)
     })

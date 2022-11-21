@@ -232,6 +232,9 @@ pub struct QuickwitJsonOptions {
     /// If true, the field will be stored in the doc store.
     #[serde(default = "default_as_true")]
     pub stored: bool,
+    /// If true, the '.' in json keys will be expanded.
+    #[serde(default = "default_as_true")]
+    pub expand_dots: bool,
 }
 
 impl Default for QuickwitJsonOptions {
@@ -242,6 +245,7 @@ impl Default for QuickwitJsonOptions {
             tokenizer: None,
             record: None,
             stored: true,
+            expand_dots: true,
         }
     }
 }
@@ -263,6 +267,9 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
                 .set_tokenizer(tokenizer.get_name())
                 .set_index_option(index_record_option);
             json_options = json_options.set_indexing_options(text_field_indexing);
+        }
+        if quickwit_json_options.expand_dots {
+            json_options = json_options.set_expand_dots_enabled();
         }
         json_options
     }
@@ -582,12 +589,10 @@ mod tests {
     "#,
         );
         assert!(mapping_entry.is_err());
-        assert_eq!(
-            mapping_entry.unwrap_err().to_string(),
-            "Error while parsing field `my_field_name`: unknown field `blub`, expected one of \
-             `description`, `indexed`, `tokenizer`, `record`, `stored`"
-                .to_string()
-        );
+        assert!(mapping_entry
+            .unwrap_err()
+            .to_string()
+            .contains("Error while parsing field `my_field_name`: unknown field `blub`"));
         Ok(())
     }
 
@@ -1204,6 +1209,7 @@ mod tests {
             tokenizer: None,
             record: None,
             stored: true,
+            expand_dots: true,
         };
         assert_eq!(&field_mapping_entry.name, "my_json_field");
         assert!(
@@ -1243,6 +1249,7 @@ mod tests {
             tokenizer: Some(QuickwitTextTokenizer::Raw),
             record: None,
             stored: false,
+            expand_dots: true,
         };
         assert_eq!(&field_mapping_entry.name, "my_json_field_multi");
         assert!(
@@ -1323,7 +1330,8 @@ mod tests {
                 "description": "If you see this description, your test is failed",
                 "type": "json",
                 "stored": true,
-                "indexed": true
+                "indexed": true,
+                "expand_dots": true,
             })
         );
     }

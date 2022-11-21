@@ -31,7 +31,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context};
 pub use errors::IngestApiError;
 use errors::Result;
-pub use ingest_api_service::IngestApiService;
+pub use ingest_api_service::{GetPartitionId, IngestApiService};
 use metrics::INGEST_METRICS;
 use once_cell::sync::OnceCell;
 pub use position::Position;

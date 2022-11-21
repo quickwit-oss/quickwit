@@ -445,12 +445,21 @@ fn convert_sqlx_err(index_id: &str, sqlx_err: sqlx::Error) -> MetastoreError {
     match &sqlx_err {
         sqlx::Error::Database(boxed_db_err) => {
             error!(pg_db_err=?boxed_db_err, "postgresql-error");
-            let pg_error_code = boxed_db_err.downcast_ref::<PgDatabaseError>().code();
-            match pg_error_code {
-                pg_error_code::FOREIGN_KEY_VIOLATION => MetastoreError::IndexDoesNotExist {
+
+            let pg_db_error = boxed_db_err.downcast_ref::<PgDatabaseError>();
+            let pg_error_code = pg_db_error.code();
+            let pg_error_table = pg_db_error.table();
+
+            match (pg_error_code, pg_error_table) {
+                (pg_error_code::FOREIGN_KEY_VIOLATION, _) => MetastoreError::IndexDoesNotExist {
                     index_id: index_id.to_string(),
                 },
-                pg_error_code::UNIQUE_VIOLATION => MetastoreError::InternalError {
+                (pg_error_code::UNIQUE_VIOLATION, Some(table)) if table.starts_with("indexes") => {
+                    MetastoreError::IndexAlreadyExists {
+                        index_id: index_id.to_string(),
+                    }
+                }
+                (pg_error_code::UNIQUE_VIOLATION, _) => MetastoreError::InternalError {
                     message: "Unique key violation.".to_string(),
                     cause: format!("DB error {:?}", boxed_db_err),
                 },
