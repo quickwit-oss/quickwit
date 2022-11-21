@@ -175,7 +175,7 @@ The `datetime` type handles dates and datetimes. Quickwit supports multiple inpu
 
 - `unix_timestamp`: parse Unix timestamp values. Timestamp values come in different precision, namely: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. Quickwit is capable of inferring the precision from the value. Because of this feature, Quickwit only supports timestamp values ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`.
 
-The `precision` parameter indicates the precision used to truncate the values before encoding and compressing them. The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`. It only affects what is stored in fast fields when a `datetime` field is marked as fast field. 
+The `precision` parameter indicates the precision used to truncate the values before encoding and compressing them. The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`. It only affects what is stored in fast fields when a `datetime` field is marked as fast field.
 
 :::info
 When specifying multiple input formats, the corresponding parsers are attempted in the order they are declared.
@@ -299,6 +299,7 @@ type: json
 stored: true
 indexed: true
 tokenizer: "default"
+expand_dots: false
 ```
 
 **Parameters for JSON field**
@@ -310,6 +311,7 @@ tokenizer: "default"
 | `indexed`   | Whether value is indexed | `true` |
 | `tokenizer` | **Only affects strings in the json object**. Name of the `Tokenizer`, choices between `raw`, `default`, `en_stem` and `chinese_compatible` | `default` |
 | `record`    | **Only affects strings in the json object**. Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
+| `expand_dots`    | If true, json keys containing a `.` should be expanded. For instance, if `expand_dots` is set to true, `{"k8s.node.id": "node-2"}` will be indexed as if it was `{"k8s": {"node": {"id": "node2"}}}`. The benefit is that escaping the `.` will not be required at query time. In other words, `k8s.node.id:node2` will match the document. This does not impact the way the document is stored.  | `true` |
 
 Note that the `tokenizer` and the `record` have the same definition and the same effect as for the text field.
 
@@ -372,6 +374,7 @@ Quickwit offers you three different modes:
 - stored: true
 - tokenizer: raw
 - record: basic
+- expand_dots: true
 ```
 
 The `dynamic` mode makes it possible to operate Quickwit in a schemaless manner, or with a partial schema.

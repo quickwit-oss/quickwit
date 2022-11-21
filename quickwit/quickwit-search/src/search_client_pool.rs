@@ -29,7 +29,7 @@ use http::Uri;
 use itertools::Itertools;
 use quickwit_cluster::ClusterMember;
 use quickwit_config::service::QuickwitService;
-use quickwit_proto::tonic;
+use quickwit_proto::{tonic, SpanContextInterceptor};
 use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt;
 use tonic::transport::Endpoint;
@@ -50,10 +50,11 @@ pub async fn create_search_service_client(
         .build()?;
     // Create a channel with connect_lazy to automatically reconnect to the node.
     let channel = Endpoint::from(uri).connect_lazy();
-    let client = SearchServiceClient::from_grpc_client(
-        quickwit_proto::search_service_client::SearchServiceClient::new(channel),
-        grpc_addr,
+    let client = quickwit_proto::search_service_client::SearchServiceClient::with_interceptor(
+        channel,
+        SpanContextInterceptor,
     );
+    let client = SearchServiceClient::from_grpc_client(client, grpc_addr);
     Ok(client)
 }
 

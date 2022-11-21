@@ -17,6 +17,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+ulid = {workspace = true}
 
 quickwit-actors = { workspace = true }
 quickwit-common = { workspace = true }

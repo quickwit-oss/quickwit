@@ -107,6 +107,7 @@ pub(crate) async fn start_grpc_server(
         } else {
             None
         };
+
     let server_router = server
         .add_optional_service(metastore_service)
         .add_optional_service(otlp_log_service)
