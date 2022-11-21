@@ -3603,12 +3603,15 @@ name = "quickwit-proto"
 version = "0.3.1"
 dependencies = [
  "glob",
+ "opentelemetry",
  "prost",
  "prost-build",
  "prost-types",
  "serde",
  "tonic",
  "tonic-build",
+ "tracing",
+ "tracing-opentelemetry",
 ]
 
 [[package]]
