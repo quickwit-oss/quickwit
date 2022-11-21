@@ -109,6 +109,10 @@ impl<A: Actor> ActorHandle<A> {
         self.actor_context.state()
     }
 
+    pub fn context(&self) -> ActorContext<A> {
+        self.actor_context.clone()
+    }
+
     /// Process all of the pending messages, and returns a snapshot of
     /// the observable state of the actor after this.
     ///

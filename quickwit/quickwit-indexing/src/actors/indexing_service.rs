@@ -122,6 +122,7 @@ pub struct IndexingService {
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
     indexing_pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
+    indexing_pipeline_states: HashMap<IndexingPipelineId, ActorContext<IndexingPipeline>>,
     counters: IndexingServiceCounters,
     indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
     local_split_store: Arc<LocalSplitStore>,
@@ -151,6 +152,7 @@ impl IndexingService {
             storage_resolver,
             local_split_store: Arc::new(local_split_store),
             indexing_pipeline_handles: Default::default(),
+            indexing_pipeline_states: Default::default(),
             counters: Default::default(),
             indexing_directories: HashMap::new(),
             max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
@@ -326,6 +328,9 @@ impl IndexingService {
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
+        self.indexing_pipeline_states
+            .insert(pipeline_id.clone(), pipeline_handle.context());
+        info!("Adding services actor {:?}", &pipeline_id);
         self.indexing_pipeline_handles
             .insert(pipeline_id, pipeline_handle);
         self.counters.num_running_pipelines += 1;
@@ -363,9 +368,9 @@ impl IndexingService {
     }
 
     async fn handle_supervise(&mut self) -> Result<(), ActorExitStatus> {
-        self.indexing_pipeline_handles
+        self.indexing_pipeline_states
             .retain(
-                |pipeline_id, pipeline_handle| match pipeline_handle.state() {
+                |pipeline_id, pipeline_ctx| match pipeline_ctx.state() {
                     ActorState::Idle | ActorState::Paused | ActorState::Processing => true,
                     ActorState::Success => {
                         info!(
@@ -393,7 +398,7 @@ impl IndexingService {
             );
         // Evict and kill merge pipelines that are not needed.
         let needed_merge_pipeline_ids: HashSet<MergePipelineId> = self
-            .indexing_pipeline_handles
+            .indexing_pipeline_states
             .keys()
             .map(MergePipelineId::from)
             .collect();
