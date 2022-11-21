@@ -666,7 +666,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexing_service() {
-        let metastore_uri = Uri::from_well_formed("ram:///metastore".to_string());
+        let metastore_uri = Uri::from_well_formed("ram:///metastore");
         let metastore = quickwit_metastore_uri_resolver()
             .resolve(&metastore_uri)
             .await
@@ -895,7 +895,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_service_shut_down_merge_pipeline_when_no_indexing_pipeline() {
         quickwit_common::setup_logging_for_tests();
-        let metastore_uri = Uri::from_well_formed("ram:///metastore".to_string());
+        let metastore_uri = Uri::from_well_formed("ram:///metastore");
         let metastore = quickwit_metastore_uri_resolver()
             .resolve(&metastore_uri)
             .await
