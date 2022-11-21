@@ -43,6 +43,10 @@ function SearchView() {
   const quickwitClient = useMemo(() => new Client(), []);
 
   const runSearch = (updatedSearchRequest: SearchRequest) => {
+    if (!updatedSearchRequest || !updatedSearchRequest.indexId) {
+      return;
+    }
+
     console.log('Run search...', updatedSearchRequest);
     // If we have a timestamp field, order by desc on the timestamp field.
     if (index?.metadata.index_config.indexing_settings.timestamp_field) {
@@ -52,9 +56,6 @@ function SearchView() {
       };
     } else {
       updatedSearchRequest.sortByField = null;
-    }
-    if (updatedSearchRequest !== null) {
-      setSearchRequest(updatedSearchRequest);
     }
     setQueryRunning(true);
     setSearchError(null);
@@ -88,9 +89,10 @@ function SearchView() {
     prevIndexIdRef.current = index === null ? null : index.metadata.index_config.index_id;
   }, [index]);
   useEffect(() => {
-    if (searchRequest.indexId === null || searchRequest.indexId === undefined || searchRequest.indexId === '') {
+    if (!searchRequest.indexId) {
       return;
     }
+
     if (index !== null && index.metadata.index_config.index_id === searchRequest.indexId) {
       return;
     }

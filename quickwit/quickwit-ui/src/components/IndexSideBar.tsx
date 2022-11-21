@@ -63,11 +63,7 @@ function IndexAutocomplete(props: IndexMetadataProps) {
   }, [open, props.indexMetadata, options.length]);
 
   useEffect(() => {
-    if (props.indexMetadata !== null) {
       setValue(props.indexMetadata);
-    } else {
-      setValue(null);
-    }
   }, [props.indexMetadata]);
 
   return (
@@ -77,11 +73,8 @@ function IndexAutocomplete(props: IndexMetadataProps) {
       open={open}
       value={value}
       onChange={(_, updatedValue) => {
-        if (updatedValue === null) {
-          setValue(null);
-        } else {
-          setValue(updatedValue);
-        }
+        setValue(updatedValue);
+
         if (updatedValue == null || updatedValue.index_config.index_id == null) {
           props.onIndexMetadataUpdate(null);
         } else {
