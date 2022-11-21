@@ -156,7 +156,7 @@ mod tests {
     async fn test_metastore_resolver_should_not_raise_errors_on_file() -> anyhow::Result<()> {
         let metastore_resolver = quickwit_metastore_uri_resolver();
         metastore_resolver
-            .resolve(&Uri::from_well_formed("file://".to_string()))
+            .resolve(&Uri::from_well_formed("file://"))
             .await?;
         Ok(())
     }
@@ -173,7 +173,7 @@ mod tests {
         });
         let (_uri_protocol, uri_path) = test_database_url.split_once("://").unwrap();
         for protocol in &["postgres", "postgresql"] {
-            let postgres_uri = Uri::from_well_formed(format!("{}://{}", protocol, uri_path));
+            let postgres_uri = Uri::from_well_formed(format!("{protocol}://{uri_path}"));
             metastore_resolver.resolve(&postgres_uri).await.unwrap();
         }
     }

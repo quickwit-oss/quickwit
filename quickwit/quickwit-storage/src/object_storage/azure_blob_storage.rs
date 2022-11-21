@@ -123,7 +123,7 @@ impl AzureBlobStorage {
         let container_client = ClientBuilder::emulator().container_client(container);
         Self {
             container_client,
-            uri: Uri::from_well_formed(format!("azure://tester/{}", container)),
+            uri: Uri::from_well_formed(format!("azure://tester/{container}")),
             prefix: PathBuf::new(),
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams {
@@ -565,31 +565,26 @@ mod tests {
 
     #[test]
     fn test_parse_azure_uri() {
-        let (account, container, path) = parse_azure_uri(&Uri::from_well_formed(
-            "azure://quickwit/indexes/wiki".to_string(),
-        ))
-        .unwrap();
+        let (account, container, path) =
+            parse_azure_uri(&Uri::from_well_formed("azure://quickwit/indexes/wiki")).unwrap();
         assert_eq!(account, "quickwit");
         assert_eq!(container, "indexes");
         assert_eq!(path.to_string_lossy().to_string(), "wiki");
 
         let (account, container, path) =
-            parse_azure_uri(&Uri::from_well_formed("azure://jane/store".to_string())).unwrap();
+            parse_azure_uri(&Uri::from_well_formed("azure://jane/store")).unwrap();
         assert_eq!(account, "jane");
         assert_eq!(container, "store");
         assert_eq!(path.to_string_lossy().to_string(), "");
 
         assert_eq!(
-            parse_azure_uri(&Uri::from_well_formed("azure://quickwit".to_string())),
+            parse_azure_uri(&Uri::from_well_formed("azure://quickwit")),
             None
         );
         assert_eq!(
-            parse_azure_uri(&Uri::from_well_formed("azure://quickwit/".to_string())),
+            parse_azure_uri(&Uri::from_well_formed("azure://quickwit/")),
             None
         );
-        assert_eq!(
-            parse_azure_uri(&Uri::from_well_formed("azure://".to_string())),
-            None
-        );
+        assert_eq!(parse_azure_uri(&Uri::from_well_formed("azure://")), None);
     }
 }

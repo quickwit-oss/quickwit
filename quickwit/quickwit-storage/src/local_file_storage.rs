@@ -383,13 +383,13 @@ mod tests {
         assert_eq!(local_file_storage.uri(), &index_uri);
 
         let err = local_file_storage_factory
-            .resolve(&Uri::from_well_formed("s3://foo/bar".to_string()))
+            .resolve(&Uri::from_well_formed("s3://foo/bar"))
             .err()
             .unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
         let err = local_file_storage_factory
-            .resolve(&Uri::from_well_formed("s3://".to_string()))
+            .resolve(&Uri::from_well_formed("s3://"))
             .err()
             .unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));

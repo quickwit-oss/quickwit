@@ -117,7 +117,8 @@ pub struct Uri {
 impl Uri {
     /// Constructs a [`Uri`] from a properly formatted string `<protocol>://<path>` where `path` is
     /// normalized. Use this method exclusively for trusted input.
-    pub fn from_well_formed(uri: String) -> Self {
+    pub fn from_well_formed<S: ToString>(uri: S) -> Self {
+        let uri = uri.to_string();
         let protocol_idx = uri.find(PROTOCOL_SEPARATOR).expect(
             "URI lacks protocol separator. Use `Uri::from_well_formed` exclusively for trusted \
              input.",
@@ -131,7 +132,7 @@ impl Uri {
 
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(uri: &str) -> Self {
-        Uri::from_well_formed(uri.to_string())
+        Uri::from_well_formed(uri)
     }
 
     /// Returns the extension of the URI.
