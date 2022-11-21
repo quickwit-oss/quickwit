@@ -30,7 +30,7 @@ use futures::StreamExt;
 use quickwit_common::ignore_error_kind;
 use quickwit_common::uri::{Protocol, Uri};
 use tokio::fs;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tracing::warn;
 
 use crate::storage::{BulkDeleteError, DeleteFailure, SendableAsync};
@@ -167,7 +167,7 @@ fn delete_all_dirs_if_empty<'a>(
 #[async_trait]
 impl Storage for LocalFileStorage {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
-        if !self.root.exists() {
+        if !self.root.try_exists()? {
             // By creating directories, we check if we have the right permissions.
             fs::create_dir_all(&self.root).await?
         }
@@ -180,14 +180,25 @@ impl Storage for LocalFileStorage {
         payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
         let full_path = self.full_path(path)?;
-        if let Some(parent_dir) = full_path.parent() {
-            fs::create_dir_all(parent_dir).await?;
-        }
+        let parent_dir = full_path.parent().ok_or_else(|| {
+            let err = anyhow::anyhow!("No parent directory for {full_path:?}");
+            StorageErrorKind::InternalError.with_error(err)
+        })?;
 
+        fs::create_dir_all(parent_dir).await?;
         let mut reader = payload.byte_stream().await?.into_async_read();
-        let mut f = tokio::fs::File::create(full_path).await?;
-        tokio::io::copy(&mut reader, &mut f).await?;
-
+        let named_temp_file = tempfile::NamedTempFile::new_in(parent_dir)?;
+        let (temp_std_file, temp_filepath) = named_temp_file.into_parts();
+        let mut temp_tokio_file = tokio::fs::File::from_std(temp_std_file);
+        tokio::io::copy(&mut reader, &mut temp_tokio_file).await?;
+        temp_tokio_file.flush().await?;
+        temp_tokio_file.sync_data().await?;
+        temp_filepath
+            .persist(&full_path)
+            .map_err(|err| StorageErrorKind::Io.with_error(err))?;
+        // We also need to sync the parent directory to ensure it
+        // the file move has been persisted on all file systems.
+        tokio::fs::File::open(parent_dir).await?.sync_data().await?;
         Ok(())
     }
 
@@ -409,7 +420,7 @@ mod tests {
         let failure = error.failures.get(Path::new("bar-dir")).unwrap();
         assert_eq!(failure.error.as_ref().unwrap().kind(), StorageErrorKind::Io);
 
-        assert!(!tempdir.path().join("foo-dir").exists());
+        assert!(!tempdir.path().join("foo-dir").try_exists().unwrap());
     }
 
     #[tokio::test]
@@ -419,25 +430,25 @@ mod tests {
         tokio::fs::create_dir_all(dir_path.clone()).await?;
 
         // check all empty directory
-        assert_eq!(dir_path.exists(), true);
+        assert_eq!(dir_path.try_exists().unwrap(), true);
         delete_all_dirs_if_empty(&path_root, dir_path.as_path()).await?;
-        assert_eq!(dir_path.exists(), false);
-        assert_eq!(dir_path.parent().unwrap().exists(), false);
+        assert_eq!(dir_path.try_exists().unwrap(), false);
+        assert_eq!(dir_path.parent().unwrap().try_exists().unwrap(), false);
 
         // check with intermediate file
         tokio::fs::create_dir_all(dir_path.clone()).await?;
         let intermediate_file = dir_path.parent().unwrap().join("fizz.txt");
         tokio::fs::File::create(intermediate_file.clone()).await?;
-        assert_eq!(dir_path.exists(), true);
-        assert_eq!(intermediate_file.exists(), true);
+        assert_eq!(dir_path.try_exists().unwrap(), true);
+        assert_eq!(intermediate_file.try_exists().unwrap(), true);
         delete_all_dirs_if_empty(&path_root, dir_path.as_path()).await?;
-        assert_eq!(dir_path.exists(), false);
-        assert_eq!(dir_path.parent().unwrap().exists(), true);
+        assert_eq!(dir_path.try_exists().unwrap(), false);
+        assert_eq!(dir_path.parent().unwrap().try_exists().unwrap(), true);
 
         // make sure it does not go beyond the path
         tokio::fs::create_dir_all(path_root.join("home/foo/bar")).await?;
         delete_all_dirs_if_empty(&path_root.join("home/foo"), Path::new("bar")).await?;
-        assert_eq!(path_root.join("home/foo").exists(), true);
+        assert_eq!(path_root.join("home/foo").try_exists().unwrap(), true);
 
         Ok(())
     }

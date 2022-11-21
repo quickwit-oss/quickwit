@@ -33,7 +33,7 @@ use tracing::error;
 
 use crate::leaf::open_index_with_caches;
 use crate::service::SearcherContext;
-use crate::GlobalDocAddress;
+use crate::{convert_document_to_json_string, GlobalDocAddress};
 
 const SNIPPET_MAX_NUM_CHARS: usize = 150;
 
@@ -44,7 +44,7 @@ async fn fetch_docs_to_map(
     mut global_doc_addrs: Vec<GlobalDocAddress>,
     index_storage: Arc<dyn Storage>,
     splits: &[SplitIdAndFooterOffsets],
-    doc_mapper_opt: Option<Arc<dyn DocMapper>>,
+    doc_mapper: Arc<dyn DocMapper>,
     search_request_opt: Option<&SearchRequest>,
 ) -> anyhow::Result<HashMap<GlobalDocAddress, Document>> {
     let mut split_fetch_docs_futures = Vec::new();
@@ -71,7 +71,7 @@ async fn fetch_docs_to_map(
             global_doc_addrs,
             index_storage.clone(),
             split_and_offset,
-            doc_mapper_opt.clone(),
+            doc_mapper.clone(),
             search_request_opt,
         ));
     }
@@ -111,7 +111,7 @@ pub async fn fetch_docs(
     partial_hits: Vec<PartialHit>,
     index_storage: Arc<dyn Storage>,
     splits: &[SplitIdAndFooterOffsets],
-    doc_mapper_opt: Option<Arc<dyn DocMapper>>,
+    doc_mapper: Arc<dyn DocMapper>,
     search_request_opt: Option<&SearchRequest>,
 ) -> anyhow::Result<FetchDocsResponse> {
     let global_doc_addrs: Vec<GlobalDocAddress> = partial_hits
@@ -124,7 +124,7 @@ pub async fn fetch_docs(
         global_doc_addrs,
         index_storage,
         splits,
-        doc_mapper_opt,
+        doc_mapper,
         search_request_opt,
     )
     .await?;
@@ -164,7 +164,7 @@ async fn fetch_docs_in_split(
     mut global_doc_addrs: Vec<GlobalDocAddress>,
     index_storage: Arc<dyn Storage>,
     split: &SplitIdAndFooterOffsets,
-    doc_mapper_opt: Option<Arc<dyn DocMapper>>,
+    doc_mapper: Arc<dyn DocMapper>,
     search_request_opt: Option<&SearchRequest>,
 ) -> anyhow::Result<Vec<(GlobalDocAddress, Document)>> {
     global_doc_addrs.sort_by_key(|doc| doc.doc_addr);
@@ -180,22 +180,25 @@ async fn fetch_docs_in_split(
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = Arc::new(index_reader.searcher());
-    let fields_snippet_generator_opt =
-        if let (Some(doc_mapper), Some(search_request)) = (doc_mapper_opt, search_request_opt) {
-            Some(create_fields_snippet_generator(&searcher, doc_mapper, search_request).await?)
-        } else {
-            None
-        };
+    let fields_snippet_generator_opt = if let Some(search_request) = search_request_opt {
+        Some(create_fields_snippet_generator(&searcher, doc_mapper.clone(), search_request).await?)
+    } else {
+        None
+    };
 
     let doc_futures = global_doc_addrs.into_iter().map(|global_doc_addr| {
-        let searcher = searcher.clone();
+        let moved_searcher = searcher.clone();
+        let moved_doc_mapper = doc_mapper.clone();
         let fields_snippet_generator_opt_clone = fields_snippet_generator_opt.clone();
         async move {
-            let doc = searcher
+            let doc = moved_searcher
                 .doc_async(global_doc_addr.doc_addr)
                 .await
                 .context("searcher-doc-async")?;
-            let content_json = searcher.schema().to_json(&doc);
+
+            let named_field_doc = moved_searcher.schema().to_named_doc(&doc);
+            let content_json =
+                convert_document_to_json_string(named_field_doc, &*moved_doc_mapper)?;
             if fields_snippet_generator_opt_clone.is_none() {
                 return Ok((
                     global_doc_addr,
@@ -219,7 +222,7 @@ async fn fetch_docs_in_split(
 
             let mut snippets = HashMap::new();
             for (field, field_values) in doc.get_sorted_field_values() {
-                let field_name = searcher.schema().get_field_name(field);
+                let field_name = moved_searcher.schema().get_field_name(field);
                 if let Some(values) = fields_snippet_generator_clone
                     .snippets_from_field_values(field_name, field_values)
                 {
@@ -286,7 +289,7 @@ async fn create_fields_snippet_generator(
     search_request: &SearchRequest,
 ) -> anyhow::Result<FieldsSnippetGenerator> {
     let schema = searcher.schema();
-    let query = doc_mapper.query(schema.clone(), search_request)?;
+    let (query, _) = doc_mapper.query(schema.clone(), search_request)?;
     let mut snippet_generators = HashMap::new();
     for field_name in &search_request.snippet_fields {
         let field = schema
@@ -308,6 +311,7 @@ async fn create_snippet_generator(
     field: Field,
 ) -> anyhow::Result<SnippetGenerator> {
     let mut terms: Vec<&Term> = Vec::new();
+    // TODO ok with termset?
     query.query_terms(&mut |term, _need_position| {
         if term.field() == field {
             terms.push(term);

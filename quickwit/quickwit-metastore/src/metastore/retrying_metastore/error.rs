@@ -17,14 +17,20 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-#![deny(clippy::disallowed_methods)]
+use super::retry::Retryable;
+use crate::MetastoreError;
 
-mod grpc_request;
-pub use grpc_request::GrpcRequest;
-use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Deserialize)]
-pub struct GrpcCall {
-    pub ts: u64,
-    pub grpc_request: GrpcRequest,
+impl Retryable for MetastoreError {
+    fn is_retryable(&self) -> bool {
+        matches!(
+            self,
+            MetastoreError::ConnectionError { message: _ }
+                | MetastoreError::Io { message: _ }
+                | MetastoreError::DbError { message: _ }
+                | MetastoreError::InternalError {
+                    message: _,
+                    cause: _,
+                }
+        )
+    }
 }

@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::{fmt, io};
 
 use async_trait::async_trait;
-use quickwit_storage::MemorySizedCache;
+use quickwit_storage::ByteRangeCache;
 use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, OwnedBytes};
 use tantivy::{AsyncIoResult, Directory, HasLen};
@@ -33,43 +33,18 @@ use tantivy::{AsyncIoResult, Directory, HasLen};
 pub struct CachingDirectory {
     underlying: Arc<dyn Directory>,
     // TODO fixme: that's a pretty ugly cache we have here.
-    cache: Arc<MemorySizedCache>,
+    cache: Arc<ByteRangeCache>,
 }
 
 impl CachingDirectory {
     /// Creates a new CachingDirectory.
-    /// `capacity_in_bytes` acts as a memory budget for the directory.
-    ///
-    /// The implementation is voluntarily very naive as it was design solely to
-    /// address Quickwit's requirements.
-    /// Most notably, if two reads targetting the same read on the same path
-    /// happen concurrently, the read will be executed twice.
-    ///
-    /// The overall number of bytes held in memory may exceed the capacity at one point
-    /// if a read request is large than `capacity_in_bytes`.
-    /// In that case, the read payload will not be saved in the cache.
-    pub fn new_with_capacity_in_bytes(
-        underlying: Arc<dyn Directory>,
-        capacity_in_bytes: usize,
-    ) -> CachingDirectory {
-        CachingDirectory {
-            underlying,
-            cache: Arc::new(MemorySizedCache::with_capacity_in_bytes(
-                capacity_in_bytes,
-                &quickwit_storage::STORAGE_METRICS.shortlived_cache,
-            )),
-        }
-    }
-
-    /// Creates a new CachingDirectory.
     ///
     /// Warming: The resulting CacheDirectory will cache all information without ever
     /// removing any item from the cache.
-    /// Prefer using `.new_with_capacity_in_bytes(...)` in most case.
     pub fn new_unbounded(underlying: Arc<dyn Directory>) -> CachingDirectory {
         CachingDirectory {
             underlying,
-            cache: Arc::new(MemorySizedCache::with_infinite_capacity(
+            cache: Arc::new(ByteRangeCache::with_infinite_capacity(
                 &quickwit_storage::STORAGE_METRICS.shortlived_cache,
             )),
         }
@@ -84,7 +59,7 @@ impl fmt::Debug for CachingDirectory {
 
 struct CachingFileHandle {
     path: PathBuf,
-    cache: Arc<MemorySizedCache>,
+    cache: Arc<ByteRangeCache>,
     underlying_filehandle: Arc<dyn FileHandle>,
 }
 
@@ -179,8 +154,7 @@ mod tests {
         let test_path = Path::new("test");
         ram_directory.atomic_write(test_path, &b"test"[..])?;
         let debug_proxy_directory = Arc::new(DebugProxyDirectory::wrap(ram_directory));
-        let caching_directory =
-            CachingDirectory::new_with_capacity_in_bytes(debug_proxy_directory.clone(), 10_000);
+        let caching_directory = CachingDirectory::new_unbounded(debug_proxy_directory.clone());
         caching_directory.atomic_read(test_path)?;
         caching_directory.atomic_read(test_path)?;
         assert_eq!(debug_proxy_directory.drain_read_operations().count(), 1);
