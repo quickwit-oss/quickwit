@@ -182,7 +182,7 @@ impl DeleteTaskPipeline {
         let throughput_limit: f64 = index_config
             .indexing_settings
             .resources
-            .max_janitor_write_throughput
+            .max_merge_write_throughput
             .as_ref()
             .map(|bytes_per_sec| bytes_per_sec.get_bytes() as f64)
             .unwrap_or(f64::INFINITY);
