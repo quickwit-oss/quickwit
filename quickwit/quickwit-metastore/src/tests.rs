@@ -20,15 +20,15 @@
 #[cfg(test)]
 pub mod test_suite {
     use std::collections::{BTreeSet, HashSet};
+    use std::time::Duration;
 
     use async_trait::async_trait;
-    use itertools::Itertools;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use quickwit_proto::metastore_api::DeleteQuery;
     use time::OffsetDateTime;
-    use tokio::time::{sleep, Duration};
+    use tokio::time::sleep;
     use tracing::{error, info};
 
     use crate::checkpoint::{IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint};
@@ -71,88 +71,161 @@ pub mod test_suite {
                 .await
                 .unwrap();
         }
-
         // Delete index.
         metastore.delete_index(index_id).await.unwrap();
     }
 
-    pub async fn test_metastore_reset_checkpoint<MetastoreToTest: Metastore + DefaultForTest>() {
+    // Index API tests
+    //
+    //  - create_index
+    //  - index_exists
+    //  - index_metadata
+    //  - list_indexes
+    //  - delete_index
+
+    pub async fn test_metastore_create_index<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let index_id = append_random_suffix("test-metastore-reset-checkpoint");
+        let index_id = append_random_suffix("test-create-index");
         let index_uri = format!("ram://indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
+
+        metastore.create_index(index_metadata).await.unwrap();
+
+        assert!(metastore.index_exists(&index_id).await.unwrap());
+
+        let index_metadata = metastore.index_metadata(&index_id).await.unwrap();
+
+        assert_eq!(index_metadata.index_id(), index_id);
+        assert_eq!(index_metadata.index_uri(), &index_uri);
+        assert_eq!(
+            index_metadata.create_timestamp,
+            index_metadata.update_timestamp
+        );
+
+        cleanup_index(&metastore, &index_id).await;
+    }
+
+    pub async fn test_metastore_index_exists<MetastoreToTest: Metastore + DefaultForTest>() {
+        let metastore = MetastoreToTest::default_for_test().await;
+
+        let index_id = append_random_suffix("test-index-exists");
+        let index_uri = format!("ram://indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
+
+        assert!(!metastore.index_exists(&index_id).await.unwrap());
+
+        metastore.create_index(index_metadata).await.unwrap();
+
+        assert!(metastore.index_exists(&index_id).await.unwrap());
+
+        cleanup_index(&metastore, &index_id).await;
+    }
+
+    pub async fn test_metastore_index_metadata<MetastoreToTest: Metastore + DefaultForTest>() {
+        let metastore = MetastoreToTest::default_for_test().await;
+
+        let index_id = append_random_suffix("test-index-metadata");
+        let index_uri = format!("ram://indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
+
+        let error = metastore
+            .index_metadata("index-not-found")
+            .await
+            .unwrap_err();
+        assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
 
         metastore
             .create_index(index_metadata.clone())
             .await
             .unwrap();
 
-        let source_ids: Vec<String> = (0..2).map(|i| format!("{index_id}--source-{i}")).collect();
-        let split_ids: Vec<String> = (0..2).map(|i| format!("{index_id}--split-{i}")).collect();
-
-        for (source_id, split_id) in source_ids.iter().zip(split_ids.iter()) {
-            let source = SourceConfig {
-                source_id: source_id.clone(),
-                num_pipelines: 1,
-                enabled: true,
-                source_params: SourceParams::void(),
-            };
-            metastore
-                .add_source(&index_id, source.clone())
-                .await
-                .unwrap();
-
-            let split_metadata = SplitMetadata {
-                split_id: split_id.clone(),
-                index_id: index_id.clone(),
-                ..Default::default()
-            };
-            metastore
-                .stage_split(&index_id, split_metadata)
-                .await
-                .unwrap();
-            metastore
-                .publish_splits(&index_id, &[split_id], &[], None)
-                .await
-                .unwrap();
-        }
-        assert!(!metastore
-            .index_metadata(&index_id)
-            .await
-            .unwrap()
-            .checkpoint
-            .is_empty());
-
-        metastore
-            .reset_source_checkpoint(&index_id, &source_ids[0])
-            .await
-            .unwrap();
-
         let index_metadata = metastore.index_metadata(&index_id).await.unwrap();
-        assert!(index_metadata
-            .checkpoint
-            .source_checkpoint(&source_ids[0])
-            .is_none());
 
-        assert!(index_metadata
-            .checkpoint
-            .source_checkpoint(&source_ids[1])
-            .is_some());
+        assert_eq!(index_metadata.index_id(), index_id);
+        assert_eq!(index_metadata.index_uri(), &index_uri);
+
+        cleanup_index(&metastore, &index_id).await;
+    }
+
+    pub async fn test_metastore_list_indexes<MetastoreToTest: Metastore + DefaultForTest>() {
+        let metastore = MetastoreToTest::default_for_test().await;
+
+        let index_id_suffix = append_random_suffix("test-list-indexes");
+        let index_id_1 = format!("{index_id_suffix}-1");
+        let index_uri_1 = format!("ram:///indexes/{index_id_1}");
+        let index_metadata_1 = IndexMetadata::for_test(&index_id_1, &index_uri_1);
+
+        let index_id_2 = format!("{index_id_suffix}-2");
+        let index_uri_2 = format!("ram:///indexes/{index_id_2}");
+        let index_metadata_2 = IndexMetadata::for_test(&index_id_2, &index_uri_2);
+
+        let indexes_count = metastore
+            .list_indexes_metadatas()
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|index| index.index_id().starts_with(&index_id_suffix))
+            .count();
+        assert_eq!(indexes_count, 0);
+
+        metastore.create_index(index_metadata_1).await.unwrap();
+        metastore.create_index(index_metadata_2).await.unwrap();
+
+        let indexes_count = metastore
+            .list_indexes_metadatas()
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|index| index.index_id().starts_with(&index_id_suffix))
+            .count();
+        assert_eq!(indexes_count, 2);
+
+        cleanup_index(&metastore, &index_id_1).await;
+        cleanup_index(&metastore, &index_id_2).await;
+    }
+
+    pub async fn test_metastore_delete_index<MetastoreToTest: Metastore + DefaultForTest>() {
+        let metastore = MetastoreToTest::default_for_test().await;
+
+        let index_id = append_random_suffix("test-delete-index-index");
+        let index_uri = format!("ram://indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
+
+        let error = metastore.delete_index("index-not-found").await.unwrap_err();
+        assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
 
         metastore
-            .reset_source_checkpoint(&index_id, &source_ids[1])
+            .create_index(index_metadata.clone())
             .await
             .unwrap();
 
-        assert!(metastore
-            .index_metadata(&index_id)
-            .await
-            .unwrap()
-            .checkpoint
-            .is_empty());
+        metastore.delete_index(&index_id).await.unwrap();
 
-        cleanup_index(&metastore, index_metadata.index_id()).await;
+        assert!(!metastore.index_exists(&index_id).await.unwrap());
+
+        let split_id = format!("{index_id}--split");
+        let split_metadata = SplitMetadata {
+            split_id: split_id.clone(),
+            index_id: index_id.clone(),
+            ..Default::default()
+        };
+
+        metastore.create_index(index_metadata).await.unwrap();
+
+        metastore
+            .stage_split(&index_id, split_metadata)
+            .await
+            .unwrap();
+
+        // TODO: We should not be able to delete an index that has remaining splits, at least not as
+        // a default behavior. Let's implement the logic that allows this test to pass.
+        // let error = metastore.delete_index(&index_id).await.unwrap_err();
+        // assert!(matches!(error, MetastoreError::IndexNotEmpty { .. }));
+        // let splits = metastore.list_all_splits(&index_id).await.unwrap();
+        // assert_eq!(splits.len(), 1)
+
+        cleanup_index(&metastore, &index_id).await;
     }
 
     pub async fn test_metastore_add_source<MetastoreToTest: Metastore + DefaultForTest>() {
@@ -313,74 +386,83 @@ pub mod test_suite {
         cleanup_index(&metastore, index_metadata.index_id()).await;
     }
 
-    pub async fn test_metastore_create_index<MetastoreToTest: Metastore + DefaultForTest>() {
+    pub async fn test_metastore_reset_checkpoint<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let index_id = "create-index-index";
+        let index_id = append_random_suffix("test-metastore-reset-checkpoint");
         let index_uri = format!("ram://indexes/{index_id}");
-        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
-
-        // Create an index
-        metastore
-            .create_index(index_metadata.clone())
-            .await
-            .unwrap();
-
-        cleanup_index(&metastore, index_id).await;
-    }
-
-    pub async fn test_metastore_delete_index<MetastoreToTest: Metastore + DefaultForTest>() {
-        let metastore = MetastoreToTest::default_for_test().await;
-
-        let index_id = "delete-index-index";
-        let index_uri = format!("ram://indexes/{index_id}");
-        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
-
-        // Delete a non-existent index
-        let result = metastore
-            .delete_index("non-existent-index")
-            .await
-            .unwrap_err();
-        assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
+        let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
 
         metastore
             .create_index(index_metadata.clone())
             .await
             .unwrap();
 
-        // Delete an index
-        metastore.delete_index(index_id).await.unwrap();
-    }
+        let source_ids: Vec<String> = (0..2).map(|i| format!("{index_id}--source-{i}")).collect();
+        let split_ids: Vec<String> = (0..2).map(|i| format!("{index_id}--split-{i}")).collect();
 
-    pub async fn test_metastore_index_metadata<MetastoreToTest: Metastore + DefaultForTest>() {
-        let metastore = MetastoreToTest::default_for_test().await;
+        for (source_id, split_id) in source_ids.iter().zip(split_ids.iter()) {
+            let source = SourceConfig {
+                source_id: source_id.clone(),
+                num_pipelines: 1,
+                enabled: true,
+                source_params: SourceParams::void(),
+            };
+            metastore
+                .add_source(&index_id, source.clone())
+                .await
+                .unwrap();
 
-        let index_id = "index-metadata-index";
-        let index_uri = format!("ram://indexes/{index_id}");
-        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
-
-        // Get a non-existent index metadata
-        let result = metastore
-            .index_metadata("non-existent-index")
-            .await
-            .unwrap_err();
-        assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
-
-        metastore
-            .create_index(index_metadata.clone())
-            .await
-            .unwrap();
-
-        // Get an index metadata
-        let index_config = metastore
-            .index_metadata(index_id)
+            let split_metadata = SplitMetadata {
+                split_id: split_id.clone(),
+                index_id: index_id.clone(),
+                ..Default::default()
+            };
+            metastore
+                .stage_split(&index_id, split_metadata)
+                .await
+                .unwrap();
+            metastore
+                .publish_splits(&index_id, &[split_id], &[], None)
+                .await
+                .unwrap();
+        }
+        assert!(!metastore
+            .index_metadata(&index_id)
             .await
             .unwrap()
-            .into_index_config();
-        assert_eq!(index_config.index_id, index_id);
-        assert_eq!(index_config.index_uri, index_uri);
+            .checkpoint
+            .is_empty());
 
-        cleanup_index(&metastore, index_id).await;
+        metastore
+            .reset_source_checkpoint(&index_id, &source_ids[0])
+            .await
+            .unwrap();
+
+        let index_metadata = metastore.index_metadata(&index_id).await.unwrap();
+        assert!(index_metadata
+            .checkpoint
+            .source_checkpoint(&source_ids[0])
+            .is_none());
+
+        assert!(index_metadata
+            .checkpoint
+            .source_checkpoint(&source_ids[1])
+            .is_some());
+
+        metastore
+            .reset_source_checkpoint(&index_id, &source_ids[1])
+            .await
+            .unwrap();
+
+        assert!(metastore
+            .index_metadata(&index_id)
+            .await
+            .unwrap()
+            .checkpoint
+            .is_empty());
+
+        cleanup_index(&metastore, index_metadata.index_id()).await;
     }
 
     pub async fn test_metastore_stage_split<MetastoreToTest: Metastore + DefaultForTest>() {
@@ -2283,60 +2365,6 @@ pub mod test_suite {
         cleanup_index(&metastore, index_id).await;
     }
 
-    pub async fn test_metastore_list_indexes<MetastoreToTest: Metastore + DefaultForTest>() {
-        let metastore = MetastoreToTest::default_for_test().await;
-
-        let index_id_1 = "index-metadata-list-indexes-1";
-        let index_uri_1 = format!("ram:///indexes/{index_id_1}");
-        let index_metadata_1 = IndexMetadata::for_test(index_id_1, &index_uri_1);
-        let index_id_2 = "index-metadata-list-indexes-2";
-        let index_uri_2 = format!("ram:///indexes/{index_id_2}");
-        let index_metadata_2 = IndexMetadata::for_test(index_id_2, &index_uri_2);
-        let index_ids: &[&str] = &[index_id_1, index_id_2];
-
-        // Get a non-existent index metadata
-        let result = metastore
-            .list_indexes_metadatas()
-            .await
-            .unwrap()
-            .into_iter()
-            .filter(|index_metadata| index_ids.contains(&index_metadata.index_id()))
-            .collect_vec();
-        assert!(result.is_empty());
-
-        metastore
-            .create_index(index_metadata_1.clone())
-            .await
-            .unwrap();
-        metastore
-            .create_index(index_metadata_2.clone())
-            .await
-            .unwrap();
-
-        // Get list indexes metadata.
-        let result = metastore
-            .list_indexes_metadatas()
-            .await
-            .unwrap()
-            .into_iter()
-            .filter(|index_metadata| index_ids.contains(&index_metadata.index_id()))
-            .collect_vec();
-        assert_eq!(2, result.len());
-
-        cleanup_index(&metastore, index_id_1).await;
-        cleanup_index(&metastore, index_id_2).await;
-
-        // Check that no index is left.
-        let result = metastore
-            .list_indexes_metadatas()
-            .await
-            .unwrap()
-            .into_iter()
-            .filter(|index_metadata| index_ids.contains(&index_metadata.index_id()))
-            .collect_vec();
-        assert!(result.is_empty());
-    }
-
     pub async fn test_metastore_create_delete_task<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
         let index_id = "add-delete-task";
@@ -2752,6 +2780,15 @@ macro_rules! metastore_test_suite {
     ($metastore_type:ty) => {
         #[cfg(test)]
         mod common_tests {
+
+            // Index API tests
+            //
+            //  - create_index
+            //  - index_exists
+            //  - index_metadata
+            //  - list_indexes
+            //  - delete_index
+
             #[tokio::test]
             async fn test_metastore_create_index() {
                 let _ = tracing_subscriber::fmt::try_init();
@@ -2759,9 +2796,9 @@ macro_rules! metastore_test_suite {
             }
 
             #[tokio::test]
-            async fn test_metastore_delete_index() {
+            async fn test_metastore_index_exists() {
                 let _ = tracing_subscriber::fmt::try_init();
-                crate::tests::test_suite::test_metastore_delete_index::<$metastore_type>().await;
+                crate::tests::test_suite::test_metastore_index_exists::<$metastore_type>().await;
             }
 
             #[tokio::test]
@@ -2774,6 +2811,12 @@ macro_rules! metastore_test_suite {
             async fn test_metastore_list_indexes() {
                 let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_list_indexes::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_delete_index() {
+                let _ = tracing_subscriber::fmt::try_init();
+                crate::tests::test_suite::test_metastore_delete_index::<$metastore_type>().await;
             }
 
             #[tokio::test]
