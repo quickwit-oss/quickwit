@@ -41,7 +41,7 @@ use quickwit_config::{
 use quickwit_core::{
     clear_cache_directory, remove_indexing_directory, validate_storage_uri, IndexService,
 };
-use quickwit_indexing::actors::{IndexingService, MergePipelineId};
+use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingPipelineId, IndexingStatistics,
     SpawnMergePipeline, SpawnPipeline,
@@ -938,7 +938,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         .await?;
     let merge_pipeline_handle = indexing_server_mailbox
         .ask_for_res(DetachMergePipeline {
-            pipeline_id: MergePipelineId::from(&pipeline_id),
+            pipeline_id: pipeline_id.clone(),
         })
         .await?;
     let indexing_pipeline_handle = indexing_server_mailbox

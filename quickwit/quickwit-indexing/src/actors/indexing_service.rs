@@ -96,8 +96,8 @@ pub struct IndexingServiceCounters {
 type IndexId = String;
 type SourceId = String;
 
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct MergePipelineId {
+#[derive(Clone, Hash, Eq, PartialEq)]
+struct MergePipelineId {
     index_id: String,
     source_id: String,
 }
@@ -526,7 +526,9 @@ impl Handler<DetachMergePipeline> for IndexingService {
         msg: DetachMergePipeline,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self.detach_merge_pipeline(&msg.pipeline_id).await)
+        Ok(self
+            .detach_merge_pipeline(&MergePipelineId::from(&msg.pipeline_id))
+            .await)
     }
 }
 
