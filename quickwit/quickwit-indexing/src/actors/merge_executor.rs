@@ -371,7 +371,7 @@ impl MergeExecutor {
                 segment
             } else {
                 info!(
-                    "All document from split `{}` were deleted.",
+                    "All documents from split `{}` were deleted.",
                     split.split_id()
                 );
                 self.metastore
