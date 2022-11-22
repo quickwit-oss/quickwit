@@ -173,7 +173,6 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
         doc_mapper_yaml,
         indexing_setting_yaml,
         &search_fields,
-        None,
     )
     .await?;
     let batch_1: Vec<serde_json::Value> = vec![
@@ -242,7 +241,6 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         doc_mapper_yaml,
         indexing_setting_yaml,
         &search_fields,
-        None,
     )
     .await?;
 

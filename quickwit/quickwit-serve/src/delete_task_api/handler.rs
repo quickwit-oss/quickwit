@@ -135,16 +135,9 @@ mod tests {
                 type: i64
                 fast: true
         "#;
-        let metastore_uri = "ram:///delete-task-rest";
-        let test_sandbox = TestSandbox::create(
-            index_id,
-            doc_mapping_yaml,
-            "{}",
-            &["body"],
-            Some(metastore_uri),
-        )
-        .await
-        .unwrap();
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"])
+            .await
+            .unwrap();
         let metastore = test_sandbox.metastore();
         let mock_search_service = MockSearchService::new();
         let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)])

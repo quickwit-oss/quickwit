@@ -49,7 +49,7 @@ mod tests {
                 type: text
         "#;
         let test_sandbox =
-            TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["title", "body"], None).await?;
+            TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["title", "body"]).await?;
         test_sandbox.add_documents(vec![
             serde_json::json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
         ]).await?;
