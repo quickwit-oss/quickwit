@@ -426,7 +426,7 @@ mod tests {
         wi_cloned.merge(WarmupInfo::default());
         assert_eq!(wi_cloned, wi_base);
 
-        let mut wi_cloned = wi_base.clone();
+        let mut wi_base = wi_base;
         let wi_2 = WarmupInfo {
             term_dict_field_names: hashset(&["termdict2", "termdict3"]),
             posting_field_names: hashset(&["posting2", "posting3"]),
@@ -434,21 +434,21 @@ mod tests {
             field_norms: true,
             terms_grouped_by_field: hashmap(&[(2, "term1", false), (1, "term2", true)]),
         };
-        wi_cloned.merge(wi_2.clone());
+        wi_base.merge(wi_2.clone());
 
         assert_eq!(
-            wi_cloned.term_dict_field_names,
+            wi_base.term_dict_field_names,
             hashset(&["termdict1", "termdict2", "termdict3"])
         );
         assert_eq!(
-            wi_cloned.posting_field_names,
+            wi_base.posting_field_names,
             hashset(&["posting1", "posting2", "posting3"])
         );
         assert_eq!(
-            wi_cloned.fast_field_names,
+            wi_base.fast_field_names,
             hashset(&["fast1", "fast2", "fast3"])
         );
-        assert!(wi_cloned.field_norms);
+        assert!(wi_base.field_norms);
 
         let expected = [(1, "term1", false), (1, "term2", true), (2, "term1", false)];
         for (field, term, pos) in expected {
@@ -456,7 +456,7 @@ mod tests {
             let term = Term::from_field_text(field, term);
 
             assert_eq!(
-                *wi_cloned
+                *wi_base
                     .terms_grouped_by_field
                     .get(&field)
                     .unwrap()
@@ -467,8 +467,8 @@ mod tests {
         }
 
         // merge is idempotent
-        let mut wi_cloned2 = wi_cloned.clone();
-        wi_cloned2.merge(wi_2);
-        assert_eq!(wi_cloned2, wi_cloned);
+        let mut wi_cloned = wi_base.clone();
+        wi_cloned.merge(wi_2);
+        assert_eq!(wi_cloned, wi_base);
     }
 }
