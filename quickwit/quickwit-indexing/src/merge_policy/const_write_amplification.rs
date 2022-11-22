@@ -22,6 +22,7 @@ use std::collections::HashMap;
 use quickwit_config::merge_policy_config::ConstWriteAmplificationMergePolicyConfig;
 use quickwit_config::IndexingSettings;
 use quickwit_metastore::SplitMetadata;
+use time::OffsetDateTime;
 
 use super::MergeOperation;
 use crate::merge_policy::MergePolicy;
@@ -74,10 +75,13 @@ impl ConstWriteAmplificationMergePolicy {
 
     #[cfg(test)]
     fn for_test() -> ConstWriteAmplificationMergePolicy {
+        use std::time::Duration;
+
         let config = ConstWriteAmplificationMergePolicyConfig {
             max_merge_ops: 3,
             merge_factor: 3,
             max_merge_factor: 5,
+            maturity_period: Duration::from_secs(3600),
         };
         Self::new(config, 10_000_000)
     }
@@ -155,6 +159,12 @@ impl MergePolicy for ConstWriteAmplificationMergePolicy {
             return true;
         }
         if split.num_docs >= self.split_num_docs_target {
+            return true;
+        }
+        if split.create_timestamp
+            >= OffsetDateTime::now_utc().unix_timestamp()
+                + self.config.maturity_period.as_secs() as i64
+        {
             return true;
         }
         false
