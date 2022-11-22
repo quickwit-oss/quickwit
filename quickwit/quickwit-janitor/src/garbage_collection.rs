@@ -353,20 +353,19 @@ mod tests {
     use crate::run_garbage_collect;
 
     #[tokio::test]
-    async fn test_run_gc_expires_stale_staged_splits_after_grace_period() {
+    async fn test_run_gc_marks_stale_staged_splits_for_deletion_after_grace_period() {
         let storage = storage_for_test();
         let metastore = metastore_for_test();
 
         let index_id = "test-run-gc--index";
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
         metastore.create_index(index_metadata).await.unwrap();
 
         let split_id = "test-run-gc--split";
         let split_metadata = SplitMetadata {
-            footer_offsets: 1000..2000,
-            index_id: index_id.to_string(),
             split_id: split_id.to_string(),
+            index_id: index_id.to_string(),
             ..Default::default()
         };
         metastore
@@ -376,13 +375,14 @@ mod tests {
 
         let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
         assert_eq!(metastore.list_splits(query).await.unwrap().len(), 1);
-        // The graced period hasn't passed yet so the split remains staged.
+
+        // The staging grace period hasn't passed yet so the split remains staged.
         run_garbage_collect(
             index_id,
             storage.clone(),
             metastore.clone(),
-            Duration::from_secs(1),
-            Duration::from_secs(1),
+            Duration::from_secs(30),
+            Duration::from_secs(30),
             false,
             None,
         )
@@ -391,40 +391,39 @@ mod tests {
 
         let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
         assert_eq!(metastore.list_splits(query).await.unwrap().len(), 1);
-        tokio::time::sleep(Duration::from_secs(1)).await;
 
-        // The graced period has passed so the split is marked for deletion and then deleted.
+        // The staging grace period has passed so the split is marked for deletion.
         run_garbage_collect(
             index_id,
             storage.clone(),
             metastore.clone(),
-            Duration::from_secs(1),
-            Duration::from_secs(1),
+            Duration::from_secs(0),
+            Duration::from_secs(30),
             false,
             None,
         )
         .await
         .unwrap();
 
-        let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
-        assert_eq!(metastore.list_splits(query).await.unwrap().len(), 0);
+        let query =
+            ListSplitsQuery::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
+        assert_eq!(metastore.list_splits(query).await.unwrap().len(), 1);
     }
 
     #[tokio::test]
-    async fn test_run_gc_deletes_marked_splits_after_grace_period() {
+    async fn test_run_gc_deletes_splits_marked_for_deletion_after_grace_period() {
         let storage = storage_for_test();
         let metastore = metastore_for_test();
 
         let index_id = "test-run-gc--index";
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
         metastore.create_index(index_metadata).await.unwrap();
 
         let split_id = "test-run-gc--split";
         let split_metadata = SplitMetadata {
-            footer_offsets: 1000..2000,
-            index_id: index_id.to_string(),
             split_id: split_id.to_string(),
+            index_id: index_id.to_string(),
             ..Default::default()
         };
         metastore
@@ -439,13 +438,14 @@ mod tests {
         let query =
             ListSplitsQuery::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
         assert_eq!(metastore.list_splits(query).await.unwrap().len(), 1);
-        // The graced period hasn't passed yet so the split remains marked for deletion.
+
+        // The delete grace period hasn't passed yet so the split remains marked for deletion.
         run_garbage_collect(
             index_id,
             storage.clone(),
             metastore.clone(),
-            Duration::from_secs(1),
-            Duration::from_secs(1),
+            Duration::from_secs(30),
+            Duration::from_secs(30),
             false,
             None,
         )
@@ -455,23 +455,21 @@ mod tests {
         let query =
             ListSplitsQuery::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
         assert_eq!(metastore.list_splits(query).await.unwrap().len(), 1);
-        tokio::time::sleep(Duration::from_secs(1)).await;
 
-        // The graced period has passed so the split is deleted.
+        // The delete grace period has passed so the split is deleted.
         run_garbage_collect(
             index_id,
             storage.clone(),
             metastore.clone(),
-            Duration::from_secs(1),
-            Duration::from_secs(1),
+            Duration::from_secs(30),
+            Duration::from_secs(0),
             false,
             None,
         )
         .await
         .unwrap();
 
-        let query =
-            ListSplitsQuery::for_index(index_id).with_split_state(SplitState::MarkedForDeletion);
+        let query = ListSplitsQuery::for_index(index_id);
         assert_eq!(metastore.list_splits(query).await.unwrap().len(), 0);
     }
 }
