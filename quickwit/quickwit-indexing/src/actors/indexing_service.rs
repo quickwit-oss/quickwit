@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -27,9 +27,7 @@ use quickwit_actors::{
     Observation,
 };
 use quickwit_common::fs::get_cache_directory_path;
-use quickwit_config::{
-    build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
-};
+use quickwit_config::{build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig};
 use quickwit_ingest_api::QUEUES_DIR_NAME;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -38,12 +36,11 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{error, info};
 
-use super::merge_pipeline::{MergePipeline, MergePipelineParams};
+use super::merge_pipeline::MergePipeline;
 use super::MergePlanner;
 use crate::models::{
     DetachPipeline, IndexingDirectory, IndexingPipelineId, Observe, ObservePipeline,
-    ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
-    WeakIndexingDirectory,
+    ShutdownPipeline, ShutdownPipelines, SpawnPipeline, SpawnPipelines, WeakIndexingDirectory,
 };
 use crate::split_store::{LocalSplitStore, SplitStoreQuota};
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics};
@@ -90,7 +87,6 @@ pub struct IndexingServiceCounters {
     pub num_running_pipelines: usize,
     pub num_successful_pipelines: usize,
     pub num_failed_pipelines: usize,
-    pub num_running_merge_pipelines: usize,
 }
 
 type IndexId = String;
@@ -122,12 +118,10 @@ pub struct IndexingService {
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
     indexing_pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
-    indexing_pipeline_states: HashMap<IndexingPipelineId, ActorContext<IndexingPipeline>>,
     counters: IndexingServiceCounters,
     indexing_directories: HashMap<(IndexId, SourceId), WeakIndexingDirectory>,
     local_split_store: Arc<LocalSplitStore>,
     max_concurrent_split_uploads: usize,
-    merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineHandle>,
 }
 
 impl IndexingService {
@@ -152,11 +146,9 @@ impl IndexingService {
             storage_resolver,
             local_split_store: Arc::new(local_split_store),
             indexing_pipeline_handles: Default::default(),
-            indexing_pipeline_states: Default::default(),
             counters: Default::default(),
             indexing_directories: HashMap::new(),
             max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
-            merge_pipeline_handles: HashMap::new(),
         })
     }
 
@@ -291,24 +283,6 @@ impl IndexingService {
         )
         .map_err(IndexingServiceError::InvalidParams)?;
 
-        let merge_pipeline_params = MergePipelineParams {
-            pipeline_id: pipeline_id.clone(),
-            doc_mapper: doc_mapper.clone(),
-            indexing_directory: indexing_directory.clone(),
-            metastore: self.metastore.clone(),
-            split_store: split_store.clone(),
-            merge_policy,
-            merge_max_io_num_bytes_per_sec: index_config
-                .indexing_settings
-                .resources
-                .max_merge_write_throughput,
-            max_concurrent_split_uploads: self.max_concurrent_split_uploads,
-        };
-
-        let merge_planner_mailbox = self
-            .get_or_create_merge_pipeline(merge_pipeline_params, ctx)
-            .await?;
-
         let max_concurrent_split_uploads_index = (self.max_concurrent_split_uploads / 2).max(1);
         let max_concurrent_split_uploads_merge =
             (self.max_concurrent_split_uploads - max_concurrent_split_uploads_index).max(1);
@@ -324,36 +298,13 @@ impl IndexingService {
             max_concurrent_split_uploads_index,
             max_concurrent_split_uploads_merge,
             queues_dir_path,
-            merge_planner_mailbox,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
-        self.indexing_pipeline_states
-            .insert(pipeline_id.clone(), pipeline_handle.context());
         self.indexing_pipeline_handles
             .insert(pipeline_id, pipeline_handle);
         self.counters.num_running_pipelines += 1;
         Ok(())
-    }
-
-    async fn spawn_merge_pipeline(
-        &mut self,
-        ctx: &ActorContext<Self>,
-        pipeline_id: IndexingPipelineId,
-    ) -> Result<IndexingPipelineId, IndexingServiceError> {
-        let index_config = self
-            .index_metadata(ctx, &pipeline_id.index_id)
-            .await?
-            .into_index_config();
-        let source_config = SourceConfig {
-            source_id: pipeline_id.source_id.clone(),
-            num_pipelines: 1,
-            enabled: true,
-            source_params: SourceParams::Vec(VecSourceParams::default()),
-        };
-        self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_config, source_config)
-            .await?;
-        Ok(pipeline_id)
     }
 
     async fn index_metadata(
@@ -367,65 +318,32 @@ impl IndexingService {
     }
 
     async fn handle_supervise(&mut self) -> Result<(), ActorExitStatus> {
-        self.indexing_pipeline_states
-            .retain(
-                |pipeline_id, pipeline_ctx| match pipeline_ctx.state() {
-                    ActorState::Idle | ActorState::Paused | ActorState::Processing => true,
-                    ActorState::Success => {
-                        info!(
-                            index_id=%pipeline_id.index_id,
-                            source_id=%pipeline_id.source_id,
-                            pipeline_ord=%pipeline_id.pipeline_ord,
-                            "Indexing pipeline exited successfully."
-                        );
-                        self.counters.num_successful_pipelines += 1;
-                        self.counters.num_running_pipelines -= 1;
-                        false
-                    }
-                    ActorState::Failure => {
-                        error!(
-                            index_id=%pipeline_id.index_id,
-                            source_id=%pipeline_id.source_id,
-                            pipeline_ord=%pipeline_id.pipeline_ord,
-                            "Indexing pipeline exited with failure."
-                        );
-                        self.counters.num_failed_pipelines += 1;
-                        self.counters.num_running_pipelines -= 1;
-                        false
-                    }
-                },
-            );
-        // Evict and kill merge pipelines that are not needed.
-        let needed_merge_pipeline_ids: HashSet<MergePipelineId> = self
-            .indexing_pipeline_states
-            .keys()
-            .map(MergePipelineId::from)
-            .collect();
-        let current_merge_pipeline_ids: HashSet<MergePipelineId> =
-            self.merge_pipeline_handles.keys().cloned().collect();
-        for merge_pipeline_id_to_shut_down in
-            current_merge_pipeline_ids.difference(&needed_merge_pipeline_ids)
-        {
-            if let Some((_, merge_pipeline_handle)) = self
-                .merge_pipeline_handles
-                .remove_entry(merge_pipeline_id_to_shut_down)
-            {
-                // We kill the merge pipeline to avoid waiting a merge operation to finish as it can
-                // be long.
-                info!(
-                    index_id=%merge_pipeline_id_to_shut_down.index_id,
-                    source_id=%merge_pipeline_id_to_shut_down.source_id,
-                    "No more indexing pipeline on this index and source, killing merge pipeline."
-                );
-                merge_pipeline_handle.handle.kill().await;
-            }
-        }
-        // Finally remove the merge pipeline with an exit status.
-        self.merge_pipeline_handles
-            .retain(|_, merge_pipeline_mailbox_handle| {
-                merge_pipeline_mailbox_handle.handle.state().is_running()
+        self.indexing_pipeline_handles
+            .retain(|pipeline_id, pipeline_ctx| match pipeline_ctx.state() {
+                ActorState::Idle | ActorState::Paused | ActorState::Processing => true,
+                ActorState::Success => {
+                    info!(
+                        index_id=%pipeline_id.index_id,
+                        source_id=%pipeline_id.source_id,
+                        pipeline_ord=%pipeline_id.pipeline_ord,
+                        "Indexing pipeline exited successfully."
+                    );
+                    self.counters.num_successful_pipelines += 1;
+                    self.counters.num_running_pipelines -= 1;
+                    false
+                }
+                ActorState::Failure => {
+                    error!(
+                        index_id=%pipeline_id.index_id,
+                        source_id=%pipeline_id.source_id,
+                        pipeline_ord=%pipeline_id.pipeline_ord,
+                        "Indexing pipeline exited with failure."
+                    );
+                    self.counters.num_failed_pipelines += 1;
+                    self.counters.num_running_pipelines -= 1;
+                    false
+                }
             });
-        self.counters.num_running_merge_pipelines = self.merge_pipeline_handles.len();
         Ok(())
     }
 
@@ -452,29 +370,6 @@ impl IndexingService {
         self.indexing_directories
             .insert(key, indexing_directory.downgrade());
         Ok(indexing_directory)
-    }
-
-    async fn get_or_create_merge_pipeline(
-        &mut self,
-        merge_pipeline_params: MergePipelineParams,
-        ctx: &ActorContext<Self>,
-    ) -> Result<Mailbox<MergePlanner>, IndexingServiceError> {
-        let merge_pipeline_id = MergePipelineId::from(&merge_pipeline_params.pipeline_id);
-        if let Some(merge_pipeline_mailbox_handle) =
-            self.merge_pipeline_handles.get(&merge_pipeline_id)
-        {
-            return Ok(merge_pipeline_mailbox_handle.mailbox.clone());
-        }
-        let merge_pipeline = MergePipeline::new(merge_pipeline_params);
-        let merge_planner_mailbox = merge_pipeline.merge_planner_mailbox().clone();
-        let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(merge_pipeline);
-        let merge_pipeline_mailbox_handle = MergePipelineHandle {
-            mailbox: merge_planner_mailbox.clone(),
-            handle: pipeline_handle,
-        };
-        self.merge_pipeline_handles
-            .insert(merge_pipeline_id, merge_pipeline_mailbox_handle);
-        Ok(merge_planner_mailbox)
     }
 }
 
@@ -534,18 +429,6 @@ impl Actor for IndexingService {
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         self.handle(SuperviseLoop, ctx).await
-    }
-}
-
-#[async_trait]
-impl Handler<SpawnMergePipeline> for IndexingService {
-    type Reply = Result<IndexingPipelineId, IndexingServiceError>;
-    async fn handle(
-        &mut self,
-        message: SpawnMergePipeline,
-        ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self.spawn_merge_pipeline(ctx, message.pipeline_id).await)
     }
 }
 
@@ -853,18 +736,6 @@ mod tests {
         assert_eq!(
             indexing_server_handle.observe().await.num_running_pipelines,
             0
-        );
-
-        // Test `spawn_merge_pipeline`.
-        indexing_server_mailbox
-            .ask_for_res(SpawnMergePipeline {
-                pipeline_id: pipeline_id_0,
-            })
-            .await
-            .unwrap();
-        assert_eq!(
-            indexing_server_handle.observe().await.num_running_pipelines,
-            1
         );
 
         // Test `supervise_pipelines`

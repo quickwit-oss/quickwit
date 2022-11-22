@@ -31,19 +31,23 @@ use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use itertools::Itertools;
 use quickwit_actors::{ActorHandle, ObservationType, Universe};
+use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
-    ConfigFormat, IndexConfig, IndexerConfig, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
-    INGEST_API_SOURCE_ID,
+    build_doc_mapper, ConfigFormat, IndexConfig, IndexerConfig, SourceConfig, SourceParams,
+    CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 use quickwit_core::{
     clear_cache_directory, remove_indexing_directory, validate_storage_uri, IndexService,
 };
-use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
+use quickwit_indexing::actors::{IndexingPipeline, IndexingService, INDEXING_DIR_NAME};
 use quickwit_indexing::models::{
-    DetachPipeline, IndexingPipelineId, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
+    DetachPipeline, IndexingDirectory, IndexingPipelineId, IndexingStatistics, SpawnPipeline,
+};
+use quickwit_indexing::{
+    IndexingSplitStore, LocalSplitStore, MergePipeline, MergePipelineParams, SplitStoreQuota,
 };
 use quickwit_metastore::{
     quickwit_metastore_uri_resolver, IndexMetadata, ListSplitsQuery, Split, SplitState,
@@ -1039,33 +1043,59 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
     let storage_resolver = quickwit_storage_uri_resolver().clone();
     start_actor_runtimes(&HashSet::from_iter([QuickwitService::Indexer]))?;
     let node_id = config.node_id.clone();
-    let indexing_server = IndexingService::new(
-        config.node_id,
-        config.data_dir_path,
-        indexer_config,
-        metastore,
-        storage_resolver,
-    )
-    .await?;
-    let universe = Universe::new();
-    let (indexing_service_mailbox, indexing_service_handle) =
-        universe.spawn_builder().spawn(indexing_server);
+
+    let index_metadata = metastore.index_metadata(&args.index_id).await?;
+    let index_config = index_metadata.index_config;
     let pipeline_id = IndexingPipelineId {
         index_id: args.index_id,
         source_id: args.source_id,
         node_id,
         pipeline_ord: 0,
     };
-    indexing_service_mailbox
-        .ask_for_res(SpawnMergePipeline {
-            pipeline_id: pipeline_id.clone(),
-        })
-        .await?;
-    let pipeline_handle = indexing_service_mailbox
-        .ask_for_res(DetachPipeline { pipeline_id })
-        .await?;
+    let split_store_space_quota = SplitStoreQuota::new(
+        indexer_config.split_store_max_num_splits,
+        indexer_config.split_store_max_num_bytes,
+    );
+    let split_cache_dir_path = get_cache_directory_path(&config.data_dir_path);
+    let merge_policy = quickwit_indexing::merge_policy::merge_policy_from_settings(
+        &index_config.indexing_settings,
+    );
+    let remote_storage = storage_resolver.resolve(&index_config.index_uri)?;
+    let local_split_store =
+        LocalSplitStore::open(split_cache_dir_path, split_store_space_quota).await?;
+    let split_store = IndexingSplitStore::new(
+        remote_storage,
+        merge_policy.clone(),
+        local_split_store.into(),
+    );
+    let doc_mapper = build_doc_mapper(
+        &index_config.doc_mapping,
+        &index_config.search_settings,
+        &index_config.indexing_settings,
+    )?;
+    let indexing_directory_path = config
+        .data_dir_path
+        .join(INDEXING_DIR_NAME)
+        .join(&pipeline_id.index_id)
+        .join(&pipeline_id.source_id);
+    let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path).await?;
+    let merge_pipeline_params = MergePipelineParams {
+        pipeline_id: pipeline_id.clone(),
+        doc_mapper,
+        indexing_directory: indexing_directory.clone(),
+        metastore,
+        split_store,
+        merge_policy,
+        merge_max_io_num_bytes_per_sec: index_config
+            .indexing_settings
+            .resources
+            .max_merge_write_throughput,
+        max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
+    };
+    let merge_pipeline = MergePipeline::new(merge_pipeline_params);
+    let universe = Universe::new();
+    let (_pipeline_mailbox, pipeline_handle) = universe.spawn_builder().spawn(merge_pipeline);
     let (pipeline_exit_status, _pipeline_statistics) = pipeline_handle.join().await;
-    indexing_service_handle.quit().await;
     if !pipeline_exit_status.is_success() {
         bail!(pipeline_exit_status);
     }

@@ -29,11 +29,14 @@ use tracing::info;
 
 pub use crate::actors::{
     IndexingPipeline, IndexingPipelineParams, IndexingService, IndexingServiceError,
-    IngestApiGarbageCollector, PublisherType, Sequencer, SplitsUpdateMailbox,
+    IngestApiGarbageCollector, MergePipeline, MergePipelineParams, PublisherType, Sequencer,
+    SplitsUpdateMailbox,
 };
 pub use crate::controlled_directory::ControlledDirectory;
 use crate::models::{IndexingStatistics, SpawnPipelines};
-pub use crate::split_store::{get_tantivy_directory_from_split_bundle, IndexingSplitStore};
+pub use crate::split_store::{
+    get_tantivy_directory_from_split_bundle, IndexingSplitStore, LocalSplitStore, SplitStoreQuota,
+};
 
 pub mod actors;
 mod controlled_directory;
