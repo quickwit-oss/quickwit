@@ -184,7 +184,7 @@ impl IndexingService {
                 index_id: pipeline_id.index_id.clone(),
                 source_id: pipeline_id.source_id.clone(),
             })?;
-        self.counters.num_running_merge_pipelines = 1;
+        self.counters.num_running_merge_pipelines -= 1;
         Ok(pipeline_handle.handle)
     }
 
