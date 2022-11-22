@@ -132,6 +132,10 @@ impl MergePlanner {
         merge_policy: Arc<dyn MergePolicy>,
         merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
     ) -> MergePlanner {
+        let published_splits: Vec<SplitMetadata> = published_splits
+            .into_iter()
+            .filter(|split_metadata| belongs_to_pipeline(&pipeline_id, split_metadata))
+            .collect();
         let mut merge_planner = MergePlanner {
             pipeline_id,
             partitioned_young_splits: Default::default(),
@@ -144,9 +148,7 @@ impl MergePlanner {
     }
 
     fn record_split(&mut self, new_split: SplitMetadata) {
-        if !belongs_to_pipeline(&self.pipeline_id, &new_split)
-            || self.merge_policy.is_mature(&new_split)
-        {
+        if self.merge_policy.is_mature(&new_split) {
             return;
         }
         let splits_for_partition: &mut Vec<SplitMetadata> = self
@@ -187,7 +189,7 @@ impl MergePlanner {
                 merge_operations.extend(self.merge_policy.operations(young_splits));
             }
             ctx.record_progress();
-            tokio::task::yield_now().await;
+            ctx.yield_now().await;
         }
         self.partitioned_young_splits
             .retain(|_, splits| !splits.is_empty());
@@ -355,8 +357,8 @@ mod tests {
         );
         let universe = Universe::new();
 
-        let (merge_planner_mailbox, _) = universe.spawn_builder().spawn(merge_planner);
-
+        let (merge_planner_mailbox, merge_planner_handle) =
+            universe.spawn_builder().spawn(merge_planner);
         {
             // send one split
             let message = NewSplits {
@@ -369,7 +371,6 @@ mod tests {
             let merge_ops = merge_split_downloader_inbox.drain_for_test();
             assert_eq!(merge_ops.len(), 0);
         }
-
         {
             // send two splits with a duplicate
             let message = NewSplits {
@@ -382,7 +383,6 @@ mod tests {
             let merge_ops = merge_split_downloader_inbox.drain_for_test();
             assert_eq!(merge_ops.len(), 0);
         }
-
         {
             // send four more splits to generate merge
             let message = NewSplits {
@@ -394,6 +394,7 @@ mod tests {
                 ],
             };
             merge_planner_mailbox.send_message(message).await?;
+            merge_planner_handle.process_pending_and_observe().await;
             let operations = merge_split_downloader_inbox
                 .drain_for_test_typed::<TrackedObject<MergeOperation>>();
             assert_eq!(operations.len(), 2);
@@ -542,11 +543,10 @@ mod tests {
                 .await
                 .unwrap();
         });
-        tokio::task::spawn(async move {
+        tokio::task::spawn_blocking(move || {
             let mut merge_ops: Vec<TrackedObject<MergeOperation>> = Vec::new();
             while merge_ops.len() < 20 {
                 merge_ops.extend(merge_split_downloader_inbox.drain_for_test_typed());
-                tokio::task::yield_now().await;
             }
         })
         .await

@@ -346,6 +346,11 @@ impl<A: Actor> ActorContext<A> {
         future.await
     }
 
+    /// Cooperatively yields, while keeping the actor protected.
+    pub async fn yield_now(&self) {
+        self.protect_future(tokio::task::yield_now()).await;
+    }
+
     /// Gets a copy of the actor kill switch.
     /// This should rarely be used.
     ///
