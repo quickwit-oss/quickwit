@@ -6,8 +6,10 @@ pub struct ExportLogsServiceRequest {
     /// element. Intermediary nodes (such as OpenTelemetry Collector) that receive
     /// data from multiple origins typically batch the data before forwarding further and
     /// in that case this array will contain multiple elements.
-    #[prost(message, repeated, tag="1")]
-    pub resource_logs: ::prost::alloc::vec::Vec<super::super::super::logs::v1::ResourceLogs>,
+    #[prost(message, repeated, tag = "1")]
+    pub resource_logs: ::prost::alloc::vec::Vec<
+        super::super::super::logs::v1::ResourceLogs,
+    >,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -27,7 +29,7 @@ pub struct ExportLogsServiceResponse {
     /// A `partial_success` message with an empty value (rejected_<signal> = 0 and
     /// `error_message` = "") is equivalent to it not being set/present. Senders
     /// SHOULD interpret it the same way as in the full success case.
-    #[prost(message, optional, tag="1")]
+    #[prost(message, optional, tag = "1")]
     pub partial_success: ::core::option::Option<ExportLogsPartialSuccess>,
 }
 #[derive(Serialize, Deserialize)]
@@ -37,7 +39,7 @@ pub struct ExportLogsPartialSuccess {
     ///
     /// A `rejected_<signal>` field holding a `0` value indicates that the
     /// request was fully accepted.
-    #[prost(int64, tag="1")]
+    #[prost(int64, tag = "1")]
     pub rejected_log_records: i64,
     /// A developer-facing human-readable message in English. It should be used
     /// either to explain why the server rejected parts of the data during a partial
@@ -46,7 +48,7 @@ pub struct ExportLogsPartialSuccess {
     ///
     /// error_message is an optional field. An error_message with an empty value
     /// is equivalent to it not being set.
-    #[prost(string, tag="2")]
+    #[prost(string, tag = "2")]
     pub error_message: ::prost::alloc::string::String,
 }
 /// Generated client implementations.

@@ -1,157 +1,149 @@
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateIndexRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_metadata_serialized_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CreateIndexResponse {
-}
+pub struct CreateIndexResponse {}
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ListIndexesMetadatasRequest {
-}
+pub struct ListIndexesMetadatasRequest {}
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListIndexesMetadatasResponse {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub indexes_metadatas_serialized_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteIndexRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeleteTasksResponse {
-}
+pub struct DeleteTasksResponse {}
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeleteIndexResponse {
-}
+pub struct DeleteIndexResponse {}
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IndexMetadataRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IndexMetadataResponse {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_metadata_serialized_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListAllSplitsRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSplitsRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub filter_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSplitsResponse {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub splits_serialized_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StageSplitRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
+    #[prost(string, tag = "2")]
     pub split_metadata_serialized_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PublishSplitsRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    #[prost(string, repeated, tag="2")]
+    #[prost(string, repeated, tag = "2")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(string, repeated, tag="3")]
+    #[prost(string, repeated, tag = "3")]
     pub replaced_split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(string, optional, tag="4")]
-    pub index_checkpoint_delta_serialized_json: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "4")]
+    pub index_checkpoint_delta_serialized_json: ::core::option::Option<
+        ::prost::alloc::string::String,
+    >,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MarkSplitsForDeletionRequest {
-    #[prost(string, tag="2")]
+    #[prost(string, tag = "2")]
     pub index_id: ::prost::alloc::string::String,
-    #[prost(string, repeated, tag="3")]
+    #[prost(string, repeated, tag = "3")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteSplitsRequest {
-    #[prost(string, tag="2")]
+    #[prost(string, tag = "2")]
     pub index_id: ::prost::alloc::string::String,
-    #[prost(string, repeated, tag="3")]
+    #[prost(string, repeated, tag = "3")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SplitResponse {
-}
+pub struct SplitResponse {}
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AddSourceRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
+    #[prost(string, tag = "2")]
     pub source_config_serialized_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ToggleSourceRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
+    #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(bool, tag="3")]
+    #[prost(bool, tag = "3")]
     pub enable: bool,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteSourceRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
+    #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetSourceCheckpointRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
+    #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SourceResponse {
-}
-// /
-// / Delete tasks.
-// /
-
+pub struct SourceResponse {}
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteTask {
-    #[prost(int64, tag="1")]
+    #[prost(int64, tag = "1")]
     pub create_timestamp: i64,
-    #[prost(uint64, tag="2")]
+    #[prost(uint64, tag = "2")]
     pub opstamp: u64,
-    #[prost(message, optional, tag="3")]
+    #[prost(message, optional, tag = "3")]
     pub delete_query: ::core::option::Option<DeleteQuery>,
 }
 #[derive(Serialize, Deserialize)]
@@ -159,71 +151,70 @@ pub struct DeleteTask {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteQuery {
     /// / Index ID.
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
     /// / If set, restrict search to documents with a `timestamp >= start_timestamp`.
-    #[prost(int64, optional, tag="2")]
+    #[prost(int64, optional, tag = "2")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start_timestamp: ::core::option::Option<i64>,
     /// / If set, restrict search to documents with a `timestamp < end_timestamp``.
-    #[prost(int64, optional, tag="3")]
+    #[prost(int64, optional, tag = "3")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_timestamp: ::core::option::Option<i64>,
     /// / Query text. The query language is that of tantivy.
-    #[prost(string, tag="4")]
+    #[prost(string, tag = "4")]
     pub query: ::prost::alloc::string::String,
     /// / Search fields.
-    #[prost(string, repeated, tag="5")]
+    #[prost(string, repeated, tag = "5")]
     pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateSplitsDeleteOpstampRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    #[prost(string, repeated, tag="2")]
+    #[prost(string, repeated, tag = "2")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(uint64, tag="3")]
+    #[prost(uint64, tag = "3")]
     pub delete_opstamp: u64,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct UpdateSplitsDeleteOpstampResponse {
-}
+pub struct UpdateSplitsDeleteOpstampResponse {}
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LastDeleteOpstampRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LastDeleteOpstampResponse {
-    #[prost(uint64, tag="1")]
+    #[prost(uint64, tag = "1")]
     pub last_delete_opstamp: u64,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListStaleSplitsRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag="2")]
+    #[prost(uint64, tag = "2")]
     pub delete_opstamp: u64,
-    #[prost(uint64, tag="3")]
+    #[prost(uint64, tag = "3")]
     pub num_splits: u64,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListDeleteTasksRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag="2")]
+    #[prost(uint64, tag = "2")]
     pub opstamp_start: u64,
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListDeleteTasksResponse {
-    #[prost(message, repeated, tag="1")]
+    #[prost(message, repeated, tag = "1")]
     pub delete_tasks: ::prost::alloc::vec::Vec<DeleteTask>,
 }
 /// Generated client implementations.
@@ -661,7 +652,7 @@ pub mod metastore_api_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        //// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
+        #[doc = "/ Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`."]
         pub async fn list_stale_splits(
             &mut self,
             request: impl tonic::IntoRequest<super::ListStaleSplitsRequest>,
@@ -783,7 +774,7 @@ pub mod metastore_api_service_server {
             &self,
             request: tonic::Request<super::ListDeleteTasksRequest>,
         ) -> Result<tonic::Response<super::ListDeleteTasksResponse>, tonic::Status>;
-        //// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
+        #[doc = "/ Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`."]
         async fn list_stale_splits(
             &self,
             request: tonic::Request<super::ListStaleSplitsRequest>,
