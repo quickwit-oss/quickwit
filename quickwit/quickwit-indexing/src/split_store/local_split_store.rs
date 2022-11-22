@@ -60,11 +60,11 @@ use anyhow::Context;
 use byte_unit::Byte;
 use quickwit_common::split_file;
 use quickwit_directories::BundleDirectory;
-use quickwit_storage::{StorageErrorKind, StorageResult};
+use quickwit_storage::StorageResult;
 use tantivy::directory::MmapDirectory;
 use tantivy::Directory;
 use tokio::sync::Mutex;
-use tracing::warn;
+use tracing::{debug, warn};
 use ulid::Ulid;
 
 use super::SplitStoreQuota;
@@ -163,15 +163,16 @@ struct InnerLocalSplitStore {
 
 impl InnerLocalSplitStore {
     /// Moves a split within the store to an external folder.
+    ///
+    /// Returns `None` if the split is not available in the cache.
     async fn move_out(
         &mut self,
         split_id: Ulid,
         to_folder: &Path,
     ) -> StorageResult<Option<PathBuf>> {
-        let split_folder = self.split_folders.remove(&split_id).ok_or_else(|| {
-            StorageErrorKind::DoesNotExist
-                .with_error(anyhow::anyhow!("Missing split_id `{split_id}`"))
-        })?;
+        let Some(split_folder) = self.split_folders.remove(&split_id) else {
+            return Ok(None);
+        };
         let from_path = self.split_path(split_id);
         let to_full_path = to_folder.join(from_path.file_name().unwrap());
         tokio::fs::rename(&from_path, &to_full_path).await?;
@@ -381,17 +382,16 @@ impl LocalSplitStore {
         } else {
             return Ok(None);
         };
-        let split_file_res = split_store_lock.move_out(split_ulid, output_dir_path).await;
-        match split_file_res {
-            Ok(Some(split_path)) => Ok(Some(split_path)),
-            Ok(None) => Ok(None),
-            Err(storage_err) if storage_err.kind() == StorageErrorKind::DoesNotExist => {
-                warn!(split_id = split_id, error = ?storage_err, "Cached split file/folder is missing.");
-                split_store_lock.split_folders.remove(&split_ulid);
-                Ok(None)
-            }
-            Err(storage_err) => Err(storage_err),
+        let split_file_opt: Option<PathBuf> = split_store_lock
+            .move_out(split_ulid, output_dir_path)
+            .await?;
+        if split_file_opt.is_none() {
+            debug!(
+                split_id = split_id,
+                "Split file/folder is not in cache missing."
+            );
         }
+        Ok(split_file_opt)
     }
 
     /// Tries to move a `split_folder` file into the cache.
@@ -579,18 +579,18 @@ mod tests {
         let local_store = LocalSplitStore::open(cache_dir.path().to_path_buf(), quota)
             .await
             .unwrap();
-        assert!(split_dir.exists());
+        assert!(split_dir.try_exists().unwrap());
         assert!(local_store
             .move_into_cache(&split_id, &split_dir)
             .await
             .unwrap());
-        assert!(!split_dir.exists());
+        assert!(!split_dir.try_exists().unwrap());
         let split_path = local_store
             .get_cached_split(&split_id, temp_dir_in.path())
             .await
             .unwrap()
             .unwrap();
-        assert!(split_path.exists());
+        assert!(split_path.try_exists().unwrap());
         assert_eq!(split_path.parent().unwrap(), temp_dir_in.path());
     }
 }

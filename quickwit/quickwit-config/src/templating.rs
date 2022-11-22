@@ -46,7 +46,7 @@ pub fn render_config(config_uri: &Uri, config_content: &[u8]) -> Result<String> 
             .expect("Captures should always have at least one match.")
             .as_str();
         let substitution_value = {
-            if let Ok(env_var_value) = std::env::var(&env_var_key) {
+            if let Ok(env_var_value) = std::env::var(env_var_key) {
                 debug!(
                     env_var_name=%env_var_key,
                     env_var_value=%env_var_value,
@@ -86,7 +86,7 @@ mod test {
 
     use super::render_config;
 
-    static TEST_URI: Lazy<Uri> = Lazy::new(|| Uri::new("file://config.yaml".to_string()));
+    static TEST_URI: Lazy<Uri> = Lazy::new(|| Uri::from_well_formed("file://config.yaml"));
 
     #[test]
     fn test_template_render() {

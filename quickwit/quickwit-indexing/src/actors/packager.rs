@@ -134,14 +134,6 @@ impl Handler<IndexedSplitBatch> for Packager {
             split_ids=?split_ids,
             "start-packaging-splits"
         );
-        for split in &batch.splits {
-            if let Some(controlled_directory) = &split.controlled_directory_opt {
-                controlled_directory.set_progress_and_kill_switch(
-                    ctx.progress().clone(),
-                    ctx.kill_switch().clone(),
-                );
-            }
-        }
         fail_point!("packager:before");
         let mut packaged_splits = Vec::new();
         for split in batch.splits {
@@ -162,6 +154,7 @@ impl Handler<IndexedSplitBatch> for Packager {
                 packaged_splits,
                 batch.checkpoint_delta,
                 batch.publish_lock,
+                batch.merge_operation,
                 batch.batch_parent_span,
             ),
         )
@@ -175,14 +168,14 @@ impl Handler<IndexedSplitBatch> for Packager {
 fn list_split_files(
     segment_metas: &[SegmentMeta],
     scratch_directory: &ScratchDirectory,
-) -> Vec<PathBuf> {
+) -> io::Result<Vec<PathBuf>> {
     let mut index_files = vec![scratch_directory.path().join("meta.json")];
 
     // list the segment files
     for segment_meta in segment_metas {
         for relative_path in segment_meta.list_files() {
             let filepath = scratch_directory.path().join(&relative_path);
-            if filepath.exists() {
+            if filepath.try_exists()? {
                 // If the file is missing, this is fine.
                 // segment_meta.list_files() may actually returns files that
                 // may not exist.
@@ -191,7 +184,7 @@ fn list_split_files(
         }
     }
     index_files.sort();
-    index_files
+    Ok(index_files)
 }
 
 fn build_hotcache<W: io::Write>(split_path: &Path, out: &mut W) -> anyhow::Result<()> {
@@ -262,7 +255,7 @@ fn create_packaged_split(
     ctx: &ActorContext<Packager>,
 ) -> anyhow::Result<PackagedSplit> {
     info!(split_id = split.split_id(), "create-packaged-split");
-    let split_files = list_split_files(segment_metas, &split.split_scratch_directory);
+    let split_files = list_split_files(segment_metas, &split.split_scratch_directory)?;
 
     // Extracts tag values from inverted indexes only when a field cardinality is less
     // than `MAX_VALUES_PER_TAG_FIELD`.
@@ -440,6 +433,7 @@ mod tests {
                 checkpoint_delta: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
                 publish_lock: PublishLock::default(),
                 batch_parent_span: Span::none(),
+                merge_operation: None,
             })
             .await?;
         assert_eq!(

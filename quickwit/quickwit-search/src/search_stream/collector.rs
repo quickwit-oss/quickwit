@@ -62,7 +62,7 @@ impl<Item: FastValue> SegmentCollector for FastFieldSegmentCollector<Item> {
         if !self.accept_document(doc_id) {
             return;
         }
-        let fast_field_value = self.fast_field_reader.get_val(doc_id as u64);
+        let fast_field_value = self.fast_field_reader.get_val(doc_id);
         self.fast_field_values.push(fast_field_value);
     }
 
@@ -223,8 +223,8 @@ impl<Item: FastValue, PartitionItem: FastValue + Hash + Eq> SegmentCollector
         if !self.accept_document(doc_id) {
             return;
         }
-        let fast_field_value = self.fast_field_reader.get_val(doc_id as u64);
-        let fast_field_partition = &self.partition_by_fast_field_reader.get_val(doc_id as u64);
+        let fast_field_value = self.fast_field_reader.get_val(doc_id);
+        let fast_field_partition = &self.partition_by_fast_field_reader.get_val(doc_id);
         if let Some(values) = self.fast_field_values.get_mut(fast_field_partition) {
             values.push(fast_field_value);
         } else {

@@ -23,14 +23,17 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, HEARTBEAT};
-use quickwit_metastore::{IndexMetadata, Metastore, MetastoreResult};
+use quickwit_config::{build_doc_mapper, IndexConfig};
+use quickwit_metastore::Metastore;
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::SearchRequest;
 use quickwit_search::SearchClientPool;
 use quickwit_storage::StorageUriResolver;
 use serde::Serialize;
 use tracing::{error, info, warn};
 
 use super::delete_task_pipeline::DeleteTaskPipeline;
+use crate::error::JanitorError;
 
 pub const DELETE_SERVICE_TASK_DIR_NAME: &str = "delete_task_service";
 
@@ -92,14 +95,19 @@ impl DeleteTaskService {
         &mut self,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
-        let mut index_metadata_by_index_id: HashMap<String, IndexMetadata> = self
+        let mut index_config_by_index_id: HashMap<String, IndexConfig> = self
             .metastore
             .list_indexes_metadatas()
             .await?
             .into_iter()
-            .map(|index_metadata| (index_metadata.index_id.clone(), index_metadata))
+            .map(|index_metadata| {
+                (
+                    index_metadata.index_id().to_string(),
+                    index_metadata.into_index_config(),
+                )
+            })
             .collect();
-        let index_ids: HashSet<String> = index_metadata_by_index_id.keys().cloned().collect();
+        let index_ids: HashSet<String> = index_config_by_index_id.keys().cloned().collect();
         let pipeline_index_ids: HashSet<String> =
             self.pipeline_handles_by_index_id.keys().cloned().collect();
 
@@ -113,15 +121,16 @@ impl DeleteTaskService {
                 .pipeline_handles_by_index_id
                 .remove(deleted_index_id)
                 .expect("Handle must be present.");
-            pipeline_handle.quit().await;
+            // Kill the pipeline, this avoids to wait a long time for a delete operation to finish.
+            pipeline_handle.kill().await;
         }
 
         // Start new pipelines and add them to the handles hashmap.
         for index_id in index_ids.difference(&pipeline_index_ids) {
-            let index_metadata = index_metadata_by_index_id
+            let index_config = index_config_by_index_id
                 .remove(index_id)
                 .expect("Index metadata must be present.");
-            if self.spawn_pipeline(index_metadata, ctx).await.is_err() {
+            if self.spawn_pipeline(index_config, ctx).await.is_err() {
                 warn!("Failed to spawn delete pipeline for {index_id}");
             }
         }
@@ -131,24 +140,50 @@ impl DeleteTaskService {
 
     pub async fn spawn_pipeline(
         &mut self,
-        index_metadata: IndexMetadata,
+        index_config: IndexConfig,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         let delete_task_service_dir = self.data_dir_path.join(DELETE_SERVICE_TASK_DIR_NAME);
-        let index_storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
+        let index_uri = index_config.index_uri.clone();
+        let index_storage = self.storage_resolver.resolve(&index_uri)?;
         let pipeline = DeleteTaskPipeline::new(
-            index_metadata.index_id.to_string(),
+            index_config.index_id.clone(),
             self.metastore.clone(),
             self.search_client_pool.clone(),
-            index_metadata.indexing_settings,
+            index_config.indexing_settings,
             index_storage,
             delete_task_service_dir,
             self.max_concurrent_split_uploads,
         );
         let (_pipeline_mailbox, pipeline_handler) = ctx.spawn_actor().spawn(pipeline);
         self.pipeline_handles_by_index_id
-            .insert(index_metadata.index_id, pipeline_handler);
+            .insert(index_config.index_id, pipeline_handler);
         Ok(())
+    }
+
+    pub async fn validate_and_create_delete_task(
+        &self,
+        delete_query: DeleteQuery,
+    ) -> Result<DeleteTask, JanitorError> {
+        let index_config: IndexConfig = self
+            .metastore
+            .index_metadata(&delete_query.index_id)
+            .await?
+            .into_index_config();
+        let doc_mapper = build_doc_mapper(
+            &index_config.doc_mapping,
+            &index_config.search_settings,
+            &index_config.indexing_settings,
+        )
+        .map_err(|error| JanitorError::InternalError(error.to_string()))?;
+        let delete_search_request = SearchRequest::from(delete_query.clone());
+        // Validate the delete query.
+        doc_mapper
+            .query(doc_mapper.schema(), &delete_search_request)
+            .map_err(|error| JanitorError::InvalidDeleteQuery(error.to_string()))?;
+        let delete_task = self.metastore.create_delete_task(delete_query).await?;
+
+        Ok(delete_task)
     }
 }
 
@@ -175,14 +210,14 @@ impl Handler<SuperviseLoop> for DeleteTaskService {
 
 #[async_trait]
 impl Handler<DeleteQuery> for DeleteTaskService {
-    type Reply = MetastoreResult<DeleteTask>;
+    type Reply = Result<DeleteTask, JanitorError>;
 
     async fn handle(
         &mut self,
         message: DeleteQuery,
         _: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        let reply = self.metastore.create_delete_task(message).await;
+        let reply = self.validate_and_create_delete_task(message).await;
         Ok(reply)
     }
 }
@@ -201,6 +236,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_task_service() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
         let index_id = "test-delete-task-service-index";
         let doc_mapping_yaml = r#"
             field_mappings:
@@ -210,15 +246,7 @@ mod tests {
                 type: i64
                 fast: true
         "#;
-        let metastore_uri = "ram:///delete-task-service";
-        let test_sandbox = TestSandbox::create(
-            index_id,
-            doc_mapping_yaml,
-            "{}",
-            &["body"],
-            Some(metastore_uri),
-        )
-        .await?;
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
         let metastore = test_sandbox.metastore();
         let mock_search_service = MockSearchService::new();
         let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
@@ -264,6 +292,12 @@ mod tests {
             .process_pending_and_observe()
             .await;
         assert_eq!(state_after_deletion.num_running_pipelines, 0);
+        assert!(universe.get_one::<DeleteTaskService>().is_some());
+        let actors_observations = universe.observe(HEARTBEAT).await;
+        // Once the pipeline is properly shut down, the only remaining actors are the scheduler and
+        // the delete service.
+        assert_eq!(actors_observations.len(), 2);
+        assert!(universe.get_one::<DeleteTaskService>().is_some());
         Ok(())
     }
 }

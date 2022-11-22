@@ -29,7 +29,7 @@ use http::Uri;
 use itertools::Itertools;
 use quickwit_cluster::ClusterMember;
 use quickwit_config::service::QuickwitService;
-use quickwit_proto::tonic;
+use quickwit_proto::{tonic, SpanContextInterceptor};
 use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt;
 use tonic::transport::Endpoint;
@@ -50,10 +50,11 @@ pub async fn create_search_service_client(
         .build()?;
     // Create a channel with connect_lazy to automatically reconnect to the node.
     let channel = Endpoint::from(uri).connect_lazy();
-    let client = SearchServiceClient::from_grpc_client(
-        quickwit_proto::search_service_client::SearchServiceClient::new(channel),
-        grpc_addr,
+    let client = quickwit_proto::search_service_client::SearchServiceClient::with_interceptor(
+        channel,
+        SpanContextInterceptor,
     );
+    let client = SearchServiceClient::from_grpc_client(client, grpc_addr);
     Ok(client)
 }
 
@@ -134,11 +135,7 @@ impl SearchClientPool {
     async fn update_members(&self, cluster_members: &[ClusterMember]) {
         let members_grpc_addrs = cluster_members
             .iter()
-            .filter(|member| {
-                member
-                    .available_services
-                    .contains(&QuickwitService::Searcher)
-            })
+            .filter(|member| member.enabled_services.contains(&QuickwitService::Searcher))
             .map(|member| member.grpc_advertise_addr)
             .collect_vec();
         let mut new_clients = self.clients();
@@ -265,11 +262,7 @@ impl SearchClientPool {
             sort_by_rendez_vous_hash(&mut nodes, job.split_id());
             // choose one of the the first two nodes based on least loaded
             let chosen_node_index: usize = if nodes.len() >= 2 {
-                if nodes[0].load > nodes[1].load {
-                    1
-                } else {
-                    0
-                }
+                usize::from(nodes[0].load > nodes[1].load)
             } else {
                 0
             };

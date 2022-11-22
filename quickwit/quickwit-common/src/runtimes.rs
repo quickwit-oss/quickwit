@@ -20,7 +20,6 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use anyhow::bail;
 use once_cell::sync::OnceCell;
 use tokio::runtime::Runtime;
 use tracing::warn;
@@ -43,7 +42,7 @@ pub enum RuntimeType {
     /// The non-blocking runtime is closer to what one would expect from
     /// a regular tokio runtime.
     ///
-    /// Task are expect to yield within 500 microsecs.
+    /// Task are expect to yield within 500 micros.
     NonBlocking,
 
     /// The ingest API is a bit special in that it has its own
@@ -119,10 +118,7 @@ fn start_runtimes(config: RuntimesConfiguration) -> HashMap<RuntimeType, Runtime
 }
 
 pub fn initialize_runtimes(runtime_config: RuntimesConfiguration) -> anyhow::Result<()> {
-    let runtimes = start_runtimes(runtime_config);
-    if RUNTIMES.set(runtimes).is_err() {
-        bail!("Runtimes have already been initialized.");
-    }
+    RUNTIMES.get_or_init(|| start_runtimes(runtime_config));
     Ok(())
 }
 

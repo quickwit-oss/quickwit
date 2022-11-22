@@ -27,16 +27,13 @@ mod lazy_file_backed_index;
 mod store_operations;
 
 use std::collections::HashMap;
-use std::ops::Range;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::try_join_all;
-use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
-use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use quickwit_storage::Storage;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
@@ -50,7 +47,8 @@ use self::store_operations::{
 };
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    IndexMetadata, Metastore, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState,
+    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, Split,
+    SplitMetadata, SplitState,
 };
 
 /// State of an index tracked by the metastore.
@@ -152,7 +150,7 @@ impl FileBackedMetastore {
         if !mutation_occurred {
             return Ok(false);
         }
-
+        locked_index.set_recently_modified();
         let put_result = put_index(&*self.storage, &index).await;
         match put_result {
             Ok(()) => {
@@ -186,7 +184,7 @@ impl FileBackedMetastore {
     async fn read<T, F>(&self, index_id: &str, view: F) -> MetastoreResult<T>
     where F: FnOnce(&FileBackedIndex) -> MetastoreResult<T> {
         let locked_index = self.get_locked_index(index_id).await?;
-        view(&*locked_index)
+        view(&locked_index)
     }
 
     /// Returns a valid metadataset that is locked.
@@ -256,7 +254,7 @@ impl FileBackedMetastore {
         Ok(index_mutex)
     }
 
-    // Helper used for testing to obtain the data associated with the given index.
+    /// Helper used for testing to obtain the data associated with the given index.
     #[cfg(test)]
     async fn get_index(&self, index_id: &str) -> MetastoreResult<FileBackedIndex> {
         self.read(index_id, |index| Ok(index.clone())).await
@@ -273,7 +271,7 @@ impl Metastore for FileBackedMetastore {
     /// -------------------------------------------------------------------------------
     /// Mutations over the high-level index.
     async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
-        let index_id = index_metadata.index_id.clone();
+        let index_id = index_metadata.index_id().to_string();
 
         // We pick the outer lock here, so that we enter a critical section.
         let mut per_index_metastores_wlock = self.per_index_metastores.write().await;
@@ -287,10 +285,10 @@ impl Metastore for FileBackedMetastore {
         if let Some(index_state) = per_index_metastores_wlock.get(&index_id) {
             if let IndexState::Alive(_) = index_state {
                 return Err(MetastoreError::IndexAlreadyExists {
-                    index_id: index_metadata.index_id.clone(),
+                    index_id: index_id.clone(),
                 });
             }
-        } else if index_exists(&*self.storage, &index_metadata.index_id).await? {
+        } else if index_exists(&*self.storage, &index_id).await? {
             return Err(MetastoreError::InternalError {
                 message: format!("Index {index_id} cannot be created."),
                 cause: format!(
@@ -440,8 +438,11 @@ impl Metastore for FileBackedMetastore {
     }
 
     async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()> {
-        self.mutate(index_id, |index| index.add_source(source))
-            .await?;
+        self.mutate(index_id, |index| {
+            index.add_source(source)?;
+            Ok(true)
+        })
+        .await?;
         Ok(())
     }
 
@@ -475,21 +476,9 @@ impl Metastore for FileBackedMetastore {
     /// -------------------------------------------------------------------------------
     /// Read-only accessors
 
-    async fn list_splits(
-        &self,
-        index_id: &str,
-        state: SplitState,
-        time_range_opt: Option<Range<i64>>,
-        tags: Option<TagFilterAst>,
-    ) -> MetastoreResult<Vec<Split>> {
-        self.read(index_id, |index| {
-            index.list_splits(state, time_range_opt, tags, None)
-        })
-        .await
-    }
-
-    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
-        self.read(index_id, |index| index.list_all_splits()).await
+    async fn list_splits<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>> {
+        self.read(query.index_id, |index| index.list_splits(query))
+            .await
     }
 
     async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata> {
@@ -508,37 +497,6 @@ impl Metastore for FileBackedMetastore {
                 })
                 .map(|index_id| self.index_metadata(index_id)),
         )
-        .await
-    }
-
-    async fn list_stale_splits(
-        &self,
-        index_id: &str,
-        delete_opstamp: u64,
-        num_splits: usize,
-    ) -> MetastoreResult<Vec<Split>> {
-        self.read(index_id, |index| {
-            let splits = index
-                .list_splits(SplitState::Published, None, None, Some(delete_opstamp))?
-                .into_iter()
-                // Ordering by:
-                // - delete_opstamp ASC
-                // - publish_timestamp ASC
-                .sorted_by(|split_left, split_right| {
-                    split_left
-                        .split_metadata
-                        .delete_opstamp
-                        .cmp(&split_right.split_metadata.delete_opstamp)
-                        .then_with(|| {
-                            split_left
-                                .publish_timestamp
-                                .cmp(&split_right.publish_timestamp)
-                        })
-                })
-                .take(num_splits)
-                .collect_vec();
-            Ok(splits)
-        })
         .await
     }
 
@@ -657,7 +615,9 @@ mod tests {
     };
     use super::{FileBackedIndex, FileBackedMetastore, IndexState};
     use crate::tests::test_suite::DefaultForTest;
-    use crate::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
+    use crate::{
+        IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState,
+    };
 
     #[tokio::test]
     async fn test_file_backed_metastore_index_exists() {
@@ -683,10 +643,15 @@ mod tests {
             .await
             .unwrap();
 
+        let index_config = index_metadata.into_index_config();
+
         // Open index and check its metadata
         let created_index = metastore.get_index(index_id).await.unwrap();
-        assert_eq!(created_index.index_id(), index_metadata.index_id);
-        assert_eq!(created_index.metadata().index_uri, index_metadata.index_uri);
+        assert_eq!(created_index.index_id(), index_config.index_id);
+        assert_eq!(
+            created_index.metadata().index_uri(),
+            &index_config.index_uri
+        );
 
         // Check index is returned by list indexes.
         let indexes = metastore.list_indexes_metadatas().await.unwrap();
@@ -765,17 +730,13 @@ mod tests {
         assert!(err.is_err());
 
         // empty
-        let split = metastore
-            .list_splits(index_id, SplitState::Published, None, None)
-            .await
-            .unwrap();
+        let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Published);
+        let split = metastore.list_splits(query).await.unwrap();
         assert!(split.is_empty());
 
         // not empty
-        let split = metastore
-            .list_splits(index_id, SplitState::Staged, None, None)
-            .await
-            .unwrap();
+        let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
+        let split = metastore.list_splits(query).await.unwrap();
         assert!(!split.is_empty());
     }
 
@@ -934,10 +895,8 @@ mod tests {
 
         futures::future::try_join_all(handles).await.unwrap();
 
-        let splits = metastore
-            .list_splits(index_id, SplitState::Published, None, None)
-            .await
-            .unwrap();
+        let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Published);
+        let splits = metastore.list_splits(query).await.unwrap();
 
         // Make sure that all 20 splits are in `Published` state.
         assert_eq!(splits.len(), 20);

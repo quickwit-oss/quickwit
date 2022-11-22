@@ -135,16 +135,9 @@ mod tests {
                 type: i64
                 fast: true
         "#;
-        let metastore_uri = "ram:///delete-task-rest";
-        let test_sandbox = TestSandbox::create(
-            index_id,
-            doc_mapping_yaml,
-            "{}",
-            &["body"],
-            Some(metastore_uri),
-        )
-        .await
-        .unwrap();
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"])
+            .await
+            .unwrap();
         let metastore = test_sandbox.metastore();
         let mock_search_service = MockSearchService::new();
         let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)])
@@ -182,6 +175,18 @@ mod tests {
         assert_eq!(created_delete_query.start_timestamp, Some(1));
         assert_eq!(created_delete_query.end_timestamp, Some(10));
 
+        // POST an invalid delete query.
+        let resp = warp::test::request()
+            .path("/test-delete-task-rest/delete-tasks")
+            .method("POST")
+            .json(&true)
+            .body(r#"{"query": "unknown_field:test", "start_timestamp": 1, "end_timestamp": 10}"#)
+            .reply(&delete_query_api_handlers)
+            .await;
+        assert_eq!(resp.status(), 400);
+        assert!(String::from_utf8_lossy(resp.body()).contains("InvalidDeleteQuery"));
+
+        // GET delete tasks.
         let resp = warp::test::request()
             .path("/test-delete-task-rest/delete-tasks")
             .reply(&delete_query_api_handlers)

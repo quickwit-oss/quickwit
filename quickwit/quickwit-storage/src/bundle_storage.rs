@@ -35,7 +35,7 @@ use thiserror::Error;
 use tokio::io::AsyncWriteExt;
 use tracing::error;
 
-use crate::storage::SendableAsync;
+use crate::storage::{BulkDeleteError, SendableAsync};
 use crate::{OwnedBytes, Storage, StorageError, StorageResult};
 
 /// BundleStorage bundles together multiple files into a single file.
@@ -184,7 +184,7 @@ impl Storage for BundleStorage {
         path: &Path,
         _payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
-        Err(unsupported_operation(path))
+        Err(unsupported_operation(&[path]))
     }
 
     async fn copy_to(
@@ -232,7 +232,14 @@ impl Storage for BundleStorage {
     }
 
     async fn delete(&self, path: &Path) -> crate::StorageResult<()> {
-        Err(unsupported_operation(path))
+        Err(unsupported_operation(&[path]))
+    }
+
+    async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+        Err(BulkDeleteError {
+            error: Some(unsupported_operation(paths)),
+            ..Default::default()
+        })
     }
 
     async fn exists(&self, path: &Path) -> crate::StorageResult<bool> {
@@ -269,10 +276,10 @@ impl fmt::Debug for BundleStorage {
     }
 }
 
-fn unsupported_operation(path: &Path) -> StorageError {
+fn unsupported_operation<'a>(paths: &[&'a Path]) -> StorageError {
     let msg = "Unsupported operation. BundleStorage only supports async reads";
-    error!(path=?path, msg);
-    io::Error::new(io::ErrorKind::Other, format!("{}: {:?}", msg, path)).into()
+    error!(paths=?paths, msg);
+    io::Error::new(io::ErrorKind::Other, format!("{}: {:?}", msg, paths)).into()
 }
 
 #[cfg(test)]

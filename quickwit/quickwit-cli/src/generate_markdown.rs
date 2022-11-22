@@ -19,12 +19,12 @@
 
 use clap::Command;
 use quickwit_cli::cli::build_cli;
-use quickwit_serve::build_quickwit_build_info;
+use quickwit_serve::quickwit_build_info;
 use toml::Value;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let build_info = build_quickwit_build_info();
+    let build_info = quickwit_build_info();
     let version_text = format!(
         "{} ({} {})",
         build_info.cargo_pkg_version, build_info.cargo_pkg_version, build_info.commit_date,

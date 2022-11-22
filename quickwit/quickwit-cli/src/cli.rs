@@ -35,7 +35,20 @@ pub fn build_cli<'a>() -> Command<'a> {
                 .help("Config file location")
                 .env("QW_CONFIG")
                 .default_value(DEFAULT_QW_CONFIG_PATH)
-                .global(true),
+                .global(true)
+                .display_order(1),
+        )
+        .arg(
+            Arg::new("no-color")
+                .long("no-color")
+                .help(
+                    "Disable ANSI terminal codes (colors, etc...) being injected into the logging \
+                     output",
+                )
+                .env("NO_COLOR")
+                .global(true)
+                .display_order(2)
+                .takes_value(false),
         )
         .subcommand(build_run_command().display_order(1))
         .subcommand(build_index_command().display_order(2))

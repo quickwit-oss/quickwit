@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#![deny(clippy::disallowed_methods)]
+
 mod cluster;
 mod error;
 
@@ -43,18 +45,18 @@ fn unix_timestamp() -> u64 {
 
 pub async fn start_cluster_service(
     quickwit_config: &QuickwitConfig,
-    services: &HashSet<QuickwitService>,
+    enabled_services: &HashSet<QuickwitService>,
 ) -> anyhow::Result<Arc<Cluster>> {
-    let member = ClusterMember::new(
+    let self_node = ClusterMember::new(
         quickwit_config.node_id.clone(),
         unix_timestamp(),
+        enabled_services.clone(),
         quickwit_config.gossip_advertise_addr,
-        services.clone(),
         quickwit_config.grpc_advertise_addr,
     );
 
     let cluster = Cluster::join(
-        member,
+        self_node,
         quickwit_config.gossip_listen_addr,
         quickwit_config.cluster_id.clone(),
         quickwit_config.peer_seed_addrs().await?,

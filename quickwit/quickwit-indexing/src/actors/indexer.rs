@@ -28,6 +28,7 @@ use fail::fail_point;
 use fnv::FnvHashMap;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::io::IoControls;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::{DocMapper, SortBy, QUICKWIT_TOKENIZER_MANAGER};
@@ -38,7 +39,7 @@ use tantivy::schema::Schema;
 use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::{IndexBuilder, IndexSettings, IndexSortByField};
 use tokio::runtime::Handle;
-use tracing::{info, info_span, Instrument, Span};
+use tracing::{info, info_span, Span};
 use ulid::Ulid;
 
 use crate::actors::IndexSerializer;
@@ -86,14 +87,19 @@ impl IndexerState {
             .settings(self.index_settings.clone())
             .schema(self.schema.clone())
             .tokenizers(QUICKWIT_TOKENIZER_MANAGER.clone());
+
+        let io_controls = IoControls::default()
+            .set_progress(ctx.progress().clone())
+            .set_kill_switch(ctx.kill_switch().clone())
+            .set_index_and_component(&self.pipeline_id.index_id, "indexer");
+
         let indexed_split = IndexedSplitBuilder::new_in_dir(
             self.pipeline_id.clone(),
             partition_id,
             last_delete_opstamp,
             self.indexing_directory.scratch_directory().clone(),
             index_builder,
-            ctx.progress().clone(),
-            ctx.kill_switch().clone(),
+            io_controls,
         )?;
         info!(
             split_id = indexed_split.split_id(),
@@ -491,9 +497,7 @@ impl Indexer {
         }
         let num_splits = splits.len() as u64;
         let split_ids = splits.iter().map(|split| split.split_id()).join(",");
-
         info!(commit_trigger=?commit_trigger, split_ids=%split_ids, num_docs=self.counters.num_docs_in_workbench, "send-to-index-serializer");
-        let span_id = batch_parent_span.id();
         ctx.send_message(
             &self.index_serializer_mailbox,
             IndexedSplitBatchBuilder {
@@ -504,7 +508,6 @@ impl Indexer {
                 commit_trigger,
             },
         )
-        .instrument(info_span!(parent: span_id, "send_to_serializer"))
         .await?;
         self.counters.num_docs_in_workbench = 0;
         self.counters.num_splits_emitted += num_splits;

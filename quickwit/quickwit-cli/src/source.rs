@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::str::FromStr;
+
 use anyhow::{bail, Context};
 use clap::{arg, ArgMatches, Command};
 use itertools::Itertools;
@@ -38,7 +40,8 @@ pub fn build_source_command<'a>() -> Command<'a> {
             Command::new("create")
                 .about("Adds a new source to an index.")
                 .args(&[
-                    arg!(--index <INDEX_ID> "ID of the target index"),
+                    arg!(--index <INDEX_ID> "ID of the target index")
+                        .display_order(1),
                     arg!(--"source-config" <SOURCE_CONFIG> "Path to source config file. Please, refer to the documentation for more details."),
                 ])
             )
@@ -61,32 +64,43 @@ pub fn build_source_command<'a>() -> Command<'a> {
         .subcommand(
             Command::new("delete")
                 .about("Deletes a source from an index.")
+                .alias("del")
                 .args(&[
-                    arg!(--index <INDEX_ID> "ID of the target index"),
-                    arg!(--source <SOURCE_ID> "ID of the source."),
+                    arg!(--index <INDEX_ID> "ID of the target index")
+                        .display_order(1),
+                    arg!(--source <SOURCE_ID> "ID of the source.")
+                        .display_order(2),
                 ])
             )
         .subcommand(
             Command::new("describe")
                 .about("Describes a source.")
+                .alias("desc")
                 .args(&[
-                    arg!(--index <INDEX_ID> "ID of the target index"),
-                    arg!(--source <SOURCE_ID> "ID of the source."),
+                    arg!(--index <INDEX_ID> "ID of the target index")
+                        .display_order(1),
+                    arg!(--source <SOURCE_ID> "ID of the source.")
+                        .display_order(2),
                 ])
             )
         .subcommand(
             Command::new("list")
                 .about("Lists the sources of an index.")
+                .alias("ls")
                 .args(&[
-                    arg!(--index <INDEX_ID> "ID of the target index"),
+                    arg!(--index <INDEX_ID> "ID of the target index")
+                        .display_order(1),
                 ])
             )
         .subcommand(
             Command::new("reset-checkpoint")
                 .about("Resets a source checkpoint. This operation is destructive and cannot be undone. Proceed with caution.")
+                .alias("reset")
                 .args(&[
-                    arg!(--index <INDEX_ID> "Index ID"),
-                    arg!(--source <SOURCE_ID> "Source ID"),
+                    arg!(--index <INDEX_ID> "Index ID")
+                        .display_order(1),
+                    arg!(--source <SOURCE_ID> "Source ID")
+                        .display_order(2),
                 ])
             )
         .arg_required_else_help(true)
@@ -181,7 +195,7 @@ impl SourceCliCommand {
     fn parse_create_args(matches: &ArgMatches) -> anyhow::Result<CreateSourceArgs> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -189,7 +203,7 @@ impl SourceCliCommand {
             .expect("`index` is a required arg.");
         let source_config_uri = matches
             .value_of("source-config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`source-config` is a required arg.")?;
         Ok(CreateSourceArgs {
             config_uri,
@@ -204,7 +218,7 @@ impl SourceCliCommand {
     ) -> anyhow::Result<ToggleSourceArgs> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -226,7 +240,7 @@ impl SourceCliCommand {
     fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<DeleteSourceArgs> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -246,7 +260,7 @@ impl SourceCliCommand {
     fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<DescribeSourceArgs> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -266,7 +280,7 @@ impl SourceCliCommand {
     fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<ListSourcesArgs> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -281,7 +295,7 @@ impl SourceCliCommand {
     fn parse_reset_checkpoint_args(matches: &ArgMatches) -> anyhow::Result<ResetCheckpointArgs> {
         let config_uri = matches
             .value_of("config")
-            .map(Uri::try_new)
+            .map(Uri::from_str)
             .expect("`config` is a required arg.")?;
         let index_id = matches
             .value_of("index")
@@ -300,13 +314,17 @@ impl SourceCliCommand {
 }
 
 async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
-    let qw_config = load_quickwit_config(&args.config_uri, None).await?;
+    let qw_config = load_quickwit_config(&args.config_uri).await?;
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&qw_config.metastore_uri)
         .await?;
     let source_config_content = load_file(&args.source_config_uri).await?;
     let source_config =
-        SourceConfig::load(&args.source_config_uri, source_config_content.as_slice()).await?;
+        SourceConfig::load(&args.source_config_uri, source_config_content.as_slice())?;
+    // This is a bit redundant, as SourceConfig deserialization also checks
+    // that the indentifier is valid. However it authorizes the special
+    // private names internal to quickwit, so we do an extra check.
+    validate_identifier("Source ID", &source_config.source_id)?;
     if let SourceParams::IngestApi = source_config.source_params {
         bail!(
             "Failed to create Ingest API source `{}` for index `{}`. Ingest API sources are \
@@ -329,7 +347,7 @@ async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
 }
 
 async fn toggle_source_cli(args: ToggleSourceArgs) -> anyhow::Result<()> {
-    let config = load_quickwit_config(&args.config_uri, None).await?;
+    let config = load_quickwit_config(&args.config_uri).await?;
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri)
         .await?;
@@ -354,7 +372,7 @@ async fn toggle_source_cli(args: ToggleSourceArgs) -> anyhow::Result<()> {
 }
 
 async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
-    let config = load_quickwit_config(&args.config_uri, None).await?;
+    let config = load_quickwit_config(&args.config_uri).await?;
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri)
         .await?;
@@ -378,7 +396,7 @@ async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
 }
 
 async fn describe_source_cli(args: DescribeSourceArgs) -> anyhow::Result<()> {
-    let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let index_metadata = resolve_index(&quickwit_config.metastore_uri, &args.index_id).await?;
     let source_checkpoint = index_metadata
         .checkpoint
@@ -410,6 +428,7 @@ where
     let source_rows = vec![SourceRow {
         source_id: source.source_id.clone(),
         source_type: source.source_type().to_string(),
+        enabled: source.enabled.to_string(),
     }];
     let source_table = make_table("Source", source_rows, true);
 
@@ -431,7 +450,7 @@ where
 }
 
 async fn list_sources_cli(args: ListSourcesArgs) -> anyhow::Result<()> {
-    let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri).await?;
     let index_metadata = resolve_index(&quickwit_config.metastore_uri, &args.index_id).await?;
     let table = make_list_sources_table(index_metadata.sources.into_values());
     display_tables(&[table]);
@@ -445,6 +464,7 @@ where I: IntoIterator<Item = SourceConfig> {
         .map(|source| SourceRow {
             source_type: source.source_type().to_string(),
             source_id: source.source_id,
+            enabled: source.enabled.to_string(),
         })
         .sorted_by(|left, right| left.source_id.cmp(&right.source_id));
     make_table("Sources", rows, false)
@@ -452,10 +472,12 @@ where I: IntoIterator<Item = SourceConfig> {
 
 #[derive(Tabled)]
 struct SourceRow {
-    #[tabled(rename = "Type")]
-    source_type: String,
     #[tabled(rename = "ID")]
     source_id: String,
+    #[tabled(rename = "Type")]
+    source_type: String,
+    #[tabled(rename = "Enabled")]
+    enabled: String,
 }
 
 #[derive(Tabled)]
@@ -509,7 +531,7 @@ fn flatten_json(value: Value) -> Vec<(String, Value)> {
 }
 
 async fn reset_checkpoint_cli(args: ResetCheckpointArgs) -> anyhow::Result<()> {
-    let config = load_quickwit_config(&args.config_uri, None).await?;
+    let config = load_quickwit_config(&args.config_uri).await?;
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri)
         .await?;
@@ -532,6 +554,8 @@ async fn resolve_index(metastore_uri: &Uri, index_id: &str) -> anyhow::Result<In
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use quickwit_config::SourceParams;
     use quickwit_metastore::checkpoint::{PartitionId, Position};
     use serde_json::json;
@@ -574,9 +598,9 @@ mod tests {
         let command = CliCommand::parse_cli_args(&matches).unwrap();
         let expected_command =
             CliCommand::Source(SourceCliCommand::CreateSource(CreateSourceArgs {
-                config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+                config_uri: Uri::from_str("file:///conf.yaml").unwrap(),
                 index_id: "hdfs-logs".to_string(),
-                source_config_uri: Uri::try_new("file:///source-conf.yaml").unwrap(),
+                source_config_uri: Uri::from_str("file:///source-conf.yaml").unwrap(),
             }));
         assert_eq!(command, expected_command);
     }
@@ -600,7 +624,7 @@ mod tests {
             let command = CliCommand::parse_cli_args(&matches).unwrap();
             let expected_command =
                 CliCommand::Source(SourceCliCommand::ToggleSource(ToggleSourceArgs {
-                    config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+                    config_uri: Uri::from_str("file:///conf.yaml").unwrap(),
                     index_id: "hdfs-logs".to_string(),
                     source_id: "kafka-foo".to_string(),
                     enable: true,
@@ -624,7 +648,7 @@ mod tests {
             let command = CliCommand::parse_cli_args(&matches).unwrap();
             let expected_command =
                 CliCommand::Source(SourceCliCommand::ToggleSource(ToggleSourceArgs {
-                    config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+                    config_uri: Uri::from_str("file:///conf.yaml").unwrap(),
                     index_id: "hdfs-logs".to_string(),
                     source_id: "kafka-foo".to_string(),
                     enable: false,
@@ -651,7 +675,7 @@ mod tests {
         let command = CliCommand::parse_cli_args(&matches).unwrap();
         let expected_command =
             CliCommand::Source(SourceCliCommand::DeleteSource(DeleteSourceArgs {
-                config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+                config_uri: Uri::from_str("file:///conf.yaml").unwrap(),
                 index_id: "hdfs-logs".to_string(),
                 source_id: "hdfs-logs-source".to_string(),
             }));
@@ -676,7 +700,7 @@ mod tests {
         let command = CliCommand::parse_cli_args(&matches).unwrap();
         let expected_command =
             CliCommand::Source(SourceCliCommand::DescribeSource(DescribeSourceArgs {
-                config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+                config_uri: Uri::from_str("file:///conf.yaml").unwrap(),
                 index_id: "hdfs-logs".to_string(),
                 source_id: "hdfs-logs-source".to_string(),
             }));
@@ -701,7 +725,7 @@ mod tests {
         let command = CliCommand::parse_cli_args(&matches).unwrap();
         let expected_command =
             CliCommand::Source(SourceCliCommand::ResetCheckpoint(ResetCheckpointArgs {
-                config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+                config_uri: Uri::from_str("file:///conf.yaml").unwrap(),
                 index_id: "hdfs-logs".to_string(),
                 source_id: "hdfs-logs-source".to_string(),
             }));
@@ -730,6 +754,7 @@ mod tests {
         let expected_source = vec![SourceRow {
             source_id: "foo-source".to_string(),
             source_type: "file".to_string(),
+            enabled: "true".to_string(),
         }];
         let expected_params = vec![ParamsRow {
             key: "filepath".to_string(),
@@ -776,7 +801,7 @@ mod tests {
             .unwrap();
         let command = CliCommand::parse_cli_args(&matches).unwrap();
         let expected_command = CliCommand::Source(SourceCliCommand::ListSources(ListSourcesArgs {
-            config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+            config_uri: Uri::from_str("file:///conf.yaml").unwrap(),
             index_id: "hdfs-logs".to_string(),
         }));
         assert_eq!(command, expected_command);
@@ -802,10 +827,12 @@ mod tests {
             SourceRow {
                 source_id: "bar-source".to_string(),
                 source_type: "file".to_string(),
+                enabled: "true".to_string(),
             },
             SourceRow {
                 source_id: "foo-source".to_string(),
                 source_type: "file".to_string(),
+                enabled: "true".to_string(),
             },
         ];
         assert_eq!(

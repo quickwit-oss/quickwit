@@ -26,6 +26,7 @@ use std::time::Instant;
 use anyhow::Context;
 #[cfg(any(test, feature = "testsuite"))]
 use byte_unit::Byte;
+use quickwit_common::io::{IoControls, IoControlsAccess};
 use quickwit_metastore::SplitMetadata;
 use quickwit_storage::{PutPayload, Storage, StorageResult};
 use tantivy::directory::MmapDirectory;
@@ -195,11 +196,12 @@ impl IndexingSplitStore {
     ///
     /// As we fetch the split, we optimistically assume that this is for a merge
     /// operation that will be successful and we remove the split from the cache.
-    #[instrument(skip(self, output_dir_path), fields(cache_hit))]
+    #[instrument(skip(self, output_dir_path, io_controls), fields(cache_hit))]
     pub async fn fetch_and_open_split(
         &self,
         split_id: &str,
         output_dir_path: &Path,
+        io_controls: &IoControls,
     ) -> StorageResult<Box<dyn Directory>> {
         let path = PathBuf::from(quickwit_common::split_file(split_id));
         if let Some(split_path) = self
@@ -215,10 +217,11 @@ impl IndexingSplitStore {
             tracing::Span::current().record("cache_hit", false);
         }
         let dest_filepath = output_dir_path.join(&path);
-        let mut dest_file = tokio::fs::File::create(&dest_filepath).await?;
+        let dest_file = tokio::fs::File::create(&dest_filepath).await?;
+        let mut dest_file_with_write_limit = io_controls.clone().wrap_write(dest_file);
         self.inner
             .remote_storage
-            .copy_to(&path, &mut dest_file)
+            .copy_to(&path, &mut dest_file_with_write_limit)
             .instrument(info_span!("fetch_split_from_remote_storage", path=?path))
             .await?;
         get_tantivy_directory_from_split_bundle(&dest_filepath)
@@ -242,6 +245,7 @@ mod tests {
     use std::sync::Arc;
 
     use byte_unit::Byte;
+    use quickwit_common::io::IoControls;
     use quickwit_metastore::SplitMetadata;
     use quickwit_storage::{RamStorage, SplitPayloadBuilder};
     use tempfile::tempdir;
@@ -287,11 +291,11 @@ mod tests {
             split_store
                 .store_split(&split_metadata1, &split1_dir, Box::new(b"1234".to_vec()))
                 .await?;
-            assert!(!split1_dir.exists());
+            assert!(!split1_dir.try_exists()?);
             assert!(split_cache_dir
                 .path()
                 .join(format!("{split_id1}.split"))
-                .exists());
+                .try_exists()?);
             let local_store_stats = split_store.inspect_local_store().await;
             assert_eq!(local_store_stats.len(), 1);
             assert_eq!(
@@ -307,11 +311,11 @@ mod tests {
             split_store
                 .store_split(&split_metadata2, &split2_dir, Box::new(b"567".to_vec()))
                 .await?;
-            assert!(!split2_dir.exists());
+            assert!(!split2_dir.try_exists()?);
             assert!(split_cache_dir
                 .path()
                 .join(format!("{split_id2}.split"))
-                .exists());
+                .try_exists()?);
         }
 
         let local_store_stats = split_store.inspect_local_store().await;
@@ -361,11 +365,11 @@ mod tests {
                     Box::new(SplitPayloadBuilder::get_split_payload(&[], &[5, 5, 5])?),
                 )
                 .await?;
-            assert!(!split_path.exists());
+            assert!(!split_path.try_exists()?);
             assert!(split_cache_dir
                 .path()
                 .join(format!("{split_id1}.split"))
-                .exists());
+                .try_exists()?);
             let local_store_stats = split_store.inspect_local_store().await;
             assert_eq!(local_store_stats.len(), 1);
             assert_eq!(
@@ -386,11 +390,11 @@ mod tests {
                     Box::new(SplitPayloadBuilder::get_split_payload(&[], &[5, 5, 5])?),
                 )
                 .await?;
-            assert!(!split_path.exists());
+            assert!(!split_path.try_exists()?);
             assert!(split_cache_dir
                 .path()
                 .join(format!("{split_id2}.split"))
-                .exists());
+                .try_exists()?);
             let local_store_stats = split_store.inspect_local_store().await;
             assert_eq!(local_store_stats.len(), 1);
             assert_eq!(
@@ -400,13 +404,14 @@ mod tests {
         }
         {
             let output = tempfile::tempdir()?;
+            let io_controls = IoControls::default();
             // get from cache
             let _split1 = split_store
-                .fetch_and_open_split(&split_id1, output.path())
+                .fetch_and_open_split(&split_id1, output.path(), &io_controls)
                 .await?;
             // get from remote storage
             let _split2 = split_store
-                .fetch_and_open_split(&split_id2, output.path())
+                .fetch_and_open_split(&split_id2, output.path(), &io_controls)
                 .await?;
         }
         Ok(())

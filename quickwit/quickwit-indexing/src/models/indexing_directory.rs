@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 
 use anyhow::Context;
-use quickwit_common::ignore_io_error;
+use quickwit_common::ignore_error_kind;
 use tokio::fs;
 
 use super::ScratchDirectory;
@@ -77,7 +77,7 @@ impl IndexingDirectory {
         let scratch_directory_path = root_dir.join(SCRATCH);
         fs::create_dir_all(&scratch_directory_path).await?;
 
-        ignore_io_error!(
+        ignore_error_kind!(
             io::ErrorKind::NotFound,
             fs::remove_dir_all(&scratch_directory_path).await
         )
@@ -155,16 +155,16 @@ mod tests {
         assert_eq!(indexing_directory_path, tempdir.path());
 
         let scratch_directory_path = indexing_directory_path.join("scratch");
-        assert!(scratch_directory_path.exists());
+        assert!(scratch_directory_path.try_exists()?);
         assert_eq!(
             indexing_directory.scratch_directory().path(),
             scratch_directory_path
         );
         let scratch_file_path = scratch_directory_path.join("file");
         tokio::fs::File::create(&scratch_file_path).await?;
-        assert!(scratch_file_path.exists());
+        assert!(scratch_file_path.try_exists()?);
         let _indexing_directory = IndexingDirectory::create_in_dir(tempdir.path()).await?;
-        assert!(!scratch_file_path.exists());
+        assert!(!scratch_file_path.try_exists()?);
         Ok(())
     }
 
@@ -173,7 +173,7 @@ mod tests {
         let indexing_directory = IndexingDirectory::for_test().await;
         let indexing_directory_path = indexing_directory.path().to_path_buf();
         drop(indexing_directory);
-        assert!(!indexing_directory_path.exists());
+        assert!(!indexing_directory_path.try_exists()?);
         Ok(())
     }
 }

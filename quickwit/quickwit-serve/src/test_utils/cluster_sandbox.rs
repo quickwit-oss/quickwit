@@ -20,6 +20,7 @@
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::time::Duration;
 
 use hyper::Uri;
@@ -211,9 +212,9 @@ pub fn build_node_configs(
         config.cluster_id = cluster_id.clone();
         config.data_dir_path = root_data_dir.join(&config.node_id);
         config.metastore_uri =
-            QuickwitUri::try_new(&format!("ram:///{}/metastore", unique_dir_name)).unwrap();
+            QuickwitUri::from_str(&format!("ram:///{}/metastore", unique_dir_name)).unwrap();
         config.default_index_root_uri =
-            QuickwitUri::try_new(&format!("ram:///{}/indexes", unique_dir_name)).unwrap();
+            QuickwitUri::from_str(&format!("ram:///{}/indexes", unique_dir_name)).unwrap();
         peers.push(config.gossip_advertise_addr.to_string());
         node_configs.push(NodeConfig {
             quickwit_config: config,

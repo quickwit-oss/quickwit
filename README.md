@@ -56,7 +56,7 @@ Quickwit is a cloud-native search engine for log management & analytics. It is d
 - Search stream API that notably unlocks full-text search in ClickHouse
 
 ### 🔮 Roadmap
-- [Quickwit 0.5 - November 2022](https://github.com/quickwit-oss/quickwit/projects/5)
+- [Quickwit 0.4 - November 2022](https://github.com/quickwit-oss/quickwit/projects/5)
   - Distributed indexing with Kafka
   - Native support for Kubernetes
   - Index partitioning

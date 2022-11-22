@@ -20,12 +20,14 @@
 pub mod file_backed_metastore;
 pub mod grpc_metastore;
 mod index_metadata;
+mod instrumented_metastore;
 #[cfg(feature = "postgres")]
 pub mod postgresql_metastore;
 #[cfg(feature = "postgres")]
 mod postgresql_model;
+pub mod retrying_metastore;
 
-use std::ops::Range;
+use std::ops::{Bound, RangeInclusive};
 
 use async_trait::async_trait;
 pub use index_metadata::IndexMetadata;
@@ -86,10 +88,21 @@ use crate::{MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait Metastore: Send + Sync + 'static {
+    /// Returns the metastore's uri.
+    fn uri(&self) -> &Uri;
+
     /// Checks whether the metastore is available.
     async fn check_connectivity(&self) -> anyhow::Result<()>;
 
-    /// Returns whether an index exists in the metastore.
+    // Index API
+
+    /// Creates an index.
+    ///
+    /// This API creates a new index in the metastore.
+    /// An error will occur if an index that already exists in the storage is specified.
+    async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()>;
+
+    /// Returns whether the index `index_id` exists in the metastore.
     async fn index_exists(&self, index_id: &str) -> MetastoreResult<bool> {
         match self.index_metadata(index_id).await {
             Ok(_) => Ok(true),
@@ -98,21 +111,15 @@ pub trait Metastore: Send + Sync + 'static {
         }
     }
 
-    /// Creates an index.
-    ///
-    /// This API creates a new index in the metastore.
-    /// An error will occur if an index that already exists in the storage is specified.
-    async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()>;
+    /// Returns the [`IndexMetadata`] for a given index.
+    /// TODO consider merging with list_splits to remove one round-trip
+    async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata>;
 
-    /// List indexes.
+    /// Lists the indexes.
     ///
     /// This API lists the indexes stored in the metastore and returns a collection of
     /// [`IndexMetadata`].
     async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>>;
-
-    /// Returns the [`IndexMetadata`] for a given index.
-    /// TODO consider merging with list_splits to remove one round-trip
-    async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata>;
 
     /// Deletes an index.
     ///
@@ -120,6 +127,8 @@ pub trait Metastore: Send + Sync + 'static {
     /// storage. An error will occur if an index that does not exist in the storage is
     /// specified.
     async fn delete_index(&self, index_id: &str) -> MetastoreResult<()>;
+
+    // Split API
 
     /// Stages a split.
     ///
@@ -154,18 +163,44 @@ pub trait Metastore: Send + Sync + 'static {
     /// Returns a list of splits that intersects the given `time_range`, `split_state`, and `tag`.
     /// Regardless of the time range filter, if a split has no timestamp it is always returned.
     /// An error will occur if an index that does not exist in the storage is specified.
-    async fn list_splits(
-        &self,
-        index_id: &str,
-        split_state: SplitState,
-        time_range: Option<Range<i64>>,
-        tags: Option<TagFilterAst>,
-    ) -> MetastoreResult<Vec<Split>>;
+    async fn list_splits<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>>;
 
     /// Lists all the splits without filtering.
     ///
     /// Returns a list of all splits currently known to the metastore regardless of their state.
-    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>>;
+    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
+        let query = ListSplitsQuery::for_index(index_id);
+        self.list_splits(query).await
+    }
+
+    /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
+    /// These splits are called "stale" as they have an `delete_opstamp` strictly inferior
+    /// to the given `delete_opstamp`.
+    async fn list_stale_splits(
+        &self,
+        index_id: &str,
+        delete_opstamp: u64,
+        num_splits: usize,
+    ) -> MetastoreResult<Vec<Split>> {
+        let query = ListSplitsQuery::for_index(index_id)
+            .with_delete_opstamp_lt(delete_opstamp)
+            .with_split_state(SplitState::Published);
+
+        let mut splits = self.list_splits(query).await?;
+        splits.sort_by(|split_left, split_right| {
+            split_left
+                .split_metadata
+                .delete_opstamp
+                .cmp(&split_right.split_metadata.delete_opstamp)
+                .then_with(|| {
+                    split_left
+                        .publish_timestamp
+                        .cmp(&split_right.publish_timestamp)
+                })
+        });
+        splits.truncate(num_splits);
+        Ok(splits)
+    }
 
     /// Marks a list of splits for deletion.
     ///
@@ -187,6 +222,8 @@ pub trait Metastore: Send + Sync + 'static {
     async fn delete_splits<'a>(&self, index_id: &str, split_ids: &[&'a str])
         -> MetastoreResult<()>;
 
+    // Source API
+
     /// Adds a new source. Fails with
     /// [`SourceAlreadyExists`](crate::MetastoreError::SourceAlreadyExists) if a source with the
     /// same ID is already defined for the index.
@@ -203,6 +240,10 @@ pub trait Metastore: Send + Sync + 'static {
         enable: bool,
     ) -> MetastoreResult<()>;
 
+    /// Resets the checkpoint of a source identified by `index_id` and `source_id`.
+    async fn reset_source_checkpoint(&self, index_id: &str, source_id: &str)
+        -> MetastoreResult<()>;
+
     /// Deletes a source. Fails with
     /// [`SourceDoesNotExist`](crate::MetastoreError::SourceDoesNotExist) if the specified source
     /// does not exist.
@@ -211,18 +252,13 @@ pub trait Metastore: Send + Sync + 'static {
     /// If the checkpoint is missing, this does not trigger an error.
     async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()>;
 
-    /// Resets the checkpoint of a source identified by `index_id` and `source_id`.
-    async fn reset_source_checkpoint(&self, index_id: &str, source_id: &str)
-        -> MetastoreResult<()>;
+    // Delete tasks API
 
-    /// Returns the metastore uri.
-    fn uri(&self) -> &Uri;
-
-    /// Gets the last delete opstamp for a given `index_id`.
-    async fn last_delete_opstamp(&self, index_id: &str) -> MetastoreResult<u64>;
-
-    /// Creates a [`DeleteTask`] from a [`DeleteQuery`].
+    /// Creates a new [`DeleteTask`] from a [`DeleteQuery`].
     async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask>;
+
+    /// Retrieves the last delete opstamp for a given `index_id`.
+    async fn last_delete_opstamp(&self, index_id: &str) -> MetastoreResult<u64>;
 
     /// Updates splits `split_metadata.delete_opstamp` to the value `delete_opstamp`.
     async fn update_splits_delete_opstamp<'a>(
@@ -238,14 +274,357 @@ pub trait Metastore: Send + Sync + 'static {
         index_id: &str,
         opstamp_start: u64,
     ) -> MetastoreResult<Vec<DeleteTask>>;
+}
 
-    /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
-    /// These splits are called "stale" as they have an `delete_opstamp` strictly inferior
-    /// to the given `delete_opstamp`.
-    async fn list_stale_splits(
-        &self,
-        index_id: &str,
-        delete_opstamp: u64,
-        num_splits: usize,
-    ) -> MetastoreResult<Vec<Split>>;
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// A query builder for listing splits within the metastore.
+pub struct ListSplitsQuery<'a> {
+    /// The index to get splits from.
+    pub index_id: &'a str,
+
+    /// The maximum number of splits to retrieve.
+    pub limit: Option<usize>,
+
+    /// The number of splits to skip.
+    pub offset: Option<usize>,
+
+    /// A specific split state(s) to filter by.
+    pub split_states: Vec<SplitState>,
+
+    /// A specific set of tag(s) to filter by.
+    pub tags: Option<TagFilterAst>,
+
+    /// The time range to filter by.
+    pub time_range: FilterRange<i64>,
+
+    /// The delete opstamp range to filter by.
+    pub delete_opstamp: FilterRange<u64>,
+
+    /// The update timestamp range to filter by.
+    pub update_timestamp: FilterRange<i64>,
+
+    /// The create timestamp range to filter by.
+    pub create_timestamp: FilterRange<i64>,
+}
+
+#[allow(unused_attributes)]
+impl<'a> ListSplitsQuery<'a> {
+    /// Creates a new [ListSplitsQuery] for a specific index.
+    pub fn for_index(index_id: &'a str) -> Self {
+        Self {
+            index_id,
+            limit: None,
+            offset: None,
+            split_states: Vec::new(),
+            tags: None,
+            time_range: Default::default(),
+            delete_opstamp: Default::default(),
+            update_timestamp: Default::default(),
+            create_timestamp: Default::default(),
+        }
+    }
+
+    /// Sets the maximum number of splits to retrieve.
+    pub fn with_limit(mut self, n: usize) -> Self {
+        self.limit = Some(n);
+        self
+    }
+
+    /// Sets the number of splits to skip.
+    pub fn with_offset(mut self, n: usize) -> Self {
+        self.offset = Some(n);
+        self
+    }
+
+    /// Select splits which have the given split state.
+    pub fn with_split_state(mut self, state: SplitState) -> Self {
+        self.split_states.push(state);
+        self
+    }
+
+    /// Select splits which have the any of the following split state.
+    pub fn with_split_states(mut self, states: impl AsRef<[SplitState]>) -> Self {
+        self.split_states.extend_from_slice(states.as_ref());
+        self
+    }
+
+    /// Select splits which match the given tag filter.
+    pub fn with_tags_filter(mut self, tags: TagFilterAst) -> Self {
+        self.tags = Some(tags);
+        self
+    }
+
+    /// Set the field's lower bound to match values that are
+    /// *less than or equal to* the provided value.
+    pub fn with_time_range_end_lte(mut self, v: i64) -> Self {
+        self.time_range.end = Bound::Included(v);
+        self
+    }
+
+    /// Set the field's lower bound to match values that are
+    /// *less than* the provided value.
+    pub fn with_time_range_end_lt(mut self, v: i64) -> Self {
+        self.time_range.end = Bound::Excluded(v);
+        self
+    }
+
+    /// Set the field's upper bound to match values that are
+    /// *greater than or equal to* the provided value.
+    pub fn with_time_range_start_gte(mut self, v: i64) -> Self {
+        self.time_range.start = Bound::Included(v);
+        self
+    }
+
+    /// Set the field's upper bound to match values that are
+    /// *greater than* the provided value.
+    pub fn with_time_range_start_gt(mut self, v: i64) -> Self {
+        self.time_range.start = Bound::Excluded(v);
+        self
+    }
+
+    /// Set the field's lower bound to match values that are
+    /// *less than or equal to* the provided value.
+    pub fn with_delete_opstamp_lte(mut self, v: u64) -> Self {
+        self.delete_opstamp.end = Bound::Included(v);
+        self
+    }
+
+    /// Set the field's lower bound to match values that are
+    /// *less than* the provided value.
+    pub fn with_delete_opstamp_lt(mut self, v: u64) -> Self {
+        self.delete_opstamp.end = Bound::Excluded(v);
+        self
+    }
+
+    /// Set the field's upper bound to match values that are
+    /// *greater than or equal to* the provided value.
+    pub fn with_delete_opstamp_gte(mut self, v: u64) -> Self {
+        self.delete_opstamp.start = Bound::Included(v);
+        self
+    }
+
+    /// Set the field's upper bound to match values that are
+    /// *greater than* the provided value.
+    pub fn with_delete_opstamp_gt(mut self, v: u64) -> Self {
+        self.delete_opstamp.start = Bound::Excluded(v);
+        self
+    }
+
+    /// Set the field's lower bound to match values that are
+    /// *less than or equal to* the provided value.
+    pub fn with_update_timestamp_lte(mut self, v: i64) -> Self {
+        self.update_timestamp.end = Bound::Included(v);
+        self
+    }
+
+    /// Set the field's lower bound to match values that are
+    /// *less than* the provided value.
+    pub fn with_update_timestamp_lt(mut self, v: i64) -> Self {
+        self.update_timestamp.end = Bound::Excluded(v);
+        self
+    }
+
+    /// Set the field's upper bound to match values that are
+    /// *greater than or equal to* the provided value.
+    pub fn with_update_timestamp_gte(mut self, v: i64) -> Self {
+        self.update_timestamp.start = Bound::Included(v);
+        self
+    }
+
+    /// Set the field's upper bound to match values that are
+    /// *greater than* the provided value.
+    pub fn with_update_timestamp_gt(mut self, v: i64) -> Self {
+        self.update_timestamp.start = Bound::Excluded(v);
+        self
+    }
+
+    /// Set the field's lower bound to match values that are
+    /// *less than or equal to* the provided value.
+    pub fn with_create_timestamp_lte(mut self, v: i64) -> Self {
+        self.create_timestamp.end = Bound::Included(v);
+        self
+    }
+
+    /// Set the field's lower bound to match values that are
+    /// *less than* the provided value.
+    pub fn with_create_timestamp_lt(mut self, v: i64) -> Self {
+        self.create_timestamp.end = Bound::Excluded(v);
+        self
+    }
+
+    /// Set the field's upper bound to match values that are
+    /// *greater than or equal to* the provided value.
+    pub fn with_create_timestamp_gte(mut self, v: i64) -> Self {
+        self.create_timestamp.start = Bound::Included(v);
+        self
+    }
+
+    /// Set the field's upper bound to match values that are
+    /// *greater than* the provided value.
+    pub fn with_create_timestamp_gt(mut self, v: i64) -> Self {
+        self.create_timestamp.start = Bound::Excluded(v);
+        self
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// A range containing the upper and lower bounds to filter documents by.
+pub struct FilterRange<T> {
+    /// The lower bound of the filter.
+    pub start: Bound<T>,
+    /// The upper bound of the filter.
+    pub end: Bound<T>,
+}
+
+impl<T: PartialEq + PartialOrd> FilterRange<T> {
+    /// Checks if both the upper and lower bound are `Bound::Unbounded`.
+    pub fn is_unbounded(&self) -> bool {
+        self.start == Bound::Unbounded && self.end == Bound::Unbounded
+    }
+
+    /// Checks if the provided value lies within the upper and lower bounds
+    /// of the range.
+    pub fn contains(&self, value: &T) -> bool {
+        if self.is_unbounded() {
+            return true;
+        }
+
+        let lower_check = match &self.start {
+            Bound::Unbounded => true,
+            Bound::Included(left) => left <= value,
+            Bound::Excluded(left) => left < value,
+        };
+
+        let upper_check = match &self.end {
+            Bound::Unbounded => true,
+            Bound::Included(left) => left >= value,
+            Bound::Excluded(left) => left > value,
+        };
+
+        lower_check && upper_check
+    }
+
+    /// Checks if the provided range overlaps with the range.
+    pub fn overlaps_with(&self, range: RangeInclusive<T>) -> bool {
+        if self.is_unbounded() {
+            return true;
+        }
+
+        let lower_check = match &self.start {
+            Bound::Unbounded => true,
+            Bound::Included(left) => left <= range.end(),
+            Bound::Excluded(left) => left < range.end(),
+        };
+
+        let upper_check = match &self.end {
+            Bound::Unbounded => true,
+            Bound::Included(left) => left >= range.start(),
+            Bound::Excluded(left) => left > range.start(),
+        };
+
+        lower_check && upper_check
+    }
+}
+
+// The `Default` derive implementation imposes a restriction
+// for `T` to also implement Default when this is not required.
+impl<T> Default for FilterRange<T> {
+    fn default() -> Self {
+        Self {
+            start: Bound::Unbounded,
+            end: Bound::Unbounded,
+        }
+    }
+}
+
+#[cfg(test)]
+mod list_splits_query_tests {
+    use super::*;
+
+    #[test]
+    fn test_filter_contains() {
+        let filter = FilterRange {
+            start: Bound::Unbounded,
+            end: Bound::Excluded(50),
+        };
+        assert!(!filter.contains(&50));
+        assert!(filter.contains(&0));
+        assert!(filter.contains(&49));
+
+        let filter = FilterRange {
+            start: Bound::Included(50),
+            end: Bound::Unbounded,
+        };
+        assert!(filter.contains(&50));
+        assert!(filter.contains(&51));
+        assert!(!filter.contains(&0));
+
+        let filter = FilterRange {
+            start: Bound::Included(50),
+            end: Bound::Excluded(75),
+        };
+        assert!(filter.contains(&50));
+        assert!(filter.contains(&51));
+        assert!(!filter.contains(&0));
+        assert!(!filter.contains(&75));
+        assert!(filter.contains(&74));
+    }
+
+    #[test]
+    fn test_overlaps_with() {
+        let filter = FilterRange {
+            start: Bound::Unbounded,
+            end: Bound::Excluded(50),
+        };
+        assert!(filter.overlaps_with(0..=50));
+        assert!(filter.overlaps_with(0..=51));
+        assert!(filter.overlaps_with(32..=63));
+        assert!(filter.overlaps_with(32..=32));
+        assert!(!filter.overlaps_with(51..=76));
+        assert!(!filter.overlaps_with(50..=76));
+
+        let filter = FilterRange {
+            start: Bound::Unbounded,
+            end: Bound::Included(50),
+        };
+        assert!(filter.overlaps_with(0..=50));
+        assert!(filter.overlaps_with(0..=51));
+        assert!(filter.overlaps_with(50..=76));
+        assert!(!filter.overlaps_with(51..=76));
+
+        let filter = FilterRange {
+            start: Bound::Excluded(50),
+            end: Bound::Unbounded,
+        };
+        assert!(filter.overlaps_with(51..=75));
+        assert!(filter.overlaps_with(0..=51));
+        assert!(filter.overlaps_with(51..=76));
+        assert!(filter.overlaps_with(50..=76));
+        assert!(!filter.overlaps_with(0..=49));
+        assert!(!filter.overlaps_with(0..=50));
+
+        let filter = FilterRange {
+            start: Bound::Included(50),
+            end: Bound::Unbounded,
+        };
+        assert!(filter.overlaps_with(51..=75));
+        assert!(filter.overlaps_with(0..=51));
+        assert!(filter.overlaps_with(51..=76));
+        assert!(filter.overlaps_with(50..=76));
+        assert!(filter.overlaps_with(0..=50));
+        assert!(!filter.overlaps_with(0..=49));
+
+        let filter = FilterRange {
+            start: Bound::Included(50),
+            end: Bound::Excluded(75),
+        };
+        assert!(filter.overlaps_with(51..=75));
+        assert!(filter.overlaps_with(0..=51));
+        assert!(filter.overlaps_with(45..=76));
+        assert!(filter.overlaps_with(50..=76));
+        assert!(filter.overlaps_with(0..=50));
+        assert!(filter.overlaps_with(74..=124));
+        assert!(!filter.overlaps_with(0..=49));
+        assert!(!filter.overlaps_with(75..=124));
+    }
 }

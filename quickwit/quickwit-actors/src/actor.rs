@@ -22,23 +22,25 @@ use std::convert::Infallible;
 use std::fmt;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::Future;
+use quickwit_common::metrics::IntCounter;
 use thiserror::Error;
 use tokio::sync::{oneshot, watch};
 use tracing::{debug, error};
 
 use crate::actor_state::{ActorState, AtomicState};
-use crate::progress::{Progress, ProtectedZoneGuard};
 use crate::registry::ActorRegistry;
 use crate::scheduler::{Callback, ScheduleEvent, Scheduler};
 use crate::spawn_builder::SpawnBuilder;
 #[cfg(any(test, feature = "testsuite"))]
 use crate::Universe;
-use crate::{AskError, Command, KillSwitch, Mailbox, QueueCapacity, SendError};
+use crate::{
+    AskError, Command, KillSwitch, Mailbox, Progress, ProtectedZoneGuard, QueueCapacity, SendError,
+};
 
 /// The actor exit status represents the outcome of the execution of an actor,
 /// after the end of the execution.
@@ -134,8 +136,8 @@ pub trait Actor: Send + Sync + Sized + 'static {
     /// The runner method makes it possible to decide the environment
     /// of execution of the Actor.
     ///
-    /// Actor with a handler that may block for more than 50microsecs should
-    /// use the `ActorRunner::DedicatedThread`.
+    /// Actor with a handler that may block for more than 50 microseconds
+    /// should use the `ActorRunner::DedicatedThread`.
     fn runtime_handle(&self) -> tokio::runtime::Handle {
         tokio::runtime::Handle::current()
     }
@@ -238,7 +240,8 @@ pub struct ActorContextInner<A: Actor> {
     // This counter is useful to unsure that obsolete WakeUp
     // events do not effect ulterior `sleep`.
     sleep_count: AtomicUsize,
-    observable_state_tx: Mutex<watch::Sender<A::ObservableState>>,
+    backpressure_micros_counter_opt: Option<IntCounter>,
+    observable_state_tx: watch::Sender<A::ObservableState>,
 }
 
 /// Internal command used to resume an actor that was paused using
@@ -274,6 +277,7 @@ impl<A: Actor> ActorContext<A> {
         scheduler_mailbox: Mailbox<Scheduler>,
         registry: ActorRegistry,
         observable_state_tx: watch::Sender<A::ObservableState>,
+        backpressure_micros_counter_opt: Option<IntCounter>,
     ) -> Self {
         ActorContext {
             inner: ActorContextInner {
@@ -284,7 +288,8 @@ impl<A: Actor> ActorContext<A> {
                 registry,
                 actor_state: AtomicState::default(),
                 sleep_count: AtomicUsize::default(),
-                observable_state_tx: Mutex::new(observable_state_tx),
+                observable_state_tx,
+                backpressure_micros_counter_opt,
             }
             .into(),
         }
@@ -302,6 +307,7 @@ impl<A: Actor> ActorContext<A> {
             universe.scheduler_mailbox.clone(),
             universe.registry.clone(),
             observable_state_tx,
+            None,
         )
     }
 
@@ -407,11 +413,7 @@ impl<A: Actor> ActorContext<A> {
 
     pub(crate) fn observe(&self, actor: &mut A) -> A::ObservableState {
         let obs_state = actor.observable_state();
-        let _ = self
-            .observable_state_tx
-            .lock()
-            .unwrap()
-            .send(obs_state.clone());
+        let _ = self.observable_state_tx.send(obs_state.clone());
         obs_state
     }
 
@@ -472,7 +474,12 @@ impl<A: Actor> ActorContext<A> {
     {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg);
-        mailbox.send_message(msg).await
+        mailbox
+            .send_message_with_backpressure_counter(
+                msg,
+                self.backpressure_micros_counter_opt.as_ref(),
+            )
+            .await
     }
 
     pub async fn ask<DestActor: Actor, M, T>(
@@ -486,7 +493,9 @@ impl<A: Actor> ActorContext<A> {
     {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg, "ask");
-        mailbox.ask(msg).await
+        mailbox
+            .ask_with_backpressure_counter(msg, self.backpressure_micros_counter_opt.as_ref())
+            .await
     }
 
     /// Similar to `send_message`, except this method

@@ -76,9 +76,22 @@ The Kafka source consumes a `topic` using the client library [librdkafka](https:
 | --- | --- | --- |
 | topic | Name of the topic to consume. | required |
 | client_log_level | librdkafka client log level. Possible values are: debug, info, warn, error. | info |
-| client_params | librdkafka client configuration parameters. |  |
+| client_params | librdkafka client configuration parameters. | {} |
+| enable_backfill_mode | Backfill mode stops the source after reaching the end of the topic. | false |
 
-Note that the Kafka source manages commit offsets manually thanks to Quickwit’s index checkpoint mechanism and always disables auto-commit.
+#### Kafka client parameters
+
+- `bootstrap.servers`
+Comma-separated list of host and port pairs that are the addresses of a subset of the Kafka brokers in the Kafka cluster.
+
+- `enable.auto.commit`
+The Kafka source manages commit offsets manually using the [checkpoint API](../concepts/indexing.md#Checkpoint) and disables auto-commit.
+
+- `group.id`
+Kafka-based distributed indexing relies on consumer groups. The group ID assigned to each consumer managed by the source is `quickwit-{index_id}-{source_id}`.
+
+- `max.poll.interval.ms`
+Short max poll interval durations may cause a source to crash when back pressure from the indexer occurs. Therefore, Quickwit recommends using the default value of `300000` (5 minutes).
 
 *Declaring a Kafka source in an [index config](index-config.md) (YAML)*
 
@@ -170,7 +183,7 @@ quickwit source create --index my-index --source-config source-config.yaml
 
 ## Deleting a source from an index
 
-A source can be removed from an index using the [CLI command](../reference/cli.md) `quickwit source delete`: 
+A source can be removed from an index using the [CLI command](../reference/cli.md) `quickwit source delete`:
 
 ```bash
 quickwit source delete --index my-index --source my-source

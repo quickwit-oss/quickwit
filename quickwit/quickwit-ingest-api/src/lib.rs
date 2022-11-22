@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#![deny(clippy::disallowed_methods)]
+
 mod errors;
 mod ingest_api_service;
 mod metrics;
@@ -29,7 +31,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context};
 pub use errors::IngestApiError;
 use errors::Result;
-pub use ingest_api_service::IngestApiService;
+pub use ingest_api_service::{GetPartitionId, IngestApiService};
 use metrics::INGEST_METRICS;
 use once_cell::sync::OnceCell;
 pub use position::Position;

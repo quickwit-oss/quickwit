@@ -19,6 +19,7 @@ http = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true, optional = true }
 once_cell = { workspace = true }
+rand = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -50,7 +51,7 @@ quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
-testsuite = ["mockall", "tempfile"]
+testsuite = ["mockall", "tempfile", "quickwit-config/testsuite"]
 ci-test = []
 postgres = ["sqlx"]
 azure = ["quickwit-storage/azure"]

@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#![deny(clippy::disallowed_methods)]
+
 mod index;
 
 pub use index::{
@@ -28,11 +30,8 @@ pub use index::{
 mod tests {
     use std::path::Path;
 
-    use quickwit_common::uri::Uri;
-    use quickwit_config::{IndexConfig, IndexingSettings, SearchSettings};
     use quickwit_indexing::TestSandbox;
     use quickwit_janitor::FileEntry;
-    use quickwit_metastore::quickwit_metastore_uri_resolver;
     use quickwit_storage::StorageUriResolver;
 
     use crate::IndexService;
@@ -50,7 +49,7 @@ mod tests {
                 type: text
         "#;
         let test_sandbox =
-            TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["title", "body"], None).await?;
+            TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["title", "body"]).await?;
         test_sandbox.add_documents(vec![
             serde_json::json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
         ]).await?;
@@ -71,51 +70,10 @@ mod tests {
             assert_eq!(split_num_bytes, file_entry.file_size_in_bytes);
         }
         // Now delete the index.
-        let index_service = IndexService::new(
-            test_sandbox.metastore(),
-            StorageUriResolver::for_test(),
-            Uri::new("ram:///indexes".to_string()),
-        );
+        let index_service =
+            IndexService::new(test_sandbox.metastore(), StorageUriResolver::for_test());
         let deleted_file_entries = index_service.delete_index(index_id, false).await?;
         assert_eq!(deleted_file_entries.len(), 1);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_create_index_without_index_uri() -> anyhow::Result<()> {
-        let index_id = "test-index--no-index-uri";
-        let doc_mapping_yaml = r#"
-            field_mappings:
-              - name: title
-                type: text
-        "#;
-        let index_config = IndexConfig {
-            version: 0,
-            index_id: index_id.to_string(),
-            index_uri: None,
-            doc_mapping: serde_yaml::from_str(doc_mapping_yaml)?,
-            retention_policy: None,
-            indexing_settings: IndexingSettings::default(),
-            search_settings: SearchSettings::default(),
-            sources: Vec::new(),
-        };
-        let metastore_uri = Uri::new("ram:///metastore".to_string());
-        let metastore = quickwit_metastore_uri_resolver()
-            .resolve(&metastore_uri)
-            .await
-            .unwrap();
-        let storage_resolver = StorageUriResolver::for_test();
-        let index_service = IndexService::new(
-            metastore,
-            storage_resolver,
-            Uri::new("ram:///indexes".to_string()),
-        );
-        let index_metadata = index_service.create_index(index_config, false).await?;
-        assert_eq!(index_metadata.index_id, index_id);
-        assert_eq!(
-            index_metadata.index_uri,
-            "ram:///indexes/test-index--no-index-uri"
-        );
         Ok(())
     }
 }

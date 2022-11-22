@@ -19,16 +19,17 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, KillSwitch, Supervisor,
-    SupervisorState,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Supervisor, SupervisorState,
+    HEARTBEAT,
 };
+use quickwit_common::io::IoControls;
+use quickwit_common::uri::Uri;
 use quickwit_config::{build_doc_mapper, IndexingSettings};
 use quickwit_indexing::actors::{
-    MergeExecutor, MergeSplitDownloader, Packager, Publisher, Uploader,
+    MergeExecutor, MergeSplitDownloader, Packager, Publisher, Uploader, UploaderType,
 };
 use quickwit_indexing::merge_policy::merge_policy_from_settings;
 use quickwit_indexing::models::{IndexingDirectory, IndexingPipelineId};
@@ -91,6 +92,24 @@ impl Actor for DeleteTaskPipeline {
         self.handle(Observe, ctx).await?;
         Ok(())
     }
+
+    async fn finalize(
+        &mut self,
+        _exit_status: &ActorExitStatus,
+        _ctx: &ActorContext<Self>,
+    ) -> anyhow::Result<()> {
+        if let Some(handles) = self.handles.take() {
+            join!(
+                handles.delete_task_planner.quit(),
+                handles.downloader.quit(),
+                handles.delete_task_executor.quit(),
+                handles.packager.quit(),
+                handles.uploader.quit(),
+                handles.publisher.quit(),
+            );
+        };
+        Ok(())
+    }
 }
 
 impl DeleteTaskPipeline {
@@ -122,80 +141,89 @@ impl DeleteTaskPipeline {
             root_dir=%self.delete_service_dir_path.display(),
             "Spawning delete tasks pipeline.",
         );
-        let index_metadata = self.metastore.index_metadata(&self.index_id).await?;
+        let index_config = self
+            .metastore
+            .index_metadata(&self.index_id)
+            .await?
+            .into_index_config();
         let publisher = Publisher::new(
             PublisherType::MergePublisher,
             self.metastore.clone(),
             None,
             None,
         );
-        let (publisher_mailbox, publisher_supervisor_handler) = ctx
-            .spawn_actor()
-            .set_kill_switch(KillSwitch::default())
-            .supervise(publisher);
+        let (publisher_mailbox, publisher_supervisor_handler) =
+            ctx.spawn_actor().supervise(publisher);
         let split_store =
             IndexingSplitStore::create_without_local_store(self.index_storage.clone());
         let uploader = Uploader::new(
-            "MergeUploader",
+            UploaderType::DeleteUploader,
             self.metastore.clone(),
             split_store.clone(),
             SplitsUpdateMailbox::Publisher(publisher_mailbox),
             self.max_concurrent_split_uploads,
         );
-        let (uploader_mailbox, uploader_supervisor_handler) = ctx
-            .spawn_actor()
-            .set_kill_switch(KillSwitch::default())
-            .supervise(uploader);
+        let (uploader_mailbox, uploader_supervisor_handler) = ctx.spawn_actor().supervise(uploader);
 
         let doc_mapper = build_doc_mapper(
-            &index_metadata.doc_mapping,
-            &index_metadata.search_settings,
-            &index_metadata.indexing_settings,
+            &index_config.doc_mapping,
+            &index_config.search_settings,
+            &index_config.indexing_settings,
         )?;
         let tag_fields = doc_mapper.tag_named_fields()?;
         let packager = Packager::new("MergePackager", tag_fields, uploader_mailbox);
-        let (packager_mailbox, packager_supervisor_handler) = ctx
-            .spawn_actor()
-            .set_kill_switch(KillSwitch::default())
-            .supervise(packager);
+        let (packager_mailbox, packager_supervisor_handler) = ctx.spawn_actor().supervise(packager);
         let index_pipeline_id = IndexingPipelineId {
             index_id: self.index_id.to_string(),
             node_id: "unknown".to_string(),
             pipeline_ord: 0,
             source_id: "unknown".to_string(),
         };
-        let delete_executor =
-            MergeExecutor::new(index_pipeline_id, self.metastore.clone(), packager_mailbox);
-        let (delete_executor_mailbox, task_executor_supervisor_handler) = ctx
-            .spawn_actor()
-            .set_kill_switch(KillSwitch::default())
-            .supervise(delete_executor);
+        let throughput_limit: f64 = index_config
+            .indexing_settings
+            .resources
+            .max_merge_write_throughput
+            .as_ref()
+            .map(|bytes_per_sec| bytes_per_sec.get_bytes() as f64)
+            .unwrap_or(f64::INFINITY);
+        let delete_executor_io_controls = IoControls::default()
+            .set_throughput_limit(throughput_limit)
+            .set_index_and_component(self.index_id.as_str(), "deleter");
+        let split_download_io_controls = delete_executor_io_controls
+            .clone()
+            .set_index_and_component(self.index_id.as_str(), "split_downloader_delete");
+        let delete_executor = MergeExecutor::new(
+            index_pipeline_id,
+            self.metastore.clone(),
+            doc_mapper.clone(),
+            delete_executor_io_controls,
+            packager_mailbox,
+        );
+        let (delete_executor_mailbox, task_executor_supervisor_handler) =
+            ctx.spawn_actor().supervise(delete_executor);
         let indexing_directory_path = self.delete_service_dir_path.join(&self.index_id);
         let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path).await?;
         let merge_split_downloader = MergeSplitDownloader {
             scratch_directory: indexing_directory.scratch_directory().clone(),
             split_store: split_store.clone(),
             executor_mailbox: delete_executor_mailbox,
+            io_controls: split_download_io_controls,
         };
-        let (downloader_mailbox, downloader_supervisor_handler) = ctx
-            .spawn_actor()
-            .set_kill_switch(KillSwitch::default())
-            .supervise(merge_split_downloader);
+        let (downloader_mailbox, downloader_supervisor_handler) =
+            ctx.spawn_actor().supervise(merge_split_downloader);
         let merge_policy = merge_policy_from_settings(&self.indexing_settings);
         let doc_mapper_str = serde_json::to_string(&doc_mapper)?;
+        let index_uri: &Uri = &index_config.index_uri;
         let task_planner = DeleteTaskPlanner::new(
             self.index_id.clone(),
-            index_metadata.index_uri,
+            index_uri.clone(),
             doc_mapper_str,
             self.metastore.clone(),
             self.search_client_pool.clone(),
             merge_policy,
             downloader_mailbox,
         );
-        let (_, task_planner_supervisor_handler) = ctx
-            .spawn_actor()
-            .set_kill_switch(KillSwitch::default())
-            .supervise(task_planner);
+        let (_, task_planner_supervisor_handler) = ctx.spawn_actor().supervise(task_planner);
         self.handles = Some(DeletePipelineHandle {
             delete_task_planner: task_planner_supervisor_handler,
             downloader: downloader_supervisor_handler,
@@ -245,7 +273,7 @@ impl Handler<Observe> for DeleteTaskPipeline {
             }
         }
         // Supervisors supervise every `HEARTBEAT`. We can wait a bit more to observe supervisors.
-        ctx.schedule_self_msg(Duration::from_secs(5), Observe).await;
+        ctx.schedule_self_msg(HEARTBEAT, Observe).await;
         Ok(())
     }
 }
@@ -298,16 +326,9 @@ mod tests {
                 type: i64
                 fast: true
         "#;
-        let metastore_uri = "ram:///delete-pipeline";
-        let test_sandbox = TestSandbox::create(
-            index_id,
-            doc_mapping_yaml,
-            "{}",
-            &["body"],
-            Some(metastore_uri),
-        )
-        .await
-        .unwrap();
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"])
+            .await
+            .unwrap();
         let docs = vec![
             serde_json::json!({"body": "info", "ts": 0 }),
             serde_json::json!({"body": "info", "ts": 0 }),
@@ -375,9 +396,8 @@ mod tests {
         assert_eq!(pipeline_state.uploader.num_errors, 0);
         assert_eq!(pipeline_state.publisher.num_errors, 0);
         let _ = pipeline_mailbox.send_message(GracefulShutdown).await;
-        // Time shifting will speed up the test.
+        // Time shifting to speed up the test.
         universe.simulate_time_shift(HEARTBEAT * 10).await;
-        pipeline_handler.join().await;
         let splits = metastore.list_all_splits(index_id).await?;
         assert_eq!(splits.len(), 2);
         let published_split = splits
@@ -385,6 +405,63 @@ mod tests {
             .find(|split| split.split_state == SplitState::Published)
             .unwrap();
         assert_eq!(published_split.split_metadata.delete_opstamp, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_delete_pipeline_shut_down() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let index_id = "test-delete-pipeline-shut-down";
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+              - name: ts
+                type: i64
+                fast: true
+        "#;
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"])
+            .await
+            .unwrap();
+        let metastore = test_sandbox.metastore();
+        let mut mock_search_service = MockSearchService::new();
+        mock_search_service
+            .expect_leaf_search()
+            .withf(|leaf_request| -> bool {
+                leaf_request.search_request.as_ref().unwrap().index_id
+                    == "test-delete-pipeline-shut-down"
+            })
+            .returning(move |_: LeafSearchRequest| {
+                Ok(LeafSearchResponse {
+                    num_hits: 0,
+                    ..Default::default()
+                })
+            });
+        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let data_dir_path = temp_dir.path().to_path_buf();
+        let indexing_settings = IndexingSettings::for_test();
+        let pipeline = DeleteTaskPipeline::new(
+            index_id.to_string(),
+            metastore.clone(),
+            client_pool,
+            indexing_settings,
+            test_sandbox.storage(),
+            data_dir_path,
+            4,
+        );
+        let universe = Universe::new();
+
+        let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
+        pipeline_handler.quit().await;
+        let observations = universe.observe(HEARTBEAT).await;
+        // Once the pipeline is properly shut down, the only remaining actor is the scheduler.
+        assert_eq!(observations.len(), 1);
+        assert_eq!(
+            observations[0].type_name,
+            "quickwit_actors::scheduler::Scheduler"
+        );
         Ok(())
     }
 }

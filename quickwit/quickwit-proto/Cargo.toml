@@ -10,10 +10,14 @@ homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
+opentelemetry = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
-serde = { workspace = true }
 tonic = { workspace = true }
+tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+serde = { workspace = true }
+
 
 [build-dependencies]
 glob = "0.3.0"

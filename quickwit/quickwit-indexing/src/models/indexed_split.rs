@@ -20,13 +20,14 @@
 use std::fmt;
 use std::path::Path;
 
-use quickwit_actors::{KillSwitch, Progress};
+use quickwit_common::io::IoControls;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use tantivy::directory::MmapDirectory;
-use tantivy::IndexBuilder;
+use tantivy::{IndexBuilder, TrackedObject};
 use tracing::{instrument, Span};
 
 use crate::controlled_directory::ControlledDirectory;
+use crate::merge_policy::MergeOperation;
 use crate::models::{IndexingPipelineId, PublishLock, ScratchDirectory, SplitAttrs};
 use crate::new_split_id;
 
@@ -79,8 +80,7 @@ impl IndexedSplitBuilder {
         last_delete_opstamp: u64,
         scratch_directory: ScratchDirectory,
         index_builder: IndexBuilder,
-        progress: Progress,
-        kill_switch: KillSwitch,
+        io_controls: IoControls,
     ) -> anyhow::Result<Self> {
         // We avoid intermediary merge, and instead merge all segments in the packager.
         // The benefit is that we don't have to wait for potentially existing merges,
@@ -91,8 +91,9 @@ impl IndexedSplitBuilder {
             scratch_directory.named_temp_child(split_scratch_directory_prefix)?;
         let mmap_directory = MmapDirectory::open(split_scratch_directory.path())?;
         let box_mmap_directory = Box::new(mmap_directory);
-        let controlled_directory =
-            ControlledDirectory::new(box_mmap_directory, progress, kill_switch);
+
+        let controlled_directory = ControlledDirectory::new(box_mmap_directory, io_controls);
+
         let index_writer =
             index_builder.single_segment_index_writer(controlled_directory.clone(), 10_000_000)?;
         Ok(Self {
@@ -153,6 +154,11 @@ pub struct IndexedSplitBatch {
     pub splits: Vec<IndexedSplit>,
     pub checkpoint_delta: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
+    /// A [`MergeOperation`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
+    /// in the `MergePipeline` or `DeleteTaskPipeline`.
+    /// See planners docs to understand the usage.
+    /// If `None`, the split batch was built in the `IndexingPipeline`.
+    pub merge_operation: Option<TrackedObject<MergeOperation>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

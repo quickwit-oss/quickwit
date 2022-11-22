@@ -26,12 +26,11 @@ pub use self::rest_handler::{search_get_handler, search_post_handler, search_str
 #[cfg(test)]
 mod tests {
     use std::net::SocketAddr;
-    use std::ops::Range;
     use std::sync::Arc;
 
     use futures::TryStreamExt;
     use quickwit_indexing::mock_split;
-    use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
+    use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_proto::search_service_server::SearchServiceServer;
     use quickwit_proto::{tonic, OutputFormat};
     use quickwit_search::{
@@ -81,11 +80,9 @@ mod tests {
                     "ram:///indexes/test-index",
                 ))
             });
-        metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
-                Ok(vec![mock_split("split_1"), mock_split("split_2")])
-            },
-        );
+        metastore
+            .expect_list_splits()
+            .returning(|_filter| Ok(vec![mock_split("split_1"), mock_split("split_2")]));
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {

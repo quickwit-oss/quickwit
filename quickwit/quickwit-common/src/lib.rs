@@ -17,13 +17,17 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#![deny(clippy::disallowed_methods)]
+
 mod checklist;
 mod coolid;
 
-pub mod fast_field_reader;
 pub mod fs;
+pub mod io;
+mod kill_switch;
 pub mod metrics;
 pub mod net;
+mod progress;
 pub mod rand;
 pub mod runtimes;
 pub mod uri;
@@ -36,6 +40,8 @@ pub use checklist::{
     print_checklist, run_checklist, ChecklistError, BLUE_COLOR, GREEN_COLOR, RED_COLOR,
 };
 pub use coolid::new_coolid;
+pub use kill_switch::KillSwitch;
+pub use progress::{Progress, ProtectedZoneGuard};
 use tracing::{error, info};
 
 pub fn chunk_range(range: Range<usize>, chunk_size: usize) -> impl Iterator<Item = Range<usize>> {
@@ -110,7 +116,7 @@ pub fn is_disjoint(left: &Range<i64>, right: &RangeInclusive<i64>) -> bool {
 }
 
 #[macro_export]
-macro_rules! ignore_io_error {
+macro_rules! ignore_error_kind {
     ($kind:path, $expr:expr) => {
         match $expr {
             Ok(_) => Ok(()),
@@ -151,7 +157,7 @@ mod tests {
 
     #[test]
     fn test_ignore_io_error_macro() {
-        ignore_io_error!(
+        ignore_error_kind!(
             ErrorKind::NotFound,
             std::fs::remove_file("file-does-not-exist")
         )

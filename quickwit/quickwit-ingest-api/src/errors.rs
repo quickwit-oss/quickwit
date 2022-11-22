@@ -34,10 +34,18 @@ pub enum IngestApiError {
     IndexAlreadyExists { index_id: String },
     #[error("Ingest API service is down")]
     IngestAPIServiceDown,
-    #[error("Io Error")]
-    IoError(String),
+    #[error("Io Error {msg}")]
+    IoError { msg: String },
     #[error("Invalid position: {0}.")]
     InvalidPosition(String),
+}
+
+impl From<io::Error> for IngestApiError {
+    fn from(io_err: io::Error) -> Self {
+        IngestApiError::IoError {
+            msg: format!("{:?}", io_err),
+        }
+    }
 }
 
 impl ServiceError for IngestApiError {
@@ -47,7 +55,7 @@ impl ServiceError for IngestApiError {
             IngestApiError::IndexDoesNotExist { .. } => ServiceErrorCode::NotFound,
             IngestApiError::IndexAlreadyExists { .. } => ServiceErrorCode::BadRequest,
             IngestApiError::IngestAPIServiceDown => ServiceErrorCode::Internal,
-            IngestApiError::IoError(_) => ServiceErrorCode::Internal,
+            IngestApiError::IoError { .. } => ServiceErrorCode::Internal,
             IngestApiError::InvalidPosition(_) => ServiceErrorCode::BadRequest,
         }
     }
@@ -72,17 +80,11 @@ impl From<IngestApiError> for tonic::Status {
             IngestApiError::IndexDoesNotExist { .. } => tonic::Code::NotFound,
             IngestApiError::IndexAlreadyExists { .. } => tonic::Code::AlreadyExists,
             IngestApiError::IngestAPIServiceDown => tonic::Code::Internal,
-            IngestApiError::IoError(_) => tonic::Code::Internal,
+            IngestApiError::IoError { .. } => tonic::Code::Internal,
             IngestApiError::InvalidPosition(_) => tonic::Code::InvalidArgument,
         };
         let message = error.to_string();
         tonic::Status::new(code, message)
-    }
-}
-
-impl From<io::Error> for IngestApiError {
-    fn from(io_err: io::Error) -> Self {
-        IngestApiError::IoError(format!("{io_err:?}"))
     }
 }
 

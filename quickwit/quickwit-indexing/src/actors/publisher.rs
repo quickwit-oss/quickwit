@@ -22,7 +22,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
-use quickwit_actors::{Actor, ActorContext, Handler, Mailbox};
+use quickwit_actors::{Actor, ActorContext, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::Metastore;
 use serde::Serialize;
 use tracing::{info, instrument};
@@ -90,22 +90,11 @@ impl Actor for Publisher {
         self.publisher_type.actor_name().to_string()
     }
 
-    async fn finalize(
-        &mut self,
-        _exit_status: &quickwit_actors::ActorExitStatus,
-        ctx: &ActorContext<Self>,
-    ) -> anyhow::Result<()> {
-        // The `garbage_collector` actor runs for ever.
-        // Periodically scheduling new messages for itself.
-        //
-        // The publisher actor being the last standing actor of the pipeline,
-        // its end of life should also means the end of life of never stopping actors.
-        // After all, when the publisher is stopped, there shouldn't be anything to process.
-        // It's fine if the merge planner is already dead.
-        if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
-            let _ = ctx.send_exit_with_success(merge_planner_mailbox).await;
+    fn queue_capacity(&self) -> QueueCapacity {
+        match self.publisher_type {
+            PublisherType::MainPublisher => QueueCapacity::Bounded(1),
+            PublisherType::MergePublisher => QueueCapacity::Unbounded,
         }
-        Ok(())
     }
 }
 
@@ -127,6 +116,7 @@ impl Handler<SplitsUpdate> for Publisher {
             replaced_split_ids,
             checkpoint_delta_opt,
             publish_lock,
+            merge_operation: _,
             parent_span: _,
         } = split_update;
 
@@ -245,6 +235,7 @@ mod tests {
                     source_delta: SourceCheckpointDelta::from(1..3),
                 }),
                 publish_lock: PublishLock::default(),
+                merge_operation: None,
                 parent_span: tracing::Span::none(),
             })
             .await
@@ -305,6 +296,7 @@ mod tests {
             replaced_split_ids: vec!["split1".to_string(), "split2".to_string()],
             checkpoint_delta_opt: None,
             publish_lock: PublishLock::default(),
+            merge_operation: None,
             parent_span: Span::none(),
         };
         assert!(publisher_mailbox
@@ -344,6 +336,7 @@ mod tests {
                 replaced_split_ids: Vec::new(),
                 checkpoint_delta_opt: None,
                 publish_lock,
+                merge_operation: None,
                 parent_span: Span::none(),
             })
             .await

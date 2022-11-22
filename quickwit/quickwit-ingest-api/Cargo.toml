@@ -10,13 +10,14 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }
-mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev="edd44d3dd90ea5cfed9fe721fc1e9b8afb2e13e2" }
+mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev="421ebc48e820c279e7e830f61d93b17135dfa5dc" }
 once_cell = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+ulid = {workspace = true}
 
 quickwit-actors = { workspace = true }
 quickwit-common = { workspace = true }

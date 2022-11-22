@@ -29,7 +29,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 
 use crate::prefix_storage::add_prefix_to_storage;
-use crate::storage::SendableAsync;
+use crate::storage::{BulkDeleteError, SendableAsync};
 use crate::{
     OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
 };
@@ -55,7 +55,7 @@ impl fmt::Debug for RamStorage {
 impl Default for RamStorage {
     fn default() -> Self {
         Self {
-            uri: Uri::new("ram:///".to_string()),
+            uri: Uri::from_well_formed("ram:///"),
             files: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -120,6 +120,14 @@ impl Storage for RamStorage {
         Ok(())
     }
 
+    async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+        let mut files = self.files.write().await;
+        for &path in paths {
+            files.remove(path);
+        }
+        Ok(())
+    }
+
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let payload_bytes = self.get_data(path).await.ok_or_else(|| {
             StorageErrorKind::DoesNotExist
@@ -159,7 +167,7 @@ impl RamStorageBuilder {
     /// Finalizes the [`RamStorage`] creation.
     pub fn build(self) -> RamStorage {
         RamStorage {
-            uri: Uri::new("ram:///".to_string()),
+            uri: Uri::from_well_formed("ram:///"),
             files: Arc::new(RwLock::new(self.files)),
         }
     }
@@ -215,13 +223,13 @@ mod tests {
     #[test]
     fn test_ram_storage_factory() {
         let ram_storage_factory = RamStorageFactory::default();
-        let ram_uri = Uri::new("s3:///foo".to_string());
+        let ram_uri = Uri::from_well_formed("s3:///foo");
         let err = ram_storage_factory.resolve(&ram_uri).err().unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
-        let data_uri = Uri::new("ram:///data".to_string());
+        let data_uri = Uri::from_well_formed("ram:///data");
         let data_storage = ram_storage_factory.resolve(&data_uri).ok().unwrap();
-        let home_uri = Uri::new("ram:///home".to_string());
+        let home_uri = Uri::from_well_formed("ram:///home");
         let home_storage = ram_storage_factory.resolve(&home_uri).ok().unwrap();
         assert_ne!(data_storage.uri(), home_storage.uri());
 

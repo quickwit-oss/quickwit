@@ -1,0 +1,22 @@
+[package]
+name = "quickwit-metastore-utils"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
+
+[[bin]]
+name = "replay"
+
+[[bin]]
+name = "proxy"
+
+
+[dependencies]
+serde_json = {workspace = true}
+anyhow = { workspace = true }
+async-trait = { workspace=true }
+quickwit-proto = { workspace=true }
+quickwit-metastore = { workspace = true }
+serde = "1"
+structopt = "0.3"
+tokio = {workspace= true}
