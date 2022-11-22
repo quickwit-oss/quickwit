@@ -56,7 +56,7 @@ pub struct TestSandbox {
 const METASTORE_URI: &str = "ram://quickwit-test-indexes";
 
 fn index_uri(index_id: &str) -> Uri {
-    Uri::from_well_formed(format!("{}/{}", METASTORE_URI, index_id))
+    Uri::from_well_formed(format!("{METASTORE_URI}/{index_id}"))
 }
 
 impl TestSandbox {
@@ -88,7 +88,7 @@ impl TestSandbox {
         let metastore_uri_resolver = quickwit_metastore_uri_resolver();
         let metastore_uri = metastore_uri.unwrap_or(METASTORE_URI);
         let metastore = metastore_uri_resolver
-            .resolve(&Uri::from_well_formed(metastore_uri.to_string()))
+            .resolve(&Uri::from_well_formed(metastore_uri))
             .await?;
         let index_metadata = IndexMetadata::new(index_config);
         metastore.create_index(index_metadata.clone()).await?;

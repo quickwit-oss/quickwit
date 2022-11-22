@@ -25,8 +25,8 @@ use itertools::Itertools;
 use quickwit_config::{build_doc_mapper, IndexConfig};
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::{
-    FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse, PartialHit,
-    SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
+    FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafSearchRequest, LeafSearchResponse,
+    PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
 };
 use tantivy::aggregation::agg_req::Aggregations;
 use tantivy::aggregation::agg_result::AggregationResults;
@@ -251,24 +251,18 @@ pub async fn root_search(
                     .map(|fetch_doc_job| fetch_doc_job.into())
                     .collect();
 
-                let fetch_docs_req = if search_request.snippet_fields.is_empty() {
-                    FetchDocsRequest {
-                        partial_hits,
-                        index_id: search_request.index_id.to_string(),
-                        split_offsets,
-                        index_uri: index_uri.to_string(),
-                        search_request: None,
-                        doc_mapper: None,
-                    }
+                let search_request_opt = if search_request.snippet_fields.is_empty() {
+                    None
                 } else {
-                    FetchDocsRequest {
-                        partial_hits,
-                        index_id: search_request.index_id.to_string(),
-                        split_offsets,
-                        index_uri: index_uri.to_string(),
-                        search_request: Some(search_request.clone()),
-                        doc_mapper: Some(doc_mapper_str.clone()),
-                    }
+                    Some(search_request.clone())
+                };
+                let fetch_docs_req = FetchDocsRequest {
+                    partial_hits,
+                    index_id: search_request.index_id.to_string(),
+                    split_offsets,
+                    index_uri: index_uri.to_string(),
+                    search_request: search_request_opt,
+                    doc_mapper: doc_mapper_str.clone(),
                 };
                 cluster_client.fetch_docs(fetch_docs_req, client)
             });
@@ -280,9 +274,13 @@ pub async fn root_search(
         .into_iter()
         .flat_map(|response| response.hits.into_iter());
 
-    let mut hits: Vec<quickwit_proto::Hit> = leaf_hits
-        .map(|leaf_hit: quickwit_proto::LeafHit| crate::convert_leaf_hit(leaf_hit, &*doc_mapper))
-        .collect::<crate::Result<_>>()?;
+    let mut hits: Vec<Hit> = leaf_hits
+        .map(|leaf_hit: LeafHit| Hit {
+            json: leaf_hit.leaf_json,
+            partial_hit: leaf_hit.partial_hit,
+            snippet: leaf_hit.leaf_snippet_json,
+        })
+        .collect();
 
     hits.sort_unstable_by_key(|hit| {
         Reverse(

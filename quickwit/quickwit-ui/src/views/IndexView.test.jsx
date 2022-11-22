@@ -50,7 +50,9 @@ afterEach(() => {
 test('renders IndexView', async () => {
   const index = {
     metadata: {
-      index_uri: 'my-new-fresh-index-uri',
+      index_config: {
+        index_uri: 'my-new-fresh-index-uri',
+      }
     },
     splits: []
   };

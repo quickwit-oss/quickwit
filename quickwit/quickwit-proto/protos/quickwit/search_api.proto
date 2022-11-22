@@ -249,7 +249,7 @@ message FetchDocsRequest {
   SearchRequest search_request = 5;
 
   // `DocMapper` as json serialized trait.
-  optional string doc_mapper = 6;
+  string doc_mapper = 6;
 }
 
 message FetchDocsResponse {

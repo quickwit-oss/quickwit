@@ -160,9 +160,9 @@ toml = "0.5.8"
 tonic = "0.8"
 tonic-build = "0.8.0"
 tower = "0.4.13"
-tracing = "0.1.29"
-tracing-opentelemetry = "0.18"
-tracing-subscriber = { version = "0.3", features = [
+tracing = "0.1.37"
+tracing-opentelemetry = "0.18.0"
+tracing-subscriber = { version = "0.3.16", features = [
   "time",
   "std",
   "env-filter",
@@ -193,14 +193,14 @@ quickwit-serve = { version = "0.3.1", path = "./quickwit-serve" }
 quickwit-storage = { version = "0.3.1", path = "./quickwit-storage" }
 quickwit-telemetry = { version = "0.3.1", path = "./quickwit-telemetry" }
 
-fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", rev = "55a9d80" }
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "55a9d80", default-features = false, features = [
+fastfield_codecs = { git = "https://github.com/quickwit-oss/tantivy/", rev = "0b40a7fe" }
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "0b40a7fe", default-features = false, features = [
   "mmap",
   "lz4-compression",
   "zstd-compression",
   "quickwit",
 ] }
-tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "55a9d80" }
+tantivy-query-grammar = { git = "https://github.com/quickwit-oss/tantivy/", rev = "0b40a7fe" }
 
 # This is actually not used directly the goal is to fix the version
 # used by reqwest. 0.8.30 has an unclear license.

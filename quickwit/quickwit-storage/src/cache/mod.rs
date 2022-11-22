@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod byte_range_cache;
 mod memory_sized_cache;
 mod quickwit_cache;
 mod slice_address;
@@ -31,6 +32,7 @@ use async_trait::async_trait;
 pub use quickwit_cache::QuickwitCache;
 pub use storage_with_cache::StorageWithCache;
 
+pub use self::byte_range_cache::ByteRangeCache;
 pub use self::memory_sized_cache::MemorySizedCache;
 use crate::{OwnedBytes, Storage};
 

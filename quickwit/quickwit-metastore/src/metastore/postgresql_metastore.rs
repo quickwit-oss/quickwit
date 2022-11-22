@@ -86,7 +86,7 @@ async fn run_postgres_migrations(pool: &Pool<Postgres>) -> MetastoreResult<()> {
         tx.rollback().await?;
         error!(err=?migration_err, "Database migrations failed");
         return Err(MetastoreError::InternalError {
-            message: "Failed to run migrator on Postgresql database.".to_string(),
+            message: "Failed to run migration on Postgresql database.".to_string(),
             cause: migration_err.to_string(),
         });
     }
@@ -451,12 +451,21 @@ fn convert_sqlx_err(index_id: &str, sqlx_err: sqlx::Error) -> MetastoreError {
     match &sqlx_err {
         sqlx::Error::Database(boxed_db_err) => {
             error!(pg_db_err=?boxed_db_err, "postgresql-error");
-            let pg_error_code = boxed_db_err.downcast_ref::<PgDatabaseError>().code();
-            match pg_error_code {
-                pg_error_code::FOREIGN_KEY_VIOLATION => MetastoreError::IndexDoesNotExist {
+
+            let pg_db_error = boxed_db_err.downcast_ref::<PgDatabaseError>();
+            let pg_error_code = pg_db_error.code();
+            let pg_error_table = pg_db_error.table();
+
+            match (pg_error_code, pg_error_table) {
+                (pg_error_code::FOREIGN_KEY_VIOLATION, _) => MetastoreError::IndexDoesNotExist {
                     index_id: index_id.to_string(),
                 },
-                pg_error_code::UNIQUE_VIOLATION => MetastoreError::InternalError {
+                (pg_error_code::UNIQUE_VIOLATION, Some(table)) if table.starts_with("indexes") => {
+                    MetastoreError::IndexAlreadyExists {
+                        index_id: index_id.to_string(),
+                    }
+                }
+                (pg_error_code::UNIQUE_VIOLATION, _) => MetastoreError::InternalError {
                     message: "Unique key violation.".to_string(),
                     cause: format!("DB error {:?}", boxed_db_err),
                 },
@@ -512,11 +521,12 @@ where
     if !mutation_occurred {
         return Ok(mutation_occurred);
     }
-    let index_metadata_json =
-        serde_json::to_string(&index_metadata).map_err(|err| MetastoreError::InternalError {
-            message: "Failed to serialize index metadata.".to_string(),
-            cause: err.to_string(),
-        })?;
+    let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|error| {
+        MetastoreError::JsonSerializeError {
+            struct_name: "IndexMetadata".to_string(),
+            message: error.to_string(),
+        }
+    })?;
     let update_index_res = sqlx::query(
         r#"
         UPDATE indexes
@@ -556,10 +566,10 @@ impl Metastore for PostgresqlMetastore {
 
     #[instrument(skip(self), fields(index_id=index_metadata.index_id()))]
     async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
-        let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|err| {
-            MetastoreError::InternalError {
-                message: "Failed to serialize index metadata.".to_string(),
-                cause: err.to_string(),
+        let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|error| {
+            MetastoreError::JsonSerializeError {
+                struct_name: "IndexMetadata".to_string(),
+                message: error.to_string(),
             }
         })?;
         sqlx::query("INSERT INTO indexes (index_id, index_metadata_json) VALUES ($1, $2)")
@@ -591,10 +601,10 @@ impl Metastore for PostgresqlMetastore {
         index_id: &str,
         split_metadata: SplitMetadata,
     ) -> MetastoreResult<()> {
-        let split_metadata_json = serde_json::to_string(&split_metadata).map_err(|err| {
-            MetastoreError::InternalError {
-                message: "Failed to serialize split metadata.".to_string(),
-                cause: err.to_string(),
+        let split_metadata_json = serde_json::to_string(&split_metadata).map_err(|error| {
+            MetastoreError::JsonSerializeError {
+                struct_name: "SplitMetadata".to_string(),
+                message: error.to_string(),
             }
         })?;
         let time_range_start = split_metadata
@@ -891,11 +901,12 @@ impl Metastore for PostgresqlMetastore {
     /// Creates a delete task from a delete query.
     #[instrument(skip(self), fields(index_id=delete_query.index_id))]
     async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask> {
-        let delete_query_json =
-            serde_json::to_string(&delete_query).map_err(|err| MetastoreError::InternalError {
-                message: "Failed to serialize delete query.".to_string(),
-                cause: err.to_string(),
-            })?;
+        let delete_query_json = serde_json::to_string(&delete_query).map_err(|error| {
+            MetastoreError::JsonSerializeError {
+                struct_name: "DeleteQuery".to_string(),
+                message: error.to_string(),
+            }
+        })?;
         let (create_timestamp, opstamp): (sqlx::types::time::PrimitiveDateTime, i64) =
             sqlx::query_as(
                 r#"

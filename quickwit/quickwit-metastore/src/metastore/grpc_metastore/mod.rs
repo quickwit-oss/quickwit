@@ -42,14 +42,15 @@ use quickwit_proto::metastore_api::{
     ResetSourceCheckpointRequest, StageSplitRequest, ToggleSourceRequest,
     UpdateSplitsDeleteOpstampRequest,
 };
+use quickwit_proto::tonic::codegen::InterceptedService;
 use quickwit_proto::tonic::transport::{Channel, Endpoint};
 use quickwit_proto::tonic::Status;
+use quickwit_proto::SpanContextInterceptor;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt;
 use tower::discover::Change;
-use tower::service_fn;
 use tower::timeout::error::Elapsed;
 use tower::timeout::Timeout;
 use tracing::{error, info};
@@ -63,7 +64,7 @@ use crate::{
 const CLIENT_TIMEOUT_DURATION: Duration = if cfg!(test) {
     Duration::from_millis(100)
 } else {
-    Duration::from_secs(5)
+    Duration::from_secs(30)
 };
 
 /// The [`MetastoreGrpcClient`] sends gRPC requests to cluster members running a [`Metastore`]
@@ -72,7 +73,8 @@ const CLIENT_TIMEOUT_DURATION: Duration = if cfg!(test) {
 /// listen to cluster live nodes changes to keep updated the list of available nodes.
 #[derive(Clone)]
 pub struct MetastoreGrpcClient {
-    underlying: MetastoreApiServiceClient<Timeout<Channel>>,
+    underlying:
+        MetastoreApiServiceClient<InterceptedService<Timeout<Channel>, SpanContextInterceptor>>,
     pool_size_rx: watch::Receiver<usize>,
 }
 
@@ -112,7 +114,8 @@ impl MetastoreGrpcClient {
                 Result::<_, anyhow::Error>::Ok(())
             }
         });
-        let underlying = MetastoreApiServiceClient::new(timeout_channel);
+        let underlying =
+            MetastoreApiServiceClient::with_interceptor(timeout_channel, SpanContextInterceptor);
 
         Ok(Self {
             underlying,
@@ -120,12 +123,12 @@ impl MetastoreGrpcClient {
         })
     }
 
-    /// Creates a [`MetastoreService`] from a duplex stream client for testing purpose.
-    #[doc(hidden)]
+    /// Creates a [`MetastoreGrpcClient`] from a duplex stream client for testing purpose.
+    #[cfg(any(test, feature = "testsuite"))]
     pub async fn from_duplex_stream(client: tokio::io::DuplexStream) -> anyhow::Result<Self> {
         let mut client = Some(client);
         let channel = Endpoint::try_from("http://test.server")?
-            .connect_with_connector(service_fn(move |_: Uri| {
+            .connect_with_connector(tower::service_fn(move |_: Uri| {
                 let client = client.take();
                 async move {
                     client.ok_or_else(|| {
@@ -134,8 +137,9 @@ impl MetastoreGrpcClient {
                 }
             }))
             .await?;
+        let timeout_channel = Timeout::new(channel, CLIENT_TIMEOUT_DURATION);
         let underlying =
-            MetastoreApiServiceClient::new(Timeout::new(channel, CLIENT_TIMEOUT_DURATION));
+            MetastoreApiServiceClient::with_interceptor(timeout_channel, SpanContextInterceptor);
         let (_pool_size_tx, pool_size_rx) = watch::channel(1);
         Ok(Self {
             underlying,
@@ -162,7 +166,7 @@ impl Metastore for MetastoreGrpcClient {
         let index_metadata_serialized_json =
             serde_json::to_string(&index_metadata).map_err(|error| {
                 MetastoreError::JsonSerializeError {
-                    name: "IndexMetadata".to_string(),
+                    struct_name: "IndexMetadata".to_string(),
                     message: error.to_string(),
                 }
             })?;
@@ -188,7 +192,7 @@ impl Metastore for MetastoreGrpcClient {
         let indexes_metadatas =
             serde_json::from_str(&response.into_inner().indexes_metadatas_serialized_json)
                 .map_err(|error| MetastoreError::JsonDeserializeError {
-                    name: "Vec<IndexMetadata>".to_string(),
+                    struct_name: "Vec<IndexMetadata>".to_string(),
                     message: error.to_string(),
                 })?;
         Ok(indexes_metadatas)
@@ -209,7 +213,7 @@ impl Metastore for MetastoreGrpcClient {
             &response.into_inner().index_metadata_serialized_json,
         )
         .map_err(|error| MetastoreError::JsonDeserializeError {
-            name: "IndexMetadata".to_string(),
+            struct_name: "IndexMetadata".to_string(),
             message: error.to_string(),
         })?;
         Ok(index_metadata)
@@ -238,7 +242,7 @@ impl Metastore for MetastoreGrpcClient {
         let split_metadata_serialized_json =
             serde_json::to_string(&split_metadata).map_err(|error| {
                 MetastoreError::JsonSerializeError {
-                    name: "SplitMetadata".to_string(),
+                    struct_name: "SplitMetadata".to_string(),
                     message: error.to_string(),
                 }
             })?;
@@ -271,7 +275,7 @@ impl Metastore for MetastoreGrpcClient {
             .map(|checkpoint_delta| serde_json::to_string(&checkpoint_delta))
             .transpose()
             .map_err(|error| MetastoreError::JsonSerializeError {
-                name: "IndexCheckpointDelta".to_string(),
+                struct_name: "IndexCheckpointDelta".to_string(),
                 message: error.to_string(),
             })?;
         let request = PublishSplitsRequest {
@@ -293,7 +297,7 @@ impl Metastore for MetastoreGrpcClient {
     async fn list_splits<'a>(&self, query: ListSplitsQuery<'a>) -> MetastoreResult<Vec<Split>> {
         let filter_json =
             serde_json::to_string(&query).map_err(|error| MetastoreError::JsonSerializeError {
-                name: "ListSplitsQuery".to_string(),
+                struct_name: "ListSplitsQuery".to_string(),
                 message: error.to_string(),
             })?;
 
@@ -308,7 +312,7 @@ impl Metastore for MetastoreGrpcClient {
         let splits: Vec<Split> =
             serde_json::from_str(&response.splits_serialized_json).map_err(|error| {
                 MetastoreError::JsonDeserializeError {
-                    name: "Vec<Split>".to_string(),
+                    struct_name: "Vec<Split>".to_string(),
                     message: error.to_string(),
                 }
             })?;
@@ -330,7 +334,7 @@ impl Metastore for MetastoreGrpcClient {
         let splits: Vec<Split> =
             serde_json::from_str(&response.splits_serialized_json).map_err(|error| {
                 MetastoreError::JsonDeserializeError {
-                    name: "Vec<Split>".to_string(),
+                    struct_name: "Vec<Split>".to_string(),
                     message: error.to_string(),
                 }
             })?;
@@ -387,7 +391,7 @@ impl Metastore for MetastoreGrpcClient {
     async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()> {
         let source_config_serialized_json =
             serde_json::to_string(&source).map_err(|error| MetastoreError::JsonSerializeError {
-                name: "SourceConfig".to_string(),
+                struct_name: "SourceConfig".to_string(),
                 message: error.to_string(),
             })?;
         let request = AddSourceRequest {
@@ -552,7 +556,7 @@ impl Metastore for MetastoreGrpcClient {
         let splits: Vec<Split> =
             serde_json::from_str(&response.splits_serialized_json).map_err(|error| {
                 MetastoreError::JsonDeserializeError {
-                    name: "Vec<Split>".to_string(),
+                    struct_name: "Vec<Split>".to_string(),
                     message: error.to_string(),
                 }
             })?;
