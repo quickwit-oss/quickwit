@@ -1001,7 +1001,7 @@ mod tests {
                 .indexing_pipeline_handles
                 .get(&message.0)
                 .unwrap()
-                .health())
+                .harvest_health())
         }
     }
 
