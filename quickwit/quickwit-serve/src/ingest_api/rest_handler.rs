@@ -25,7 +25,7 @@ use quickwit_actors::Mailbox;
 use quickwit_ingest_api::{add_doc, IngestApiService};
 use quickwit_proto::ingest_api::{DocBatch, IngestRequest, TailRequest};
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::Value as JsonValue;
 use thiserror::Error;
 use warp::{reject, Filter, Rejection};
 
@@ -193,7 +193,7 @@ async fn elastic_ingest(
                 BulkApiError::InvalidSource("Expected source for the action.".to_string())
             })
             .and_then(|source| {
-                serde_json::from_str::<Value>(source)
+                serde_json::from_str::<JsonValue>(source)
                     .map_err(|err| BulkApiError::InvalidSource(err.to_string()))
             })?;
 

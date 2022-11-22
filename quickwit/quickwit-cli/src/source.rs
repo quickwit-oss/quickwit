@@ -28,7 +28,7 @@ use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
 use quickwit_storage::load_file;
-use serde_json::Value;
+use serde_json::Value as JsonValue;
 use tabled::{Table, Tabled};
 
 use crate::{load_quickwit_config, make_table};
@@ -485,7 +485,7 @@ struct ParamsRow {
     #[tabled(rename = "Key")]
     key: String,
     #[tabled(rename = "Value")]
-    value: Value,
+    value: JsonValue,
 }
 
 #[derive(Tabled)]
@@ -507,12 +507,12 @@ fn display_tables(tables: &[Table]) {
 /// represents the full path of each property in the original object. For instance, `{"root": true,
 /// "parent": {"child": 0}}` yields `[("root", true), ("parent.child", 0)]`. Arrays are not
 /// flattened.
-fn flatten_json(value: Value) -> Vec<(String, Value)> {
+fn flatten_json(value: JsonValue) -> Vec<(String, JsonValue)> {
     let mut acc = Vec::new();
     let mut values = vec![(String::new(), value)];
 
     while let Some((root, value)) = values.pop() {
-        if let Value::Object(obj) = value {
+        if let JsonValue::Object(obj) = value {
             for (key, val) in obj {
                 values.push((
                     if root.is_empty() {
@@ -568,14 +568,16 @@ mod tests {
         assert!(flatten_json(json!({})).is_empty());
 
         assert_eq!(
-            flatten_json(json!(Value::Null)),
-            vec![("".to_string(), Value::Null)]
+            flatten_json(json!(JsonValue::Null)),
+            vec![("".to_string(), JsonValue::Null)]
         );
         assert_eq!(
-            flatten_json(json!({"foo": {"bar": Value::Bool(true)}, "baz": Value::Bool(false)})),
+            flatten_json(
+                json!({"foo": {"bar": JsonValue::Bool(true)}, "baz": JsonValue::Bool(false)})
+            ),
             vec![
-                ("foo.bar".to_string(), Value::Bool(true)),
-                ("baz".to_string(), Value::Bool(false)),
+                ("foo.bar".to_string(), JsonValue::Bool(true)),
+                ("baz".to_string(), JsonValue::Bool(false)),
             ]
         );
     }
@@ -758,7 +760,7 @@ mod tests {
         }];
         let expected_params = vec![ParamsRow {
             key: "filepath".to_string(),
-            value: Value::String("path/to/file".to_string()),
+            value: JsonValue::String("path/to/file".to_string()),
         }];
         let expected_checkpoint = vec![
             CheckpointRow {

@@ -25,6 +25,7 @@ use std::str::FromStr;
 use quickwit_common::uri::Uri;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value as JsonValue;
 // For backward compatibility.
 use serialize::VersionedSourceConfig;
 
@@ -73,7 +74,7 @@ impl SourceConfig {
     }
 
     // TODO: Remove after source factory refactor.
-    pub fn params(&self) -> serde_json::Value {
+    pub fn params(&self) -> JsonValue {
         match &self.source_params {
             SourceParams::File(params) => serde_json::to_value(params),
             SourceParams::Kafka(params) => serde_json::to_value(params),
@@ -199,7 +200,7 @@ pub struct KafkaSourceParams {
     /// Kafka client configuration parameters.
     #[serde(default = "serde_json::Value::default")]
     #[serde(skip_serializing_if = "serde_json::Value::is_null")]
-    pub client_params: serde_json::Value,
+    pub client_params: JsonValue,
     /// When backfill mode is enabled, the source exits after reaching the end of the topic.
     #[serde(default)]
     #[serde(skip_serializing_if = "is_false")]

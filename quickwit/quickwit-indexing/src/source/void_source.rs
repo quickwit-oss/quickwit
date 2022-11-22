@@ -24,6 +24,7 @@ use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox, HEARTBEAT};
 use quickwit_config::VoidSourceParams;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
+use serde_json::Value as JsonValue;
 
 use crate::actors::DocProcessor;
 use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
@@ -45,8 +46,8 @@ impl Source for VoidSource {
         "VoidSource".to_string()
     }
 
-    fn observable_state(&self) -> serde_json::Value {
-        serde_json::Value::Object(Default::default())
+    fn observable_state(&self) -> JsonValue {
+        JsonValue::Object(Default::default())
     }
 }
 

@@ -49,6 +49,7 @@ use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_indexing::models::{IndexingPipelineId, MergeScratch, ScratchDirectory};
 use quickwit_indexing::{get_tantivy_directory_from_split_bundle, TestSandbox};
 use quickwit_metastore::{ListSplitsQuery, Split, SplitMetadata, SplitState};
+use serde_json::Value as JsonValue;
 use tantivy::{Directory, Inventory};
 
 #[tokio::test]
@@ -175,11 +176,11 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
         &search_fields,
     )
     .await?;
-    let batch_1: Vec<serde_json::Value> = vec![
+    let batch_1: Vec<JsonValue> = vec![
         serde_json::json!({"body ": "1", "ts": 1629889530 }),
         serde_json::json!({"body ": "2", "ts": 1629889531 }),
     ];
-    let batch_2: Vec<serde_json::Value> = vec![
+    let batch_2: Vec<JsonValue> = vec![
         serde_json::json!({"body ": "3", "ts": 1629889532 }),
         serde_json::json!({"body ": "4", "ts": 1629889533 }),
     ];
@@ -245,7 +246,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     .await?;
 
     let doc_mapper = test_index_builder.doc_mapper();
-    let batch: Vec<serde_json::Value> =
+    let batch: Vec<JsonValue> =
         std::iter::repeat_with(|| serde_json::json!({"body ": TEST_TEXT, "ts": 1631072713 }))
             .take(500)
             .collect();

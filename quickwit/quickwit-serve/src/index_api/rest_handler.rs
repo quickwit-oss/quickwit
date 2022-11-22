@@ -146,6 +146,7 @@ mod tests {
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_storage::StorageUriResolver;
+    use serde_json::Value as JsonValue;
 
     use super::*;
     use crate::recover_fn;
@@ -169,7 +170,7 @@ mod tests {
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 200);
-        let actual_response_json: serde_json::Value = serde_json::from_slice(resp.body())?;
+        let actual_response_json: JsonValue = serde_json::from_slice(resp.body())?;
         let expected_response_json = serde_json::json!({
             "index_id": "test-index",
             "index_uri": "ram:///indexes/test-index",
@@ -195,7 +196,7 @@ mod tests {
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 200);
-        let actual_response_json: serde_json::Value = serde_json::from_slice(resp.body())?;
+        let actual_response_json: JsonValue = serde_json::from_slice(resp.body())?;
         let expected_response_json = serde_json::json!([{
             "create_timestamp": 0,
             "split_id": "split_1",
@@ -224,10 +225,10 @@ mod tests {
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 200);
-        let actual_response_json: serde_json::Value = serde_json::from_slice(resp.body())?;
-        let actual_response_arr: &Vec<serde_json::Value> = actual_response_json.as_array().unwrap();
+        let actual_response_json: JsonValue = serde_json::from_slice(resp.body())?;
+        let actual_response_arr: &Vec<JsonValue> = actual_response_json.as_array().unwrap();
         assert_eq!(actual_response_arr.len(), 1);
-        let actual_index_metadata_json: &serde_json::Value = &actual_response_arr[0];
+        let actual_index_metadata_json: &JsonValue = &actual_response_arr[0];
         let expected_response_json = serde_json::json!({
             "index_id": "test-index",
             "index_uri": "ram:///indexes/test-index",
