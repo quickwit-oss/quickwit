@@ -2,7 +2,7 @@ version: 2
 
 updates:
   - package-ecosystem: cargo
-    directory: "/"
+    directory: "/quickwit"
     schedule:
       interval: daily
       time: "20:00"
