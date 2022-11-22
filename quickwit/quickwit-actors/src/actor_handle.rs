@@ -64,7 +64,7 @@ impl<A: Actor> fmt::Debug for ActorHandle<A> {
 
 pub trait Supervisable {
     fn name(&self) -> &str;
-    fn health(&self) -> Health;
+    fn harvest_health(&self) -> Health;
 }
 
 impl<A: Actor> Supervisable for ActorHandle<A> {
@@ -72,7 +72,11 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
         self.actor_context.actor_instance_id()
     }
 
-    fn health(&self) -> Health {
+    /// Harvests the health of the actor by checking its state (see [`ActorState`]) and/or progress
+    /// (see `Progress`). When the actor is running, calling this method resets its progress state
+    /// to "no update" (see `ProgressState`). As a consequence, only one supervisor or probe
+    /// should periodically invoke this method during the lifetime of the actor.
+    fn harvest_health(&self) -> Health {
         let actor_state = self.state();
         if actor_state == ActorState::Success {
             Health::Success
