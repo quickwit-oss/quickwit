@@ -60,7 +60,7 @@ Slop queries can only be used on field indexed with the [record option](./../con
 
 ### Set Operator
 
-Quickwit supports `IN [value1 value2 ...]` as a set appartenance operator. This is more cpu efficient than the equivalent `OR`ing of many terms, but may download more of the split than `OR`ing, especially when only a few terms are searched. You must specify a field being searched for Set queries.
+Quickwit supports `IN [value1 value2 ...]` as a set membership operator. This is more cpu efficient than the equivalent `OR`ing of many terms, but may download more of the split than `OR`ing, especially when only a few terms are searched. You must specify a field being searched for Set queries.
 
 #### Examples:
 
