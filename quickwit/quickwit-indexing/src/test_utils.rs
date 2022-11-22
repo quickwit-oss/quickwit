@@ -35,7 +35,7 @@ use quickwit_metastore::{
 use quickwit_storage::{Storage, StorageUriResolver};
 
 use crate::actors::IndexingService;
-use crate::models::{DetachPipeline, IndexingStatistics, SpawnPipeline};
+use crate::models::{DetachIndexingPipeline, IndexingStatistics, SpawnPipeline};
 
 /// Creates a Test environment.
 ///
@@ -156,7 +156,7 @@ impl TestSandbox {
             .await?;
         let pipeline_handle = self
             .indexing_service
-            .ask_for_res(DetachPipeline { pipeline_id })
+            .ask_for_res(DetachIndexingPipeline { pipeline_id })
             .await?;
         let (_pipeline_exit_status, pipeline_statistics) = pipeline_handle.join().await;
         Ok(pipeline_statistics)

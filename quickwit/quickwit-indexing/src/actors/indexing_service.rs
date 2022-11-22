@@ -41,9 +41,9 @@ use tracing::{error, info};
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::MergePlanner;
 use crate::models::{
-    DetachPipeline, IndexingDirectory, IndexingPipelineId, Observe, ObservePipeline,
-    ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
-    WeakIndexingDirectory,
+    DetachIndexingPipeline, DetachMergePipeline, IndexingDirectory, IndexingPipelineId, Observe,
+    ObservePipeline, ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline, SpawnPipeline,
+    SpawnPipelines, WeakIndexingDirectory,
 };
 use crate::split_store::{LocalSplitStore, SplitStoreQuota};
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics};
@@ -96,8 +96,8 @@ pub struct IndexingServiceCounters {
 type IndexId = String;
 type SourceId = String;
 
-#[derive(Clone, Hash, Eq, PartialEq)]
-struct MergePipelineId {
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub struct MergePipelineId {
     index_id: String,
     source_id: String,
 }
@@ -171,6 +171,21 @@ impl IndexingService {
             })?;
         self.counters.num_running_pipelines -= 1;
         Ok(pipeline_handle)
+    }
+
+    async fn detach_merge_pipeline(
+        &mut self,
+        pipeline_id: &MergePipelineId,
+    ) -> Result<ActorHandle<MergePipeline>, IndexingServiceError> {
+        let pipeline_handle = self
+            .merge_pipeline_handles
+            .remove(pipeline_id)
+            .ok_or_else(|| IndexingServiceError::MissingPipeline {
+                index_id: pipeline_id.index_id.clone(),
+                source_id: pipeline_id.source_id.clone(),
+            })?;
+        self.counters.num_running_merge_pipelines = 1;
+        Ok(pipeline_handle.handle)
     }
 
     async fn observe_pipeline(
@@ -470,6 +485,7 @@ impl IndexingService {
         };
         self.merge_pipeline_handles
             .insert(merge_pipeline_id, merge_pipeline_mailbox_handle);
+        self.counters.num_running_merge_pipelines += 1;
         Ok(merge_planner_mailbox)
     }
 }
@@ -489,15 +505,28 @@ impl Handler<ObservePipeline> for IndexingService {
 }
 
 #[async_trait]
-impl Handler<DetachPipeline> for IndexingService {
+impl Handler<DetachIndexingPipeline> for IndexingService {
     type Reply = Result<ActorHandle<IndexingPipeline>, IndexingServiceError>;
 
     async fn handle(
         &mut self,
-        msg: DetachPipeline,
+        msg: DetachIndexingPipeline,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self.detach_pipeline(&msg.pipeline_id).await)
+    }
+}
+
+#[async_trait]
+impl Handler<DetachMergePipeline> for IndexingService {
+    type Reply = Result<ActorHandle<MergePipeline>, IndexingServiceError>;
+
+    async fn handle(
+        &mut self,
+        msg: DetachMergePipeline,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.detach_merge_pipeline(&msg.pipeline_id).await)
     }
 }
 
@@ -748,7 +777,7 @@ mod tests {
 
         // Test `detach_pipeline`.
         let pipeline_handle = indexing_server_mailbox
-            .ask_for_res(DetachPipeline {
+            .ask_for_res(DetachIndexingPipeline {
                 pipeline_id: pipeline_id_0.clone(),
             })
             .await

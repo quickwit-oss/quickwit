@@ -41,10 +41,12 @@ use quickwit_config::{
 use quickwit_core::{
     clear_cache_directory, remove_indexing_directory, validate_storage_uri, IndexService,
 };
-use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
+use quickwit_indexing::actors::{IndexingService, MergePipelineId};
 use quickwit_indexing::models::{
-    DetachPipeline, IndexingPipelineId, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
+    DetachIndexingPipeline, DetachMergePipeline, IndexingPipelineId, IndexingStatistics,
+    SpawnMergePipeline, SpawnPipeline,
 };
+use quickwit_indexing::IndexingPipeline;
 use quickwit_metastore::{
     quickwit_metastore_uri_resolver, IndexMetadata, ListSplitsQuery, Split, SplitState,
 };
@@ -934,8 +936,13 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
             pipeline_ord: 0,
         })
         .await?;
-    let pipeline_handle = indexing_server_mailbox
-        .ask_for_res(DetachPipeline { pipeline_id })
+    let merge_pipeline_handle = indexing_server_mailbox
+        .ask_for_res(DetachMergePipeline {
+            pipeline_id: MergePipelineId::from(&pipeline_id),
+        })
+        .await?;
+    let indexing_pipeline_handle = indexing_server_mailbox
+        .ask_for_res(DetachIndexingPipeline { pipeline_id })
         .await?;
 
     let is_stdin_atty = atty::is(atty::Stream::Stdin);
@@ -950,7 +957,9 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         );
     }
     let statistics =
-        start_statistics_reporting_loop(pipeline_handle, args.input_path_opt.is_none()).await?;
+        start_statistics_reporting_loop(indexing_pipeline_handle, args.input_path_opt.is_none())
+            .await?;
+    merge_pipeline_handle.kill().await;
     // Shutdown the indexing server.
     universe
         .send_exit_with_success(&indexing_server_mailbox)
@@ -1062,7 +1071,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         })
         .await?;
     let pipeline_handle = indexing_service_mailbox
-        .ask_for_res(DetachPipeline { pipeline_id })
+        .ask_for_res(DetachIndexingPipeline { pipeline_id })
         .await?;
     let (pipeline_exit_status, _pipeline_statistics) = pipeline_handle.join().await;
     indexing_service_handle.quit().await;
