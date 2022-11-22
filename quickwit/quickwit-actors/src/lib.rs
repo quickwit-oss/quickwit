@@ -81,6 +81,11 @@ pub const HEARTBEAT: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_secs(3)
 };
 
+/// Time we accept to wait for a new observation.
+///
+/// Once this time is elapsed, we just return the last observation.
+const OBSERVE_TIMEOUT: Duration = Duration::from_secs(3);
+
 /// Error that occured while calling `ActorContext::ask(..)` or `Universe::ask`
 #[derive(Error, Debug)]
 pub enum AskError<E: fmt::Debug> {
