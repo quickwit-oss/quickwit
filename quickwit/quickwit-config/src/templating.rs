@@ -86,8 +86,7 @@ mod test {
 
     use super::render_config;
 
-    static TEST_URI: Lazy<Uri> =
-        Lazy::new(|| Uri::from_well_formed("file://config.yaml".to_string()));
+    static TEST_URI: Lazy<Uri> = Lazy::new(|| Uri::from_well_formed("file://config.yaml"));
 
     #[test]
     fn test_template_render() {

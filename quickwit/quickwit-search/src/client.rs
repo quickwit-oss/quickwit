@@ -22,36 +22,25 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use futures::{StreamExt, TryStreamExt};
-use opentelemetry::global;
-use opentelemetry::propagation::Injector;
-use quickwit_proto::{tonic, LeafSearchStreamResponse};
+use quickwit_proto::tonic::codegen::InterceptedService;
+use quickwit_proto::{tonic, LeafSearchStreamResponse, SpanContextInterceptor};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Channel;
 use tonic::Request;
 use tracing::*;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::error::parse_grpc_error;
 use crate::SearchService;
-
-struct MetadataMap<'a>(&'a mut tonic::metadata::MetadataMap);
-
-impl<'a> Injector for MetadataMap<'a> {
-    /// Sets a key-value pair in the [`MetadataMap`]. No-op if the key or value is invalid.
-    fn set(&mut self, key: &str, value: String) {
-        if let Ok(metadata_key) = tonic::metadata::MetadataKey::from_bytes(key.as_bytes()) {
-            if let Ok(metadata_value) = tonic::metadata::MetadataValue::try_from(&value) {
-                self.0.insert(metadata_key, metadata_value);
-            }
-        }
-    }
-}
 
 /// Impl is an enumeration that meant to manage Quickwit's search service client types.
 #[derive(Clone)]
 enum SearchServiceClientImpl {
     Local(Arc<dyn SearchService>),
-    Grpc(quickwit_proto::search_service_client::SearchServiceClient<Channel>),
+    Grpc(
+        quickwit_proto::search_service_client::SearchServiceClient<
+            InterceptedService<Channel, SpanContextInterceptor>,
+        >,
+    ),
 }
 
 /// A search service client.
@@ -79,7 +68,9 @@ impl fmt::Debug for SearchServiceClient {
 impl SearchServiceClient {
     /// Create a search service client instance given a gRPC client and gRPC address.
     pub fn from_grpc_client(
-        client: quickwit_proto::search_service_client::SearchServiceClient<Channel>,
+        client: quickwit_proto::search_service_client::SearchServiceClient<
+            InterceptedService<Channel, SpanContextInterceptor>,
+        >,
         grpc_addr: SocketAddr,
     ) -> Self {
         SearchServiceClient {
@@ -126,13 +117,7 @@ impl SearchServiceClient {
     ) -> crate::Result<quickwit_proto::LeafSearchResponse> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
-                let mut tonic_request = Request::new(request);
-                global::get_text_map_propagator(|propagator| {
-                    propagator.inject_context(
-                        &tracing::Span::current().context(),
-                        &mut MetadataMap(tonic_request.metadata_mut()),
-                    )
-                });
+                let tonic_request = Request::new(request);
                 let tonic_response = grpc_client
                     .leaf_search(tonic_request)
                     .await
@@ -155,13 +140,7 @@ impl SearchServiceClient {
                     "client:leaf_search_stream",
                     grpc_addr=?self.grpc_addr()
                 );
-                let mut tonic_request = Request::new(request);
-                global::get_text_map_propagator(|propagator| {
-                    propagator.inject_context(
-                        &tracing::Span::current().context(),
-                        &mut MetadataMap(tonic_request.metadata_mut()),
-                    )
-                });
+                let tonic_request = Request::new(request);
                 let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
                 tokio::spawn(
                     async move {
@@ -210,13 +189,7 @@ impl SearchServiceClient {
     ) -> crate::Result<quickwit_proto::FetchDocsResponse> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
-                let mut tonic_request = Request::new(request);
-                global::get_text_map_propagator(|propagator| {
-                    propagator.inject_context(
-                        &tracing::Span::current().context(),
-                        &mut MetadataMap(tonic_request.metadata_mut()),
-                    )
-                });
+                let tonic_request = Request::new(request);
                 let tonic_response = grpc_client
                     .fetch_docs(tonic_request)
                     .await

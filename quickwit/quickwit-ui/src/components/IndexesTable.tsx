@@ -46,15 +46,15 @@ const IndexesTable = ({ indexesMetadata }: Readonly<{indexesMetadata: IndexMetad
         <TableBody>
           {indexesMetadata.map((indexMetadata) => (
             <TableRow
-              key={indexMetadata.index_id}
+              key={indexMetadata.index_config.index_id}
               sx={{ '&:last-child td, &:last-child th': { border: 0 }, cursor: "pointer"}}
               hover={true}
-              onClick={() => handleClick(indexMetadata.index_id)}
+              onClick={() => handleClick(indexMetadata.index_config.index_id)}
             >
               <TableCell component="th" scope="row">
-                {indexMetadata.index_id}
+                {indexMetadata.index_config.index_id}
               </TableCell>
-              <TableCell align="left">{indexMetadata.index_uri}</TableCell>
+              <TableCell align="left">{indexMetadata.index_config.index_uri}</TableCell>
               <TableCell align="left">{ dayjs.unix(indexMetadata.create_timestamp).utc().format("YYYY/MM/DD HH:MM") }</TableCell>
               <TableCell align="left">{ dayjs.unix(indexMetadata.update_timestamp).utc().format("YYYY/MM/DD HH:MM") }</TableCell>
               <TableCell align="left">{ indexMetadata.sources?.length || 'None'}</TableCell>

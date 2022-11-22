@@ -33,7 +33,7 @@ use quickwit_metastore::checkpoint::{
 };
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::{
-    BaseConsumer, Consumer, ConsumerContext, DefaultConsumerContext, Rebalance, RebalanceProtocol,
+    BaseConsumer, Consumer, ConsumerContext, DefaultConsumerContext, Rebalance,
 };
 use rdkafka::error::KafkaError;
 use rdkafka::message::BorrowedMessage;
@@ -219,7 +219,6 @@ pub struct KafkaSource {
     state: KafkaSourceState,
     backfill_mode_enabled: bool,
     events_rx: mpsc::Receiver<KafkaEvent>,
-    consumer: Arc<RdKafkaConsumer>,
     poll_loop_jh: JoinHandle<()>,
     publish_lock: PublishLock,
 }
@@ -261,7 +260,7 @@ impl KafkaSource {
             .get("max.poll.interval.ms")?
             .parse::<u64>()?;
 
-        let poll_loop_jh = spawn_consumer_poll_loop(consumer.clone(), topic.clone(), events_tx);
+        let poll_loop_jh = spawn_consumer_poll_loop(consumer, topic.clone(), events_tx);
         let publish_lock = PublishLock::default();
 
         info!(
@@ -286,18 +285,9 @@ impl KafkaSource {
             state: KafkaSourceState::default(),
             backfill_mode_enabled,
             events_rx,
-            consumer,
             poll_loop_jh,
             publish_lock,
         })
-    }
-
-    fn rebalance_protocol(&self) -> &str {
-        match self.consumer.rebalance_protocol() {
-            RebalanceProtocol::None => "unknown", // The consumer has not joined the group yet.
-            RebalanceProtocol::Eager => "eager",
-            RebalanceProtocol::Cooperative => "cooperative",
-        }
     }
 
     async fn process_message(
@@ -400,7 +390,6 @@ impl KafkaSource {
             source_id=%self.ctx.source_config.source_id,
             topic=%self.topic,
             partitions=?partitions,
-            rebalance_protocol=%self.rebalance_protocol(),
             "New partition assignment after rebalance.",
         );
         assignment_tx
@@ -545,11 +534,6 @@ impl Source for KafkaSource {
         _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         self.poll_loop_jh.abort();
-
-        let consumer = self.consumer.clone();
-        spawn_blocking(move || {
-            consumer.unsubscribe();
-        });
         Ok(())
     }
 
@@ -591,7 +575,7 @@ impl Source for KafkaSource {
 // blocking tokio task and handle the rebalance events via message passing between the rebalance
 // callback and the source.
 fn spawn_consumer_poll_loop(
-    consumer: Arc<RdKafkaConsumer>,
+    consumer: RdKafkaConsumer,
     topic: String,
     events_tx: mpsc::Sender<KafkaEvent>,
 ) -> JoinHandle<()> {
@@ -675,7 +659,7 @@ fn create_consumer(
     source_id: &str,
     params: KafkaSourceParams,
     events_tx: mpsc::Sender<KafkaEvent>,
-) -> anyhow::Result<(ClientConfig, Arc<RdKafkaConsumer>)> {
+) -> anyhow::Result<(ClientConfig, RdKafkaConsumer)> {
     let mut client_config = parse_client_params(params.client_params)?;
 
     // Group ID is limited to 255 characters.
@@ -697,7 +681,7 @@ fn create_consumer(
         })
         .context("Failed to create Kafka consumer.")?;
 
-    Ok((client_config, Arc::new(consumer)))
+    Ok((client_config, consumer))
 }
 
 fn parse_client_log_level(client_log_level: Option<String>) -> anyhow::Result<RDKafkaLogLevel> {

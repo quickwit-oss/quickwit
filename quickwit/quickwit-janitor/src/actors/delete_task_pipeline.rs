@@ -182,7 +182,7 @@ impl DeleteTaskPipeline {
         let throughput_limit: f64 = index_config
             .indexing_settings
             .resources
-            .max_janitor_write_throughput
+            .max_merge_write_throughput
             .as_ref()
             .map(|bytes_per_sec| bytes_per_sec.get_bytes() as f64)
             .unwrap_or(f64::INFINITY);
@@ -326,16 +326,9 @@ mod tests {
                 type: i64
                 fast: true
         "#;
-        let metastore_uri = "ram:///delete-pipeline";
-        let test_sandbox = TestSandbox::create(
-            index_id,
-            doc_mapping_yaml,
-            "{}",
-            &["body"],
-            Some(metastore_uri),
-        )
-        .await
-        .unwrap();
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"])
+            .await
+            .unwrap();
         let docs = vec![
             serde_json::json!({"body": "info", "ts": 0 }),
             serde_json::json!({"body": "info", "ts": 0 }),
@@ -427,16 +420,9 @@ mod tests {
                 type: i64
                 fast: true
         "#;
-        let metastore_uri = "ram:///delete-pipeline";
-        let test_sandbox = TestSandbox::create(
-            index_id,
-            doc_mapping_yaml,
-            "{}",
-            &["body"],
-            Some(metastore_uri),
-        )
-        .await
-        .unwrap();
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"])
+            .await
+            .unwrap();
         let metastore = test_sandbox.metastore();
         let mut mock_search_service = MockSearchService::new();
         mock_search_service

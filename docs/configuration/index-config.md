@@ -20,7 +20,7 @@ The index configuration format is YAML. When a key is absent from the configurat
 Here is a complete example suited for the HDFS logs dataset:
 
 ```yaml
-version: 0 # File format version.
+version: 3 # File format version.
 
 index_id: "hdfs"
 
@@ -175,7 +175,7 @@ The `datetime` type handles dates and datetimes. Quickwit supports multiple inpu
 
 - `unix_timestamp`: parse Unix timestamp values. Timestamp values come in different precision, namely: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. Quickwit is capable of inferring the precision from the value. Because of this feature, Quickwit only supports timestamp values ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`.
 
-When a `datetime` field is stored as a fast field, the `precision` parameter indicates the precision used to truncate the values before encoding and compressing them. The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`.
+The `precision` parameter indicates the precision used to truncate the values before encoding and compressing them. The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`. It only affects what is stored in fast fields when a `datetime` field is marked as fast field.
 
 :::info
 When specifying multiple input formats, the corresponding parsers are attempted in the order they are declared.
@@ -184,6 +184,11 @@ When specifying multiple input formats, the corresponding parsers are attempted 
 :::warning
 The timezone name format specifier (`%Z`) is not currently supported in `strptime` format.
 :::
+
+In addition, Quickwit support the `output_format` field option to specify how datetimes are represented in search result. This options supports the same value as input formats except for `Timestamp` which is replace by the following formats are for finer grained control:
+- `unix_timestamp_secs`: displays timestamps in seconds.
+- `unix_timestamp_millis`: displays timestamps in milliseconds.
+- `unix_timestamp_micros`: displays timestamps in microseconds.
 
 Example of a mapping for a datetime field:
 
@@ -195,6 +200,7 @@ input_formats:
   - rfc3339
   - unix_timestamp
   - "%Y %m %d %H:%M:%S.%f %z"
+output_format: unix_timestamp_secs
 stored: true
 indexed: true
 fast: true
@@ -206,10 +212,11 @@ precision: milliseconds
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | `input_formats` | Formats used to parse input dates | [`rfc3339`, `unix_timestamp`] |
+| `output_format` | Format used to display dates in search results | `rfc3339` |
 | `stored`        | Whether the field values are stored in the document store | `true` |
 | `indexed`       | Whether the field values are indexed | `true` |
 | `fast`          | Whether the field values are stored in a fast field | `false` |
-| `precision`     | The precision (`seconds`, `milliseconds`, or `microseconds`) used to store the fast values | `seconds` |
+| `precision`     | The precision (`seconds`, `milliseconds`, or `microseconds`) used to store the fast values. | `seconds` |
 
 #### `bool` type
 
@@ -292,6 +299,7 @@ type: json
 stored: true
 indexed: true
 tokenizer: "default"
+expand_dots: false
 ```
 
 **Parameters for JSON field**
@@ -303,6 +311,7 @@ tokenizer: "default"
 | `indexed`   | Whether value is indexed | `true` |
 | `tokenizer` | **Only affects strings in the json object**. Name of the `Tokenizer`, choices between `raw`, `default`, `en_stem` and `chinese_compatible` | `default` |
 | `record`    | **Only affects strings in the json object**. Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
+| `expand_dots`    | If true, json keys containing a `.` should be expanded. For instance, if `expand_dots` is set to true, `{"k8s.node.id": "node-2"}` will be indexed as if it was `{"k8s": {"node": {"id": "node2"}}}`. The benefit is that escaping the `.` will not be required at query time. In other words, `k8s.node.id:node2` will match the document. This does not impact the way the document is stored.  | `true` |
 
 Note that the `tokenizer` and the `record` have the same definition and the same effect as for the text field.
 
@@ -354,7 +363,7 @@ field_mappings:
 The `mode` describes how Quickwit should behave when it receives a field that is not defined in the field mapping.
 
 Quickwit offers you three different modes:
-- `lenient`: unmapped fields are dismissed by Quickwit.
+- `lenient` (default value): unmapped fields are dismissed by Quickwit.
 - `strict`: if a document contains a field that is not mapped, quickwit will dismiss it, and count it as an error.
 - `dynamic`: unmapped fields are gathered by Quickwit and handled as defined in the `dynamic_mapping` parameter.
 
@@ -365,6 +374,7 @@ Quickwit offers you three different modes:
 - stored: true
 - tokenizer: raw
 - record: basic
+- expand_dots: true
 ```
 
 The `dynamic` mode makes it possible to operate Quickwit in a schemaless manner, or with a partial schema.

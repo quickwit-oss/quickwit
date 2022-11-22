@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#![deny(clippy::disallowed_methods)]
+
 mod index;
 
 pub use index::{
@@ -47,7 +49,7 @@ mod tests {
                 type: text
         "#;
         let test_sandbox =
-            TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["title", "body"], None).await?;
+            TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["title", "body"]).await?;
         test_sandbox.add_documents(vec![
             serde_json::json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
         ]).await?;

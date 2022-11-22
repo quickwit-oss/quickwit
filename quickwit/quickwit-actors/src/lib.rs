@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#![deny(clippy::disallowed_methods)]
+
 //! quickwit-actors is a simplified actor framework for quickwit.
 //!
 //! It solves the following problem:
@@ -48,7 +50,7 @@ pub(crate) mod tests;
 mod universe;
 
 pub use actor::{Actor, ActorExitStatus, Handler};
-pub use actor_handle::{ActorHandle, Health, Supervisable};
+pub use actor_handle::{ActorHandle, Health, Healthz, Supervisable};
 pub use command::Command;
 pub use observation::{Observation, ObservationType};
 use quickwit_common::{KillSwitch, Progress, ProtectedZoneGuard};
