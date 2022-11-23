@@ -87,12 +87,10 @@ impl IndexConfigForSerialization {
         if let Some(retention_policy) = &self.retention_policy {
             retention_policy.validate()?;
 
-            if retention_policy.requires_timestamp_field()
-                && self.indexing_settings.timestamp_field.is_none()
-            {
+            if self.indexing_settings.timestamp_field.is_none() {
                 bail!(
-                    "Failed to validate index config. The retention policy cutoff reference \
-                     requires a timestamp field, but the indexing settings do not declare one."
+                    "Failed to validate index config. The retention policy requires a timestamp \
+                     field, but the indexing settings do not declare one."
                 );
             }
         }
@@ -209,6 +207,22 @@ mod test {
             "Index config merge policy `max_merge_factor` must be superior or equal to \
              `merge_factor`."
         );
+    }
+
+    #[test]
+    fn test_validate_retention_policy() {
+        // Not yet invalid, but we modify it right after this.
+        let mut invalid_index_config: IndexConfigForSerialization =
+            minimal_index_config_for_serialization();
+        invalid_index_config.retention_policy = Some(RetentionPolicy {
+            retention_period: "90 days".to_string(),
+            evaluation_schedule: "hourly".to_string(),
+        });
+        let validation_err = invalid_index_config
+            .validate_and_build(None)
+            .unwrap_err()
+            .to_string();
+        assert!(validation_err.contains("The retention policy requires a timestamp field"));
     }
 
     #[test]

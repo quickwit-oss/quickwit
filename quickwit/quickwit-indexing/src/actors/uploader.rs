@@ -266,7 +266,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         fail_point!("uploader:before");
-        let split_udpate_sender = self
+        let split_update_sender = self
             .split_update_mailbox
             .get_split_update_sender(ctx)
             .await?;
@@ -301,7 +301,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     if batch.publish_lock.is_dead() {
                         // TODO: Remove the junk right away?
                         info!("Splits' publish lock is dead.");
-                        split_udpate_sender.discard()?;
+                        split_update_sender.discard()?;
                         return Ok(());
                     }
 
@@ -354,7 +354,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                 );
 
                 split_udpate_sender.send(splits_update, &ctx_clone).await?;
-                // We explicitely drop it in order to force move the permit guard into the async
+                // We explicitly drop it in order to force move the permit guard into the async
                 // task.
                 mem::drop(permit_guard);
                 Result::<(), anyhow::Error>::Ok(())

@@ -787,14 +787,20 @@ mod tests {
         let indexing_pipeline = IndexingPipeline::new(indexing_pipeline_params);
         let (_indexing_pipeline_mailbox, indexing_pipeline_handler) =
             universe.spawn_builder().spawn(indexing_pipeline);
-        assert_eq!(indexing_pipeline_handler.observe().await.generation, 1);
+        let obs = indexing_pipeline_handler
+            .process_pending_and_observe()
+            .await;
+        assert_eq!(obs.generation, 1);
         // Let's shutdown the indexer, this will trigger the the indexing pipeline failure and the
         // restart.
         let indexer = universe.get::<Indexer>().into_iter().next().unwrap();
         indexer.send_message(Command::Quit).await.unwrap();
         tokio::time::sleep(Duration::from_secs(2)).await;
         // Check indexing pipeline has restarted.
-        assert_eq!(indexing_pipeline_handler.observe().await.generation, 2);
+        let obs = indexing_pipeline_handler
+            .process_pending_and_observe()
+            .await;
+        assert_eq!(obs.generation, 2);
         // Check that the merge pipeline is still up.
         assert_eq!(merge_pipeline_handler.harvest_health(), Health::Healthy);
         Ok(())

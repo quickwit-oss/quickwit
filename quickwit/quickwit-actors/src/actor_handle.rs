@@ -237,7 +237,7 @@ impl<A: Actor> ActorHandle<A> {
         &self,
         rx: oneshot::Receiver<Box<dyn Any + Send>>,
     ) -> Observation<A::ObservableState> {
-        let observable_state_or_timeout = timeout(crate::HEARTBEAT, rx).await;
+        let observable_state_or_timeout = timeout(crate::OBSERVE_TIMEOUT, rx).await;
         match observable_state_or_timeout {
             Ok(Ok(observable_state_any)) => {
                 let state: A::ObservableState = *observable_state_any
