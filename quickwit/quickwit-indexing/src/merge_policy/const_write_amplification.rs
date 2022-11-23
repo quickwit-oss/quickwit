@@ -161,9 +161,8 @@ impl MergePolicy for ConstWriteAmplificationMergePolicy {
         if split.num_docs >= self.split_num_docs_target {
             return true;
         }
-        if split.create_timestamp
-            >= OffsetDateTime::now_utc().unix_timestamp()
-                + self.config.maturity_period.as_secs() as i64
+        if OffsetDateTime::now_utc().unix_timestamp()
+            >= split.create_timestamp + self.config.maturity_period.as_secs() as i64
         {
             return true;
         }
@@ -203,8 +202,36 @@ mod tests {
     use rand::seq::SliceRandom;
 
     use super::ConstWriteAmplificationMergePolicy;
+    use crate::merge_policy::tests::create_splits;
     use crate::merge_policy::MergeOperation;
     use crate::MergePolicy;
+
+    #[test]
+    fn test_split_is_mature() {
+        let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
+        let split = create_splits(vec![9_000_000]).into_iter().next().unwrap();
+        // Split under max_merge_docs, num_merge_ops < max_merge_ops and created before now() -
+        // maturity_period is not mature.
+        assert!(!merge_policy.is_mature(&split));
+        {
+            // Split with docs > max_merge_docs is mature.
+            let mut mature_split = split.clone();
+            mature_split.num_docs = merge_policy.split_num_docs_target + 1;
+            assert!(merge_policy.is_mature(&mature_split));
+        }
+        {
+            // Split with create_timestamp >= now + maturity duration is mature
+            let mut mature_split = split.clone();
+            mature_split.create_timestamp -= merge_policy.config.maturity_period.as_secs() as i64;
+            assert!(merge_policy.is_mature(&mature_split));
+        }
+        {
+            // Split with num_merge_ops >= max_merge_ops is mature
+            let mut mature_split = split.clone();
+            mature_split.num_merge_ops = merge_policy.config.max_merge_ops;
+            assert!(merge_policy.is_mature(&mature_split));
+        }
+    }
 
     #[test]
     fn test_const_write_amplification_merge_policy_empty() {

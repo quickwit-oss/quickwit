@@ -376,19 +376,22 @@ mod tests {
     #[test]
     fn test_split_is_mature() {
         let merge_policy = StableLogMergePolicy::default();
-        // Split under max_merge_docs is not mature.
-        let mut split = create_splits(vec![9_000_000]).into_iter().next().unwrap();
+        // Split under max_merge_docs and created before now() - maturity_period is not mature.
+        let split = create_splits(vec![9_000_000]).into_iter().next().unwrap();
         assert!(!merge_policy.is_mature(&split));
-        // Split under max_merge_docs is not mature.
-        assert!(!merge_policy.is_mature(&split));
-        // Split with docs > max_merge_docs is mature.
-        split.num_docs = merge_policy.split_num_docs_target + 1;
-        assert!(merge_policy.is_mature(&split));
-        // Split under max_merge_docs but with create_timestamp >= now + maturity duration is mature
-        let mut split = create_splits(vec![9_000_000]).into_iter().next().unwrap();
-        assert!(!merge_policy.is_mature(&split));
-        split.create_timestamp -= merge_policy.config.maturity_period.as_secs() as i64;
-        assert!(merge_policy.is_mature(&split));
+        {
+            // Split with docs > max_merge_docs is mature.
+            let mut mature_split = split.clone();
+            mature_split.num_docs = merge_policy.split_num_docs_target + 1;
+            assert!(merge_policy.is_mature(&mature_split));
+        }
+        {
+            // Split under max_merge_docs but with create_timestamp >= now + maturity duration is
+            // mature.
+            let mut mature_split = split.clone();
+            mature_split.create_timestamp -= merge_policy.config.maturity_period.as_secs() as i64;
+            assert!(merge_policy.is_mature(&mature_split));
+        }
     }
 
     #[test]

@@ -33,7 +33,7 @@ pub struct ConstWriteAmplificationMergePolicyConfig {
     /// Maximum number of merges that a given split should undergo.
     #[serde(default = "default_max_merge_ops")]
     pub max_merge_ops: usize,
-    /// Maximum number of merges that a given split should undergo.
+    /// Period since the split `create_timestamp` before it becomes mature.
     #[serde(default = "default_maturity_period")]
     #[serde(deserialize_with = "parse_duration")]
     #[serde(serialize_with = "serialize_duration")]
@@ -63,7 +63,7 @@ pub struct StableLogMergePolicyConfig {
     /// Maximum number of splits that can be merged together in a single merge operation.
     #[serde(default = "default_max_merge_factor")]
     pub max_merge_factor: usize,
-    /// Maximum number of merges that a given split should undergo.
+    /// Period since the split `create_timestamp` before it becomes mature.
     #[serde(default = "default_maturity_period")]
     #[serde(deserialize_with = "parse_duration")]
     #[serde(serialize_with = "serialize_duration")]
