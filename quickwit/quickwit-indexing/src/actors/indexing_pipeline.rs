@@ -184,7 +184,7 @@ impl IndexingPipeline {
         let mut failure_or_unhealthy_actors: Vec<&str> = Default::default();
         let mut success_actors: Vec<&str> = Default::default();
         for supervisable in self.supervisables() {
-            match supervisable.health() {
+            match supervisable.harvest_health() {
                 Health::Healthy => {
                     // At least one other actor is running.
                     healthy_actors.push(supervisable.name());
@@ -796,7 +796,7 @@ mod tests {
         // Check indexing pipeline has restarted.
         assert_eq!(indexing_pipeline_handler.observe().await.generation, 2);
         // Check that the merge pipeline is still up.
-        assert_eq!(merge_pipeline_handler.health(), Health::Healthy);
+        assert_eq!(merge_pipeline_handler.harvest_health(), Health::Healthy);
         Ok(())
     }
 }
