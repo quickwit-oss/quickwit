@@ -27,16 +27,15 @@ use once_cell::sync::OnceCell;
 use quickwit_common::uri::Uri;
 use regex::Regex;
 
-mod config;
 mod config_value;
 mod index_config;
 pub mod merge_policy_config;
+mod quickwit_config;
 mod qw_env_vars;
 pub mod service;
 mod source_config;
 mod templating;
 
-pub use config::{IndexerConfig, QuickwitConfig, SearcherConfig, DEFAULT_QW_CONFIG_PATH};
 // We export that one for backward compatibility.
 // See #2048
 pub use index_config::{
@@ -50,6 +49,10 @@ pub use source_config::{
     SourceParams, VecSourceParams, VoidSourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 use tracing::warn;
+
+pub use crate::quickwit_config::{
+    IndexerConfig, QuickwitConfig, SearcherConfig, DEFAULT_QW_CONFIG_PATH,
+};
 
 fn is_false(val: &bool) -> bool {
     !*val
@@ -69,29 +72,6 @@ pub fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
         "{label} identifier `{value}` is invalid. Identifiers must match the following regular \
          expression: `^[a-zA-Z][a-zA-Z0-9-_]{{2,254}}$`."
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::validate_identifier;
-
-    #[test]
-    fn test_validate_identifier() {
-        validate_identifier("Cluster ID", "").unwrap_err();
-        validate_identifier("Cluster ID", "-").unwrap_err();
-        validate_identifier("Cluster ID", "_").unwrap_err();
-        validate_identifier("Cluster ID", "f").unwrap_err();
-        validate_identifier("Cluster ID", "fo").unwrap_err();
-        validate_identifier("Cluster ID", "_fo").unwrap_err();
-        validate_identifier("Cluster ID", "_foo").unwrap_err();
-        validate_identifier("Cluster ID", "foo").unwrap();
-        validate_identifier("Cluster ID", "f-_").unwrap();
-
-        assert!(validate_identifier("Cluster ID", "foo!")
-            .unwrap_err()
-            .to_string()
-            .contains("Cluster ID identifier `foo!` is invalid."));
-    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -167,4 +147,27 @@ impl FromStr for ConfigFormat {
 pub trait TestableForRegression: Serialize + DeserializeOwned {
     fn sample_for_regression() -> Self;
     fn test_equality(&self, other: &Self);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_identifier;
+
+    #[test]
+    fn test_validate_identifier() {
+        validate_identifier("Cluster ID", "").unwrap_err();
+        validate_identifier("Cluster ID", "-").unwrap_err();
+        validate_identifier("Cluster ID", "_").unwrap_err();
+        validate_identifier("Cluster ID", "f").unwrap_err();
+        validate_identifier("Cluster ID", "fo").unwrap_err();
+        validate_identifier("Cluster ID", "_fo").unwrap_err();
+        validate_identifier("Cluster ID", "_foo").unwrap_err();
+        validate_identifier("Cluster ID", "foo").unwrap();
+        validate_identifier("Cluster ID", "f-_").unwrap();
+
+        assert!(validate_identifier("Cluster ID", "foo!")
+            .unwrap_err()
+            .to_string()
+            .contains("Cluster ID identifier `foo!` is invalid."));
+    }
 }

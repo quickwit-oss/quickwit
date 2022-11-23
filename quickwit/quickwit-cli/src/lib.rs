@@ -30,7 +30,7 @@ use quickwit_common::run_checklist;
 use quickwit_common::runtimes::RuntimesConfiguration;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{QuickwitConfig, SourceConfig};
+use quickwit_config::{ConfigFormat, QuickwitConfig, SourceConfig};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
@@ -91,8 +91,13 @@ pub fn start_actor_runtimes(services: &HashSet<QuickwitService>) -> anyhow::Resu
 }
 
 async fn load_quickwit_config(config_uri: &Uri) -> anyhow::Result<QuickwitConfig> {
-    let config_content = load_file(config_uri).await?;
-    let config = QuickwitConfig::load(config_uri, config_content.as_slice()).await?;
+    let config_content = load_file(config_uri)
+        .await
+        .context("Failed to load quickwit config.")?;
+    let config_format = ConfigFormat::sniff_from_uri(config_uri)?;
+    let config = QuickwitConfig::load(config_format, config_content.as_slice())
+        .await
+        .with_context(|| format!("Failed to deserialize quickwit config `{config_uri}`."))?;
     info!(config_uri=%config_uri, config=?config, "Loaded Quickwit config.");
     Ok(config)
 }
