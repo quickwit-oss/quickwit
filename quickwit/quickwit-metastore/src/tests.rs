@@ -2103,7 +2103,7 @@ pub mod test_suite {
             assert_eq!(split_ids, to_hash_set(&["list-splits-five"]));
 
             // Artificially increase the create_timestamp
-            sleep(Duration::from_secs(2)).await;
+            sleep(Duration::from_secs(1)).await;
             // add a split without tag
             let split_metadata_6 = SplitMetadata {
                 footer_offsets: 1000..2000,
@@ -2182,9 +2182,8 @@ pub mod test_suite {
                 ])
             );
 
-            let select_timestamp = OffsetDateTime::now_utc().unix_timestamp() - 1;
-            let query =
-                ListSplitsQuery::for_index(index_id).with_update_timestamp_gte(select_timestamp);
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_update_timestamp_gte(split_metadata_6.create_timestamp);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
@@ -2192,8 +2191,8 @@ pub mod test_suite {
                 .collect();
             assert_eq!(split_ids, to_hash_set(&["list-splits-six"]));
 
-            let query =
-                ListSplitsQuery::for_index(index_id).with_create_timestamp_lte(select_timestamp);
+            let query = ListSplitsQuery::for_index(index_id)
+                .with_create_timestamp_lt(split_metadata_6.create_timestamp);
             let splits = metastore.list_splits(query).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()

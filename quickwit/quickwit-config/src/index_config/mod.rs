@@ -74,18 +74,13 @@ pub struct IndexingResources {
     pub __num_threads_deprecated: IgnoredAny, // DEPRECATED
     #[serde(default = "IndexingResources::default_heap_size")]
     pub heap_size: Byte,
-    /// Sets the maximum write IO throughput for the merge pipeline,
-    /// in bytes per secs. On hardware where IO is limited, this parameter can help limiting
-    /// the impact of merges on indexing.
+    /// Sets the maximum write IO throughput in bytes/sec for the merge and delete pipelines.
+    /// The IO limit is applied both to the downloader and to the merge executor.
+    /// On hardware where IO is limited, this parameter can help limiting the impact of
+    /// merges/deletes on indexing.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_merge_write_throughput: Option<Byte>,
-    /// Sets the maximum write IO throughput for the janitor, in bytes per secs.
-    /// On hardware where IO is limited, this parameter can help limiting
-    /// the impact on indexing.
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_janitor_write_throughput: Option<Byte>,
 }
 
 impl PartialEq for IndexingResources {
@@ -113,7 +108,6 @@ impl Default for IndexingResources {
         Self {
             heap_size: Self::default_heap_size(),
             max_merge_write_throughput: None,
-            max_janitor_write_throughput: None,
             __num_threads_deprecated: IgnoredAny,
         }
     }
@@ -626,7 +620,7 @@ impl TestableForRegression for IndexConfig {
         };
         IndexConfig {
             index_id: "my-index".to_string(),
-            index_uri: Uri::from_well_formed("s3://quickwit-indexes/my-index".to_string()),
+            index_uri: Uri::from_well_formed("s3://quickwit-indexes/my-index"),
             doc_mapping,
             indexing_settings,
             retention_policy,
@@ -714,7 +708,7 @@ mod tests {
         let index_config = load_index_config_from_user_config(
             config_format,
             file.as_bytes(),
-            &Uri::from_well_formed("s3://defaultbucket/".to_string()),
+            &Uri::from_well_formed("s3://defaultbucket/"),
         )
         .unwrap();
         assert_eq!(index_config.doc_mapping.field_mappings.len(), 5);
@@ -799,7 +793,7 @@ mod tests {
 
     #[test]
     fn test_index_config_default_values() {
-        let default_index_root_uri = Uri::from_well_formed("s3://defaultbucket/".to_string());
+        let default_index_root_uri = Uri::from_well_formed("s3://defaultbucket/");
         {
             let index_config_filepath = get_index_config_filepath("minimal-hdfs-logs.yaml");
             let file_content = std::fs::read_to_string(&index_config_filepath).unwrap();
@@ -884,7 +878,7 @@ mod tests {
         let minimal_config: IndexConfig = load_index_config_from_user_config(
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
-            &Uri::from_well_formed("s3://my-index".to_string()),
+            &Uri::from_well_formed("s3://my-index"),
         )
         .unwrap();
         assert_eq!(minimal_config.doc_mapping.mode, ModeType::Lenient);

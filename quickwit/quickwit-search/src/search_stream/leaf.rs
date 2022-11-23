@@ -142,7 +142,7 @@ async fn leaf_search_stream_single_split(
     }
 
     let search_request = Arc::new(SearchRequest::from(stream_request.clone()));
-    let (query, warmup_info) = doc_mapper.query(split_schema.clone(), &search_request)?;
+    let (query, mut warmup_info) = doc_mapper.query(split_schema.clone(), &search_request)?;
     let reader = index
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
@@ -161,15 +161,14 @@ async fn leaf_search_stream_single_split(
     let requires_scoring =
         matches!(&search_request.sort_by_field, Some(field_name) if field_name == "_score");
 
-    warmup(
-        &searcher,
-        query.as_ref(),
-        &request_fields.fast_fields_for_request(timestamp_filter_builder_opt.as_ref()),
-        &warmup_info.term_dict_field_names,
-        &warmup_info.posting_field_names,
-        requires_scoring,
-    )
-    .await?;
+    // TODO no test fail if this line get removed
+    warmup_info.field_norms |= requires_scoring;
+
+    let fast_field_names =
+        request_fields.fast_fields_for_request(timestamp_filter_builder_opt.as_ref());
+    warmup_info.fast_field_names.extend(fast_field_names);
+
+    warmup(&searcher, &warmup_info).await?;
 
     let span = info_span!(
         "collect_fast_field",
@@ -462,7 +461,6 @@ mod tests {
             doc_mapping_yaml,
             indexing_settings_yaml,
             &["body"],
-            None,
         )
         .await?;
 
@@ -536,7 +534,6 @@ mod tests {
             doc_mapping_yaml,
             indexing_settings_yaml,
             &["body"],
-            None,
         )
         .await?;
         let mut docs = vec![];
@@ -608,8 +605,7 @@ mod tests {
                 tokenizer: raw
                 fast: true
         "#;
-        let test_sandbox =
-            TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"], None).await?;
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
 
         test_sandbox
             .add_documents(vec![json!({"body": "body", "app": "my-app"})])
@@ -679,7 +675,6 @@ mod tests {
             doc_mapping_yaml,
             indexing_settings_yaml,
             &["body"],
-            None,
         )
         .await?;
 
