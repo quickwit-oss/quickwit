@@ -22,7 +22,7 @@ use std::collections::{BinaryHeap, HashSet};
 use std::sync::Arc;
 
 use itertools::Itertools;
-use quickwit_doc_mapper::{DocMapper, SortBy, SortOrder};
+use quickwit_doc_mapper::{DocMapper, SortBy, SortOrder, WarmupInfo};
 use quickwit_proto::{LeafSearchResponse, PartialHit, SearchRequest};
 use tantivy::aggregation::agg_req::{
     get_fast_field_names, get_term_dict_field_names, Aggregations,
@@ -288,6 +288,14 @@ impl QuickwitCollector {
             term_dict_field_names.extend(get_term_dict_field_names(aggregate));
         }
         term_dict_field_names
+    }
+    pub fn warmup_info(&self) -> WarmupInfo {
+        WarmupInfo {
+            term_dict_field_names: self.term_dict_field_names(),
+            fast_field_names: self.fast_field_names(),
+            field_norms: self.requires_scoring(),
+            ..WarmupInfo::default()
+        }
     }
 }
 
