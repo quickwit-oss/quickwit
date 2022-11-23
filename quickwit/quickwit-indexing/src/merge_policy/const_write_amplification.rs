@@ -200,6 +200,7 @@ mod tests {
 
     use quickwit_metastore::SplitMetadata;
     use rand::seq::SliceRandom;
+    use time::OffsetDateTime;
 
     use super::ConstWriteAmplificationMergePolicy;
     use crate::merge_policy::tests::create_splits;
@@ -263,6 +264,7 @@ mod tests {
                 split_id: format!("split-{i}"),
                 num_docs: 1_000,
                 num_merge_ops: 1,
+                create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
                 ..Default::default()
             })
             .collect();
@@ -283,6 +285,7 @@ mod tests {
                     split_id: format!("split-{i}"),
                     num_docs: 1_000,
                     num_merge_ops: 1,
+                    create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
                     ..Default::default()
                 })
                 .collect();
@@ -297,12 +300,13 @@ mod tests {
     #[test]
     fn test_const_write_merge_policy_older_first() {
         let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
+        let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let mut splits: Vec<SplitMetadata> = (0..merge_policy.config.max_merge_factor)
             .map(|i| SplitMetadata {
                 split_id: format!("split-{i}"),
                 num_docs: 1_000,
-                create_timestamp: 1_664_000_000i64 + i as i64,
                 num_merge_ops: 1,
+                create_timestamp: now_timestamp + i as i64,
                 ..Default::default()
             })
             .collect();
@@ -332,6 +336,7 @@ mod tests {
                 split_id: format!("split-{i}"),
                 num_docs: (merge_policy.split_num_docs_target + 2) / 3,
                 num_merge_ops: 1,
+                create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
                 ..Default::default()
             })
             .collect();
