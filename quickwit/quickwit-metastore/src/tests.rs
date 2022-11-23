@@ -2780,9 +2780,7 @@ pub mod test_suite {
         }
     }
 
-    pub async fn test_metastore_stage_splits<
-        MetastoreToTest: Metastore + DefaultForTest,
-    >() {
+    pub async fn test_metastore_stage_splits<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let index_id = "stage-splits-bulk";
@@ -2824,21 +2822,20 @@ pub mod test_suite {
 
         // Stage a split on an index
         metastore
-            .stage_splits(index_id, vec![split_metadata_1.clone(), split_metadata_2.clone()])
+            .stage_splits(
+                index_id,
+                vec![split_metadata_1.clone(), split_metadata_2.clone()],
+            )
             .await
             .unwrap();
 
-        let query = ListSplitsQuery::for_index(index_id)
-            .with_split_state(SplitState::Staged);
+        let query = ListSplitsQuery::for_index(index_id).with_split_state(SplitState::Staged);
         let splits = metastore.list_splits(query).await.unwrap();
         let split_ids: HashSet<String> = splits
             .into_iter()
             .map(|meta| meta.split_id().to_string())
             .collect();
-        assert_eq!(
-            split_ids,
-            to_hash_set(&[split_id_1, split_id_2])
-        );
+        assert_eq!(split_ids, to_hash_set(&[split_id_1, split_id_2]));
 
         // Stage a existent-split on an index
         let result = metastore

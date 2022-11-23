@@ -390,7 +390,11 @@ impl Metastore for FileBackedMetastore {
         Ok(())
     }
 
-    async fn stage_splits(&self, index_id: &str, split_metadata_list: Vec<SplitMetadata>) -> MetastoreResult<()> {
+    async fn stage_splits(
+        &self,
+        index_id: &str,
+        split_metadata_list: Vec<SplitMetadata>,
+    ) -> MetastoreResult<()> {
         self.mutate(index_id, |index| {
             for split_metadata in split_metadata_list {
                 index.stage_split(split_metadata)?;
