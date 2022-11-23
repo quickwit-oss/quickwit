@@ -18,6 +18,6 @@ flowchart LR
         merge_uploader[MergeUploader] --inf--> merge_publisher
     end
     merge_planner[MergePlanner] --1--> merge_downloader
-    merge_publisher[MergePublisher] --0--> merge_planner
-    publisher[Publisher] --0--> merge_planner
+    merge_publisher[MergePublisher] --1--> merge_planner
+    publisher[Publisher] --1--> merge_planner
 ```
