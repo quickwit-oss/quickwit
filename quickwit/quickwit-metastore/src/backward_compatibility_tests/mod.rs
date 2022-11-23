@@ -39,12 +39,12 @@ use crate::{IndexMetadata, SplitMetadata};
 /// You can just reuse the same versioned object in that case.
 /// ```
 /// enum MyResource {
-///     #[serde(rename="v1")]
-///     V1(MyResourceV1),
-///     #[serde(rename="v2")]
-///     V2(MyResourceV1) //< there was no change in this version.
+///     #[serde(rename="0.1")]
+///     V0_1(MyResourceV1),
+///     #[serde(rename="0.2")]
+///     V0_2(MyResourceV1) //< there was no change in this version.
 /// }
-const GLOBAL_QUICKWIT_RESOURCE_VERSION: &str = "3";
+const GLOBAL_QUICKWIT_RESOURCE_VERSION: &str = "0.4";
 
 /// This test makes sure that the resource is using the current `GLOBAL_QUICKWIT_RESOURCE_VERSION`.
 fn test_global_version<T: Serialize>(serializable: &T) -> anyhow::Result<()> {
