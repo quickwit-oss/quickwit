@@ -632,6 +632,62 @@ impl Metastore for PostgresqlMetastore {
         Ok(())
     }
 
+    #[instrument(skip(self, split_metadata_list))]
+    async fn stage_splits(&self, index_id: &str, split_metadata_list: Vec<SplitMetadata>) -> MetastoreResult<()> {
+        let num_splits = split_metadata_list.len();
+
+        let mut split_ids = Vec::with_capacity(split_metadata_list.len());
+        let mut time_range_start_list = Vec::with_capacity(split_metadata_list.len());
+        let mut time_range_end_list = Vec::with_capacity(split_metadata_list.len());
+        let mut tags_list = Vec::with_capacity(split_metadata_list.len());
+        let mut split_metadata_json_list = Vec::with_capacity(split_metadata_list.len());
+        let mut delete_opstamps = Vec::with_capacity(split_metadata_list.len());
+
+        for split_metadata in split_metadata_list {
+            let split_metadata_json = serde_json::to_string(&split_metadata).map_err(|error| {
+                MetastoreError::JsonSerializeError {
+                    struct_name: "SplitMetadata".to_string(),
+                    message: error.to_string(),
+                }
+            })?;
+            let time_range_start = split_metadata
+                .time_range
+                .as_ref()
+                .map(|range| *range.start());
+            let time_range_end = split_metadata.time_range.map(|range| *range.end());
+            let tags: Vec<String> = split_metadata.tags.into_iter().collect();
+
+            split_ids.push(split_metadata.split_id);
+            time_range_start_list.push(time_range_start);
+            time_range_end_list.push(time_range_end);
+            tags_list.push(sqlx::types::Json(tags));
+            split_metadata_json_list.push(split_metadata_json);
+            delete_opstamps.push(split_metadata.delete_opstamp as i64);
+        }
+
+        sqlx::query(r#"
+            INSERT INTO splits
+                (split_id, time_range_start, time_range_end, tags, split_metadata_json, delete_opstamp, split_state, index_id)
+            SELECT *, $7, $8 FROM UNNEST ($1, $2, $3, $4, $5, $6);
+            "#)
+            .bind(split_ids)
+            .bind(time_range_start_list)
+            .bind(time_range_end_list)
+            .bind(tags_list)
+            .bind(split_metadata_json_list)
+            .bind(delete_opstamps)
+            .bind(index_id)
+            .bind(SplitState::Staged.as_str())
+            .execute(&self.connection_pool)
+            .await
+            .map_err(|error| convert_sqlx_err(index_id, error))?;
+
+        debug!(index_id=%index_id, num_splits=num_splits, "Splits successfully staged.");
+
+        self.update_index_update_timestamp(index_id).await;
+        Ok(())
+    }
+
     #[instrument(skip(self), fields(index_id=index_id))]
     async fn publish_splits<'a>(
         &self,
