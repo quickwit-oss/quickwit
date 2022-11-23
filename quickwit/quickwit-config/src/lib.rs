@@ -41,8 +41,7 @@ pub use config::{IndexerConfig, QuickwitConfig, SearcherConfig, DEFAULT_QW_CONFI
 // See #2048
 pub use index_config::{
     build_doc_mapper, load_index_config_from_user_config, DocMapping, IndexConfig,
-    IndexingResources, IndexingSettings, IndexingSettingsLegacy, RetentionPolicy,
-    RetentionPolicyCutoffReference, SearchSettings,
+    IndexingResources, IndexingSettings, IndexingSettingsLegacy, RetentionPolicy, SearchSettings,
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;

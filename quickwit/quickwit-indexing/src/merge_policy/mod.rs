@@ -24,6 +24,7 @@ mod stable_log_merge_policy;
 use std::fmt;
 use std::sync::Arc;
 
+pub(crate) use const_write_amplification::ConstWriteAmplificationMergePolicy;
 use itertools::Itertools;
 pub use nop_merge_policy::NopMergePolicy;
 use quickwit_config::merge_policy_config::MergePolicyConfig;
@@ -33,7 +34,6 @@ use serde::Serialize;
 pub(crate) use stable_log_merge_policy::StableLogMergePolicy;
 use tracing::{info_span, Span};
 
-use crate::merge_policy::const_write_amplification::ConstWriteAmplificationMergePolicy;
 use crate::new_split_id;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -397,6 +397,9 @@ pub mod tests {
             create_timestamp: 0,
             tags: BTreeSet::from_iter(vec!["tenant_id:1".to_string(), "tenant_id:2".to_string()]),
             footer_offsets: 0..100,
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
             ..Default::default()
         }
     }

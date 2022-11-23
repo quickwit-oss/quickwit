@@ -28,7 +28,6 @@ doc_mapping:
 
 retention:
   period: 90 days
-  cutoff_reference: split_timestamp_field
   schedule: daily
 
 indexing_settings:

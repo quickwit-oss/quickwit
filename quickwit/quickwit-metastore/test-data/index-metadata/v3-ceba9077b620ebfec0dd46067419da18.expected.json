@@ -72,7 +72,6 @@
       "timestamp_field": "timestamp"
     },
     "retention": {
-      "cutoff_reference": "publish_timestamp",
       "period": "90 days",
       "schedule": "daily"
     },
