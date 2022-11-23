@@ -25,7 +25,7 @@ The source parameters indicate how to connect to a data store and are specific t
 
 ## File source
 
-A file source reads data from a local file. The file must consist of JSON objects separated by a newline. As of version 0.3, compressed files (bz2, gzip, ...) and remote files (Amazon S3, HTTP, ...) are not supported.
+A file source reads data from a local file. The file must consist of JSON objects separated by a newline. As of version 0.4, compressed files (bz2, gzip, ...) and remote files (Amazon S3, HTTP, ...) are not supported.
 
 ### File source parameters
 
@@ -37,7 +37,7 @@ A file source reads data from a local file. The file must consist of JSON object
 
 ```yaml
 # Version of the index config file format
-version: 0
+version: 0.4
 
 # Sources
 sources:
@@ -97,7 +97,7 @@ Short max poll interval durations may cause a source to crash when back pressure
 
 ```yaml
 # Version of the index config file format
-version: 0
+version: 0.4
 
 # Sources
 sources:
@@ -156,7 +156,7 @@ If no region is specified, Quickwit will attempt to find one in multiple other l
 
 ```yaml
 # Version of the index config file format
-version: 0
+version: 0.4
 
 # Sources
 sources:

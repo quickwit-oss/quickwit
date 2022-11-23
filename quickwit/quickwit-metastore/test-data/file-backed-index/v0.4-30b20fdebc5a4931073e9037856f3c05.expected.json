@@ -92,7 +92,7 @@
           "message"
         ]
       },
-      "version": "3"
+      "version": "0.4"
     },
     "sources": [
       {
@@ -104,11 +104,11 @@
         },
         "source_id": "kafka-source",
         "source_type": "kafka",
-        "version": "3"
+        "version": "0.4"
       }
     ],
     "update_timestamp": 1789,
-    "version": "3"
+    "version": "0.4"
   },
   "splits": [
     {
@@ -137,8 +137,8 @@
       },
       "uncompressed_docs_size_in_bytes": 234234,
       "update_timestamp": 1789,
-      "version": "3"
+      "version": "0.4"
     }
   ],
-  "version": "3"
+  "version": "0.4"
 }

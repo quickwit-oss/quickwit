@@ -831,7 +831,7 @@ mod tests {
     #[should_panic(expected = "empty URI")]
     fn test_config_validates_uris() {
         let config_yaml = r#"
-            version: 3
+            version: 0.4
             index_id: hdfs-logs
             index_uri: ''
             doc_mapping: {}
@@ -842,7 +842,7 @@ mod tests {
     #[test]
     fn test_minimal_index_config_default_lenient() {
         let config_yaml = r#"
-            version: 3
+            version: 0.4
             index_id: hdfs-logs
             index_uri: "s3://my-index"
             doc_mapping: {}

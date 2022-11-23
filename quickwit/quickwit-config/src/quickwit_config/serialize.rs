@@ -128,14 +128,14 @@ pub async fn load_quickwit_config_with_env(
 #[derive(Debug, Deserialize)]
 #[serde(tag = "version")]
 enum VersionedQuickwitConfig {
-    #[serde(rename = "3")]
-    V3(QuickwitConfigBuilder),
+    #[serde(rename = "0.4")]
+    V0_4(QuickwitConfigBuilder),
 }
 
 impl From<VersionedQuickwitConfig> for QuickwitConfigBuilder {
     fn from(versioned_quickwit_config: VersionedQuickwitConfig) -> Self {
         match versioned_quickwit_config {
-            VersionedQuickwitConfig::V3(quickwit_config_builder) => quickwit_config_builder,
+            VersionedQuickwitConfig::V0_4(quickwit_config_builder) => quickwit_config_builder,
         }
     }
 }
@@ -480,7 +480,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_quickwit_config_default_values_minimal() {
-        let config_yaml = "version: 3";
+        let config_yaml = "version: 0.4";
         let config = load_quickwit_config_with_env(
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
@@ -528,7 +528,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_quickwit_config_env_var_override() {
-        let config_yaml = "version: 3";
+        let config_yaml = "version: 0.4";
         let mut env_vars = HashMap::new();
         env_vars.insert("QW_CLUSTER_ID".to_string(), "test-cluster".to_string());
         env_vars.insert("QW_NODE_ID".to_string(), "test-node".to_string());
@@ -610,7 +610,7 @@ mod tests {
     #[tokio::test]
     async fn test_quickwwit_config_default_values_storage() {
         let config_yaml = r#"
-            version: 3
+            version: 0.4
             node_id: "node1"
             metastore_uri: postgres://username:password@host:port/db
         "#;
@@ -632,7 +632,7 @@ mod tests {
     #[tokio::test]
     async fn test_quickwit_config_config_default_values_default_indexer_searcher_config() {
         let config_yaml = r#"
-            version: 3
+            version: 0.4
             metastore_uri: postgres://username:password@host:port/db
             data_dir: /opt/quickwit/data
         "#;
@@ -806,7 +806,7 @@ mod tests {
     async fn test_config_validates_uris() {
         {
             let config_yaml = r#"
-            version: 3
+            version: 0.4
             node_id: 1
             metastore_uri: ''
         "#;
@@ -820,7 +820,7 @@ mod tests {
         }
         {
             let config_yaml = r#"
-            version: 3
+            version: 0.4
             node_id: 1
             metastore_uri: postgres://username:password@host:port/db
             default_index_root_uri: ''
@@ -839,7 +839,7 @@ mod tests {
     async fn test_quickwit_config_data_dir_accepts_both_file_uris_and_file_paths() {
         {
             let config_yaml = r#"
-                version: 3
+                version: 0.4
                 data_dir: /opt/quickwit/data
             "#;
             let config = load_quickwit_config_with_env(
@@ -853,7 +853,7 @@ mod tests {
         }
         {
             let config_yaml = r#"
-                version: 3
+                version: 0.4
                 data_dir: file:///opt/quickwit/data
             "#;
             let config = load_quickwit_config_with_env(
@@ -867,7 +867,7 @@ mod tests {
         }
         {
             let config_yaml = r#"
-                version: 3
+                version: 0.4
                 data_dir: s3://indexes/foo
             "#;
             let error = load_quickwit_config_with_env(
