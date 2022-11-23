@@ -133,9 +133,15 @@ impl Metastore for InstrumentedMetastore {
         );
     }
 
-    async fn stage_splits(&self, index_id: &str, split_metadata_list: Vec<SplitMetadata>) -> MetastoreResult<()> {
+    async fn stage_splits(
+        &self,
+        index_id: &str,
+        split_metadata_list: Vec<SplitMetadata>,
+    ) -> MetastoreResult<()> {
         instrument!(
-            self.underlying.stage_splits(index_id, split_metadata_list).await,
+            self.underlying
+                .stage_splits(index_id, split_metadata_list)
+                .await,
             [stage_splits, index_id]
         );
     }
