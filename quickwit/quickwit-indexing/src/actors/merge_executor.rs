@@ -418,7 +418,7 @@ impl MergeExecutor {
                 num_docs,
                 uncompressed_docs_size_in_bytes,
                 delete_opstamp: last_delete_opstamp,
-                num_merge_ops: max_merge_ops(&[split]),
+                num_merge_ops: split.num_merge_ops,
             },
             index: merged_index,
             split_scratch_directory: merge_scratch_directory,
