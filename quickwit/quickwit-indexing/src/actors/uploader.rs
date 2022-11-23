@@ -353,7 +353,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     batch.parent_span,
                 );
 
-                split_udpate_sender.send(splits_update, &ctx_clone).await?;
+                split_update_sender.send(splits_update, &ctx_clone).await?;
                 // We explicitly drop it in order to force move the permit guard into the async
                 // task.
                 mem::drop(permit_guard);
