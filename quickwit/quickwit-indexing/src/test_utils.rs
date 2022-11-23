@@ -185,6 +185,11 @@ impl TestSandbox {
     pub fn doc_mapper(&self) -> Arc<dyn DocMapper> {
         self.doc_mapper.clone()
     }
+
+    /// Returns the index ID.
+    pub fn index_id(&self) -> &str {
+        &self.index_id
+    }
 }
 
 /// Mock split helper.

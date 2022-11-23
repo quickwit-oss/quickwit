@@ -26,7 +26,7 @@ use crate::split_metadata::utc_now_timestamp;
 use crate::SplitMetadata;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub(crate) struct SplitMetadataV3 {
+pub(crate) struct SplitMetadataV0_4 {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
     /// In reality, some information may be implicitly configured
@@ -83,11 +83,11 @@ pub(crate) struct SplitMetadataV3 {
     num_merge_ops: usize,
 }
 
-impl From<SplitMetadataV3> for SplitMetadata {
-    fn from(v1: SplitMetadataV3) -> Self {
-        let source_id = v1.source_id.unwrap_or_else(|| "unknown".to_string());
+impl From<SplitMetadataV0_4> for SplitMetadata {
+    fn from(v3: SplitMetadataV0_4) -> Self {
+        let source_id = v3.source_id.unwrap_or_else(|| "unknown".to_string());
 
-        let node_id = if let Some(node_id) = v1.node_id {
+        let node_id = if let Some(node_id) = v3.node_id {
             // The previous version encoded `v1.node_id` as `{node_id}/{pipeline_ord}`.
             // Since pipeline_ord is no longer needed, we only extract the `node_id` portion
             // to keep backward compatibility.  This has the advantage of avoiding a
@@ -102,26 +102,26 @@ impl From<SplitMetadataV3> for SplitMetadata {
         };
 
         SplitMetadata {
-            split_id: v1.split_id,
-            index_id: v1.index_id,
-            partition_id: v1.partition_id,
+            split_id: v3.split_id,
+            index_id: v3.index_id,
+            partition_id: v3.partition_id,
             source_id,
             node_id,
-            delete_opstamp: v1.delete_opstamp,
-            num_docs: v1.num_docs,
-            uncompressed_docs_size_in_bytes: v1.uncompressed_docs_size_in_bytes,
-            time_range: v1.time_range,
-            create_timestamp: v1.create_timestamp,
-            tags: v1.tags,
-            footer_offsets: v1.footer_offsets,
-            num_merge_ops: v1.num_merge_ops,
+            delete_opstamp: v3.delete_opstamp,
+            num_docs: v3.num_docs,
+            uncompressed_docs_size_in_bytes: v3.uncompressed_docs_size_in_bytes,
+            time_range: v3.time_range,
+            create_timestamp: v3.create_timestamp,
+            tags: v3.tags,
+            footer_offsets: v3.footer_offsets,
+            num_merge_ops: v3.num_merge_ops,
         }
     }
 }
 
-impl From<SplitMetadata> for SplitMetadataV3 {
+impl From<SplitMetadata> for SplitMetadataV0_4 {
     fn from(split: SplitMetadata) -> Self {
-        SplitMetadataV3 {
+        SplitMetadataV0_4 {
             split_id: split.split_id,
             index_id: split.index_id,
             partition_id: split.partition_id,
@@ -142,20 +142,20 @@ impl From<SplitMetadata> for SplitMetadataV3 {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedSplitMetadata {
-    #[serde(rename = "3")]
-    V3(SplitMetadataV3),
+    #[serde(rename = "0.4")]
+    V0_4(SplitMetadataV0_4),
 }
 
 impl From<VersionedSplitMetadata> for SplitMetadata {
     fn from(versioned_helper: VersionedSplitMetadata) -> Self {
         match versioned_helper {
-            VersionedSplitMetadata::V3(v3) => v3.into(),
+            VersionedSplitMetadata::V0_4(v0_4) => v0_4.into(),
         }
     }
 }
 
 impl From<SplitMetadata> for VersionedSplitMetadata {
     fn from(split_metadata: SplitMetadata) -> Self {
-        VersionedSplitMetadata::V3(split_metadata.into())
+        VersionedSplitMetadata::V0_4(split_metadata.into())
     }
 }

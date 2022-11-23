@@ -27,26 +27,26 @@ use crate::{IndexMetadata, Split};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedFileBackedIndex {
-    #[serde(rename = "3")]
-    V3(FileBackedIndexV3),
+    #[serde(rename = "0.4")]
+    V0_4(FileBackedIndexV0_4),
 }
 
 impl From<FileBackedIndex> for VersionedFileBackedIndex {
     fn from(index: FileBackedIndex) -> Self {
-        VersionedFileBackedIndex::V3(index.into())
+        VersionedFileBackedIndex::V0_4(index.into())
     }
 }
 
 impl From<VersionedFileBackedIndex> for FileBackedIndex {
     fn from(index: VersionedFileBackedIndex) -> Self {
         match index {
-            VersionedFileBackedIndex::V3(index) => index.into(),
+            VersionedFileBackedIndex::V0_4(v0_4) => v0_4.into(),
         }
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct FileBackedIndexV3 {
+pub(crate) struct FileBackedIndexV0_4 {
     #[serde(rename = "index")]
     metadata: IndexMetadata,
     splits: Vec<Split>,
@@ -54,7 +54,7 @@ pub(crate) struct FileBackedIndexV3 {
     delete_tasks: Vec<DeleteTask>,
 }
 
-impl From<FileBackedIndex> for FileBackedIndexV3 {
+impl From<FileBackedIndex> for FileBackedIndexV0_4 {
     fn from(index: FileBackedIndex) -> Self {
         Self {
             metadata: index.metadata,
@@ -72,8 +72,8 @@ impl From<FileBackedIndex> for FileBackedIndexV3 {
     }
 }
 
-impl From<FileBackedIndexV3> for FileBackedIndex {
-    fn from(mut index: FileBackedIndexV3) -> Self {
+impl From<FileBackedIndexV0_4> for FileBackedIndex {
+    fn from(mut index: FileBackedIndexV0_4) -> Self {
         // Override split index_id to support old SplitMetadata format.
         for split in index.splits.iter_mut() {
             if split.split_metadata.index_id.is_empty() {

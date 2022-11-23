@@ -15,7 +15,7 @@ As a user, you need to precisely define the list of fields to be ingested by Qui
 For instance, a reasonable mapping for an application log could be:
 
 ```yaml
-version: 0
+version: 0.4
 
 index_id: my_app
 
@@ -54,7 +54,7 @@ By default, this catch-all configuration indexes and stores all of these fields,
 A minimalist, yet perfectly valid and useful index configuration is then:
 
 ```yaml
-version: 0
+version: 0.4
 index_id: "my_dynamic_index"
 doc_mapping:
   mode: dynamic
@@ -99,7 +99,7 @@ Each event type comes with its own set of attributes. Declaring our mapping as t
 Instead, we can cherry-pick the fields that are common to all of the logs, and rely on dynamic mode to handle the rest.
 
 ```yaml
-version: 0
+version: 0.4
 index_id: "my_dynamic_index"
 doc_mapping:
   mode: dynamic
@@ -152,7 +152,7 @@ Quickwit 0.3 introduced a JSON field type to handle this use case.
 A good index configuration here could be:
 
 ```yaml
-version: 0
+version: 0.4
 index_id: "otel_logs"
 mode: lenient
 doc_mapping:
