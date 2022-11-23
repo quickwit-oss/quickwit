@@ -46,27 +46,27 @@ pub struct IngestApiService {
 /// The idea is to make sure that if the entire queue storage is lost,
 /// the old source checkpoint (stored in the metastore) do not apply.
 /// (See #2310)
-const PARTITION_ID: &str = "PARTITION_ID";
+const PARTITION_ID_PATH: &str = "partition_id";
 
-fn get_or_initialize_partition_id() -> crate::Result<String> {
-    // if let Some(partition_id_bytes) = db.get(PARTITION_ID)? {
-    // let partition_id: &str = std::str::from_utf8(&partition_id_bytes).map_err(|_| {
-    // let msg = format!("Partition key ({partition_id_bytes:?}) is not utf8");
-    // IngestApiError::Corruption { msg }
-    // })?;
-    // return Ok(partition_id.to_string());
-    // }
+async fn get_or_initialize_partition_id(dir_path: &Path) -> crate::Result<String> {
+    let partition_id_path = dir_path.join(PARTITION_ID_PATH);
+    if let Ok(partition_id_bytes) = tokio::fs::read(&partition_id_path).await {
+        let partition_id: &str = std::str::from_utf8(&partition_id_bytes).map_err(|_| {
+            let msg = format!("Partition key ({partition_id_bytes:?}) is not utf8");
+            IngestApiError::Corruption { msg }
+        })?;
+        return Ok(partition_id.to_string());
+    }
     // We add a prefix here to make sure we don't mistake it for a split id when reading logs.
-    // let partition_id = format!("ingest_partition_{}", Ulid::new());
-    // db.put(PARTITION_ID, partition_id.as_bytes())?;
-    // Ok(partition_id)
-    Ok("todo".to_string())
+    let partition_id = format!("ingest_partition_{}", Ulid::new());
+    tokio::fs::write(partition_id_path, partition_id.as_bytes()).await?;
+    Ok(partition_id)
 }
 
 impl IngestApiService {
     pub async fn with_queues_dir(queues_dir_path: &Path) -> crate::Result<Self> {
         let queues = Queues::open(queues_dir_path).await?;
-        let partition_id = get_or_initialize_partition_id()?;
+        let partition_id = get_or_initialize_partition_id(queues_dir_path).await?;
         info!(ingest_partition_id=%partition_id, "Ingest API partition id");
         Ok(IngestApiService {
             partition_id,
