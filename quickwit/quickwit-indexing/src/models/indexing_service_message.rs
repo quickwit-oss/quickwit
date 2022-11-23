@@ -20,6 +20,7 @@
 use quickwit_config::SourceConfig;
 
 use super::IndexingPipelineId;
+use crate::actors::MergePipelineId;
 
 #[derive(Debug)]
 pub struct SpawnPipelines {
@@ -52,16 +53,19 @@ pub struct ShutdownPipeline {
 /// server. This is mostly useful for ad-hoc indexing pipelines launched with `quickwit index
 /// ingest ..` and testing.
 #[derive(Debug)]
-pub struct DetachPipeline {
+pub struct DetachIndexingPipeline {
     pub pipeline_id: IndexingPipelineId,
+}
+
+#[derive(Debug)]
+/// Detaches a merge pipeline from the indexing service. The pipeline is no longer managed by the
+/// server. This is mostly useful for preventing the server killing an existing merge pipeline
+/// if a indexing pipeline is detached.
+pub struct DetachMergePipeline {
+    pub pipeline_id: MergePipelineId,
 }
 
 #[derive(Debug)]
 pub struct ObservePipeline {
-    pub pipeline_id: IndexingPipelineId,
-}
-
-#[derive(Debug)]
-pub struct SpawnMergePipeline {
     pub pipeline_id: IndexingPipelineId,
 }
