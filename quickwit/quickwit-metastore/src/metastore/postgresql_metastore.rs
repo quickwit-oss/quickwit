@@ -633,7 +633,11 @@ impl Metastore for PostgresqlMetastore {
     }
 
     #[instrument(skip(self, split_metadata_list))]
-    async fn stage_splits(&self, index_id: &str, split_metadata_list: Vec<SplitMetadata>) -> MetastoreResult<()> {
+    async fn stage_splits(
+        &self,
+        index_id: &str,
+        split_metadata_list: Vec<SplitMetadata>,
+    ) -> MetastoreResult<()> {
         let num_splits = split_metadata_list.len();
 
         let mut split_ids = Vec::with_capacity(split_metadata_list.len());

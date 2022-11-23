@@ -550,11 +550,10 @@ mod tests {
         mock_metastore
             .expect_stage_splits()
             .withf(move |index_id, metadata_list| -> bool {
-                let is_metadata_valid = metadata_list.iter()
-                    .all(|metadata| {
-                        vec!["test-split-1", "test-split-2"].contains(&metadata.split_id())
-                            && metadata.time_range == Some(1628203589..=1628203640)
-                    });
+                let is_metadata_valid = metadata_list.iter().all(|metadata| {
+                    vec!["test-split-1", "test-split-2"].contains(&metadata.split_id())
+                        && metadata.time_range == Some(1628203589..=1628203640)
+                });
 
                 (index_id == "test-index") && is_metadata_valid
             })
