@@ -2779,6 +2779,76 @@ pub mod test_suite {
             cleanup_index(&metastore, index_id).await;
         }
     }
+
+    pub async fn test_metastore_stage_splits<
+        MetastoreToTest: Metastore + DefaultForTest,
+    >() {
+        let metastore = MetastoreToTest::default_for_test().await;
+        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+        let index_id = "stage-splits-bulk";
+        let index_uri = format!("ram://indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
+
+        let split_id_1 = "stage-splits-bulk-1";
+        let split_metadata_1 = SplitMetadata {
+            footer_offsets: 1000..2000,
+            split_id: split_id_1.to_string(),
+            num_docs: 1,
+            uncompressed_docs_size_in_bytes: 2,
+            create_timestamp: current_timestamp,
+            delete_opstamp: 20,
+            ..Default::default()
+        };
+        let split_id_2 = "stage-splits-bulk-2";
+        let split_metadata_2 = SplitMetadata {
+            footer_offsets: 1000..2000,
+            split_id: split_id_2.to_string(),
+            num_docs: 1,
+            uncompressed_docs_size_in_bytes: 2,
+            create_timestamp: current_timestamp,
+            delete_opstamp: 10,
+            ..Default::default()
+        };
+
+        // Stage a splits on a non-existent index
+        let result = metastore
+            .stage_splits("non-existent-index", vec![split_metadata_1.clone()])
+            .await
+            .unwrap_err();
+        assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
+
+        metastore
+            .create_index(index_metadata.clone())
+            .await
+            .unwrap();
+
+        // Stage a split on an index
+        metastore
+            .stage_splits(index_id, vec![split_metadata_1.clone(), split_metadata_2.clone()])
+            .await
+            .unwrap();
+
+        let query = ListSplitsQuery::for_index(index_id)
+            .with_split_state(SplitState::Staged);
+        let splits = metastore.list_splits(query).await.unwrap();
+        let split_ids: HashSet<String> = splits
+            .into_iter()
+            .map(|meta| meta.split_id().to_string())
+            .collect();
+        assert_eq!(
+            split_ids,
+            to_hash_set(&[split_id_1, split_id_2])
+        );
+
+        // Stage a existent-split on an index
+        let result = metastore
+            .stage_splits(index_id, vec![split_metadata_1.clone()])
+            .await
+            .unwrap_err();
+        assert!(matches!(result, MetastoreError::InternalError { .. }));
+
+        cleanup_index(&metastore, index_id).await;
+    }
 }
 
 macro_rules! metastore_test_suite {
@@ -2938,6 +3008,12 @@ macro_rules! metastore_test_suite {
             async fn test_metastore_update_splits_delete_opstamp() {
                 let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_update_splits_delete_opstamp::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_stage_splits() {
+                let _ = tracing_subscriber::fmt::try_init();
+                crate::tests::test_suite::test_metastore_stage_splits::<$metastore_type>().await;
             }
         }
     }
