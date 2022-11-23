@@ -40,7 +40,7 @@ pub use indexing_directory::{IndexingDirectory, WeakIndexingDirectory};
 pub use indexing_pipeline_id::IndexingPipelineId;
 pub use indexing_service_message::{
     DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, ShutdownPipeline,
-    ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
+    ShutdownPipelines, SpawnPipeline, SpawnPipelines,
 };
 pub use indexing_statistics::IndexingStatistics;
 pub use merge_planner_message::NewSplits;
