@@ -866,7 +866,7 @@ mod tests {
         assert_eq!(observation.num_running_merge_pipelines, 1);
 
         // Test `detach_merge_pipeline`
-        let pipeline = indexing_server_mailbox
+        let _pipeline = indexing_server_mailbox
             .ask_for_res(DetachMergePipeline {
                 pipeline_id: MergePipelineId::from(&pipeline_id),
             })
