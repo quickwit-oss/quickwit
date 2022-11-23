@@ -34,14 +34,7 @@ use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::SourceConfig;
 use quickwit_proto::metastore_api::metastore_api_service_client::MetastoreApiServiceClient;
-use quickwit_proto::metastore_api::{
-    AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, DeleteQuery, DeleteSourceRequest,
-    DeleteSplitsRequest, DeleteTask, IndexMetadataRequest, LastDeleteOpstampRequest,
-    ListAllSplitsRequest, ListDeleteTasksRequest, ListIndexesMetadatasRequest, ListSplitsRequest,
-    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest,
-    ResetSourceCheckpointRequest, StageSplitRequest, ToggleSourceRequest,
-    UpdateSplitsDeleteOpstampRequest,
-};
+use quickwit_proto::metastore_api::{AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, DeleteQuery, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, IndexMetadataRequest, LastDeleteOpstampRequest, ListAllSplitsRequest, ListDeleteTasksRequest, ListIndexesMetadatasRequest, ListSplitsRequest, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitRequest, StageSplitsRequest, ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest};
 use quickwit_proto::tonic::codegen::InterceptedService;
 use quickwit_proto::tonic::transport::{Channel, Endpoint};
 use quickwit_proto::tonic::Status;
@@ -253,6 +246,27 @@ impl Metastore for MetastoreGrpcClient {
         self.underlying
             .clone()
             .stage_split(tonic_request)
+            .await
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+        Ok(())
+    }
+
+    /// Stages several splits.
+    async fn stage_splits(&self, index_id: &str, split_metadata_list: Vec<SplitMetadata>) -> MetastoreResult<()> {
+        let split_metadata_list_serialized_json =
+            serde_json::to_string(&split_metadata_list).map_err(|error| {
+                MetastoreError::JsonSerializeError {
+                    struct_name: "Vec<SplitMetadata>".to_string(),
+                    message: error.to_string(),
+                }
+            })?;
+        let tonic_request = StageSplitsRequest {
+            index_id: index_id.to_string(),
+            split_metadata_list_serialized_json,
+        };
+        self.underlying
+            .clone()
+            .stage_splits(tonic_request)
             .await
             .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
         Ok(())

@@ -35,6 +35,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::Mutex;
 use tokio::time::Instant;
+use quickwit_proto::tonic::{Request, Response, Status};
 
 struct Inner {
     start: Instant,
@@ -145,6 +146,13 @@ impl MetastoreApiService for MetastoreProxyService {
         let mut lock = self.inner.lock().await;
         lock.record(request.get_ref().clone()).await.unwrap();
         let resp = lock.client.stage_split(request).await?;
+        Ok(resp)
+    }
+    /// Stages several splits.
+    async fn stage_splits(&self, request: Request<StageSplitsRequest>) -> Result<Response<SplitResponse>, Status> {
+        let mut lock = self.inner.lock().await;
+        lock.record(request.get_ref().clone()).await.unwrap();
+        let resp = lock.client.stage_splits(request).await?;
         Ok(resp)
     }
     /// Publishes split.

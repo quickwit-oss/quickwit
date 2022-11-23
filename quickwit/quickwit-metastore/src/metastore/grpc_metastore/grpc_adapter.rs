@@ -22,19 +22,10 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_proto::metastore_api::metastore_api_service_server::{self as grpc};
-use quickwit_proto::metastore_api::{
-    AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
-    DeleteIndexResponse, DeleteQuery, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask,
-    IndexMetadataRequest, IndexMetadataResponse, LastDeleteOpstampRequest,
-    LastDeleteOpstampResponse, ListAllSplitsRequest, ListDeleteTasksRequest,
-    ListDeleteTasksResponse, ListIndexesMetadatasRequest, ListIndexesMetadatasResponse,
-    ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, SourceResponse, SplitResponse,
-    StageSplitRequest, ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest,
-    UpdateSplitsDeleteOpstampResponse,
-};
+use quickwit_proto::metastore_api::{AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteIndexResponse, DeleteQuery, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, IndexMetadataRequest, IndexMetadataResponse, LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListAllSplitsRequest, ListDeleteTasksRequest, ListDeleteTasksResponse, ListIndexesMetadatasRequest, ListIndexesMetadatasResponse, ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest, ResetSourceCheckpointRequest, SourceResponse, SplitResponse, StageSplitRequest, StageSplitsRequest, ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse};
 use quickwit_proto::{set_parent_span_from_request_metadata, tonic};
 use tracing::instrument;
+use quickwit_proto::tonic::{Request, Response, Status};
 
 use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreError};
 
@@ -193,6 +184,25 @@ impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
         let stage_split_reply = self
             .0
             .stage_split(&stage_split_request.index_id, split_metadata)
+            .await
+            .map(|_| SplitResponse {})?;
+        Ok(tonic::Response::new(stage_split_reply))
+    }
+
+    #[instrument(skip(self, request))]
+    async fn stage_splits(&self, request: Request<StageSplitsRequest>) -> Result<Response<SplitResponse>, Status> {
+        set_parent_span_from_request_metadata(request.metadata());
+        let stage_split_request = request.into_inner();
+        let split_metadata_list = serde_json::from_str(
+            &stage_split_request.split_metadata_list_serialized_json,
+        )
+        .map_err(|error| MetastoreError::JsonDeserializeError {
+            struct_name: "Vec<SplitMetadata>".to_string(),
+            message: error.to_string(),
+        })?;
+        let stage_split_reply = self
+            .0
+            .stage_splits(&stage_split_request.index_id, split_metadata_list)
             .await
             .map(|_| SplitResponse {})?;
         Ok(tonic::Response::new(stage_split_reply))

@@ -68,6 +68,14 @@ pub struct StageSplitRequest {
 }
 #[derive(Serialize, Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StageSplitsRequest {
+    #[prost(string, tag = "1")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub split_metadata_list_serialized_json: ::prost::alloc::string::String,
+}
+#[derive(Serialize, Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PublishSplitsRequest {
     #[prost(string, tag = "1")]
     pub index_id: ::prost::alloc::string::String,
@@ -429,6 +437,26 @@ pub mod metastore_api_service_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
+        /// Stages several splits.
+        pub async fn stage_splits(
+            &mut self,
+            request: impl tonic::IntoRequest<super::StageSplitsRequest>,
+        ) -> Result<tonic::Response<super::SplitResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit_metastore_api.MetastoreApiService/stage_splits",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
         /// Publishes split.
         pub async fn publish_splits(
             &mut self,
@@ -715,6 +743,11 @@ pub mod metastore_api_service_server {
         async fn stage_split(
             &self,
             request: tonic::Request<super::StageSplitRequest>,
+        ) -> Result<tonic::Response<super::SplitResponse>, tonic::Status>;
+        /// Stages several splits.
+        async fn stage_splits(
+            &self,
+            request: tonic::Request<super::StageSplitsRequest>,
         ) -> Result<tonic::Response<super::SplitResponse>, tonic::Status>;
         /// Publishes split.
         async fn publish_splits(
@@ -1104,6 +1137,46 @@ pub mod metastore_api_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = stage_splitSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit_metastore_api.MetastoreApiService/stage_splits" => {
+                    #[allow(non_camel_case_types)]
+                    struct stage_splitsSvc<T: MetastoreApiService>(pub Arc<T>);
+                    impl<
+                        T: MetastoreApiService,
+                    > tonic::server::UnaryService<super::StageSplitsRequest>
+                    for stage_splitsSvc<T> {
+                        type Response = super::SplitResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::StageSplitsRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).stage_splits(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = stage_splitsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
