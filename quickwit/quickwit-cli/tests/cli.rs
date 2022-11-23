@@ -686,7 +686,7 @@ async fn test_garbage_collect_index_cli() {
     let splits = metastore.list_all_splits(&test_env.index_id).await.unwrap();
     assert_eq!(splits[0].split_state, SplitState::Staged);
 
-    let args = create_gc_args(1);
+    let args = create_gc_args(3600);
 
     garbage_collect_index_cli(args).await.unwrap();
 
