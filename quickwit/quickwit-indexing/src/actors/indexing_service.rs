@@ -847,8 +847,8 @@ mod tests {
         // Let the service cleanup the merge pipelines.
         universe.simulate_time_shift(HEARTBEAT).await;
 
-        // Test `spawn_merge_pipeline`.
-        indexing_server_mailbox
+        // Test spawning a merge pipeline.
+        let pipeline_id = indexing_server_mailbox
             .ask_for_res(SpawnPipeline {
                 index_id: index_id.clone(),
                 source_config: SourceConfig {
@@ -864,6 +864,16 @@ mod tests {
         let observation = indexing_server_handle.process_pending_and_observe().await;
         assert_eq!(observation.num_running_pipelines, 1);
         assert_eq!(observation.num_running_merge_pipelines, 1);
+
+        // Test `detach_merge_pipeline`
+        let pipeline = indexing_server_mailbox
+            .ask_for_res(DetachMergePipeline {
+                pipeline_id: MergePipelineId::from(&pipeline_id),
+            })
+            .await
+            .unwrap();
+        let observation = indexing_server_handle.process_pending_and_observe().await;
+        assert_eq!(observation.num_running_merge_pipelines, 0);
 
         // Test `supervise_pipelines`
         let source_config_3 = SourceConfig {
