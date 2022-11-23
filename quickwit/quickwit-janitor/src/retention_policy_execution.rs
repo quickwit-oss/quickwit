@@ -49,15 +49,24 @@ pub async fn run_execute_retention_policy(
         .with_split_state(SplitState::Published)
         .with_time_range_end_lte(max_retention_timestamp);
 
-    let expired_splits: Vec<SplitMetadata> = ctx
+    let (expired_splits, splits_to_ignore): (Vec<SplitMetadata>, Vec<SplitMetadata>) = ctx
         .protect_future(metastore.list_splits(query))
         .await?
         .into_iter()
         .map(|split| split.split_metadata)
-        .filter(is_split_expired)
-        .collect();
+        .partition(|split_metadata| split_metadata.time_range.is_some());
+
     if expired_splits.is_empty() {
         return Ok(expired_splits);
+    }
+
+    if !splits_to_ignore.is_empty() {
+        let split_to_ignore_ids: Vec<String> = splits_to_ignore
+            .into_iter()
+            .map(|split_metadata| split_metadata.split_id)
+            .collect();
+        warn!(index_id=%index_id, split_ids=?split_to_ignore_ids,
+            "The retention policy cannot be applied to the following splits as they don't have `time_range` info.");
     }
 
     info!(index_id=%index_id, num_splits=%expired_splits.len(), "retention-policy-mark-splits-for-deletion");
@@ -67,18 +76,4 @@ pub async fn run_execute_retention_policy(
         .await?;
 
     Ok(expired_splits)
-}
-
-/// Checks to see if a split is indeed expired based on the retention policy.
-///
-/// Retention policy cannot be applied to splits without time range.
-fn is_split_expired(split_metadata: &SplitMetadata) -> bool {
-    match &split_metadata.time_range {
-        None => {
-            warn!(index_id=%split_metadata.index_id, split_id=%split_metadata.split_id,
-                "Retention policy execution expected a `time_range` on the split, but none exist.");
-            false
-        }
-        _ => true,
-    }
 }
