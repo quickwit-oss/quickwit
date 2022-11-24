@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox};
 use quickwit_aws::retry::RetryParams;
 use rusoto_kinesis::{KinesisClient, Record};
-use serde_json::json;
+use serde_json::{json, Value as JsonValue};
 use tokio::sync::mpsc;
 
 use crate::source::kinesis::api::{get_records, get_shard_iterator};
@@ -137,7 +137,7 @@ pub(super) struct Loop;
 
 #[async_trait]
 impl Actor for ShardConsumer {
-    type ObservableState = serde_json::Value;
+    type ObservableState = JsonValue;
 
     fn name(&self) -> String {
         "KinesisShardConsumer".to_string()
@@ -243,6 +243,7 @@ impl Handler<Loop> for ShardConsumer {
 #[cfg(all(test, feature = "kinesis-localstack-tests"))]
 mod tests {
     use quickwit_actors::Universe;
+    use serde_json::Value as JsonValue;
 
     use super::*;
     use crate::source::kinesis::api::tests::{merge_shards, split_shard};
@@ -289,7 +290,7 @@ mod tests {
         let expected_state = json!({
             "stream_name": stream_name,
             "shard_id": shard_id_0,
-            "current_sequence_number": serde_json::Value::Null,
+            "current_sequence_number": JsonValue::Null,
             "lag_millis": 0,
             "num_bytes_processed": 0,
             "num_records_processed": 0,

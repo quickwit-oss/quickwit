@@ -23,6 +23,7 @@ use std::path::Path;
 use anyhow::{bail, Context};
 use quickwit_config::TestableForRegression;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 
 use crate::file_backed_metastore::file_backed_index::FileBackedIndex;
 use crate::{IndexMetadata, SplitMetadata};
@@ -96,9 +97,8 @@ where T: TestableForRegression {
 fn test_and_update_expected_files_single_case<T>(expected_path: &Path) -> anyhow::Result<bool>
 where for<'a> T: Serialize + Deserialize<'a> {
     let expected: T = deserialize_json_file(Path::new(&expected_path))?;
-    let expected_old_json_value: serde_json::Value =
-        deserialize_json_file(Path::new(&expected_path))?;
-    let expected_new_json_value: serde_json::Value = serde_json::to_value(&expected)?;
+    let expected_old_json_value: JsonValue = deserialize_json_file(Path::new(&expected_path))?;
+    let expected_new_json_value: JsonValue = serde_json::to_value(&expected)?;
     // We compare json Value, so we don't detect format change like a change in the field order.
     if expected_old_json_value == expected_new_json_value {
         // No modification

@@ -84,6 +84,7 @@ use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceConfig, SourceParams};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::Metastore;
+use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 use tokio::runtime::Handle;
 use tracing::error;
@@ -209,7 +210,7 @@ pub trait Source: Send + Sync + 'static {
     ///
     /// This object is simply a json object, and its content may vary depending on the
     /// source.
-    fn observable_state(&self) -> serde_json::Value;
+    fn observable_state(&self) -> JsonValue;
 }
 
 /// The SourceActor acts as a thin wrapper over a source trait object to execute.
@@ -225,7 +226,7 @@ struct Loop;
 
 #[async_trait]
 impl Actor for SourceActor {
-    type ObservableState = serde_json::Value;
+    type ObservableState = JsonValue;
 
     fn name(&self) -> String {
         self.source.name()

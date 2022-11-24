@@ -44,6 +44,7 @@ pub use index_config::{
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde_json::Value as JsonValue;
 pub use source_config::{
     FileSourceParams, KafkaSourceParams, KinesisSourceParams, RegionOrEndpoint, SourceConfig,
     SourceParams, VecSourceParams, VoidSourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
@@ -98,12 +99,12 @@ impl ConfigFormat {
     where T: DeserializeOwned {
         match self {
             ConfigFormat::Json => {
-                let mut json_value: serde_json::Value =
+                let mut json_value: JsonValue =
                     serde_json::from_reader(StripComments::new(payload))?;
                 let version_value = json_value.get_mut("version").context("Missing version.")?;
                 if let Some(version_number) = version_value.as_u64() {
                     warn!("`version` is supposed to be a string.");
-                    *version_value = serde_json::Value::String(version_number.to_string());
+                    *version_value = JsonValue::String(version_number.to_string());
                 }
                 serde_json::from_value(json_value).context("Failed to read JSON file.")
             }
