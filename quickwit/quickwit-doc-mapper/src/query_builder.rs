@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
@@ -61,18 +61,32 @@ pub(crate) fn build_query(
         validate_sort_by_field_name(sort_by_field, &schema, Some(&search_fields))?;
     }
 
-    let mut term_set_query_fields = HashSet::new();
-    extract_term_set_query_fields(&user_input_ast, &mut term_set_query_fields);
-
-    let warmup_info = WarmupInfo {
-        term_dict_field_names: term_set_query_fields.clone(),
-        posting_field_names: term_set_query_fields,
-    };
-
     let mut query_parser =
         QueryParser::new(schema, search_fields, QUICKWIT_TOKENIZER_MANAGER.clone());
     query_parser.set_conjunction_by_default();
     let query = query_parser.parse_query(&request.query)?;
+
+    let mut term_set_query_fields = HashSet::new();
+    extract_term_set_query_fields(&user_input_ast, &mut term_set_query_fields);
+
+    let mut terms_grouped_by_field: HashMap<Field, HashMap<_, bool>> = Default::default();
+
+    query.query_terms(&mut |term, need_position| {
+        let field = term.field();
+        *terms_grouped_by_field
+            .entry(field)
+            .or_default()
+            .entry(term.clone())
+            .or_default() |= need_position;
+    });
+
+    let warmup_info = WarmupInfo {
+        term_dict_field_names: term_set_query_fields.clone(),
+        posting_field_names: term_set_query_fields,
+        terms_grouped_by_field,
+        ..WarmupInfo::default()
+    };
+
     Ok((query, warmup_info))
 }
 

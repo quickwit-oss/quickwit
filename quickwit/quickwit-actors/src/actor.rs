@@ -40,6 +40,7 @@ use crate::spawn_builder::SpawnBuilder;
 use crate::Universe;
 use crate::{
     AskError, Command, KillSwitch, Mailbox, Progress, ProtectedZoneGuard, QueueCapacity, SendError,
+    TrySendError,
 };
 
 /// The actor exit status represents the outcome of the execution of an actor,
@@ -345,6 +346,11 @@ impl<A: Actor> ActorContext<A> {
         future.await
     }
 
+    /// Cooperatively yields, while keeping the actor protected.
+    pub async fn yield_now(&self) {
+        self.protect_future(tokio::task::yield_now()).await;
+    }
+
     /// Gets a copy of the actor kill switch.
     /// This should rarely be used.
     ///
@@ -467,7 +473,7 @@ impl<A: Actor> ActorContext<A> {
         &self,
         mailbox: &Mailbox<DestActor>,
         msg: M,
-    ) -> Result<oneshot::Receiver<DestActor::Reply>, crate::SendError>
+    ) -> Result<oneshot::Receiver<DestActor::Reply>, SendError>
     where
         DestActor: Handler<M>,
         M: 'static + Send + Sync + fmt::Debug,
@@ -521,24 +527,42 @@ impl<A: Actor> ActorContext<A> {
     pub async fn send_exit_with_success<Dest: Actor>(
         &self,
         mailbox: &Mailbox<Dest>,
-    ) -> Result<(), crate::SendError> {
+    ) -> Result<(), SendError> {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), to=%mailbox.actor_instance_id(), "success");
         mailbox.send_message(Command::ExitWithSuccess).await?;
         Ok(())
     }
 
-    /// `async` version of `send_self_message`.
+    /// Sends a message to an actor's own mailbox.
+    ///
+    /// Warning: This method is dangerous as it can very easily
+    /// cause a deadlock.
     pub async fn send_self_message<M>(
         &self,
         msg: M,
-    ) -> Result<oneshot::Receiver<A::Reply>, crate::SendError>
+    ) -> Result<oneshot::Receiver<A::Reply>, SendError>
     where
         A: Handler<M>,
         M: 'static + Sync + Send + fmt::Debug,
     {
         debug!(self=%self.self_mailbox.actor_instance_id(), msg=?msg, "self_send");
         self.self_mailbox.send_message(msg).await
+    }
+
+    /// Attempts to send a message to itself.
+    ///
+    /// Warning: This method will always fail if
+    /// an actor has a capacity of 0.
+    pub fn try_send_self_message<M>(
+        &self,
+        msg: M,
+    ) -> Result<oneshot::Receiver<A::Reply>, TrySendError<M>>
+    where
+        A: Handler<M>,
+        M: 'static + Sync + Send + fmt::Debug,
+    {
+        self.self_mailbox.try_send_message(msg)
     }
 
     pub async fn schedule_self_msg<M>(&self, after_duration: Duration, message: M)

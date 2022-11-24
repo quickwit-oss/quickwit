@@ -239,7 +239,7 @@ impl IndexerState {
     }
 }
 
-/// A workbench hosts the set of `IndexedSplit` that will are being built.
+/// A workbench hosts the set of `IndexedSplit` that are being built.
 struct IndexingWorkbench {
     workbench_id: Ulid,
     // This span is used for the entire lifetime of the splits batch creations
