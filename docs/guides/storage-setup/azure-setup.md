@@ -24,8 +24,8 @@ Quickwit expects Azure URIs to be of the format `azure://{storage-account}/{cont
 Here is an example of how to set up your [node config file](/docs/configuration/node-config) with GCS:
 
 ```yaml
-metastore_uri: azure://my-storage-account/my-indexes
-default_index_uri: azure://my-storage-account/my-indexes
+metastore_uri: azure://my-storage-account/my-container/my-indexes
+default_index_uri: azure://my-storage-account/my-container/my-indexes
 ```
 
 ## Set the Index URI
