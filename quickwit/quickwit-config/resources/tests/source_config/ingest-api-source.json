@@ -1,5 +1,5 @@
 {
-  "version": "3",
+  "version": "0.4",
   "source_id": "_ingest-api",
   "enabled": true,
   "source_type": "ingest-api"

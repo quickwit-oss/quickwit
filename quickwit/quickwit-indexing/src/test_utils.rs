@@ -36,7 +36,7 @@ use quickwit_storage::{Storage, StorageUriResolver};
 use serde_json::Value as JsonValue;
 
 use crate::actors::IndexingService;
-use crate::models::{DetachPipeline, IndexingStatistics, SpawnPipeline};
+use crate::models::{DetachIndexingPipeline, IndexingStatistics, SpawnPipeline};
 
 /// Creates a Test environment.
 ///
@@ -157,7 +157,7 @@ impl TestSandbox {
             .await?;
         let pipeline_handle = self
             .indexing_service
-            .ask_for_res(DetachPipeline { pipeline_id })
+            .ask_for_res(DetachIndexingPipeline { pipeline_id })
             .await?;
         let (_pipeline_exit_status, pipeline_statistics) = pipeline_handle.join().await;
         Ok(pipeline_statistics)
@@ -185,6 +185,11 @@ impl TestSandbox {
     /// Returns the doc mapper of the TestSandbox.
     pub fn doc_mapper(&self) -> Arc<dyn DocMapper> {
         self.doc_mapper.clone()
+    }
+
+    /// Returns the index ID.
+    pub fn index_id(&self) -> &str {
+        &self.index_id
     }
 }
 

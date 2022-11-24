@@ -2687,11 +2687,11 @@ pub mod test_suite {
     >() {
         let metastore = MetastoreToTest::default_for_test().await;
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
-        let index_id = "udpate-splits-delete-opstamp";
+        let index_id = "update-splits-delete-opstamp";
         let index_uri = format!("ram://indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
-        let split_id_1 = "list-stale-splits-one";
+        let split_id_1 = "update-splits-delete-opstamp-one";
         let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: split_id_1.to_string(),
@@ -2701,7 +2701,7 @@ pub mod test_suite {
             delete_opstamp: 20,
             ..Default::default()
         };
-        let split_id_2 = "list-stale-splits-two";
+        let split_id_2 = "update-splits-delete-opstamp-two";
         let split_metadata_2 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: split_id_2.to_string(),
@@ -2711,7 +2711,7 @@ pub mod test_suite {
             delete_opstamp: 10,
             ..Default::default()
         };
-        let split_id_3 = "list-stale-splits-three";
+        let split_id_3 = "update-splits-delete-opstamp-three";
         let split_metadata_3 = SplitMetadata {
             footer_offsets: 1000..2000,
             split_id: split_id_3.to_string(),

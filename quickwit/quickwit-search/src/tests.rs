@@ -660,12 +660,10 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
     Ok(())
 }
 
-const DYNAMIC_TEST_INDEX_ID: &str = "search_dynamic_mode";
-
 async fn test_search_dynamic_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
     let splits = test_sandbox
         .metastore()
-        .list_all_splits(DYNAMIC_TEST_INDEX_ID)
+        .list_all_splits(test_sandbox.index_id())
         .await
         .unwrap();
     let splits_offsets: Vec<_> = splits
@@ -677,7 +675,7 @@ async fn test_search_dynamic_util(test_sandbox: &TestSandbox, query: &str) -> Ve
         })
         .collect();
     let request = quickwit_proto::SearchRequest {
-        index_id: DYNAMIC_TEST_INDEX_ID.to_string(),
+        index_id: test_sandbox.index_id().to_string(),
         query: query.to_string(),
         max_hits: 100,
         ..Default::default()
@@ -711,7 +709,7 @@ async fn test_search_dynamic_mode() -> anyhow::Result<()> {
             dynamic_mapping:
                 tokenizer: raw
         "#;
-    let test_sandbox = TestSandbox::create(DYNAMIC_TEST_INDEX_ID, doc_mapping_yaml, "{}", &[])
+    let test_sandbox = TestSandbox::create("search_dynamic_mode", doc_mapping_yaml, "{}", &[])
         .await
         .unwrap();
     let docs = vec![
@@ -740,9 +738,14 @@ async fn test_search_dynamic_mode_expand_dots() -> anyhow::Result<()> {
             #dynamic_mapping:
             #  expand_dots: true -- that's the default value.
         "#;
-    let test_sandbox = TestSandbox::create(DYNAMIC_TEST_INDEX_ID, doc_mapping_yaml, "{}", &[])
-        .await
-        .unwrap();
+    let test_sandbox = TestSandbox::create(
+        "search_dynamic_mode_expand_dots",
+        doc_mapping_yaml,
+        "{}",
+        &[],
+    )
+    .await
+    .unwrap();
     let docs = vec![json!({"k8s.component.name": "quickwit"})];
     test_sandbox.add_documents(docs).await.unwrap();
     {
@@ -765,9 +768,14 @@ async fn test_search_dynamic_mode_do_not_expand_dots() -> anyhow::Result<()> {
             dynamic_mapping:
                 expand_dots: false
         "#;
-    let test_sandbox = TestSandbox::create(DYNAMIC_TEST_INDEX_ID, doc_mapping_yaml, "{}", &[])
-        .await
-        .unwrap();
+    let test_sandbox = TestSandbox::create(
+        "search_dynamic_mode_not_expand_dots",
+        doc_mapping_yaml,
+        "{}",
+        &[],
+    )
+    .await
+    .unwrap();
     let docs = vec![json!({"k8s.component.name": "quickwit"})];
     test_sandbox.add_documents(docs).await.unwrap();
     {

@@ -5,6 +5,7 @@ ARG PBC_URL="https://github.com/protocolbuffers/protobuf/releases/download/v21.5
 RUN apt-get update && \
     apt-get install -y clang \
         libclang-dev \
+        libsasl2-dev \
         unzip && \
     rm -rf /var/lib/apt/lists/*
 

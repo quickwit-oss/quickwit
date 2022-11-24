@@ -60,7 +60,7 @@ pub use universe::Universe;
 
 pub use self::actor::ActorContext;
 pub use self::actor_state::ActorState;
-pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError};
+pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError, TrySendError};
 pub use self::mailbox::{create_mailbox, create_test_mailbox, Inbox, Mailbox};
 pub use self::registry::ActorObservation;
 pub use self::supervisor::{Supervisor, SupervisorState};
@@ -80,6 +80,11 @@ pub const HEARTBEAT: Duration = if cfg!(any(test, feature = "testsuite")) {
 } else {
     Duration::from_secs(3)
 };
+
+/// Time we accept to wait for a new observation.
+///
+/// Once this time is elapsed, we just return the last observation.
+const OBSERVE_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Error that occured while calling `ActorContext::ask(..)` or `Universe::ask`
 #[derive(Error, Debug)]

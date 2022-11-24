@@ -35,16 +35,17 @@ use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
-    ConfigFormat, IndexConfig, IndexerConfig, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID,
-    INGEST_API_SOURCE_ID,
+    ConfigFormat, IndexConfig, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
+    CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 use quickwit_core::{
     clear_cache_directory, remove_indexing_directory, validate_storage_uri, IndexService,
 };
-use quickwit_indexing::actors::{IndexingPipeline, IndexingService};
+use quickwit_indexing::actors::{IndexingService, MergePipelineId};
 use quickwit_indexing::models::{
-    DetachPipeline, IndexingPipelineId, IndexingStatistics, SpawnMergePipeline, SpawnPipeline,
+    DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
+use quickwit_indexing::IndexingPipeline;
 use quickwit_metastore::{
     quickwit_metastore_uri_resolver, IndexMetadata, ListSplitsQuery, Split, SplitState,
 };
@@ -934,8 +935,13 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
             pipeline_ord: 0,
         })
         .await?;
-    let pipeline_handle = indexing_server_mailbox
-        .ask_for_res(DetachPipeline { pipeline_id })
+    let merge_pipeline_handle = indexing_server_mailbox
+        .ask_for_res(DetachMergePipeline {
+            pipeline_id: MergePipelineId::from(&pipeline_id),
+        })
+        .await?;
+    let indexing_pipeline_handle = indexing_server_mailbox
+        .ask_for_res(DetachIndexingPipeline { pipeline_id })
         .await?;
 
     let is_stdin_atty = atty::is(atty::Stream::Stdin);
@@ -950,7 +956,9 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         );
     }
     let statistics =
-        start_statistics_reporting_loop(pipeline_handle, args.input_path_opt.is_none()).await?;
+        start_statistics_reporting_loop(indexing_pipeline_handle, args.input_path_opt.is_none())
+            .await?;
+    merge_pipeline_handle.quit().await;
     // Shutdown the indexing server.
     universe
         .send_exit_with_success(&indexing_server_mailbox)
@@ -1038,7 +1046,6 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
     start_actor_runtimes(&HashSet::from_iter([QuickwitService::Indexer]))?;
-    let node_id = config.node_id.clone();
     let indexing_server = IndexingService::new(
         config.node_id,
         config.data_dir_path,
@@ -1050,19 +1057,20 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
     let universe = Universe::new();
     let (indexing_service_mailbox, indexing_service_handle) =
         universe.spawn_builder().spawn(indexing_server);
-    let pipeline_id = IndexingPipelineId {
-        index_id: args.index_id,
-        source_id: args.source_id,
-        node_id,
-        pipeline_ord: 0,
-    };
-    indexing_service_mailbox
-        .ask_for_res(SpawnMergePipeline {
-            pipeline_id: pipeline_id.clone(),
+    let pipeline_id = indexing_service_mailbox
+        .ask_for_res(SpawnPipeline {
+            index_id: args.index_id,
+            source_config: SourceConfig {
+                source_id: args.source_id,
+                num_pipelines: 1,
+                enabled: true,
+                source_params: SourceParams::Vec(VecSourceParams::default()),
+            },
+            pipeline_ord: 0,
         })
         .await?;
     let pipeline_handle = indexing_service_mailbox
-        .ask_for_res(DetachPipeline { pipeline_id })
+        .ask_for_res(DetachIndexingPipeline { pipeline_id })
         .await?;
     let (pipeline_exit_status, _pipeline_statistics) = pipeline_handle.join().await;
     indexing_service_handle.quit().await;
