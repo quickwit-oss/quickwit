@@ -349,7 +349,7 @@ mod tests {
                 min_level_num_docs: 10_000,
                 merge_factor: 3,
                 max_merge_factor: 5,
-                maturity_period: Duration::from_secs(3600),
+                maturation_period: Duration::from_secs(3600),
             },
             50_000,
         ));

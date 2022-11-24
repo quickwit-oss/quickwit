@@ -33,11 +33,14 @@ pub struct ConstWriteAmplificationMergePolicyConfig {
     /// Maximum number of merges that a given split should undergo.
     #[serde(default = "default_max_merge_ops")]
     pub max_merge_ops: usize,
-    /// Period since the split `create_timestamp` before it becomes mature.
-    #[serde(default = "default_maturity_period")]
-    #[serde(deserialize_with = "parse_duration")]
+    /// Duration relative to `split.created_timestamp` after which a split
+    /// becomes mature.
+    /// If `now() >= split.created_timestamp + maturation_period` then
+    /// the split is considered mature.
+    #[serde(default = "default_maturation_period")]
+    #[serde(deserialize_with = "parse_human_duration")]
     #[serde(serialize_with = "serialize_duration")]
-    pub maturity_period: Duration,
+    pub maturation_period: Duration,
 }
 
 impl Default for ConstWriteAmplificationMergePolicyConfig {
@@ -46,7 +49,7 @@ impl Default for ConstWriteAmplificationMergePolicyConfig {
             max_merge_ops: default_max_merge_ops(),
             merge_factor: default_merge_factor(),
             max_merge_factor: default_max_merge_factor(),
-            maturity_period: default_maturity_period(),
+            maturation_period: default_maturation_period(),
         }
     }
 }
@@ -63,11 +66,14 @@ pub struct StableLogMergePolicyConfig {
     /// Maximum number of splits that can be merged together in a single merge operation.
     #[serde(default = "default_max_merge_factor")]
     pub max_merge_factor: usize,
-    /// Period since the split `create_timestamp` before it becomes mature.
-    #[serde(default = "default_maturity_period")]
-    #[serde(deserialize_with = "parse_duration")]
+    /// Duration relative to `split.created_timestamp` after which a split
+    /// becomes mature.
+    /// If `now() >= split.created_timestamp + maturation_period` then
+    /// the split is mature.
+    #[serde(default = "default_maturation_period")]
+    #[serde(deserialize_with = "parse_human_duration")]
     #[serde(serialize_with = "serialize_duration")]
-    pub maturity_period: Duration,
+    pub maturation_period: Duration,
 }
 
 fn default_merge_factor() -> usize {
@@ -86,7 +92,7 @@ fn default_min_level_num_docs() -> usize {
     100_000
 }
 
-fn default_maturity_period() -> Duration {
+fn default_maturation_period() -> Duration {
     Duration::from_secs(48 * 3600)
 }
 
@@ -96,18 +102,17 @@ impl Default for StableLogMergePolicyConfig {
             min_level_num_docs: default_min_level_num_docs(),
             merge_factor: default_merge_factor(),
             max_merge_factor: default_max_merge_factor(),
-            maturity_period: default_maturity_period(),
+            maturation_period: default_maturation_period(),
         }
     }
 }
 
-fn parse_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+fn parse_human_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
 where D: Deserializer<'de> {
     let value: String = Deserialize::deserialize(deserializer)?;
     let duration = humantime::parse_duration(&value).map_err(|error| {
         de::Error::custom(format!(
-            "Cannot parse human duration `{}`: {:?}",
-            value, error
+            "Failed to parse human-readable duration `{value}`: {error:?}",
         ))
     })?;
     Ok(duration)

@@ -56,7 +56,7 @@ mod tests {
             .into_iter()
             .next()
             .unwrap();
-        // All splits are mature always mature for `NopMergePolicy`.
+        // All splits are always mature for `NopMergePolicy`.
         assert!(NopMergePolicy.is_mature(&split));
     }
 

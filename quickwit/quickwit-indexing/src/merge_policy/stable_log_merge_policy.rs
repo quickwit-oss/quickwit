@@ -117,13 +117,13 @@ impl MergePolicy for StableLogMergePolicy {
         operations
     }
 
-    /// A mature split for merge is a split that won't undergo merge operation in the future.
+    /// A mature split for merge is a split that won't undergo any merge operation in the future.
     fn is_mature(&self, split: &SplitMetadata) -> bool {
         if split.num_docs >= self.split_num_docs_target {
             return true;
         }
         if OffsetDateTime::now_utc().unix_timestamp()
-            >= split.create_timestamp + self.config.maturity_period.as_secs() as i64
+            >= split.create_timestamp + self.config.maturation_period.as_secs() as i64
         {
             return true;
         }
@@ -376,7 +376,7 @@ mod tests {
     #[test]
     fn test_split_is_mature() {
         let merge_policy = StableLogMergePolicy::default();
-        // Split under max_merge_docs and created before now() - maturity_period is not mature.
+        // Split under max_merge_docs and created before now() - maturation_period is not mature.
         let split = create_splits(vec![9_000_000]).into_iter().next().unwrap();
         assert!(!merge_policy.is_mature(&split));
         {
@@ -388,8 +388,8 @@ mod tests {
         {
             // Split under max_merge_docs but with create_timestamp >= now + maturity duration is
             // mature.
-            let mut mature_split = split.clone();
-            mature_split.create_timestamp -= merge_policy.config.maturity_period.as_secs() as i64;
+            let mut mature_split = split;
+            mature_split.create_timestamp -= merge_policy.config.maturation_period.as_secs() as i64;
             assert!(merge_policy.is_mature(&mature_split));
         }
     }
@@ -624,7 +624,7 @@ mod tests {
             min_level_num_docs: 100_000,
             merge_factor: 4,
             max_merge_factor: 6,
-            maturity_period: Duration::from_secs(3600),
+            maturation_period: Duration::from_secs(3600),
         };
         let merge_policy = StableLogMergePolicy::new(config, 10_000_000);
         crate::merge_policy::tests::proptest_merge_policy(&merge_policy);

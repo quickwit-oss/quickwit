@@ -81,7 +81,7 @@ impl ConstWriteAmplificationMergePolicy {
             max_merge_ops: 3,
             merge_factor: 3,
             max_merge_factor: 5,
-            maturity_period: Duration::from_secs(3600),
+            maturation_period: Duration::from_secs(3600),
         };
         Self::new(config, 10_000_000)
     }
@@ -162,7 +162,7 @@ impl MergePolicy for ConstWriteAmplificationMergePolicy {
             return true;
         }
         if OffsetDateTime::now_utc().unix_timestamp()
-            >= split.create_timestamp + self.config.maturity_period.as_secs() as i64
+            >= split.create_timestamp + self.config.maturation_period.as_secs() as i64
         {
             return true;
         }
@@ -212,7 +212,7 @@ mod tests {
         let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
         let split = create_splits(vec![9_000_000]).into_iter().next().unwrap();
         // Split under max_merge_docs, num_merge_ops < max_merge_ops and created before now() -
-        // maturity_period is not mature.
+        // maturation_period is not mature.
         assert!(!merge_policy.is_mature(&split));
         {
             // Split with docs > max_merge_docs is mature.
@@ -223,12 +223,12 @@ mod tests {
         {
             // Split with create_timestamp >= now + maturity duration is mature
             let mut mature_split = split.clone();
-            mature_split.create_timestamp -= merge_policy.config.maturity_period.as_secs() as i64;
+            mature_split.create_timestamp -= merge_policy.config.maturation_period.as_secs() as i64;
             assert!(merge_policy.is_mature(&mature_split));
         }
         {
             // Split with num_merge_ops >= max_merge_ops is mature
-            let mut mature_split = split.clone();
+            let mut mature_split = split;
             mature_split.num_merge_ops = merge_policy.config.max_merge_ops;
             assert!(merge_policy.is_mature(&mature_split));
         }

@@ -55,7 +55,7 @@
             "type": "stable_log",
             "merge_factor": 9,
             "max_merge_factor": 11,
-            "maturity_period": "48 hours"
+            "maturation_period": "48 hours"
         },
         "resources": {
             "heap_size": "3G"
