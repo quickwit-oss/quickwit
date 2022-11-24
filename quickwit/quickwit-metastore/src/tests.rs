@@ -20,9 +20,11 @@
 #[cfg(test)]
 pub mod test_suite {
     use std::collections::{BTreeSet, HashSet};
+    use std::sync::Arc;
     use std::time::Duration;
 
     use async_trait::async_trait;
+    use futures::future::try_join_all;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
@@ -31,7 +33,9 @@ pub mod test_suite {
     use tokio::time::sleep;
     use tracing::{error, info};
 
-    use crate::checkpoint::{IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint};
+    use crate::checkpoint::{
+        IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
+    };
     use crate::{
         IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState,
     };
@@ -87,7 +91,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = append_random_suffix("test-create-index");
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
 
         metastore
@@ -116,7 +120,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = append_random_suffix("test-index-exists");
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
 
         assert!(!metastore.index_exists(&index_id).await.unwrap());
@@ -132,7 +136,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = append_random_suffix("test-index-metadata");
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
 
         let error = metastore
@@ -195,7 +199,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = append_random_suffix("test-delete-index-index");
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
 
         let error = metastore.delete_index("index-not-found").await.unwrap_err();
@@ -238,7 +242,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = "test-metastore-add-source";
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
         metastore
@@ -303,7 +307,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = "test-metastore-toggle-source";
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
         metastore
@@ -352,7 +356,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = "test-metastore-delete-source";
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let source_id = "test-metastore-delete-source--void-source-id";
 
         let source = SourceConfig {
@@ -396,7 +400,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = append_random_suffix("test-metastore-reset-checkpoint");
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
 
         metastore
@@ -477,7 +481,7 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "stage-split-index";
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
         let split_id = "stage-split-my-index-one";
@@ -526,7 +530,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = "publish-splits-empty-index";
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let source_id = "publish-splits-empty-source";
 
         // Publish a split on a non-existent index
@@ -592,7 +596,7 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "publish-splits-index";
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let source_id = "publish-splits-source";
         let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
@@ -1028,13 +1032,75 @@ pub mod test_suite {
         }
     }
 
+    pub async fn test_metastore_publish_splits_concurrency<
+        MetastoreToTest: Metastore + DefaultForTest,
+    >() {
+        let metastore: Arc<dyn Metastore> = Arc::new(MetastoreToTest::default_for_test().await);
+
+        let index_id = append_random_suffix("test-publish-concurrency");
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
+
+        metastore.create_index(index_metadata).await.unwrap();
+
+        let source_id = format!("{index_id}--source");
+
+        let split_id = format!("{index_id}--split");
+        let split_metadata = SplitMetadata {
+            split_id: split_id.clone(),
+            index_id: index_id.clone(),
+            ..Default::default()
+        };
+        metastore
+            .stage_split(&index_id, split_metadata)
+            .await
+            .unwrap();
+
+        let mut join_handles = Vec::with_capacity(10);
+
+        for partition_id in 0..10 {
+            let metastore = metastore.clone();
+            let index_id = index_id.clone();
+            let source_id = source_id.clone();
+            let split_id = split_id.clone();
+
+            let join_handle = tokio::spawn(async move {
+                let source_delta = SourceCheckpointDelta::from_partition_delta(
+                    PartitionId::from(partition_id as u64),
+                    Position::Beginning,
+                    Position::from(partition_id as u64),
+                );
+                let checkpoint_delta = IndexCheckpointDelta {
+                    source_id,
+                    source_delta,
+                };
+                metastore
+                    .publish_splits(&index_id, &[&split_id], &[], Some(checkpoint_delta))
+                    .await
+                    .unwrap();
+            });
+            join_handles.push(join_handle);
+        }
+        try_join_all(join_handles).await.unwrap();
+
+        let index_metadata = metastore.index_metadata(&index_id).await.unwrap();
+        let source_checkpoint = index_metadata
+            .checkpoint
+            .source_checkpoint(&source_id)
+            .unwrap();
+
+        assert_eq!(source_checkpoint.num_partitions(), 10);
+
+        cleanup_index(metastore.as_ref(), &index_id).await
+    }
+
     pub async fn test_metastore_replace_splits<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = append_random_suffix("test-metastore-replace-splits");
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
 
         let split_id_1 = format!("{index_id}--split-one");
@@ -1288,7 +1354,7 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "mark-splits-as-deleted-my-index";
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
         let split_id_1 = "mark-splits-as-deleted-my-index-one";
         let split_metadata_1 = SplitMetadata {
@@ -1359,7 +1425,7 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "delete-splits-index";
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let source_id = "delete-splits-source";
         let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
@@ -1490,7 +1556,7 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "list-all-splits-index";
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
         let split_id_1 = "list-all-splits-index-one";
@@ -1612,7 +1678,7 @@ pub mod test_suite {
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "list-splits-index";
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
         let split_id_1 = "list-splits-one";
@@ -2237,7 +2303,7 @@ pub mod test_suite {
         let mut current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         let index_id = "split-update-timestamp-index";
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let source_id = "split-update-timestamp-source";
         let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
@@ -2558,7 +2624,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let index_id = "list-stale-splits";
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
         let split_id_1 = "list-stale-splits-one";
@@ -2688,7 +2754,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let index_id = "update-splits-delete-opstamp";
-        let index_uri = format!("ram://indexes/{index_id}");
+        let index_uri = format!("ram:///indexes/{index_id}");
         let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
 
         let split_id_1 = "update-splits-delete-opstamp-one";
@@ -2824,6 +2890,11 @@ macro_rules! metastore_test_suite {
                 crate::tests::test_suite::test_metastore_delete_index::<$metastore_type>().await;
             }
 
+            // Split API tests
+            //
+            //  - stage_split
+            //  - publish_splits
+
             #[tokio::test]
             async fn test_metastore_stage_split() {
                 let _ = tracing_subscriber::fmt::try_init();
@@ -2834,6 +2905,12 @@ macro_rules! metastore_test_suite {
             async fn test_metastore_publish_splits() {
                 let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_publish_splits::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_publish_splits_concurrency() {
+                let _ = tracing_subscriber::fmt::try_init();
+                crate::tests::test_suite::test_metastore_publish_splits_concurrency::<$metastore_type>().await;
             }
 
             #[tokio::test]
