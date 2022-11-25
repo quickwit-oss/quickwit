@@ -121,6 +121,7 @@ where E: sqlx::Executor<'a, Database = Postgres> {
         SELECT *
         FROM indexes
         WHERE index_id = $1
+        FOR UPDATE
         "#,
     )
     .bind(index_id)
