@@ -345,11 +345,7 @@ impl Handler<Observe> for MergePipeline {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         if let Some(handles) = &self.handles {
-            let (
-                merge_planner_state,
-                merge_uploader_counters,
-                merge_publisher_counters,
-            ) = join!(
+            let (merge_planner_state, merge_uploader_counters, merge_publisher_counters) = join!(
                 handles.merge_planner.observe(),
                 handles.merge_uploader.observe(),
                 handles.merge_publisher.observe(),

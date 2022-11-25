@@ -30,7 +30,7 @@ use clap::{arg, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use itertools::Itertools;
-use quickwit_actors::{Actor, ActorHandle, ObservationType, Universe};
+use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
 use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::service::QuickwitService;
@@ -1071,7 +1071,9 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         })
         .await?;
     let pipeline_handle: ActorHandle<MergePipeline> = indexing_service_mailbox
-        .ask_for_res(DetachMergePipeline { pipeline_id: MergePipelineId::from(&pipeline_id) })
+        .ask_for_res(DetachMergePipeline {
+            pipeline_id: MergePipelineId::from(&pipeline_id),
+        })
         .await?;
 
     let mut interval = interval(Duration::from_secs(1));
@@ -1081,7 +1083,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         let observation = pipeline_handle.observe().await;
 
         if observation.num_ongoing_merges == 0 {
-            break
+            break;
         }
 
         if observation.obs_type == ObservationType::PostMortem {
@@ -1091,8 +1093,10 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
 
     let (pipeline_exit_status, _pipeline_statistics) = pipeline_handle.quit().await;
     indexing_service_handle.quit().await;
-    // TODO: This is nearly always an error because we call `quit()`, alternatives?
-    if !pipeline_exit_status.is_success() {
+    if !matches!(
+        pipeline_exit_status,
+        ActorExitStatus::Success | ActorExitStatus::Quit
+    ) {
         bail!(pipeline_exit_status);
     }
     Ok(())
