@@ -1089,8 +1089,9 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         }
     }
 
-    let (pipeline_exit_status, _pipeline_statistics) = pipeline_handle.join().await;
+    let (pipeline_exit_status, _pipeline_statistics) = pipeline_handle.quit().await;
     indexing_service_handle.quit().await;
+    // TODO: This is nearly always an error because we call `quit()`, alternatives?
     if !pipeline_exit_status.is_success() {
         bail!(pipeline_exit_status);
     }
