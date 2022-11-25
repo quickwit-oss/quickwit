@@ -353,6 +353,7 @@ mod tests {
     use std::net::Ipv6Addr;
 
     use pnet::ipnetwork::{Ipv4Network, Ipv6Network};
+    use serde_json::Value as JsonValue;
 
     use super::*;
 
@@ -392,15 +393,15 @@ mod tests {
     fn test_serialize_host() {
         assert_eq!(
             serde_json::to_value(Host::from(Ipv4Addr::LOCALHOST)).unwrap(),
-            serde_json::Value::String("127.0.0.1".to_string())
+            JsonValue::String("127.0.0.1".to_string())
         );
         assert_eq!(
             serde_json::to_value(Host::from(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))).unwrap(),
-            serde_json::Value::String("::1".to_string())
+            JsonValue::String("::1".to_string())
         );
         assert_eq!(
             serde_json::to_value(Host::Hostname("localhost".to_string())).unwrap(),
-            serde_json::Value::String("localhost".to_string())
+            JsonValue::String("localhost".to_string())
         );
     }
 

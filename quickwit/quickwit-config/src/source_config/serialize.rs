@@ -24,19 +24,19 @@ use crate::{
     validate_identifier, SourceConfig, SourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 
-type SourceConfigForSerialization = SourceConfigV3;
+type SourceConfigForSerialization = SourceConfigV0_4;
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedSourceConfig {
-    #[serde(rename = "3")]
-    V3(SourceConfigV3),
+    #[serde(rename = "0.4")]
+    V0_4(SourceConfigV0_4),
 }
 
-impl From<SourceConfig> for SourceConfigV3 {
+impl From<SourceConfig> for SourceConfigV0_4 {
     fn from(source_config: SourceConfig) -> Self {
-        SourceConfigV3 {
+        SourceConfigV0_4 {
             source_id: source_config.source_id,
             num_pipelines: source_config.num_pipelines,
             enabled: source_config.enabled,
@@ -47,7 +47,7 @@ impl From<SourceConfig> for SourceConfigV3 {
 
 impl From<SourceConfig> for VersionedSourceConfig {
     fn from(source_config: SourceConfig) -> Self {
-        VersionedSourceConfig::V3(source_config.into())
+        VersionedSourceConfig::V0_4(source_config.into())
     }
 }
 
@@ -55,7 +55,7 @@ impl TryFrom<VersionedSourceConfig> for SourceConfig {
     type Error = anyhow::Error;
 
     fn try_from(versioned_source_config: VersionedSourceConfig) -> anyhow::Result<Self> {
-        let v1: SourceConfigV3 = versioned_source_config.into();
+        let v1: SourceConfigV0_4 = versioned_source_config.into();
         v1.validate_and_build()
     }
 }
@@ -63,7 +63,7 @@ impl TryFrom<VersionedSourceConfig> for SourceConfig {
 impl From<VersionedSourceConfig> for SourceConfigForSerialization {
     fn from(versioned_source_config: VersionedSourceConfig) -> Self {
         match versioned_source_config {
-            VersionedSourceConfig::V3(v3) => v3,
+            VersionedSourceConfig::V0_4(v0_4) => v0_4,
         }
     }
 }
@@ -81,7 +81,7 @@ fn default_source_enabled() -> bool {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub(crate) struct SourceConfigV3 {
+pub(crate) struct SourceConfigV0_4 {
     pub source_id: String,
 
     #[doc(hidden)]
@@ -99,7 +99,7 @@ pub(crate) struct SourceConfigV3 {
     pub source_params: SourceParams,
 }
 
-impl SourceConfigV3 {
+impl SourceConfigV0_4 {
     /// Checks the validity of the `SourceConfig` as a "serializable source".
     ///
     /// Two remarks:

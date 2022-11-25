@@ -27,6 +27,7 @@ use quickwit_doc_mapper::{SortByField, SortOrder};
 use quickwit_proto::{OutputFormat, ServiceError, SortOrder as ProtoSortOrder};
 use quickwit_search::{SearchError, SearchResponseRest, SearchService};
 use serde::{de, Deserialize, Deserializer};
+use serde_json::Value as JsonValue;
 use tracing::info;
 use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
@@ -83,7 +84,7 @@ pub struct SearchRequestQueryString {
     /// Query text. The query language is that of tantivy.
     pub query: String,
     /// The aggregation JSON string.
-    pub aggs: Option<serde_json::Value>,
+    pub aggs: Option<JsonValue>,
     // Fields to search on
     #[serde(default)]
     #[serde(rename(deserialize = "search_field"))]
@@ -145,7 +146,7 @@ async fn search_endpoint(
         start_offset: search_request.start_offset,
         aggregation_request: search_request
             .aggs
-            .map(|agg| serde_json::to_string(&agg).expect("could not serialize serde_json::Value")),
+            .map(|agg| serde_json::to_string(&agg).expect("could not serialize JsonValue")),
         sort_order,
         sort_by_field,
     };
@@ -336,7 +337,7 @@ mod tests {
     use bytes::Bytes;
     use mockall::predicate;
     use quickwit_search::{MockSearchService, SearchError};
-    use serde_json::json;
+    use serde_json::{json, Value as JsonValue};
 
     use super::*;
     use crate::recover_fn;
@@ -361,8 +362,8 @@ mod tests {
             errors: Vec::new(),
             aggregations: None,
         };
-        let search_response_json: serde_json::Value = serde_json::to_value(&search_response)?;
-        let expected_search_response_json: serde_json::Value = json!({
+        let search_response_json: JsonValue = serde_json::to_value(&search_response)?;
+        let expected_search_response_json: JsonValue = json!({
             "num_hits": 55,
             "hits": [],
             "elapsed_time_micros": 0,
@@ -564,7 +565,7 @@ mod tests {
             .reply(&search_handler(MockSearchService::new()))
             .await;
         assert_eq!(resp.status(), 400);
-        let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
+        let resp_json: JsonValue = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
             "error": "unknown field `end_unix_timestamp`, expected one of `query`, `aggs`, `search_field`, `snippet_fields`, `start_timestamp`, `end_timestamp`, `max_hits`, `start_offset`, `format`, `sort_by_field`"
         });
@@ -605,7 +606,7 @@ mod tests {
             .reply(&rest_search_api_handler)
             .await;
         assert_eq!(resp.status(), 200);
-        let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
+        let resp_json: JsonValue = serde_json::from_slice(resp.body())?;
         let expected_response_json = serde_json::json!({
             "num_hits": 10,
             "hits": [],
@@ -822,7 +823,7 @@ mod tests {
             .await;
 
         assert_eq!(resp.status(), 200);
-        let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
+        let resp_json: JsonValue = serde_json::from_slice(resp.body())?;
         let expected_response_json = serde_json::json!({
             "num_hits": 1,
             "hits": [{"title": "foo", "body": "foo bar baz"}],
