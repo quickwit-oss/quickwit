@@ -56,7 +56,7 @@ use quickwit_telemetry::payload::TelemetryEvent;
 use tabled::object::{Columns, Segment};
 use tabled::{Alignment, Concat, Format, Modify, Panel, Rotate, Style, Table, Tabled};
 use thousands::Separable;
-use tracing::{debug, warn, Level};
+use tracing::{debug, info, warn, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
 use crate::{
@@ -1082,10 +1082,12 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         let observation = pipeline_handle.observe().await;
 
         if observation.num_ongoing_merges == 0 {
+            info!("Merge pipeline has no more ongoing merges, Exiting.");
             break;
         }
 
         if observation.obs_type == ObservationType::PostMortem {
+            info!("Merge pipeline has exited, Exiting.");
             break;
         }
     }
