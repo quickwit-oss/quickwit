@@ -56,7 +56,6 @@ use quickwit_telemetry::payload::TelemetryEvent;
 use tabled::object::{Columns, Segment};
 use tabled::{Alignment, Concat, Format, Modify, Panel, Rotate, Style, Table, Tabled};
 use thousands::Separable;
-use tokio::time::interval;
 use tracing::{debug, warn, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
@@ -1076,9 +1075,9 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         })
         .await?;
 
-    let mut interval = interval(Duration::from_secs(1));
+    let mut check_interval = tokio::time::interval(Duration::from_secs(1));
     loop {
-        interval.tick().await;
+        check_interval.tick().await;
 
         let observation = pipeline_handle.observe().await;
 
