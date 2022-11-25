@@ -43,8 +43,6 @@ pub struct Index {
     pub index_metadata_json: String,
     /// Timestamp for tracking when the split was created.
     pub create_timestamp: sqlx::types::time::PrimitiveDateTime,
-    /// Timestamp for tracking when the split was last updated.
-    pub update_timestamp: sqlx::types::time::PrimitiveDateTime,
 }
 
 impl Index {
@@ -64,7 +62,6 @@ impl Index {
         // duplicated in [`IndexMetadata`]. We must override the duplicates with the authentic
         // values upon deserialization.
         index_metadata.create_timestamp = self.create_timestamp.assume_utc().unix_timestamp();
-        index_metadata.update_timestamp = self.update_timestamp.assume_utc().unix_timestamp();
         Ok(index_metadata)
     }
 }

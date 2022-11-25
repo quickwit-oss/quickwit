@@ -58,7 +58,6 @@ impl From<IndexMetadata> for IndexMetadataV0_4 {
             index_config: index_metadata.index_config,
             checkpoint: index_metadata.checkpoint,
             create_timestamp: index_metadata.create_timestamp,
-            update_timestamp: index_metadata.update_timestamp,
             sources,
         }
     }
@@ -70,8 +69,6 @@ pub(crate) struct IndexMetadataV0_4 {
     pub checkpoint: IndexCheckpoint,
     #[serde(default = "utc_now_timestamp")]
     pub create_timestamp: i64,
-    #[serde(default = "utc_now_timestamp")]
-    pub update_timestamp: i64,
     pub sources: Vec<SourceConfig>,
 }
 
@@ -90,7 +87,6 @@ impl TryFrom<IndexMetadataV0_4> for IndexMetadata {
             index_config: v0_4.index_config,
             checkpoint: v0_4.checkpoint,
             create_timestamp: v0_4.create_timestamp,
-            update_timestamp: v0_4.update_timestamp,
             sources,
         })
     }

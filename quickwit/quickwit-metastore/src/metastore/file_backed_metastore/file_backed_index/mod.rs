@@ -188,7 +188,6 @@ impl FileBackedIndex {
 
         self.splits
             .insert(metadata.split_id().to_string(), metadata);
-        self.metadata.update_timestamp = now_timestamp;
         Ok(())
     }
 
@@ -234,9 +233,6 @@ impl FileBackedIndex {
             return Err(MetastoreError::SplitsNotDeletable {
                 split_ids: non_deletable_split_ids,
             });
-        }
-        if is_modified {
-            self.metadata.update_timestamp = now_timestamp;
         }
         Ok(is_modified)
     }
@@ -289,7 +285,6 @@ impl FileBackedIndex {
             });
         }
 
-        self.metadata.update_timestamp = now_timestamp;
         Ok(())
     }
 
@@ -364,7 +359,6 @@ impl FileBackedIndex {
                 split_ids: split_not_deletable_ids,
             });
         }
-        self.metadata.update_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         Ok(())
     }
 
