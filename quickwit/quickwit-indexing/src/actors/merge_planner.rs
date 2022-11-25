@@ -291,7 +291,7 @@ impl Handler<RefreshMetric> for MergePlanner {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct MergePlannerState {
-    ongoing_merge_operations: Vec<MergeOperation>,
+    pub(crate) ongoing_merge_operations: Vec<MergeOperation>,
 }
 
 #[cfg(test)]
