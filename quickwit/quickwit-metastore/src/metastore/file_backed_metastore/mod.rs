@@ -418,6 +418,7 @@ impl Metastore for FileBackedMetastore {
                     SplitState::Published,
                     SplitState::MarkedForDeletion,
                 ],
+                false,
             )
         })
         .await?;

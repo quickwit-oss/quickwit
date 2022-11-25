@@ -1344,74 +1344,126 @@ pub mod test_suite {
     pub async fn test_metastore_mark_splits_for_deletion<
         MetastoreToTest: Metastore + DefaultForTest,
     >() {
-        let _ = tracing_subscriber::fmt::try_init();
         let metastore = MetastoreToTest::default_for_test().await;
 
         let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
-        let index_id = "mark-splits-as-deleted-my-index";
+        let index_id = append_random_suffix("test-mark-splits-for-deletion");
         let index_uri = format!("ram:///indexes/{index_id}");
-        let index_metadata = IndexMetadata::for_test(index_id, &index_uri);
-        let split_id_1 = "mark-splits-as-deleted-my-index-one";
+        let index_metadata = IndexMetadata::for_test(&index_id, &index_uri);
+
+        metastore.create_index(index_metadata).await.unwrap();
+
+        let error = metastore
+            .mark_splits_for_deletion("index-not-found", &[])
+            .await
+            .unwrap_err();
+        assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
+
+        metastore
+            .mark_splits_for_deletion(&index_id, &["split-not-found"])
+            .await
+            .unwrap();
+
+        let split_id_1 = format!("{index_id}--split-1");
         let split_metadata_1 = SplitMetadata {
-            footer_offsets: 1000..2000,
-            split_id: split_id_1.to_string(),
-            index_id: index_id.to_string(),
-            num_docs: 1,
-            uncompressed_docs_size_in_bytes: 2,
-            time_range: Some(0..=99),
+            split_id: split_id_1.clone(),
+            index_id: index_id.clone(),
             create_timestamp: current_timestamp,
             ..Default::default()
         };
+        metastore
+            .stage_split(&index_id, split_metadata_1)
+            .await
+            .unwrap();
 
-        // Mark a split for deletion on a non-existent index
-        {
-            let index_does_not_exist_error = metastore
-                .mark_splits_for_deletion("non-existent-index", &["non-existent-split"])
-                .await
-                .unwrap_err();
-            info!(err=?index_does_not_exist_error);
-            assert!(matches!(
-                index_does_not_exist_error,
-                MetastoreError::IndexDoesNotExist { .. }
-            ));
-        }
+        let split_id_2 = format!("{index_id}--split-2");
+        let split_metadata_2 = SplitMetadata {
+            split_id: split_id_2.clone(),
+            index_id: index_id.clone(),
+            create_timestamp: current_timestamp,
+            ..Default::default()
+        };
+        metastore
+            .stage_split(&index_id, split_metadata_2)
+            .await
+            .unwrap();
+        metastore
+            .publish_splits(&index_id, &[&split_id_2], &[], None)
+            .await
+            .unwrap();
 
-        // Mark a non-existent split for deletion on an index
-        {
-            metastore
-                .create_index(index_metadata.clone())
-                .await
-                .unwrap();
+        let split_id_3 = format!("{index_id}--split-3");
+        let split_metadata_3 = SplitMetadata {
+            split_id: split_id_3.clone(),
+            index_id: index_id.clone(),
+            create_timestamp: current_timestamp,
+            ..Default::default()
+        };
+        metastore
+            .stage_split(&index_id, split_metadata_3)
+            .await
+            .unwrap();
+        metastore
+            .publish_splits(&index_id, &[&split_id_3], &[], None)
+            .await
+            .unwrap();
 
-            let result = metastore
-                .mark_splits_for_deletion(index_id, &["non-existent-split"])
-                .await
-                .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
+        // Sleep for 1s so we can observe the timestamp update.
+        sleep(Duration::from_secs(1)).await;
 
-            cleanup_index(&metastore, index_id).await;
-        }
+        metastore
+            .mark_splits_for_deletion(&index_id, &[&split_id_3])
+            .await
+            .unwrap();
 
-        // Mark an existent split for deletion on an index
-        {
-            metastore
-                .create_index(index_metadata.clone())
-                .await
-                .unwrap();
+        let marked_splits = metastore
+            .list_splits(
+                ListSplitsQuery::for_index(&index_id)
+                    .with_split_state(SplitState::MarkedForDeletion),
+            )
+            .await
+            .unwrap();
 
-            metastore
-                .stage_split(index_id, split_metadata_1.clone())
-                .await
-                .unwrap();
+        assert_eq!(marked_splits.len(), 1);
+        assert_eq!(marked_splits[0].split_id(), split_id_3);
 
-            metastore
-                .mark_splits_for_deletion(index_id, &[split_id_1])
-                .await
-                .unwrap();
+        let split_3_update_timestamp = marked_splits[0].update_timestamp;
+        assert!(current_timestamp < split_3_update_timestamp);
 
-            cleanup_index(&metastore, index_id).await;
-        }
+        // Sleep for 1s so we can observe the timestamp update.
+        sleep(Duration::from_secs(1)).await;
+
+        metastore
+            .mark_splits_for_deletion(
+                &index_id,
+                &[&split_id_1, &split_id_2, &split_id_3, "split-not-found"],
+            )
+            .await
+            .unwrap();
+
+        let mut marked_splits = metastore
+            .list_splits(
+                ListSplitsQuery::for_index(&index_id)
+                    .with_split_state(SplitState::MarkedForDeletion),
+            )
+            .await
+            .unwrap();
+
+        marked_splits.sort_by_key(|split| split.split_id().to_string());
+
+        assert_eq!(marked_splits.len(), 3);
+
+        assert_eq!(marked_splits[0].split_id(), split_id_1);
+        assert!(current_timestamp + 2 <= marked_splits[0].update_timestamp);
+
+        assert_eq!(marked_splits[1].split_id(), split_id_2);
+        assert!(current_timestamp + 2 <= marked_splits[1].update_timestamp);
+
+        assert_eq!(marked_splits[2].split_id(), split_id_3);
+        assert_eq!(marked_splits[2].update_timestamp, split_3_update_timestamp);
+
+        cleanup_index(&metastore, &index_id).await;
     }
 
     pub async fn test_metastore_delete_splits<MetastoreToTest: Metastore + DefaultForTest>() {
@@ -2788,6 +2840,8 @@ macro_rules! metastore_test_suite {
             //
             //  - stage_split
             //  - publish_splits
+            //  - mark_splits_for_deletion
+            //  - delete_splits
 
             #[tokio::test]
             async fn test_metastore_stage_split() {
