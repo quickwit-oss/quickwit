@@ -30,7 +30,7 @@ use clap::{arg, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use itertools::Itertools;
-use quickwit_actors::{ActorHandle, ObservationType, Universe};
+use quickwit_actors::{Actor, ActorHandle, ObservationType, Universe};
 use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::service::QuickwitService;
@@ -41,7 +41,7 @@ use quickwit_config::{
 use quickwit_core::{
     clear_cache_directory, remove_indexing_directory, validate_storage_uri, IndexService,
 };
-use quickwit_indexing::actors::{IndexingService, MergePipelineId};
+use quickwit_indexing::actors::{IndexingService, MergePipeline, MergePipelineId};
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
@@ -56,6 +56,7 @@ use quickwit_telemetry::payload::TelemetryEvent;
 use tabled::object::{Columns, Segment};
 use tabled::{Alignment, Concat, Format, Modify, Panel, Rotate, Style, Table, Tabled};
 use thousands::Separable;
+use tokio::time::interval;
 use tracing::{debug, warn, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
@@ -1069,9 +1070,25 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
             pipeline_ord: 0,
         })
         .await?;
-    let pipeline_handle = indexing_service_mailbox
-        .ask_for_res(DetachIndexingPipeline { pipeline_id })
+    let pipeline_handle: ActorHandle<MergePipeline> = indexing_service_mailbox
+        .ask_for_res(DetachMergePipeline { pipeline_id: MergePipelineId::from(&pipeline_id) })
         .await?;
+
+    let mut interval = interval(Duration::from_secs(1));
+    loop {
+        interval.tick().await;
+
+        let observation = pipeline_handle.observe().await;
+
+        if observation.num_ongoing_merges == 0 {
+            break
+        }
+
+        if observation.obs_type == ObservationType::PostMortem {
+            break;
+        }
+    }
+
     let (pipeline_exit_status, _pipeline_statistics) = pipeline_handle.join().await;
     indexing_service_handle.quit().await;
     if !pipeline_exit_status.is_success() {
