@@ -9,7 +9,7 @@ import TabItem from '@theme/TabItem';
 
 Before running Quickwit search instances on your servers, you will need to create indexes, add documents, and finally launch the server. In this quick start guide, we will install Quickwit and go through these steps one by one. All the Quickwit commands used in this guide are documented [in the CLI reference documentation](../reference/cli.md).
 
-## Install Quickwit using Quickwit installer 
+## Install Quickwit using Quickwit installer
 
 The Quickwit installer automatically picks the correct binary archive for your environment and then downloads and unpacks it in your working directory.
 This method works only for [some OS/architectures](installation.md#download), and you will also need to install some [external dependencies](installation.md#note-on-external-dependencies).
@@ -50,7 +50,7 @@ The index config defines three text fields: `title`, `body` and `url`. It also s
 And here is the complete config:
 
 ```yaml title="wikipedia-index-config.yaml"
-version: 0
+version: 0.4
 index_id: wikipedia
 doc_mapping:
   field_mappings:

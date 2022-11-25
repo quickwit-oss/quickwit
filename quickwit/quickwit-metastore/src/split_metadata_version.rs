@@ -26,7 +26,7 @@ use crate::split_metadata::utc_now_timestamp;
 use crate::SplitMetadata;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub(crate) struct SplitMetadataV3 {
+pub(crate) struct SplitMetadataV0_4 {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
     /// In reality, some information may be implicitly configured
@@ -83,8 +83,8 @@ pub(crate) struct SplitMetadataV3 {
     num_merge_ops: usize,
 }
 
-impl From<SplitMetadataV3> for SplitMetadata {
-    fn from(v3: SplitMetadataV3) -> Self {
+impl From<SplitMetadataV0_4> for SplitMetadata {
+    fn from(v3: SplitMetadataV0_4) -> Self {
         let source_id = v3.source_id.unwrap_or_else(|| "unknown".to_string());
 
         let node_id = if let Some(node_id) = v3.node_id {
@@ -119,9 +119,9 @@ impl From<SplitMetadataV3> for SplitMetadata {
     }
 }
 
-impl From<SplitMetadata> for SplitMetadataV3 {
+impl From<SplitMetadata> for SplitMetadataV0_4 {
     fn from(split: SplitMetadata) -> Self {
-        SplitMetadataV3 {
+        SplitMetadataV0_4 {
             split_id: split.split_id,
             index_id: split.index_id,
             partition_id: split.partition_id,
@@ -142,20 +142,20 @@ impl From<SplitMetadata> for SplitMetadataV3 {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedSplitMetadata {
-    #[serde(rename = "3")]
-    V3(SplitMetadataV3),
+    #[serde(rename = "0.4")]
+    V0_4(SplitMetadataV0_4),
 }
 
 impl From<VersionedSplitMetadata> for SplitMetadata {
     fn from(versioned_helper: VersionedSplitMetadata) -> Self {
         match versioned_helper {
-            VersionedSplitMetadata::V3(v3) => v3.into(),
+            VersionedSplitMetadata::V0_4(v0_4) => v0_4.into(),
         }
     }
 }
 
 impl From<SplitMetadata> for VersionedSplitMetadata {
     fn from(split_metadata: SplitMetadata) -> Self {
-        VersionedSplitMetadata::V3(split_metadata.into())
+        VersionedSplitMetadata::V0_4(split_metadata.into())
     }
 }

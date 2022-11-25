@@ -31,6 +31,7 @@ use quickwit_proto::ingest_api::{
     CreateQueueIfNotExistsRequest, FetchRequest, FetchResponse, SuggestTruncateRequest,
 };
 use serde::Serialize;
+use serde_json::Value as JsonValue;
 
 use super::{Source, SourceActor, SourceContext, TypedSourceFactory};
 use crate::actors::DocProcessor;
@@ -191,7 +192,7 @@ impl Source for IngestApiSource {
         "IngestApiSource".to_string()
     }
 
-    fn observable_state(&self) -> serde_json::Value {
+    fn observable_state(&self) -> JsonValue {
         serde_json::to_value(&self.counters).unwrap()
     }
 }

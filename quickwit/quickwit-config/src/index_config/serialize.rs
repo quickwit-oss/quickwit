@@ -28,19 +28,19 @@ use crate::{
 };
 
 /// Alias for the latest serialization format.
-type IndexConfigForSerialization = IndexConfigV3;
+type IndexConfigForSerialization = IndexConfigV0_4;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "version")]
 pub(super) enum VersionedIndexConfig {
-    #[serde(rename = "3")]
-    V3(IndexConfigV3),
+    #[serde(rename = "0.4")]
+    V0_4(IndexConfigV0_4),
 }
 
 impl From<VersionedIndexConfig> for IndexConfigForSerialization {
     fn from(versioned_config: VersionedIndexConfig) -> IndexConfigForSerialization {
         match versioned_config {
-            VersionedIndexConfig::V3(v3) => v3,
+            VersionedIndexConfig::V0_4(v0_4) => v0_4,
         }
     }
 }
@@ -119,7 +119,7 @@ impl IndexConfigForSerialization {
 
 impl From<IndexConfig> for VersionedIndexConfig {
     fn from(index_config: IndexConfig) -> Self {
-        VersionedIndexConfig::V3(index_config.into())
+        VersionedIndexConfig::V0_4(index_config.into())
     }
 }
 
@@ -128,14 +128,14 @@ impl TryFrom<VersionedIndexConfig> for IndexConfig {
 
     fn try_from(versioned_index_config: VersionedIndexConfig) -> anyhow::Result<Self> {
         match versioned_index_config {
-            VersionedIndexConfig::V3(v3) => v3.validate_and_build(None),
+            VersionedIndexConfig::V0_4(v3) => v3.validate_and_build(None),
         }
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct IndexConfigV3 {
+pub(crate) struct IndexConfigV0_4 {
     pub index_id: String,
     #[serde(default)]
     pub index_uri: Option<Uri>,
@@ -149,9 +149,9 @@ pub(crate) struct IndexConfigV3 {
     pub retention_policy: Option<RetentionPolicy>,
 }
 
-impl From<IndexConfig> for IndexConfigV3 {
+impl From<IndexConfig> for IndexConfigV0_4 {
     fn from(index_config: IndexConfig) -> Self {
-        IndexConfigV3 {
+        IndexConfigV0_4 {
             index_id: index_config.index_id,
             index_uri: Some(index_config.index_uri),
             doc_mapping: index_config.doc_mapping,
@@ -228,7 +228,7 @@ mod test {
     #[test]
     fn test_minimal_index_config_missing_root_uri_no_default_uri() {
         let config_yaml = r#"
-            version: 3
+            version: 0.4
             index_id: hdfs-logs
             doc_mapping: {}
         "#;
@@ -240,7 +240,7 @@ mod test {
     #[test]
     fn test_minimal_index_config_missing_root_uri_with_default_index_root_uri() {
         let config_yaml = r#"
-            version: 3
+            version: 0.4
             index_id: hdfs-logs
             doc_mapping: {}
         "#;

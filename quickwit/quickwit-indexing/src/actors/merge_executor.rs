@@ -521,6 +521,7 @@ mod tests {
     use quickwit_common::split_file;
     use quickwit_metastore::SplitMetadata;
     use quickwit_proto::metastore_api::DeleteQuery;
+    use serde_json::Value as JsonValue;
     use tantivy::{Inventory, ReloadPolicy};
 
     use super::*;
@@ -650,9 +651,9 @@ mod tests {
 
     async fn aux_test_delete_and_merge_executor(
         index_id: &str,
-        docs: Vec<serde_json::Value>,
+        docs: Vec<JsonValue>,
         delete_query: &str,
-        result_docs: Vec<serde_json::Value>,
+        result_docs: Vec<JsonValue>,
     ) -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let pipeline_id = IndexingPipelineId {
@@ -786,7 +787,7 @@ mod tests {
                     let doc_json = searcher.schema().to_json(&doc);
                     serde_json::from_str(&doc_json).unwrap()
                 })
-                .collect::<Vec<serde_json::Value>>();
+                .collect::<Vec<JsonValue>>();
 
             assert_eq!(documents_left.len(), result_docs.len());
             for doc in &documents_left {

@@ -27,9 +27,7 @@ use quickwit_actors::{
     Observation,
 };
 use quickwit_common::fs::get_cache_directory_path;
-use quickwit_config::{
-    build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
-};
+use quickwit_config::{build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig};
 use quickwit_ingest_api::QUEUES_DIR_NAME;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -41,8 +39,8 @@ use tracing::{error, info};
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::MergePlanner;
 use crate::models::{
-    DetachPipeline, IndexingDirectory, IndexingPipelineId, Observe, ObservePipeline,
-    ShutdownPipeline, ShutdownPipelines, SpawnMergePipeline, SpawnPipeline, SpawnPipelines,
+    DetachIndexingPipeline, DetachMergePipeline, IndexingDirectory, IndexingPipelineId, Observe,
+    ObservePipeline, ShutdownPipeline, ShutdownPipelines, SpawnPipeline, SpawnPipelines,
     WeakIndexingDirectory,
 };
 use crate::split_store::{LocalSplitStore, SplitStoreQuota};
@@ -96,8 +94,8 @@ pub struct IndexingServiceCounters {
 type IndexId = String;
 type SourceId = String;
 
-#[derive(Clone, Hash, Eq, PartialEq)]
-struct MergePipelineId {
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub struct MergePipelineId {
     index_id: String,
     source_id: String,
 }
@@ -171,6 +169,21 @@ impl IndexingService {
             })?;
         self.counters.num_running_pipelines -= 1;
         Ok(pipeline_handle)
+    }
+
+    async fn detach_merge_pipeline(
+        &mut self,
+        pipeline_id: &MergePipelineId,
+    ) -> Result<ActorHandle<MergePipeline>, IndexingServiceError> {
+        let pipeline_handle = self
+            .merge_pipeline_handles
+            .remove(pipeline_id)
+            .ok_or_else(|| IndexingServiceError::MissingPipeline {
+                index_id: pipeline_id.index_id.clone(),
+                source_id: pipeline_id.source_id.clone(),
+            })?;
+        self.counters.num_running_merge_pipelines -= 1;
+        Ok(pipeline_handle.handle)
     }
 
     async fn observe_pipeline(
@@ -332,26 +345,6 @@ impl IndexingService {
         Ok(())
     }
 
-    async fn spawn_merge_pipeline(
-        &mut self,
-        ctx: &ActorContext<Self>,
-        pipeline_id: IndexingPipelineId,
-    ) -> Result<IndexingPipelineId, IndexingServiceError> {
-        let index_config = self
-            .index_metadata(ctx, &pipeline_id.index_id)
-            .await?
-            .into_index_config();
-        let source_config = SourceConfig {
-            source_id: pipeline_id.source_id.clone(),
-            num_pipelines: 1,
-            enabled: true,
-            source_params: SourceParams::Vec(VecSourceParams::default()),
-        };
-        self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_config, source_config)
-            .await?;
-        Ok(pipeline_id)
-    }
-
     async fn index_metadata(
         &self,
         ctx: &ActorContext<Self>,
@@ -470,6 +463,7 @@ impl IndexingService {
         };
         self.merge_pipeline_handles
             .insert(merge_pipeline_id, merge_pipeline_mailbox_handle);
+        self.counters.num_running_merge_pipelines += 1;
         Ok(merge_planner_mailbox)
     }
 }
@@ -489,15 +483,28 @@ impl Handler<ObservePipeline> for IndexingService {
 }
 
 #[async_trait]
-impl Handler<DetachPipeline> for IndexingService {
+impl Handler<DetachIndexingPipeline> for IndexingService {
     type Reply = Result<ActorHandle<IndexingPipeline>, IndexingServiceError>;
 
     async fn handle(
         &mut self,
-        msg: DetachPipeline,
+        msg: DetachIndexingPipeline,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self.detach_pipeline(&msg.pipeline_id).await)
+    }
+}
+
+#[async_trait]
+impl Handler<DetachMergePipeline> for IndexingService {
+    type Reply = Result<ActorHandle<MergePipeline>, IndexingServiceError>;
+
+    async fn handle(
+        &mut self,
+        msg: DetachMergePipeline,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(self.detach_merge_pipeline(&msg.pipeline_id).await)
     }
 }
 
@@ -530,18 +537,6 @@ impl Actor for IndexingService {
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         self.handle(SuperviseLoop, ctx).await
-    }
-}
-
-#[async_trait]
-impl Handler<SpawnMergePipeline> for IndexingService {
-    type Reply = Result<IndexingPipelineId, IndexingServiceError>;
-    async fn handle(
-        &mut self,
-        message: SpawnMergePipeline,
-        ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self.spawn_merge_pipeline(ctx, message.pipeline_id).await)
     }
 }
 
@@ -658,7 +653,7 @@ mod tests {
     use quickwit_actors::{Health, ObservationType, Supervisable, Universe, HEARTBEAT};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::uri::Uri;
-    use quickwit_config::{SourceConfig, VecSourceParams};
+    use quickwit_config::{SourceConfig, SourceParams, VecSourceParams};
     use quickwit_ingest_api::init_ingest_api;
     use quickwit_metastore::{quickwit_metastore_uri_resolver, MockMetastore};
 
@@ -748,7 +743,7 @@ mod tests {
 
         // Test `detach_pipeline`.
         let pipeline_handle = indexing_server_mailbox
-            .ask_for_res(DetachPipeline {
+            .ask_for_res(DetachIndexingPipeline {
                 pipeline_id: pipeline_id_0.clone(),
             })
             .await
@@ -846,22 +841,39 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!(
-            indexing_server_handle.observe().await.num_running_pipelines,
-            0
-        );
+        let observation = indexing_server_handle.process_pending_and_observe().await;
+        assert_eq!(observation.num_running_pipelines, 0);
 
-        // Test `spawn_merge_pipeline`.
-        indexing_server_mailbox
-            .ask_for_res(SpawnMergePipeline {
-                pipeline_id: pipeline_id_0,
+        // Let the service cleanup the merge pipelines.
+        universe.simulate_time_shift(HEARTBEAT).await;
+
+        // Test spawning a merge pipeline.
+        let pipeline_id = indexing_server_mailbox
+            .ask_for_res(SpawnPipeline {
+                index_id: index_id.clone(),
+                source_config: SourceConfig {
+                    source_id: source_config_0.source_id,
+                    num_pipelines: 1,
+                    enabled: true,
+                    source_params: SourceParams::Vec(VecSourceParams::default()),
+                },
+                pipeline_ord: 0,
             })
             .await
             .unwrap();
-        assert_eq!(
-            indexing_server_handle.observe().await.num_running_pipelines,
-            1
-        );
+        let observation = indexing_server_handle.process_pending_and_observe().await;
+        assert_eq!(observation.num_running_pipelines, 1);
+        assert_eq!(observation.num_running_merge_pipelines, 1);
+
+        // Test `detach_merge_pipeline`
+        let _pipeline = indexing_server_mailbox
+            .ask_for_res(DetachMergePipeline {
+                pipeline_id: MergePipelineId::from(&pipeline_id),
+            })
+            .await
+            .unwrap();
+        let observation = indexing_server_handle.process_pending_and_observe().await;
+        assert_eq!(observation.num_running_merge_pipelines, 0);
 
         // Test `supervise_pipelines`
         let source_config_3 = SourceConfig {
@@ -946,6 +958,7 @@ mod tests {
         assert_eq!(observation.num_running_pipelines, 1);
         assert_eq!(observation.num_failed_pipelines, 0);
         assert_eq!(observation.num_successful_pipelines, 0);
+        assert_eq!(observation.num_running_merge_pipelines, 1);
 
         // Test `shutdown_pipeline`
         indexing_server_mailbox
@@ -955,17 +968,13 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!(
-            indexing_server_handle.observe().await.num_running_pipelines,
-            0
-        );
-        assert_eq!(
-            indexing_server_handle
-                .observe()
-                .await
-                .num_running_merge_pipelines,
-            0
-        );
+
+        // Let the service cleanup the merge pipelines.
+        universe.simulate_time_shift(HEARTBEAT).await;
+
+        let observation = indexing_server_handle.process_pending_and_observe().await;
+        assert_eq!(observation.num_running_pipelines, 0);
+        assert_eq!(observation.num_running_merge_pipelines, 0);
         universe.simulate_time_shift(HEARTBEAT).await;
         // Check that the merge pipeline is also shut down as they are no more indexing pipeilne on
         // the index.
