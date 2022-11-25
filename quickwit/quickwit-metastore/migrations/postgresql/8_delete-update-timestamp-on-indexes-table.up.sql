@@ -1,0 +1,1 @@
+ALTER TABLE indexes DROP COLUMN IF EXISTS update_timestamp;

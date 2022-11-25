@@ -101,10 +101,6 @@ pub mod test_suite {
 
         assert_eq!(index_metadata.index_id(), index_id);
         assert_eq!(index_metadata.index_uri(), &index_uri);
-        assert_eq!(
-            index_metadata.create_timestamp,
-            index_metadata.update_timestamp
-        );
 
         let error = metastore.create_index(index_metadata).await.unwrap_err();
         assert!(matches!(error, MetastoreError::IndexAlreadyExists { .. }));
@@ -2270,14 +2266,6 @@ pub mod test_suite {
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
         assert!(split_meta.publish_timestamp.is_none());
-        assert!(
-            metastore
-                .index_metadata(index_id)
-                .await
-                .unwrap()
-                .update_timestamp
-                > current_timestamp
-        );
 
         current_timestamp = split_meta.update_timestamp;
 
@@ -2301,14 +2289,6 @@ pub mod test_suite {
         assert_eq!(
             split_meta.publish_timestamp,
             Some(split_meta.update_timestamp)
-        );
-        assert!(
-            metastore
-                .index_metadata(index_id)
-                .await
-                .unwrap()
-                .update_timestamp
-                > current_timestamp
         );
 
         // wait a sec & re-publish and check publish_timestamp has not changed
@@ -2341,14 +2321,6 @@ pub mod test_suite {
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
         assert!(split_meta.publish_timestamp.is_some());
-        assert!(
-            metastore
-                .index_metadata(index_id)
-                .await
-                .unwrap()
-                .update_timestamp
-                > current_timestamp
-        );
 
         current_timestamp = split_meta.update_timestamp;
 
@@ -2358,14 +2330,8 @@ pub mod test_suite {
             .delete_splits(index_id, &[split_id])
             .await
             .unwrap();
-        assert!(
-            metastore
-                .index_metadata(index_id)
-                .await
-                .unwrap()
-                .update_timestamp
-                > current_timestamp
-        );
+
+        // TODO add new check?
 
         cleanup_index(&metastore, index_id).await;
     }

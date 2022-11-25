@@ -111,27 +111,6 @@ impl PostgresqlMetastore {
             connection_pool,
         })
     }
-
-    /// This function attempts to update an index update timestamp. Since we call this method after
-    /// a successful update of splits or delete tasks, we never return an error to not mislead the
-    /// clients into believing that the update failed. We log the error instead.
-    #[instrument(skip(self))]
-    async fn update_index_update_timestamp(&self, index_id: &str) {
-        let update_res = sqlx::query(
-            r#"
-            UPDATE indexes
-            SET update_timestamp = current_timestamp
-            WHERE index_id = $1;
-            "#,
-        )
-        .bind(index_id)
-        .execute(&self.connection_pool)
-        .await;
-
-        if let Err(error) = update_res {
-            warn!(error=?error, "Failed to update index update timestamp.");
-        }
-    }
 }
 
 /// Returns an Index object given an index_id or None if it does not exists.
@@ -628,7 +607,6 @@ impl Metastore for PostgresqlMetastore {
 
         debug!(index_id=%index_id, split_id=%split_metadata.split_id, "Split successfully staged.");
 
-        self.update_index_update_timestamp(index_id).await;
         Ok(())
     }
 
@@ -694,7 +672,6 @@ impl Metastore for PostgresqlMetastore {
             }
             Ok(())
         })?;
-        self.update_index_update_timestamp(index_id).await;
         Ok(())
     }
 
@@ -754,7 +731,6 @@ impl Metastore for PostgresqlMetastore {
                 cause: "".to_string(),
             })
         })?;
-        self.update_index_update_timestamp(index_id).await;
         Ok(())
     }
 
@@ -795,7 +771,6 @@ impl Metastore for PostgresqlMetastore {
                 split_ids: not_deletable_ids,
             })
         })?;
-        self.update_index_update_timestamp(index_id).await;
         Ok(())
     }
 
@@ -960,7 +935,6 @@ impl Metastore for PostgresqlMetastore {
                 index_id: index_id.to_string(),
             });
         }
-        self.update_index_update_timestamp(index_id).await;
         Ok(())
     }
 
