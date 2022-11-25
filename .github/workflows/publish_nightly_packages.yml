@@ -10,8 +10,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - build: macos
-            os: macos-latest
+          - os: macos-latest
             target: aarch64-apple-darwin
 
     steps:
@@ -31,8 +30,9 @@ jobs:
         working-directory: ./quickwit
       - name: Bundle archive
         run: |
-          make archive BINARY_FILE=target/release/quickwit \
+          make archive BINARY_FILE=quickwit/target/release/quickwit \
             BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
+        shell: bash
       - name: Save binary archive for few days
         uses: actions/upload-artifact@v3
         with:
