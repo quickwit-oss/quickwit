@@ -2322,8 +2322,6 @@ pub mod test_suite {
         assert!(split_meta.update_timestamp > current_timestamp);
         assert!(split_meta.publish_timestamp.is_some());
 
-        current_timestamp = split_meta.update_timestamp;
-
         // wait for 1s, delete split & check the index `update_timestamp`
         sleep(Duration::from_secs(1)).await;
         metastore
