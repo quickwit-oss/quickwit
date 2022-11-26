@@ -48,7 +48,7 @@ The index config defines five fields: `timestamp`, `tenant_id`, `severity_text`,
 for the nested values `resource.service` . It also sets the `default_search_fields`, the `tag_fields`, and the `timestamp_field`.The `timestamp_field` and `tag_fields` are used by Quickwit for [splits pruning](/docs/concepts/architecture) at query time to boost search speed. Check out the [index config docs](/docs/configuration/index-config) for more details.
 
 ```yaml title="hdfs_logs_index_config.yaml"
-version: 0
+version: 0.4
 index_id: hdfs-logs
 doc_mapping:
   field_mappings:
