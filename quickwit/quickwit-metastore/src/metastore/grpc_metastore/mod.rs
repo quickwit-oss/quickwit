@@ -67,6 +67,11 @@ const CLIENT_TIMEOUT_DURATION: Duration = if cfg!(test) {
     Duration::from_secs(30)
 };
 
+// URI describing in a generic way the metastore services resource present in the cluster (=
+// discovered by Quickwit gossip). This value is used to build the URI of `MetastoreGrpcClient` and
+// is only useful for debugging.
+const GRPC_METASTORE_BASE_URI: &str = "grpc://metastore.service.cluster";
+
 /// The [`MetastoreGrpcClient`] sends gRPC requests to cluster members running a [`Metastore`]
 /// service, those nodes will execute the queries on the metastore.
 /// The [`MetastoreGrpcClient`] use tonic load balancer to balance requests between nodes and
@@ -76,13 +81,19 @@ pub struct MetastoreGrpcClient {
     underlying:
         MetastoreApiServiceClient<InterceptedService<Timeout<Channel>, SpanContextInterceptor>>,
     pool_size_rx: watch::Receiver<usize>,
+    // URI used to describe the metastore resource of form
+    // `GRPC_METASTORE_BASE_URI:{grpc_advertise_port}`. This value is only useful for
+    // debugging.
+    uri: QuickwitUri,
 }
 
 impl MetastoreGrpcClient {
     /// Create a [`MetastoreGrpcClient`] that sends gRPC requests to nodes running
     /// [`Metastore`] service. It listens to cluster members changes to update the
     /// nodes.
+    /// `grpc_advertise_port` is used only for building the `uri`.
     pub async fn create_and_update_from_members(
+        grpc_advertise_port: u16,
         mut members_watch_channel: WatchStream<Vec<ClusterMember>>,
     ) -> anyhow::Result<Self> {
         // Create a balance channel whose endpoint can be updated thanks to a sender.
@@ -116,8 +127,12 @@ impl MetastoreGrpcClient {
         });
         let underlying =
             MetastoreApiServiceClient::with_interceptor(timeout_channel, SpanContextInterceptor);
-
+        let uri = QuickwitUri::from_well_formed(format!(
+            "{}:{}",
+            GRPC_METASTORE_BASE_URI, grpc_advertise_port
+        ));
         Ok(Self {
+            uri,
             underlying,
             pool_size_rx,
         })
@@ -144,6 +159,7 @@ impl MetastoreGrpcClient {
         Ok(Self {
             underlying,
             pool_size_rx,
+            uri: QuickwitUri::from_well_formed(GRPC_METASTORE_BASE_URI),
         })
     }
 }
@@ -158,7 +174,7 @@ impl Metastore for MetastoreGrpcClient {
     }
 
     fn uri(&self) -> &QuickwitUri {
-        unimplemented!()
+        &self.uri
     }
 
     /// Creates an index.
@@ -764,10 +780,14 @@ mod tests {
             watch::channel::<Vec<ClusterMember>>(vec![metastore_service_member.clone()]);
         let watch_members = WatchStream::new(members_rx);
         let mut metastore_client =
-            MetastoreGrpcClient::create_and_update_from_members(watch_members)
+            MetastoreGrpcClient::create_and_update_from_members(1, watch_members)
                 .await
                 .unwrap();
 
+        assert_eq!(
+            metastore_client.uri().to_string(),
+            "grpc://metastore.service.cluster:1"
+        );
         // gRPC service should send request on the running server.
         metastore_client.pool_size_rx.changed().await.unwrap();
         assert_eq!(*metastore_client.pool_size_rx.borrow(), 1);
@@ -850,7 +870,7 @@ mod tests {
             watch::channel::<Vec<ClusterMember>>(vec![metastore_member_1.clone()]);
         let watch_members = WatchStream::new(members_rx);
         let mut metastore_client =
-            MetastoreGrpcClient::create_and_update_from_members(watch_members)
+            MetastoreGrpcClient::create_and_update_from_members(1, watch_members)
                 .await
                 .unwrap();
 
