@@ -24,6 +24,7 @@ use std::time::Duration;
 
 use futures::Future;
 use quickwit_actors::ActorContext;
+use quickwit_common::PrettySample;
 use quickwit_metastore::{ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState};
 use quickwit_storage::Storage;
 use serde::Serialize;
@@ -224,18 +225,16 @@ async fn incrementally_remove_marked_splits(
             Ok(entries) => removed_split_files.extend(entries),
             Err(SplitDeletionError::MetastoreFailure {
                 error,
-                failed_split_ids: split_ids,
+                failed_split_ids: failed_split_ids_inner,
             }) => {
-                let num_failed_splits = split_ids.len();
-                let truncated_split_ids = split_ids.iter().take(5).collect::<Vec<_>>();
                 error!(
-                    error = ?error,
-                    num_failed_splits = num_failed_splits,
-                    "Failed to delete {:?} and {} other splits.",
-                    truncated_split_ids,
-                    num_failed_splits
+                    error=?error,
+                    index_id=%index_id,
+                    split_ids=?PrettySample::new(&failed_split_ids_inner, 5),
+                    "Failed to delete {} splits.",
+                    failed_split_ids_inner.len()
                 );
-                failed_split_ids.extend(split_ids);
+                failed_split_ids.extend(failed_split_ids_inner);
                 break;
             }
         }

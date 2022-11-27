@@ -306,6 +306,7 @@ mod tests {
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
+    use serde_json::Value as JsonValue;
 
     use super::*;
     use crate::models::{PublishLock, RawDocBatch};
@@ -364,7 +365,7 @@ mod tests {
         assert_eq!(batch.checkpoint_delta, checkpoint_delta);
 
         let schema = doc_mapper.schema();
-        let doc_json: serde_json::Value =
+        let doc_json: JsonValue =
             serde_json::from_str(&schema.to_json(&batch.docs[0].doc)).unwrap();
         assert_eq!(
             doc_json,

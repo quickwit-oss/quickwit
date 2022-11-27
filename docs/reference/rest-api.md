@@ -109,7 +109,7 @@ The endpoint will return 10 million values if 10 million documents match the que
 
 :::warning
 The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision. The timestamp field precision only affects the way it's stored as fast-fields, whereas the document filtering is always performed in seconds.
-::: 
+:::
 
 #### Response
 
@@ -181,3 +181,18 @@ The response is a JSON object, and the content type is `application/json; charse
 | Field                   | Description                        | Type       |
 | --------------------    | ---------------------------------- | :--------: |
 | **num_docs_for_processing**   | Total number of documents ingested for processing. The documents may not have been processed. The API will not return indexing errors, check the server logs for errors. | `number`   |
+
+
+### Cluster API
+
+This endpoint lets you check the state of the cluster from the point of view of the node handling the request.
+
+```
+GET api/v1/cluster?format=prettyjson
+```
+
+#### Parameters
+
+Name | Type | Description | Default value
+--- | --- | --- | ---
+**format** | `String` | The output format requested for the response: `json` or `prettyjson` | `prettyjson`

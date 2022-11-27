@@ -25,6 +25,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::future;
 use serde::Serialize;
+use serde_json::Value as JsonValue;
 use tokio::sync::oneshot;
 
 use crate::mailbox::WeakMailbox;
@@ -40,7 +41,7 @@ trait JsonObservable: Sync + Send {
     fn is_disconnected(&self) -> bool;
     fn any(&self) -> &dyn Any;
     fn actor_instance_id(&self) -> &str;
-    async fn observe(&self) -> Option<serde_json::Value>;
+    async fn observe(&self) -> Option<JsonValue>;
 }
 
 #[async_trait]
@@ -57,7 +58,7 @@ impl<A: Actor> JsonObservable for TypedJsonObservable<A> {
     fn actor_instance_id(&self) -> &str {
         self.actor_instance_id.as_str()
     }
-    async fn observe(&self) -> Option<serde_json::Value> {
+    async fn observe(&self) -> Option<JsonValue> {
         let mailbox = self.weak_mailbox.upgrade()?;
         let (oneshot_tx, oneshot_rx) = oneshot::channel::<Box<dyn Any + Send>>();
         mailbox
@@ -104,7 +105,7 @@ impl ActorRegistryForSpecificType {
 pub struct ActorObservation {
     pub type_name: &'static str,
     pub instance_id: String,
-    pub obs: Option<serde_json::Value>,
+    pub obs: Option<JsonValue>,
 }
 
 impl ActorRegistry {

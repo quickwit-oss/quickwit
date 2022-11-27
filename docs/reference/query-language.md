@@ -58,6 +58,10 @@ Quickwit also supports phrase queries with a slop parameter using the slop opera
 Slop queries can only be used on field indexed with the [record option](./../configuration/index-config.md#text-type) set to `position` value.
 :::
 
+### Set Operator
+
+Quickwit supports `IN [value1 value2 ...]` as a set membership operator. This is more cpu efficient than the equivalent `OR`ing of many terms, but may download more of the split than `OR`ing, especially when only a few terms are searched. You must specify a field being searched for Set queries.
+
 #### Examples:
 
 With the following corpus:
@@ -79,6 +83,7 @@ The following queries will output:
 - `body:"small bike"~1`: matches [2, 4]
 - `body:"small bike"~2`: matches [2, 4]
 - `body:"small bike"~3`: matches [2, 3, 4]
+- `body: IN [small tiny]`: matches [2, 3, 4, 5]
 
 ### Escaping Special Characters
 

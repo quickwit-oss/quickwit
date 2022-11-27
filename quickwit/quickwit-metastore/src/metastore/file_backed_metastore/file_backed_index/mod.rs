@@ -27,11 +27,13 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 use itertools::Itertools;
+use quickwit_common::PrettySample;
 use quickwit_config::{SourceConfig, TestableForRegression};
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use serde::{Deserialize, Serialize};
 use serialize::VersionedFileBackedIndex;
 use time::OffsetDateTime;
+use tracing::{info, warn};
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
@@ -113,7 +115,8 @@ impl From<IndexMetadata> for FileBackedIndex {
 enum DeleteSplitOutcome {
     Success,
     SplitNotFound,
-    ForbiddenBecausePublished,
+    // The split is in another state than marked for deletion.
+    Forbidden,
 }
 
 impl FileBackedIndex {
@@ -188,7 +191,6 @@ impl FileBackedIndex {
 
         self.splits
             .insert(metadata.split_id().to_string(), metadata);
-        self.metadata.update_timestamp = now_timestamp;
         Ok(())
     }
 
@@ -234,9 +236,6 @@ impl FileBackedIndex {
             return Err(MetastoreError::SplitsNotDeletable {
                 split_ids: non_deletable_split_ids,
             });
-        }
-        if is_modified {
-            self.metadata.update_timestamp = now_timestamp;
         }
         Ok(is_modified)
     }
@@ -289,7 +288,6 @@ impl FileBackedIndex {
             });
         }
 
-        self.metadata.update_timestamp = now_timestamp;
         Ok(())
     }
 
@@ -328,12 +326,11 @@ impl FileBackedIndex {
     /// Deletes a split.
     fn delete_split(&mut self, split_id: &str) -> DeleteSplitOutcome {
         match self.splits.get(split_id).map(|split| split.split_state) {
-            // Only `Staged` and `MarkedForDeletion` splits can be deleted
-            Some(SplitState::Staged | SplitState::MarkedForDeletion) => {
+            Some(SplitState::MarkedForDeletion) => {
                 self.splits.remove(split_id);
                 DeleteSplitOutcome::Success
             }
-            Some(SplitState::Published) => DeleteSplitOutcome::ForbiddenBecausePublished,
+            Some(SplitState::Staged | SplitState::Published) => DeleteSplitOutcome::Forbidden,
             None => DeleteSplitOutcome::SplitNotFound,
         }
     }
@@ -347,24 +344,28 @@ impl FileBackedIndex {
             match self.delete_split(split_id) {
                 DeleteSplitOutcome::Success => {}
                 DeleteSplitOutcome::SplitNotFound => {
-                    split_not_found_ids.push(split_id.to_string());
+                    split_not_found_ids.push(split_id);
                 }
-                DeleteSplitOutcome::ForbiddenBecausePublished => {
+                DeleteSplitOutcome::Forbidden => {
                     split_not_deletable_ids.push(split_id.to_string());
                 }
             }
-        }
-        if !split_not_found_ids.is_empty() {
-            return Err(MetastoreError::SplitsDoNotExist {
-                split_ids: split_not_found_ids,
-            });
         }
         if !split_not_deletable_ids.is_empty() {
             return Err(MetastoreError::SplitsNotDeletable {
                 split_ids: split_not_deletable_ids,
             });
         }
-        self.metadata.update_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+        info!(index_id=%self.index_id(), "Deleted {} splits from index.", split_ids.len());
+
+        if !split_not_found_ids.is_empty() {
+            warn!(
+                index_id=%self.index_id(),
+                split_ids=?PrettySample::new(&split_not_found_ids, 5),
+                "{} splits were not found and could not be deleted.",
+                split_not_found_ids.len()
+            );
+        }
         Ok(())
     }
 

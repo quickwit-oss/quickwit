@@ -34,6 +34,8 @@ pub struct MergeStatistics {
     pub generation: usize,
     /// Number of successive pipeline spawn attempts.
     pub num_spawn_attempts: usize,
+    /// Number of merges currently in progress.
+    pub num_ongoing_merges: usize,
 }
 
 impl MergeStatistics {
@@ -54,6 +56,11 @@ impl MergeStatistics {
 
     pub fn set_generation(mut self, generation: usize) -> Self {
         self.generation = generation;
+        self
+    }
+
+    pub fn set_ongoing_merges(mut self, n: usize) -> Self {
+        self.num_ongoing_merges = n;
         self
     }
 }

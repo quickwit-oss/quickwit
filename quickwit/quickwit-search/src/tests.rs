@@ -24,8 +24,8 @@ use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DefaultDocMapper;
 use quickwit_indexing::TestSandbox;
 use quickwit_proto::{SearchRequest, SortOrder};
-use serde_json::json;
-use tantivy::schema::Value;
+use serde_json::{json, Value as JsonValue};
+use tantivy::schema::Value as TantivyValue;
 use tantivy::time::OffsetDateTime;
 
 use super::*;
@@ -69,8 +69,8 @@ async fn test_single_node_simple() -> anyhow::Result<()> {
     .await?;
     assert_eq!(single_node_result.num_hits, 1);
     assert_eq!(single_node_result.hits.len(), 1);
-    let hit_json: serde_json::Value = serde_json::from_str(&single_node_result.hits[0].json)?;
-    let expected_json: serde_json::Value = json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy", "binary": "dGhpcyBpcyBhIHRlc3Qu"});
+    let hit_json: JsonValue = serde_json::from_str(&single_node_result.hits[0].json)?;
+    let expected_json: JsonValue = json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy", "binary": "dGhpcyBpcyBhIHRlc3Qu"});
     assert_json_include!(actual: hit_json, expected: expected_json);
     assert!(single_node_result.elapsed_time_micros > 10);
     assert!(single_node_result.elapsed_time_micros < 1_000_000);
@@ -114,8 +114,8 @@ async fn test_single_node_termset() -> anyhow::Result<()> {
     .await?;
     assert_eq!(single_node_result.num_hits, 1);
     assert_eq!(single_node_result.hits.len(), 1);
-    let hit_json: serde_json::Value = serde_json::from_str(&single_node_result.hits[0].json)?;
-    let expected_json: serde_json::Value = json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle", "binary": "bWFkZSB5b3UgbG9vay4="});
+    let hit_json: JsonValue = serde_json::from_str(&single_node_result.hits[0].json)?;
+    let expected_json: JsonValue = json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle", "binary": "bWFkZSB5b3UgbG9vay4="});
     assert_json_include!(actual: hit_json, expected: expected_json);
     assert!(single_node_result.elapsed_time_micros > 10);
     assert!(single_node_result.elapsed_time_micros < 1_000_000);
@@ -159,14 +159,14 @@ async fn test_single_search_with_snippet() -> anyhow::Result<()> {
     assert_eq!(single_node_result.num_hits, 2);
     assert_eq!(single_node_result.hits.len(), 2);
 
-    let highlight_json: serde_json::Value =
+    let highlight_json: JsonValue =
         serde_json::from_str(single_node_result.hits[0].snippet.as_ref().unwrap())?;
-    let expected_json: serde_json::Value = json!({"title": [], "body": ["Snoopy is an anthropomorphic <b>beagle</b> in the comic strip"]});
+    let expected_json: JsonValue = json!({"title": [], "body": ["Snoopy is an anthropomorphic <b>beagle</b> in the comic strip"]});
     assert_json_eq!(highlight_json, expected_json);
 
-    let highlight_json: serde_json::Value =
+    let highlight_json: JsonValue =
         serde_json::from_str(single_node_result.hits[1].snippet.as_ref().unwrap())?;
-    let expected_json: serde_json::Value = json!({
+    let expected_json: JsonValue = json!({
         "title": ["<b>beagle</b>"],
         "body": ["The <b>beagle</b> is a breed of small scent hound"]
     });
@@ -790,26 +790,25 @@ async fn test_search_dynamic_mode_do_not_expand_dots() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn json_to_named_field_doc(doc_json: serde_json::Value) -> NamedFieldDocument {
+fn json_to_named_field_doc(doc_json: JsonValue) -> NamedFieldDocument {
     assert!(doc_json.is_object());
-    let mut doc_map: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    let mut doc_map: BTreeMap<String, Vec<TantivyValue>> = BTreeMap::new();
     for (key, value) in doc_json.as_object().unwrap().clone() {
         doc_map.insert(key, json_value_to_tantivy_value(value));
     }
     NamedFieldDocument(doc_map)
 }
 
-fn json_value_to_tantivy_value(value: serde_json::Value) -> Vec<Value> {
-    use serde_json::Value as JsonValue;
+fn json_value_to_tantivy_value(value: JsonValue) -> Vec<TantivyValue> {
     match value {
-        JsonValue::Bool(val) => vec![Value::Bool(val)],
-        JsonValue::String(val) => vec![Value::Str(val)],
+        JsonValue::Bool(val) => vec![TantivyValue::Bool(val)],
+        JsonValue::String(val) => vec![TantivyValue::Str(val)],
         JsonValue::Array(values) => values
             .into_iter()
             .flat_map(json_value_to_tantivy_value)
             .collect(),
         JsonValue::Object(object) => {
-            vec![Value::JsonObject(object)]
+            vec![TantivyValue::JsonObject(object)]
         }
         JsonValue::Null => vec![],
         value => vec![value.into()],
@@ -818,16 +817,16 @@ fn json_value_to_tantivy_value(value: serde_json::Value) -> Vec<Value> {
 
 #[track_caller]
 fn test_convert_leaf_hit_aux(
-    default_doc_mapper_json: serde_json::Value,
-    document_json: serde_json::Value,
-    expected_hit_json: serde_json::Value,
+    default_doc_mapper_json: JsonValue,
+    document_json: JsonValue,
+    expected_hit_json: JsonValue,
 ) {
     let default_doc_mapper: DefaultDocMapper =
         serde_json::from_value(default_doc_mapper_json).unwrap();
     let named_field_doc = json_to_named_field_doc(document_json);
     let hit_json_str =
         convert_document_to_json_string(named_field_doc, &default_doc_mapper).unwrap();
-    let hit_json: serde_json::Value = serde_json::from_str(&hit_json_str).unwrap();
+    let hit_json: JsonValue = serde_json::from_str(&hit_json_str).unwrap();
     assert_eq!(hit_json, expected_hit_json);
 }
 
@@ -1009,8 +1008,7 @@ async fn test_single_node_aggregation() -> anyhow::Result<()> {
         test_sandbox.storage_uri_resolver(),
     )
     .await?;
-    let agg_res_json: serde_json::Value =
-        serde_json::from_str(&single_node_result.aggregation.unwrap())?;
+    let agg_res_json: JsonValue = serde_json::from_str(&single_node_result.aggregation.unwrap())?;
     assert_eq!(
         agg_res_json["expensive_colors"]["buckets"][0]["key"],
         "white"
@@ -1149,9 +1147,8 @@ async fn test_single_node_with_ip_field() -> anyhow::Result<()> {
         .await?;
         assert_eq!(single_node_result.num_hits, 1);
         assert_eq!(single_node_result.hits.len(), 1);
-        let hit_json: serde_json::Value = serde_json::from_str(&single_node_result.hits[0].json)?;
-        let expected_json: serde_json::Value =
-            json!({"log": "Request successful", "host": "10.10.11.125"});
+        let hit_json: JsonValue = serde_json::from_str(&single_node_result.hits[0].json)?;
+        let expected_json: JsonValue = json!({"log": "Request successful", "host": "10.10.11.125"});
         assert_json_include!(actual: hit_json, expected: expected_json);
         Ok(())
     }

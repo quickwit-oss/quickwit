@@ -39,7 +39,7 @@ use rdkafka::error::KafkaError;
 use rdkafka::message::BorrowedMessage;
 use rdkafka::util::Timeout;
 use rdkafka::{ClientContext, Message, Offset, TopicPartitionList};
-use serde_json::json;
+use serde_json::{json, Value as JsonValue};
 use tokio::sync::mpsc;
 use tokio::task::{spawn_blocking, JoinHandle};
 use tokio::time;
@@ -544,7 +544,7 @@ impl Source for KafkaSource {
         )
     }
 
-    fn observable_state(&self) -> serde_json::Value {
+    fn observable_state(&self) -> JsonValue {
         let assigned_partitions: Vec<&i32> =
             self.state.assigned_partitions.keys().sorted().collect();
         let current_positions: Vec<(&i32, &str)> = self
@@ -701,8 +701,8 @@ fn parse_client_log_level(client_log_level: Option<String>) -> anyhow::Result<RD
     Ok(log_level)
 }
 
-fn parse_client_params(client_params: serde_json::Value) -> anyhow::Result<ClientConfig> {
-    let params = if let serde_json::Value::Object(params) = client_params {
+fn parse_client_params(client_params: JsonValue) -> anyhow::Result<ClientConfig> {
+    let params = if let JsonValue::Object(params) = client_params {
         params
     } else {
         bail!("Failed to parse Kafka client parameters. `client_params` must be a JSON object.");
@@ -710,11 +710,11 @@ fn parse_client_params(client_params: serde_json::Value) -> anyhow::Result<Clien
     let mut client_config = ClientConfig::new();
     for (key, value_json) in params {
         let value = match value_json {
-            serde_json::Value::Bool(value_bool) => value_bool.to_string(),
-            serde_json::Value::Number(value_number) => value_number.to_string(),
-            serde_json::Value::String(value_string) => value_string,
-            serde_json::Value::Null => continue,
-            serde_json::Value::Array(_) | serde_json::Value::Object(_) => bail!(
+            JsonValue::Bool(value_bool) => value_bool.to_string(),
+            JsonValue::Number(value_number) => value_number.to_string(),
+            JsonValue::String(value_string) => value_string,
+            JsonValue::Null => continue,
+            JsonValue::Array(_) | JsonValue::Object(_) => bail!(
                 "Failed to parse Kafka client parameters. `client_params.{}` must be a boolean, \
                  number, or string.",
                 key

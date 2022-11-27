@@ -33,6 +33,7 @@ use quickwit_metastore::{
     IndexMetadata, Metastore, MetastoreUriResolver, Split, SplitMetadata, SplitState,
 };
 use quickwit_storage::{Storage, StorageUriResolver};
+use serde_json::Value as JsonValue;
 
 use crate::actors::IndexingService;
 use crate::models::{DetachIndexingPipeline, IndexingStatistics, SpawnPipeline};
@@ -124,11 +125,11 @@ impl TestSandbox {
 
     /// Adds documents.
     ///
-    /// The documents are expected to be `serde_json::Value`.
+    /// The documents are expected to be `JsonValue`.
     /// They can be created using the `serde_json::json!` macro.
     pub async fn add_documents<I>(&self, split_docs: I) -> anyhow::Result<IndexingStatistics>
     where
-        I: IntoIterator<Item = serde_json::Value> + 'static,
+        I: IntoIterator<Item = JsonValue> + 'static,
         I::IntoIter: Send,
     {
         let docs: Vec<String> = split_docs

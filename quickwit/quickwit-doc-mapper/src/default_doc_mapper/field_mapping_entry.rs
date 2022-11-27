@@ -21,6 +21,7 @@ use std::convert::TryFrom;
 
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use tantivy::schema::{
     Cardinality, IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type,
 };
@@ -64,7 +65,7 @@ struct FieldMappingEntryForSerialization {
     #[serde(rename = "type")]
     type_id: String,
     #[serde(flatten)]
-    pub field_mapping_json: serde_json::Map<String, serde_json::Value>,
+    pub field_mapping_json: serde_json::Map<String, JsonValue>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -277,7 +278,7 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
 
 fn deserialize_mapping_type(
     quickwit_field_type: QuickwitFieldType,
-    json: serde_json::Value,
+    json: JsonValue,
 ) -> anyhow::Result<FieldMappingType> {
     let (typ, cardinality) = match quickwit_field_type {
         QuickwitFieldType::Simple(typ) => (typ, Cardinality::SingleValue),
@@ -368,7 +369,7 @@ impl TryFrom<FieldMappingEntryForSerialization> for FieldMappingEntry {
             })?;
         let mapping_type = deserialize_mapping_type(
             quickwit_field_type,
-            serde_json::Value::Object(value.field_mapping_json),
+            JsonValue::Object(value.field_mapping_json),
         )
         .map_err(|err| format!("Error while parsing field `{}`: {}", value.name, err))?;
         Ok(FieldMappingEntry {
@@ -379,9 +380,9 @@ impl TryFrom<FieldMappingEntryForSerialization> for FieldMappingEntry {
 }
 
 /// Serialize object into a `Map` of json values.
-fn serialize_to_map<S: Serialize>(val: &S) -> Option<serde_json::Map<String, serde_json::Value>> {
+fn serialize_to_map<S: Serialize>(val: &S) -> Option<serde_json::Map<String, JsonValue>> {
     let json_val = serde_json::to_value(val).ok()?;
-    if let serde_json::Value::Object(map) = json_val {
+    if let JsonValue::Object(map) = json_val {
         Some(map)
     } else {
         None
@@ -390,7 +391,7 @@ fn serialize_to_map<S: Serialize>(val: &S) -> Option<serde_json::Map<String, ser
 
 fn typed_mapping_to_json_params(
     field_mapping_type: FieldMappingType,
-) -> serde_json::Map<String, serde_json::Value> {
+) -> serde_json::Map<String, JsonValue> {
     match field_mapping_type {
         FieldMappingType::Text(text_options, _) => serialize_to_map(&text_options),
         FieldMappingType::U64(options, _)

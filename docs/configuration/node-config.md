@@ -15,7 +15,7 @@ A commented example is accessible here: [quickwit.yaml](https://github.com/quick
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| version | Config file version. 0 is the only available value. |  |
+| version | Config file version. 0.4 is the only available value. |  |
 | node_id | Node ID of the instance (searcher or indexer). It must be unique in your cluster. If not set, a random ID is generated at each boot. |  |
 | cluster_id | Unique Id for the cluster this node will be joining. Should be set to a unique name to ensure clusters do not accidentally merge together. | "quickwit-test-cluster" |
 | listen_address | The IP address or hostname that Quickwit service binds to for starting REST and GRPC server and connecting this node to other nodes. By default, Quickwit binds itself to 127.0.0.1 (localhost). This default is not valid when trying to form a cluster. | 127.0.0.1 |
@@ -75,7 +75,7 @@ export QW_LISTEN_ADDRESS=0.0.0.0
 
 ```yaml
 # config.yaml
-version: 0
+version: 0.4
 cluster_id: quickwit-cluster
 node_id: my-unique-node-id
 listen_address: ${QW_LISTEN_ADDRESS}
@@ -85,7 +85,7 @@ rest_listen_port: ${QW_LISTEN_PORT:-1111}
 Will be interpreted by Quickwit as:
 
 ```yaml
-version: 0
+version: 0.4
 cluster_id: quickwit-cluster
 node_id: my-unique-node-id
 listen_address: 0.0.0.0

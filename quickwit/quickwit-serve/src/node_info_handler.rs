@@ -67,6 +67,7 @@ async fn get_config(config: Arc<QuickwitConfig>) -> Result<impl warp::Reply, Rej
 #[cfg(test)]
 mod tests {
     use assert_json_diff::assert_json_include;
+    use serde_json::Value as JsonValue;
 
     use super::*;
     use crate::{quickwit_build_info, recover_fn};
@@ -80,7 +81,7 @@ mod tests {
             super::node_info_handler(build_info, Arc::new(config.clone())).recover(recover_fn);
         let resp = warp::test::request().path("/version").reply(&handler).await;
         assert_eq!(resp.status(), 200);
-        let resp_build_info_json: serde_json::Value = serde_json::from_slice(resp.body())?;
+        let resp_build_info_json: JsonValue = serde_json::from_slice(resp.body())?;
         let expected_build_json = serde_json::json!({
             "commit_date": build_info.commit_date,
             "version": build_info.version,
@@ -89,7 +90,7 @@ mod tests {
 
         let resp = warp::test::request().path("/config").reply(&handler).await;
         assert_eq!(resp.status(), 200);
-        let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
+        let resp_json: JsonValue = serde_json::from_slice(resp.body())?;
         let expected_response_json = serde_json::json!({
             "node_id": config.node_id,
             "metastore_uri": "postgresql://username:***redacted***@db",
