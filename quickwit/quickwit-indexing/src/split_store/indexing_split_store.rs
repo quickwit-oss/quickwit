@@ -249,6 +249,7 @@ mod tests {
     use quickwit_metastore::SplitMetadata;
     use quickwit_storage::{RamStorage, SplitPayloadBuilder};
     use tempfile::tempdir;
+    use time::OffsetDateTime;
     use tokio::fs;
     use ulid::Ulid;
 
@@ -259,6 +260,7 @@ mod tests {
     fn create_test_split_metadata(split_id: &str) -> SplitMetadata {
         SplitMetadata {
             split_id: split_id.to_string(),
+            create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
             ..Default::default()
         }
     }

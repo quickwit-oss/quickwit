@@ -424,9 +424,6 @@ impl<A: Actor> ActorContext<A> {
     }
 
     pub(crate) fn exit(&self, exit_status: &ActorExitStatus) {
-        if !exit_status.is_success() {
-            error!(actor_name=self.actor_instance_id(), actor_exit_status=?exit_status, "actor-failure");
-        }
         self.actor_state.exit(exit_status.is_success());
         if should_activate_kill_switch(exit_status) {
             error!(actor=%self.actor_instance_id(), exit_status=?exit_status, "exit activating-kill-switch");

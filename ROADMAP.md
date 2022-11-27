@@ -1,16 +1,14 @@
-## Long-term roadmap (Q4 2022 and 2023)
+## Long-term roadmap (2023-2024)
 
 ### Major features
 
 - Alerting
-- Distributed indexing
+- Schema updates
+- Transforms
 - Geospatial search
 - Native Go, Java, and Python clients
 - Pipe-based query language
-- Schema changes
 - Security (TLS, authentication, RBAC)
-- Support for Microsoft Azure Azure and Google Cloud Platform
-- Tiered storage
 - and more...
 
-*(order above does not reflect roadmap prioritization)*
+*(the order above does not reflect roadmap prioritization)*

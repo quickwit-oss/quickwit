@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use anyhow::{bail, Context};
-use clap::{arg, Arg, ArgMatches, Command};
+use clap::{arg, ArgMatches, Command};
 use humansize::{format_size, DECIMAL};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
@@ -65,11 +65,10 @@ pub fn build_split_command<'a>() -> Command<'a> {
                         .display_order(6)
                         .required(false)
                         .use_value_delimiter(true),
-                    Arg::new("mark-for-deletion")
-                        .alias("mark")
+                    arg!(--"output-format" <OUTPUT_FORMAT> "Output format. Possible values are `table`, `json`, and `prettyjson`.")
+                        .alias("format")
                         .display_order(7)
-                        .long("mark-for-deletion")
-                        .help("Marks the selected splits for deletion.")
+                        .required(false)
                 ])
             )
         .subcommand(
@@ -112,6 +111,29 @@ pub fn build_split_command<'a>() -> Command<'a> {
         .arg_required_else_help(true)
 }
 
+#[derive(Debug, Eq, PartialEq)]
+enum OutputFormat {
+    Table, // Default
+    Json,
+    PrettyJson,
+}
+
+impl FromStr for OutputFormat {
+    type Err = anyhow::Error;
+
+    fn from_str(output_format_str: &str) -> anyhow::Result<Self> {
+        match output_format_str {
+            "table" => Ok(OutputFormat::Table),
+            "json" => Ok(OutputFormat::Json),
+            "prettyjson" => Ok(OutputFormat::PrettyJson),
+            _ => bail!(
+                "Failed to parse output format `{output_format_str}`. Supported formats are: \
+                 `table`, `json`, and `prettyjson`."
+            ),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct ListSplitArgs {
     pub config_uri: Uri,
@@ -121,7 +143,7 @@ pub struct ListSplitArgs {
     pub start_date: Option<OffsetDateTime>,
     pub end_date: Option<OffsetDateTime>,
     pub tags: Option<TagFilterAst>,
-    pub mark_for_deletion: bool,
+    output_format: OutputFormat,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -210,7 +232,11 @@ impl SplitCliCommand {
                     .collect(),
             )
         });
-        let mark_for_deletion = matches.is_present("mark-for-deletion");
+        let output_format = matches
+            .value_of("output-format")
+            .map(OutputFormat::from_str)
+            .transpose()?
+            .unwrap_or(OutputFormat::Table);
 
         Ok(Self::List(ListSplitArgs {
             config_uri,
@@ -220,7 +246,7 @@ impl SplitCliCommand {
             end_date,
             create_date,
             tags,
-            mark_for_deletion,
+            output_format,
         }))
     }
 
@@ -316,6 +342,7 @@ async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
 
     let mut query = ListSplitsQuery::for_index(&args.index_id)
         .with_split_states(args.split_states.unwrap_or_default());
+
     if let Some(start_date) = args.start_date {
         query = query.with_time_range_start_gte(start_date.unix_timestamp());
     }
@@ -330,22 +357,13 @@ async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
     }
 
     let splits = metastore.list_splits(query).await?;
-    let table = make_split_table(&splits, "Splits");
-    println!("{table}");
 
-    if args.mark_for_deletion {
-        let split_ids = splits
-            .iter()
-            .map(|split| split.split_id())
-            .collect::<Vec<_>>();
-        println!(
-            "The following splits will be marked for deletion: `{}`.",
-            split_ids.join(", ")
-        );
-        metastore
-            .mark_splits_for_deletion(&args.index_id, &split_ids)
-            .await?;
-    }
+    let output = match args.output_format {
+        OutputFormat::Json => serde_json::to_string(&splits)?,
+        OutputFormat::PrettyJson => serde_json::to_string_pretty(&splits)?,
+        OutputFormat::Table => make_split_table(&splits, "Splits").to_string(),
+    };
+    println!("{output}");
     Ok(())
 }
 
@@ -579,7 +597,8 @@ mod tests {
             "2020-12-25T12:42",
             "--tags",
             "tenant:a,service:zk",
-            "--mark",
+            "--format",
+            "json",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
 
@@ -597,6 +616,7 @@ mod tests {
                 tag: "service:zk".to_string(),
             },
         ]));
+        let expected_output_format = OutputFormat::Json;
         assert!(matches!(
             command,
             CliCommand::Split(SplitCliCommand::List(ListSplitArgs {
@@ -606,7 +626,7 @@ mod tests {
                 start_date,
                 end_date,
                 tags,
-                mark_for_deletion,
+                output_format,
                 ..
             })) if index_id == "hdfs"
                    && split_states == expected_split_states
@@ -614,7 +634,7 @@ mod tests {
                    && start_date == expected_start_date
                    && end_date == expected_end_date
                    && tags == expected_tags
-                   && mark_for_deletion
+                   && output_format == expected_output_format
         ));
         Ok(())
     }

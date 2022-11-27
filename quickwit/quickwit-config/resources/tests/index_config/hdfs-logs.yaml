@@ -40,6 +40,7 @@ indexing_settings:
     type: "stable_log"
     merge_factor: 9
     max_merge_factor: 11
+    maturation_period: 48 hours
   resources:
     heap_size: 3G
 
