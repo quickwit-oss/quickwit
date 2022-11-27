@@ -45,7 +45,7 @@ After [installing quickwit], let's create an index configured to receive these e
 We don't need to index all fields described above as Quickwit. The `title` and `body` are the fields of interest for our full-text search tutorial. `id` will be helpful to make the join in Clickhouse, `created_at` and `event_type` may also be beneficial for timestamp pruning and filtering.
 
 ```yaml title="gh-archive-index-config.yaml"
-version: 0
+version: 0.4
 index_id: gh-archive
 # By default, the index will be stored in your data directory,
 # but you can store it on s3 or on a custom path as follows:
