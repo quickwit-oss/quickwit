@@ -135,7 +135,7 @@ async fn create_index(
 ) -> Result<IndexMetadata, IndexServiceError> {
     let index_config = quickwit_config::load_index_config_from_user_config(
         ConfigFormat::Json,
-        &*index_config_bytes,
+        &index_config_bytes,
         &quickwit_config.default_index_root_uri,
     )
     .map_err(IndexServiceError::InvalidConfig)?;
