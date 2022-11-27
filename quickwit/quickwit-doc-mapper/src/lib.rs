@@ -33,7 +33,6 @@ mod error;
 pub mod fast_field_reader;
 mod query_builder;
 mod routing_expression;
-mod sort_by;
 mod tokenizers;
 
 /// Pruning tags manipulation.
@@ -41,11 +40,9 @@ pub mod tag_pruning;
 
 pub use default_doc_mapper::{
     DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry, ModeType, QuickwitJsonOptions,
-    SortByConfig,
 };
 pub use doc_mapper::{DocMapper, NamedField, WarmupInfo};
 pub use error::{DocParsingError, QueryParserError};
-pub use sort_by::{SortBy, SortByField, SortOrder};
 pub use tokenizers::QUICKWIT_TOKENIZER_MANAGER;
 
 /// Field name reserved for storing the source document.
@@ -64,10 +61,6 @@ pub fn default_doc_mapper_for_test() -> DefaultDocMapper {
                 "body", "attributes.server", "attributes.server\\.status"
             ],
             "timestamp_field": "timestamp",
-            "sort_by": {
-                "field_name": "timestamp",
-                "order": "desc"
-            },
             "tag_fields": ["owner"],
             "field_mappings": [
                 {

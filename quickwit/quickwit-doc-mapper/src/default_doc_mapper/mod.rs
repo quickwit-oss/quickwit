@@ -30,7 +30,7 @@ use anyhow::bail;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-pub use self::default_mapper::{DefaultDocMapper, SortByConfig};
+pub use self::default_mapper::DefaultDocMapper;
 pub use self::default_mapper_builder::{DefaultDocMapperBuilder, ModeType};
 pub use self::field_mapping_entry::{
     FieldMappingEntry, QuickwitJsonOptions, QuickwitNumericOptions, QuickwitTextOptions,
