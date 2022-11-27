@@ -36,8 +36,31 @@ pub(crate) fn build_query(
     let user_input_ast = tantivy_query_grammar::parse_query(&request.query)
         .map_err(|_| TantivyQueryParserError::SyntaxError(request.query.to_string()))?;
 
-    if has_range_clause(&user_input_ast) {
-        return Err(anyhow::anyhow!("Range queries are not currently allowed.").into());
+    if has_global_range_clause(&user_input_ast) {
+        return Err(anyhow::anyhow!(
+            "Range queries without field specifier are not currently allowed."
+        )
+        .into());
+    }
+
+    let range_query_fields = get_range_query_fields(&user_input_ast);
+    for range_query_field in range_query_fields.iter() {
+        let field = schema.get_field(&range_query_field).ok_or_else(|| {
+            anyhow::anyhow!("Couldn't find field name {} in schema", range_query_field)
+        })?;
+        let field_entry = schema.get_field_entry(field);
+        if !field_entry.is_fast() {
+            return Err(anyhow::anyhow!(
+                "Range queries are currently only supported on fast fields."
+            )
+            .into());
+        }
+        if !field_entry.field_type().is_ip_addr() {
+            return Err(anyhow::anyhow!(
+                "Range queries are currently only supported on ip fields."
+            )
+            .into());
+        }
     }
 
     if needs_default_search_field(&user_input_ast)
@@ -84,6 +107,7 @@ pub(crate) fn build_query(
         term_dict_field_names: term_set_query_fields.clone(),
         posting_field_names: term_set_query_fields,
         terms_grouped_by_field,
+        fast_field_names: range_query_fields,
         ..WarmupInfo::default()
     };
 
@@ -126,10 +150,33 @@ fn extract_field_name(leaf: &UserInputLeaf) -> Option<&str> {
 }
 
 /// Tells if the query has a range ast node.
-fn has_range_clause(user_input_ast: &UserInputAst) -> bool {
+fn has_global_range_clause(user_input_ast: &UserInputAst) -> bool {
     collect_leaves(user_input_ast)
         .into_iter()
-        .any(|leaf| matches!(*leaf, UserInputLeaf::Range { .. }))
+        .any(|leaf| match leaf {
+            UserInputLeaf::Range {
+                field,
+                lower: _,
+                upper: _,
+            } => field.is_none(),
+            _ => false,
+        })
+}
+
+/// Extract the field names of the query
+fn get_range_query_fields(user_input_ast: &UserInputAst) -> HashSet<String> {
+    collect_leaves(user_input_ast)
+        .into_iter()
+        .filter_map(|leaf| match leaf {
+            UserInputLeaf::Range {
+                field,
+                lower: _,
+                upper: _,
+            } => Some(field.to_owned()),
+            _ => None,
+        })
+        .filter_map(|field| field)
+        .collect::<HashSet<String>>()
 }
 
 fn extract_term_set_query_fields(user_input_ast: &UserInputAst, set: &mut HashSet<String>) {
@@ -234,6 +281,7 @@ mod test {
         schema_builder.add_bool_field("server.running", FAST | STORED | INDEXED);
         schema_builder.add_text_field(SOURCE_FIELD_NAME, TEXT);
         schema_builder.add_json_field(DYNAMIC_FIELD_NAME, TEXT);
+        schema_builder.add_ip_addr_field("ips", FAST);
         schema_builder.build()
     }
 
@@ -315,21 +363,28 @@ mod test {
             "title:[a TO b]",
             vec![],
             None,
-            TestExpectation::Err("Range queries are not currently allowed."),
+            TestExpectation::Err("Range queries are currently only supported on fast fields."),
         )
         .unwrap();
         check_build_query(
             "title:{a TO b} desc:foo",
             vec![],
             None,
-            TestExpectation::Err("Range queries are not currently allowed."),
+            TestExpectation::Err("Range queries are currently only supported on fast fields."),
         )
         .unwrap();
         check_build_query(
             "title:>foo",
             vec![],
             None,
-            TestExpectation::Err("Range queries are not currently allowed."),
+            TestExpectation::Err("Range queries are currently only supported on fast fields."),
+        )
+        .unwrap();
+        check_build_query(
+            "ips:[127.0.0.1 TO 127.0.0.25]",
+            vec![],
+            None,
+            TestExpectation::Ok("RangeQuery"),
         )
         .unwrap();
         check_build_query(
