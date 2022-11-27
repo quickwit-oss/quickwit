@@ -149,6 +149,11 @@ fn extract_term_set_query_fields(user_input_ast: &UserInputAst, set: &mut HashSe
 /// Tells if the query has a Term or Range node which does not
 /// specify a search field.
 fn needs_default_search_field(user_input_ast: &UserInputAst) -> bool {
+    // `All` query apply to all fields, therefore doesn't need default fields.
+    if matches!(user_input_ast, UserInputAst::Leaf(leaf) if **leaf == UserInputLeaf::All) {
+        return false;
+    }
+
     collect_leaves(user_input_ast)
         .into_iter()
         .any(|leaf| extract_field_name(leaf).is_none())
@@ -291,6 +296,7 @@ mod test {
 
     #[test]
     fn test_build_query() {
+        check_build_query("*", vec![], None, TestExpectation::Ok("All")).unwrap();
         check_build_query(
             "foo:bar",
             vec![],
