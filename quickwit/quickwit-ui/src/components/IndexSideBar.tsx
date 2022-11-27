@@ -40,7 +40,7 @@ function IndexAutocomplete(props: IndexMetadataProps) {
   const [loading, setLoading] = React.useState(false);
   // We want to show the circular progress only if we are loading some results and
   // when there is no option avaiable.
-  const showLoading = loading && options.length == 0;
+  const showLoading = loading && options.length === 0;
   const quickwitClient = useMemo(() => new Client(), []);
 
   useEffect(() => {
