@@ -315,19 +315,18 @@ impl SourceCliCommand {
 
 async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
     let quickwit_config = load_quickwit_config(&args.config_uri).await?;
-    let source_config_content = load_file(&args.source_config_uri).await?;
     let index_service = IndexService::from_config(quickwit_config).await?;
+    let source_config_content = load_file(&args.source_config_uri).await?;
     let config_format = ConfigFormat::sniff_from_uri(&args.source_config_uri)?;
-    let source_config = index_service
-        .load_and_create_source(
-            &args.index_id,
-            config_format,
-            source_config_content.as_slice(),
-        )
+    let source_config = config_format
+        .parse::<SourceConfig>(source_config_content.as_slice())
+        .context("Failed to parse source config.")?;
+    let source_config_after_creation = index_service
+        .create_source(&args.index_id, source_config)
         .await?;
     println!(
         "Source `{}` successfully created for index `{}`.",
-        source_config.source_id, args.index_id
+        source_config_after_creation.source_id, args.index_id
     );
     Ok(())
 }
