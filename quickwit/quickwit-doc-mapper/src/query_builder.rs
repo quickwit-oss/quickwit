@@ -19,9 +19,10 @@
 
 use std::collections::{HashMap, HashSet};
 
+use anyhow::{bail, Context};
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
-use tantivy::schema::{Field, FieldType, Schema};
+use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
 use tantivy_query_grammar::{UserInputAst, UserInputLeaf, UserInputLiteral};
 
 use crate::sort_by::validate_sort_by_field_name;
@@ -36,9 +37,7 @@ pub(crate) fn build_query(
     let user_input_ast = tantivy_query_grammar::parse_query(&request.query)
         .map_err(|_| TantivyQueryParserError::SyntaxError(request.query.to_string()))?;
 
-    if has_range_clause(&user_input_ast) {
-        return Err(anyhow::anyhow!("Range queries are not currently allowed.").into());
-    }
+    let fast_field_names: HashSet<String> = extract_field_with_ranges(&schema, &user_input_ast)?;
 
     if needs_default_search_field(&user_input_ast)
         && request.search_fields.is_empty()
@@ -84,6 +83,7 @@ pub(crate) fn build_query(
         term_dict_field_names: term_set_query_fields.clone(),
         posting_field_names: term_set_query_fields,
         terms_grouped_by_field,
+        fast_field_names,
         ..WarmupInfo::default()
     };
 
@@ -125,11 +125,51 @@ fn extract_field_name(leaf: &UserInputLeaf) -> Option<&str> {
     }
 }
 
-/// Tells if the query has a range ast node.
-fn has_range_clause(user_input_ast: &UserInputAst) -> bool {
-    collect_leaves(user_input_ast)
-        .into_iter()
-        .any(|leaf| matches!(*leaf, UserInputLeaf::Range { .. }))
+fn is_valid_field_for_range(field_entry: &FieldEntry) -> anyhow::Result<()> {
+    match field_entry.field_type() {
+        FieldType::IpAddr(ip_addr_options) => {
+            if !ip_addr_options.is_fast() {
+                bail!(
+                    "Range queries require having a fast field (Field `{}` is not declared as a \
+                     fast field.)",
+                    field_entry.name()
+                );
+            }
+        }
+        other_type => {
+            anyhow::bail!(
+                "`{}` is of type `{:?}`. Range queries are only supported for IP Field at the \
+                 moment.",
+                field_entry.name(),
+                other_type.value_type()
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Extracts field names with ranges.
+fn extract_field_with_ranges(
+    schema: &Schema,
+    user_input_ast: &UserInputAst,
+) -> anyhow::Result<HashSet<String>> {
+    let mut field_with_ranges: HashSet<String> = Default::default();
+    for leaf in collect_leaves(user_input_ast) {
+        if let UserInputLeaf::Range { field, .. } = leaf {
+            // TODO check the field supports ranges.
+            if let Some(field_name) = field {
+                let field: Field = schema
+                    .get_field(field_name)
+                    .with_context(|| format!("Unknown field `{field_name}`"))?;
+                let field_entry = schema.get_field_entry(field);
+                is_valid_field_for_range(field_entry)?;
+                field_with_ranges.insert(field_name.clone());
+            } else {
+                anyhow::bail!("Range query without targeting a specific field is forbidden.");
+            }
+        }
+    }
+    Ok(field_with_ranges)
 }
 
 fn extract_term_set_query_fields(user_input_ast: &UserInputAst, set: &mut HashSet<String>) {
@@ -215,7 +255,9 @@ fn validate_requested_snippet_fields(
 mod test {
     use quickwit_proto::SearchRequest;
     use tantivy::query::QueryParserError;
-    use tantivy::schema::{Schema, FAST, INDEXED, STORED, TEXT};
+    use tantivy::schema::{
+        Cardinality, DateOptions, IpAddrOptions, Schema, FAST, INDEXED, STORED, TEXT,
+    };
 
     use super::{build_query, validate_requested_snippet_fields};
     use crate::{DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME};
@@ -234,6 +276,17 @@ mod test {
         schema_builder.add_bool_field("server.running", FAST | STORED | INDEXED);
         schema_builder.add_text_field(SOURCE_FIELD_NAME, TEXT);
         schema_builder.add_json_field(DYNAMIC_FIELD_NAME, TEXT);
+        schema_builder.add_ip_addr_field("ip", FAST | STORED);
+        schema_builder.add_ip_addr_field(
+            "ips",
+            IpAddrOptions::default().set_fast(Cardinality::MultiValues),
+        );
+        schema_builder.add_ip_addr_field("ip_notff", STORED);
+        schema_builder.add_date_field(
+            "dt",
+            DateOptions::default().set_fast(Cardinality::SingleValue),
+        );
+        schema_builder.add_u64_field("int_fast", FAST | STORED);
         schema_builder.build()
     }
 
@@ -315,21 +368,26 @@ mod test {
             "title:[a TO b]",
             vec![],
             None,
-            TestExpectation::Err("Range queries are not currently allowed."),
+            TestExpectation::Err(r#"`title` is of type `Str`. Range queries are only supported for IP Field at the moment."#),
         )
         .unwrap();
         check_build_query(
             "title:{a TO b} desc:foo",
             vec![],
             None,
-            TestExpectation::Err("Range queries are not currently allowed."),
+            TestExpectation::Err(
+                "`title` is of type `Str`. Range queries are only supported for IP Field at the \
+                 moment.",
+            ),
         )
         .unwrap();
         check_build_query(
             "title:>foo",
             vec![],
             None,
-            TestExpectation::Err("Range queries are not currently allowed."),
+            TestExpectation::Err(
+                "`title` is of type `Str`. Range queries are only supported for IP Field",
+            ),
         )
         .unwrap();
         check_build_query(
@@ -400,6 +458,57 @@ mod test {
             vec![],
             None,
             TestExpectation::Err("Unsupported query: Set query need to target a specific field."),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_range_query() {
+        check_build_query(
+            "ip:[127.0.0.1 TO 127.1.1.1]",
+            Vec::new(),
+            None,
+            TestExpectation::Ok(
+                "RangeQuery { field: Field(7), value_type: IpAddr, left_bound: Included([0, 0, 0, \
+                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 0, 0, 1]), right_bound: Included([0, 0, 0, \
+                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 1, 1, 1]) }",
+            ),
+        )
+        .unwrap();
+        check_build_query(
+            "ip:>127.0.0.1",
+            Vec::new(),
+            None,
+            TestExpectation::Ok(
+                "RangeQuery { field: Field(7), value_type: IpAddr, left_bound: Excluded([0, 0, 0, \
+                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 0, 0, 1]), right_bound: Unbounded }",
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_range_query_ip_fields_multivalued() {
+        check_build_query(
+            "ips:[127.0.0.1 TO 127.1.1.1]",
+            Vec::new(),
+            None,
+            TestExpectation::Ok(
+                "RangeQuery { field: Field(8), value_type: IpAddr, left_bound: Included([0, 0, 0, \
+                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 0, 0, 1]), right_bound: Included([0, 0, 0, \
+                 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 1, 1, 1]) }",
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_range_query_ip_field_no_fast_field() {
+        check_build_query(
+            "ip_notff:[127.0.0.1 TO 127.1.1.1]",
+            Vec::new(),
+            None,
+            TestExpectation::Err("Field `ip_notff` is not declared as a fast field"),
         )
         .unwrap();
     }
