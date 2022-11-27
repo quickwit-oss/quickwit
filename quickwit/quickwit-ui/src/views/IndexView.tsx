@@ -85,7 +85,8 @@ function IndexView() {
               <Tab label="Doc Mapping" value="3" />
               <Tab label="Indexing settings" value="4" />
               <Tab label="Search settings" value="5" />
-              <Tab label="Splits" value="6" />
+              <Tab label="Retention settings" value="6" />
+              <Tab label="Splits" value="7" />
             </TabList>
           </Box>
           <CustomTabPanel value="1">
@@ -104,6 +105,9 @@ function IndexView() {
             <JsonEditor content={index.metadata.index_config.search_settings} resizeOnMount={false} />
           </CustomTabPanel>
           <CustomTabPanel value="6">
+            <JsonEditor content={index.metadata.index_config.retention || {}} resizeOnMount={false} />
+          </CustomTabPanel>
+          <CustomTabPanel value="7">
             <JsonEditor content={index.splits} resizeOnMount={false} />
           </CustomTabPanel>
         </TabContext>
