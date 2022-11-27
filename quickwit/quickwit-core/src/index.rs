@@ -23,10 +23,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use quickwit_common::fs::{empty_dir, get_cache_directory_path};
-use quickwit_common::uri::Uri;
-use quickwit_config::{
-    validate_identifier, ConfigFormat, IndexConfig, QuickwitConfig, SourceConfig,
-};
+use quickwit_config::{validate_identifier, IndexConfig, QuickwitConfig, SourceConfig};
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_indexing::check_source_connectivity;
 use quickwit_janitor::{
@@ -72,20 +69,14 @@ impl ServiceError for IndexServiceError {
 
 /// Index service responsible for creating, updating and deleting indexes.
 pub struct IndexService {
-    default_index_root_uri: Uri,
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
 }
 
 impl IndexService {
     /// Creates an `IndexService`.
-    pub fn new(
-        metastore: Arc<dyn Metastore>,
-        default_index_root_uri: Uri,
-        storage_resolver: StorageUriResolver,
-    ) -> Self {
+    pub fn new(metastore: Arc<dyn Metastore>, storage_resolver: StorageUriResolver) -> Self {
         Self {
-            default_index_root_uri,
             metastore,
             storage_resolver,
         }
@@ -96,7 +87,7 @@ impl IndexService {
             .resolve(&config.metastore_uri)
             .await?;
         let storage_resolver = quickwit_storage_uri_resolver().clone();
-        let index_service = Self::new(metastore, config.default_index_root_uri, storage_resolver);
+        let index_service = Self::new(metastore, storage_resolver);
         Ok(index_service)
     }
 
@@ -154,21 +145,6 @@ impl IndexService {
         Ok(index_metadata)
     }
 
-    /// Loads index config from the given bytes and create index.
-    pub async fn load_config_and_create_index(
-        &self,
-        index_config_bytes: &[u8],
-        config_format: ConfigFormat,
-        overwrite: bool,
-    ) -> Result<IndexMetadata, IndexServiceError> {
-        let index_config = quickwit_config::load_index_config_from_user_config(
-            config_format,
-            index_config_bytes,
-            &self.default_index_root_uri,
-        )
-        .map_err(IndexServiceError::InvalidConfig)?;
-        self.create_index(index_config, overwrite).await
-    }
     /// Deletes the index specified with `index_id`.
     /// This is equivalent to running `rm -rf <index path>` for a local index or
     /// `aws s3 rm --recursive <index path>` for a remote Amazon S3 index.
@@ -343,19 +319,6 @@ impl IndexService {
             })?
             .clone();
         Ok(source)
-    }
-
-    /// Loads a source config from the given bytes and create it for index `index_id`.
-    pub async fn load_and_create_source(
-        &self,
-        index_id: &str,
-        config_format: ConfigFormat,
-        source_config_bytes: &[u8],
-    ) -> Result<SourceConfig, IndexServiceError> {
-        let source_config = config_format
-            .parse::<SourceConfig>(source_config_bytes)
-            .map_err(IndexServiceError::InvalidConfig)?;
-        self.create_source(index_id, source_config).await
     }
 
     pub async fn delete_source(
