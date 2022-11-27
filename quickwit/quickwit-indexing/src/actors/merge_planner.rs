@@ -297,6 +297,7 @@ pub struct MergePlannerState {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::time::Duration;
 
     use itertools::Itertools;
     use quickwit_actors::{create_mailbox, QueueCapacity, Universe};
@@ -306,6 +307,7 @@ mod tests {
     use quickwit_config::IndexingSettings;
     use quickwit_metastore::SplitMetadata;
     use tantivy::TrackedObject;
+    use time::OffsetDateTime;
 
     use crate::actors::MergePlanner;
     use crate::merge_policy::{
@@ -327,6 +329,7 @@ mod tests {
             num_docs,
             partition_id,
             num_merge_ops,
+            create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
             ..Default::default()
         }
     }
@@ -346,6 +349,7 @@ mod tests {
                 min_level_num_docs: 10_000,
                 merge_factor: 3,
                 max_merge_factor: 5,
+                maturation_period: Duration::from_secs(3600),
             },
             50_000,
         ));
@@ -428,6 +432,7 @@ mod tests {
             merge_factor: 2,
             max_merge_factor: 2,
             max_merge_ops: 3,
+            ..Default::default()
         };
         let indexing_settings = IndexingSettings {
             merge_policy: MergePolicyConfig::ConstWriteAmplification(merge_policy_config),
@@ -478,6 +483,7 @@ mod tests {
             merge_factor: 2,
             max_merge_factor: 2,
             max_merge_ops: 3,
+            ..Default::default()
         };
         let indexing_settings = IndexingSettings {
             merge_policy: MergePolicyConfig::ConstWriteAmplification(merge_policy_config),

@@ -730,6 +730,7 @@ mod tests {
             MergePolicyConfig::StableLog(StableLogMergePolicyConfig {
                 merge_factor: 9,
                 max_merge_factor: 11,
+                maturation_period: Duration::from_secs(48 * 3600),
                 ..Default::default()
             })
         );
@@ -854,6 +855,31 @@ mod tests {
         )
         .unwrap();
         assert_eq!(minimal_config.doc_mapping.mode, ModeType::Lenient);
+    }
+
+    #[test]
+    fn test_index_config_with_malformed_maturation_duration() {
+        let config_yaml = r#"
+            version: 0.4
+            index_id: hdfs-logs
+            index_uri: "s3://my-index"
+            doc_mapping: {}
+            indexing_settings:
+              merge_policy:
+                type: limit_merge
+                maturation_period: x
+        "#;
+        let parsing_config_error = load_index_config_from_user_config(
+            ConfigFormat::Yaml,
+            config_yaml.as_bytes(),
+            &Uri::from_well_formed("s3://my-index"),
+        )
+        .unwrap_err();
+        println!("{:?}", parsing_config_error);
+        assert!(parsing_config_error
+            .root_cause()
+            .to_string()
+            .contains("Failed to parse human-readable duration `x`"));
     }
 
     #[test]
