@@ -735,7 +735,7 @@ impl IndexStats {
 
         let timestamp_range = if index_metadata
             .index_config()
-            .indexing_settings
+            .doc_mapping
             .timestamp_field
             .is_some()
         {
@@ -774,7 +774,7 @@ impl IndexStats {
             num_published_splits: splits.len(),
             num_published_docs: total_num_docs,
             size_published_docs: total_bytes,
-            timestamp_field_name: index_config.indexing_settings.timestamp_field,
+            timestamp_field_name: index_config.doc_mapping.timestamp_field,
             timestamp_range,
             num_docs_descriptive,
             num_bytes_descriptive,
