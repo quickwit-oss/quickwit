@@ -148,7 +148,7 @@ fn is_valid_field_for_range(field_entry: &FieldEntry) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tells if the query has a range ast node.
+/// Extracts field names with ranges.
 fn extract_field_with_ranges(
     schema: &Schema,
     user_input_ast: &UserInputAst,
@@ -165,7 +165,7 @@ fn extract_field_with_ranges(
                 is_valid_field_for_range(field_entry)?;
                 field_with_ranges.insert(field_name.clone());
             } else {
-                anyhow::bail!("Range query without targetting a specific field is forbidden.");
+                anyhow::bail!("Range query without targeting a specific field is forbidden.");
             }
         }
     }
@@ -385,7 +385,9 @@ mod test {
             "title:>foo",
             vec![],
             None,
-            TestExpectation::Err("Range queries are not currently allowed."),
+            TestExpectation::Err(
+                "`title` is of type `Str`. Range queries are only supported for IP Field",
+            ),
         )
         .unwrap();
         check_build_query(
