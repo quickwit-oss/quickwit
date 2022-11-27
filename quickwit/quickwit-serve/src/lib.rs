@@ -130,6 +130,7 @@ pub async fn serve_quickwit(config: QuickwitConfig) -> anyhow::Result<()> {
                 )
             })?;
         let grpc_metastore_client = MetastoreGrpcClient::create_and_update_from_members(
+            1,
             cluster.ready_member_change_watcher(),
         )
         .await?;
