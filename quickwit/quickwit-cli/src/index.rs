@@ -38,9 +38,7 @@ use quickwit_config::{
     ConfigFormat, IndexConfig, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
     CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
-use quickwit_core::{
-    clear_cache_directory, remove_indexing_directory, validate_storage_uri, IndexService,
-};
+use quickwit_core::{clear_cache_directory, remove_indexing_directory, IndexService};
 use quickwit_indexing::actors::{IndexingService, MergePipeline, MergePipelineId};
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
@@ -585,13 +583,6 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         .resolve(&quickwit_config.metastore_uri)
         .await?;
 
-    validate_storage_uri(
-        quickwit_storage_uri_resolver(),
-        &quickwit_config,
-        &index_config,
-    )
-    .await?;
-
     // On overwrite and index present and `assume_yes` if false, ask the user to confirm the
     // destructive operation.
     let index_exists = metastore.index_exists(&index_id).await?;
@@ -607,7 +598,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         }
     }
 
-    let index_service = IndexService::new(metastore, quickwit_storage_uri_resolver().clone());
+    let index_service = IndexService::from_config(quickwit_config).await?;
     index_service
         .create_index(index_config, args.overwrite)
         .await?;
@@ -909,8 +900,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         .await?;
 
     if args.overwrite {
-        let index_service =
-            IndexService::new(metastore.clone(), quickwit_storage_uri_resolver().clone());
+        let index_service = IndexService::from_config(config.clone()).await?;
         index_service.clear_index(&args.index_id).await?;
     }
     let indexer_config = IndexerConfig {
@@ -1108,10 +1098,7 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Delete).await;
 
     let quickwit_config = load_quickwit_config(&args.config_uri).await?;
-    let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&quickwit_config.metastore_uri)
-        .await?;
-    let index_service = IndexService::new(metastore, quickwit_storage_uri_resolver().clone());
+    let index_service = IndexService::from_config(quickwit_config.clone()).await?;
     let affected_files = index_service
         .delete_index(&args.index_id, args.dry_run)
         .await?;
@@ -1143,10 +1130,7 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::GarbageCollect).await;
 
     let quickwit_config = load_quickwit_config(&args.config_uri).await?;
-    let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&quickwit_config.metastore_uri)
-        .await?;
-    let index_service = IndexService::new(metastore, quickwit_storage_uri_resolver().clone());
+    let index_service = IndexService::from_config(quickwit_config.clone()).await?;
     let removal_info = index_service
         .garbage_collect_index(&args.index_id, args.grace_period, args.dry_run)
         .await?;

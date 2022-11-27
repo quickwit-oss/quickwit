@@ -28,6 +28,7 @@ split_num_docs_target = 10_000_001
 type = "stable_log"
 merge_factor = 9
 max_merge_factor = 11
+maturation_period = "48 hours"
 
 [indexing_settings.resources]
 heap_size = "3G"
