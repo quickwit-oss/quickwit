@@ -3440,7 +3440,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "byte-unit",
- "bytes",
  "futures",
  "futures-util",
  "mockall",

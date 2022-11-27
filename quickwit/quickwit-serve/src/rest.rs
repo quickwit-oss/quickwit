@@ -86,6 +86,7 @@ pub(crate) async fn start_rest_server(
         ))
         .or(index_management_handlers(
             quickwit_services.index_service.clone(),
+            quickwit_services.config.clone(),
         ))
         .or({
             let delete_task_service_opt: Option<Mailbox<DeleteTaskService>> = universe.get_one();
